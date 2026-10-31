@@ -133,3 +133,80 @@ describe('dots', () => {
     expect(outcomes).toEqual(new Set(['delivered', 'dropped', 'rejected']))
   })
 })
+
+describe('review fixes', () => {
+  it('ignores a step of zero length instead of turning the meters into NaN', () => {
+    const sim = run(pipeline({ a: 50, b: 150, cap: 100 }), 10)
+    sim.step(0)
+    sim.step(1 / 60)
+    expect(Number.isNaN(sim.queue('topic', 'b').served)).toBe(false)
+    expect(Number.isNaN(sim.busy('pool'))).toBe(false)
+  })
+
+  it('drains a backlog once its arrivals stop, even with an idle cost', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      params: { on: p.switch({ label: 'On', default: true }) },
+      flows: { a: { rate: ({ load, on }) => (on ? 200 * load : 0) } },
+      components: {
+        pool: { name: 'Pool', demand: ({ flows }) => 5 + flows.a, capacity: measured(105, 'u/s'), over: '' },
+      },
+      stages: { topic: queue({ partitions: { a: 4 } }), pool: workers('pool', { pods: 1, perPod: 4 }) },
+      routes: { a: ['topic', 'pool'] },
+    })
+    const sim = createSim(m, m.evaluate(), { speed: 10 })
+    for (let i = 0; i < 600; i++) sim.step(1 / 60)
+    expect(sim.queue('topic', 'a').backlog).toBeGreaterThan(1000)
+    sim.update(m.evaluate({ on: false }))
+    for (let i = 0; i < 60; i++) sim.step(1 / 60)
+    expect(sim.queue('topic', 'a')).toMatchObject({ backlog: 0, lag: 0 })
+  })
+
+  it('runs out where the model says, also with a "full" below 100 %', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      thresholds: { full: 0.8 },
+      flows: { a: { rate: ({ load }) => 90 * load } },
+      components: {
+        gate: { name: 'Gate', demand: ({ flows }) => flows.a, capacity: measured(100, 'u/s'), over: '' },
+        pool: { name: 'Pool', demand: ({ flows }) => flows.a, capacity: measured(100, 'u/s'), over: '' },
+      },
+      stages: {
+        gate: pass('gate'),
+        topic: queue({ partitions: { a: 4 } }),
+        pool: workers('pool', { pods: 1, perPod: 4 }),
+      },
+      routes: { a: ['gate', 'topic', 'pool'] },
+    })
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.components.pool.state).toBe('over')
+    const sim = createSim(m, ev, { speed: 10 })
+    for (let i = 0; i < 600; i++) sim.step(1 / 60)
+    // 90 a second against a full of 80: one ninth rejected at the gate, the pool takes the remaining 80
+    expect(sim.shed('gate')).toBeCloseTo(1 / 9)
+    expect(sim.queue('topic', 'a').served).toBeCloseTo(80, 0)
+  })
+
+  it('applies priority across queues that feed the same workers', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: {
+        low: { rate: ({ load }) => 150 * load, priority: 2 },
+        high: { rate: ({ load }) => 50 * load, priority: 1 },
+      },
+      components: {
+        pool: { name: 'Pool', demand: ({ flows }) => flows.low + flows.high, capacity: measured(100, 'u/s'), over: '' },
+      },
+      stages: {
+        first: queue({ partitions: { low: 4 } }),
+        second: queue({ partitions: { high: 4 } }),
+        pool: workers('pool', { pods: 1, perPod: 4 }),
+      },
+      routes: { low: ['first', 'pool'], high: ['second', 'pool'] },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10 })
+    for (let i = 0; i < 600; i++) sim.step(1 / 60)
+    expect(sim.queue('second', 'high')).toMatchObject({ backlog: 0, lag: 0 })
+    expect(sim.queue('first', 'low').served).toBeCloseTo(50, 0)
+  })
+})

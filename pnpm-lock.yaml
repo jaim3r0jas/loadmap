@@ -284,10 +284,10 @@ importers:
         specifier: workspace:*
         version: link:../sim
       react:
-        specifier: ^18.3 || ^19
+        specifier: ^19
         version: 19.3.1
       react-dom:
-        specifier: ^18.3 || ^19
+        specifier: ^19
         version: 19.3.1(react@19.3.1)
 
   packages/sim:

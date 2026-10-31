@@ -84,7 +84,14 @@ const SLOT_GAP = 3
 const LABEL_H = 16
 
 const elk = new ELK()
-const cache = new Map<string, Promise<Scene>>()
+const scenes = new WeakMap<View, Map<string, Promise<Scene>>>()
+// per measurer and view, per combination of values other than the load: the contexts labels are sized against
+const sampleCache = new WeakMap<Measure, WeakMap<View, Map<string, Sampled>>>()
+
+interface Sampled {
+  contexts: LooseValues[]
+  widths: Map<Label, Map<string, number>>
+}
 
 /** The current text of every label. Cheap: call it on every change of values; the layout stays put. */
 export function labelsAt(view: View, ev: Evaluation) {
@@ -108,6 +115,8 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   const direction = o.direction ?? 'RIGHT'
   const measure = o.measure ?? estimateText
   const prep = prepare(view, ev, direction, measure)
+  const cache = scenes.get(view) ?? new Map<string, Promise<Scene>>()
+  scenes.set(view, cache)
   let hit = cache.get(prep.key)
   if (!hit) {
     hit = run(prep).catch((err) => {
@@ -137,12 +146,7 @@ interface Prepared {
 }
 
 function prepare(view: View, ev: Evaluation, direction: Direction, measure: Measure): Prepared {
-  // labels are sized for their widest text across the load range, so moving the load never moves the layout
-  const { min, max } = view.model.load
-  const loads = [min, max, ...[0.25, 0.5, 0.75].map((t) => min * (max / Math.max(min, 1e-9)) ** t)]
-  const samples = loads.map((load) => view.model.evaluate({ ...ev.values, load }).ctx)
-  const widest = (l: Label | undefined, size: number, weight: number) =>
-    l == null ? 0 : Math.max(...samples.map((ctx) => measure(text(l, ctx), size, weight)))
+  const widest = labelWidths(view, ev, measure)
 
   const stageNode: Record<string, string> = {}
   const nodes = (Object.entries(view.def.nodes) as [string, AnyNodeDef][]).map(([id, def]) => {
@@ -166,12 +170,48 @@ function prepare(view: View, ev: Evaluation, direction: Direction, measure: Meas
   }))
   const flowFrom: Record<string, string> = {}
   for (const [f, fv] of Object.entries(view.def.flows) as [string, { from: string }][]) flowFrom[f] = fv.from
-  const key = JSON.stringify({
-    direction,
-    nodes: nodes.map((n) => [n.id, n.inner.w, n.inner.h, n.inner.cells.length, n.inner.slots.length]),
-    edges: edges.map((e) => [e.from, e.to, e.labelW]),
-  })
+  // everything the scene is built from, so two different structures never share a scene
+  const key = JSON.stringify({ direction, nodes: nodes.map((n) => [n.id, n.def.kind, n.inner]), edges, flowFrom })
   return { key, direction, nodes, edges, stageNode, flowFrom }
+}
+
+/**
+ * Labels are sized for their widest text over every load the slider can reach, so moving the load never moves the
+ * layout. Text width does not grow steadily with a number ("9.9k" is wider than "10k"), hence every step, not a few.
+ */
+function labelWidths(view: View, ev: Evaluation, measure: Measure) {
+  const { load: _, ...rest } = ev.values
+  const key = JSON.stringify(rest)
+  const byView = sampleCache.get(measure) ?? new WeakMap<View, Map<string, Sampled>>()
+  sampleCache.set(measure, byView)
+  const byValues = byView.get(view) ?? new Map<string, Sampled>()
+  byView.set(view, byValues)
+  let sampled = byValues.get(key)
+  if (!sampled) {
+    const { min, max, step } = view.model.load
+    const n = Math.floor((max - min) / step)
+    const loads =
+      n <= 400
+        ? [...Array.from({ length: n + 1 }, (_, i) => min + i * step), max]
+        : Array.from({ length: 401 }, (_, i) => min + ((max - min) * i) / 400)
+    sampled = { contexts: loads.map((load) => view.model.evaluate({ ...ev.values, load }).ctx), widths: new Map() }
+    if (byValues.size > 32) byValues.delete(byValues.keys().next().value!)
+    byValues.set(key, sampled)
+  }
+  const { contexts, widths } = sampled
+  return (l: Label | undefined, size: number, weight: number) => {
+    if (l == null) return 0
+    if (typeof l === 'string') return measure(l, size, weight)
+    const byFont = widths.get(l) ?? new Map<string, number>()
+    widths.set(l, byFont)
+    const font = `${size}/${weight}`
+    let w = byFont.get(font)
+    if (w == null) {
+      w = Math.max(...contexts.map((ctx) => measure(text(l, ctx), size, weight)))
+      byFont.set(font, w)
+    }
+    return w
+  }
 }
 
 async function run(prep: Prepared): Promise<Scene> {

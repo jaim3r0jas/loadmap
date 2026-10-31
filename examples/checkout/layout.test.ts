@@ -51,3 +51,33 @@ describe('checkout layout', () => {
     expect(path.slice(1, -1)).toEqual(edge.points)
   })
 })
+
+describe('layout cache', () => {
+  it('tells apart structures with the same sizes but cells split differently', async () => {
+    const { defineModel, measured, p, pass, queue } = await import('@loadmap/core')
+    const { cluster, topology } = await import('@loadmap/layout')
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      params: { swap: p.switch({ label: 'Swap', default: false }) },
+      flows: { a: { rate: () => 1 }, b: { rate: () => 1 } },
+      components: { q: { name: 'Q', demand: () => 1, capacity: measured(10, 'x'), over: '' } },
+      stages: {
+        q: queue({ component: 'q', partitions: ({ swap }) => (swap ? { a: 12, b: 6 } : { a: 6, b: 12 }) }),
+        out: pass('q'),
+      },
+      routes: { a: ['q', 'out'], b: ['q', 'out'] },
+    })
+    const v = topology(m, {
+      nodes: {
+        q: cluster({ label: 'Queue', members: 3, stage: 'q' }),
+        out: { kind: 'node', label: 'Out', stage: 'out', shape: 'box' },
+      },
+      edges: [],
+      flows: { a: { from: 'q', color: 'accent' }, b: { from: 'q', color: 'alt' } },
+    })
+    const a = await layout(v, m.evaluate())
+    const b = await layout(v, m.evaluate({ swap: true }))
+    expect(b).not.toBe(a)
+    expect(b.nodes[0]!.cells.filter((c) => c.flow === 'a')).toHaveLength(12)
+  })
+})

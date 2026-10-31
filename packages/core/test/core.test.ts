@@ -103,6 +103,21 @@ describe('model', () => {
     expect(s.ranked.at(-1)?.id).toBe('cache')
   })
 
+  it('ranks a switched-off component after a live one that never reaches the target', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: ({ load }) => load } },
+      components: {
+        off: { name: 'Off', when: () => false, demand: () => 1, capacity: measured(1, 'x'), over: '' },
+        idle: { name: 'Idle', demand: () => 0, capacity: measured(1, 'x'), over: '' },
+        busy: { name: 'Busy', demand: ({ flows }) => flows.req, capacity: measured(10, 'x'), over: '' },
+      },
+      stages: { busy: pass('busy') },
+      routes: { req: ['busy'] },
+    })
+    expect(m.evaluate().ranked.map((c) => c.id)).toEqual(['busy', 'idle', 'off'])
+  })
+
   it('finds the first crossing of a utilization that does not rise steadily', () => {
     // rises to 0.6 at 5×, falls back, crosses 0.5 for good only past 50×
     const m = tiny({

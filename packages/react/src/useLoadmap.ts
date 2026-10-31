@@ -30,16 +30,32 @@ export interface LoadmapController<P = any> {
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
-  const [values, setValuesState] = useState<Values<P>>(() => ({ ...model.defaults(), ...o.initial }) as Values<P>)
-  const ev = useMemo(() => model.evaluate(values), [model, values])
+  const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
+  const [state, setState] = useState(() => ({ model, values: init() }))
+  // a new model starts from its own defaults
+  let values = state.values
+  if (state.model !== model) {
+    values = init()
+    setState({ model, values })
+  }
+
+  // setValues evaluates once for the engine; the render reuses that evaluation
+  const evaluated = useRef<{ values: Values<P>; ev: Evaluation<P> } | null>(null)
+  const ev = useMemo(
+    () => (evaluated.current?.values === values ? evaluated.current.ev : model.evaluate(values)),
+    [model, values],
+  )
+
   const engineRef = useRef<Engine | null>(null)
-  if (!engineRef.current) engineRef.current = new Engine(model, view, ev, o)
+  if (!engineRef.current || engineRef.current.model !== model || engineRef.current.view !== view)
+    engineRef.current = new Engine(model, view, ev, o)
   const engine = engineRef.current
 
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const [direction, setDirection] = useState<Direction>('RIGHT')
   const [measure, setMeasure] = useState<Measure | null>(null)
-  const [scene, setScene] = useState<Scene | null>(null)
+  const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
+  const scene = laid?.view === view ? laid.scene : null
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const narrowBelow = o.narrowBelow ?? 640
 
@@ -68,7 +84,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
       (s) => {
         if (!live) return
         engine.setScene(s)
-        setScene(s)
+        setLaid({ view, scene: s })
       },
       (err) => console.error('loadmap: layout failed', err),
     )
@@ -85,8 +101,10 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
       const next = { ...valuesRef.current, ...v }
       valuesRef.current = next
       // the engine takes the new numbers now, so a frame stepped before React renders already uses them
-      engine.setEvaluation(model.evaluate(next))
-      setValuesState(next)
+      const nextEv = model.evaluate(next)
+      evaluated.current = { values: next, ev: nextEv }
+      engine.setEvaluation(nextEv)
+      setState({ model, values: next })
     },
     [engine, model],
   )

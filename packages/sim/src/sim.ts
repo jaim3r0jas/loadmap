@@ -61,10 +61,11 @@ const TAU = 3 // simulated seconds: smoothing of the rates shown on meters
 /**
  * A fluid model of the queues, driven by the model's utilization, plus dots sampled from it.
  *
- * Each queue stage is drained by the next stage on each flow's route, at that stage's capacity:
- * demand ÷ utilization, so the queue grows exactly when its bar in the limits passes 100 %. Flows share that
- * capacity by priority (1 first). Backlog is kept as arrival cohorts, so the lag is the real age of the oldest unit
- * and a drop rule can remove exactly the units older than its limit.
+ * Each queue stage is drained by the next stage on each flow's route, at that stage's capacity: what its flows carry
+ * at the load where its component runs out (the limits' "full at N×"), so a queue grows exactly when the load passes
+ * the point the bars show. Flows share that capacity by priority (1 first), across every queue feeding the stage.
+ * Backlog is kept as arrival cohorts, so the lag is the real age of the oldest unit and a drop rule can remove
+ * exactly the units older than its limit.
  */
 export class Sim {
   readonly speed: number
@@ -116,11 +117,12 @@ export class Sim {
         if (s.kind === 'workers') this.#fills.set(s.id, fillOrder(s.pods, s.perPod, s.fill, this.#o.seed))
     }
 
+    const full = this.#model.thresholds.full
     this.#shed.clear()
     this.#inflow.clear()
     for (const s of Object.values(ev.stages) as ResolvedStage[]) {
       const u = s.kind === 'pass' ? this.#util(s.component) : null
-      this.#shed.set(s.id, u != null && u > 1 ? 1 - 1 / u : 0)
+      this.#shed.set(s.id, u != null && u > full ? 1 - full / u : 0)
     }
     for (const f of this.#model.flowIds) {
       let rate = ev.flows[f] ?? 0
@@ -129,12 +131,23 @@ export class Sim {
         rate *= 1 - (this.#shed.get(st) ?? 0)
       }
     }
+    // a stage drains what its flows carry at the load where its component runs out, the same point the limits show
     this.#capacity.clear()
+    const routedThrough = (s: string) => this.#model.flowIds.filter((f) => ev.routes[f]?.includes(s))
     for (const s of Object.values(ev.stages) as ResolvedStage[]) {
-      const u = s.component ? this.#util(s.component) : null
-      let through = 0
-      for (const f of this.#model.flowIds) through += this.#inflow.get(`${s.id}/${f}`) ?? 0
-      this.#capacity.set(s.id, u == null || u <= 0 ? Number.POSITIVE_INFINITY : through / u)
+      const c = s.component ? ev.components[s.component] : undefined
+      let cap = Number.POSITIVE_INFINITY
+      if (c && c.util != null && c.full != null && Number.isFinite(c.full)) {
+        if (c.full > 0) {
+          const at = this.#model.evaluate({ ...ev.values, load: c.full })
+          cap = routedThrough(s.id).reduce((a, f) => a + (at.flows[f] ?? 0), 0)
+        } else {
+          // already past "full" at no load: scale what it carries now
+          const now = routedThrough(s.id).reduce((a, f) => a + (this.#inflow.get(`${s.id}/${f}`) ?? 0), 0)
+          cap = c.util > 0 ? (now * full) / c.util : 0
+        }
+      }
+      this.#capacity.set(s.id, cap)
     }
 
     const total = this.#model.flowIds.reduce((a, f) => a + (ev.flows[f] ?? 0), 0)
@@ -143,6 +156,7 @@ export class Sim {
 
   /** Advance by `dtReal` real seconds: the queues by dtReal × speed, the dots by dtReal. */
   step(dtReal: number, o: { particles?: boolean } = {}): void {
+    if (!(dtReal > 0)) return
     const dt = dtReal * this.speed
     this.time += dt
     this.#stepQueues(dt)
@@ -179,20 +193,20 @@ export class Sim {
   #steadyBusy(stage: string): number {
     const s = this.#ev.stages[stage]
     const u = s?.component ? this.#util(s.component) : null
-    return Math.min(1, u ?? 0)
+    return Math.min(1, (u ?? 0) / this.#model.thresholds.full)
   }
 
   #stepQueues(dt: number): void {
     const ev = this.#ev
-    const avail = new Map<string, number>()
-    const taken = new Map<string, number>()
+    const entries: { q: string; f: string; fq: { cohorts: Cohort[]; s: QueueState }; drainer: string; prio: number }[] =
+      []
     for (const q of Object.values(ev.stages) as ResolvedStage[]) {
       if (q.kind !== 'queue') continue
       const qs = this.#queues.get(q.id) ?? new Map()
       this.#queues.set(q.id, qs)
-
-      const through = this.#model.flowIds.filter((f) => ev.routes[f]?.includes(q.id))
-      for (const f of through) {
+      for (const f of this.#model.flowIds) {
+        const route = ev.routes[f] ?? []
+        if (!route.includes(q.id)) continue
         const fq = qs.get(f) ?? { cohorts: [], s: { backlog: 0, lag: 0, arriving: 0, served: 0, dropped: 0 } }
         qs.set(f, fq)
         const n = (this.#inflow.get(`${q.id}/${f}`) ?? 0) * dt
@@ -200,63 +214,52 @@ export class Sim {
         if (last && this.time - last.t < MERGE_WINDOW) last.n += n
         else if (n > 0) fq.cohorts.push({ t: this.time, n })
         if (fq.cohorts.length > MAX_COHORTS) fq.cohorts = mergePairs(fq.cohorts)
+        const drainer = route[route.indexOf(q.id) + 1] ?? '∞'
+        entries.push({ q: q.id, f, fq, drainer, prio: this.#model.def.flows[f]?.priority ?? 1 })
       }
+    }
 
-      // serve by priority; flows of equal priority share in proportion to their backlog
-      const byPrio = new Map<number, string[]>()
-      for (const f of through) {
-        const pr = this.#model.def.flows[f]?.priority ?? 1
-        byPrio.set(pr, [...(byPrio.get(pr) ?? []), f])
-      }
-      for (const pr of [...byPrio.keys()].sort((a, b) => a - b)) {
-        const group = byPrio.get(pr)!
-        // a group may drain into different stages; each drainer's capacity is shared by everything it drains
-        const want = new Map<string, number>()
-        for (const f of group) {
-          const route = ev.routes[f]!
-          const d = route[route.indexOf(q.id) + 1]
-          const key = d ?? '∞'
-          if (!avail.has(key)) avail.set(key, d ? (this.#capacity.get(d) ?? Number.POSITIVE_INFINITY) * dt : Infinity)
-          want.set(key, (want.get(key) ?? 0) + backlog(qs.get(f)!.cohorts))
+    // each drainer's capacity goes to its flows by priority, across every queue that feeds it;
+    // flows of equal priority share in proportion to their backlog
+    const taken = new Map<string, number>()
+    for (const d of new Set(entries.map((e) => e.drainer))) {
+      const feeding = entries.filter((e) => e.drainer === d)
+      let avail = d === '∞' ? Number.POSITIVE_INFINITY : (this.#capacity.get(d) ?? Number.POSITIVE_INFINITY) * dt
+      for (const pr of [...new Set(feeding.map((e) => e.prio))].sort((a, b) => a - b)) {
+        const group = feeding.filter((e) => e.prio === pr)
+        const want = group.reduce((a, e) => a + backlog(e.fq.cohorts), 0)
+        let took = 0
+        for (const e of group) {
+          const b = backlog(e.fq.cohorts)
+          const take = Number.isFinite(avail) ? (want > 0 ? Math.min(b, (avail * b) / want) : 0) : b
+          serveOldest(e.fq.cohorts, take)
+          took += take
+          e.fq.s.served = ema(e.fq.s.served, take / dt, dt)
         }
-        const took = new Map<string, number>()
-        for (const f of group) {
-          const route = ev.routes[f]!
-          const key = route[route.indexOf(q.id) + 1] ?? '∞'
-          const fq = qs.get(f)!
-          const b = backlog(fq.cohorts)
-          const a = avail.get(key)!
-          const w = want.get(key)!
-          const take = Number.isFinite(a) ? (w > 0 ? Math.min(b, (a * b) / w) : 0) : b
-          serveOldest(fq.cohorts, take)
-          took.set(key, (took.get(key) ?? 0) + take)
-          taken.set(key, (taken.get(key) ?? 0) + take)
-          fq.s.served = ema(fq.s.served, take / dt, dt)
-        }
-        for (const [key, t] of took) avail.set(key, Math.max(0, avail.get(key)! - t))
+        avail = Math.max(0, avail - took)
+        taken.set(d, (taken.get(d) ?? 0) + took)
       }
+    }
 
-      for (const f of through) {
-        const fq = qs.get(f)!
-        let dropped = 0
-        const rule = this.#model.def.flows[f]?.overload?.drop
-        if (rule)
-          while (fq.cohorts.length && this.time - fq.cohorts[0]!.t > rule.olderThan) dropped += fq.cohorts.shift()!.n
-        const b = backlog(fq.cohorts)
-        // a sliver of the step's own arrivals is rounding, not backlog
-        if (b < 1e-9 * Math.max(1, this.#inflow.get(`${q.id}/${f}`) ?? 0)) fq.cohorts = []
-        fq.s.backlog = backlog(fq.cohorts)
-        fq.s.lag = fq.cohorts.length ? this.time - fq.cohorts[0]!.t : 0
-        fq.s.arriving = ema(fq.s.arriving, this.#inflow.get(`${q.id}/${f}`) ?? 0, dt)
-        fq.s.dropped = ema(fq.s.dropped, dropped / dt, dt)
-      }
+    for (const { q, f, fq } of entries) {
+      let dropped = 0
+      const rule = this.#model.def.flows[f]?.overload?.drop
+      if (rule)
+        while (fq.cohorts.length && this.time - fq.cohorts[0]!.t > rule.olderThan) dropped += fq.cohorts.shift()!.n
+      const inflow = this.#inflow.get(`${q}/${f}`) ?? 0
+      // a sliver of the step's own arrivals is rounding, not backlog
+      if (backlog(fq.cohorts) < 1e-9 * Math.max(1, inflow)) fq.cohorts = []
+      fq.s.backlog = backlog(fq.cohorts)
+      fq.s.lag = fq.cohorts.length ? this.time - fq.cohorts[0]!.t : 0
+      fq.s.arriving = ema(fq.s.arriving, inflow, dt)
+      fq.s.dropped = ema(fq.s.dropped, dropped / dt, dt)
     }
 
     for (const s of Object.values(ev.stages) as ResolvedStage[]) {
       if (s.kind !== 'workers') continue
       const cap = this.#capacity.get(s.id) ?? Number.POSITIVE_INFINITY
-      const fed = taken.has(s.id)
-      const now = fed && Number.isFinite(cap) && cap > 0 ? taken.get(s.id)! / (cap * dt) : this.#steadyBusy(s.id)
+      const now =
+        taken.has(s.id) && Number.isFinite(cap) && cap > 0 ? taken.get(s.id)! / (cap * dt) : this.#steadyBusy(s.id)
       this.#busy.set(s.id, ema(this.#busy.get(s.id) ?? now, Math.min(1, now), dt))
     }
   }

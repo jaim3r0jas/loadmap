@@ -22,9 +22,14 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
   const [full, setFull] = useState(false)
 
   // bind after every structural render: the worker fills are new elements
+  // bind when the structure is new: the worker fills are new elements
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scene and reducedMotion change the drawn elements
   useEffect(() => {
     engine.bind(svgRef.current, canvasRef.current)
     if (lm.root) engine.readColors(lm.root)
+  }, [engine, scene, reducedMotion, lm.root])
+  // the labels and colours for these values are on screen: export waits for this
+  useEffect(() => {
     engine.drawnValues = JSON.stringify(lm.values)
   })
 

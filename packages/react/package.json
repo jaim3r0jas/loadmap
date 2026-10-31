@@ -26,7 +26,7 @@
     "@loadmap/layout": "workspace:*"
   },
   "peerDependencies": {
-    "react": "^18.3 || ^19",
-    "react-dom": "^18.3 || ^19"
+    "react": "^19",
+    "react-dom": "^19"
   }
 }

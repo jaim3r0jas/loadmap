@@ -118,7 +118,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
 }
 
 export interface Model<P = any, F extends string = string, C extends string = string, S extends string = string> {
-  def: ModelDef<P, F, C, any, S>
+  /** The definition as written; loosely typed so any model fits `Model` in the packages that drive it. */
+  def: ModelDef<any, any, any, any, any>
   title?: string
   load: LoadParam
   /** The load first, then the other parameters in declaration order. */
@@ -213,8 +214,12 @@ export function defineModel<
 
     const all = componentIds.map((c) => components[c])
     const live = all.filter((r) => r.util != null)
-    const order = (x: number | null) => (x == null ? Number.MAX_VALUE : x)
-    const ranked = [...all].sort((a, b) => order(a.target) - order(b.target) || order(a.full) - order(b.full))
+    // switched-off components go last, after live ones that never reach the target
+    const order = (x: number | null) => (x == null ? Number.POSITIVE_INFINITY : x)
+    const cmp = (x: number | null, y: number | null) => (order(x) === order(y) ? 0 : order(x) < order(y) ? -1 : 1)
+    const ranked = [...all].sort(
+      (a, b) => Number(a.util == null) - Number(b.util == null) || cmp(a.target, b.target) || cmp(a.full, b.full),
+    )
     const firstLimit = live.length ? live.reduce((a, b) => (order(b.target) < order(a.target) ? b : a)) : null
     const firstFull = live.length ? live.reduce((a, b) => (order(b.full) < order(a.full) ? b : a)) : null
 
@@ -247,7 +252,7 @@ export function defineModel<
   }
 
   return {
-    def: def as ModelDef<P, F, C, any, S>,
+    def: def as ModelDef<any, any, any, any, any>,
     title: def.title,
     load: def.load,
     params: paramList,

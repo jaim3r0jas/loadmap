@@ -38,8 +38,9 @@ export class Engine {
 
   setEvaluation(ev: Evaluation): void {
     if (ev === this.ev) return
+    const same = JSON.stringify(ev.values) === JSON.stringify(this.ev.values)
     this.ev = ev
-    this.sim.update(ev)
+    if (!same) this.sim.update(ev)
   }
 
   setScene(scene: Scene): void {
