@@ -209,7 +209,8 @@ class Parser {
     const close = this.peek()
     if (!this.is('}')) {
       this.report.error(open, `this "{" of "${'keyword' in d ? d.keyword.name : 'edge'}" is never closed`)
-      d.bodySpan = { from: open.from, to: close.from }
+      // open to the end: a cursor typing at the end of the file is still inside
+      d.bodySpan = { from: open.from, to: close.from + 1 }
       d.to = close.from
       return
     }

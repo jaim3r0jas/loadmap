@@ -9,8 +9,10 @@ export {
   LANGUAGE_VERSION,
   LIMITS,
 } from './compile'
+export { type Completion, type Completions, completions } from './complete'
 export { closest, type Diagnostic, didYouMean, formatDiagnostic, Reporter, type Span } from './diagnostics'
 export { BUILTINS, FormulaError, type HostFunctions } from './expr'
 export { LEXICON, lex, type Token } from './lexer'
 export { MAX_DEPTH, MAX_SOURCE, parse, parseExpression } from './parser'
 export { BOXES, COLORS, COMPONENT_PROPS, EDGE_PROPS, type PropSpec, SCHEMA, STAGES } from './schema'
+export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared } from './share'
