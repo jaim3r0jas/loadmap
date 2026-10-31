@@ -1,8 +1,8 @@
 import { Alerts } from '@loadmap/example-alerts'
 import { Checkout } from '@loadmap/example-checkout'
-import { download, exportPng, recordVideo } from '@loadmap/export'
+import { download, exportPng, expose, recordVideo } from '@loadmap/export'
 import type { LoadmapHandle } from '@loadmap/react'
-import { StrictMode, useRef, useState } from 'react'
+import { StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 const EXAMPLES = { checkout: Checkout, alerts: Alerts } as const
@@ -17,6 +17,15 @@ function App() {
   const [name, setName] = useState<Name>(initial)
   const handle = useRef<LoadmapHandle>(null)
   const Example = EXAMPLES[name]
+  // loadmap record finds the shown example as "default" and by its name
+  useEffect(() => {
+    const h = handle.current
+    if (!h) return
+    const off = [expose(h), expose(h, name)]
+    return () => {
+      for (const f of off) f()
+    }
+  }, [name])
   const pick = (n: Name) => {
     setName(n)
     history.replaceState(null, '', `?example=${n}`)

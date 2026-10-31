@@ -267,6 +267,19 @@ importers:
         specifier: 1.65.0
         version: 1.65.0
 
+  packages/cli:
+    dependencies:
+      playwright:
+        specifier: 1.64.1
+        version: 1.64.1
+    devDependencies:
+      '@loadmap/export':
+        specifier: workspace:*
+        version: link:../export
+      mediabunny:
+        specifier: 1.65.0
+        version: 1.65.0
+
   packages/core: {}
 
   packages/export:
@@ -277,6 +290,9 @@ importers:
       '@loadmap/react':
         specifier: workspace:*
         version: link:../react
+      gifenc:
+        specifier: 1.0.3
+        version: 1.0.3
       mediabunny:
         specifier: 1.65.0
         version: 1.65.0
@@ -847,6 +863,9 @@ packages:
   get-tsconfig@5.0.0-beta.6:
     resolution: {integrity: sha512-X6fBC0pmImC70gvX2zm56go9hx0MyoGVdG0tUCkg/D+Xnh5TJsOZ7iDbOdI3PvmtrDxnu1YdDufpK2QJX1Meqw==}
     engines: {node: '>=20.20.0'}
+
+  gifenc@1.0.3:
+    resolution: {integrity: sha512-xdr6AdrfGBcfzncONUOlXMBuc5wJDtOueE3c5rdG0oNgtINLD+f2iFZltrBRZYzACRbKr+mSVU/x98zv2u3jmw==}
 
   hookable@6.1.2:
     resolution: {integrity: sha512-+abwxtiEA52GCVIsQqut3S/uKTbUwYIp4Pe/vv+6py5XiXBCqMZHg6pA6Y5qhgLSEys0/cYuPbO0z1QFj5ZCmg==}
@@ -1566,6 +1585,8 @@ snapshots:
   get-tsconfig@5.0.0-beta.6:
     dependencies:
       resolve-pkg-maps: 1.0.0
+
+  gifenc@1.0.3: {}
 
   hookable@6.1.2: {}
 

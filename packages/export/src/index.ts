@@ -1,5 +1,6 @@
 import type { Values } from '@loadmap/core'
 import type { LoadmapHandle } from '@loadmap/react'
+import { applyPalette, GIFEncoder, quantize } from 'gifenc'
 import {
   BufferTarget,
   CanvasSource,
@@ -25,8 +26,9 @@ export interface FrameOptions {
 
 export interface RecordOptions extends FrameOptions {
   seconds: number
+  /** Default 30 for video, 15 for GIF. */
   fps?: number
-  format?: 'webm' | 'mp4'
+  format?: 'webm' | 'mp4' | 'gif'
   /** Value changes during the recording, e.g. the load rising from 1× to 40×. */
   script?: readonly ScriptStep[]
   /** The sim starts over with this seed, so two recordings match frame for frame. Default 1. */
@@ -75,34 +77,24 @@ export async function exportPng(handle: LoadmapHandle, o: FrameOptions = {}): Pr
 }
 
 /**
- * A video of a scenario, made frame by frame on a fixed clock: the live animation is paused, the sim advances
+ * A video or GIF of a scenario, made frame by frame on a fixed clock: the live animation is paused, the sim advances
  * exactly 1/fps per frame, and each frame is encoded at its own timestamp. Nothing depends on how fast the machine
  * is, so the same options give the same frames. The values the script changed are put back afterwards.
  */
 export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Promise<Blob> {
-  const fps = o.fps ?? 30
   const format = o.format ?? 'webm'
+  const fps = o.fps ?? (format === 'gif' ? 15 : 30)
   const script = [...(o.script ?? [])].sort((a, b) => a.at - b.at)
   await handle.ready()
   const before = handle.values()
   handle.pause()
   try {
     for (const s of script.filter((s) => s.at <= 0)) handle.setValues(s.set)
-    await handle.ready()
-    handle.reset(o.seed ?? 1)
-    const warm = Math.round((o.warmup ?? 2) * fps)
-    for (let i = 0; i < warm; i++) handle.step(1 / fps)
+    await warmUp(handle, o.seed ?? 1, o.warmup ?? 2, fps)
 
     const canvas = document.createElement('canvas')
     await composeFrame(handle, { scale: o.scale ?? 1 }, canvas)
-    const codec = await pickCodec(format, canvas.width, canvas.height)
-    const output = new Output({
-      format: format === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
-      target: new BufferTarget(),
-    })
-    const source = new CanvasSource(canvas, { codec, bitrate: QUALITY_HIGH, keyFrameInterval: 2 })
-    output.addVideoTrack(source, { frameRate: fps })
-    await output.start()
+    const sink = format === 'gif' ? gifSink(canvas, fps) : await videoSink(canvas, format, fps)
 
     const frames = Math.round(o.seconds * fps)
     let next = script.findIndex((s) => s.at > 0)
@@ -117,16 +109,113 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
       handle.step(1 / fps)
       await composeFrame(handle, { size: { width: canvas.width, height: canvas.height } }, canvas)
       await o.onFrame?.(i, canvas)
-      await source.add(t, 1 / fps)
+      await sink.add(t)
     }
-    source.close()
-    await output.finalize()
-    const buf = (output.target as BufferTarget).buffer!
-    return new Blob([buf], { type: format === 'mp4' ? 'video/mp4' : 'video/webm' })
+    return await sink.finish()
   } finally {
     handle.setValues(before)
     handle.resume()
   }
+}
+
+/** A PNG of the board after `set` and a warm-up on a fixed clock: the same options give the same picture. */
+export async function recordStill(
+  handle: LoadmapHandle,
+  o: FrameOptions & { set?: Partial<Values<any>>; seed?: number; warmup?: number } = {},
+): Promise<Blob> {
+  await handle.ready()
+  const before = handle.values()
+  handle.pause()
+  try {
+    if (o.set) handle.setValues(o.set)
+    await warmUp(handle, o.seed ?? 1, o.warmup ?? 4, 30)
+    return await exportPng(handle, o)
+  } finally {
+    handle.setValues(before)
+    handle.resume()
+  }
+}
+
+declare global {
+  var __loadmap: Record<string, PageRecorder> | undefined
+}
+
+/** What `expose` puts on the page for `loadmap record`: results come back base64-encoded. */
+export interface PageRecorder {
+  record(o: RecordOptions): Promise<string>
+  still(o: Parameters<typeof recordStill>[1]): Promise<string>
+}
+
+/**
+ * Lets `loadmap record` drive this loadmap: puts a recorder on `globalThis.__loadmap[name]`.
+ * Returns a function that takes it off again.
+ */
+export function expose(handle: LoadmapHandle, name = 'default'): () => void {
+  const recorder: PageRecorder = {
+    record: async (o) => base64(await recordVideo(handle, o)),
+    still: async (o) => base64(await recordStill(handle, o)),
+  }
+  globalThis.__loadmap ??= {}
+  globalThis.__loadmap[name] = recorder
+  return () => {
+    if (globalThis.__loadmap?.[name] === recorder) delete globalThis.__loadmap[name]
+  }
+}
+
+async function warmUp(handle: LoadmapHandle, seed: number, seconds: number, fps: number) {
+  await handle.ready()
+  handle.reset(seed)
+  for (let i = 0, n = Math.round(seconds * fps); i < n; i++) handle.step(1 / fps)
+}
+
+interface Sink {
+  add(t: number): Promise<void>
+  finish(): Promise<Blob>
+}
+
+async function videoSink(canvas: HTMLCanvasElement, format: 'webm' | 'mp4', fps: number): Promise<Sink> {
+  const codec = await pickCodec(format, canvas.width, canvas.height)
+  const output = new Output({
+    format: format === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
+    target: new BufferTarget(),
+  })
+  const source = new CanvasSource(canvas, { codec, bitrate: QUALITY_HIGH, keyFrameInterval: 2 })
+  output.addVideoTrack(source, { frameRate: fps })
+  await output.start()
+  return {
+    add: (t) => source.add(t, 1 / fps),
+    finish: async () => {
+      source.close()
+      await output.finalize()
+      const buf = (output.target as BufferTarget).buffer!
+      return new Blob([buf], { type: format === 'mp4' ? 'video/mp4' : 'video/webm' })
+    },
+  }
+}
+
+/** A GIF with a palette per frame, so flow colours stay true; pure JavaScript, so its bytes are reproducible. */
+function gifSink(canvas: HTMLCanvasElement, fps: number): Sink {
+  const gif = GIFEncoder()
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  const delay = Math.round(1000 / fps)
+  return {
+    add: async () => {
+      const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const palette = quantize(data, 256)
+      gif.writeFrame(applyPalette(data, palette), width, height, { palette, delay, repeat: 0 })
+    },
+    finish: async () => {
+      gif.finish()
+      return new Blob([gif.bytes() as BlobPart], { type: 'image/gif' })
+    },
+  }
+}
+
+async function base64(b: Blob): Promise<string> {
+  const bytes = new Uint8Array(await b.arrayBuffer())
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(s)
 }
 
 /** Saves a blob through the browser's download. */

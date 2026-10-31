@@ -1,0 +1,32 @@
+{
+  "name": "@loadmap/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "loadmap": "./dist/bin.js"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "@loadmap/export": "workspace:*",
+    "mediabunny": "1.65.0"
+  }
+}

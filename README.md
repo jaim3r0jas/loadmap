@@ -63,4 +63,14 @@ pnpm dev                                # the playground
 pnpm check                              # typecheck, lint, tests, build
 ```
 
+## Record a scenario
+
+```bash
+pnpm dev &   # or any page that calls expose(handle) from @loadmap/export
+pnpm record 'http://localhost:5173/?example=alerts' --out alerts.gif --script ramp.json
+```
+
+`ramp.json` is `[{ "at": 0, "set": { "load": 5 } }, { "at": 3, "set": { "load": 30 } }]`; `--out` picks GIF, WebM,
+MP4 or PNG. The clock is fixed, so the same options give the same file.
+
 See `CLAUDE.md` for the conventions and `docs/` for the research and the lessons behind the design.

@@ -18,6 +18,7 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 | `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                     |
 | `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, engine, theme                                  | core, sim, layout; react (peer) |
 | `@loadmap/export` | PNG and WebM/MP4 on a fixed clock                                                          | react, mediabunny               |
+| `@loadmap/cli`    | `loadmap record <url> --out x.gif                                                          | webm                            | mp4 | png`: Playwright drives a page that calls `expose()` | playwright |
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests; `apps/playground` shows both (`pnpm dev`, `?example=alerts`).
@@ -52,7 +53,14 @@ The browser tests need Chromium once: `pnpm exec playwright install chromium`. T
 - Text in the UI and the verdict: short plain sentences, numbers with units, `×` for load multiples, `%` with a space.
 - The example and docs are generic: no figures, component names or links from anyone's employer.
 
-## Not yet (milestone 2)
+## Recording
 
-GIF, the `loadmap record` CLI (Playwright calling `recordVideo`), fan-out stages, merge-newest-per-key, ELK in a
-Web Worker (it is ~1.5 MB of the playground bundle), a docs site, publishing.
+A page calls `expose(handle)` (`@loadmap/export`); then `pnpm record <url> --out demo.gif [--script s.json]
+[--set load=30]` records it in headless Chromium on a fixed clock: the same options give the same GIF, byte for byte.
+The playground exposes the shown example: `pnpm dev`, then `pnpm record 'http://localhost:5173/?example=alerts'
+--out alerts.gif`.
+
+## Not yet
+
+ELK in a Web Worker (it is ~1.5 MB of the playground bundle), state in the URL, hover detail on nodes, a docs site,
+publishing.

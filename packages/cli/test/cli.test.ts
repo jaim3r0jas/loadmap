@@ -1,0 +1,102 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
+import { createServer, type ViteDevServer } from 'vite'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { main, parseRecord, record } from '../src'
+
+describe('arguments', () => {
+  it('reads values, numbers and a script file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'loadmap-cli-'))
+    const script = join(dir, 's.json')
+    await writeFile(script, JSON.stringify({ seconds: 6, fps: 12, script: [{ at: 2, set: { load: 40 } }] }))
+    const a = await parseRecord([
+      'http://x/',
+      '--out',
+      'a.gif',
+      '--set',
+      'load=30',
+      '--set',
+      'batch=false',
+      '--script',
+      script,
+    ])
+    expect(a).toMatchObject({ url: 'http://x/', out: 'a.gif', set: { load: 30, batch: false }, seconds: 6, fps: 12 })
+    expect(a.script).toEqual([{ at: 2, set: { load: 40 } }])
+    await rm(dir, { recursive: true })
+  })
+
+  it('explains itself without a command, and asks for --out', async () => {
+    const out: string[] = []
+    expect(await main([], (s) => out.push(s))).toBe(2)
+    expect(out[0]).toContain('loadmap record <url> --out')
+    await expect(parseRecord(['http://x/'])).rejects.toThrow(/needs a URL and --out/)
+  })
+})
+
+describe('recording the playground', () => {
+  let server: ViteDevServer
+  let url: string
+  let dir: string
+
+  beforeAll(async () => {
+    server = await createServer({
+      root: join(import.meta.dirname, '../../../apps/playground'),
+      configFile: join(import.meta.dirname, '../../../apps/playground/vite.config.ts'),
+      server: { port: 0, host: '127.0.0.1' },
+      logLevel: 'error',
+    })
+    await server.listen()
+    url = server.resolvedUrls!.local[0]!
+    dir = await mkdtemp(join(tmpdir(), 'loadmap-cli-'))
+  }, 60_000)
+
+  afterAll(async () => {
+    await server?.close()
+    if (dir) await rm(dir, { recursive: true })
+  })
+
+  const args = (out: string, extra: string[] = []) =>
+    parseRecord([
+      `${url}?example=checkout`,
+      '--out',
+      join(dir, out),
+      '--seconds',
+      '1',
+      '--fps',
+      '8',
+      '--scale',
+      '0.5',
+      ...extra,
+    ])
+
+  it('makes the same GIF twice', async () => {
+    const a = await record(await args('a.gif', ['--set', 'load=30']))
+    const b = await record(await args('b.gif', ['--set', 'load=30']))
+    expect(a.subarray(0, 6).toString('latin1')).toBe('GIF89a')
+    expect(a.equals(b)).toBe(true)
+  }, 120_000)
+
+  for (const format of ['webm', 'mp4'] as const)
+    it(`makes a ${format} of the requested length`, async () => {
+      const bytes = await record(await args(`v.${format}`))
+      const input = new Input({ source: new BufferSource(bytes), formats: ALL_FORMATS })
+      expect(await input.computeDuration()).toBeCloseTo(1, 0)
+      expect(await input.getPrimaryVideoTrack()).toBeTruthy()
+    }, 120_000)
+
+  it('writes a PNG through the command line', async () => {
+    const out: string[] = []
+    const png = join(dir, 'still.png')
+    expect(await main(['record', `${url}?example=alerts`, '--out', png, '--set', 'load=30'], (s) => out.push(s))).toBe(
+      0,
+    )
+    expect((await readFile(png)).subarray(1, 4).toString('latin1')).toBe('PNG')
+    expect(out[0]).toMatch(/still\.png: \d+ KB/)
+  }, 120_000)
+
+  it('names the missing expose() call', async () => {
+    await expect(record(await args('x.gif', ['--name', 'nope']))).rejects.toThrow(/must call expose\(handle, 'nope'\)/)
+  }, 60_000)
+})

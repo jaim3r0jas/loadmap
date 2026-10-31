@@ -23,6 +23,7 @@
   "dependencies": {
     "@loadmap/core": "workspace:*",
     "@loadmap/react": "workspace:*",
+    "gifenc": "1.0.3",
     "mediabunny": "1.65.0"
   },
   "peerDependencies": {}

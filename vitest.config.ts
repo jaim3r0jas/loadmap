@@ -10,6 +10,8 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           include: ['packages/*/test/**/*.test.ts', 'examples/*/**/*.test.ts'],
+          // the CLI test starts a dev server and Chromium; it gets time to
+          testTimeout: 30_000,
           exclude: ['**/node_modules/**', '**/*.browser.test.*'],
         },
       },
