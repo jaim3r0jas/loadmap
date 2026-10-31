@@ -1,4 +1,4 @@
-import { defineModel, measured, p, pass, queue, workers } from '@loadmap/core'
+import { defineModel, fanout, measured, p, pass, queue, sink, workers } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { busyOf, createSim, fillOrder } from '../src'
 
@@ -208,5 +208,113 @@ describe('review fixes', () => {
     for (let i = 0; i < 600; i++) sim.step(1 / 60)
     expect(sim.queue('second', 'high')).toMatchObject({ backlog: 0, lag: 0 })
     expect(sim.queue('first', 'low').served).toBeCloseTo(50, 0)
+  })
+})
+
+/** One flow through a topic to a pool, then a fan-out to two receivers. `merge` switches keep-newest on. */
+const fanModel = (o: { rate: number; cap: number; shares?: [number, number] }) =>
+  defineModel({
+    load: p.load({ max: 10 }),
+    params: { merge: p.switch({ label: 'Merge', default: true }) },
+    flows: {
+      pos: {
+        rate: ({ load }) => o.rate * load,
+        overload: ({ merge }) => (merge ? { merge: { share: 0.4 } } : {}),
+      },
+    },
+    components: {
+      pool: { name: 'Pool', demand: ({ flows }) => flows.pos, capacity: measured(o.cap, 'u/s'), over: '' },
+    },
+    stages: {
+      topic: queue({ partitions: { pos: 6 }, label: 'positions topic' }),
+      pool: workers('pool', { pods: 2, perPod: 4 }),
+      push: fanout({
+        to: [
+          { stage: 'viewers', share: o.shares?.[0] ?? 1 },
+          { stage: 'watchers', share: o.shares?.[1] ?? 0.5 },
+        ],
+      }),
+      viewers: sink(),
+      watchers: sink(),
+    },
+    routes: { pos: ['topic', 'pool', 'push'] },
+  })
+
+describe('merge', () => {
+  it('supersedes its share of what is handled, without using capacity', () => {
+    const m = fanModel({ rate: 200, cap: 100 })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10 })
+    for (let i = 0; i < 1200; i++) sim.step(1 / 60)
+    const q = sim.queue('topic', 'pos')
+    expect(q.merging).toBe(true)
+    // 100 a second of capacity handles 100 / (1 − 0.4) ≈ 167 units: 100 kept, 67 superseded
+    expect(q.served).toBeCloseTo(100, 0)
+    expect(q.merged).toBeCloseTo(100 * (0.4 / 0.6), 0)
+  })
+
+  it('keeps the lag lower than without it', () => {
+    const m = fanModel({ rate: 200, cap: 100 })
+    const lag = (merge: boolean) => {
+      const sim = createSim(m, m.evaluate({ load: 1, merge }), { speed: 10 })
+      for (let i = 0; i < 1200; i++) sim.step(1 / 60)
+      return sim.queue('topic', 'pos').lag
+    }
+    expect(lag(true)).toBeLessThan(lag(false) * 0.5)
+  })
+
+  it('does nothing without a backlog', () => {
+    const m = fanModel({ rate: 50, cap: 100 })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10 })
+    for (let i = 0; i < 600; i++) sim.step(1 / 60)
+    expect(sim.queue('topic', 'pos')).toMatchObject({ merging: false, merged: 0 })
+  })
+})
+
+describe('fan-out', () => {
+  const outcomes = (m: ReturnType<typeof fanModel>) => {
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10, seed: 3 })
+    const seen = new Map<number, string>()
+    for (let i = 0; i < 3600; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.phase === 'fade' && d.t === 0) seen.set(d.id, `${d.branch ?? d.to.stage}:${d.outcome}`)
+    }
+    const count = (k: string) => [...seen.values()].filter((v) => v === k).length
+    return { count, seen }
+  }
+
+  it('copies each dot to its branches in proportion to their shares', () => {
+    const { count } = outcomes(fanModel({ rate: 50, cap: 1000 }))
+    const viewers = count('viewers:delivered')
+    const watchers = count('watchers:delivered')
+    expect(viewers).toBeGreaterThan(30)
+    expect(watchers / viewers).toBeGreaterThan(0.35)
+    expect(watchers / viewers).toBeLessThan(0.65)
+  })
+
+  it('marks a dot nobody receives as unread', () => {
+    const { count } = outcomes(fanModel({ rate: 50, cap: 1000, shares: [0, 0.2] }))
+    expect(count('push:unread')).toBeGreaterThan(count('watchers:delivered'))
+  })
+
+  it('rejects a fan-out that is not the last stage, or a branch into a queue', () => {
+    const base = {
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: () => 1 } },
+      components: { c: { name: 'C', demand: () => 1, capacity: measured(1, 'x'), over: '' } },
+    }
+    expect(() =>
+      defineModel({
+        ...base,
+        stages: { f: fanout({ to: [] }), s: sink() },
+        routes: { a: ['f', 's'] },
+      }),
+    ).toThrow(/must be the last stage/)
+    const m = defineModel({
+      ...base,
+      stages: { q: queue({ partitions: { a: 1 } }), f: fanout({ to: [{ stage: 'q', share: 1 }] }) },
+      routes: { a: ['f'] },
+    })
+    expect(() => m.evaluate()).toThrow(/not a sink, store or pass stage/)
   })
 })

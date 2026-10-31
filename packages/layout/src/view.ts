@@ -17,12 +17,15 @@ export interface NodeDef<S extends string = string> {
   shape: 'box' | 'cylinder'
 }
 
-/** A cluster of members (brokers) holding a queue stage's partitions: partition i on member i mod n. */
+/**
+ * A cluster of members (brokers) holding the partitions of one or several queue stages (topics): partition i of each
+ * on member i mod n.
+ */
 export interface ClusterDef<S extends string = string> {
   kind: 'cluster'
   label: Label
   sub?: Label
-  stage: S
+  stage: S | readonly S[]
   members: Dyn<number>
   memberLabel?: (i: number) => string
 }
@@ -73,8 +76,9 @@ export function topology<P, F extends string, C extends string, S extends string
     for (const end of [e.from, e.to]) if (!(end in nodes)) throw new Error(`loadmap: edge to unknown node "${end}"`)
   for (const [f, fv] of Object.entries(def.flows) as [string, FlowView][])
     if (!(fv.from in nodes)) throw new Error(`loadmap: flow "${f}" starts at unknown node "${fv.from}"`)
+  const shows = (n: AnyNodeDef, s: string) => (Array.isArray(n.stage) ? n.stage.includes(s) : n.stage === s)
   for (const s of model.stageIds)
-    if (!Object.values(nodes).some((n) => n.stage === s)) throw new Error(`loadmap: no node shows stage "${s}"`)
+    if (!Object.values(nodes).some((n) => shows(n, s))) throw new Error(`loadmap: no node shows stage "${s}"`)
   return { model, def }
 }
 

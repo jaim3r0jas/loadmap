@@ -34,7 +34,8 @@ export function anchor(scene: Scene, place: { stage: string | null; cell?: numbe
   const n = nodeOf(scene, place.stage, flow)
   if (!n) return [0, 0]
   if (place.cell != null) {
-    const cell = n.cells.find((c) => c.flow === flow && c.index === place.cell) ?? n.slots[place.cell]
+    const cell =
+      n.cells.find((c) => c.stage === place.stage && c.flow === flow && c.index === place.cell) ?? n.slots[place.cell]
     if (cell) return centre(cell)
   }
   return centre(n)

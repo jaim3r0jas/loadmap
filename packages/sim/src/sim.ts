@@ -35,7 +35,10 @@ export interface Particle {
   dur: number
   from: Place
   to: Place
-  outcome?: 'delivered' | 'dropped' | 'rejected'
+  /** Set on a copy made at a fan-out: the branch stage it is heading to. */
+  branch?: string
+  /** superseded: merged into a newer unit of its key; unread: a fan-out that made no copy. */
+  outcome?: 'delivered' | 'dropped' | 'rejected' | 'superseded' | 'unread'
 }
 
 export interface QueueState {
@@ -43,11 +46,24 @@ export interface QueueState {
   backlog: number
   /** Age of the oldest unit waiting, in simulated seconds: what a consumer-lag dashboard shows. */
   lag: number
-  /** Units per second arriving, served and dropped (smoothed). */
+  /** Units per second arriving, served, dropped and superseded by a merge (smoothed). */
   arriving: number
   served: number
   dropped: number
+  merged: number
+  /** A merge rule is at work: more than a second of arrivals waits. */
+  merging: boolean
 }
+
+const emptyQueue = (): QueueState => ({
+  backlog: 0,
+  lag: 0,
+  arriving: 0,
+  served: 0,
+  dropped: 0,
+  merged: 0,
+  merging: false,
+})
 
 interface Cohort {
   t: number
@@ -167,7 +183,7 @@ export class Sim {
   }
 
   queue(stage: string, flow: string): QueueState {
-    return this.#queues.get(stage)?.get(flow)?.s ?? { backlog: 0, lag: 0, arriving: 0, served: 0, dropped: 0 }
+    return this.#queues.get(stage)?.get(flow)?.s ?? emptyQueue()
   }
 
   /** How busy a stage is, 0–1, smoothed: for a workers stage, the share of its workers at work. */
@@ -198,8 +214,15 @@ export class Sim {
 
   #stepQueues(dt: number): void {
     const ev = this.#ev
-    const entries: { q: string; f: string; fq: { cohorts: Cohort[]; s: QueueState }; drainer: string; prio: number }[] =
-      []
+    const entries: {
+      q: string
+      f: string
+      fq: { cohorts: Cohort[]; s: QueueState }
+      drainer: string
+      prio: number
+      /** Units removed per unit of capacity used: 1, or 1 ÷ (1 − share) while a merge is at work. */
+      k: number
+    }[] = []
     for (const q of Object.values(ev.stages) as ResolvedStage[]) {
       if (q.kind !== 'queue') continue
       const qs = this.#queues.get(q.id) ?? new Map()
@@ -207,15 +230,19 @@ export class Sim {
       for (const f of this.#model.flowIds) {
         const route = ev.routes[f] ?? []
         if (!route.includes(q.id)) continue
-        const fq = qs.get(f) ?? { cohorts: [], s: { backlog: 0, lag: 0, arriving: 0, served: 0, dropped: 0 } }
+        const fq = qs.get(f) ?? { cohorts: [], s: emptyQueue() }
         qs.set(f, fq)
-        const n = (this.#inflow.get(`${q.id}/${f}`) ?? 0) * dt
+        const inflow = this.#inflow.get(`${q.id}/${f}`) ?? 0
+        const n = inflow * dt
         const last = fq.cohorts.at(-1)
         if (last && this.time - last.t < MERGE_WINDOW) last.n += n
         else if (n > 0) fq.cohorts.push({ t: this.time, n })
         if (fq.cohorts.length > MAX_COHORTS) fq.cohorts = mergePairs(fq.cohorts)
         const drainer = route[route.indexOf(q.id) + 1] ?? '∞'
-        entries.push({ q: q.id, f, fq, drainer, prio: this.#model.def.flows[f]?.priority ?? 1 })
+        const share = Math.min(0.95, Math.max(0, ev.overload[f]?.merge?.share ?? 0))
+        fq.s.merging = share > 0 && backlog(fq.cohorts) > inflow * 1
+        const k = fq.s.merging ? 1 / (1 - share) : 1
+        entries.push({ q: q.id, f, fq, drainer, prio: this.#model.def.flows[f]?.priority ?? 1, k })
       }
     }
 
@@ -231,10 +258,13 @@ export class Sim {
         let took = 0
         for (const e of group) {
           const b = backlog(e.fq.cohorts)
-          const take = Number.isFinite(avail) ? (want > 0 ? Math.min(b, (avail * b) / want) : 0) : b
-          serveOldest(e.fq.cohorts, take)
-          took += take
-          e.fq.s.served = ema(e.fq.s.served, take / dt, dt)
+          // a merge removes k units for each unit of capacity: the newest of each key is handled, the rest superseded
+          const removed = Number.isFinite(avail) ? (want > 0 ? Math.min(b, ((avail * b) / want) * e.k) : 0) : b
+          const used = removed / e.k
+          serveOldest(e.fq.cohorts, removed)
+          took += used
+          e.fq.s.served = ema(e.fq.s.served, used / dt, dt)
+          e.fq.s.merged = ema(e.fq.s.merged, (removed - used) / dt, dt)
         }
         avail = Math.max(0, avail - took)
         taken.set(d, (taken.get(d) ?? 0) + took)
@@ -243,7 +273,7 @@ export class Sim {
 
     for (const { q, f, fq } of entries) {
       let dropped = 0
-      const rule = this.#model.def.flows[f]?.overload?.drop
+      const rule = ev.overload[f]?.drop
       if (rule)
         while (fq.cohorts.length && this.time - fq.cohorts[0]!.t > rule.olderThan) dropped += fq.cohorts.shift()!.n
       const inflow = this.#inflow.get(`${q}/${f}`) ?? 0
@@ -310,6 +340,7 @@ export class Sim {
       d.to = this.#place(route[d.leg]!, d.flow)
     }
 
+    const born: Particle[] = []
     for (const d of this.particles) {
       d.t += dtReal
       if (d.t < d.dur) continue
@@ -319,7 +350,31 @@ export class Sim {
         d.outcome ??= 'delivered'
         continue
       }
-      if (d.phase === 'move') {
+      if (d.phase === 'move' && d.branch) {
+        // a fan-out copy ends where it lands
+        fade(d, stage.kind === 'pass' && this.#r() < this.shed(stage.id) ? 'rejected' : 'delivered', 0.35)
+      } else if (d.phase === 'move' && stage.kind === 'fanout') {
+        let made = 0
+        for (const b of stage.to[d.flow] ?? []) {
+          const copies = Math.floor(b.share) + (this.#r() < b.share % 1 ? 1 : 0)
+          for (let i = 0; i < copies; i++, made++)
+            if (this.particles.length + born.length < this.#o.maxParticles)
+              born.push({
+                id: this.#nextId++,
+                flow: d.flow,
+                leg: d.leg,
+                phase: 'move',
+                t: 0,
+                dur: this.#o.legSeconds,
+                from: d.to,
+                to: { stage: b.stage },
+                branch: b.stage,
+              })
+        }
+        // the copies carry on; a unit nobody receives fades where it stopped
+        if (made) fade(d, 'delivered', 0)
+        else fade(d, 'unread', 0.6)
+      } else if (d.phase === 'move') {
         if (stage.kind === 'pass' && this.#r() < this.shed(stage.id)) fade(d, 'rejected', 0.6)
         else if (stage.kind === 'queue') {
           const lag = this.queue(stage.id, d.flow).lag
@@ -334,11 +389,13 @@ export class Sim {
       } else if (d.phase === 'hold') {
         const q = stage.kind === 'queue' ? this.queue(stage.id, d.flow) : null
         const dropShare = q && q.arriving > 0 ? Math.min(1, q.dropped / q.arriving) : 0
-        if (this.#r() < dropShare) fade(d, 'dropped', 0.6)
+        const mergeShare = q?.merging ? (ev.overload[d.flow]?.merge?.share ?? 0) : 0
+        if (this.#r() < mergeShare) fade(d, 'superseded', 0.6)
+        else if (this.#r() < dropShare) fade(d, 'dropped', 0.6)
         else advance(d)
       }
     }
-    this.particles = this.particles.filter((d) => !(d.phase === 'fade' && d.t >= d.dur))
+    this.particles = this.particles.filter((d) => !(d.phase === 'fade' && d.t >= d.dur)).concat(born)
   }
 
   #place(stage: string, flow: string): Place {

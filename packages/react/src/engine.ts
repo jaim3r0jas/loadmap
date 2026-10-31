@@ -82,6 +82,12 @@ export class Engine {
     return this.colors[c] || c
   }
 
+  outcomeColor(outcome: Particle['outcome']): string {
+    if (outcome === 'dropped' || outcome === 'rejected') return this.colors.drop || '#b7392e'
+    if (outcome === 'superseded' || outcome === 'unread') return this.colors.muted || '#5d6d7c'
+    return this.colors.ok || '#2a7f5a'
+  }
+
   resize(): void {
     const c = this.canvas
     if (!c || !this.scene) return
@@ -129,12 +135,7 @@ export class Engine {
       const [x, y] = this.#position(scene, d)
       const inCell = d.to.cell != null && d.phase !== 'move'
       ctx.globalAlpha = d.phase === 'fade' ? Math.max(0, 1 - d.t / d.dur) : 1
-      ctx.fillStyle =
-        d.phase === 'fade' && d.outcome !== 'delivered'
-          ? this.colors.drop || '#b7392e'
-          : d.phase === 'fade'
-            ? this.colors.ok || '#2a7f5a'
-            : this.flowColor(d.flow)
+      ctx.fillStyle = d.phase === 'fade' ? this.outcomeColor(d.outcome) : this.flowColor(d.flow)
       ctx.beginPath()
       ctx.arc(
         x,

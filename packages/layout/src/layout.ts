@@ -22,6 +22,7 @@ export interface TextSpot {
 }
 
 export interface Cell extends Box {
+  stage: string
   flow: string
   /** The partition's index within its flow. */
   index: number
@@ -31,7 +32,8 @@ export interface SceneNode extends Box {
   id: string
   kind: AnyNodeDef['kind']
   shape: 'box' | 'cylinder'
-  stage?: string
+  /** The stages this node shows: one, or several queues for a cluster that holds several topics. */
+  stages: string[]
   component?: string
   title: TextSpot
   sub?: TextSpot
@@ -134,7 +136,7 @@ export function structureKey(view: View, ev: Evaluation, o: LayoutOptions = {}):
   return prepare(view, ev, o.direction ?? 'RIGHT', o.measure ?? estimateText).key
 }
 
-type Inner = Omit<SceneNode, 'x' | 'y' | 'id' | 'kind' | 'shape' | 'stage' | 'component'>
+type Inner = Omit<SceneNode, 'x' | 'y' | 'id' | 'kind' | 'shape' | 'stages' | 'component'>
 
 interface Prepared {
   key: string
@@ -150,13 +152,16 @@ function prepare(view: View, ev: Evaluation, direction: Direction, measure: Meas
 
   const stageNode: Record<string, string> = {}
   const nodes = (Object.entries(view.def.nodes) as [string, AnyNodeDef][]).map(([id, def]) => {
-    if (def.stage) stageNode[def.stage] = id
+    const own = stagesOf(def)
+    for (const st of own) stageNode[st] = id
     const titleW = widest(def.label, T_TITLE.size, T_TITLE.weight)
     const subW = widest(def.sub, T_SUB.size, T_SUB.weight)
-    const stage = def.stage ? (ev.stages as Record<string, ResolvedStage>)[def.stage] : undefined
+    const resolved = own.map((st) => (ev.stages as Record<string, ResolvedStage>)[st]!)
+    const stage = resolved[0]
+    const queues = resolved.filter((r) => r.kind === 'queue')
     const inner =
-      def.kind === 'cluster' && stage?.kind === 'queue'
-        ? clusterInner(def, stage, ev.ctx, direction, titleW, subW, measure, view)
+      def.kind === 'cluster' && queues.length
+        ? clusterInner(def, queues, ev.ctx, direction, titleW, subW, measure, view)
         : def.kind === 'pool' && stage?.kind === 'workers'
           ? poolInner(def, stage, direction, titleW, subW)
           : boxInner(titleW, subW, def.sub != null, def.kind === 'node' && def.shape === 'cylinder' ? 8 : 0)
@@ -262,7 +267,7 @@ async function run(prep: Prepared): Promise<Scene> {
         id,
         kind: def.kind,
         shape: def.kind === 'node' ? def.shape : 'box',
-        stage: def.stage,
+        stages: stagesOf(def),
         component: def.kind === 'node' ? def.component : undefined,
         ...inner,
         x: 0,
@@ -323,7 +328,7 @@ function header(titleW: number, subW: number, hasSub: boolean) {
 
 function clusterInner(
   def: Extract<AnyNodeDef, { kind: 'cluster' }>,
-  stage: Extract<ResolvedStage, { kind: 'queue' }>,
+  stages: Extract<ResolvedStage, { kind: 'queue' }>[],
   ctx: LooseValues,
   direction: Direction,
   titleW: number,
@@ -333,14 +338,22 @@ function clusterInner(
 ): Inner {
   const m = Math.max(1, dyn(def.members, ctx))
   const hd = header(titleW, subW, def.sub != null)
-  const flows = Object.entries(stage.partitions).filter(([, n]) => n > 0)
   const flowName = (f: string) => (view.def.flows as Record<string, { label?: string }>)[f]?.label ?? f
+  // one group of cells per stage and flow; with several stages the stage names the group (a topic name)
+  const flows = stages.flatMap((st) => {
+    const parts = Object.entries(st.partitions).filter(([, n]) => n > 0)
+    return parts.map(([f, n]) => ({
+      stage: st.id,
+      f,
+      n,
+      text: stages.length > 1 ? (parts.length > 1 ? `${st.label} · ${flowName(f)}` : st.label) : flowName(f),
+    }))
+  })
   const gridW = CELL_COLS * (CELL + CELL_GAP) - CELL_GAP
   const memberW =
-    Math.max(gridW, ...flows.map(([f]) => measure(flowName(f), T_SMALL.size)), measure('member 00', T_SMALL.size)) +
-    2 * GAP
+    Math.max(gridW, ...flows.map((g) => measure(g.text, T_SMALL.size)), measure('member 00', T_SMALL.size)) + 2 * GAP
   const rowsOf = (n: number, k: number) => Math.ceil(Math.ceil((n - k) / m) / CELL_COLS)
-  const memberH = (k: number) => 14 + flows.reduce((h, [, n]) => h + 12 + rowsOf(n, k) * (CELL + CELL_GAP), 0) + 4
+  const memberH = (k: number) => 14 + flows.reduce((h, g) => h + 12 + rowsOf(g.n, k) * (CELL + CELL_GAP), 0) + 4
   const mh = Math.max(...Array.from({ length: m }, (_, k) => memberH(k)))
   const down = direction === 'DOWN'
   const innerW = down ? m * memberW + (m - 1) * GAP : memberW
@@ -363,11 +376,12 @@ function clusterInner(
       spot: { x: bx + GAP, y: by + 11, ...T_SMALL },
     })
     let cy = by + 14
-    for (const [f, n] of flows) {
-      groups.push({ flow: f, text: flowName(f), spot: { x: bx + GAP, y: cy + 9, ...T_SMALL } })
+    for (const { stage, f, n, text } of flows) {
+      groups.push({ flow: f, text, spot: { x: bx + GAP, y: cy + 9, ...T_SMALL } })
       cy += 12
       for (let i = k, j = 0; i < n; i += m, j++)
         cells.push({
+          stage,
           flow: f,
           index: i,
           x: bx + GAP + (j % CELL_COLS) * (CELL + CELL_GAP),
@@ -459,6 +473,11 @@ function offset(n: SceneNode, dx: number, dy: number): SceneNode {
     cells: n.cells.map(box),
     slots: n.slots.map(box),
   }
+}
+
+function stagesOf(def: AnyNodeDef): string[] {
+  const st = def.stage
+  return st == null ? [] : typeof st === 'string' ? [st] : [...st]
 }
 
 function visibleEdges(view: View, ctx: LooseValues): { e: EdgeDef; id: string }[] {

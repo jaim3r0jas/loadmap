@@ -23,8 +23,19 @@ export interface FlowDef<X> {
   rate: (ctx: X) => number
   /** 1 is served first. Flows of the same priority share capacity. */
   priority?: number
-  /** What happens to this flow's backlog in a queue. Without a rule it waits as long as it takes. */
-  overload?: { drop?: { olderThan: number; reason?: string } }
+  /** What happens to this flow's backlog in a queue; may depend on the values. Without a rule it waits. */
+  overload?: Overload | ((ctx: X) => Overload)
+}
+
+/** Rules for a flow's backlog in a queue. */
+export interface Overload {
+  /** Units older than `olderThan` simulated seconds are dropped before they are handled. */
+  drop?: { olderThan: number; reason?: string }
+  /**
+   * Under backlog (more than a second of arrivals waiting), this share of what is handled is superseded by a newer
+   * unit of the same key: it leaves the queue without using capacity. Keep-newest-per-key, as a share.
+   */
+  merge?: { share: number; reason?: string }
 }
 
 export interface ComponentDef<X> {
@@ -113,6 +124,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   assumptions: readonly Assumption[]
   stages: Readonly<Record<S, ResolvedStage>>
   routes: Readonly<Record<F, readonly S[]>>
+  /** Each flow's overload rules for these values. */
+  overload: Readonly<Record<F, Overload>>
   /** The context model functions saw: for labels and other view callbacks. */
   ctx: LooseValues
 }
@@ -152,8 +165,12 @@ export function defineModel<
   for (const f of flowIds) {
     const route = (def.routes as Record<string, readonly string[]>)[f]
     if (!route?.length) throw new Error(`loadmap: flow "${f}" has no route`)
-    for (const s of route)
-      if (!(s in def.stages)) throw new Error(`loadmap: flow "${f}" routes through unknown stage "${s}"`)
+    route.forEach((s, i) => {
+      const st = (def.stages as Record<string, StageDef>)[s]
+      if (!st) throw new Error(`loadmap: flow "${f}" routes through unknown stage "${s}"`)
+      if (st.kind === 'fanout' && i < route.length - 1)
+        throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
+    })
   }
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
@@ -226,7 +243,21 @@ export function defineModel<
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
     const stages = {} as Record<S, ResolvedStage>
-    for (const s of stageIds) stages[s] = resolveStage(s, def.stages[s] as StageDef, ctx)
+    for (const s of stageIds) stages[s] = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds)
+    for (const st of Object.values(stages) as ResolvedStage[])
+      if (st.kind === 'fanout')
+        for (const b of Object.values(st.to).flat()) {
+          const to = (stages as Record<string, ResolvedStage>)[b.stage]
+          if (!to || to.kind === 'queue' || to.kind === 'workers' || to.kind === 'fanout')
+            throw new Error(
+              `loadmap: fan-out "${st.id}" branches to "${b.stage}", which is not a sink, store or pass stage`,
+            )
+        }
+    const overload = {} as Record<F, Overload>
+    for (const f of flowIds) {
+      const o = def.flows[f].overload
+      overload[f] = (typeof o === 'function' ? o(ctx as any) : o) ?? {}
+    }
 
     const assumptions: Assumption[] = []
     for (const c of componentIds) {
@@ -247,6 +278,7 @@ export function defineModel<
       assumptions,
       stages,
       routes: def.routes as Record<F, readonly S[]>,
+      overload,
       ctx,
     }
   }

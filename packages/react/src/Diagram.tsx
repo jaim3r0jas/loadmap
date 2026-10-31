@@ -90,6 +90,8 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
 
 function Legend({ lm }: { lm: LoadmapController }) {
   const flows = lm.view.def.flows as Record<string, { color: string; label?: string }>
+  const grey =
+    Object.values(lm.ev.overload).some((o) => o.merge) || Object.values(lm.ev.stages).some((s) => s.kind === 'fanout')
   return (
     <div className="lm-legend">
       {Object.entries(flows).map(([f, v]) => (
@@ -106,6 +108,12 @@ function Legend({ lm }: { lm: LoadmapController }) {
         <i style={{ background: 'var(--lm-drop)' }} />
         dropped or rejected
       </span>
+      {grey && (
+        <span>
+          <i style={{ background: 'var(--lm-muted)' }} />
+          superseded or unread
+        </span>
+      )}
       <span>
         {lm.reducedMotion
           ? 'line width: rate'
@@ -129,7 +137,7 @@ function Structure({
   const marker = useId().replace(/:/g, '')
   const { labels, ev } = lm
   const stateOf = (n: SceneNode): ComponentState | null => {
-    const c = n.stage ? ev.stages[n.stage]?.component : n.component
+    const c = n.stages.map((s) => ev.stages[s]?.component).find(Boolean) ?? n.component
     return c ? (ev.components[c]?.state ?? null) : null
   }
   const summary = scene.nodes.map((n) => labels.nodes[n.id]?.title).join(', ')
@@ -203,8 +211,15 @@ function RateStrokes({ lm, scene }: { lm: LoadmapController; scene: Scene }) {
     const seq = [scene.flowFrom[f], ...(ev.routes[f] ?? []).map((s) => scene.stageNode[s])].filter(
       (n, i, a) => n && n !== a[i - 1],
     )
-    seq.slice(1).forEach((to, i) => {
-      const e = scene.edges.find((x) => x.from === seq[i] && x.to === to)
+    const rate = ev.flows[f] ?? 0
+    const legs: [string | undefined, string | undefined, number][] = seq.slice(1).map((to, i) => [seq[i], to, rate])
+    // a fan-out's branches carry the rate times their share
+    const last = (ev.routes[f] ?? []).at(-1)
+    const st = last ? ev.stages[last] : undefined
+    if (st?.kind === 'fanout')
+      for (const b of st.to[f] ?? []) legs.push([scene.stageNode[last!], scene.stageNode[b.stage], rate * b.share])
+    for (const [from, to, r] of legs) {
+      const e = scene.edges.find((x) => x.from === from && x.to === to)
       if (e)
         out.push(
           <path
@@ -213,10 +228,10 @@ function RateStrokes({ lm, scene }: { lm: LoadmapController; scene: Scene }) {
             fill="none"
             stroke={tokenColor(flows[f]!.color)}
             strokeOpacity=".45"
-            strokeWidth={1.5 + (6 * (ev.flows[f] ?? 0)) / max}
+            strokeWidth={1.5 + (6 * Math.min(r, max)) / max}
           />,
         )
-    })
+    }
   }
   return <g>{out}</g>
 }
@@ -310,7 +325,7 @@ function Node({
       ))}
       {n.cells.map((c) => (
         <rect
-          key={`${c.flow}${c.index}`}
+          key={`${c.stage}/${c.flow}/${c.index}`}
           x={c.x}
           y={c.y}
           width={c.w}
@@ -335,7 +350,7 @@ function Node({
           />
           <rect
             data-slot={s.index}
-            data-stage={n.stage}
+            data-stage={n.stages[0]}
             data-y={s.y}
             data-s={s.w}
             x={s.x + 1}

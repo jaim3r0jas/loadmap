@@ -13,6 +13,7 @@ export {
   type FlowDef,
   type Model,
   type ModelDef,
+  type Overload,
   type Preset,
   type Verdict,
 } from './model'
@@ -30,15 +31,20 @@ export {
   type Values,
 } from './params'
 export {
+  type Branch,
   type Dyn,
   dyn,
+  type FanoutStage,
+  fanout,
   type PassStage,
   pass,
   type QueueStage,
   queue,
   type ResolvedStage,
+  type SinkStage,
   type StageDef,
   type StoreStage,
+  sink,
   store,
   type WorkersStage,
   workers,

@@ -89,17 +89,25 @@ export function Meters({ lm }: { lm: LoadmapController }) {
     if (s.kind === 'queue')
       for (const f of model.flowIds.filter((x) => ev.routes[x]?.includes(s.id))) {
         const q = sim.queue(s.id, f)
+        const rules = ev.overload[f] ?? {}
         items.push({
           key: `${s.id}/${f}/lag`,
           value: secs(q.lag),
-          label: `${flowLabel(f)} lag in ${s.id}`,
+          label: `${flowLabel(f)} lag in ${s.label}`,
           state: q.lag > 60 ? 'over' : q.lag > 5 ? 'warn' : 'ok',
         })
-        if (model.def.flows[f]?.overload?.drop)
+        if (rules.merge)
+          items.push({
+            key: `${s.id}/${f}/merge`,
+            value: kfmt(q.merged),
+            label: `${flowLabel(f)} superseded /s (${rules.merge.reason ?? 'newest kept'})`,
+            state: q.merged > 0.5 ? 'warn' : 'ok',
+          })
+        if (rules.drop)
           items.push({
             key: `${s.id}/${f}/drop`,
             value: kfmt(q.dropped),
-            label: `${flowLabel(f)} dropped /s (${model.def.flows[f]!.overload!.drop!.reason ?? 'too old'})`,
+            label: `${flowLabel(f)} dropped /s (${rules.drop.reason ?? 'too old'})`,
             state: q.dropped > 0.5 ? 'over' : 'ok',
           })
       }
@@ -108,12 +116,12 @@ export function Meters({ lm }: { lm: LoadmapController }) {
       items.push({
         key: `${s.id}/busy`,
         value: pct(b),
-        label: `${s.id} busy`,
+        label: `${s.label} busy`,
         state: b > 0.95 ? 'over' : b > 0.5 ? 'warn' : 'ok',
       })
     }
     if (s.kind === 'pass' && sim.shed(s.id) > 0)
-      items.push({ key: `${s.id}/shed`, value: pct(sim.shed(s.id)), label: `rejected at ${s.id}`, state: 'over' })
+      items.push({ key: `${s.id}/shed`, value: pct(sim.shed(s.id)), label: `rejected at ${s.label}`, state: 'over' })
   }
   return (
     <>
