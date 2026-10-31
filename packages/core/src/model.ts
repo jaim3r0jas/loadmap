@@ -1,6 +1,7 @@
 import type { LinearFit } from './calibrate'
 import type { Capacity } from './capacity'
-import { fmt, joinAnd, multiple, pct } from './format'
+import { around, fmt, joinAnd, multiple, pct } from './format'
+import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import { type ResolvedStage, resolveStage, type StageDef } from './stages'
 
@@ -60,6 +61,13 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   load: LoadParam
   params?: P
   presets?: Readonly<Record<string, Partial<NoInfer<Values<P>>>>>
+  /**
+   * Named designs to compare, by label: the defaults plus these values, never the load. The first is the baseline the
+   * others are measured against.
+   */
+  scenarios?: Readonly<Record<string, Partial<NoInfer<Omit<Values<P>, 'load'>>>>>
+  /** How fast the load grows: turns load multiples into dates. */
+  growth?: Growth
   flows: { [K in F]: FlowDef<Ctx<P, F, C, D>> }
   components: { [K in C]: ComponentDef<Ctx<P, F, C, D>> }
   derived?: { [K in D]: (ctx: Ctx<P, F, C, D>) => number }
@@ -105,6 +113,12 @@ export interface Preset<P> {
   derived: boolean
 }
 
+/** A named design: every parameter's value, the load left to the slider. */
+export interface Scenario<P = any> {
+  label: string
+  values: Omit<Values<P>, 'load'>
+}
+
 export type Assumption =
   | { kind: 'capacity'; component: string; name: string; capacity: Capacity }
   | { kind: 'fit'; name: string; fit: LinearFit }
@@ -142,9 +156,18 @@ export interface Model<P = any, F extends string = string, C extends string = st
   stageIds: readonly S[]
   thresholds: { target: number; full: number }
   searchMax: number
+  /** Declared scenarios in order; the first is the baseline. */
+  scenarios: readonly Scenario<P>[]
+  growth?: Growth
   defaults(): Values<P>
   isEnabled(id: string, values: LooseValues): boolean
   evaluate(values?: Partial<Values<P>>): Evaluation<P, F, C, S>
+  /** Each component's utilization at these values: what `evaluate` computes first, without the crossings. */
+  utilization(values?: Partial<Values<P>>): Readonly<Record<C, number | null>>
+  /** The scenario whose values these are, ignoring the load; null when they match none. */
+  scenarioOf(values: LooseValues): Scenario<P> | null
+  /** When the load reaches this multiple, from `growth`; null without growth or a finite multiple. */
+  dateAt(multiple: number | null): Date | null
 }
 
 const RESERVED = ['load', 'flows', 'demand', 'util', 'derived']
@@ -174,6 +197,8 @@ export function defineModel<
   }
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
+  const growth = def.growth && checkGrowth(def.growth)
+  const when = (x: number | null) => (growth ? dateAt(growth, x) : null)
   const paramList = [
     { id: 'load', def: def.load as AnyParamDef },
     ...Object.entries(params).map(([id, d]) => ({ id, def: d })),
@@ -184,6 +209,18 @@ export function defineModel<
     for (const [id, d] of Object.entries(params)) v[id] = d.default
     return v as Values<P>
   }
+
+  const scenarios: Scenario<P>[] = Object.entries(def.scenarios ?? {}).map(([label, set]) => {
+    for (const k of Object.keys(set as object)) {
+      if (k === 'load')
+        throw new Error(`loadmap: scenario "${label}" sets the load; a scenario leaves it to the slider`)
+      if (!Object.hasOwn(params, k)) throw new Error(`loadmap: scenario "${label}" sets unknown parameter "${k}"`)
+    }
+    const { load: _, ...values } = { ...defaults(), ...set } as Values<P>
+    return { label, values }
+  })
+  const scenarioOf = (values: LooseValues) =>
+    scenarios.find((s) => Object.entries(s.values).every(([k, v]) => values[k] === v)) ?? null
 
   // crossings depend on every value but the load: cache them per combination
   const crossingCache = new Map<string, Record<string, { target: number | null; full: number | null }>>()
@@ -273,7 +310,7 @@ export function defineModel<
       ranked,
       firstLimit,
       firstFull,
-      verdict: verdict(values.load, live, firstLimit, thresholds, searchMax),
+      verdict: verdict(values.load, live, firstLimit, thresholds, searchMax, when),
       presets: presets(def, firstLimit, firstFull, thresholds, searchMax),
       assumptions,
       stages,
@@ -293,12 +330,20 @@ export function defineModel<
     stageIds,
     thresholds,
     searchMax,
+    scenarios,
+    growth,
     defaults,
     isEnabled: (id, values) => {
       const d = paramList.find((x) => x.id === id)?.def
       return d ? isEnabled(d, values) : false
     },
     evaluate,
+    utilization: (partial) => {
+      const util = context(def as any, { ...defaults(), ...partial }).ctx.util as Record<C, number | null>
+      return Object.fromEntries(componentIds.map((c) => [c, util[c]])) as Record<C, number | null>
+    },
+    scenarioOf,
+    dateAt: when,
   }
 }
 
@@ -395,12 +440,16 @@ function verdict(
   first: ComponentResult | null,
   th: { target: number; full: number },
   searchMax: number,
+  when: (x: number | null) => Date | null,
 ): Verdict {
   const at = `At ${fmt(load)}×`
   const target = `${pct(th.target)} target`
   if (!first) return { tier: 'ok', text: `${at}, every component is switched off.` }
   const est = (c: ComponentResult) => (c.capacity?.provenance === 'estimated' ? ' (capacity estimated)' : '')
-  const holds = `The ${target} holds up to ${multiple(first.target, searchMax)}, limited by ${first.short}${est(first)}.`
+  // a date only for a crossing still ahead: below 1× it has already passed
+  const date = first.target != null && first.target > 1 ? when(first.target) : null
+  const upTo = `${multiple(first.target, searchMax)}${date ? ` (${around(date)})` : ''}`
+  const holds = `The ${target} holds up to ${upTo}, limited by ${first.short}${est(first)}.`
   const verb = (list: readonly ComponentResult[], one: string, many: string) =>
     list.length > 1 || list[0]?.plural ? many : one
 
@@ -422,7 +471,7 @@ function verdict(
   }
   return {
     tier: 'ok',
-    text: `${at}, every component is under the ${target}. It holds up to ${multiple(first.target, searchMax)}; ${first.short} ${verb([first], 'is', 'are')} the first limit${est(first)}.`,
+    text: `${at}, every component is under the ${target}. It holds up to ${upTo}; ${first.short} ${verb([first], 'is', 'are')} the first limit${est(first)}.`,
   }
 }
 

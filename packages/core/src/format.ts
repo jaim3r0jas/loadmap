@@ -48,3 +48,23 @@ export function joinAnd(items: readonly string[]): string {
   if (items.length <= 1) return items[0] ?? ''
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
+
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+/** A date as a reader plans with it, by month in UTC: "around March 2028". Fixed names, whatever the locale. */
+export function around(d: Date): string {
+  return `around ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+}
