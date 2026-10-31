@@ -1,5 +1,5 @@
 import { compare } from '@loadmap/core'
-import { composeFrame, exportPng, recordVideo } from '@loadmap/export'
+import { composeFrame, exportPng, exportSvg, recordPoster, recordVideo } from '@loadmap/export'
 import type { LoadmapHandle, Theme } from '@loadmap/react'
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { createRef } from 'react'
@@ -196,6 +196,65 @@ describe('export', () => {
     const frame = await composeFrame(handle, { scale: 2 })
     expect(frame.width % 2).toBe(0)
     expect(Math.abs(frame.width - handle.board()!.scene.width * 2)).toBeLessThanOrEqual(2)
+  })
+
+  const bytes = async (b: Blob) => {
+    const d = await crypto.subtle.digest('SHA-256', await b.arrayBuffer())
+    return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, '0')).join('')
+  }
+
+  it('records the same captioned GIF of a scenario switch twice', async () => {
+    const { handle } = await mount()
+    const opts = {
+      format: 'gif' as const,
+      seconds: 2,
+      fps: 10,
+      caption: true,
+      script: [
+        { at: 0, set: { load: 15 } },
+        { at: 1, scenario: 'Proposed' },
+      ],
+    }
+    const a = await recordVideo(handle, opts)
+    const b = await recordVideo(handle, opts)
+    expect(await bytes(a)).toBe(await bytes(b))
+    // the values come back afterwards
+    expect(handle.values()).toMatchObject({ load: 10, pods: 3, gateways: 1 })
+    // the caption's bands sit above and below the board
+    const frame = await composeFrame(handle, { scale: 1, caption: true })
+    expect(frame.height).toBeGreaterThan(handle.board()!.scene.height + 100)
+    await expect(recordVideo(handle, { ...opts, script: [{ at: 0, scenario: 'Later' }] })).rejects.toThrow(
+      'no scenario "Later"; the model has "Today", "Proposed"',
+    )
+  })
+
+  it('makes the same poster twice', async () => {
+    const { handle } = await mount()
+    const a = await recordPoster(handle, { scenario: 'Proposed', seed: 4 })
+    const b = await recordPoster(handle, { scenario: 'Proposed', seed: 4 })
+    expect(a.type).toBe('image/png')
+    expect(await bytes(a)).toBe(await bytes(b))
+    expect(await bytes(await recordPoster(handle, { seed: 4 }))).not.toBe(await bytes(a))
+    const img = await createImageBitmap(a)
+    // 2 px per CSS pixel, taller than the board: the verdict, three limits and two scenarios below it
+    expect(img.width).toBeGreaterThan(2 * handle.board()!.scene.width)
+    expect(img.height).toBeGreaterThan(2 * handle.board()!.scene.height + 400)
+  })
+
+  it('exports the board as an SVG file with its dots and caption', async () => {
+    const { handle } = await mount()
+    handle.pause()
+    handle.reset(2)
+    for (let i = 0; i < 60; i++) handle.step(1 / 30)
+    const text = await exportSvg(handle, { caption: true })
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml')
+    expect(doc.querySelector('parsererror')).toBeNull()
+    expect(doc.documentElement.getAttribute('xmlns')).toBe('http://www.w3.org/2000/svg')
+    expect(doc.querySelectorAll('circle').length).toBe(handle.engine.sim.particles.length)
+    expect(text).not.toContain('var(--lm-')
+    expect(text).not.toContain('tabindex')
+    expect(doc.documentElement.textContent).toContain('Checkout pipeline')
+    expect(doc.documentElement.textContent).toContain('At 10×, every component is under the 50 % target.')
   })
 
   it('records the same WebM frames twice', async () => {

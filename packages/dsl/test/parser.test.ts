@@ -135,10 +135,10 @@ describe('parse', () => {
   })
 
   it('stays fast on a page of garbage, listing at most 200 problems', () => {
-    // CPU time, not the wall clock: the browser tests run beside this one and slow the machine down
-    const t0 = process.cpuUsage()
+    // this thread's CPU time, not the wall clock or the process: other test files run beside this one
+    const t0 = process.threadCpuUsage()
     const r = compile('@'.repeat(60_000))
-    const used = process.cpuUsage(t0)
+    const used = process.threadCpuUsage(t0)
     expect((used.user + used.system) / 1000).toBeLessThan(1000)
     expect(r.diagnostics).toHaveLength(201)
     expect(r.diagnostics.at(-1)!.message).toBe('more than 200 problems; fix these first')

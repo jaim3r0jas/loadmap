@@ -27,6 +27,12 @@ describe('arguments', () => {
     await rm(dir, { recursive: true })
   })
 
+  it('reads a scenario, a caption and a poster', async () => {
+    const a = await parseRecord(['http://x/', '--out', 'p.png', '--scenario', 'Proposed', '--caption', '--poster'])
+    expect(a).toMatchObject({ scenario: 'Proposed', caption: true, poster: true })
+    await expect(parseRecord(['http://x/', '--out', 'p.gif', '--poster'])).rejects.toThrow(/--poster writes a PNG/)
+  })
+
   it('refuses numbers that would write a broken file', async () => {
     await expect(parseRecord(['http://x/', '--out', 'a.gif', '--seconds', '8s'])).rejects.toThrow(
       /--seconds takes a positive number/,
@@ -107,6 +113,27 @@ describe('recording the playground', () => {
     )
     expect((await readFile(png)).subarray(1, 4).toString('latin1')).toBe('PNG')
     expect(out[0]).toMatch(/still\.png: \d+ KB/)
+  }, 120_000)
+
+  it('makes the same captioned GIF of a scenario twice', async () => {
+    const extra = ['--scenario', 'Proposed', '--caption', '--set', 'load=30']
+    const a = await record(await args('c1.gif', extra))
+    const b = await record(await args('c2.gif', extra))
+    expect(a.equals(b)).toBe(true)
+    // the caption adds its bands: taller than the board alone
+    const plain = await record(await args('c3.gif', ['--scenario', 'Proposed', '--set', 'load=30']))
+    expect(a.readUInt16LE(8)).toBeGreaterThan(plain.readUInt16LE(8))
+  }, 120_000)
+
+  it('writes a poster and an SVG', async () => {
+    const poster = await record(await args('p.png', ['--poster', '--scenario', 'Proposed']))
+    expect(poster.subarray(1, 4).toString('latin1')).toBe('PNG')
+    const svg = (await record(await args('b.svg', ['--caption']))).toString('utf8')
+    expect(svg).toMatch(/^<svg [^>]*xmlns="http:\/\/www.w3.org\/2000\/svg"/)
+    expect(svg).toContain('Checkout pipeline')
+    await expect(record(await args('x.gif', ['--scenario', 'Later']))).rejects.toThrow(
+      /no scenario "Later"; the model has "Today", "Proposed"/,
+    )
   }, 120_000)
 
   it('names the missing expose() call', async () => {

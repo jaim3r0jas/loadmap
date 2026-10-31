@@ -10,11 +10,16 @@ import {
   QUALITY_HIGH,
   WebMOutputFormat,
 } from 'mediabunny'
+import { bands, type Caption, captionOf, drawCaption, drawPoster, exportSvg, standalone } from './media'
+
+export { type Caption, exportSvg } from './media'
 
 export interface ScriptStep {
   /** Seconds into the recording. */
   at: number
-  set: Partial<Values<any>>
+  /** A scenario's values, by its label; `set` goes on top. The load stays. */
+  scenario?: string
+  set?: Partial<Values<any>>
 }
 
 export interface FrameOptions {
@@ -22,6 +27,20 @@ export interface FrameOptions {
   scale?: number
   /** A fixed frame size: the board is scaled to fit and centred. A video keeps its first frame's size. */
   size?: { width: number; height: number }
+  /** The title, scenario and load above the board and the verdict below it, so the frame stands alone. */
+  caption?: boolean | Caption
+}
+
+/** What a script step or a still sets: a scenario's values, then `set`. An unknown scenario names the known ones. */
+function valuesOf(handle: LoadmapHandle, o: { scenario?: string; set?: Partial<Values<any>> }): Partial<Values<any>> {
+  if (o.scenario == null) return { ...o.set }
+  const model = handle.engine.model
+  const s = model.scenarios.find((x) => x.label === o.scenario)
+  if (!s) {
+    const known = model.scenarios.map((x) => `"${x.label}"`).join(', ')
+    throw new Error(`loadmap: no scenario "${o.scenario}"; ${known ? `the model has ${known}` : 'the model has none'}`)
+  }
+  return { ...s.values, ...o.set }
 }
 
 export interface RecordOptions extends FrameOptions {
@@ -47,9 +66,12 @@ export async function composeFrame(
 ): Promise<HTMLCanvasElement> {
   await handle.ready()
   const b = handle.board()!
+  const cap = captionOf(o.caption)
   const w = o.size?.width ?? even(b.scene.width * (o.scale ?? 2))
-  const h = o.size?.height ?? even(b.scene.height * (o.scale ?? 2))
-  const scale = Math.min(w / b.scene.width, h / b.scene.height)
+  const band = cap ? bands(w) : { top: 0, bottom: 0 }
+  const h = o.size?.height ?? even(b.scene.height * (o.scale ?? 2) + band.top + band.bottom)
+  const room = h - band.top - band.bottom
+  const scale = Math.min(w / b.scene.width, room / b.scene.height)
   const dw = b.scene.width * scale
   const dh = b.scene.height * scale
   const c = into ?? document.createElement('canvas')
@@ -62,18 +84,16 @@ export async function composeFrame(
   ctx.fillStyle = getComputedStyle(b.svg).getPropertyValue('--lm-surface').trim() || '#fff'
   ctx.fillRect(0, 0, w, h)
   const img = await rasterise(b.svg, Math.round(dw), Math.round(dh))
-  ctx.translate((w - dw) / 2, (h - dh) / 2)
+  ctx.translate((w - dw) / 2, band.top + (room - dh) / 2)
   ctx.drawImage(img, 0, 0, dw, dh)
   handle.engine.paintParticles(ctx, scale)
+  if (cap) drawCaption(ctx, handle, cap, w, h)
   return c
 }
 
 /** A PNG of the board as it is now. */
 export async function exportPng(handle: LoadmapHandle, o: FrameOptions = {}): Promise<Blob> {
-  const c = await composeFrame(handle, o)
-  return new Promise((resolve, reject) =>
-    c.toBlob((b) => (b ? resolve(b) : reject(new Error('loadmap: PNG failed'))), 'image/png'),
-  )
+  return toPng(await composeFrame(handle, o))
 }
 
 /**
@@ -91,13 +111,13 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
   const before = handle.values()
   handle.pause()
   try {
-    for (const s of script.filter((s) => s.at <= 0)) handle.setValues(s.set)
+    for (const s of script.filter((s) => s.at <= 0)) handle.setValues(valuesOf(handle, s))
     await warmUp(handle, o.seed ?? 1, o.warmup ?? 2, fps)
 
     const canvas = document.createElement('canvas')
     // a GIF reads every frame back: ask for a canvas kept in memory before anything draws on it
     if (format === 'gif') canvas.getContext('2d', { willReadFrequently: true })
-    await composeFrame(handle, { scale: o.scale ?? 1 }, canvas)
+    await composeFrame(handle, { scale: o.scale ?? 1, caption: o.caption }, canvas)
     const sink = format === 'gif' ? gifSink(canvas, fps) : await videoSink(canvas, format, fps)
 
     const frames = Math.round(o.seconds * fps)
@@ -105,13 +125,13 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
     for (let i = 0; i < frames; i++) {
       const t = i / fps
       while (next >= 0 && next < script.length && script[next]!.at <= t) {
-        handle.setValues(script[next]!.set)
+        handle.setValues(valuesOf(handle, script[next]!))
         next++
       }
       // a value that changes the layout needs the new scene first
       await handle.ready()
       handle.step(1 / fps)
-      await composeFrame(handle, { size: { width: canvas.width, height: canvas.height } }, canvas)
+      await composeFrame(handle, { size: { width: canvas.width, height: canvas.height }, caption: o.caption }, canvas)
       await o.onFrame?.(i, canvas)
       await sink.add(t)
     }
@@ -122,22 +142,57 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
   }
 }
 
+export interface StillOptions extends FrameOptions {
+  /** A scenario's values, by label; `set` goes on top. */
+  scenario?: string
+  set?: Partial<Values<any>>
+  seed?: number
+  /** Seconds of sim run before the picture. Default 4. */
+  warmup?: number
+}
+
 /** A PNG of the board after `set` and a warm-up on a fixed clock: the same options give the same picture. */
-export async function recordStill(
+export async function recordStill(handle: LoadmapHandle, o: StillOptions = {}): Promise<Blob> {
+  return settled(handle, o, () => exportPng(handle, o))
+}
+
+/**
+ * A poster: the board after a warm-up, with the title, the verdict, where each component runs out and the scenarios
+ * compared, as one PNG. The same options give the same bytes. `scale` is pixels per CSS pixel (default 2).
+ */
+export async function recordPoster(
   handle: LoadmapHandle,
-  o: FrameOptions & { set?: Partial<Values<any>>; seed?: number; warmup?: number } = {},
+  o: Omit<StillOptions, 'size' | 'caption'> = {},
 ): Promise<Blob> {
+  return settled(handle, o, async () => {
+    const scale = o.scale ?? 2
+    const b = handle.board()!
+    const inner = Math.max(720, Math.min(1400, b.scene.width + 48)) - 48
+    const size = { width: even(inner * scale), height: even(((b.scene.height * inner) / b.scene.width) * scale) }
+    const board = await composeFrame(handle, { size })
+    return toPng(await drawPoster(handle, board, scale))
+  })
+}
+
+/** Sets the values, warms the sim up on a fixed clock, makes the picture, and puts the values back. */
+async function settled<T>(handle: LoadmapHandle, o: StillOptions, make: () => Promise<T>): Promise<T> {
   await handle.ready()
   const before = handle.values()
   handle.pause()
   try {
-    if (o.set) handle.setValues(o.set)
+    if (o.set || o.scenario != null) handle.setValues(valuesOf(handle, o))
     await warmUp(handle, o.seed ?? 1, o.warmup ?? 4, 30)
-    return await exportPng(handle, o)
+    return await make()
   } finally {
     handle.setValues(before)
     handle.resume()
   }
+}
+
+function toPng(c: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) =>
+    c.toBlob((b) => (b ? resolve(b) : reject(new Error('loadmap: PNG failed'))), 'image/png'),
+  )
 }
 
 declare global {
@@ -147,7 +202,10 @@ declare global {
 /** What `expose` puts on the page for `loadmap record`: results come back base64-encoded. */
 export interface PageRecorder {
   record(o: RecordOptions): Promise<string>
-  still(o: Parameters<typeof recordStill>[1]): Promise<string>
+  still(o: StillOptions): Promise<string>
+  poster(o: StillOptions): Promise<string>
+  /** The SVG's text, not base64. */
+  svg(o: StillOptions): Promise<string>
 }
 
 /**
@@ -158,6 +216,8 @@ export function expose(handle: LoadmapHandle, name = 'default'): () => void {
   const recorder: PageRecorder = {
     record: async (o) => base64(await recordVideo(handle, o)),
     still: async (o) => base64(await recordStill(handle, o)),
+    poster: async (o) => base64(await recordPoster(handle, o)),
+    svg: (o) => settled(handle, o, () => exportSvg(handle, o)),
   }
   globalThis.__loadmap ??= {}
   globalThis.__loadmap[name] = recorder
@@ -244,31 +304,9 @@ async function pickCodec(format: 'webm' | 'mp4', width: number, height: number) 
   throw new Error(`loadmap: this browser cannot encode ${format} video`)
 }
 
-const PAINT = ['fill', 'stroke', 'color'] as const
-
-/**
- * An SVG drawn as an image cannot see the page's CSS, so every colour that comes from a theme token is written into
- * the copy as the value the page computed.
- */
+/** An SVG drawn as an image cannot see the page's CSS: it is drawn from a copy with the theme written in. */
 async function rasterise(svg: SVGSVGElement, w: number, h: number): Promise<HTMLImageElement> {
-  const copy = svg.cloneNode(true) as SVGSVGElement
-  const src = [svg, ...svg.querySelectorAll('*')]
-  const dst = [copy, ...copy.querySelectorAll('*')]
-  src.forEach((el, i) => {
-    const cs = getComputedStyle(el)
-    const out = dst[i] as SVGElement
-    for (const p of PAINT) {
-      const a = out.getAttribute(p)
-      if (a && (a.includes('var(') || a === 'currentColor')) out.setAttribute(p, cs.getPropertyValue(p))
-    }
-    if ((out as SVGElement).style?.color) out.style.color = cs.color
-  })
-  const root = getComputedStyle(svg)
-  copy.setAttribute('font-family', root.fontFamily)
-  copy.setAttribute('color', root.color)
-  copy.setAttribute('width', String(w))
-  copy.setAttribute('height', String(h))
-  copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  const copy = standalone(svg, w, h)
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' }))
   try {
     const img = new Image()

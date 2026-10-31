@@ -95,7 +95,8 @@ describe('the editor', () => {
     const { handle } = await mount()
     handle.loadmap()!.setValues({ load: 80, pods: 6 })
     handle.setSource(alerts)
-    await expect.poll(() => handle.loadmap()?.values().alertPods).toBe(3)
+    // a new text compiles and lays out from scratch: on a busy machine that takes more than the default second
+    await expect.poll(() => handle.loadmap()?.values().alertPods, { timeout: 5000 }).toBe(3)
     expect(handle.loadmap()!.values()).toMatchObject({ load: 10, posPods: 3 })
   })
 

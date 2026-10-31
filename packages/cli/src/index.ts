@@ -4,14 +4,18 @@ import { parseArgs } from 'node:util'
 import type { PageRecorder } from '@loadmap/export'
 import { chromium } from 'playwright'
 
-export const USAGE = `loadmap record <url> --out <file.gif|.webm|.mp4|.png> [options]
+export const USAGE = `loadmap record <url> --out <file.gif|.webm|.mp4|.png|.svg> [options]
 
 Opens the page in headless Chromium, finds the loadmap it exposes (expose() from @loadmap/export) and records it
 on a fixed clock, so the same options give the same file.
 
-  --out <file>          the extension picks the format: gif, webm, mp4 or png
-  --script <file.json>  [{ "at": 0, "set": { "load": 5 } }, …] or { "seconds", "fps", "script": […] }
+  --out <file>          the extension picks the format: gif, webm, mp4, png or svg
+  --script <file.json>  [{ "at": 0, "set": { "load": 5 } }, { "at": 3, "scenario": "Proposed" }, …]
+                        or { "seconds", "fps", "script": […] }
+  --scenario <label>    start from a scenario's values (--set goes on top)
   --set <key=value>     a value before recording starts; repeatable (--set load=30 --set pods=6)
+  --caption             the title, scenario and load above the board, the verdict below it
+  --poster              with .png: the board, the verdict, the limits and the scenarios compared
   --seconds <n>         length of a video or GIF (default 8, or the script's)
   --fps <n>             frames per second (default 30; GIF 15, at most 50)
   --scale <n>           pixels per diagram unit (default 1, PNG 2)
@@ -23,8 +27,11 @@ on a fixed clock, so the same options give the same file.
 export interface RecordArgs {
   url: string
   out: string
-  script?: { at: number; set: Record<string, string | number | boolean> }[]
+  script?: { at: number; scenario?: string; set?: Record<string, string | number | boolean> }[]
+  scenario?: string
   set: Record<string, string | number | boolean>
+  caption: boolean
+  poster: boolean
   seconds?: number
   fps?: number
   scale?: number
@@ -56,6 +63,9 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
       out: { type: 'string' },
       script: { type: 'string' },
       set: { type: 'string', multiple: true },
+      scenario: { type: 'string' },
+      caption: { type: 'boolean' },
+      poster: { type: 'boolean' },
       seconds: { type: 'string' },
       fps: { type: 'string' },
       scale: { type: 'string' },
@@ -91,11 +101,16 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   }
   const scheme = v['color-scheme'] ?? 'light'
   if (scheme !== 'light' && scheme !== 'dark') throw new Error('--color-scheme is light or dark')
+  if (v.poster && extname(v.out).toLowerCase() !== '.png')
+    throw new Error('--poster writes a PNG: --out must end in .png')
   return {
     url,
     out: v.out,
     script,
+    scenario: v.scenario,
     set,
+    caption: v.caption ?? false,
+    poster: v.poster ?? false,
     seconds: num(v.seconds, 'seconds') ?? fromFile.seconds,
     fps: num(v.fps, 'fps') ?? fromFile.fps,
     scale: num(v.scale, 'scale'),
@@ -109,7 +124,8 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
 /** Records in a fresh headless Chromium and returns the file's bytes. */
 export async function record(a: RecordArgs): Promise<Buffer> {
   const format = extname(a.out).slice(1).toLowerCase()
-  if (!['gif', 'webm', 'mp4', 'png'].includes(format)) throw new Error(`--out must end in .gif, .webm, .mp4 or .png`)
+  if (!['gif', 'webm', 'mp4', 'png', 'svg'].includes(format))
+    throw new Error(`--out must end in .gif, .webm, .mp4, .png or .svg`)
   const browser = await chromium.launch()
   try {
     const page = await browser.newPage({ viewport: { width: a.width, height: 900 }, colorScheme: a.colorScheme })
@@ -125,23 +141,26 @@ export async function record(a: RecordArgs): Promise<Buffer> {
           `no loadmap "${a.name}" on ${a.url}: the page must call expose(handle${a.name === 'default' ? '' : `, '${a.name}'`})`,
         )
       })
-    const b64 = await page.evaluate(
+    const out = await page.evaluate(
       async ({ a, format }) => {
         const r = (globalThis as { __loadmap?: Record<string, PageRecorder> }).__loadmap![a.name]!
-        if (format === 'png') return r.still({ set: a.set, scale: a.scale, seed: a.seed })
-        const script = [{ at: 0, set: a.set }, ...(a.script ?? [])]
+        const still = { scenario: a.scenario, set: a.set, scale: a.scale, seed: a.seed, caption: a.caption }
+        if (format === 'svg') return r.svg(still)
+        if (format === 'png') return a.poster ? r.poster(still) : r.still(still)
+        const script = [{ at: 0, scenario: a.scenario, set: a.set }, ...(a.script ?? [])]
         return r.record({
           format: format as 'gif',
           seconds: a.seconds ?? 8,
           fps: a.fps,
           scale: a.scale,
           seed: a.seed,
+          caption: a.caption,
           script,
         })
       },
       { a, format },
     )
-    return Buffer.from(b64, 'base64')
+    return format === 'svg' ? Buffer.from(out, 'utf8') : Buffer.from(out, 'base64')
   } finally {
     await browser.close()
   }

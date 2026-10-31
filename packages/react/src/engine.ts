@@ -123,31 +123,41 @@ export class Engine {
     }
   }
 
-  /** Paints the dots onto any 2D context, scene units × `scale`: the overlay, or an export frame. */
-  paintParticles(ctx: CanvasRenderingContext2D, scale: number): void {
+  /** Every dot as it is drawn now, in scene units: for the canvas, and for an SVG export. */
+  dots(): { x: number; y: number; r: number; color: string; alpha: number }[] {
     const scene = this.scene
-    if (!scene) return
-    ctx.save()
-    ctx.transform(scale, 0, 0, scale, 0, 0)
+    if (!scene) return []
+    const out: { x: number; y: number; r: number; color: string; alpha: number }[] = []
     const live = new Set<number>()
     for (const d of this.sim.particles) {
       live.add(d.id)
       const [x, y] = this.#position(scene, d)
       const inCell = d.to.cell != null && d.phase !== 'move'
-      ctx.globalAlpha = d.phase === 'fade' ? Math.max(0, 1 - d.t / d.dur) : 1
-      ctx.fillStyle = d.phase === 'fade' ? this.outcomeColor(d.outcome) : this.flowColor(d.flow)
-      ctx.beginPath()
-      ctx.arc(
+      out.push({
         x,
-        y - (d.phase === 'fade' && d.outcome !== 'delivered' ? (d.t / d.dur) * 8 : 0),
-        inCell ? 3 : 3.4,
-        0,
-        Math.PI * 2,
-      )
+        y: y - (d.phase === 'fade' && d.outcome !== 'delivered' ? (d.t / d.dur) * 8 : 0),
+        r: inCell ? 3 : 3.4,
+        color: d.phase === 'fade' ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
+        alpha: d.phase === 'fade' ? Math.max(0, 1 - d.t / d.dur) : 1,
+      })
+    }
+    for (const id of this.#paths.keys()) if (!live.has(id)) this.#paths.delete(id)
+    return out
+  }
+
+  /** Paints the dots onto any 2D context, scene units × `scale`: the overlay, or an export frame. */
+  paintParticles(ctx: CanvasRenderingContext2D, scale: number): void {
+    if (!this.scene) return
+    ctx.save()
+    ctx.transform(scale, 0, 0, scale, 0, 0)
+    for (const d of this.dots()) {
+      ctx.globalAlpha = d.alpha
+      ctx.fillStyle = d.color
+      ctx.beginPath()
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2)
       ctx.fill()
     }
     ctx.restore()
-    for (const id of this.#paths.keys()) if (!live.has(id)) this.#paths.delete(id)
   }
 
   #position(scene: Scene, d: Particle): Point {
