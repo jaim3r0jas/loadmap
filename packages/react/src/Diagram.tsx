@@ -1,7 +1,7 @@
-import { around, type ComponentState, compare, fmt, kfmt, multiple, pct } from '@loadmap/core'
+import { around, type ComponentState, fmt, kfmt, multiple, pct } from '@loadmap/core'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { scenarioColor } from './scenarios'
+import { memo, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
 const STATE_STROKE: Record<ComponentState, string> = {
@@ -85,20 +85,11 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
         ref={boardRef}
         style={scene ? { aspectRatio: `${scene.width} / ${scene.height}` } : { minHeight: 240 }}
       >
-        {scene && (
-          <Structure
-            lm={lm}
-            scene={scene}
-            svgRef={svgRef}
-            rates={reducedMotion}
-            tip={tip}
-            setTip={setTip}
-            detailId={detailId}
-          />
-        )}
+        {scene && <Structure lm={lm} scene={scene} svgRef={svgRef} rates={reducedMotion} setTip={setTip} />}
         <canvas ref={canvasRef} hidden={reducedMotion} />
-        {scene && tip && <Detail lm={lm} scene={scene} id={tip.id} board={boardRef.current} detailId={detailId} />}
       </div>
+      {/* outside the board, which clips: a detail taller than the room beside its box still shows whole */}
+      {scene && tip && <Detail lm={lm} scene={scene} id={tip.id} board={boardRef.current} detailId={detailId} />}
     </div>
   )
 }
@@ -145,22 +136,19 @@ function componentOf(lm: LoadmapController, n: SceneNode): string | undefined {
 
 type Tip = { id: string; pinned: boolean } | null
 
-function Structure({
+/** The SVG. It does not read the detail's state, so a hover re-renders the detail, not every box and edge. */
+const Structure = memo(function Structure({
   lm,
   scene,
   svgRef,
   rates,
-  tip,
   setTip,
-  detailId,
 }: {
   lm: LoadmapController
   scene: Scene
   svgRef: React.RefObject<SVGSVGElement | null>
   rates: boolean
-  tip: Tip
   setTip: (t: Tip | ((t: Tip) => Tip)) => void
-  detailId: string
 }) {
   const marker = useId().replace(/:/g, '')
   const { labels, ev } = lm
@@ -168,31 +156,38 @@ function Structure({
     const c = componentOf(lm, n)
     return c ? (ev.components[c]?.state ?? null) : null
   }
-  // hover and focus show a box's detail; a tap (or Enter) pins it until the next one
-  const handlers = (n: SceneNode) =>
-    componentOf(lm, n)
-      ? {
-          tabIndex: 0,
-          className: 'lm-node',
-          'aria-describedby': tip?.id === n.id ? detailId : undefined,
-          onPointerEnter: (e: React.PointerEvent) =>
-            e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
-          onPointerLeave: (e: React.PointerEvent) => e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : null)),
-          onFocus: () => setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
-          onBlur: () => setTip((t) => (t?.pinned ? t : null)),
-          onClick: () => setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true })),
-          onKeyDown: (e: React.KeyboardEvent) => {
-            if (e.key === 'Escape') setTip(null)
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true }))
-            }
-          },
+  // hover and focus show a box's detail; a tap (or Enter) pins it until the next one. A box is a button named by
+  // its title, its component and its utilization; the detail describes it while it shows
+  const handlers = (n: SceneNode) => {
+    const cid = componentOf(lm, n)
+    const c = cid ? ev.components[cid] : undefined
+    if (!c) return {}
+    const title = labels.nodes[n.id]?.title
+    return {
+      tabIndex: 0,
+      role: 'button',
+      className: 'lm-node',
+      'aria-label': `${title && title !== c.name ? `${title}, ` : ''}${c.name}: ${c.util == null ? 'switched off' : pct(c.util)}`,
+      onPointerEnter: (e: React.PointerEvent) =>
+        e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
+      onPointerLeave: (e: React.PointerEvent) => e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : null)),
+      onFocus: () => setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
+      onBlur: () => setTip((t) => (t?.pinned ? t : null)),
+      onClick: () => setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true })),
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === 'Escape') setTip(null)
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true }))
         }
-      : {}
+      },
+    }
+  }
   const summary = scene.nodes.map((n) => labels.nodes[n.id]?.title).join(', ')
+  // a group, not an image: an image's children are hidden from screen readers, and the boxes are buttons
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="img" aria-label={`Diagram: ${summary}`}>
+    // biome-ignore lint/a11y/useSemanticElements: an <svg> cannot be a <fieldset>
+    <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="group" aria-label={`Diagram: ${summary}`}>
       <defs>
         <marker
           id={marker}
@@ -223,7 +218,7 @@ function Structure({
       ))}
     </svg>
   )
-}
+})
 
 const pathOf = (pts: readonly [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ')
 
@@ -439,17 +434,23 @@ function Detail({
   const { model, ev } = lm
   const n = scene.nodes.find((x) => x.id === id)
   const cid = n && componentOf(lm, n)
-  const rows = useMemo(
-    () => (model.scenarios.length > 1 ? compare(model, lm.values.load).rows : []),
-    [model, lm.values.load],
-  )
+  const comparison = useComparison(lm)
+  const rows = model.scenarios.length > 1 ? comparison.rows : []
+  // the box this describes: set on its element, so the SVG need not render again for it
+  useEffect(() => {
+    const el = board?.querySelector(`[data-node="${CSS.escape(id)}"]`)
+    el?.setAttribute('aria-describedby', detailId)
+    return () => el?.removeAttribute('aria-describedby')
+  }, [board, id, detailId])
   const c = cid ? ev.components[cid] : undefined
   if (!n || !c || !board) return null
+  // placed in the wrap, beside the board: below a box in the upper half, above one in the lower half
   const k = board.clientWidth / scene.width
   const below = n.y + n.h / 2 < scene.height / 2
-  const place = below ? { top: (n.y + n.h) * k + 6 } : { bottom: (scene.height - n.y) * k + 6 }
+  const top = board.offsetTop + (below ? (n.y + n.h) * k + 6 : n.y * k - 6)
+  const place = { top, transform: below ? undefined : 'translateY(-100%)' }
   const date = (x: number | null) => {
-    const d = x != null && x > 1 ? model.dateAt(x) : null
+    const d = model.dateAt(x)
     return d ? ` (${around(d)})` : ''
   }
   const num = (x: number) => (Math.abs(x) >= 1000 ? kfmt(x) : fmt(x))
@@ -459,7 +460,7 @@ function Detail({
       id={detailId}
       className="lm-tip lm-detail"
       role="tooltip"
-      style={{ ...place, left: `clamp(0px, ${n.x * k}px, calc(100% - 17rem))` }}
+      style={{ ...place, left: `clamp(0px, ${board.offsetLeft + n.x * k}px, calc(100% - 17rem))` }}
     >
       <b>
         {c.name}

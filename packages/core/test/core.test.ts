@@ -216,6 +216,15 @@ describe('growth', () => {
     // 6 % a month: 2× is ln 2 / ln 1.06 = 11.9 months
     expect(around(dateAt(growth({ rate: 0.06, per: 'month', asOf: '2026-11' }), 2)!)).toBe('around October 2027')
     expect(dateAt(g, 1)?.toISOString().slice(0, 10)).toBe('2026-11-01')
+    // from the 31st, one month on is the last day of February, not March
+    const late = growth({ rate: 0.06, per: 'month', asOf: '2026-01-31' })
+    expect(dateAt(late, 1.06)?.toISOString().slice(0, 10)).toBe('2026-02-28')
+    // the model gives no date for a crossing already reached
+    expect([sized.dateAt(1), sized.dateAt(0.5), sized.dateAt(5)?.toISOString().slice(0, 7)]).toEqual([
+      null,
+      null,
+      '2029-02',
+    ])
     expect([dateAt(g, null), dateAt(g, Number.POSITIVE_INFINITY)]).toEqual([null, null])
   })
 
@@ -248,6 +257,9 @@ describe('scenarios', () => {
   it('refuse the load and unknown parameters', () => {
     expect(() => tiny({ scenarios: { High: { load: 3 } } } as any)).toThrow(/sets the load/)
     expect(() => tiny({ scenarios: { X: { pods: 3 } } } as any)).toThrow(/unknown parameter "pods"/)
+    const check = (set: object) => () => defineModel({ ...(sized.def as any), scenarios: { X: set } })
+    expect(check({ nodes: 3 })).toThrow('scenario "X" sets "nodes" to 3, which it cannot take')
+    expect(check({ cache: 'yes' })).toThrow(/sets "cache" to yes/)
   })
 
   it('compare first limits, multiples, dates and the change per component', () => {
@@ -273,6 +285,40 @@ describe('scenarios', () => {
     expect(c.best?.label).toBe('Two nodes')
     expect(c.text).toBe(
       'Two nodes buys the most headroom: the 50 % target holds up to 10× (around February 2030), limited by the API, against 5× (around February 2029) in Today and 5× (around February 2029) in Cache.',
+    )
+  })
+
+  it('compare equal targets by when they run out, and name scenarios that tie', () => {
+    // util = load / 4 up to 2× (the target at 2× in both), then steeper or flatter: 100 % at 4× or 6×; heavy doubles it
+    const shaped = defineModel({
+      load: p.load({ max: 10 }),
+      params: {
+        steep: p.switch({ label: 'Steep', default: false }),
+        heavy: p.switch({ label: 'Heavy', default: false }),
+      },
+      scenarios: { Steep: { steep: true }, Flat: {}, Heavy: { heavy: true } },
+      flows: { req: { rate: ({ load }) => load } },
+      components: {
+        x: {
+          name: 'X',
+          demand: ({ load, steep, heavy }) =>
+            (heavy ? 2 : 1) * (load <= 2 ? load / 4 : 0.5 + (load - 2) * (steep ? 0.25 : 0.125)),
+          capacity: measured(1, 'u'),
+          over: '',
+        },
+      },
+      stages: { x: pass('x') },
+      routes: { req: ['x'] },
+    })
+    const c = compare(shaped)
+    expect(c.best?.label).toBe('Flat')
+    expect(c.text).toBe(
+      'Flat buys the most headroom: the 50 % target holds up to 2×, limited by X, and runs out at 6×, against 2× in Steep (runs out at 4×) and 1× in Heavy.',
+    )
+    const twins = defineModel({ ...(shaped.def as any), scenarios: { A: {}, B: {}, Heavy: { heavy: true } } })
+    expect(compare(twins).best).toBeNull()
+    expect(compare(twins).text).toBe(
+      'A and B buy the most headroom: the 50 % target holds up to 2×, against 1× in Heavy.',
     )
   })
 

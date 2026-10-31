@@ -33,7 +33,7 @@ export interface ScenarioRow<P = any, C extends string = string> {
 export interface Comparison<P = any, C extends string = string> {
   /** The scenarios in declaration order; the first is the baseline. */
   rows: readonly ScenarioRow<P, C>[]
-  /** The scenario whose target holds the longest; null with fewer than two or when they tie. */
+  /** The scenario whose target holds the longest (then: runs out last); null with fewer than two or a tie. */
   best: ScenarioRow<P, C> | null
   /** One sentence: which buys more headroom. Empty with fewer than two scenarios. */
   text: string
@@ -71,22 +71,41 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
   if (rows.length < 2) return { rows, best: null, text: '' }
 
   const th = pct(model.thresholds.target)
-  const upTo = (r: ScenarioRow<P, C>) =>
-    `${multiple(r.target, model.searchMax)}${r.targetDate && (r.target ?? 0) > 1 ? ` (${around(r.targetDate)})` : ''}`
+  const at = (x: number | null, d: Date | null) => `${multiple(x, model.searchMax)}${d ? ` (${around(d)})` : ''}`
+  const upTo = (r: ScenarioRow<P, C>) => at(r.target, r.targetDate)
+  // the target first; between equal targets, the one that runs out later
   const order = (x: number | null) => (x == null ? Number.NEGATIVE_INFINITY : x)
-  const best = rows.reduce((a, b) =>
-    order(b.target) > order(a.target) || (order(b.target) === order(a.target) && order(b.full) > order(a.full)) ? b : a,
-  )
-  const others = rows.filter((r) => r !== best)
-  if (others.every((r) => order(r.target) === order(best.target)))
-    return { rows, best: null, text: `Every scenario holds the ${th} target up to ${upTo(best)}.` }
+  const sameTarget = (a: ScenarioRow<P, C>, b: ScenarioRow<P, C>) => order(a.target) === order(b.target)
+  const better = (a: ScenarioRow<P, C>, b: ScenarioRow<P, C>) =>
+    order(a.target) > order(b.target) || (sameTarget(a, b) && order(a.full) > order(b.full))
+  const top = rows.reduce((a, b) => (better(b, a) ? b : a))
+  const leaders = rows.filter((r) => !better(top, r))
+  if (leaders.length === rows.length)
+    return { rows, best: null, text: `Every scenario holds the ${th} target up to ${upTo(top)}.` }
   const more = rows.length > 2 ? 'the most' : 'more'
-  const by = best.firstLimit ? `, limited by ${best.firstLimit.short}` : ''
-  const against = joinAnd(others.map((r) => `${upTo(r)} in ${r.label}`))
+  const against = joinAnd(
+    rows
+      .filter((r) => !leaders.includes(r))
+      .map((r) =>
+        sameTarget(r, top)
+          ? `${upTo(r)} in ${r.label} (runs out at ${at(r.full, r.fullDate)})`
+          : `${upTo(r)} in ${r.label}`,
+      ),
+  )
+  if (leaders.length > 1)
+    return {
+      rows,
+      best: null,
+      text: `${joinAnd(leaders.map((r) => r.label))} buy the most headroom: the ${th} target holds up to ${upTo(top)}, against ${against}.`,
+    }
+  const by = top.firstLimit ? `, limited by ${top.firstLimit.short}` : ''
+  const later = rows.some((r) => r !== top && sameTarget(r, top))
+    ? `${by ? ',' : ''} and runs out at ${at(top.full, top.fullDate)}`
+    : ''
   return {
     rows,
-    best,
-    text: `${best.label} buys ${more} headroom: the ${th} target holds up to ${upTo(best)}${by}, against ${against}.`,
+    best: top,
+    text: `${top.label} buys ${more} headroom: the ${th} target holds up to ${upTo(top)}${by}${later}, against ${against}.`,
   }
 }
 

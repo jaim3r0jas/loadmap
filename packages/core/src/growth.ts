@@ -37,11 +37,12 @@ export function dateAt(g: Growth, multiple: number | null): Date | null {
   if (!start || multiple == null || !Number.isFinite(multiple)) return null
   if (multiple <= 1) return start
   const months = (Math.log(multiple) / Math.log(1 + g.rate)) * (g.per === 'year' ? 12 : 1)
-  // whole months on the calendar, then the rest as a share of the month it lands in
+  // whole months on the calendar (the 31st becomes the last day of a shorter month), then the rest as a share of
+  // the month it lands in
   const whole = Math.floor(months)
   const y = start.getUTCFullYear()
   const mo = start.getUTCMonth() + whole
-  const at = Date.UTC(y, mo, start.getUTCDate())
   const days = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate()
+  const at = Date.UTC(y, mo, Math.min(start.getUTCDate(), days))
   return new Date(at + (months - whole) * days * 86_400_000)
 }

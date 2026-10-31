@@ -24,7 +24,7 @@ export const CSS = `
 .lm button:focus-visible, .lm input:focus-visible, .lm select:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
 .lm-card { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
 
-.lm-wrap { display: grid; gap: 8px; min-width: 0; }
+.lm-wrap { display: grid; gap: 8px; min-width: 0; position: relative; }
 .lm-wrap:fullscreen { background: var(--lm-bg); padding: 16px; align-content: center; overflow: auto; }
 .lm-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .lm-btn { font: 500 .8rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }

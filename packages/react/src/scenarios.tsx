@@ -37,9 +37,8 @@ const lineName = (l: HeadroomLine) => l.label ?? 'These values'
 
 /** A month for a table cell or an axis: "Mar 2031"; "now" for a crossing already reached. */
 function when(model: Model, x: number | null): string {
-  if (x != null && x <= 1 && model.growth) return 'now'
   const d = model.dateAt(x)
-  return d ? monthOf(d, true) : ''
+  return d ? monthOf(d, true) : x != null && x <= 1 && model.growth ? 'now' : ''
 }
 
 /** The comparison at the shown load: crossings do not depend on it, the verdicts do. */

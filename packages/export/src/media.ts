@@ -194,6 +194,14 @@ export async function exportSvg(handle: LoadmapHandle, o: { caption?: boolean | 
  * each component runs out (with dates, given growth), the scenarios compared, and which capacities are estimates.
  * `scale` is pixels per CSS pixel (default 2).
  */
+/** The poster's width and the board's place in it, in CSS pixels: one source for the board image and the drawing. */
+export function posterLayout(scene: { width: number; height: number }) {
+  const W = Math.max(720, Math.min(1400, scene.width + 48))
+  const pad = 24
+  const inner = W - 2 * pad
+  return { W, pad, inner, boardH: (scene.height * inner) / scene.width }
+}
+
 export async function drawPoster(
   handle: LoadmapHandle,
   image: CanvasImageSource,
@@ -202,19 +210,15 @@ export async function drawPoster(
   const b = handle.board()!
   const { model, ev } = handle.engine
   const k = tokens(b.svg)
-  const W = Math.max(720, Math.min(1400, b.scene.width + 48))
-  const pad = 24
-  const inner = W - 2 * pad
-  const boardH = (b.scene.height * inner) / b.scene.width
+  const { W, pad, inner, boardH } = posterLayout(b.scene)
   const date = (x: number | null) => {
-    if (x == null || !(x > 1)) return ''
     const d = model.dateAt(x)
     return d ? ` (${monthOf(d, true)})` : ''
   }
   const at = (x: number | null) => `${multiple(x, model.searchMax)}${date(x)}`
   const t = captionText(handle, {})
   const g = model.growth
-  const sub = [t.where, g && `load grows ${pct(g.rate)} a ${g.per} from ${monthOf(parseAsOf(g.asOf)!)}`]
+  const sub = [t.where, g && `load grows ${fmt(g.rate * 100)} % a ${g.per} from ${monthOf(parseAsOf(g.asOf)!)}`]
     .filter(Boolean)
     .join(' · ')
   const rows = model.scenarios.length > 1 ? compare(model, ev.values.load) : null

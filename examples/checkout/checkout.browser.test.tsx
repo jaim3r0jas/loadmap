@@ -161,7 +161,13 @@ describe('checkout in the browser', () => {
     expect(detail()).toContain('50 % at 10× (around February 2030)')
     expect(detail()).toContain('capacity measured, pod CPU limit')
     expect(detail()).toContain('Today 10× · Proposed 20×')
-    expect(workers.getAttribute('aria-describedby')).toBe(el.querySelector('.lm-detail')!.id)
+    await expect.poll(() => workers.getAttribute('aria-describedby')).toBe(el.querySelector('.lm-detail')!.id)
+    // a button named by what it stands for, its detail outside the board that clips
+    expect([workers.getAttribute('role'), workers.getAttribute('aria-label')]).toEqual([
+      'button',
+      'Workers, Worker pool: 50 %',
+    ])
+    expect(el.querySelector('.lm-detail')!.closest('.lm-board')).toBeNull()
     await userEvent.unhover(workers)
     await expect.poll(() => el.querySelector('.lm-detail')).toBeNull()
     el.querySelector<SVGGElement>('[data-node="gateway"]')!.focus()

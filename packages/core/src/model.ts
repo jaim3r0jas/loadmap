@@ -166,7 +166,10 @@ export interface Model<P = any, F extends string = string, C extends string = st
   utilization(values?: Partial<Values<P>>): Readonly<Record<C, number | null>>
   /** The scenario whose values these are, ignoring the load; null when they match none. */
   scenarioOf(values: LooseValues): Scenario<P> | null
-  /** When the load reaches this multiple, from `growth`; null without growth or a finite multiple. */
+  /**
+   * When the load reaches this multiple, from `growth`. Null without growth, without a finite multiple, and at 1× or
+   * below: a crossing already reached has no date ahead.
+   */
   dateAt(multiple: number | null): Date | null
 }
 
@@ -198,7 +201,7 @@ export function defineModel<
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
   const growth = def.growth && checkGrowth(def.growth)
-  const when = (x: number | null) => (growth ? dateAt(growth, x) : null)
+  const when = (x: number | null) => (growth && x != null && x > 1 ? dateAt(growth, x) : null)
   const paramList = [
     { id: 'load', def: def.load as AnyParamDef },
     ...Object.entries(params).map(([id, d]) => ({ id, def: d })),
@@ -214,7 +217,16 @@ export function defineModel<
     for (const k of Object.keys(set as object)) {
       if (k === 'load')
         throw new Error(`loadmap: scenario "${label}" sets the load; a scenario leaves it to the slider`)
-      if (!Object.hasOwn(params, k)) throw new Error(`loadmap: scenario "${label}" sets unknown parameter "${k}"`)
+      const p = Object.hasOwn(params, k) ? params[k] : undefined
+      if (!p) throw new Error(`loadmap: scenario "${label}" sets unknown parameter "${k}"`)
+      const v = (set as Record<string, unknown>)[k]
+      const fits =
+        p.kind === 'select'
+          ? p.options.includes(v)
+          : p.kind === 'switch'
+            ? typeof v === 'boolean'
+            : typeof v === 'number' && v >= p.min && v <= p.max
+      if (!fits) throw new Error(`loadmap: scenario "${label}" sets "${k}" to ${String(v)}, which it cannot take`)
     }
     const { load: _, ...values } = { ...defaults(), ...set } as Values<P>
     return { label, values }
@@ -446,8 +458,7 @@ function verdict(
   const target = `${pct(th.target)} target`
   if (!first) return { tier: 'ok', text: `${at}, every component is switched off.` }
   const est = (c: ComponentResult) => (c.capacity?.provenance === 'estimated' ? ' (capacity estimated)' : '')
-  // a date only for a crossing still ahead: below 1× it has already passed
-  const date = first.target != null && first.target > 1 ? when(first.target) : null
+  const date = when(first.target)
   const upTo = `${multiple(first.target, searchMax)}${date ? ` (${around(date)})` : ''}`
   const holds = `The ${target} holds up to ${upTo}, limited by ${first.short}${est(first)}.`
   const verb = (list: readonly ComponentResult[], one: string, many: string) =>

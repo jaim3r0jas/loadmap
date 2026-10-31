@@ -10,7 +10,7 @@ import {
   QUALITY_HIGH,
   WebMOutputFormat,
 } from 'mediabunny'
-import { bands, type Caption, captionOf, drawCaption, drawPoster, exportSvg, standalone } from './media'
+import { bands, type Caption, captionOf, drawCaption, drawPoster, exportSvg, posterLayout, standalone } from './media'
 
 export { type Caption, exportSvg } from './media'
 
@@ -166,9 +166,8 @@ export async function recordPoster(
 ): Promise<Blob> {
   return settled(handle, o, async () => {
     const scale = o.scale ?? 2
-    const b = handle.board()!
-    const inner = Math.max(720, Math.min(1400, b.scene.width + 48)) - 48
-    const size = { width: even(inner * scale), height: even(((b.scene.height * inner) / b.scene.width) * scale) }
+    const { inner, boardH } = posterLayout(handle.board()!.scene)
+    const size = { width: even(inner * scale), height: even(boardH * scale) }
     const board = await composeFrame(handle, { size })
     return toPng(await drawPoster(handle, board, scale))
   })
