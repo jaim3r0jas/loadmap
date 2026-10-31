@@ -32,8 +32,8 @@ export interface LoadmapEditorHandle {
 export interface LoadmapEditorProps {
   /** The text to start from. */
   initial: string
-  /** Values to start the preview at, e.g. from a shared link. */
-  values?: Partial<Values<any>>
+  /** Values to start the preview at; texts (from a shared link) are read by each parameter's kind. */
+  values?: Readonly<Record<string, ParamValue>>
   /** Functions formulas may call beyond the built-in ones. */
   functions?: HostFunctions
   theme?: Theme
@@ -79,13 +79,16 @@ export function LoadmapEditor({
   const view = useRef<EditorView | null>(null)
   const preview = useRef<LoadmapHandle>(null)
   // the values the preview shows, carried across versions so an edit does not reset the sliders
-  const shown = useRef<Partial<Values<any>>>(values ?? {})
+  const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
+  // setSource starts the new text from its own defaults: the next compile must not carry the old values over
+  const fresh = useRef(false)
   const latest = useRef({ onChange, functions })
   latest.current = { onChange, functions }
 
   const accept = (source: string, result: CompileResult) => {
     const h = preview.current
-    if (h) shown.current = h.values()
+    if (fresh.current) fresh.current = false
+    else if (h) shown.current = h.values()
     setState((prev) => {
       if (prev.source === source && prev.result === result) return prev
       if (!result.definition) return { ...prev, source, result }
@@ -150,6 +153,7 @@ export function LoadmapEditor({
       const v = view.current
       if (!v) return
       shown.current = {}
+      fresh.current = true
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: source }, selection: { anchor: 0 } })
     },
     loadmap: () => preview.current,
@@ -272,16 +276,25 @@ function fingerprint(source: string): string {
     .join('\u0001')
 }
 
-/** The values that still fit the model: known names, options that still exist, loads within range. */
-function valuesFor(model: Model, v: Partial<Values<any>>): Partial<Values<any>> {
+/**
+ * The values that still fit the model: known names, options that still exist, numbers within range. A text (from a
+ * link) is read by the parameter's kind, so "20" can be the number 20 or the option "20".
+ */
+function valuesFor(model: Model, v: Readonly<Record<string, unknown>>): Partial<Values<any>> {
   const out: Record<string, unknown> = {}
   for (const { id, def } of model.params) {
-    const x = (v as Record<string, unknown>)[id]
-    if (x === undefined) continue
-    if (def.kind === 'select' && (def.options as unknown[]).includes(x)) out[id] = x
-    if (def.kind === 'switch' && typeof x === 'boolean') out[id] = x
-    if ((def.kind === 'range' || def.kind === 'load') && typeof x === 'number')
-      out[id] = Math.min(def.max, Math.max(def.min, x))
+    if (!Object.hasOwn(v, id)) continue
+    const x = v[id]
+    if (def.kind === 'select') {
+      const o = (def.options as unknown[]).find((o) => o === x || String(o) === String(x))
+      if (o !== undefined) out[id] = o
+    }
+    if (def.kind === 'switch' && (x === true || x === 'true' || x === false || x === 'false'))
+      out[id] = x === true || x === 'true'
+    if (def.kind === 'range' || def.kind === 'load') {
+      const n = typeof x === 'number' ? x : typeof x === 'string' && x.trim() !== '' ? Number(x) : Number.NaN
+      if (Number.isFinite(n)) out[id] = Math.min(def.max, Math.max(def.min, n))
+    }
   }
   return out as Partial<Values<any>>
 }

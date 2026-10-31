@@ -55,6 +55,8 @@ export function parseExpression(source: string, from: number, to: number, report
 class Parser {
   i = 0
   depth = 0
+  /** Blocks open around the statement being read. */
+  blocks = 0
 
   constructor(
     readonly toks: Token[],
@@ -204,6 +206,27 @@ class Parser {
   }
 
   body(d: Decl | Edge) {
+    if (this.blocks >= MAX_DEPTH) {
+      // skip the block whole, without recursing: a shared definition must not exhaust the stack
+      const open = this.next()
+      this.report.error(open, `blocks are nested more than ${MAX_DEPTH} deep`)
+      for (let depth = 1; depth > 0 && this.peek().kind !== 'eof'; ) {
+        const t = this.next()
+        if (t.kind === 'punct' && t.text === '{') depth++
+        else if (t.kind === 'punct' && t.text === '}') depth--
+      }
+      d.to = this.peek().from
+      return
+    }
+    this.blocks++
+    try {
+      this.bodyInside(d)
+    } finally {
+      this.blocks--
+    }
+  }
+
+  bodyInside(d: Decl | Edge) {
     const open = this.next()
     d.body = this.block(true)
     const close = this.peek()

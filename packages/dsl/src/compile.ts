@@ -99,10 +99,11 @@ export interface CompileResult {
 /** Reads a definition: parses, checks, and builds the model and view `<Loadmap>` takes. Never throws. */
 export function compile(source: string, o: CompileOptions = {}): CompileResult {
   const report = new Reporter(source)
-  const { doc } = parse(source, report)
   const c = new Compiler(source, report, o.functions ?? {})
+  let doc: Document = { body: [] }
   let definition: Definition | undefined
   try {
+    doc = parse(source, report).doc
     definition = c.run(doc)
   } catch (err) {
     // a bug must not take the editor down with it: say so where the user looks
@@ -225,10 +226,16 @@ class Compiler {
     }
     // a let's type comes from its formula, which may use other lets: settle them on a scratch reporter first
     for (const b of lets) if (b.args.id) this.lets.set(b.args.id.name, 'any')
-    for (let pass = 0; pass < 2; pass++)
-      for (const b of lets)
-        if (b.args.id && b.decl?.init)
-          this.lets.set(b.args.id.name, compileFormula(b.decl.init, this.names, 'ctx', new Reporter(this.source)).type)
+    // until nothing changes: each pass settles at least one more let of a chain, so it ends within lets.length
+    for (let changed = true, pass = 0; changed && pass <= lets.length; pass++) {
+      changed = false
+      for (const b of lets) {
+        if (!b.args.id || !b.decl?.init) continue
+        const type = compileFormula(b.decl.init, this.names, 'ctx', new Reporter(this.source)).type
+        if (type !== this.lets.get(b.args.id.name)) changed = true
+        this.lets.set(b.args.id.name, type)
+      }
+    }
 
     const stageOf = new Map<string, { block: Block; box: Box }>()
     for (const box of boxes) for (const s of box.stages) stageOf.set(s.id, { block: s.block, box })

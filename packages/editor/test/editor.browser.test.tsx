@@ -76,6 +76,23 @@ describe('the editor', () => {
     expect(verdict(again.host)).toContain('At 25×')
   })
 
+  it('starts a new text from its own defaults', async () => {
+    const { handle } = await mount()
+    handle.loadmap()!.setValues({ load: 80, pods: 6 })
+    handle.setSource(alerts)
+    await expect.poll(() => handle.loadmap()?.values().alertPods).toBe(3)
+    expect(handle.loadmap()!.values()).toMatchObject({ load: 10, posPods: 3 })
+  })
+
+  it('reads values from a link by the kind of each parameter', async () => {
+    const source = checkout.replace(
+      'param batch "Batch DB writes" { default: true }',
+      'param batch "Batch DB writes" { default: true }\nparam tier "Tier" { options: ["10", "20"]; default: "10" }',
+    )
+    const { handle } = await mount({ source, values: { tier: '20', pods: '6', batch: 'false', load: '30' } })
+    expect(handle.loadmap()!.values()).toMatchObject({ tier: '20', pods: 6, batch: false, load: 30 })
+  })
+
   for (const theme of ['light', 'dark'] as const)
     it(`renders the ${theme} theme`, async () => {
       const { host } = await mount({ theme })

@@ -14,9 +14,13 @@ export interface Diagnostic extends Span {
   hint?: string
 }
 
+/** More are not listed: a page of garbage must not cost a page of work per keystroke. */
+export const MAX_DIAGNOSTICS = 200
+
 /** Collects diagnostics and turns offsets into lines and columns. */
 export class Reporter {
   readonly list: Diagnostic[] = []
+  private seen = new Set<string>()
   private starts: number[]
 
   constructor(readonly source: string) {
@@ -38,7 +42,19 @@ export class Reporter {
 
   private add(severity: Diagnostic['severity'], at: Span, message: string, hint?: string) {
     // one mark per place and message: recovery can reach the same spot twice
-    if (this.list.some((d) => d.from === at.from && d.message === message)) return
+    const key = `${at.from}:${message}`
+    if (this.seen.has(key)) return
+    this.seen.add(key)
+    if (this.list.length >= MAX_DIAGNOSTICS) {
+      if (this.list.length === MAX_DIAGNOSTICS)
+        this.list.push({
+          ...this.list.at(-1)!,
+          severity: 'error',
+          message: `more than ${MAX_DIAGNOSTICS} problems; fix these first`,
+          hint: undefined,
+        })
+      return
+    }
     const { line, column } = position(this.starts, at.from)
     this.list.push({ severity, message, from: at.from, to: Math.max(at.to, at.from), line, column, hint })
   }

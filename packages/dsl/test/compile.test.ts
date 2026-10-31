@@ -214,6 +214,12 @@ describe('the checker', () => {
     expect(errors(def({ flow: 'drop: 1' }))).toMatchObject([{ hint: 'write it as a block: drop { … }' }])
   })
 
+  it('settles the types of lets written in any order', () => {
+    expect(errors(def({ top: 'let c = b * 2\nlet b = a\nlet a = "x"' }))).toMatchObject([
+      { message: 'expected a number, this is a text', text: 'b' },
+    ])
+  })
+
   it('warns about a stage no flow passes', () => {
     const r = compile(def({ extra: 'node idle "Idle" { sink }' }))
     expect(r.ok).toBe(true)

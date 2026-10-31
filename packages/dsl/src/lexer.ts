@@ -46,8 +46,9 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
         i++
         while (i < to && (isDigit(source[i]!) || source[i] === '_')) i++
       }
-      if ((source[i] === 'e' || source[i] === 'E') && /[0-9+-]/.test(source[i + 1] ?? '')) {
-        i += 2
+      const sign = source[i + 1] === '+' || source[i + 1] === '-' ? 1 : 0
+      if ((source[i] === 'e' || source[i] === 'E') && isDigit(source[i + 1 + sign] ?? '')) {
+        i += 1 + sign
         while (i < to && isDigit(source[i]!)) i++
       }
       const text = source.slice(s, i)
@@ -61,7 +62,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
       push({ kind: 'string', text: source.slice(s, i), value: r.value, from: s, to: i })
     } else if (c === '`') {
       const s = i
-      const t = readTemplate(source, i + 1, to)
+      const t = readTemplate(source, i + 1, to, report)
       if (!t.closed) report.error({ from: s, to: t.end }, 'this template has no closing backtick', 'end it with `')
       i = t.end
       push({ kind: 'template', text: source.slice(s, i), quasis: t.quasis, parts: t.parts, from: s, to: i })
@@ -102,7 +103,10 @@ function readString(src: string, i: number, to: number, q: string) {
   return { value, end: closed ? i + 1 : i, closed }
 }
 
-function readTemplate(src: string, i: number, to: number) {
+/** Templates nested deeper than this are refused: the lexer reads them recursively. */
+const MAX_TEMPLATE_DEPTH = 16
+
+function readTemplate(src: string, i: number, to: number, report: Reporter, depth = 0) {
   const quasis: string[] = []
   const parts: Span[] = []
   let cur = ''
@@ -114,9 +118,13 @@ function readTemplate(src: string, i: number, to: number) {
       quasis.push(cur)
       cur = ''
       const start = i + 2
-      const end = skipExpression(src, start, to)
+      const end = skipExpression(src, start, to, report, depth)
       parts.push({ from: start, to: end })
-      i = end < to ? end + 1 : end
+      if (src[end] === '}') i = end + 1
+      else {
+        report.error({ from: i, to: end }, 'this "${" has no closing "}"')
+        i = end
+      }
     } else cur += src[i++]
   }
   quasis.push(cur)
@@ -125,18 +133,22 @@ function readTemplate(src: string, i: number, to: number) {
 }
 
 /** The offset of the `}` that closes a template's `${`, skipping nested braces, strings and templates. */
-function skipExpression(src: string, i: number, to: number): number {
-  let depth = 0
+function skipExpression(src: string, i: number, to: number, report: Reporter, depth: number): number {
+  let braces = 0
   while (i < to) {
     const c = src[i]!
-    if (c === '}' && depth === 0) return i
-    if (c === '{') depth++
-    else if (c === '}') depth--
+    if (c === '}' && braces === 0) return i
+    if (c === '{') braces++
+    else if (c === '}') braces--
     else if (c === '"' || c === "'") {
       i = readString(src, i + 1, to, c).end
       continue
     } else if (c === '`') {
-      i = readTemplate(src, i + 1, to).end
+      if (depth + 1 >= MAX_TEMPLATE_DEPTH) {
+        report.error({ from: i, to: i + 1 }, `templates are nested more than ${MAX_TEMPLATE_DEPTH} deep`)
+        return to
+      }
+      i = readTemplate(src, i + 1, to, report, depth + 1).end
       continue
     } else if (c === '\n') return i
     i++

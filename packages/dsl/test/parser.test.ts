@@ -111,6 +111,37 @@ describe('parse', () => {
     expect(report.list[0]!.message).toContain('nested more than 64 deep')
   })
 
+  it('refuses blocks and templates nested too deep instead of overflowing the stack', () => {
+    const blocks = compile(`loadmap 1\n${'a{'.repeat(5000)}`)
+    expect(blocks.diagnostics.map((d) => d.message)).toContain('blocks are nested more than 64 deep')
+    const templates = compile(`loadmap 1\nlet x = ${'`${'.repeat(3000)}1${'}`'.repeat(3000)}`)
+    expect(templates.diagnostics.map((d) => d.message)).toContain('templates are nested more than 16 deep')
+  })
+
+  it('reports a template part that is never closed', () => {
+    const src = 'loadmap 1\ntitle: `a ${load\n} b`'
+    expect(compile(src).diagnostics.find((d) => d.message.includes('${'))).toMatchObject({
+      message: 'this "${" has no closing "}"',
+      line: 2,
+      column: 11,
+    })
+  })
+
+  it('reads an exponent only with its digits', () => {
+    const src = 'x: 1e+'
+    const toks = lex(src, new Reporter(src))
+    expect(toks.map((t) => t.text)).toEqual(['x', ':', '1', 'e', '+', ''])
+    expect(lex('2.5e-3', new Reporter('2.5e-3'))[0]!.value).toBe(0.0025)
+  })
+
+  it('stays fast on a page of garbage, listing at most 200 problems', () => {
+    const t0 = performance.now()
+    const r = compile('@'.repeat(60_000))
+    expect(performance.now() - t0).toBeLessThan(1000)
+    expect(r.diagnostics).toHaveLength(201)
+    expect(r.diagnostics.at(-1)!.message).toBe('more than 200 problems; fix these first')
+  })
+
   it('never throws, whatever slice of a definition it gets', () => {
     let seed = 11
     const rnd = () => {

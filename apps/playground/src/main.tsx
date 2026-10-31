@@ -15,6 +15,8 @@ const TABS: Tab[] = ['checkout', 'alerts', 'editor']
 /** What the editor can start from. */
 const SOURCES = { uploads: uploadsSource, checkout: checkoutSource, alerts: alertsSource } as const
 const DRAFT = 'loadmap-editor-draft'
+/** The draft as it was before a shared link was edited: the link's text takes the draft's place. */
+const EARLIER = 'loadmap-editor-draft-earlier'
 
 const initial = (): Tab => {
   if (location.hash.startsWith('#v1.')) return 'editor'
@@ -74,13 +76,23 @@ function Example({ name }: { name: Name }) {
   )
 }
 
-function readDraft(): string | null {
+function read(key: string): string | null {
   try {
-    return localStorage.getItem(DRAFT)
+    return localStorage.getItem(key)
   } catch {
     return null
   }
 }
+
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // private windows refuse storage; the draft is a convenience
+  }
+}
+
+const readDraft = () => read(DRAFT)
 
 function Editor() {
   const editor = useRef<LoadmapEditorHandle>(null)
@@ -93,6 +105,21 @@ function Editor() {
   useEffect(() => {
     if (!start) decodeShare(location.hash).then(setStart)
   }, [start])
+  // editing a link makes it the draft: the earlier draft is kept aside, and the hash goes so a reload shows the edits
+  const fromLink = useRef(location.hash.startsWith('#v1.'))
+  const [earlier, setEarlier] = useState(() => read(EARLIER))
+  const save = (s: string) => {
+    if (fromLink.current) {
+      fromLink.current = false
+      const draft = readDraft()
+      if (draft != null && draft !== s) {
+        write(EARLIER, draft)
+        setEarlier(draft)
+      }
+      history.replaceState(null, '', `${location.pathname}${location.search}`)
+    }
+    write(DRAFT, s)
+  }
   if (!start) return <p className="pg-note">Opening the link…</p>
   const load = (n: keyof typeof SOURCES) => editor.current?.setSource(SOURCES[n])
   return (
@@ -105,18 +132,17 @@ function Editor() {
             {n}
           </button>
         ))}
+        {earlier != null && (
+          <button type="button" onClick={() => editor.current?.setSource(earlier)}>
+            your earlier draft
+          </button>
+        )}
       </div>
       <LoadmapEditor
         ref={editor}
         initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
         values={'values' in start ? start.values : undefined}
-        onChange={(s) => {
-          try {
-            localStorage.setItem(DRAFT, s)
-          } catch {
-            // private windows refuse storage; the draft is a convenience
-          }
-        }}
+        onChange={save}
         actions={
           <>
             <button type="button" className="lm-btn" onClick={png}>

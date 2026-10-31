@@ -88,11 +88,13 @@ export function completions(source: string, offset: number, compiled?: CompileRe
     if (kind === 'component') return out(ids('component').map((label) => ({ label, type: 'variable' })))
     if (kind === 'enum')
       return out((prop[1] === 'color' ? COLORS : (p?.values ?? [])).map((label) => ({ label, type: 'constant' })))
-    if (p?.scope === 'const' && kind !== 'capacity')
+    if (kind === 'boolean' && p?.scope === 'const')
       return out([
         { label: 'true', type: 'constant' },
         { label: 'false', type: 'constant' },
       ])
+    // a constant number or text: nothing to pick from
+    if (p?.scope === 'const') return out([])
     return out(formulaNames(r, p?.scope ?? 'ctx'))
   }
   // a -> b: |   let x = |

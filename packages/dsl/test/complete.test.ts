@@ -41,7 +41,9 @@ describe('completions', () => {
     expect(labels).toEqual(
       expect.arrayContaining(['load', 'pods', 'batch', 'flows', 'workerCores', 'kfmt', 'measured']),
     )
-    expect(at(inside('param rows "Rows per batch" {', 'hint: |')).labels).toEqual(['true', 'false'])
+    expect(at(inside('param rows "Rows per batch" {', 'hint: |')).labels).toEqual([])
+    expect(at(`${checkout.replace('title: "Checkout pipeline"', 'title: |')}`).labels).toEqual([])
+    expect(at(inside('node db "Postgres" "primary" {', 'plural: |')).labels).toEqual(['true', 'false'])
     expect(at(checkout.replace('memberLabel: `broker ${i}`', 'memberLabel: |')).labels).toEqual(['i'])
   })
 
@@ -69,7 +71,11 @@ describe('share links', () => {
     const link = await encodeShare(alerts, { load: 25, merge: false, posPods: 8 })
     expect(link.startsWith('v1.')).toBe(true)
     expect(link.endsWith('&load=25&merge=false&posPods=8')).toBe(true)
-    expect(await decodeShare(`#${link}`)).toEqual({ source: alerts, values: { load: 25, merge: false, posPods: 8 } })
+    // values come back as written; the editor reads them by each parameter's kind
+    expect(await decodeShare(`#${link}`)).toEqual({
+      source: alerts,
+      values: { load: '25', merge: 'false', posPods: '8' },
+    })
   })
 
   it('stay short enough to paste', async () => {

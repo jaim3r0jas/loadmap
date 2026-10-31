@@ -16,7 +16,11 @@ export async function encodeShare(source: string, values: Readonly<Record<string
   return `${PREFIX}${base64url(packed)}${rest ? `&${rest}` : ''}`
 }
 
-export type Shared = { source: string; values: Record<string, ParamValue> } | { error: string }
+/**
+ * `values` are the texts the link holds: only the model knows whether "20" is a number or the option "20", so the
+ * page reads them by each parameter's kind.
+ */
+export type Shared = { source: string; values: Record<string, string> } | { error: string }
 
 /** Reads a link's hash (with or without its "#"). Never throws: a broken link gives `{ error }`. */
 export async function decodeShare(hash: string): Promise<Shared> {
@@ -37,9 +41,7 @@ export async function decodeShare(hash: string): Promise<Shared> {
   } catch (err) {
     return { error: err instanceof TooLarge ? err.message : 'this link is cut or garbled' }
   }
-  const values: Record<string, ParamValue> = {}
-  for (const [k, v] of new URLSearchParams(amp < 0 ? '' : h.slice(amp + 1)))
-    values[k] = v === 'true' ? true : v === 'false' ? false : v !== '' && Number.isFinite(Number(v)) ? Number(v) : v
+  const values = Object.fromEntries(new URLSearchParams(amp < 0 ? '' : h.slice(amp + 1)))
   return { source, values }
 }
 
