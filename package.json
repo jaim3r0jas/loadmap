@@ -20,6 +20,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
+    "@loadmap/core": "workspace:*",
+    "@loadmap/dsl": "workspace:*",
+    "@loadmap/layout": "workspace:*",
+    "@loadmap/sim": "workspace:*",
     "@types/node": "^24",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

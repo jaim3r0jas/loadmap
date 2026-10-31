@@ -1,0 +1,392 @@
+/**
+ * Every statement of the language: what follows its keyword, its properties and what it may hold. The checker,
+ * autocomplete and the language reference (docs/dsl.md) all read this table, so it is the one place to add a feature.
+ */
+
+/** `o[k]` for an own entry only: a name like "constructor" must not find what every object inherits. */
+export function own<T>(o: Readonly<Record<string, T>>, k: string): T | undefined {
+  return Object.hasOwn(o, k) ? o[k] : undefined
+}
+
+/** What a formula may read: everything, only the parameters, a local (`i`, `value`) or nothing (a constant). */
+export type Scope = 'ctx' | 'values' | 'i' | 'value' | 'const'
+
+export type ValueKind =
+  | 'number'
+  | 'boolean'
+  | 'string'
+  | 'capacity'
+  /** A word from `values`, written bare or quoted: `shape: cylinder`. */
+  | 'enum'
+  /** Names joined by "->": `route: gateway -> topic -> workers`. */
+  | 'route'
+  /** The id of a node, a component, a flow. */
+  | 'node'
+  | 'component'
+  /** A list of options: `[2, 3, 4]`. */
+  | 'options'
+  /** A number, a switch or an option: a parameter's default. */
+  | 'value'
+
+export interface PropSpec {
+  value: ValueKind
+  scope: Scope
+  doc: string
+  required?: boolean
+  values?: readonly string[]
+  /** May appear more than once; each adds to a list. */
+  repeat?: boolean
+}
+
+export interface ArgSpec {
+  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y'
+  kind: 'id' | 'text' | 'number'
+  optional?: boolean
+  /** A text that may be a template computed from the model. */
+  dynamic?: boolean
+}
+
+export interface BlockSpec {
+  doc: string
+  /** An example line, shown by autocomplete. */
+  example: string
+  args: readonly ArgSpec[]
+  /** `let x = …`. */
+  init?: boolean
+  props: Readonly<Record<string, PropSpec>>
+  /** Keywords of the statements it may hold. */
+  children: readonly string[]
+  /** Its properties are named by the model: parameter ids in a preset, flow ids in partitions. */
+  open?: { names: 'values' | 'flows'; spec: PropSpec }
+  /** It holds `a -> b` lines: edges at the top, branches in a fan-out. */
+  edges?: 'edges' | 'branches'
+  /** It holds rows of numbers. */
+  rows?: boolean
+}
+
+const STAGE_LABEL: ArgSpec[] = [
+  { name: 'id', kind: 'id', optional: true },
+  { name: 'label', kind: 'text', optional: true },
+]
+const STAGE_COMPONENT: PropSpec = {
+  value: 'component',
+  scope: 'const',
+  doc: "The component whose capacity this stage uses. Defaults to its box's component.",
+}
+
+/** A component's properties: on a box, or in a `component` block. */
+export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
+  name: { value: 'string', scope: 'const', doc: "The component's name in the limits list. Defaults to the label." },
+  short: { value: 'string', scope: 'const', doc: 'The name inside a sentence, with its article: "the database".' },
+  plural: { value: 'boolean', scope: 'const', doc: '"are past capacity" instead of "is".' },
+  demand: { value: 'number', scope: 'ctx', doc: "What the component must handle, in its capacity's unit." },
+  capacity: {
+    value: 'capacity',
+    scope: 'ctx',
+    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source).',
+  },
+  when: { value: 'boolean', scope: 'ctx', doc: 'The component is switched off (no utilization) while this is false.' },
+  over: { value: 'string', scope: 'ctx', doc: 'What happens past 100 %, as a clause: "clients get 429s".' },
+  describe: { value: 'string', scope: 'ctx', doc: 'One line under the name in the limits list.' },
+}
+
+const BOX_ARGS: ArgSpec[] = [
+  { name: 'id', kind: 'id' },
+  { name: 'label', kind: 'text', optional: true, dynamic: true },
+  { name: 'sub', kind: 'text', optional: true, dynamic: true },
+]
+const SUB: PropSpec = { value: 'string', scope: 'ctx', doc: 'The second line of the box.' }
+const OVERLOAD_WHEN: PropSpec = { value: 'boolean', scope: 'ctx', doc: 'The rule applies only while this is true.' }
+
+export const COLORS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted'] as const
+
+export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
+  // the document itself
+  '': {
+    doc: 'A loadmap definition.',
+    example: '',
+    args: [],
+    props: {
+      title: { value: 'string', scope: 'const', doc: 'The heading above the diagram.' },
+      layout: {
+        value: 'enum',
+        scope: 'const',
+        values: ['right', 'down'],
+        doc: 'Which way the diagram runs. Narrow screens always run down.',
+      },
+      speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
+      assume: { value: 'string', scope: 'const', repeat: true, doc: 'A line added before the generated assumptions.' },
+      searchMax: {
+        value: 'number',
+        scope: 'const',
+        doc: 'The highest load multiple the limits search. Default 2000.',
+      },
+    },
+    children: [
+      'loadmap',
+      'load',
+      'param',
+      'preset',
+      'let',
+      'fit',
+      'flow',
+      'component',
+      'node',
+      'cluster',
+      'pool',
+      'thresholds',
+    ],
+    edges: 'edges',
+  },
+  loadmap: {
+    doc: 'The first line: the version of the language this definition is written in.',
+    example: 'loadmap 1',
+    args: [{ name: 'version', kind: 'number' }],
+    props: {},
+    children: [],
+  },
+  load: {
+    doc: 'The load, as a multiple of today. It drives the limits.',
+    example: 'load "Users, × today" { max: 100; default: 10 }',
+    args: [{ name: 'label', kind: 'text', optional: true }],
+    props: {
+      min: { value: 'number', scope: 'const', doc: 'The lowest multiple. Default 1.' },
+      max: { value: 'number', scope: 'const', doc: 'The highest multiple on the slider.', required: true },
+      step: { value: 'number', scope: 'const', doc: 'The slider step. Default 1.' },
+      default: { value: 'number', scope: 'const', doc: 'Where the slider starts. Default the minimum.' },
+    },
+    children: [],
+  },
+  param: {
+    doc: 'A control: options make a select, min and max a slider, a true or false default a switch.',
+    example: 'param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {
+      options: { value: 'options', scope: 'const', doc: 'The choices of a select: [2, 3, 4] or ["a", "b"].' },
+      min: { value: 'number', scope: 'const', doc: 'The lowest value of a slider.' },
+      max: { value: 'number', scope: 'const', doc: 'The highest value of a slider.' },
+      step: { value: 'number', scope: 'const', doc: 'The step of a slider. Default 1.' },
+      default: { value: 'value', scope: 'const', doc: 'The starting value.', required: true },
+      hint: { value: 'string', scope: 'const', doc: 'One line under the control.' },
+      tag: { value: 'string', scope: 'const', doc: 'A short tag next to the label, e.g. "estimate".' },
+      enabled: {
+        value: 'boolean',
+        scope: 'values',
+        doc: 'Greys the control out while this is false; it reads only parameters.',
+      },
+      format: { value: 'string', scope: 'value', doc: 'How a value is shown, from `value`: `${value} pods`.' },
+    },
+    children: [],
+  },
+  preset: {
+    doc: 'A named set of values, offered as a button.',
+    example: 'preset "Black Friday" { load: 40; pods: 6 }',
+    args: [{ name: 'label', kind: 'text' }],
+    props: {},
+    children: [],
+    open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
+  },
+  let: {
+    doc: 'A named formula other formulas can use by its name.',
+    example: 'let perPosition = watchOnly ? 0.3 : 1.2',
+    args: [{ name: 'id', kind: 'id' }],
+    init: true,
+    props: {},
+    children: [],
+  },
+  fit: {
+    doc: 'cost = a + b × x, fitted from measured points. Call it like a function: workerCores(rate).',
+    example: 'fit workerCores "Worker CPU per request" { source: "load test"; points rate cores { 200 0.26 } }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {
+      source: { value: 'string', scope: 'const', doc: 'Where the points came from.' },
+      through: { value: 'enum', scope: 'const', values: ['origin'], doc: 'origin: a cost with no idle part (a = 0).' },
+    },
+    children: ['points'],
+  },
+  points: {
+    doc: 'The measured points of a fit: the names of x and y, then one "x y" row per line.',
+    example: 'points rate cores {\n  200 0.2599\n  350 0.3061\n}',
+    args: [
+      { name: 'x', kind: 'id' },
+      { name: 'y', kind: 'id' },
+    ],
+    props: {},
+    children: [],
+    rows: true,
+  },
+  flow: {
+    doc: 'Something that moves through the system, with its rate and its route.',
+    example: 'flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workers }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {
+      unit: { value: 'string', scope: 'const', doc: 'One unit of the flow, singular: "order".' },
+      rate: { value: 'number', scope: 'ctx', doc: 'Units per second.', required: true },
+      priority: { value: 'number', scope: 'const', doc: '1 is served first. Flows of the same priority share.' },
+      route: { value: 'route', scope: 'const', doc: 'The stages it passes, in order: a -> b -> c.', required: true },
+      from: { value: 'node', scope: 'const', doc: 'The node its dots start from.', required: true },
+      color: {
+        value: 'enum',
+        scope: 'const',
+        values: COLORS,
+        doc: 'A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes.',
+      },
+    },
+    children: ['drop', 'merge'],
+  },
+  drop: {
+    doc: 'Units older than olderThan simulated seconds are dropped before they are handled.',
+    example: 'drop { olderThan: 60; reason: "too old" }',
+    args: [],
+    props: {
+      olderThan: { value: 'number', scope: 'ctx', doc: 'Seconds.', required: true },
+      reason: { value: 'string', scope: 'ctx', doc: 'Shown with the drop meter.' },
+      when: OVERLOAD_WHEN,
+    },
+    children: [],
+  },
+  merge: {
+    doc: 'Under backlog, this share of what is handled is superseded by a newer unit: keep the newest per key.',
+    example: 'merge { share: 0.37; reason: "newest kept" }',
+    args: [],
+    props: {
+      share: { value: 'number', scope: 'ctx', doc: 'The share superseded, 0 to 1.', required: true },
+      reason: { value: 'string', scope: 'ctx', doc: 'Shown with the meter.' },
+      when: OVERLOAD_WHEN,
+    },
+    children: [],
+  },
+  component: {
+    doc: 'Something that can run out: its demand against its capacity. On a box, write these lines on the box.',
+    example: 'component cache "Cache" { demand: flows.reads; capacity: estimated(9000, "req/s") }',
+    args: [
+      { name: 'id', kind: 'id', optional: true },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: COMPONENT_PROPS,
+    children: [],
+  },
+  node: {
+    doc: 'A box. It may run a stage (pass, store, sink, fanout) and own a component (demand and capacity lines).',
+    example: 'node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }',
+    args: BOX_ARGS,
+    props: {
+      sub: SUB,
+      shape: { value: 'enum', scope: 'const', values: ['box', 'cylinder'], doc: 'box (the default) or cylinder.' },
+      ...COMPONENT_PROPS,
+    },
+    children: ['pass', 'store', 'sink', 'fanout', 'component'],
+  },
+  cluster: {
+    doc: 'Members (brokers) holding the partitions of one or more queues (topics).',
+    example: 'cluster kafka "Kafka" { members: 3; queue topic { partitions { orders: 12 } } }',
+    args: BOX_ARGS,
+    props: {
+      sub: SUB,
+      members: { value: 'number', scope: 'ctx', doc: 'How many members.', required: true },
+      memberLabel: { value: 'string', scope: 'i', doc: "Each member's label, from its index i: `broker ${i}`." },
+      ...COMPONENT_PROPS,
+    },
+    children: ['queue', 'component'],
+  },
+  pool: {
+    doc: 'A workers stage drawn as pods holding a grid of workers.',
+    example: 'pool workers "Workers" { workers { pods: pods; perPod: 8 } }',
+    args: BOX_ARGS,
+    props: {
+      sub: SUB,
+      podLabel: { value: 'string', scope: 'i', doc: "Each pod's label, from its index i: `pod ${i}`." },
+      ...COMPONENT_PROPS,
+    },
+    children: ['workers', 'component'],
+  },
+  pass: {
+    doc: 'Flows pass through; past capacity the share above 100 % is rejected.',
+    example: 'pass "the gateway"',
+    args: STAGE_LABEL,
+    props: { component: STAGE_COMPONENT },
+    children: [],
+  },
+  store: {
+    doc: 'Where a flow ends: written to its component.',
+    example: 'store',
+    args: STAGE_LABEL,
+    props: { component: STAGE_COMPONENT },
+    children: [],
+  },
+  sink: {
+    doc: 'Where a flow ends without a component: a receiver, a viewer.',
+    example: 'sink "contacts"',
+    args: STAGE_LABEL,
+    props: {},
+    children: [],
+  },
+  queue: {
+    doc: 'Flows wait here; the next stage of each route drains it.',
+    example: 'queue topic "orders topic" { partitions { orders: 12 } }',
+    args: STAGE_LABEL,
+    props: { component: STAGE_COMPONENT },
+    children: ['partitions'],
+  },
+  partitions: {
+    doc: 'Partitions per flow, drawn as cells across the members.',
+    example: 'partitions { orders: 12; events: 24 }',
+    args: [],
+    props: {},
+    children: [],
+    open: { names: 'flows', spec: { value: 'number', scope: 'ctx', doc: 'Partitions of this flow.' } },
+  },
+  workers: {
+    doc: 'A pool of workers: pods × workers per pod.',
+    example: 'workers { pods: pods; perPod: 8 }',
+    args: STAGE_LABEL,
+    props: {
+      pods: { value: 'number', scope: 'ctx', doc: 'How many pods.', required: true },
+      perPod: { value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
+      fill: {
+        value: 'enum',
+        scope: 'const',
+        values: ['round-robin', 'in-order'],
+        doc: 'round-robin spreads work across pods (the default); in-order fills pod 0 first.',
+      },
+      component: STAGE_COMPONENT,
+    },
+    children: [],
+  },
+  fanout: {
+    doc: 'Each unit is copied to several stages; one "flow -> stage: copies" line per branch. Last on a route.',
+    example: 'fanout "push broker" {\n  alerts -> contacts: 1\n}',
+    args: STAGE_LABEL,
+    props: { component: STAGE_COMPONENT },
+    children: [],
+    edges: 'branches',
+  },
+  thresholds: {
+    doc: 'The utilization of the target and of "runs out".',
+    example: 'thresholds { target: 0.5; full: 1 }',
+    args: [],
+    props: {
+      target: { value: 'number', scope: 'const', doc: 'Default 0.5.' },
+      full: { value: 'number', scope: 'const', doc: 'Default 1.' },
+    },
+    children: [],
+  },
+}
+
+/** The properties of an edge's block: `a -> b { label: …; when: … }`. */
+export const EDGE_PROPS: Readonly<Record<string, PropSpec>> = {
+  label: { value: 'string', scope: 'ctx', doc: 'The text on the edge.' },
+  when: { value: 'boolean', scope: 'ctx', doc: 'The edge is left out while this is false.' },
+}
+
+export const BOXES = ['node', 'cluster', 'pool'] as const
+export const STAGES = ['pass', 'store', 'sink', 'queue', 'workers', 'fanout'] as const

@@ -13,7 +13,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node", "@vitest/browser-playwright"]
+    "types": ["node", "vite/client", "@vitest/browser-playwright"]
   },
   "include": [
     "packages/*/src",

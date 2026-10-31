@@ -169,6 +169,18 @@ importers:
       '@biomejs/biome':
         specifier: 2.6.4
         version: 2.6.4
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:packages/dsl
+      '@loadmap/layout':
+        specifier: workspace:*
+        version: link:packages/layout
+      '@loadmap/sim':
+        specifier: workspace:*
+        version: link:packages/sim
       '@types/node':
         specifier: ^24
         version: 24.19.2
@@ -235,6 +247,9 @@ importers:
       '@loadmap/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:../../packages/dsl
       '@loadmap/layout':
         specifier: workspace:*
         version: link:../../packages/layout
@@ -250,6 +265,9 @@ importers:
       '@loadmap/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:../../packages/dsl
       '@loadmap/export':
         specifier: workspace:*
         version: link:../../packages/export
@@ -281,6 +299,15 @@ importers:
         version: 1.65.0
 
   packages/core: {}
+
+  packages/dsl:
+    dependencies:
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:../core
+      '@loadmap/layout':
+        specifier: workspace:*
+        version: link:../layout
 
   packages/export:
     dependencies:
