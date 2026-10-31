@@ -13,7 +13,7 @@ on a fixed clock, so the same options give the same file.
   --script <file.json>  [{ "at": 0, "set": { "load": 5 } }, …] or { "seconds", "fps", "script": […] }
   --set <key=value>     a value before recording starts; repeatable (--set load=30 --set pods=6)
   --seconds <n>         length of a video or GIF (default 8, or the script's)
-  --fps <n>             frames per second (default 30, GIF 15)
+  --fps <n>             frames per second (default 30; GIF 15, at most 50)
   --scale <n>           pixels per diagram unit (default 1, PNG 2)
   --seed <n>            the sim's seed (default 1)
   --name <name>         which exposed loadmap, when the page has several (default "default")
@@ -67,7 +67,12 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   })
   const url = positionals[0]
   if (!url || !v.out) throw new Error(`loadmap record needs a URL and --out\n\n${USAGE}`)
-  const num = (x: string | undefined) => (x == null ? undefined : Number(x))
+  const num = (x: string | undefined, name: string) => {
+    if (x == null) return undefined
+    const n = Number(x)
+    if (!x.trim() || !Number.isFinite(n) || n <= 0) throw new Error(`--${name} takes a positive number, not "${x}"`)
+    return n
+  }
   let script: RecordArgs['script']
   let fromFile: { seconds?: number; fps?: number } = {}
   if (v.script) {
@@ -79,9 +84,10 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   for (const kv of v.set ?? []) {
     const i = kv.indexOf('=')
     if (i < 1) throw new Error(`--set takes key=value, not "${kv}"`)
-    const raw = kv.slice(i + 1)
-    set[kv.slice(0, i)] =
-      raw === 'true' ? true : raw === 'false' ? false : Number.isNaN(Number(raw)) ? raw : Number(raw)
+    const raw = kv.slice(i + 1).trim()
+    if (!raw) throw new Error(`--set ${kv.slice(0, i)}= has no value`)
+    const n = Number(raw)
+    set[kv.slice(0, i)] = raw === 'true' ? true : raw === 'false' ? false : Number.isFinite(n) ? n : raw
   }
   const scheme = v['color-scheme'] ?? 'light'
   if (scheme !== 'light' && scheme !== 'dark') throw new Error('--color-scheme is light or dark')
@@ -90,12 +96,12 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
     out: v.out,
     script,
     set,
-    seconds: num(v.seconds) ?? fromFile.seconds,
-    fps: num(v.fps) ?? fromFile.fps,
-    scale: num(v.scale),
-    seed: num(v.seed),
+    seconds: num(v.seconds, 'seconds') ?? fromFile.seconds,
+    fps: num(v.fps, 'fps') ?? fromFile.fps,
+    scale: num(v.scale, 'scale'),
+    seed: num(v.seed, 'seed'),
     name: v.name ?? 'default',
-    width: num(v.width) ?? 1280,
+    width: num(v.width, 'width') ?? 1280,
     colorScheme: scheme,
   }
 }

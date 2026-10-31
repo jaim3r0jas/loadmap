@@ -11,14 +11,14 @@ pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (
 mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
 stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
-| Package           | What                                                                                       | Depends on                      |
-| ----------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
-| `@loadmap/core`   | params, lazy model context, components, limits, verdict, presets, stages; `core/calibrate` | nothing                         |
-| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                          | core                            |
-| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                     |
-| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, engine, theme                                  | core, sim, layout; react (peer) |
-| `@loadmap/export` | PNG and WebM/MP4 on a fixed clock                                                          | react, mediabunny               |
-| `@loadmap/cli`    | `loadmap record <url> --out x.gif                                                          | webm                            | mp4 | png`: Playwright drives a page that calls `expose()` | playwright |
+| Package           | What                                                                                        | Depends on                      |
+| ----------------- | ------------------------------------------------------------------------------------------- | ------------------------------- |
+| `@loadmap/core`   | params, lazy model context, components, limits, verdict, presets, stages; `core/calibrate`  | nothing                         |
+| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                           | core                            |
+| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                            | core, elkjs                     |
+| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, engine, theme                                   | core, sim, layout; react (peer) |
+| `@loadmap/export` | PNG, GIF and WebM/MP4 on a fixed clock; `expose()` for the CLI                              | react, mediabunny               |
+| `@loadmap/cli`    | `loadmap record`: Playwright records a page that calls `expose()`, as GIF, WebM, MP4 or PNG | playwright                      |
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests; `apps/playground` shows both (`pnpm dev`, `?example=alerts`).

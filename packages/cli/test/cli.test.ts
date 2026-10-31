@@ -27,6 +27,14 @@ describe('arguments', () => {
     await rm(dir, { recursive: true })
   })
 
+  it('refuses numbers that would write a broken file', async () => {
+    await expect(parseRecord(['http://x/', '--out', 'a.gif', '--seconds', '8s'])).rejects.toThrow(
+      /--seconds takes a positive number/,
+    )
+    await expect(parseRecord(['http://x/', '--out', 'a.gif', '--fps', '0'])).rejects.toThrow(/--fps/)
+    await expect(parseRecord(['http://x/', '--out', 'a.gif', '--set', 'load='])).rejects.toThrow(/has no value/)
+  })
+
   it('explains itself without a command, and asks for --out', async () => {
     const out: string[] = []
     expect(await main([], (s) => out.push(s))).toBe(2)
@@ -76,6 +84,11 @@ describe('recording the playground', () => {
     const b = await record(await args('b.gif', ['--set', 'load=30']))
     expect(a.subarray(0, 6).toString('latin1')).toBe('GIF89a')
     expect(a.equals(b)).toBe(true)
+    // the frame delays (graphic control extensions, in hundredths) add up to the second asked for
+    let cs = 0
+    for (let i = 0; i < a.length - 5; i++)
+      if (a[i] === 0x21 && a[i + 1] === 0xf9 && a[i + 2] === 4) cs += a.readUInt16LE(i + 4)
+    expect(cs).toBe(100)
   }, 120_000)
 
   for (const format of ['webm', 'mp4'] as const)

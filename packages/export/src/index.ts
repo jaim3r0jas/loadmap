@@ -26,7 +26,7 @@ export interface FrameOptions {
 
 export interface RecordOptions extends FrameOptions {
   seconds: number
-  /** Default 30 for video, 15 for GIF. */
+  /** Default 30 for video, 15 for GIF. A GIF takes at most 50: its frame delays are whole hundredths. */
   fps?: number
   format?: 'webm' | 'mp4' | 'gif'
   /** Value changes during the recording, e.g. the load rising from 1× to 40×. */
@@ -84,6 +84,8 @@ export async function exportPng(handle: LoadmapHandle, o: FrameOptions = {}): Pr
 export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Promise<Blob> {
   const format = o.format ?? 'webm'
   const fps = o.fps ?? (format === 'gif' ? 15 : 30)
+  if (!(fps > 0) || !(o.seconds > 0)) throw new Error('loadmap: seconds and fps must be positive')
+  if (format === 'gif' && fps > 50) throw new Error('loadmap: a GIF plays at most 50 frames a second')
   const script = [...(o.script ?? [])].sort((a, b) => a.at - b.at)
   await handle.ready()
   const before = handle.values()
@@ -93,6 +95,8 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
     await warmUp(handle, o.seed ?? 1, o.warmup ?? 2, fps)
 
     const canvas = document.createElement('canvas')
+    // a GIF reads every frame back: ask for a canvas kept in memory before anything draws on it
+    if (format === 'gif') canvas.getContext('2d', { willReadFrequently: true })
     await composeFrame(handle, { scale: o.scale ?? 1 }, canvas)
     const sink = format === 'gif' ? gifSink(canvas, fps) : await videoSink(canvas, format, fps)
 
@@ -196,12 +200,17 @@ async function videoSink(canvas: HTMLCanvasElement, format: 'webm' | 'mp4', fps:
 /** A GIF with a palette per frame, so flow colours stay true; pure JavaScript, so its bytes are reproducible. */
 function gifSink(canvas: HTMLCanvasElement, fps: number): Sink {
   const gif = GIFEncoder()
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
-  const delay = Math.round(1000 / fps)
+  const ctx = canvas.getContext('2d')!
+  // delays are whole hundredths: frame i lasts from round(100 i / fps) to round(100 (i + 1) / fps), so the GIF's
+  // length matches the seconds asked for
+  const cs = (i: number) => Math.round((100 * i) / fps)
+  let i = 0
   return {
     add: async () => {
       const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height)
       const palette = quantize(data, 256)
+      const delay = 10 * (cs(i + 1) - cs(i))
+      i++
       gif.writeFrame(applyPalette(data, palette), width, height, { palette, delay, repeat: 0 })
     },
     finish: async () => {

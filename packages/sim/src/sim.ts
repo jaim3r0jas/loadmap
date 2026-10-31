@@ -125,7 +125,16 @@ export class Sim {
   /** New values or a new evaluation: rates and capacities change, backlog stays. A new shape clears the dots. */
   update(ev: Evaluation): void {
     this.#ev = ev
-    const shape = JSON.stringify(Object.values(ev.stages))
+    // only what places dots: partitions and workers (a fan-out share or a label does not move a dot)
+    const shape = JSON.stringify(
+      (Object.values(ev.stages) as ResolvedStage[]).map((st) =>
+        st.kind === 'queue'
+          ? [st.id, st.partitions]
+          : st.kind === 'workers'
+            ? [st.id, st.pods, st.perPod, st.fill]
+            : [st.id, st.kind],
+      ),
+    )
     if (shape !== this.#shape) {
       this.#shape = shape
       this.particles = []
@@ -137,7 +146,8 @@ export class Sim {
     this.#shed.clear()
     this.#inflow.clear()
     for (const s of Object.values(ev.stages) as ResolvedStage[]) {
-      const u = s.kind === 'pass' ? this.#util(s.component) : null
+      // a pass stage rejects arrivals, a fan-out rejects copies, past its component's capacity
+      const u = (s.kind === 'pass' || s.kind === 'fanout') && s.component ? this.#util(s.component) : null
       this.#shed.set(s.id, u != null && u > full ? 1 - full / u : 0)
     }
     for (const f of this.#model.flowIds) {
@@ -191,7 +201,7 @@ export class Sim {
     return this.#busy.get(stage) ?? this.#steadyBusy(stage)
   }
 
-  /** The share of arrivals a pass stage rejects because its component is past capacity. */
+  /** The share a pass stage (arrivals) or a fan-out (copies) rejects because its component is past capacity. */
   shed(stage: string): number {
     return this.#shed.get(stage) ?? 0
   }
@@ -233,14 +243,15 @@ export class Sim {
         const fq = qs.get(f) ?? { cohorts: [], s: emptyQueue() }
         qs.set(f, fq)
         const inflow = this.#inflow.get(`${q.id}/${f}`) ?? 0
+        const share = Math.min(0.95, Math.max(0, ev.overload[f]?.merge?.share ?? 0))
+        // a merge works on backlog: more than a second of arrivals already waiting, this step's own not counted
+        fq.s.merging = share > 0 && backlog(fq.cohorts) > inflow * 1
         const n = inflow * dt
         const last = fq.cohorts.at(-1)
         if (last && this.time - last.t < MERGE_WINDOW) last.n += n
         else if (n > 0) fq.cohorts.push({ t: this.time, n })
         if (fq.cohorts.length > MAX_COHORTS) fq.cohorts = mergePairs(fq.cohorts)
         const drainer = route[route.indexOf(q.id) + 1] ?? '∞'
-        const share = Math.min(0.95, Math.max(0, ev.overload[f]?.merge?.share ?? 0))
-        fq.s.merging = share > 0 && backlog(fq.cohorts) > inflow * 1
         const k = fq.s.merging ? 1 / (1 - share) : 1
         entries.push({ q: q.id, f, fq, drainer, prio: this.#model.def.flows[f]?.priority ?? 1, k })
       }
@@ -254,12 +265,14 @@ export class Sim {
       let avail = d === '∞' ? Number.POSITIVE_INFINITY : (this.#capacity.get(d) ?? Number.POSITIVE_INFINITY) * dt
       for (const pr of [...new Set(feeding.map((e) => e.prio))].sort((a, b) => a - b)) {
         const group = feeding.filter((e) => e.prio === pr)
-        const want = group.reduce((a, e) => a + backlog(e.fq.cohorts), 0)
+        // what each entry needs in capacity units: a merging one clears its backlog with 1 / k of it
+        const want = group.reduce((a, e) => a + backlog(e.fq.cohorts) / e.k, 0)
         let took = 0
         for (const e of group) {
           const b = backlog(e.fq.cohorts)
           // a merge removes k units for each unit of capacity: the newest of each key is handled, the rest superseded
-          const removed = Number.isFinite(avail) ? (want > 0 ? Math.min(b, ((avail * b) / want) * e.k) : 0) : b
+          // its capacity share is avail × (b / k) / want; that share removes k times as many units
+          const removed = Number.isFinite(avail) ? (want > 0 ? Math.min(b, (avail * b) / want) : 0) : b
           const used = removed / e.k
           serveOldest(e.fq.cohorts, removed)
           took += used
@@ -352,7 +365,9 @@ export class Sim {
       }
       if (d.phase === 'move' && d.branch) {
         // a fan-out copy ends where it lands
-        fade(d, stage.kind === 'pass' && this.#r() < this.shed(stage.id) ? 'rejected' : 'delivered', 0.35)
+        const refused =
+          this.#r() < this.shed(d.from.stage ?? '') || (stage.kind === 'pass' && this.#r() < this.shed(stage.id))
+        fade(d, refused ? 'rejected' : 'delivered', 0.35)
       } else if (d.phase === 'move' && stage.kind === 'fanout') {
         let made = 0
         for (const b of stage.to[d.flow] ?? []) {

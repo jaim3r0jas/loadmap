@@ -4,7 +4,7 @@ import { alerts } from './model'
 
 export const view = topology(alerts, {
   nodes: {
-    phones: node({ label: 'Phones', sub: 'alerts and positions' }),
+    phones: node({ label: 'Devices', sub: 'alerts and positions' }),
     gateway: node({ label: 'Gateway', stage: 'gateway' }),
     brokers: cluster({
       label: 'Brokers',
@@ -21,19 +21,19 @@ export const view = topology(alerts, {
     posPods: pool({ label: 'Position consumer', sub: ({ posPods }) => `${posPods} pods × 16`, stage: 'posPods' }),
     db: node({ label: 'State store', sub: 'primary', component: 'db', shape: 'cylinder' }),
     push: node({ label: 'Push broker', sub: ({ pushNodes }) => `${pushNodes} nodes`, stage: 'push' }),
-    members: node({ label: 'Group members', sub: 'alerted', stage: 'members' }),
+    contacts: node({ label: 'Contacts', sub: 'notified', stage: 'contacts' }),
     responders: node({ label: 'Responders', sub: 'on duty', stage: 'responders' }),
-    watchers: node({ label: 'Watchers', sub: 'map open', stage: 'watchers' }),
+    watchers: node({ label: 'Watchers', sub: 'following live', stage: 'watchers' }),
   },
   edges: [
-    edge('phones', 'gateway', { label: 'POST /status' }),
+    edge('phones', 'gateway', { label: 'POST /events' }),
     edge('gateway', 'brokers', { label: ({ flows }) => `${kfmt(flows.positions)} positions/s` }),
     edge('brokers', 'alertPods'),
     edge('brokers', 'posPods'),
     edge('alertPods', 'db', { label: 'state writes' }),
     edge('alertPods', 'push'),
     edge('posPods', 'push', { label: ({ merge }) => (merge ? 'newest per user' : 'every fix') }),
-    edge('push', 'members'),
+    edge('push', 'contacts'),
     edge('push', 'responders'),
     edge('push', 'watchers', { label: ({ watchOnly }) => (watchOnly ? 'watchers only' : 'every receiver') }),
   ],

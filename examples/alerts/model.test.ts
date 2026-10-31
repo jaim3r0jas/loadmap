@@ -35,7 +35,7 @@ describe('alerts model', () => {
     const fan = (e: typeof on) => (e.stages.push.kind === 'fanout' ? e.stages.push.to : {})
     expect(fan(on).positions).toEqual([{ stage: 'watchers', share: 0.3 }])
     expect(fan(off).positions).toEqual([{ stage: 'watchers', share: 1.2 }])
-    expect(fan(on).alerts?.map((b) => b.stage)).toEqual(['members', 'responders'])
+    expect(fan(on).alerts?.map((b) => b.stage)).toEqual(['contacts', 'responders'])
   })
 })
 

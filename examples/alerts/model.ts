@@ -4,7 +4,8 @@ import { defineModel, estimated, fanout, measured, p, pass, queue, sink, workers
 import { fitLinear } from '@loadmap/core/calibrate'
 import cpu from './alert-cpu.json'
 
-export const alertCores = fitLinear(cpu, { x: 'rate', y: 'cores', source: 'profiling run, staging' })
+// a synthetic series: 0.15 cores + 4 ms per alert, ±4 % noise
+export const alertCores = fitLinear(cpu, { x: 'rate', y: 'cores', source: 'synthetic series' })
 
 /** Push packets per position: to watchers only, or to every receiver. */
 const perPosition = (watchOnly: boolean) => (watchOnly ? 0.3 : 1.2)
@@ -105,13 +106,13 @@ export const alerts = defineModel({
       component: 'push',
       to: ({ watchOnly }) => ({
         alerts: [
-          { stage: 'members', share: 1 },
+          { stage: 'contacts', share: 1 },
           { stage: 'responders', share: 0.4 },
         ],
         positions: [{ stage: 'watchers', share: perPosition(watchOnly) }],
       }),
     }),
-    members: sink({ label: 'group members' }),
+    contacts: sink({ label: 'contacts' }),
     responders: sink({ label: 'responders' }),
     watchers: sink({ label: 'watchers' }),
   },

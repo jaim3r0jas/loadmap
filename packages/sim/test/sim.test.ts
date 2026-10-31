@@ -318,3 +318,76 @@ describe('fan-out', () => {
     expect(() => m.evaluate()).toThrow(/not a sink, store or pass stage/)
   })
 })
+
+describe('second review', () => {
+  it('does not merge without backlog, even with steps over a second', () => {
+    const m = fanModel({ rate: 50, cap: 100 })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10 })
+    for (let i = 0; i < 40; i++) sim.step(1 / 8)
+    expect(sim.queue('topic', 'pos')).toMatchObject({ merging: false, merged: 0 })
+  })
+
+  it('rejects fan-out copies when its component is past capacity', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 50 * load } },
+      components: { push: { name: 'Push', demand: ({ flows }) => flows.a, capacity: measured(25, 'u/s'), over: '' } },
+      stages: { push: fanout({ component: 'push', to: [{ stage: 'out', share: 1 }] }), out: sink() },
+      routes: { a: ['push'] },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10, seed: 2 })
+    expect(sim.shed('push')).toBeCloseTo(0.5)
+    const seen = new Map<number, string | undefined>()
+    for (let i = 0; i < 3600; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) if (d.branch && d.phase === 'fade') seen.set(d.id, d.outcome)
+    }
+    const rejected = [...seen.values()].filter((o) => o === 'rejected').length
+    expect(rejected / seen.size).toBeGreaterThan(0.35)
+    expect(rejected / seen.size).toBeLessThan(0.65)
+  })
+
+  it('gives a merging flow only the capacity it needs, the rest to its peers', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: {
+        a: { rate: () => 100, overload: { merge: { share: 0.5 } } },
+        b: { rate: () => 100 },
+      },
+      components: {
+        pool: { name: 'Pool', demand: ({ flows }) => flows.a + flows.b, capacity: measured(150, 'u/s'), over: '' },
+      },
+      stages: {
+        qa: queue({ partitions: { a: 2 } }),
+        qb: queue({ partitions: { b: 2 } }),
+        pool: workers('pool', { pods: 1, perPod: 2 }),
+      },
+      routes: { a: ['qa', 'pool'], b: ['qb', 'pool'] },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { speed: 10 })
+    for (let i = 0; i < 3600; i++) sim.step(1 / 60)
+    // the pool is saturated: every unit of its 150/s is used
+    expect(sim.queue('qa', 'a').served + sim.queue('qb', 'b').served).toBeCloseTo(150, 0)
+  })
+
+  it('keeps the dots when only a fan-out share changes', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      params: { wide: p.switch({ label: 'Wide', default: false }) },
+      flows: { a: { rate: () => 100 } },
+      components: { c: { name: 'C', demand: () => 1, capacity: measured(10, 'x'), over: '' } },
+      stages: {
+        q: queue({ partitions: { a: 2 } }),
+        f: fanout({ to: ({ wide }) => [{ stage: 's', share: wide ? 2 : 1 }] }),
+        s: sink(),
+      },
+      routes: { a: ['q', 'f'] },
+    })
+    const sim = createSim(m, m.evaluate(), { speed: 10 })
+    for (let i = 0; i < 60; i++) sim.step(1 / 60)
+    const before = sim.particles.length
+    sim.update(m.evaluate({ wide: true }))
+    expect(before).toBeGreaterThan(0)
+    expect(sim.particles.length).toBe(before)
+  })
+})
