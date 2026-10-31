@@ -54,6 +54,38 @@ checkout.evaluate({ load: 40 }).verdict.text
 
 The full example, with its view and tests, is in [`examples/checkout`](examples/checkout).
 
+## Or as text
+
+The same model and view can be written as a `.loadmap` definition and edited next to its live diagram (`pnpm dev`,
+then the editor tab). `@loadmap/dsl` compiles it to what `<Loadmap>` takes:
+
+```
+loadmap 1
+load "Users, × today" { max: 100; default: 10 }
+param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
+
+flow orders "orders" { rate: 40 * load; route: gateway -> workers; from: phones }
+
+node phones "Phones"
+node gateway "API gateway" {
+  pass
+  demand: flows.orders
+  capacity: estimated(20_000, "req/s", "vendor benchmark")
+  over: "clients get 429s"
+}
+pool workers "Workers" `${pods} pods × 8 threads` {
+  workers { pods: pods; perPod: 8 }
+  demand: flows.orders * 0.004
+  capacity: measured(pods * 2, "cores", "pod CPU limit")
+  over: "messages wait and the lag keeps growing"
+}
+
+phones -> gateway -> workers
+```
+
+Formulas are a small subset of TypeScript expressions, never `eval`, so a definition can be shared as a link. See
+[`docs/dsl.md`](docs/dsl.md).
+
 ## Develop
 
 ```bash
