@@ -113,6 +113,8 @@ describe('export', () => {
       script: [
         { at: 0, set: { load: 5 } },
         { at: 1, set: { load: 30 } },
+        // more pods change the layout mid-recording: the frame keeps its size
+        { at: 2, set: { pods: 6 } },
       ],
     }
     const runs: string[][] = []

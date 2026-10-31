@@ -19,6 +19,8 @@ export interface ScriptStep {
 export interface FrameOptions {
   /** Pixels per scene unit. Default 2 for stills, 1 for video. */
   scale?: number
+  /** A fixed frame size: the board is scaled to fit and centred. A video keeps its first frame's size. */
+  size?: { width: number; height: number }
 }
 
 export interface RecordOptions extends FrameOptions {
@@ -43,9 +45,11 @@ export async function composeFrame(
 ): Promise<HTMLCanvasElement> {
   await handle.ready()
   const b = handle.board()!
-  const scale = o.scale ?? 2
-  const w = even(b.scene.width * scale)
-  const h = even(b.scene.height * scale)
+  const w = o.size?.width ?? even(b.scene.width * (o.scale ?? 2))
+  const h = o.size?.height ?? even(b.scene.height * (o.scale ?? 2))
+  const scale = Math.min(w / b.scene.width, h / b.scene.height)
+  const dw = b.scene.width * scale
+  const dh = b.scene.height * scale
   const c = into ?? document.createElement('canvas')
   if (c.width !== w || c.height !== h) {
     c.width = w
@@ -55,9 +59,10 @@ export async function composeFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = getComputedStyle(b.svg).getPropertyValue('--lm-surface').trim() || '#fff'
   ctx.fillRect(0, 0, w, h)
-  const img = await rasterise(b.svg, w, h)
-  ctx.drawImage(img, 0, 0, w, h)
-  handle.engine.paintParticles(ctx, w / b.scene.width)
+  const img = await rasterise(b.svg, Math.round(dw), Math.round(dh))
+  ctx.translate((w - dw) / 2, (h - dh) / 2)
+  ctx.drawImage(img, 0, 0, dw, dh)
+  handle.engine.paintParticles(ctx, scale)
   return c
 }
 
@@ -72,13 +77,14 @@ export async function exportPng(handle: LoadmapHandle, o: FrameOptions = {}): Pr
 /**
  * A video of a scenario, made frame by frame on a fixed clock: the live animation is paused, the sim advances
  * exactly 1/fps per frame, and each frame is encoded at its own timestamp. Nothing depends on how fast the machine
- * is, so the same options give the same frames.
+ * is, so the same options give the same frames. The values the script changed are put back afterwards.
  */
 export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Promise<Blob> {
   const fps = o.fps ?? 30
   const format = o.format ?? 'webm'
   const script = [...(o.script ?? [])].sort((a, b) => a.at - b.at)
   await handle.ready()
+  const before = handle.values()
   handle.pause()
   try {
     for (const s of script.filter((s) => s.at <= 0)) handle.setValues(s.set)
@@ -109,7 +115,7 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
       // a value that changes the layout needs the new scene first
       await handle.ready()
       handle.step(1 / fps)
-      await composeFrame(handle, { scale: o.scale ?? 1 }, canvas)
+      await composeFrame(handle, { size: { width: canvas.width, height: canvas.height } }, canvas)
       await o.onFrame?.(i, canvas)
       await source.add(t, 1 / fps)
     }
@@ -118,6 +124,7 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
     const buf = (output.target as BufferTarget).buffer!
     return new Blob([buf], { type: format === 'mp4' ? 'video/mp4' : 'video/webm' })
   } finally {
+    handle.setValues(before)
     handle.resume()
   }
 }

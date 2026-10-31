@@ -122,7 +122,7 @@ export class Engine {
     const scene = this.scene
     if (!scene) return
     ctx.save()
-    ctx.setTransform(scale, 0, 0, scale, 0, 0)
+    ctx.transform(scale, 0, 0, scale, 0, 0)
     const live = new Set<number>()
     for (const d of this.sim.particles) {
       live.add(d.id)

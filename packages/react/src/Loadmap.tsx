@@ -15,6 +15,7 @@ export interface LoadmapHandle {
   ready(timeoutMs?: number): Promise<void>
   pause(): void
   resume(): void
+  values(): Values<any>
   setValues(v: Partial<Values<any>>): void
   /** Empties the queues and dots and starts over with this seed. */
   reset(seed?: number): void
@@ -98,6 +99,7 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     resume: () => {
       engine.paused = false
     },
+    values: () => engine.ev.values,
     setValues: (v) => lm.setValues(v),
     reset: (seed) => engine.reset(seed),
     step: (dt) => {

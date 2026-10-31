@@ -23,8 +23,9 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
 
   // bind after every structural render: the worker fills are new elements
   // bind when the structure is new: the worker fills are new elements
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scene and reducedMotion change the drawn elements
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reducedMotion changes the drawn elements
   useEffect(() => {
+    if (scene) engine.setScene(scene)
     engine.bind(svgRef.current, canvasRef.current)
     if (lm.root) engine.readColors(lm.root)
   }, [engine, scene, reducedMotion, lm.root])

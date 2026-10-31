@@ -82,9 +82,8 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     let live = true
     layout(view, engine.ev, { direction, measure }).then(
       (s) => {
-        if (!live) return
-        engine.setScene(s)
-        setLaid({ view, scene: s })
+        // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
+        if (live) setLaid({ view, scene: s })
       },
       (err) => console.error('loadmap: layout failed', err),
     )
