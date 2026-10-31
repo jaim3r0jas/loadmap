@@ -11,16 +11,16 @@ pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (
 mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
 stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
-| Package           | What                                                                                        | Depends on                      |
-| ----------------- | ------------------------------------------------------------------------------------------- | ------------------------------- |
-| `@loadmap/core`   | params, lazy model context, components, limits, verdict, presets, stages; `core/calibrate`  | nothing                         |
-| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                           | core                            |
-| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                            | core, elkjs                     |
-| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, engine, theme                                   | core, sim, layout; react (peer) |
-| `@loadmap/export` | PNG, GIF and WebM/MP4 on a fixed clock; `expose()` for the CLI                              | react, mediabunny               |
-| `@loadmap/cli`    | `loadmap record`: Playwright records a page that calls `expose()`, as GIF, WebM, MP4 or PNG | playwright                      |
-| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, completions, share links     | core, layout                    |
-| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 next to a live `<Loadmap>`, inline errors, share, download  | dsl, react, @codemirror/*       |
+| Package           | What                                                                                       | Depends on                      |
+| ----------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
+| `@loadmap/core`   | params, limits, verdict, presets, scenarios, growth, compare, headroom; `core/calibrate`   | nothing                         |
+| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                          | core                            |
+| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                     |
+| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme       | core, sim, layout; react (peer) |
+| `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI         | react, mediabunny               |
+| `@loadmap/cli`    | `loadmap record`: a page that calls `expose()` as GIF, WebM, MP4, PNG, poster or SVG       | playwright                      |
+| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, completions, share links    | core, layout                    |
+| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 next to a live `<Loadmap>`, inline errors, share, download | dsl, react, @codemirror/*       |
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws
@@ -47,6 +47,8 @@ The browser tests need Chromium once: `pnpm exec playwright install chromium`. T
 - **No DOM or React in core, sim or layout.** They run in Node tests; React is only the binding.
 - **Every capacity says where it came from**: `measured(...)`, `estimated(...)` or a `fitLinear(...)` result. The
   verdict and the assumptions list show it; never add a bare number as a capacity.
+- **Dates only from `growth.asOf`**, never `Date.now()` or the locale: a page and its recordings say the same date
+  on any day, on any machine.
 - **Randomness only through `rng(seed)`** (`@loadmap/sim`). `Math.random` anywhere in sim, layout, engine or export
   breaks the identical-frames export test.
 - **The sim never contradicts the bars.** A stage drains what its flows carry at the load where its component reaches
@@ -72,12 +74,15 @@ The browser tests need Chromium once: `pnpm exec playwright install chromium`. T
 A page calls `expose(handle)` (`@loadmap/export`); then `pnpm record <url> --out demo.gif [--script s.json]
 [--set load=30]` records it in headless Chromium on a fixed clock: the same options give the same GIF, byte for byte.
 The playground exposes the shown example: `pnpm dev`, then `pnpm record 'http://localhost:5173/?example=alerts'
---out alerts.gif`.
+--out alerts.gif`. `--caption` adds the title, scenario, load and verdict to every frame, `--scenario <label>`
+starts from a scenario, `--poster` (with `.png`) draws the board with the limits and the scenarios compared, and
+`.svg` writes the board as a file.
 
 ## Not yet
 
 ELK in a Web Worker (it is ~1.5 MB of the playground bundle, and live editing relayouts on the main thread), state in
-the URL for TypeScript pages (editor links carry it), hover detail on nodes, a docs site, publishing. In the editor:
+the URL for TypeScript pages (editor links carry it), a docs site, publishing. Two live diagrams side by side, cost per
+scenario, goal seek; ranges on capacities (M4). In the editor:
 editing in the UI (an inspector that writes text edits, a click on a node that jumps to its source), hover help, a
 formatter, Export → TypeScript, the source in exported PNGs, `loadmap record x.loadmap`, a Vite plugin for
 `import m from './m.loadmap'`.

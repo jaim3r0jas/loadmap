@@ -2,7 +2,7 @@ import { decodeShare, type Shared } from '@loadmap/dsl'
 import { LoadmapEditor, type LoadmapEditorHandle } from '@loadmap/editor'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
 import { Checkout, checkoutSource } from '@loadmap/example-checkout'
-import { download, exportPng, expose, recordVideo } from '@loadmap/export'
+import { download, exportPng, exportSvg, expose, recordPoster, recordVideo, type ScriptStep } from '@loadmap/export'
 import type { LoadmapHandle } from '@loadmap/react'
 import { StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -44,28 +44,45 @@ function useRecorder(name: string, get: () => LoadmapHandle | null | undefined) 
     const h = get()
     if (h) download(await exportPng(h), `${name}.png`)
   }
+  const poster = async () => {
+    const h = get()
+    if (h) download(await recordPoster(h), `${name}-poster.png`)
+  }
+  const svg = async () => {
+    const h = get()
+    if (h) download(new Blob([await exportSvg(h, { caption: true })], { type: 'image/svg+xml' }), `${name}.svg`)
+  }
+  // the load rises, then the second scenario takes over, if there is one: a captioned 6 s
   const record = async (format: 'webm' | 'gif') => {
     const h = get()
     if (!h) return
-    const script = [
+    const next = h.engine.model.scenarios[1]?.label
+    const script: ScriptStep[] = [
       { at: 0, set: { load: 5 } },
       { at: 2, set: { load: 30 } },
+      ...(next ? [{ at: 4, scenario: next }] : []),
     ]
-    download(await recordVideo(h, { seconds: 6, format, script }), `${name}.${format}`)
+    download(await recordVideo(h, { seconds: 6, format, script, caption: true }), `${name}.${format}`)
   }
-  return { png, record }
+  return { png, poster, svg, record }
 }
 
 function Example({ name }: { name: Name }) {
   const handle = useRef<LoadmapHandle>(null)
   const [get] = useState(() => () => handle.current)
-  const { png, record } = useRecorder(name, get)
+  const { png, poster, svg, record } = useRecorder(name, get)
   const Shown = EXAMPLES[name]
   return (
     <>
       <div className="pg-actions">
         <button type="button" onClick={png}>
           Export PNG
+        </button>
+        <button type="button" onClick={poster}>
+          Poster
+        </button>
+        <button type="button" onClick={svg}>
+          SVG
         </button>
         <button type="button" onClick={() => record('webm')}>
           Record 6 s WebM
@@ -97,7 +114,7 @@ const readDraft = () => read(DRAFT)
 function Editor() {
   const editor = useRef<LoadmapEditorHandle>(null)
   const [get] = useState(() => () => editor.current?.loadmap())
-  const { png, record } = useRecorder('editor', get)
+  const { png, poster, record } = useRecorder('editor', get)
   // a link's definition wins over the draft; reading it is async, so the editor waits for it
   const [start, setStart] = useState<Shared | null>(() =>
     location.hash.startsWith('#v1.') ? null : { source: readDraft() ?? SOURCES.uploads, values: {} },
@@ -147,6 +164,9 @@ function Editor() {
           <>
             <button type="button" className="lm-btn" onClick={png}>
               PNG
+            </button>
+            <button type="button" className="lm-btn" onClick={poster}>
+              Poster
             </button>
             <button type="button" className="lm-btn" onClick={() => record('gif')}>
               6 s GIF

@@ -7,7 +7,7 @@ writes the verdict.
 ```
 model (pure TS)          view (pure data)            React
 params, flows,      →    nodes, clusters, pools,  →  <Loadmap model view />
-components, stages       edges, flow colours          diagram · verdict · live · limits · controls · assumptions
+components, stages       edges, flow colours          scenarios · diagram · verdict · headroom · compare · live · limits · controls
    │                        │
    ├─ limits, verdict       └─ ELK layout, no label collisions
    └─ fluid sim → dots ───────────────────────────→  canvas overlay · PNG / WebM export
@@ -53,6 +53,27 @@ checkout.evaluate({ load: 40 }).verdict.text
 ```
 
 The full example, with its view and tests, is in [`examples/checkout`](examples/checkout).
+
+## Scenarios and headroom
+
+A design review sets today beside a proposal. Scenarios are named parameter values (never the load); growth turns
+load multiples into dates, counted from a fixed day so the page says the same thing tomorrow:
+
+```ts
+defineModel({
+  // …
+  scenarios: { Today: {}, Proposed: { gateways: 2, pods: 6 } },
+  growth: { rate: 0.06, per: 'month', asOf: '2026-11-01' },
+})
+
+compare(checkout).text
+// "Proposed buys more headroom: the 50 % target holds up to 20× (around March 2031), limited by the worker pool,
+//  against 10× (around February 2030) in Today."
+```
+
+`<Loadmap>` shows a button per scenario, a headroom chart (utilization over the load multiple, one line per scenario,
+its crossings exactly where the limits are) and the scenarios side by side. Hovering or focusing a box tells its
+utilization, capacity and where it runs out. `compare()` and `headroom()` give the same numbers without React.
 
 ## Or as text
 
@@ -102,7 +123,15 @@ pnpm dev &   # or any page that calls expose(handle) from @loadmap/export
 pnpm record 'http://localhost:5173/?example=alerts' --out alerts.gif --script ramp.json
 ```
 
-`ramp.json` is `[{ "at": 0, "set": { "load": 5 } }, { "at": 3, "set": { "load": 30 } }]`; `--out` picks GIF, WebM,
-MP4 or PNG. The clock is fixed, so the same options give the same file.
+`ramp.json` is `[{ "at": 0, "set": { "load": 5 } }, { "at": 3, "scenario": "Proposed" }]`; `--out` picks GIF,
+WebM, MP4, PNG or SVG. The clock is fixed, so the same options give the same file. Media can stand alone:
+
+```bash
+pnpm record 'http://localhost:5173/?example=checkout' --out checkout.gif --caption --script ramp.json
+pnpm record 'http://localhost:5173/?example=checkout' --out poster.png --poster --scenario Proposed
+```
+
+`--caption` puts the title, scenario and load above the board and the verdict below it; `--poster` draws the board
+with the verdict, where each component runs out and the scenarios compared.
 
 See `CLAUDE.md` for the conventions and `docs/` for the research and the lessons behind the design.

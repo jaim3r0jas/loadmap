@@ -86,6 +86,25 @@ Some properties must be constants (a `priority`, a `unit`). Others may read only
 `new Function`, no global name, no property but the four tables, and caps on size and depth. Counts that size the
 drawing are capped too: at most 64 members, 256 pods, 256 workers a pod and 1,024 partitions a flow.
 
+### Scenarios and growth
+
+A **scenario** is a design to compare: the defaults plus some parameter values, never the load. The first one is the
+baseline the others are measured against, so name today's design first:
+
+```
+scenario "Today" {}
+scenario "Proposed" { gateways: 2; pods: 6 }
+growth { rate: 0.06; per: month; asOf: "2026-11-01" }
+```
+
+The page shows a button per scenario above the diagram, a table of where each one first runs out, and a headroom
+chart with one line per scenario. **Growth** turns load multiples into dates: the load is 1× on `asOf` and grows by
+`rate` every `per`, compounded, so 10× at 6 % a month is about 40 months later ("around February 2030"). Dates come
+from `asOf` alone, never from today's date, so a page and its recordings say the same thing on any day.
+
+A share link carries the scenarios in the text and the shown one in its values (`&gateways=2&pods=6`), so it opens
+with that scenario's button pressed.
+
 ### What stays code
 
 A host page can give formulas more functions:
@@ -108,8 +127,8 @@ checkout.loadmap:73:17 error: unknown flow "order"
      |                 ^^^^^ did you mean "orders"?
 ```
 
-`compile` also runs the model at its defaults, at every preset and in every scenario. A formula that fails there, such as a loop between
-two `let`s, is marked where it is written.
+`compile` also runs the model at its defaults, at every preset and in every scenario. A formula that fails there,
+such as a loop between two `let`s, is marked where it is written.
 
 ## In code
 
