@@ -1,5 +1,5 @@
 // Checks that a .loadmap definition and the TypeScript it mirrors give the same model, layout and dots.
-import type { Evaluation, Model } from '@loadmap/core'
+import { compare, type Evaluation, type Model } from '@loadmap/core'
 import { compile, type Definition, formatDiagnostic } from '@loadmap/dsl'
 import { labelsAt, layout, structureKey, type View } from '@loadmap/layout'
 import { createSim } from '@loadmap/sim'
@@ -35,6 +35,8 @@ export function sameModel(ts: Model, dsl: Model, grid: readonly Record<string, u
     ts.params.map((p) => [p.id, p.def.kind, p.def.label]),
   )
   expect([dsl.flowIds, dsl.componentIds, dsl.stageIds]).toEqual([ts.flowIds, ts.componentIds, ts.stageIds])
+  expect([dsl.scenarios, dsl.growth]).toEqual([ts.scenarios, ts.growth])
+  for (const load of [1, 10]) expect(compare(dsl, load)).toEqual(compare(ts, load))
   for (const v of grid) {
     expect(shown(dsl.evaluate(v as any)), JSON.stringify(v)).toEqual(shown(ts.evaluate(v as any)))
     for (const p of ts.params)
@@ -69,10 +71,11 @@ export function sameDots(ts: Model, dsl: Model, values: Record<string, unknown>)
   }
 }
 
-/** Defaults, presets, each option of each parameter, and a range of loads. */
+/** Defaults, presets, scenarios, each option of each parameter, and a range of loads. */
 export function grid(model: Model): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [{}]
   for (const p of model.evaluate().presets) out.push(p.values)
+  for (const s of model.scenarios) out.push(s.values)
   for (const { id, def } of model.params) {
     if (def.kind === 'select') for (const o of def.options) out.push({ [id]: o })
     if (def.kind === 'switch') out.push({ [id]: !def.default })

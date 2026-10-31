@@ -56,8 +56,8 @@ export interface BlockSpec {
   props: Readonly<Record<string, PropSpec>>
   /** Keywords of the statements it may hold. */
   children: readonly string[]
-  /** Its properties are named by the model: parameter ids in a preset, flow ids in partitions. */
-  open?: { names: 'values' | 'flows'; spec: PropSpec }
+  /** Its properties are named by the model: the load and parameters in a preset, parameters only in a scenario, flows in partitions. */
+  open?: { names: 'values' | 'params' | 'flows'; spec: PropSpec }
   /** It holds `a -> b` lines: edges at the top, branches in a fan-out. */
   edges?: 'edges' | 'branches'
   /** It holds rows of numbers. */
@@ -127,6 +127,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'load',
       'param',
       'preset',
+      'scenario',
+      'growth',
       'let',
       'fit',
       'flow',
@@ -188,6 +190,25 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: {},
     children: [],
     open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
+  },
+  scenario: {
+    doc: 'A named design to compare: the defaults plus these values, never the load. The first is the baseline.',
+    example: 'scenario "Proposed" { pods: 6; gateways: 2 }',
+    args: [{ name: 'label', kind: 'text' }],
+    props: {},
+    children: [],
+    open: { names: 'params', spec: { value: 'value', scope: 'const', doc: 'A value of a parameter.' } },
+  },
+  growth: {
+    doc: 'How fast the load grows, compounded from asOf, where it is 1×: load multiples become dates.',
+    example: 'growth { rate: 0.06; per: month; asOf: "2026-11-01" }',
+    args: [],
+    props: {
+      rate: { value: 'number', scope: 'const', required: true, doc: 'Growth per period, as a share: 0.06 is 6 %.' },
+      per: { value: 'enum', scope: 'const', values: ['month', 'year'], required: true, doc: 'month or year.' },
+      asOf: { value: 'string', scope: 'const', required: true, doc: 'The day the load is 1×: "2026-11-01".' },
+    },
+    children: [],
   },
   let: {
     doc: 'A named formula other formulas can use by its name.',

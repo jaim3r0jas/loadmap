@@ -6,12 +6,18 @@ assume: "Load scales linearly with users; 1× is the 5-minute peak of an ordinar
 
 load "Users, × today" { max: 100; default: 10 }
 
+param gateways "Gateway instances" { options: [1, 2]; default: 1 }
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
 param threads "Threads per pod" { options: [4, 8, 16]; default: 8 }
 param batch "Batch DB writes" { default: true }
 param rows "Rows per batch" { options: [10, 50]; default: 50; enabled: batch }
 
 preset "Black Friday" { load: 40; pods: 6 }
+
+# the design review: today against twice the gateways and the workers
+scenario "Today" {}
+scenario "Proposed" { gateways: 2; pods: 6 }
+growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
 # cost = a + b × rate, fitted from the measured series
 fit workerCores "Worker CPU per request" {
@@ -65,7 +71,7 @@ node phones "Phones" "app checkout"
 node gateway "API gateway" {
   pass
   demand: flows.orders + flows.events
-  capacity: estimated(20_000, "req/s", "vendor benchmark, not load-tested")
+  capacity: estimated(20_000 * gateways, "req/s", "vendor benchmark, not load-tested")
   over: "clients get 429s"
 }
 

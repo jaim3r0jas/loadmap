@@ -10,12 +10,16 @@ export const checkout = defineModel({
   title: 'Checkout pipeline',
   load: p.load({ label: 'Users, × today', max: 100, default: 10 }),
   params: {
+    gateways: p.select({ label: 'Gateway instances', options: [1, 2], default: 1 }),
     pods: p.select({ label: 'Worker pods', options: [2, 3, 4, 6], default: 3 }),
     threads: p.select({ label: 'Threads per pod', options: [4, 8, 16], default: 8 }),
     batch: p.switch({ label: 'Batch DB writes', default: true }),
     rows: p.select({ label: 'Rows per batch', options: [10, 50], default: 50, enabled: ({ batch }) => batch }),
   },
   presets: { 'Black Friday': { load: 40, pods: 6 } },
+  // the design review: today against twice the gateways and the workers
+  scenarios: { Today: {}, Proposed: { gateways: 2, pods: 6 } },
+  growth: { rate: 0.06, per: 'month', asOf: '2026-11-01' },
   flows: {
     orders: { label: 'orders', rate: ({ load }) => 40 * load, unit: 'order', priority: 1 },
     events: {
@@ -30,7 +34,7 @@ export const checkout = defineModel({
     gateway: {
       name: 'API gateway',
       demand: ({ flows }) => flows.orders + flows.events,
-      capacity: estimated(20_000, 'req/s', 'vendor benchmark, not load-tested'),
+      capacity: ({ gateways }) => estimated(20_000 * gateways, 'req/s', 'vendor benchmark, not load-tested'),
       over: 'clients get 429s',
     },
     workers: {

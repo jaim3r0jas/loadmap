@@ -152,6 +152,50 @@ describe('formulas', () => {
   })
 })
 
+describe('scenarios and growth', () => {
+  it('compile to the model as TypeScript would write them', () => {
+    const r = compile(
+      def({
+        top: 'scenario "Today" {}\nscenario "Faster" { pods: 3; fast: true }\ngrowth { rate: 1; per: year; asOf: "2026-11-01" }',
+      }),
+    )
+    expect(r.diagnostics).toEqual([])
+    const m = r.definition!.model
+    expect(m.scenarios).toEqual([
+      { label: 'Today', values: { pods: 2, fast: false } },
+      { label: 'Faster', values: { pods: 3, fast: true } },
+    ])
+    expect(m.growth).toEqual({ rate: 1, per: 'year', asOf: '2026-11-01' })
+    // 800 req/s against 100 per 1×: 50 % at 4×, two years after 2026-11-01
+    expect(m.evaluate({ load: 1 }).verdict.text).toContain('holds up to 4× (around November 2028)')
+  })
+
+  it('refuse the load, unknown parameters, options that do not exist and a second label', () => {
+    expect(errors(def({ top: 'scenario "High" { load: 3; pod: 2; pods: 9 }\nscenario "High" {}' }))).toEqual([
+      { message: 'a scenario leaves the load to the slider', hint: 'use a preset for a load', text: 'load' },
+      { message: 'unknown parameter "pod"', hint: 'did you mean "pods"?', text: 'pod' },
+      { message: '9 is not an option of "pods"', hint: '1, 2, 3', text: '9' },
+      { message: 'scenario "High" is declared twice', hint: undefined, text: '"High"' },
+    ])
+  })
+
+  it('check the growth line', () => {
+    expect(errors(def({ top: 'growth { rate: 0; per: year; asOf: "2026-02-30" }' }))).toEqual([
+      { message: 'growth needs a rate above 0', hint: undefined, text: '0' },
+      { message: '"2026-02-30" is not a date', hint: 'a day like "2026-11-01"', text: '"2026-02-30"' },
+    ])
+    expect(errors(def({ top: 'growth { rate: 1; per: years; asOf: "2026-11" }' }))[0]?.hint).toBe(
+      'did you mean "year"?',
+    )
+    expect(errors(def({ top: 'growth { rate: 1 }' })).map((e) => e.message)).toEqual([
+      '"growth" needs "per: …"',
+      '"growth" needs "asOf: …"',
+    ])
+    const two = 'growth { rate: 1; per: year; asOf: "2026-11" }\ngrowth { rate: 1; per: year; asOf: "2026-11" }'
+    expect(errors(def({ top: two })).map((e) => e.message)).toEqual(['only one growth line is allowed'])
+  })
+})
+
 describe('the checker', () => {
   it('wants a capacity to say where it came from', () => {
     expect(errors(def({ api: 'pods * 400' }))).toEqual([

@@ -10,6 +10,12 @@ const SCOPE: Record<PropSpec['scope'], string> = {
 }
 
 /** The statement reference of docs/dsl.md, written from the schema table, so the two cannot drift apart. */
+const OPEN: Record<NonNullable<BlockSpec['open']>['names'], string> = {
+  values: 'parameters (and `load`)',
+  params: 'parameters (not `load`)',
+  flows: 'flows',
+}
+
 export function reference(): string {
   const out: string[] = []
   const table = (props: Readonly<Record<string, PropSpec>>) => {
@@ -32,8 +38,7 @@ export function reference(): string {
     table(spec.props)
     const holds = spec.children.filter((c) => c !== 'loadmap')
     if (holds.length) out.push(`Holds: ${holds.map((c) => `\`${c}\``).join(', ')}.`, '')
-    if (spec.open)
-      out.push(`Its properties are named by ${spec.open.names === 'values' ? 'parameters (and `load`)' : 'flows'}.`, '')
+    if (spec.open) out.push(`Its properties are named by ${OPEN[spec.open.names]}.`, '')
     if (spec.edges === 'edges') out.push('Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.', '')
     if (spec.edges === 'branches') out.push('Holds branches: `flow -> stage: copies per unit`.', '')
   }

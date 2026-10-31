@@ -53,7 +53,8 @@ describe('the editor', () => {
     const { host, edit } = await mount()
     edit('demand: flows.orders + flows.events', 'demand: flows.order + flows.events')
     await expect.poll(() => host.querySelector('.cm-lintRange-error')?.textContent).toBe('order')
-    expect(host.querySelector('.lme-status')!.textContent).toBe('1 error')
+    // the lint mark comes from CodeMirror, the status from React's next render
+    await expect.poll(() => host.querySelector('.lme-status')!.textContent).toBe('1 error')
     expect(host.querySelector('.lme-problems')!.textContent).toContain('unknown flow "order"did you mean "orders"?')
     expect(host.querySelector('.lme-preview')!.hasAttribute('data-stale')).toBe(true)
     expect(verdict(host)).toContain('At 10×')

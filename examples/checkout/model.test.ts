@@ -1,3 +1,4 @@
+import { around, compare } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { checkout, workerCores } from './model'
 
@@ -26,15 +27,15 @@ describe('checkout model', () => {
   it('writes a verdict for each tier', () => {
     expect(checkout.evaluate({ load: 1 }).verdict).toEqual({
       tier: 'ok',
-      text: 'At 1×, every component is under the 50 % target. It holds up to 10×; the worker pool is the first limit.',
+      text: 'At 1×, every component is under the 50 % target. It holds up to 10× (around February 2030); the worker pool is the first limit.',
     })
     expect(checkout.evaluate({ load: 15 }).verdict).toEqual({
       tier: 'warn',
-      text: 'At 15×, everything still fits, but API gateway and the worker pool run above the 50 % target. The 50 % target holds up to 10×, limited by the worker pool.',
+      text: 'At 15×, everything still fits, but API gateway and the worker pool run above the 50 % target. The 50 % target holds up to 10× (around February 2030), limited by the worker pool.',
     })
     expect(checkout.evaluate({ load: 60, pods: 2 }).verdict).toEqual({
       tier: 'over',
-      text: 'At 60×, the worker pool and API gateway are past capacity: messages wait in the topic and the lag keeps growing; clients get 429s. The 50 % target holds up to 6.4×, limited by the worker pool.',
+      text: 'At 60×, the worker pool and API gateway are past capacity: messages wait in the topic and the lag keeps growing; clients get 429s. The 50 % target holds up to 6.4× (around June 2029), limited by the worker pool.',
     })
   })
 
@@ -43,6 +44,36 @@ describe('checkout model', () => {
     // 8 cores of workers outlast the gateway's estimated 20,000 req/s
     expect(s.firstLimit?.id).toBe('gateway')
     expect(s.verdict.text).toContain('API gateway is the first limit (capacity estimated)')
+  })
+
+  it('compares today with the proposed design', () => {
+    const c = compare(checkout, 10)
+    const [today, proposed] = c.rows
+    const cores = (n: number) => (n - workerCores.a) / (workerCores.b * 940)
+    // today: 3 pods × 2 cores, the target at 3 cores and 100 % at 6
+    expect([today!.label, today!.firstLimit?.id, today!.firstFull?.id]).toEqual(['Today', 'workers', 'workers'])
+    expect(today!.target).toBeCloseTo(cores(3), 6)
+    expect(today!.full).toBeCloseTo(cores(6), 6)
+    // proposed: 6 pods (target at 6 cores, 100 % at 12) and two gateways (target at 20,000 / 940)
+    expect([proposed!.label, proposed!.firstLimit?.id, proposed!.firstFull?.id]).toEqual([
+      'Proposed',
+      'workers',
+      'workers',
+    ])
+    expect(proposed!.target).toBeCloseTo(cores(6), 6)
+    expect(proposed!.full).toBeCloseTo(cores(12), 6)
+    // 6 % a month from 2026-11-01: 10.0× is ln 10.0 / ln 1.06 = 39.5 months, 20.7× is 52.0, 42.2× is 64.2
+    expect(
+      [today!.targetDate, today!.fullDate, proposed!.targetDate, proposed!.fullDate].map((d) => around(d!)),
+    ).toEqual(['around February 2030', 'around March 2031', 'around March 2031', 'around March 2032'])
+    const change = Object.fromEntries(proposed!.components.map((x) => [x.id, x.change]))
+    expect(change.gateway).toBeCloseTo(2, 9)
+    expect(change.workers).toBeCloseTo(cores(6) / cores(3), 9)
+    // batched, the database never reaches the target in either
+    expect(change.db).toBe(1)
+    expect(c.text).toBe(
+      'Proposed buys more headroom: the 50 % target holds up to 20× (around March 2031), limited by the worker pool, against 10× (around February 2030) in Today.',
+    )
   })
 
   it('disables "rows per batch" while batching is off', () => {

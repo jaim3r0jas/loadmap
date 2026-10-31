@@ -103,12 +103,12 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:67:17 error: unknown flow "order"
-  67 |   demand: flows.order + flows.events
+checkout.loadmap:73:17 error: unknown flow "order"
+  73 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 
-`compile` also runs the model at its defaults and at every preset. A formula that fails there, such as a loop between
+`compile` also runs the model at its defaults, at every preset and in every scenario. A formula that fails there, such as a loop between
 two `let`s, is marked where it is written.
 
 ## In code
@@ -142,7 +142,7 @@ A loadmap definition.
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
-Holds: `load`, `param`, `preset`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -206,6 +206,32 @@ preset "Black Friday" { load: 40; pods: 6 }
 After the keyword: label.
 
 Its properties are named by parameters (and `load`).
+
+### scenario
+
+A named design to compare: the defaults plus these values, never the load. The first is the baseline.
+
+```
+scenario "Proposed" { pods: 6; gateways: 2 }
+```
+
+After the keyword: label.
+
+Its properties are named by parameters (not `load`).
+
+### growth
+
+How fast the load grows, compounded from asOf, where it is 1×: load multiples become dates.
+
+```
+growth { rate: 0.06; per: month; asOf: "2026-11-01" }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `rate` (required) | number, constant | Growth per period, as a share: 0.06 is 6 %. |
+| `per` (required) | `month` \| `year` | month or year. |
+| `asOf` (required) | string, constant | The day the load is 1×: "2026-11-01". |
 
 ### let
 

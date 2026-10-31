@@ -65,9 +65,13 @@ export function completions(source: string, offset: number, compiled?: CompileRe
   if (before === '') {
     if (edgeBody) return out(props(EDGE_PROPS))
     const list: Completion[] = [...props(spec.props), ...statements(spec)]
-    if (spec.open?.names === 'values')
+    if (spec.open?.names === 'values' || spec.open?.names === 'params')
       list.push(
-        ...['load', ...ids('param')].map((label) => ({ label, type: 'variable' as const, apply: `${label}: ` })),
+        ...[...(spec.open.names === 'values' ? ['load'] : []), ...ids('param')].map((label) => ({
+          label,
+          type: 'variable' as const,
+          apply: `${label}: `,
+        })),
       )
     if (spec.open?.names === 'flows')
       list.push(...ids('flow').map((label) => ({ label, type: 'variable' as const, apply: `${label}: ` })))

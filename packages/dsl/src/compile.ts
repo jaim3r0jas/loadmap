@@ -6,6 +6,7 @@ import {
   type Model,
   type Overload,
   p,
+  parseAsOf,
   pass,
   queue,
   type StageDef,
@@ -250,6 +251,16 @@ class Compiler {
       const label = this.text(b.args.label)
       if (label != null) presets[label] = this.preset(b, params)
     }
+    const scenarios: Record<string, Record<string, unknown>> = {}
+    for (const b of byKind('scenario')) {
+      const label = this.text(b.args.label)
+      if (label == null) continue
+      if (Object.hasOwn(scenarios, label)) this.report.error(b.args.label!, `scenario "${label}" is declared twice`)
+      else scenarios[label] = this.preset(b, params, 'scenario')
+    }
+    const growths = byKind('growth')
+    for (const extra of growths.slice(1)) this.report.error(extra.at, 'only one growth line is allowed')
+    const growth = growths[0] && this.growth(growths[0])
     const derived: Record<string, unknown> = {}
     for (const b of lets)
       if (b.args.id && b.decl?.init) derived[b.args.id.name] = placed(b.decl.init, this.formula(b.decl.init, 'ctx').run)
@@ -351,6 +362,8 @@ class Compiler {
     const title = this.constProp<string>(root, 'title')
     if (title != null) model.title = title
     if (Object.keys(presets).length) model.presets = presets
+    if (Object.keys(scenarios).length) model.scenarios = scenarios
+    if (growth) model.growth = growth
     if (Object.keys(derived).length) model.derived = derived
     if (Object.keys(calibration).length) model.calibration = calibration
     const th = byKind('thresholds')[0]
@@ -383,15 +396,16 @@ class Compiler {
     }
 
     if (this.report.failed) return undefined
-    return this.build(model, { nodes, edges, flows: flowViews }, options, byKind('preset'))
+    return this.build(model, { nodes, edges, flows: flowViews }, options, byKind('preset'), byKind('scenario'))
   }
 
-  /** Hands the parts to core and layout, then runs the model once per preset so formula errors show now. */
+  /** Hands the parts to core and layout, then runs the model once per preset and scenario so formula errors show now. */
   private build(
     modelDef: Record<string, unknown>,
     viewDef: { nodes: Record<string, AnyNodeDef>; edges: EdgeDef[]; flows: Record<string, FlowView> },
     options: DefinitionOptions,
     presets: Block[],
+    scenarios: Block[],
   ): Definition | undefined {
     const top = { from: 0, to: 0 }
     let model: Model
@@ -407,6 +421,11 @@ class Compiler {
     for (const b of presets) {
       const label = this.text(b.args.label)
       const v = label != null && (modelDef.presets as Record<string, Record<string, unknown>> | undefined)?.[label]
+      if (v) runs.push({ values: v, at: b.at })
+    }
+    for (const b of scenarios) {
+      const label = this.text(b.args.label)
+      const v = label != null && model.scenarios.find((s) => s.label === label)?.values
       if (v) runs.push({ values: v, at: b.at })
     }
     for (const { values, at } of runs) {
@@ -787,14 +806,20 @@ class Compiler {
     return list as (number | string)[]
   }
 
-  private preset(b: Block, params: Block[]): Record<string, unknown> {
+  /** A preset's values, or a scenario's: the same, but a scenario leaves the load to the slider. */
+  private preset(b: Block, params: Block[], kind: 'preset' | 'scenario' = 'preset'): Record<string, unknown> {
     const out: Record<string, unknown> = {}
     const known = new Map(params.filter((x) => x.args.id).map((x) => [x.args.id!.name, x]))
     for (const [k, props] of b.props) {
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
+      if (k === 'load' && kind === 'scenario') {
+        this.report.error(prop.key, 'a scenario leaves the load to the slider', 'use a preset for a load')
+        continue
+      }
       if (k !== 'load' && !known.has(k)) {
-        this.report.error(prop.key, `unknown parameter "${k}"`, didYouMean(k, ['load', ...known.keys()]))
+        const names = [...(kind === 'preset' ? ['load'] : []), ...known.keys()]
+        this.report.error(prop.key, `unknown parameter "${k}"`, didYouMean(k, names))
         continue
       }
       const type = this.names.params.get(k)
@@ -811,6 +836,17 @@ class Compiler {
       out[k] = v
     }
     return out
+  }
+
+  private growth(b: Block): { rate: number; per: string; asOf: string } | undefined {
+    const rate = this.constProp<number>(b, 'rate')
+    const per = this.constProp<string>(b, 'per')
+    const asOf = this.constProp<string>(b, 'asOf')
+    if (rate != null && !(rate > 0)) this.report.error(this.prop(b, 'rate')!.value, 'growth needs a rate above 0')
+    if (asOf != null && !parseAsOf(asOf))
+      this.report.error(this.prop(b, 'asOf')!.value, `"${asOf}" is not a date`, 'a day like "2026-11-01"')
+    if (rate == null || per == null || asOf == null) return undefined
+    return { rate, per, asOf }
   }
 
   private fit(b: Block) {
