@@ -8,6 +8,8 @@
     "preview": "node ../../scripts/node-version.mjs && vite preview"
   },
   "dependencies": {
+    "@loadmap/dsl": "workspace:*",
+    "@loadmap/editor": "workspace:*",
     "@loadmap/example-alerts": "workspace:*",
     "@loadmap/example-checkout": "workspace:*",
     "@loadmap/export": "workspace:*",

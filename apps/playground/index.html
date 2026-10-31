@@ -6,7 +6,11 @@
     <title>loadmap playground</title>
     <style>
       body { margin: 0; background: #eef2f5; }
-      @media (prefers-color-scheme: dark) { body { background: #0d141b; } }
+      @media (prefers-color-scheme: dark) { body { background: #0d141b; color: #e4ebf1; } }
+      .pg-nav, .pg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px 0; font: 14px system-ui; }
+      .pg-nav button[aria-pressed="true"] { font-weight: 600; }
+      .pg-error { color: #b7392e; }
+      .pg-note { padding: 16px; font: 14px system-ui; }
     </style>
   </head>
   <body>

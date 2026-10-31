@@ -1,0 +1,58 @@
+loadmap 1
+# A small definition to start from. Change a number, a label or a route; the diagram follows.
+title: "Photo uploads"
+layout: right
+
+load "Uploads, × today" { max: 50; default: 5 }
+param pods "Resizer pods" { options: [2, 4, 8]; default: 4 }
+param webp "Also make WebP copies" { default: true }
+preset "Holiday peak" { load: 30; pods: 8 }
+
+let files = webp ? 6 : 3                       # files written per photo
+
+flow photos "photos" {
+  unit: "photo"
+  rate: 20 * load
+  drop { olderThan: 120; reason: "too old" }
+  from: phones
+  color: accent
+  route: api -> uploads -> resizers -> bucket
+}
+
+node phones "Phones" "upload screen"
+
+node api "API" {
+  pass
+  demand: flows.photos
+  capacity: estimated(1_500, "req/s", "vendor benchmark")
+  over: "uploads fail with 503s"
+}
+
+cluster broker "Broker" "3 nodes" {
+  members: 3
+  memberLabel: `node ${i}`
+  queue uploads { partitions { photos: 12 } }
+}
+
+pool resizers "Resizers" `${pods} pods × 4 threads` {
+  workers { pods: pods; perPod: 4 }
+  short: "the resizers"
+  plural: true
+  demand: flows.photos * files * 0.005         # 5 ms of CPU per file
+  capacity: measured(pods * 2, "cores", "pod CPU limit")
+  over: "photos wait in the queue and the lag grows"
+}
+
+node bucket "Object store" {
+  shape: cylinder
+  store
+  short: "the object store"
+  demand: flows.photos * files
+  capacity: estimated(3_000, "writes/s", "provider rate limit")
+  over: "writes are throttled"
+}
+
+phones -> api: "POST /photos"
+api -> broker: `${kfmt(flows.photos)} photos/s`
+broker -> resizers
+resizers -> bucket: `${files} files a photo`

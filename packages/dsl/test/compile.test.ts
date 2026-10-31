@@ -65,11 +65,13 @@ describe('compile', () => {
     expect(r.definition!.model.title).toBe('T')
   })
 
-  it('compiles every example in the repo without a warning', () => {
+  it('compiles every example and the starter without a warning', () => {
     const dir = new URL('../../../examples/', import.meta.url)
     for (const ex of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()))
       for (const f of readdirSync(new URL(`${ex.name}/`, dir)).filter((f) => f.endsWith('.loadmap')))
         expect(compile(readFileSync(new URL(`${ex.name}/${f}`, dir), 'utf8')).diagnostics, f).toEqual([])
+    const starter = new URL('../../../apps/playground/src/uploads.loadmap', import.meta.url)
+    expect(compile(readFileSync(starter, 'utf8')).diagnostics).toEqual([])
   })
 })
 
