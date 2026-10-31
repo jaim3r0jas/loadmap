@@ -1,0 +1,101 @@
+loadmap 1
+# The checkout pipeline, as a definition: the same model and view as model.ts and view.ts.
+title: "Checkout pipeline"
+speed: 10
+assume: "Load scales linearly with users; 1× is the 5-minute peak of an ordinary day."
+
+load "Users, × today" { max: 100; default: 10 }
+
+param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
+param threads "Threads per pod" { options: [4, 8, 16]; default: 8 }
+param batch "Batch DB writes" { default: true }
+param rows "Rows per batch" { options: [10, 50]; default: 50; enabled: batch }
+
+preset "Black Friday" { load: 40; pods: 6 }
+
+# cost = a + b × rate, fitted from the measured series
+fit workerCores "Worker CPU per request" {
+  source: "Grafana, peak week"
+  points rate cores {
+      200 0.2599
+      350 0.3061
+      500 0.3419
+      650 0.3889
+      800 0.4385
+      950 0.4852
+      1100 0.5166
+      1250 0.5881
+      1400 0.6233
+      1550 0.6614
+      1700 0.7008
+      1850 0.7677
+      2000 0.8076
+      2150 0.8235
+      2300 0.8899
+      2450 0.9201
+      2600 0.9901
+      2750 1.004
+      2900 1.0739
+      3050 1.1141
+      3200 1.1375
+  }
+}
+
+flow orders "orders" {
+  unit: "order"
+  rate: 40 * load
+  priority: 1
+  route: gateway -> topic -> workers -> db
+  from: phones
+  color: accent
+}
+
+flow events "events" {
+  unit: "event"
+  rate: 900 * load
+  priority: 2
+  drop { olderThan: 60; reason: "too_old" }
+  route: gateway -> topic -> workers
+  from: phones
+  color: alt
+}
+
+node phones "Phones" "app checkout"
+
+node gateway "API gateway" {
+  pass
+  demand: flows.orders + flows.events
+  capacity: estimated(20_000, "req/s", "vendor benchmark, not load-tested")
+  over: "clients get 429s"
+}
+
+cluster kafka "Kafka" "orders and events" {
+  members: 3
+  memberLabel: `broker ${i}`
+  queue topic { partitions { orders: 12; events: 24 } }
+}
+
+pool workers "Workers" `${pods} pods × ${threads} threads` {
+  workers { pods: pods; perPod: threads }
+  name: "Worker pool"
+  short: "the worker pool"
+  demand: workerCores(flows.orders + flows.events)
+  capacity: measured(pods * 2, "cores", "pod CPU limit")
+  over: "messages wait in the topic and the lag keeps growing"
+  describe: `${pods} pods × ${threads} threads, 2 cores each`
+}
+
+node db "Postgres" "primary" {
+  shape: cylinder
+  store
+  name: "Postgres primary"
+  short: "the database"
+  demand: batch ? flows.orders / rows : flows.orders
+  capacity: estimated(4_000, "commits/s")
+  over: "commits queue on the primary"
+}
+
+phones -> gateway: "POST /checkout"
+gateway -> kafka: `${kfmt(flows.orders)} orders/s`
+kafka -> workers
+workers -> db: batch ? `${rows} rows a commit` : "a commit per order"

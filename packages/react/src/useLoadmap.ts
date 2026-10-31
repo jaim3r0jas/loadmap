@@ -9,6 +9,8 @@ export interface LoadmapOptions<P> extends SimOptions {
   initial?: Partial<Values<P>>
   /** Below this container width the diagram is laid out top to bottom. Default 640. */
   narrowBelow?: number
+  /** Which way the diagram runs where there is room. Default RIGHT; below `narrowBelow` it is always DOWN. */
+  direction?: Direction
 }
 
 export interface LoadmapController<P = any> {
@@ -52,7 +54,8 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const engine = engineRef.current
 
   const [root, setRoot] = useState<HTMLElement | null>(null)
-  const [direction, setDirection] = useState<Direction>('RIGHT')
+  const wide = o.direction ?? 'RIGHT'
+  const [direction, setDirection] = useState<Direction>(wide)
   const [measure, setMeasure] = useState<Measure | null>(null)
   const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
   const scene = laid?.view === view ? laid.scene : null
@@ -66,11 +69,11 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     setMeasure(() => canvasMeasure(getComputedStyle(root).fontFamily))
     const ro = new ResizeObserver(([e]) => {
       const w = e?.contentRect.width ?? root.clientWidth
-      setDirection(w > 0 && w < narrowBelow ? 'DOWN' : 'RIGHT')
+      setDirection(w > 0 && w < narrowBelow ? 'DOWN' : wide)
     })
     ro.observe(root)
     return () => ro.disconnect()
-  }, [root, narrowBelow])
+  }, [root, narrowBelow, wide])
 
   const key = useMemo(
     () => (measure ? structureKey(view, ev, { direction, measure }) : ''),

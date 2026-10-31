@@ -72,19 +72,19 @@ export const alerts = defineModel({
       over: 'positions wait in their topic; under backlog only the newest per user is kept',
       describe: ({ posPods }) => `${posPods} pods × 16 threads, 1.5 ms a position`,
     },
-    push: {
-      name: 'Push broker',
-      short: 'the push broker',
-      demand: ({ flows, watchOnly }) => flows.alerts * 1.4 + flows.positions * perPosition(watchOnly),
-      capacity: ({ pushNodes }) => estimated(pushNodes * 4000, 'packets/s', 'about 4,000 packets/s per node'),
-      over: 'pushes queue on the broker, so positions and alert updates arrive late',
-    },
     db: {
       name: 'State store',
       short: 'the state store',
       demand: ({ flows }) => flows.alerts * 2,
       capacity: estimated(2000, 'writes/s'),
       over: 'state writes queue on the primary',
+    },
+    push: {
+      name: 'Push broker',
+      short: 'the push broker',
+      demand: ({ flows, watchOnly }) => flows.alerts * 1.4 + flows.positions * perPosition(watchOnly),
+      capacity: ({ pushNodes }) => estimated(pushNodes * 4000, 'packets/s', 'about 4,000 packets/s per node'),
+      over: 'pushes queue on the broker, so positions and alert updates arrive late',
     },
   },
   stages: {
