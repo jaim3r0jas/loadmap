@@ -19,7 +19,8 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 | `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, engine, theme                                  | core, sim, layout; react (peer) |
 | `@loadmap/export` | PNG and WebM/MP4 on a fixed clock                                                          | react, mediabunny               |
 
-`examples/checkout` is the reference model and holds the end-to-end tests; `apps/playground` shows it (`pnpm dev`).
+`examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
+end-to-end tests; `apps/playground` shows both (`pnpm dev`, `?example=alerts`).
 
 ## Verification
 

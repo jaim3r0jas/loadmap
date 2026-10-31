@@ -60,7 +60,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               <div className="lm-tick" style={{ left: at(model.thresholds.full) }} />
             </div>
             <div className="lm-val">
-              {c.util == null ? '—' : `${pct(c.util)} · ${kfmt(c.demand ?? 0)} ${c.capacity?.unit ?? ''}`}
+              {c.util == null ? '—' : `${pct(c.util)} · ${num(c.demand ?? 0)} ${c.capacity?.unit ?? ''}`}
               <small>
                 {c.util == null
                   ? 'switched off'
@@ -283,5 +283,8 @@ function describe(a: Assumption): ReactNode {
     </>
   )
 }
+
+/** Exact below 1,000 (3.9 cores), compact above (12k req/s). */
+const num = (x: number) => (Math.abs(x) >= 1000 ? kfmt(x) : fmt(x))
 
 const sig = (x: number) => Number(x.toPrecision(3)).toString()

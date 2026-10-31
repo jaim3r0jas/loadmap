@@ -211,6 +211,9 @@ importers:
 
   apps/playground:
     dependencies:
+      '@loadmap/example-alerts':
+        specifier: workspace:*
+        version: link:../../examples/alerts
       '@loadmap/example-checkout':
         specifier: workspace:*
         version: link:../../examples/checkout
@@ -226,6 +229,21 @@ importers:
       react-dom:
         specifier: 19.3.1
         version: 19.3.1(react@19.3.1)
+
+  examples/alerts:
+    dependencies:
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@loadmap/layout':
+        specifier: workspace:*
+        version: link:../../packages/layout
+      '@loadmap/react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      '@loadmap/sim':
+        specifier: workspace:*
+        version: link:../../packages/sim
 
   examples/checkout:
     dependencies:

@@ -1,0 +1,22 @@
+[
+  { "rate": 10, "cores": 0.1923 },
+  { "rate": 30, "cores": 0.2787 },
+  { "rate": 50, "cores": 0.3443 },
+  { "rate": 70, "cores": 0.4164 },
+  { "rate": 90, "cores": 0.4989 },
+  { "rate": 110, "cores": 0.6022 },
+  { "rate": 130, "cores": 0.6536 },
+  { "rate": 150, "cores": 0.7396 },
+  { "rate": 170, "cores": 0.8501 },
+  { "rate": 190, "cores": 0.8983 },
+  { "rate": 210, "cores": 0.9994 },
+  { "rate": 230, "cores": 1.0994 },
+  { "rate": 250, "cores": 1.1917 },
+  { "rate": 270, "cores": 1.2319 },
+  { "rate": 290, "cores": 1.2888 },
+  { "rate": 310, "cores": 1.3848 },
+  { "rate": 330, "cores": 1.4635 },
+  { "rate": 350, "cores": 1.5604 },
+  { "rate": 370, "cores": 1.5983 },
+  { "rate": 390, "cores": 1.7527 }
+]

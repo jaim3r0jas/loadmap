@@ -1,0 +1,14 @@
+{
+  "name": "@loadmap/example-alerts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@loadmap/core": "workspace:*",
+    "@loadmap/layout": "workspace:*",
+    "@loadmap/react": "workspace:*",
+    "@loadmap/sim": "workspace:*"
+  }
+}

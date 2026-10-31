@@ -8,6 +8,7 @@
     "preview": "node ../../scripts/node-version.mjs && vite preview"
   },
   "dependencies": {
+    "@loadmap/example-alerts": "workspace:*",
     "@loadmap/example-checkout": "workspace:*",
     "@loadmap/export": "workspace:*",
     "@loadmap/react": "workspace:*",
