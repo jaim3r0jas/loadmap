@@ -1,0 +1,279 @@
+import { type Assumption, fmt, kfmt, multiple, pct, secs } from '@loadmap/core'
+import { type ReactNode, useEffect, useState } from 'react'
+import type { LoadmapController } from './useLoadmap'
+
+/** The model's one-sentence answer for the current values. */
+export function Verdict({ lm }: { lm: LoadmapController }) {
+  return (
+    <p className="lm-verdict" data-tier={lm.ev.verdict.tier} aria-live="polite">
+      {lm.ev.verdict.text}
+    </p>
+  )
+}
+
+/** Each component's utilization in the order they reach the target, with where they cross it and 100 %. */
+export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: LoadmapController; title?: ReactNode }) {
+  const { ev, model } = lm
+  const top = Math.max(1.5, model.thresholds.full * 1.5)
+  const at = (u: number) => `${(u / top) * 100}%`
+  return (
+    <>
+      <h3>{title}</h3>
+      <div className="lm-scale" aria-hidden="true">
+        <span />
+        <div>
+          <span style={{ left: 0, transform: 'none' }}>0</span>
+          <span style={{ left: at(model.thresholds.target) }}>{pct(model.thresholds.target)} target</span>
+          <span style={{ left: at(model.thresholds.full) }}>{pct(model.thresholds.full)}</span>
+          <span style={{ left: '100%', transform: 'translateX(-100%)' }}>{pct(top)}</span>
+        </div>
+        <span />
+      </div>
+      <div className="lm-limits">
+        {ev.ranked.map((c) => (
+          <div className="lm-lim" key={c.id} data-component={c.id}>
+            <div>
+              <b>
+                {c.name}
+                {c === ev.firstLimit && (
+                  <span className="lm-tag" data-kind="first">
+                    first limit
+                  </span>
+                )}
+                {c.capacity?.provenance === 'estimated' && (
+                  <span className="lm-tag" data-kind="estimated">
+                    estimate
+                  </span>
+                )}
+              </b>
+              <span className="lm-sub">
+                {c.describe ?? (c.capacity ? `${fmt(c.capacity.value)} ${c.capacity.unit}` : 'switched off')}
+              </span>
+            </div>
+            <div className="lm-track" role="img" aria-label={`${c.name} at ${c.util == null ? 'off' : pct(c.util)}`}>
+              <div
+                className="lm-fill"
+                data-state={c.state}
+                style={{ width: `${Math.min(100, ((c.util ?? 0) / top) * 100)}%` }}
+              />
+              <div className="lm-tick" style={{ left: at(model.thresholds.target) }} />
+              <div className="lm-tick" style={{ left: at(model.thresholds.full) }} />
+            </div>
+            <div className="lm-val">
+              {c.util == null ? '—' : `${pct(c.util)} · ${kfmt(c.demand ?? 0)} ${c.capacity?.unit ?? ''}`}
+              <small>
+                {c.util == null
+                  ? 'switched off'
+                  : `${pct(model.thresholds.target)} at ${multiple(c.target, model.searchMax)} · full at ${multiple(c.full, model.searchMax)}`}
+              </small>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** Live numbers from the sim: lag and drops per queue, busy workers, rejected requests. */
+export function Meters({ lm }: { lm: LoadmapController }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => tick((x) => x + 1), 250)
+    return () => clearInterval(t)
+  }, [])
+  const { ev, engine, model } = lm
+  const sim = engine.sim
+  const flowLabel = (f: string) => model.def.flows[f]?.label ?? f
+  const items: { key: string; value: string; label: string; state: 'ok' | 'warn' | 'over' }[] = []
+  for (const s of Object.values(ev.stages)) {
+    if (s.kind === 'queue')
+      for (const f of model.flowIds.filter((x) => ev.routes[x]?.includes(s.id))) {
+        const q = sim.queue(s.id, f)
+        items.push({
+          key: `${s.id}/${f}/lag`,
+          value: secs(q.lag),
+          label: `${flowLabel(f)} lag in ${s.id}`,
+          state: q.lag > 60 ? 'over' : q.lag > 5 ? 'warn' : 'ok',
+        })
+        if (model.def.flows[f]?.overload?.drop)
+          items.push({
+            key: `${s.id}/${f}/drop`,
+            value: kfmt(q.dropped),
+            label: `${flowLabel(f)} dropped /s (${model.def.flows[f]!.overload!.drop!.reason ?? 'too old'})`,
+            state: q.dropped > 0.5 ? 'over' : 'ok',
+          })
+      }
+    if (s.kind === 'workers') {
+      const b = sim.busy(s.id)
+      items.push({
+        key: `${s.id}/busy`,
+        value: pct(b),
+        label: `${s.id} busy`,
+        state: b > 0.95 ? 'over' : b > 0.5 ? 'warn' : 'ok',
+      })
+    }
+    if (s.kind === 'pass' && sim.shed(s.id) > 0)
+      items.push({ key: `${s.id}/shed`, value: pct(sim.shed(s.id)), label: `rejected at ${s.id}`, state: 'over' })
+  }
+  return (
+    <>
+      <h3>Live</h3>
+      <div className="lm-meters">
+        {items.map((m) => (
+          <div className="lm-meter" data-state={m.state} key={m.key}>
+            <b>{m.value}</b>
+            <span>{m.label}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** The load slider, the presets and every parameter, greyed out where it does not apply. */
+export function Controls({ lm }: { lm: LoadmapController }) {
+  const { model, values, setValues, ev } = lm
+  const v = values as Record<string, any>
+  const load = model.load
+  return (
+    <div className="lm-card lm-controls">
+      <h3>Load</h3>
+      <label className="lm-range">
+        <span>
+          {load.label} <output>{fmt(v.load)}×</output>
+        </span>
+        <input
+          type="range"
+          min={load.min}
+          max={load.max}
+          step={load.step}
+          value={v.load}
+          onChange={(e) => setValues({ load: Number(e.target.value) } as any)}
+        />
+      </label>
+      <div className="lm-presets">
+        {ev.presets.map((p) => {
+          const on = Object.entries(p.values).every(([k, x]) => v[k] === x)
+          return (
+            <button type="button" key={p.label} aria-pressed={on} onClick={() => setValues(p.values)}>
+              {p.label}
+            </button>
+          )
+        })}
+      </div>
+      {model.params.length > 1 && <h3>Design</h3>}
+      {model.params.map(({ id, def }) => {
+        if (def.kind === 'load') return null
+        const enabled = model.isEnabled(id, v)
+        const tag = def.tag && (
+          <span className="lm-tag" data-kind="estimated">
+            {def.tag}
+          </span>
+        )
+        if (def.kind === 'switch')
+          return (
+            <label className={`lm-switch${enabled ? '' : ' lm-off'}`} key={id}>
+              <input
+                type="checkbox"
+                checked={Boolean(v[id])}
+                disabled={!enabled}
+                onChange={(e) => setValues({ [id]: e.target.checked } as any)}
+              />
+              <span>
+                {def.label}
+                {tag}
+              </span>
+              {def.hint && <small>{def.hint}</small>}
+            </label>
+          )
+        if (def.kind === 'select')
+          return (
+            <label className={`lm-select${enabled ? '' : ' lm-off'}`} key={id}>
+              <span>
+                {def.label}
+                {tag}
+              </span>
+              <select
+                value={String(v[id])}
+                disabled={!enabled}
+                onChange={(e) => {
+                  const opt = def.options.find((o: number | string) => String(o) === e.target.value)
+                  setValues({ [id]: opt } as any)
+                }}
+              >
+                {def.options.map((o: number | string) => (
+                  <option key={String(o)} value={String(o)}>
+                    {def.format ? def.format(o) : String(o)}
+                  </option>
+                ))}
+              </select>
+              {def.hint && <small>{def.hint}</small>}
+            </label>
+          )
+        return (
+          <label className={`lm-range${enabled ? '' : ' lm-off'}`} key={id}>
+            <span>
+              {def.label}
+              {tag} <output>{def.format ? def.format(v[id]) : fmt(v[id])}</output>
+            </span>
+            <input
+              type="range"
+              min={def.min}
+              max={def.max}
+              step={def.step}
+              value={v[id]}
+              disabled={!enabled}
+              onChange={(e) => setValues({ [id]: Number(e.target.value) } as any)}
+            />
+            {def.hint && <small>{def.hint}</small>}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+/** What the model assumes: every capacity with its provenance, every fit, and anything the page adds. */
+export function Assumptions({ lm, extra = [] }: { lm: LoadmapController; extra?: readonly ReactNode[] }) {
+  return (
+    <div className="lm-card">
+      <h3>What this assumes</h3>
+      <ul className="lm-facts">
+        {extra.map((x, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the page's own list, in its order
+          <li key={i}>{x}</li>
+        ))}
+        {lm.ev.assumptions.map((a) => (
+          <li key={a.kind === 'capacity' ? `c:${a.component}` : `f:${a.name}`}>{describe(a)}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function describe(a: Assumption): ReactNode {
+  if (a.kind === 'capacity') {
+    const c = a.capacity
+    return (
+      <>
+        <b>{a.name}:</b> {fmt(c.value)} {c.unit},{' '}
+        <span className="lm-prov" data-kind={c.provenance}>
+          {c.provenance}
+        </span>
+        {c.source ? ` (${c.source})` : ''}.
+      </>
+    )
+  }
+  const f = a.fit
+  return (
+    <>
+      <b>{a.name}:</b> {f.y} = {sig(f.a)} + {sig(f.b)} × {f.x}, r² {f.r2.toFixed(3)} over {f.n} points,{' '}
+      <span className="lm-prov" data-kind="measured">
+        measured
+      </span>
+      {f.source ? ` (${f.source})` : ''}.
+    </>
+  )
+}
+
+const sig = (x: number) => Number(x.toPrecision(3)).toString()

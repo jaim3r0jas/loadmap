@@ -1,0 +1,50 @@
+/** A number for a reader: 1,234 / 12.3 / 0.4. */
+export function fmt(n: number): string {
+  if (!Number.isFinite(n)) return n > 0 ? '∞' : '—'
+  if (Math.abs(n) >= 1000) return Math.round(n).toLocaleString('en-US')
+  return (Math.round(n * 10) / 10).toString()
+}
+
+/** A compact number: 980 / 1.2k / 34k / 1.5M. */
+export function kfmt(n: number): string {
+  if (!Number.isFinite(n)) return n > 0 ? '∞' : '—'
+  const a = Math.abs(n)
+  if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (a >= 1e4) return `${Math.round(n / 1000)}k`
+  if (a >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return Math.round(n).toString()
+}
+
+/** A load multiple, rounded down so it never promises more than the model: 2.6× / 53×. */
+export function multiple(u: number | null, searchMax = 2000): string {
+  if (u == null) return '—'
+  if (!Number.isFinite(u)) return `beyond ${fmt(searchMax)}×`
+  return u >= 10 ? `${Math.floor(u)}×` : `${Math.floor(u * 10) / 10}×`
+}
+
+/** A percentage of a 0–1 share: 50 %. */
+export function pct(share: number): string {
+  return `${Math.round(share * 100)} %`
+}
+
+/** A duration in seconds for a meter: 0 s / 42 s / 3 min / > 1 h / stalled. */
+export function secs(s: number): string {
+  if (!Number.isFinite(s)) return 'stalled'
+  if (s < 1) return '0 s'
+  if (s < 60) return `${Math.round(s)} s`
+  if (s < 3600) return `${Math.round(s / 60)} min`
+  return '> 1 h'
+}
+
+/** The 1-2-5 step at or above x: 1, 2, 5, 10, 20, 50, … */
+export function niceStep(x: number): number {
+  const p = 10 ** Math.floor(Math.log10(Math.max(x, 1)))
+  const f = x / p
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p
+}
+
+/** "a", "a and b", "a, b and c". */
+export function joinAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+__screenshots__/
+out/
+.DS_Store
+.vitest/
+.omc/

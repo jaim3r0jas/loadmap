@@ -1,0 +1,18 @@
+{
+  "name": "@loadmap/example-checkout",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@loadmap/core": "workspace:*",
+    "@loadmap/sim": "workspace:*",
+    "@loadmap/layout": "workspace:*",
+    "@loadmap/react": "workspace:*",
+    "@loadmap/export": "workspace:*"
+  },
+  "devDependencies": {
+    "mediabunny": "1.65.0"
+  }
+}
