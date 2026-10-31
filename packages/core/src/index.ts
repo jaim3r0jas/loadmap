@@ -1,6 +1,6 @@
 export type { LinearFit } from './calibrate'
 export { type Capacity, estimated, measured, type Provenance } from './capacity'
-export { around, fmt, joinAnd, kfmt, multiple, niceStep, pct, secs } from './format'
+export { around, fmt, joinAnd, kfmt, monthOf, multiple, niceStep, pct, secs } from './format'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
 export {
   type Assumption,

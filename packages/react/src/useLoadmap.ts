@@ -1,4 +1,4 @@
-import type { Evaluation, Model, Values } from '@loadmap/core'
+import type { Evaluation, Model, Scenario, Values } from '@loadmap/core'
 import { type Direction, labelsAt, layout, type Measure, type Scene, structureKey, type View } from '@loadmap/layout'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -18,6 +18,10 @@ export interface LoadmapController<P = any> {
   view: View
   values: Values<P>
   setValues: (v: Partial<Values<P>>) => void
+  /** The scenario the values match, load aside; null for values of the reader's own. */
+  scenario: Scenario<P> | null
+  /** Takes a scenario's values; the load stays. */
+  setScenario: (label: string) => void
   ev: Evaluation<P>
   /** null until the first layout is done. */
   scene: Scene | null
@@ -111,7 +115,31 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     [engine, model],
   )
 
-  return { model, view, values, setValues, ev, scene, labels, direction, reducedMotion, engine, rootRef: setRoot, root }
+  const scenario = useMemo(() => model.scenarioOf(values), [model, values])
+  const setScenario = useCallback(
+    (label: string) => {
+      const s = model.scenarios.find((x) => x.label === label)
+      if (s) setValues(s.values as Partial<Values<P>>)
+    },
+    [model, setValues],
+  )
+
+  return {
+    model,
+    view,
+    values,
+    setValues,
+    scenario,
+    setScenario,
+    ev,
+    scene,
+    labels,
+    direction,
+    reducedMotion,
+    engine,
+    rootRef: setRoot,
+    root,
+  }
 }
 
 export function useMediaQuery(q: string): boolean {

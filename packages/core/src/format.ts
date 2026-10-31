@@ -64,7 +64,13 @@ const MONTHS = [
   'December',
 ]
 
-/** A date as a reader plans with it, by month in UTC: "around March 2028". Fixed names, whatever the locale. */
+/** A month in UTC, "March 2028" or short "Mar 2028". Fixed names, whatever the locale. */
+export function monthOf(d: Date, short = false): string {
+  const name = MONTHS[d.getUTCMonth()]!
+  return `${short ? name.slice(0, 3) : name} ${d.getUTCFullYear()}`
+}
+
+/** A date as a reader plans with it, by month: "around March 2028". */
 export function around(d: Date): string {
-  return `around ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+  return `around ${monthOf(d)}`
 }

@@ -391,3 +391,32 @@ describe('second review', () => {
     expect(sim.particles.length).toBe(before)
   })
 })
+
+describe('a new shape', () => {
+  const sized = defineModel({
+    load: p.load({ max: 10 }),
+    params: { pods: p.select({ label: 'Pods', options: [1, 2, 4], default: 2 }) },
+    flows: { a: { rate: ({ load }) => 40 * load } },
+    components: { pool: { name: 'Pool', demand: ({ flows }) => flows.a, capacity: measured(1000, 'u/s'), over: '' } },
+    stages: { topic: queue({ partitions: { a: 4 } }), pool: workers('pool', { pods: ({ pods }) => pods, perPod: 4 }) },
+    routes: { a: ['topic', 'pool'] },
+  })
+
+  it('keeps the dots whose worker still exists', () => {
+    const sim = createSim(sized, sized.evaluate({ load: 5 }), { seed: 2 })
+    for (let i = 0; i < 90; i++) sim.step(1 / 30)
+    const ids = (s: typeof sim) => new Set(s.particles.map((d) => d.id))
+    const before = ids(sim)
+    expect(before.size).toBeGreaterThan(5)
+    // more pods: every worker of two pods is still there
+    sim.update(sized.evaluate({ load: 5, pods: 4 }))
+    expect(ids(sim)).toEqual(before)
+    // fewer: the dots at workers 4 to 7 go, the rest stay
+    const inSecondPod = sim.particles.filter((d) =>
+      [d.from, d.to].some((x) => x.stage === 'pool' && (x.cell ?? 0) >= 4),
+    )
+    sim.update(sized.evaluate({ load: 5, pods: 1 }))
+    expect(sim.particles.length).toBe(before.size - inSecondPod.length)
+    expect(sim.particles.every((d) => [d.from, d.to].every((x) => x.stage !== 'pool' || (x.cell ?? 0) < 4))).toBe(true)
+  })
+})

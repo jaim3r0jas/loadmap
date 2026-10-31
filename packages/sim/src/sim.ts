@@ -122,7 +122,10 @@ export class Sim {
     for (const s of Object.values(ev.stages)) if (s.kind === 'workers') this.#busy.set(s.id, this.#steadyBusy(s.id))
   }
 
-  /** New values or a new evaluation: rates and capacities change, backlog stays. A new shape clears the dots. */
+  /**
+   * New values or a new evaluation: rates and capacities change, backlog stays. A new shape (partitions, workers)
+   * keeps every dot whose partition or worker still exists, so switching designs does not empty the picture.
+   */
   update(ev: Evaluation): void {
     this.#ev = ev
     // only what places dots: partitions and workers (a fan-out share or a label does not move a dot)
@@ -137,7 +140,16 @@ export class Sim {
     )
     if (shape !== this.#shape) {
       this.#shape = shape
-      this.particles = []
+      const fits = (at: Place, flow: string) => {
+        if (at.stage == null) return true
+        const st = ev.stages[at.stage] as ResolvedStage | undefined
+        if (!st) return false
+        if (at.cell == null) return true
+        if (st.kind === 'queue') return at.cell < (st.partitions[flow] ?? 0)
+        if (st.kind === 'workers') return at.cell < st.pods * st.perPod
+        return false
+      }
+      this.particles = this.particles.filter((d) => fits(d.from, d.flow) && fits(d.to, d.flow))
       for (const s of Object.values(ev.stages) as ResolvedStage[])
         if (s.kind === 'workers') this.#fills.set(s.id, fillOrder(s.pods, s.perPod, s.fill, this.#o.seed))
     }

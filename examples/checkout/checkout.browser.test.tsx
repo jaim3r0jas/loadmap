@@ -1,11 +1,13 @@
+import { compare } from '@loadmap/core'
 import { composeFrame, exportPng, recordVideo } from '@loadmap/export'
 import type { LoadmapHandle, Theme } from '@loadmap/react'
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { Checkout } from './Checkout'
+import { checkout } from './model'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -74,6 +76,98 @@ describe('checkout in the browser', () => {
     expect(handle.engine.sim.particles.length).toBeGreaterThan(5)
     const filled = [...el.querySelectorAll('rect[data-slot]')].filter((r) => Number(r.getAttribute('height')) > 0)
     expect(filled.length).toBeGreaterThan(0)
+  })
+
+  it('switches scenario without starting the dots over', async () => {
+    const { handle, el } = await mount()
+    handle.pause()
+    handle.reset(3)
+    for (let i = 0; i < 90; i++) handle.step(1 / 30)
+    const sim = handle.engine.sim
+    const before = new Set(sim.particles.map((d) => d.id))
+    expect(before.size).toBeGreaterThan(5)
+    const buttons = [...el.querySelectorAll<HTMLButtonElement>('.lm-scenarios button')]
+    expect(buttons.map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
+      ['Today', 'true'],
+      ['Proposed', 'false'],
+    ])
+    buttons[1]!.click()
+    await expect.poll(() => verdict(el)).toContain('holds up to 20× (around March 2031)')
+    expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true')
+    // six pods change the layout; the queues and the dots carry on
+    await handle.ready()
+    expect(handle.engine.sim).toBe(sim)
+    handle.step(1 / 30)
+    expect(sim.particles.some((d) => before.has(d.id))).toBe(true)
+    expect(el.querySelectorAll('rect[data-slot]')).toHaveLength(48)
+    // a control of the reader's own leaves every scenario
+    const pods = [...el.querySelectorAll('label')].find((l) => l.textContent?.startsWith('Worker pods'))!
+    const select = pods.querySelector('select')!
+    select.value = '4'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await expect.poll(() => el.querySelector('.lm-own')?.textContent).toBe('your own values')
+  })
+
+  it('compares the scenarios in a table that matches the model', async () => {
+    const { el } = await mount()
+    const c = compare(checkout, 10)
+    expect(el.querySelector('.lm-compare-text')!.textContent).toBe(c.text)
+    const rows = [...el.querySelectorAll('.lm-compare tbody tr[data-scenario]')]
+    expect(rows.map((r) => r.textContent)).toEqual([
+      'TodayWorker pool10×Feb 203020×Mar 2031',
+      'ProposedWorker pool20×Mar 203142×Mar 2032',
+    ])
+    expect(rows.map((r) => Number(r.querySelector('td[data-multiple]')!.getAttribute('data-multiple')))).toEqual(
+      c.rows.map((r) => r.target),
+    )
+    const gateway = el.querySelector('.lm-compare tr[data-component="gateway"]')!
+    expect(gateway.textContent).toBe('API gateway10×21×+100 %')
+  })
+
+  it('draws the headroom chart with its crossings where the limits are', async () => {
+    const { el } = await mount()
+    const c = compare(checkout, 10)
+    const dots = [...el.querySelectorAll('.lm-headroom circle[data-crossing]')]
+    const at = (label: string, kind: string) =>
+      Number(
+        dots
+          .find((d) => d.getAttribute('data-scenario') === label && d.getAttribute('data-crossing') === kind)
+          ?.getAttribute('data-multiple'),
+      )
+    for (const r of c.rows) {
+      expect(at(r.label, 'target')).toBe(r.target)
+      expect(at(r.label, 'full')).toBe(r.full)
+    }
+    expect([...el.querySelectorAll('.lm-headroom [data-line]')].map((p) => p.getAttribute('data-line'))).toEqual([
+      'Proposed',
+      'Today',
+    ])
+    // the arrow keys read every line at one load
+    const chart = el.querySelector<HTMLElement>('.lm-chart')!
+    chart.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect
+      .poll(() => el.querySelector('.lm-headroom .lm-tip')?.textContent)
+      .toMatch(/×.*Today.*Proposed.*Worker pool/)
+    expect(chart.getAttribute('aria-valuetext')).toMatch(/^\d+(\.\d)?×: Today \d+ %, Proposed \d+ %$/)
+  })
+
+  it('tells what a box stands for on hover and on focus', async () => {
+    const { el } = await mount()
+    const workers = el.querySelector<SVGGElement>('[data-node="workers"]')!
+    await userEvent.hover(workers)
+    const detail = () => el.querySelector('.lm-detail')?.textContent ?? ''
+    await expect.poll(detail).toContain('Worker pool')
+    expect(detail()).toContain('50 % at 10× (around February 2030)')
+    expect(detail()).toContain('capacity measured, pod CPU limit')
+    expect(detail()).toContain('Today 10× · Proposed 20×')
+    expect(workers.getAttribute('aria-describedby')).toBe(el.querySelector('.lm-detail')!.id)
+    await userEvent.unhover(workers)
+    await expect.poll(() => el.querySelector('.lm-detail')).toBeNull()
+    el.querySelector<SVGGElement>('[data-node="gateway"]')!.focus()
+    await expect.poll(detail).toContain('capacity estimated, vendor benchmark, not load-tested')
+    // a box without a component has nothing to tell
+    expect(el.querySelector('[data-node="phones"]')!.getAttribute('tabindex')).toBeNull()
   })
 
   for (const theme of ['light', 'dark'] as const)

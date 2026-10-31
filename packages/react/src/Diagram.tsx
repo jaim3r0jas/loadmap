@@ -1,6 +1,7 @@
-import type { ComponentState } from '@loadmap/core'
+import { around, type ComponentState, compare, fmt, kfmt, multiple, pct } from '@loadmap/core'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { scenarioColor } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
 const STATE_STROKE: Record<ComponentState, string> = {
@@ -20,6 +21,9 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
   const wrapRef = useRef<HTMLDivElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
   const [full, setFull] = useState(false)
+  // the node whose detail shows, and whether a tap pinned it
+  const [tip, setTip] = useState<{ id: string; pinned: boolean } | null>(null)
+  const detailId = useId()
 
   // bind after every structural render: the worker fills are new elements
   // bind when the structure is new: the worker fills are new elements
@@ -81,8 +85,19 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
         ref={boardRef}
         style={scene ? { aspectRatio: `${scene.width} / ${scene.height}` } : { minHeight: 240 }}
       >
-        {scene && <Structure lm={lm} scene={scene} svgRef={svgRef} rates={reducedMotion} />}
+        {scene && (
+          <Structure
+            lm={lm}
+            scene={scene}
+            svgRef={svgRef}
+            rates={reducedMotion}
+            tip={tip}
+            setTip={setTip}
+            detailId={detailId}
+          />
+        )}
         <canvas ref={canvasRef} hidden={reducedMotion} />
+        {scene && tip && <Detail lm={lm} scene={scene} id={tip.id} board={boardRef.current} detailId={detailId} />}
       </div>
     </div>
   )
@@ -123,23 +138,58 @@ function Legend({ lm }: { lm: LoadmapController }) {
   )
 }
 
+/** The component a box stands for: its stages' component, or its own. */
+function componentOf(lm: LoadmapController, n: SceneNode): string | undefined {
+  return n.stages.map((s) => lm.ev.stages[s]?.component).find(Boolean) ?? n.component ?? undefined
+}
+
+type Tip = { id: string; pinned: boolean } | null
+
 function Structure({
   lm,
   scene,
   svgRef,
   rates,
+  tip,
+  setTip,
+  detailId,
 }: {
   lm: LoadmapController
   scene: Scene
   svgRef: React.RefObject<SVGSVGElement | null>
   rates: boolean
+  tip: Tip
+  setTip: (t: Tip | ((t: Tip) => Tip)) => void
+  detailId: string
 }) {
   const marker = useId().replace(/:/g, '')
   const { labels, ev } = lm
   const stateOf = (n: SceneNode): ComponentState | null => {
-    const c = n.stages.map((s) => ev.stages[s]?.component).find(Boolean) ?? n.component
+    const c = componentOf(lm, n)
     return c ? (ev.components[c]?.state ?? null) : null
   }
+  // hover and focus show a box's detail; a tap (or Enter) pins it until the next one
+  const handlers = (n: SceneNode) =>
+    componentOf(lm, n)
+      ? {
+          tabIndex: 0,
+          className: 'lm-node',
+          'aria-describedby': tip?.id === n.id ? detailId : undefined,
+          onPointerEnter: (e: React.PointerEvent) =>
+            e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
+          onPointerLeave: (e: React.PointerEvent) => e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : null)),
+          onFocus: () => setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
+          onBlur: () => setTip((t) => (t?.pinned ? t : null)),
+          onClick: () => setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true })),
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === 'Escape') setTip(null)
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true }))
+            }
+          },
+        }
+      : {}
   const summary = scene.nodes.map((n) => labels.nodes[n.id]?.title).join(', ')
   return (
     <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="img" aria-label={`Diagram: ${summary}`}>
@@ -168,6 +218,7 @@ function Structure({
           title={labels.nodes[n.id]?.title}
           sub={labels.nodes[n.id]?.sub}
           lm={lm}
+          handlers={handlers(n)}
         />
       ))}
     </svg>
@@ -260,18 +311,20 @@ function Node({
   title,
   sub,
   lm,
+  handlers,
 }: {
   n: SceneNode
   state: ComponentState | null
   title?: string
   sub?: string
   lm: LoadmapController
+  handlers: React.SVGProps<SVGGElement>
 }) {
   const stroke = state ? STATE_STROKE[state] : 'var(--lm-line)'
   const flows = lm.view.def.flows as Record<string, { color: string }>
   const e = 6
   return (
-    <g style={{ color: 'var(--lm-fg)' }} data-node={n.id}>
+    <g style={{ color: 'var(--lm-fg)' }} data-node={n.id} {...handlers}>
       {n.shape === 'cylinder' ? (
         <>
           <path
@@ -363,5 +416,103 @@ function Node({
         </g>
       ))}
     </g>
+  )
+}
+
+/**
+ * A box's component in words, over the board: utilization, demand against capacity and where it came from, where it
+ * reaches the target and 100 % (with dates, given growth), and its target in each scenario. HTML, so exports leave it out.
+ */
+function Detail({
+  lm,
+  scene,
+  id,
+  board,
+  detailId,
+}: {
+  lm: LoadmapController
+  scene: Scene
+  id: string
+  board: HTMLDivElement | null
+  detailId: string
+}) {
+  const { model, ev } = lm
+  const n = scene.nodes.find((x) => x.id === id)
+  const cid = n && componentOf(lm, n)
+  const rows = useMemo(
+    () => (model.scenarios.length > 1 ? compare(model, lm.values.load).rows : []),
+    [model, lm.values.load],
+  )
+  const c = cid ? ev.components[cid] : undefined
+  if (!n || !c || !board) return null
+  const k = board.clientWidth / scene.width
+  const below = n.y + n.h / 2 < scene.height / 2
+  const place = below ? { top: (n.y + n.h) * k + 6 } : { bottom: (scene.height - n.y) * k + 6 }
+  const date = (x: number | null) => {
+    const d = x != null && x > 1 ? model.dateAt(x) : null
+    return d ? ` (${around(d)})` : ''
+  }
+  const num = (x: number) => (Math.abs(x) >= 1000 ? kfmt(x) : fmt(x))
+  const cap = c.capacity
+  return (
+    <div
+      id={detailId}
+      className="lm-tip lm-detail"
+      role="tooltip"
+      style={{ ...place, left: `clamp(0px, ${n.x * k}px, calc(100% - 17rem))` }}
+    >
+      <b>
+        {c.name}
+        {c === ev.firstLimit && (
+          <span className="lm-tag" data-kind="first">
+            first limit
+          </span>
+        )}
+      </b>
+      {c.util == null || !cap ? (
+        <span>switched off</span>
+      ) : (
+        <>
+          <span>
+            <strong>{pct(c.util)}</strong> · {num(c.demand ?? 0)} of {fmt(cap.value)} {cap.unit}
+          </span>
+          <span className="lm-sub">
+            capacity{' '}
+            <span className="lm-prov" data-kind={cap.provenance}>
+              {cap.provenance}
+            </span>
+            {cap.source ? `, ${cap.source}` : ''}
+          </span>
+          <span>
+            {pct(model.thresholds.target)} at {multiple(c.target, model.searchMax)}
+            {date(c.target)}
+          </span>
+          <span>
+            {pct(model.thresholds.full)} at {multiple(c.full, model.searchMax)}
+            {date(c.full)}
+          </span>
+          {c.over && (
+            <span className="lm-sub">
+              Past {pct(model.thresholds.full)}: {c.over}.
+            </span>
+          )}
+        </>
+      )}
+      {rows.length > 0 && (
+        <span className="lm-sub">
+          {pct(model.thresholds.target)} by scenario:{' '}
+          {rows.map((r, i) => {
+            const x = r.components.find((y) => y.id === cid)
+            return (
+              <span key={r.label} className="lm-nowrap">
+                {i > 0 && ' · '}
+                <b className="lm-key" style={{ background: scenarioColor(model, r.label) }} />
+                {r.label} {x?.target == null ? 'off' : multiple(x.target, model.searchMax)}
+              </span>
+            )
+          })}
+        </span>
+      )}
+    </div>
   )
 }

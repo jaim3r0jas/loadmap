@@ -1,11 +1,13 @@
 const LIGHT = `
   --lm-bg: #eef2f5; --lm-surface: #ffffff; --lm-fg: #17212b; --lm-muted: #5d6d7c; --lm-line: #c6d0da;
   --lm-accent: #0b6b8f; --lm-accent-soft: #d6e9f0; --lm-alt: #7a4f9a; --lm-alt-soft: #efe5f6;
-  --lm-ok: #2a7f5a; --lm-warn: #b86e00; --lm-drop: #b7392e; --lm-lane: #e3e9ee; color-scheme: light;`
+  --lm-ok: #2a7f5a; --lm-warn: #b86e00; --lm-drop: #b7392e; --lm-lane: #e3e9ee;
+  --lm-s1: #2a78d6; --lm-s2: #eb6834; --lm-s3: #6250d6; --lm-s4: #eda100; color-scheme: light;`
 const DARK = `
   --lm-bg: #0d141b; --lm-surface: #151e27; --lm-fg: #e4ebf1; --lm-muted: #93a3b3; --lm-line: #2a3744;
   --lm-accent: #5fb7d6; --lm-accent-soft: #163442; --lm-alt: #c39be0; --lm-alt-soft: #2b2236;
-  --lm-ok: #5fc08f; --lm-warn: #e2a24a; --lm-drop: #e26a5c; --lm-lane: #1b2631; color-scheme: dark;`
+  --lm-ok: #5fc08f; --lm-warn: #e2a24a; --lm-drop: #e26a5c; --lm-lane: #1b2631;
+  --lm-s1: #3987e5; --lm-s2: #d95926; --lm-s3: #9085e9; --lm-s4: #c98500; color-scheme: dark;`
 
 /** Theme tokens and the layout of every piece. Scoped to `.lm`; override any `--lm-*` token to restyle. */
 export const CSS = `
@@ -84,6 +86,38 @@ export const CSS = `
 .lm-facts li { margin-bottom: 8px; break-inside: avoid; }
 .lm-prov { font: 600 .66rem var(--lm-font); text-transform: uppercase; letter-spacing: .06em; }
 .lm-prov[data-kind="measured"] { color: var(--lm-ok); } .lm-prov[data-kind="estimated"] { color: var(--lm-warn); }
+
+/* scenario identity colours (s1–s4) are checked for colour-blind separation on both surfaces; text never wears them */
+.lm-scenarios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.lm-scenarios legend { float: left; font: 600 .74rem var(--lm-font); text-transform: uppercase; letter-spacing: .08em; color: var(--lm-muted); margin-right: 6px; padding: 0; }
+.lm-scenarios button { font: 500 .84rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.lm-scenarios button[aria-pressed="true"] { border-color: var(--lm-fg); box-shadow: inset 0 0 0 1px var(--lm-fg); }
+.lm-scenarios i, .lm-table i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; }
+.lm-own { font-size: .78rem; color: var(--lm-muted); }
+.lm-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: 3px; margin-right: 6px; }
+
+.lm-compare-text { margin: 0; }
+.lm-table-wrap { overflow-x: auto; }
+.lm-table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+.lm-table th, .lm-table td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--lm-line); vertical-align: top; }
+.lm-table thead th { font: 600 .7rem var(--lm-font); text-transform: uppercase; letter-spacing: .06em; color: var(--lm-muted); }
+.lm-table tbody th { font-weight: 600; white-space: nowrap; }
+.lm-table td { font-family: var(--lm-mono); font-variant-numeric: tabular-nums; }
+.lm-table td.lm-text { font-family: var(--lm-font); }
+.lm-table td small { display: block; font: 400 .72rem var(--lm-font); color: var(--lm-muted); }
+.lm-table tr[aria-current] th { text-decoration: underline; text-underline-offset: 3px; }
+
+.lm-chart { position: relative; min-width: 0; }
+.lm-chart svg { display: block; overflow: visible; }
+.lm-chart:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
+.lm-axis, .lm-axis text { font: 400 11px var(--lm-mono); fill: var(--lm-muted); }
+.lm-mark { font: 600 11px var(--lm-mono); fill: var(--lm-fg); }
+.lm-tip { position: absolute; z-index: 2; display: grid; gap: 2px; width: max-content; max-width: 17rem; padding: 8px 10px; font-size: .78rem; background: var(--lm-surface); color: var(--lm-fg); border: 1px solid var(--lm-line); border-radius: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / .14); pointer-events: none; }
+.lm-tip strong { font: 600 .82rem var(--lm-mono); font-variant-numeric: tabular-nums; }
+.lm-tip .lm-sub { color: var(--lm-muted); }
+.lm-nowrap { white-space: nowrap; }
+.lm-node { cursor: pointer; outline: none; }
+.lm-node:focus-visible > :first-child { stroke-width: 3; }
 
 @media (prefers-reduced-motion: reduce) { .lm-fill { transition: none; } }
 `

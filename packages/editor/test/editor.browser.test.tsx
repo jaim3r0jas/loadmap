@@ -77,6 +77,20 @@ describe('the editor', () => {
     expect(verdict(again.host)).toContain('At 25×')
   })
 
+  it('shares a scenario: the link reopens with its button pressed', async () => {
+    const first = await mount()
+    first.host.querySelector<HTMLButtonElement>('.lm-scenarios button:nth-of-type(2)')!.click()
+    await expect.poll(() => first.handle.loadmap()!.values()).toMatchObject({ gateways: 2, pods: 6 })
+    const shared = await decodeShare(`#${await first.handle.shareHash()}`)
+    if ('error' in shared) throw new Error(shared.error)
+    expect(shared.values).toEqual({ gateways: '2', pods: '6' })
+    root?.unmount()
+    document.body.replaceChildren()
+    const again = await mount(shared)
+    const pressed = again.host.querySelector('.lm-scenarios button[aria-pressed="true"]')
+    expect(pressed?.textContent).toBe('Proposed')
+  })
+
   it('starts a new text from its own defaults', async () => {
     const { handle } = await mount()
     handle.loadmap()!.setValues({ load: 80, pods: 6 })

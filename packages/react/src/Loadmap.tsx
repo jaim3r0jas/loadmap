@@ -4,6 +4,7 @@ import { type ReactNode, type Ref, useEffect, useImperativeHandle } from 'react'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
 import { Assumptions, Controls, Limits, Meters, Verdict } from './panels'
+import { Compare, HeadroomChart, Scenarios } from './scenarios'
 import { injectStyles } from './styles'
 import { type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
 
@@ -53,18 +54,40 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   title?: ReactNode | false
   /** Lines added before the generated assumptions. */
   assumptions?: readonly ReactNode[]
+  /** The headroom chart. Default true. */
+  headroom?: boolean
+  /** The scenarios side by side, when the model declares two or more. Default true. */
+  compare?: boolean
   ref?: Ref<LoadmapHandle>
 }
 
-/** The whole page piece: diagram, verdict, live meters, limits, controls and assumptions. */
-export function Loadmap<P>({ model, view, theme, title, assumptions, ref, ...o }: LoadmapProps<P>) {
+/** The whole page piece: scenarios, diagram, verdict, headroom, live meters, limits, controls and assumptions. */
+export function Loadmap<P>({
+  model,
+  view,
+  theme,
+  title,
+  assumptions,
+  headroom = true,
+  compare = true,
+  ref,
+  ...o
+}: LoadmapProps<P>) {
   const lm = useLoadmap(model, view, o)
   useImperativeHandle(ref, () => handleOf(lm), [lm])
+  const side = compare && model.scenarios.length > 1
   return (
     <Root lm={lm} theme={theme}>
       {title !== false && <h2>{title ?? model.title}</h2>}
+      <Scenarios lm={lm} />
       <Diagram lm={lm} />
       <Verdict lm={lm} />
+      {(headroom || side) && (
+        <div className={headroom && side ? 'lm-strip' : undefined}>
+          {headroom && <HeadroomChart lm={lm} />}
+          {side && <Compare lm={lm} />}
+        </div>
+      )}
       <div className="lm-strip">
         <div className="lm-card">
           <Meters lm={lm} />
