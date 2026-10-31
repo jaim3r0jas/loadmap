@@ -8,7 +8,8 @@ what multiple of today's load). `README.md` has the picture; `docs/prior-art.md`
 ## Stack
 
 pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (build) · Vitest 5 (Node, and browser
-mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`.
+mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
+stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
 | Package           | What                                                                                       | Depends on                      |
 | ----------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |

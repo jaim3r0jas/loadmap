@@ -7,15 +7,15 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "node scripts/node-version.mjs && tsc --noEmit -p tsconfig.json",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "vitest run",
-    "test:node": "vitest run --project node",
-    "test:browser": "vitest run --project browser",
-    "build": "pnpm -r --filter './packages/*' build && pnpm --filter playground build",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
-    "dev": "pnpm --filter playground dev"
+    "test": "node scripts/node-version.mjs && vitest run",
+    "test:node": "node scripts/node-version.mjs && vitest run --project node",
+    "test:browser": "node scripts/node-version.mjs && vitest run --project browser",
+    "build": "node scripts/node-version.mjs && pnpm -r --filter './packages/*' build && pnpm --filter playground build",
+    "check": "node scripts/node-version.mjs && pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "dev": "node scripts/node-version.mjs && pnpm --filter playground dev"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
