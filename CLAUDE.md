@@ -49,6 +49,7 @@ The browser tests need Chromium once: `pnpm exec playwright install chromium`. T
 - A browser test that compares two boards waits two frames after `ready()` before stepping (the board's
   ResizeObserver clears the canvas a frame later) and leaves out `.lm-meters` (they refresh on a 250 ms wall-clock
   timer).
+- CodeMirror draws only the lines in view: a browser test that looks for a lint mark scrolls its edit into view first.
 
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
