@@ -25,6 +25,21 @@ export const checkout = defineModel({
     { label: 'Today keeps 7×', target: 7 },
     { label: 'Proposed keeps 14×', scenario: 'Proposed', target: 14 },
   ],
+  // the walk a design review takes: the page steps through it, `loadmap record --story` plays it
+  story: [
+    { text: 'An ordinary peak: every box is under half its capacity.', set: { load: 1 } },
+    {
+      text: 'At 20×, the gateway and the workers are near full, and the gateway is only an estimate.',
+      set: { load: 20 },
+      focus: 'gateway',
+    },
+    {
+      text: 'The proposal doubles the gateways and the worker pods: at 20× both are back under half.',
+      scenario: 'Proposed',
+      set: { load: 20 },
+      focus: 'workers',
+    },
+  ],
   flows: {
     orders: { label: 'orders', rate: ({ load }) => 40 * load, unit: 'order', priority: 1 },
     events: {

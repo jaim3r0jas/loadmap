@@ -20,6 +20,8 @@ export interface ScriptStep {
   /** A scenario's values, by its label; `set` goes on top. The load stays. */
   scenario?: string
   set?: Partial<Values<any>>
+  /** A story step, by index: its values and the box it points at, instead of `scenario` and `set`. */
+  step?: number
 }
 
 export interface FrameOptions {
@@ -29,6 +31,13 @@ export interface FrameOptions {
   size?: { width: number; height: number }
   /** The title, scenario and load above the board and the verdict below it, so the frame stands alone. */
   caption?: boolean | Caption
+}
+
+/** A script step: a story step, or values. */
+function apply(handle: LoadmapHandle, s: ScriptStep) {
+  if (s.step == null) return handle.setValues(valuesOf(handle, s))
+  if (!handle.engine.model.story[s.step]) throw new Error(`loadmap: the story has no step ${s.step + 1}`)
+  handle.setStoryStep(s.step)
 }
 
 /** What a script step or a still sets: a scenario's values, then `set`. An unknown scenario names the known ones. */
@@ -44,7 +53,13 @@ function valuesOf(handle: LoadmapHandle, o: { scenario?: string; set?: Partial<V
 }
 
 export interface RecordOptions extends FrameOptions {
-  seconds: number
+  /** Required without `story`. */
+  seconds?: number
+  /**
+   * Plays the model's story: each step for its seconds, its text below the board when there is a caption. Takes the
+   * place of `script` and `seconds`.
+   */
+  story?: boolean
   /** Default 30 for video, 15 for GIF. A GIF takes at most 50: its frame delays are whole hundredths. */
   fps?: number
   format?: 'webm' | 'mp4' | 'gif'
@@ -104,40 +119,58 @@ export async function exportPng(handle: LoadmapHandle, o: FrameOptions = {}): Pr
 export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Promise<Blob> {
   const format = o.format ?? 'webm'
   const fps = o.fps ?? (format === 'gif' ? 15 : 30)
-  if (!(fps > 0) || !(o.seconds > 0)) throw new Error('loadmap: seconds and fps must be positive')
+  const story = o.story ? handle.engine.model.story : null
+  if (story && !story.length) throw new Error('loadmap: the model has no story')
+  // the steps one after another, each for its seconds
+  const starts = story?.map((_, i) => story.slice(0, i).reduce((t, s) => t + s.seconds, 0))
+  const seconds = story ? story.reduce((t, s) => t + s.seconds, 0) : o.seconds
+  if (!(fps > 0) || !(seconds != null && seconds > 0)) throw new Error('loadmap: seconds and fps must be positive')
   if (format === 'gif' && fps > 50) throw new Error('loadmap: a GIF plays at most 50 frames a second')
-  const script = [...(o.script ?? [])].sort((a, b) => a.at - b.at)
+  const script = story ? starts!.map((at, step) => ({ at, step })) : [...(o.script ?? [])].sort((a, b) => a.at - b.at)
+  const cap = captionOf(o.caption)
+  /** The caption for the step shown: its text instead of the verdict. */
+  const captionNow = (): boolean | Caption | undefined => {
+    const i = handle.storyStep()
+    const st = story && i != null ? story[i] : undefined
+    return cap && st ? { ...cap, text: st.text, step: `${i! + 1} of ${story!.length}` } : o.caption
+  }
   await handle.ready()
   const before = handle.values()
+  const beforeStep = handle.storyStep()
   handle.pause()
   try {
-    for (const s of script.filter((s) => s.at <= 0)) handle.setValues(valuesOf(handle, s))
+    for (const s of script.filter((s) => s.at <= 0)) apply(handle, s)
     await warmUp(handle, o.seed ?? 1, o.warmup ?? 2, fps)
 
     const canvas = document.createElement('canvas')
     // a GIF reads every frame back: ask for a canvas kept in memory before anything draws on it
     if (format === 'gif') canvas.getContext('2d', { willReadFrequently: true })
-    await composeFrame(handle, { scale: o.scale ?? 1, caption: o.caption }, canvas)
+    await composeFrame(handle, { scale: o.scale ?? 1, caption: captionNow() }, canvas)
     const sink = format === 'gif' ? gifSink(canvas, fps) : await videoSink(canvas, format, fps)
 
-    const frames = Math.round(o.seconds * fps)
+    const frames = Math.round(seconds * fps)
     let next = script.findIndex((s) => s.at > 0)
     for (let i = 0; i < frames; i++) {
       const t = i / fps
       while (next >= 0 && next < script.length && script[next]!.at <= t) {
-        handle.setValues(valuesOf(handle, script[next]!))
+        apply(handle, script[next]!)
         next++
       }
       // a value that changes the layout needs the new scene first
       await handle.ready()
       handle.step(1 / fps)
-      await composeFrame(handle, { size: { width: canvas.width, height: canvas.height }, caption: o.caption }, canvas)
+      await composeFrame(
+        handle,
+        { size: { width: canvas.width, height: canvas.height }, caption: captionNow() },
+        canvas,
+      )
       await o.onFrame?.(i, canvas)
       await sink.add(t)
     }
     return await sink.finish()
   } finally {
     handle.setValues(before)
+    if (handle.storyStep() !== beforeStep) handle.setStoryStep(beforeStep)
     handle.resume()
   }
 }

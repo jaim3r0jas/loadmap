@@ -97,7 +97,8 @@ A page calls `expose(handle)` (`@loadmap/export`); then `pnpm record <url> --out
 The playground exposes the shown example: `pnpm dev`, then `pnpm record 'http://localhost:5173/?example=alerts'
 --out alerts.gif`. `--caption` adds the title, scenario, load and verdict to every frame, `--scenario <label>`
 starts from a scenario, `--poster` (with `.png`) draws the board with the limits and the scenarios compared, and
-`.svg` writes the board as a file. `pnpm record x.loadmap --out x.gif` compiles the definition and draws it in the
+`.svg` writes the board as a file. `--story` plays the model's `story` steps (each step resolved from the defaults, so
+any step looks the same whichever came before). `pnpm record x.loadmap --out x.gif` compiles the definition and draws it in the
 viewer built into `packages/cli/dist/viewer` (`pnpm record` builds it). `loadmap check x.loadmap` runs its `expect`
 lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 

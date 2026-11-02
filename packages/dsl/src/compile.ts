@@ -304,6 +304,11 @@ class Compiler {
       expects.push(e)
       this.expectSpans.push({ from: b.at.from, to: b.args.label?.to ?? b.at.to })
     }
+    const story: Record<string, unknown>[] = []
+    for (const b of byKind('step')) {
+      const st = this.step(b, scenarios, componentNames, params)
+      if (st) story.push(st)
+    }
     const growths = byKind('growth')
     for (const extra of growths.slice(1)) this.report.error(extra.at, 'only one growth line is allowed')
     const growth = growths[0] && this.growth(growths[0])
@@ -411,6 +416,7 @@ class Compiler {
     if (Object.keys(scenarios).length) model.scenarios = scenarios
     if (growth) model.growth = growth
     if (expects.length) model.expect = expects
+    if (story.length) model.story = story
     if (Object.keys(derived).length) model.derived = derived
     if (Object.keys(calibration).length) model.calibration = calibration
     const th = byKind('thresholds')[0]
@@ -858,6 +864,8 @@ class Compiler {
     const out: Record<string, unknown> = {}
     const known = new Map(params.filter((x) => x.args.id).map((x) => [x.args.id!.name, x]))
     for (const [k, props] of b.props) {
+      // a step's own properties; its other lines are values
+      if (own(b.spec.props, k)) continue
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
       if (k === 'load' && kind === 'scenario') {
@@ -894,17 +902,8 @@ class Compiler {
     const e: Record<string, unknown> = {}
     const label = this.text(b.args.label)
     if (label != null) e.label = label
-    const name = (key: string, known: readonly string[], what: string) => {
-      const p = this.prop(b, key)
-      if (!p) return undefined
-      const v = p.value.t === 'id' ? p.value.name : p.value.t === 'str' ? p.value.value : undefined
-      if (v == null) this.report.error(p.value, `${key} is the name of a ${what}`)
-      else if (!known.includes(v)) this.report.error(p.value, `unknown ${what} "${v}"`, didYouMean(v, known))
-      else return v
-      return null
-    }
-    const scenario = name('scenario', Object.keys(scenarios), 'scenario')
-    const component = name('component', [...components.keys()], 'component')
+    const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
+    const component = this.named(b, 'component', [...components.keys()], 'component')
     if (scenario === null || component === null) return undefined
     if (scenario != null) e.scenario = scenario
     if (component != null) e.component = component
@@ -919,6 +918,41 @@ class Compiler {
       return undefined
     }
     return e.target != null || e.full != null ? e : undefined
+  }
+
+  /** A property naming a scenario or a component: undefined when absent, null when wrong (reported). */
+  private named(b: Block, key: string, known: readonly string[], what: string): string | null | undefined {
+    const p = this.prop(b, key)
+    if (!p) return undefined
+    const v = p.value.t === 'id' ? p.value.name : p.value.t === 'str' ? p.value.value : undefined
+    if (v == null) this.report.error(p.value, `${key} is the name of a ${what}`)
+    else if (!known.includes(v)) this.report.error(p.value, `unknown ${what} "${v}"`, didYouMean(v, known))
+    else return v
+    return null
+  }
+
+  /** A story step as the model takes it. */
+  private step(
+    b: Block,
+    scenarios: Record<string, unknown>,
+    components: Map<string, Span>,
+    params: Block[],
+  ): Record<string, unknown> | undefined {
+    const text = this.text(b.args.label)
+    const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
+    const focus = this.named(b, 'focus', [...components.keys()], 'component')
+    const seconds = this.constProp<number>(b, 'seconds')
+    if (seconds != null && !(seconds > 0 && Number.isFinite(seconds)))
+      this.report.error(this.prop(b, 'seconds')!.value, 'seconds is a duration above 0')
+    const set = this.preset(b, params)
+    if (text == null || scenario === null || focus === null) return undefined
+    return {
+      text,
+      ...(scenario != null ? { scenario } : {}),
+      ...(focus != null ? { focus } : {}),
+      ...(seconds != null && seconds > 0 ? { seconds } : {}),
+      ...(Object.keys(set).length ? { set } : {}),
+    }
   }
 
   private growth(b: Block): { rate: number; per: string; asOf: string } | undefined {

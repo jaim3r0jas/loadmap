@@ -28,6 +28,8 @@ export {
   type Preset,
   reach,
   type Scenario,
+  type StoryStep,
+  type StoryStepDef,
   sureness,
   type Verdict,
 } from './model'

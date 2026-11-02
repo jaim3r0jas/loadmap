@@ -19,6 +19,11 @@ export class Engine {
   wantKey = ''
   /** The values React last drew labels and colours for; a frame is complete once they match `ev.values`. */
   drawnValues = ''
+  /** The component a story step points at, and the one the diagram last outlined: export waits for them to match. */
+  wantFocus: string | null = null
+  /** The story step shown, set as soon as one is chosen: a recorder holding an old handle still reads it. */
+  storyStep: number | null = null
+  drawnFocus: string | null = null
   paused = false
   colors: Record<string, string> = {}
   svg: SVGSVGElement | null = null

@@ -132,6 +132,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'scenario',
       'growth',
       'expect',
+      'step',
       'let',
       'fit',
       'flow',
@@ -228,6 +229,22 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       full: { value: 'number', scope: 'const', doc: 'Nothing (or the component) runs out before this load multiple.' },
     },
     children: [],
+  },
+  step: {
+    doc: 'A step of the story the page walks through, in order: its text, and the values to show it at. `loadmap record --story` plays it.',
+    example: 'step "At 30×, the workers run out first." { load: 30; focus: workers }',
+    args: [{ name: 'label', kind: 'text' }],
+    props: {
+      scenario: {
+        value: 'scenario',
+        scope: 'const',
+        doc: "Start from this scenario's values; without one, from the defaults.",
+      },
+      focus: { value: 'component', scope: 'const', doc: 'The component to point at: its box is outlined.' },
+      seconds: { value: 'number', scope: 'const', doc: 'How long a recording holds the step. Default 4.' },
+    },
+    children: [],
+    open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
   },
   let: {
     doc: 'A named formula other formulas can use by its name.',

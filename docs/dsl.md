@@ -147,6 +147,23 @@ checkout.loadmap: 1 of 2 expectations failed
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
 line in the pull request.
 
+### A story
+
+`step` lines walk a reader through the model in order: what to look at, and the values to show it at. Each step starts
+from the defaults (or from its `scenario`), then takes its own values, so it looks the same whichever step came before.
+`focus` outlines a component's box:
+
+```
+step "An ordinary peak: every box is under half its capacity." { load: 1 }
+step "At 20×, the gateway and the workers are near full." { load: 20; focus: gateway }
+step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workers }
+```
+
+The page shows a bar above the diagram with the step's text, back and next (← and → while the bar has the focus).
+`loadmap record x.loadmap --out story.gif --story --caption` plays every step for its `seconds` (default 4), its
+text below the board; the same options give the same file. A step's own properties are `scenario`, `focus` and
+`seconds`; every other line is a value.
+
 ### What stays code
 
 A host page can give formulas more functions:
@@ -164,8 +181,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:78:17 error: unknown flow "order"
-  78 |   demand: flows.order + flows.events
+checkout.loadmap:87:17 error: unknown flow "order"
+  87 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -205,7 +222,7 @@ A loadmap definition.
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -312,6 +329,24 @@ After the keyword: [label].
 | `component` | component, constant | One component; the first limit without one. |
 | `target` | number, constant | The target holds up to at least this load multiple. |
 | `full` | number, constant | Nothing (or the component) runs out before this load multiple. |
+
+### step
+
+A step of the story the page walks through, in order: its text, and the values to show it at. `loadmap record --story` plays it.
+
+```
+step "At 30×, the workers run out first." { load: 30; focus: workers }
+```
+
+After the keyword: label.
+
+| Property | Value | |
+| --- | --- | --- |
+| `scenario` | scenario, constant | Start from this scenario's values; without one, from the defaults. |
+| `focus` | component, constant | The component to point at: its box is outlined. |
+| `seconds` | number, constant | How long a recording holds the step. Default 4. |
+
+Its properties are named by parameters (and `load`).
 
 ### let
 

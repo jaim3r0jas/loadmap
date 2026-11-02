@@ -565,3 +565,52 @@ describe('expectations', () => {
     expect(() => unsure(undefined, [{ target: 0 }])).toThrow(/above 0/)
   })
 })
+
+describe('story', () => {
+  const make = (story?: any[]) =>
+    defineModel({
+      load: p.load({ max: 50, default: 1 }),
+      params: {
+        pods: p.select({ label: 'Pods', options: [2, 4, 8], default: 2 }),
+        batch: p.switch({ label: 'Batch', default: false }),
+      },
+      flows: { reqs: { rate: ({ load }) => 100 * load } },
+      components: {
+        app: { name: 'App', demand: ({ flows }) => flows.reqs, capacity: measured(1000, 'req/s'), over: 'slow' },
+      },
+      stages: { app: pass('app') },
+      routes: { reqs: ['app'] },
+      scenarios: { Today: {}, Proposed: { pods: 8 } },
+      story,
+    })
+
+  it('resolves every value of each step: defaults, then the scenario, then set', () => {
+    const m = make([
+      { text: 'Today, at peak.' },
+      { text: 'Proposed, at 30×.', scenario: 'Proposed', set: { load: 30, batch: true }, focus: 'app', seconds: 6 },
+      { text: 'Back to today at 30×.', set: { load: 30 } },
+    ])
+    expect(m.story).toEqual([
+      { text: 'Today, at peak.', values: { load: 1, pods: 2, batch: false }, seconds: 4 },
+      {
+        text: 'Proposed, at 30×.',
+        values: { load: 30, pods: 8, batch: true },
+        scenario: 'Proposed',
+        focus: 'app',
+        seconds: 6,
+      },
+      { text: 'Back to today at 30×.', values: { load: 30, pods: 2, batch: false }, seconds: 4 },
+    ])
+    expect(make().story).toEqual([])
+  })
+
+  it('names the step that is wrong', () => {
+    const bad = (step: object) => () => make([{ text: 'ok' }, { text: 'x', ...step }])
+    expect(bad({ scenario: 'Later' })).toThrow('story step 2 names unknown scenario "Later"')
+    expect(bad({ focus: 'db' })).toThrow('story step 2 points at unknown component "db"')
+    expect(bad({ set: { pods: 3 } })).toThrow('story step 2 sets "pods" to 3, which it cannot take')
+    expect(bad({ set: { load: 80 } })).toThrow('story step 2 sets the load to 80, outside 1 to 50')
+    expect(bad({ set: { nodes: 2 } })).toThrow('story step 2 sets unknown parameter "nodes"')
+    expect(bad({ seconds: 0 })).toThrow('story step 2 needs seconds above 0, not 0')
+  })
+})

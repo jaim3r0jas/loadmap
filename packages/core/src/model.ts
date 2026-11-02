@@ -82,6 +82,29 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   searchMax?: number
   /** What must keep holding: `check()`, `assertHolds()` and `loadmap check` test them. */
   expect?: readonly Expectation<NoInfer<C>>[]
+  /** A walk through the model, a step at a time: the page shows it, `loadmap record --story` plays it. */
+  story?: readonly StoryStepDef<NoInfer<P>, NoInfer<C>>[]
+}
+
+/** A step of a story: what to say, and the values to show it at. */
+export interface StoryStepDef<P = any, C extends string = string> {
+  text: string
+  /** Start from a scenario's values; `set` goes on top. Without one, from the defaults. */
+  scenario?: string
+  set?: Partial<Values<P>>
+  /** The component to point at: its box is outlined. */
+  focus?: C
+  /** How long a recording holds the step. Default 4. */
+  seconds?: number
+}
+
+/** A step as the model resolved it: every value set, so a step looks the same whichever step came before. */
+export interface StoryStep<P = any, C extends string = string> {
+  text: string
+  values: Values<P>
+  scenario?: string
+  focus?: C
+  seconds: number
 }
 
 export type ComponentState = 'off' | 'ok' | 'warn' | 'over'
@@ -183,6 +206,7 @@ export interface Model<P = any, F extends string = string, C extends string = st
   scenarios: readonly Scenario<P>[]
   /** What must keep holding, as declared. */
   expectations: readonly Expectation<C>[]
+  story: readonly StoryStep<P, C>[]
   growth?: Growth
   defaults(): Values<P>
   isEnabled(id: string, values: LooseValues): boolean
@@ -241,21 +265,30 @@ export function defineModel<
     return v as Values<P>
   }
 
-  const scenarios: Scenario<P>[] = Object.entries(def.scenarios ?? {}).map(([label, set]) => {
-    for (const k of Object.keys(set as object)) {
-      if (k === 'load')
-        throw new Error(`loadmap: scenario "${label}" sets the load; a scenario leaves it to the slider`)
-      const p = Object.hasOwn(params, k) ? params[k] : undefined
-      if (!p) throw new Error(`loadmap: scenario "${label}" sets unknown parameter "${k}"`)
+  /** Throws unless every value is one its parameter (or the load, where allowed) can take. */
+  const takes = (owner: string, set: object, load: boolean) => {
+    for (const k of Object.keys(set)) {
       const v = (set as Record<string, unknown>)[k]
+      if (k === 'load') {
+        if (!load) throw new Error(`loadmap: ${owner} sets the load; a scenario leaves it to the slider`)
+        if (!(typeof v === 'number' && v >= def.load.min && v <= def.load.max))
+          throw new Error(`loadmap: ${owner} sets the load to ${String(v)}, outside ${def.load.min} to ${def.load.max}`)
+        continue
+      }
+      const p = Object.hasOwn(params, k) ? params[k] : undefined
+      if (!p) throw new Error(`loadmap: ${owner} sets unknown parameter "${k}"`)
       const fits =
         p.kind === 'select'
           ? p.options.includes(v)
           : p.kind === 'switch'
             ? typeof v === 'boolean'
             : typeof v === 'number' && v >= p.min && v <= p.max
-      if (!fits) throw new Error(`loadmap: scenario "${label}" sets "${k}" to ${String(v)}, which it cannot take`)
+      if (!fits) throw new Error(`loadmap: ${owner} sets "${k}" to ${String(v)}, which it cannot take`)
     }
+  }
+
+  const scenarios: Scenario<P>[] = Object.entries(def.scenarios ?? {}).map(([label, set]) => {
+    takes(`scenario "${label}"`, set as object, false)
     const { load: _, ...values } = { ...defaults(), ...set } as Values<P>
     return { label, values }
   })
@@ -275,6 +308,24 @@ export function defineModel<
         throw new Error(`loadmap: ${name} needs a ${k} multiple above 0, not ${x}`)
     }
     return { ...e } as Expectation<C>
+  })
+
+  const story = (def.story ?? []).map((st, i): StoryStep<P, C> => {
+    const name = `story step ${i + 1}`
+    const from = st.scenario == null ? undefined : scenarios.find((s) => s.label === st.scenario)
+    if (st.scenario != null && !from) throw new Error(`loadmap: ${name} names unknown scenario "${st.scenario}"`)
+    if (st.focus != null && !componentIds.includes(st.focus))
+      throw new Error(`loadmap: ${name} points at unknown component "${st.focus}"`)
+    if (st.seconds != null && !(st.seconds > 0 && Number.isFinite(st.seconds)))
+      throw new Error(`loadmap: ${name} needs seconds above 0, not ${st.seconds}`)
+    takes(name, st.set ?? {}, true)
+    return {
+      text: st.text,
+      values: { ...defaults(), ...from?.values, ...st.set } as Values<P>,
+      ...(st.scenario != null ? { scenario: st.scenario } : {}),
+      ...(st.focus != null ? { focus: st.focus } : {}),
+      seconds: st.seconds ?? 4,
+    }
   })
 
   const utilAt = (values: LooseValues, bound?: Bound, pinned?: string) => (load: number) =>
@@ -465,6 +516,7 @@ export function defineModel<
     searchMax,
     scenarios,
     expectations,
+    story,
     growth,
     defaults,
     isEnabled: (id, values) => {

@@ -34,6 +34,12 @@ export interface LoadmapController<P = any> {
   scenario: Scenario<P> | null
   /** Takes a scenario's values; the load stays. */
   setScenario: (label: string) => void
+  /** The story step shown, by index; null outside the story. */
+  step: number | null
+  /** Shows a story step (its values, its focus), or leaves the story with null. */
+  setStep: (i: number | null) => void
+  /** The component the story points at now. */
+  focus: string | null
   ev: Evaluation<P>
   /** null until the first layout is done. */
   scene: Scene | null
@@ -137,6 +143,22 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     [model, setValues],
   )
 
+  const [stepState, setStepState] = useState<{ model: Model<P>; i: number | null }>({ model, i: null })
+  const step = stepState.model === model && stepState.i != null && stepState.i < model.story.length ? stepState.i : null
+  const setStep = useCallback(
+    (i: number | null) => {
+      const st = i == null ? undefined : model.story[i]
+      if (st) setValues(st.values)
+      engine.wantFocus = st?.focus ?? null
+      engine.storyStep = st ? i : null
+      setStepState({ model, i: st ? i : null })
+    },
+    [model, setValues, engine],
+  )
+  const focus = step == null ? null : (model.story[step]?.focus ?? null)
+  engine.wantFocus = focus
+  engine.storyStep = step
+
   return {
     model,
     view,
@@ -144,6 +166,9 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     setValues,
     scenario,
     setScenario,
+    step,
+    setStep,
+    focus,
     ev,
     scene,
     labels,

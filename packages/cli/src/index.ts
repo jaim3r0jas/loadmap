@@ -28,6 +28,7 @@ comes with the command.
   --scenario <label>    start from a scenario's values (--set goes on top)
   --set <key=value>     a value before recording starts; repeatable (--set load=30 --set pods=6)
   --caption             the title, scenario and load above the board, the verdict below it
+  --story               play the definition's story, a step at a time (with --caption, its text below the board)
   --poster              with .png: the board, the verdict, the limits and the scenarios compared
   --seconds <n>         length of a video or GIF (default 8, or the script's)
   --fps <n>             frames per second (default 30; GIF 15, at most 50)
@@ -48,6 +49,7 @@ export interface RecordArgs {
   set: Record<string, string | number | boolean>
   caption: boolean
   poster: boolean
+  story: boolean
   seconds?: number
   fps?: number
   scale?: number
@@ -83,6 +85,7 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
       scenario: { type: 'string' },
       caption: { type: 'boolean' },
       poster: { type: 'boolean' },
+      story: { type: 'boolean' },
       seconds: { type: 'string' },
       fps: { type: 'string' },
       scale: { type: 'string' },
@@ -123,6 +126,12 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   if (scheme !== 'light' && scheme !== 'dark') throw new Error('--color-scheme is light or dark')
   if (v.poster && extname(v.out).toLowerCase() !== '.png')
     throw new Error('--poster writes a PNG: --out must end in .png')
+  if (v.story && !['.gif', '.webm', '.mp4'].includes(extname(v.out).toLowerCase()))
+    throw new Error('--story plays a GIF or a video: --out must end in .gif, .webm or .mp4')
+  if (v.story && (v.script || v.seconds || v.scenario || v.set))
+    throw new Error(
+      '--story sets the values and the length itself: leave out --script, --seconds, --scenario and --set',
+    )
   return {
     url: file ? '' : target,
     ...(file ? { file } : {}),
@@ -132,6 +141,7 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
     set,
     caption: v.caption ?? false,
     poster: v.poster ?? false,
+    story: v.story ?? false,
     seconds: num(v.seconds, 'seconds') ?? fromFile.seconds,
     fps: num(v.fps, 'fps') ?? fromFile.fps,
     scale: num(v.scale, 'scale'),
@@ -216,6 +226,15 @@ async function recordPage(a: RecordArgs, format: string): Promise<Buffer> {
         const still = { scenario: a.scenario, set: a.set, scale: a.scale, seed: a.seed, caption: a.caption }
         if (format === 'svg') return r.svg(still)
         if (format === 'png') return a.poster ? r.poster(still) : r.still(still)
+        if (a.story)
+          return r.record({
+            format: format as 'gif',
+            story: true,
+            fps: a.fps,
+            scale: a.scale,
+            seed: a.seed,
+            caption: a.caption,
+          })
         const script = [{ at: 0, scenario: a.scenario, set: a.set }, ...(a.script ?? [])]
         return r.record({
           format: format as 'gif',

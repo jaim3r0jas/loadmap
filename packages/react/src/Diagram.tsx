@@ -37,6 +37,7 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
   // the labels and colours for these values are on screen: export waits for this
   useEffect(() => {
     engine.drawnValues = JSON.stringify(lm.values)
+    engine.drawnFocus = lm.focus
   })
 
   useEffect(() => {
@@ -214,6 +215,7 @@ const Structure = memo(function Structure({
           title={labels.nodes[n.id]?.title}
           sub={labels.nodes[n.id]?.sub}
           lm={lm}
+          focused={!!lm.focus && componentOf(lm, n) === lm.focus}
           handlers={handlers(n)}
         />
       ))}
@@ -307,6 +309,7 @@ function Node({
   title,
   sub,
   lm,
+  focused,
   handlers,
 }: {
   n: SceneNode
@@ -314,13 +317,14 @@ function Node({
   title?: string
   sub?: string
   lm: LoadmapController
+  focused: boolean
   handlers: React.SVGProps<SVGGElement>
 }) {
   const stroke = state ? STATE_STROKE[state] : 'var(--lm-line)'
   const flows = lm.view.def.flows as Record<string, { color: string }>
   const e = 6
   return (
-    <g style={{ color: 'var(--lm-fg)' }} data-node={n.id} {...handlers}>
+    <g style={{ color: 'var(--lm-fg)' }} data-node={n.id} data-focus={focused || undefined} {...handlers}>
       {n.shape === 'cylinder' ? (
         <>
           <path
@@ -411,6 +415,21 @@ function Node({
           />
         </g>
       ))}
+      {/* last, so the keyboard focus style (on the first child) stays on the box */}
+      {focused && (
+        <rect
+          className="lm-focus"
+          x={n.x - 5}
+          y={n.y - 5}
+          width={n.w + 10}
+          height={n.h + 10}
+          rx="9"
+          fill="none"
+          stroke="var(--lm-accent)"
+          strokeWidth="2"
+          strokeDasharray="5 4"
+        />
+      )}
     </g>
   )
 }

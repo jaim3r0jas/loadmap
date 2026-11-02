@@ -5,6 +5,7 @@ import { Diagram } from './Diagram'
 import type { Engine } from './engine'
 import { Assumptions, Controls, Limits, Meters, Verdict } from './panels'
 import { Compare, HeadroomChart, Scenarios } from './scenarios'
+import { Story } from './story'
 import { injectStyles } from './styles'
 import { type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
 
@@ -22,6 +23,10 @@ export interface LoadmapHandle {
   reset(seed?: number): void
   /** Advances the sim by `dtReal` seconds and draws the frame: the deterministic way to animate. */
   step(dtReal: number): void
+  /** Shows a story step (its values and the box it points at), or leaves the story with null. */
+  setStoryStep(i: number | null): void
+  /** The story step shown; null outside the story. */
+  storyStep(): number | null
   /** The drawn board, for capturing frames. */
   board(): { svg: SVGSVGElement; canvas: HTMLCanvasElement; scene: Scene } | null
   engine: Engine
@@ -88,6 +93,7 @@ export function Loadmap<P>({
     <LoadmapRoot lm={lm} theme={theme}>
       {title !== false && <h2>{title ?? model.title}</h2>}
       <Scenarios lm={lm} />
+      <Story lm={lm} />
       <Diagram lm={lm} />
       <Verdict lm={lm} />
       {(headroom || side) && (
@@ -118,7 +124,8 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
         engine.scene &&
         engine.scene.key === engine.wantKey &&
         engine.svg &&
-        engine.drawnValues === JSON.stringify(engine.ev.values)
+        engine.drawnValues === JSON.stringify(engine.ev.values) &&
+        engine.drawnFocus === engine.wantFocus
       while (!drawn()) {
         if (performance.now() - t0 > timeoutMs) throw new Error('loadmap: layout not ready')
         await new Promise((r) => requestAnimationFrame(r))
@@ -132,6 +139,8 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     },
     values: () => engine.ev.values,
     setValues: (v) => lm.setValues(v),
+    setStoryStep: (i) => lm.setStep(i),
+    storyStep: () => engine.storyStep,
     reset: (seed) => engine.reset(seed),
     step: (dt) => {
       engine.step(dt, { particles: true })

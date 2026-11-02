@@ -109,6 +109,19 @@ The headroom chart draws a band per scenario. In a `.loadmap` it reads `estimate
 `expect "Today keeps 7×" { target: 7 }`; `loadmap check checkout.loadmap` exits 1 when one fails, with its line and
 column, and writes GitHub annotations under Actions.
 
+## Tell it as a story
+
+A model can carry the walk a design review takes: a step at a time, each with its text, its values and the box it
+points at. The page shows a bar with back and next; `loadmap record --story` plays it.
+
+```ts
+story: [
+  { text: 'An ordinary peak: every box is under half its capacity.', set: { load: 1 } },
+  { text: 'At 20×, the gateway and the workers are near full.', set: { load: 20 }, focus: 'gateway' },
+  { text: 'The proposal doubles both: at 20× they are back under half.', scenario: 'Proposed', set: { load: 20 } },
+],
+```
+
 ## Or as text
 
 The same model and view can be written as a `.loadmap` definition and edited next to its live diagram (`pnpm dev`,

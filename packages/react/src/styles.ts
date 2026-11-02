@@ -95,6 +95,13 @@ export const LOADMAP_CSS = `
 .lm-scenarios button { font: 500 .84rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .lm-scenarios button[aria-pressed="true"] { border-color: var(--lm-fg); box-shadow: inset 0 0 0 1px var(--lm-fg); }
 .lm-scenarios i, .lm-table i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; }
+.lm-story { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; min-width: 0; padding: 8px 12px; border: 1px solid var(--lm-line); border-left: 3px solid var(--lm-accent); border-radius: 6px; background: var(--lm-surface); }
+.lm-story legend { float: left; font: 600 .74rem var(--lm-font); text-transform: uppercase; letter-spacing: .08em; color: var(--lm-muted); padding: 0; }
+.lm-story p { flex: 1 1 240px; margin: 0; font: 400 .9rem/1.4 var(--lm-font); color: var(--lm-fg); }
+.lm-story b { font-weight: 600; color: var(--lm-muted); margin-right: 4px; white-space: nowrap; }
+.lm-story-nav { display: flex; gap: 6px; }
+.lm-story button { font: 500 .84rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.lm-story button[aria-disabled="true"] { opacity: .45; cursor: default; }
 .lm-own { font-size: .78rem; color: var(--lm-muted); }
 .lm-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: 3px; margin-right: 6px; }
 

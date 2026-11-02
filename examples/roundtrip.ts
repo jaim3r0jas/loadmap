@@ -38,7 +38,12 @@ export function sameModel(ts: Model, dsl: Model, grid: readonly Record<string, u
     ts.params.map((p) => [p.id, p.def.kind, p.def.label]),
   )
   expect([dsl.flowIds, dsl.componentIds, dsl.stageIds]).toEqual([ts.flowIds, ts.componentIds, ts.stageIds])
-  expect([dsl.scenarios, dsl.growth, dsl.expectations]).toEqual([ts.scenarios, ts.growth, ts.expectations])
+  expect([dsl.scenarios, dsl.growth, dsl.expectations, dsl.story]).toEqual([
+    ts.scenarios,
+    ts.growth,
+    ts.expectations,
+    ts.story,
+  ])
   expect(check(dsl)).toEqual(check(ts))
   for (const load of [1, 10]) expect(compare(dsl, load)).toEqual(compare(ts, load))
   for (const v of grid) {

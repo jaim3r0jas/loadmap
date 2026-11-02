@@ -222,6 +222,35 @@ describe('checkout in the browser', () => {
       await page.screenshot({ path: `__screenshots__/checkout-${theme}.png`, element: el })
     })
 
+  it('walks through its story: a step at a time, pointing at a box', async () => {
+    const { el, handle } = await mount()
+    const bar = el.querySelector<HTMLElement>('.lm-story')!
+    const button = (name: string) => [...bar.querySelectorAll('button')].find((b) => b.textContent === name)
+    const focused = () => [...el.querySelectorAll('[data-focus]')].map((n) => n.getAttribute('data-node'))
+    expect(bar.querySelector('p')!.textContent).toBe('A walk through this model in 3 steps.')
+    await userEvent.click(button('Start')!)
+    expect(bar.querySelector('p')!.textContent).toBe('1 of 3 An ordinary peak: every box is under half its capacity.')
+    expect(handle.values().load).toBe(1)
+    expect(focused()).toEqual([])
+    await userEvent.click(button('Next')!)
+    expect(handle.values()).toMatchObject({ load: 20, pods: 3 })
+    expect(focused()).toEqual(['gateway'])
+    // the arrows move through it while the bar has the focus
+    await userEvent.keyboard('{ArrowRight}')
+    expect(handle.values()).toMatchObject({ load: 20, pods: 6, gateways: 2 })
+    expect(el.querySelector('.lm-scenarios [aria-pressed="true"]')!.textContent).toBe('Proposed')
+    expect(focused()).toEqual(['workers'])
+    expect(button('Next')!.getAttribute('aria-disabled')).toBe('true')
+    expect(handle.storyStep()).toBe(2)
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(focused()).toEqual(['gateway'])
+    await userEvent.click(button('Done')!)
+    expect(focused()).toEqual([])
+    expect(handle.storyStep()).toBe(null)
+    // leaving the story keeps the values it showed
+    expect(handle.values().load).toBe(20)
+  })
+
   it('lays the diagram out top to bottom at phone width, without sideways scroll', async () => {
     const { handle, el } = await mount({ width: 390 })
     await expect.poll(() => handle.board()?.scene.direction).toBe('DOWN')
@@ -301,6 +330,30 @@ describe('export', () => {
     expect(doc.documentElement.textContent).toContain(
       'At 10×, every component is under the 50 % target at its stated capacity, but the API gateway may already be above it.',
     )
+  })
+
+  it('records the story, a step at a time, and puts the page back', async () => {
+    const { handle } = await mount()
+    handle.setValues({ load: 7 })
+    const steps: (number | null)[] = []
+    const opts = { format: 'gif' as const, story: true, fps: 2, scale: 0.5, caption: true }
+    const run = async () => {
+      const hashes: string[] = []
+      await recordVideo(handle, {
+        ...opts,
+        onFrame: async (_, c) => {
+          steps.push(handle.storyStep())
+          hashes.push(await hash(c))
+        },
+      })
+      return hashes
+    }
+    const a = await run()
+    expect(a).toHaveLength(24)
+    expect(steps.slice(0, 24)).toEqual([...Array(8).fill(0), ...Array(8).fill(1), ...Array(8).fill(2)])
+    expect(await run()).toEqual(a)
+    expect(handle.storyStep()).toBe(null)
+    expect(handle.values().load).toBe(7)
   })
 
   it('records the same WebM frames twice', async () => {

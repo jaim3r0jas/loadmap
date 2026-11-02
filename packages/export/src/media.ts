@@ -7,6 +7,10 @@ import type { LoadmapHandle } from '@loadmap/react'
 export interface Caption {
   /** Default: the model's title. */
   title?: string
+  /** Said below the board instead of the verdict: a story step's text. */
+  text?: string
+  /** Before the scenario and the load: "2 of 3". */
+  step?: string
 }
 
 export const captionOf = (c: boolean | Caption | undefined): Caption | null => (c === true ? {} : c ? c : null)
@@ -45,8 +49,8 @@ export function captionText(handle: LoadmapHandle, c: Caption) {
   const scenario = model.scenarioOf(ev.values)
   return {
     title: c.title ?? model.title ?? '',
-    where: [scenario?.label, `${fmt(ev.values.load)}× today`].filter(Boolean).join(' · '),
-    verdict: ev.verdict.text,
+    where: [c.step, scenario?.label, `${fmt(ev.values.load)}× today`].filter(Boolean).join(' · '),
+    verdict: c.text ?? ev.verdict.text,
     tier: ev.verdict.tier,
   }
 }

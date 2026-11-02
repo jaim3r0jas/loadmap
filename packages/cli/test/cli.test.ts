@@ -214,6 +214,14 @@ describe('loadmap check', () => {
   })
 })
 
+/** The frames of a GIF: one graphic control extension (21 F9 04) each. */
+function frames(gif: Buffer): number {
+  const mark = Buffer.from([0x21, 0xf9, 0x04])
+  let n = 0
+  for (let i = gif.indexOf(mark); i >= 0; i = gif.indexOf(mark, i + 1)) n++
+  return n
+}
+
 describe('recording a .loadmap', () => {
   let viewer: string
   let dir: string
@@ -242,6 +250,24 @@ describe('recording a .loadmap', () => {
     const svg = (await record(await args('b.svg', ['--caption']), { viewer })).toString('utf8')
     expect(svg).toContain('Checkout pipeline')
   }, 120_000)
+
+  it('records a story the same twice', async () => {
+    const story = (out: string) =>
+      parseRecord([checkout, '--out', join(dir, out), '--story', '--caption', '--fps', '2', '--scale', '0.5'])
+    const a = await record(await story('s1.gif'), { viewer })
+    const b = await record(await story('s2.gif'), { viewer })
+    expect(a.subarray(0, 6).toString('latin1')).toBe('GIF89a')
+    expect(a.equals(b)).toBe(true)
+    // three steps of 4 s at 2 frames a second: 24 frames, each with its graphic control block
+    expect(frames(a)).toBe(24)
+  }, 120_000)
+
+  it('refuses --story with values of its own or a still', async () => {
+    await expect(parseRecord([checkout, '--out', 'x.png', '--story'])).rejects.toThrow('--story plays a GIF or a video')
+    await expect(parseRecord([checkout, '--out', 'x.gif', '--story', '--set', 'load=3'])).rejects.toThrow(
+      '--story sets the values and the length itself',
+    )
+  })
 
   it('stops on a definition with an error, before opening a browser', async () => {
     const broken = join(dir, 'broken.loadmap')
