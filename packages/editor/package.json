@@ -1,6 +1,22 @@
 {
   "name": "@loadmap/editor",
   "version": "0.1.0",
+  "description": "<LoadmapEditor>: a .loadmap editor next to its live diagram, with inline errors, completions and share links.",
+  "keywords": [
+    "loadmap",
+    "editor",
+    "codemirror",
+    "react"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/editor"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -21,13 +37,13 @@
     "build": "tsdown"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "6.20.4",
-    "@codemirror/commands": "6.11.1",
-    "@codemirror/language": "6.13.1",
-    "@codemirror/lint": "6.9.7",
-    "@codemirror/state": "6.7.6",
-    "@codemirror/view": "6.43.15",
-    "@lezer/highlight": "1.2.5",
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@lezer/highlight": "^1.2.5",
     "@loadmap/core": "workspace:*",
     "@loadmap/dsl": "workspace:*",
     "@loadmap/react": "workspace:*"

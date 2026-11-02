@@ -1,6 +1,4 @@
-import { type ElkEngine, localElk } from '@loadmap/layout'
-
-type Graph = Parameters<ElkEngine['layout']>[0]
+import { type ElkEngine, type ElkGraph as Graph, localElk } from '@loadmap/layout'
 
 let shared: ElkEngine | null = null
 

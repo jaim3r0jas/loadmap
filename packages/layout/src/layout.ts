@@ -74,16 +74,22 @@ export interface LayoutOptions {
   elk?: ElkEngine
 }
 
-/** Lays out an ELK graph: ELK on this thread, or in a worker. Every engine gives the same result for a graph. */
+/**
+ * Lays out an ELK graph: ELK on this thread, or in a worker. Every engine gives the same result for a graph. The graph
+ * is typed loosely here so that our typings never pull in elkjs's (which fail a strict check without skipLibCheck).
+ */
 export interface ElkEngine {
-  layout(graph: ElkNode): Promise<ElkNode>
+  layout(graph: ElkGraph): Promise<ElkGraph>
 }
+
+/** An ELK JSON graph (elkjs's ElkNode). */
+export type ElkGraph = { id: string } & Record<string, unknown>
 
 let local: Promise<ElkEngine> | null = null
 
 /** ELK on this thread, imported on first use: it is about 1.6 MB, so it stays out of a page's first load. */
 export function localElk(): Promise<ElkEngine> {
-  local ??= import('elkjs/lib/elk.bundled.js').then((m) => new m.default())
+  local ??= import('elkjs/lib/elk.bundled.js').then((m) => new m.default() as unknown as ElkEngine)
   return local
 }
 
@@ -270,7 +276,7 @@ async function run(prep: Prepared, elk?: ElkEngine): Promise<Scene> {
       }),
     ),
   }
-  const out = await (elk ?? (await localElk())).layout(graph)
+  const out = (await (elk ?? (await localElk())).layout(graph as ElkGraph)) as ElkNode
 
   const placed = new Map((out.children ?? []).map((c) => [c.id, c]))
   const nodes: SceneNode[] = prep.nodes.map(({ id, def, inner }) => {

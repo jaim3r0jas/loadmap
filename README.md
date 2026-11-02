@@ -13,11 +13,20 @@ components, stages       edges, flow colours          scenarios · diagram · ve
    └─ fluid sim → dots ───────────────────────────→  canvas overlay · PNG / WebM export
 ```
 
+## Install
+
+```bash
+npm i @loadmap/react react react-dom
+```
+
+`@loadmap/react` brings the model, the view and the components; [its README](packages/react/README.md) has a page
+that works in a few minutes. `@loadmap/dsl` and `@loadmap/editor` add the `.loadmap` language and its editor,
+`@loadmap/export` media, `@loadmap/cli` the `loadmap` command.
+
 ## A model
 
 ```ts
-import { defineModel, estimated, measured, p, pass, queue, store, workers } from '@loadmap/core'
-import { fitLinear } from '@loadmap/core/calibrate'
+import { defineModel, estimated, fitLinear, measured, p, pass, queue, store, workers } from '@loadmap/react'
 
 const workerCores = fitLinear(cpu, { x: 'rate', y: 'cores', source: 'Grafana, peak week' })
 
@@ -138,8 +147,11 @@ Formulas are a small subset of TypeScript expressions, never `eval`, so a defini
 nvm use && corepack enable pnpm && pnpm install
 pnpm exec playwright install chromium   # once, for the browser tests
 pnpm dev                                # the playground
-pnpm check                              # typecheck, lint, tests, build
+pnpm check                              # typecheck, lint, tests, build, bundle budget
+pnpm verify:pack                        # the tarballs in a fresh Vite app outside the monorepo
 ```
+
+Releases use changesets with one version for every package; see [`.changeset/README.md`](.changeset/README.md).
 
 ## Record a scenario
 

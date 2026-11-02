@@ -22,7 +22,8 @@
     "examples",
     "apps/*/src",
     "apps/*/vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "scripts/budget"
   ],
   "exclude": ["**/node_modules", "**/dist"]
 }

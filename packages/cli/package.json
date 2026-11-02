@@ -1,6 +1,22 @@
 {
   "name": "@loadmap/cli",
   "version": "0.1.0",
+  "description": "loadmap check (capacity expectations in CI) and loadmap record (GIF, video, PNG or SVG of a page or a .loadmap file).",
+  "keywords": [
+    "loadmap",
+    "cli",
+    "ci",
+    "capacity-planning"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
   "type": "module",
   "bin": {
     "loadmap": "./dist/bin.js"
@@ -23,8 +39,8 @@
     "build": "tsdown && vite build --config viewer/vite.config.ts"
   },
   "dependencies": {
-    "elkjs": "0.12.1",
-    "playwright": "1.64.1"
+    "elkjs": "^0.12.1",
+    "playwright": "^1.64.1"
   },
   "devDependencies": {
     "@loadmap/dsl": "workspace:*",

@@ -1,6 +1,22 @@
 {
   "name": "@loadmap/layout",
   "version": "0.1.0",
+  "description": "Views for loadmap models and their ELK layout: nodes, clusters, pools, edges, labels that never collide.",
+  "keywords": [
+    "loadmap",
+    "layout",
+    "elk",
+    "diagram"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/layout"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -22,7 +38,7 @@
   },
   "dependencies": {
     "@loadmap/core": "workspace:*",
-    "elkjs": "0.12.1"
+    "elkjs": "^0.12.1"
   },
   "peerDependencies": {}
 }

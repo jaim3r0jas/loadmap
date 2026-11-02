@@ -36,7 +36,11 @@ pnpm check        # typecheck, biome check, every test (Node + browser), build
 ```
 
 Pieces: `pnpm typecheck`, `pnpm lint` (`pnpm format` fixes), `pnpm test:node`, `pnpm test:browser`, `pnpm build`.
-The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
+`pnpm budget` (in `check`) builds `scripts/budget/*.html` and fails when a `<Loadmap>` page loads more than 50 kB gzip of
+loadmap first, the editor adds more than 150 kB, or ELK is in a first load. Before a release, and after a change to
+exports, dependencies or the build: `pnpm verify:pack` (packs every package, installs the tarballs with npm in a fresh
+Vite app outside the monorepo, runs tsc, builds, measures the budget, draws checkout and the react README's quick
+start in Chromium, built and in dev). The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
 `__screenshots__/` next to each test (ignored by git). Commit only with `pnpm check && git commit`.
 
 - Load nvm in every new shell before pnpm: `. ~/.nvm/nvm.sh && nvm use`. The default node on `PATH` can be a broken

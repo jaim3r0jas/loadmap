@@ -1,6 +1,21 @@
 {
   "name": "@loadmap/core",
   "version": "0.1.0",
+  "description": "Capacity models in plain TypeScript: params, flows, components with capacities that say where they came from, limits, verdict, scenarios, growth and checks.",
+  "keywords": [
+    "loadmap",
+    "capacity-planning",
+    "model"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/core"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {

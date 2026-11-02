@@ -1,6 +1,22 @@
 {
   "name": "@loadmap/dsl",
   "version": "0.1.0",
+  "description": "The .loadmap language: a text definition of a capacity model and its diagram, compiled to what <Loadmap> takes.",
+  "keywords": [
+    "loadmap",
+    "dsl",
+    "language",
+    "capacity-planning"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/dsl"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {

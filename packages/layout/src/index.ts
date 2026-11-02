@@ -4,6 +4,7 @@ export {
   type Cell,
   type Direction,
   type ElkEngine,
+  type ElkGraph,
   type LayoutOptions,
   labelsAt,
   layout,

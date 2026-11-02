@@ -1,6 +1,21 @@
 {
   "name": "@loadmap/sim",
   "version": "0.1.0",
+  "description": "The fluid queue simulation behind loadmap's moving dots: priorities, drop rules, worker fill, seeded randomness.",
+  "keywords": [
+    "loadmap",
+    "simulation",
+    "queue"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/sim"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
   "type": "module",
   "sideEffects": false,
   "exports": {
