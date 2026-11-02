@@ -1,0 +1,64 @@
+loadmap 1
+# A web app on a few pods in front of one database: the smallest useful model. Replace the numbers with yours; every
+# capacity says where it came from, so the page tells which ones are guesses.
+title: "Web app and database"
+speed: 10
+assume: "1× is today's busiest hour."
+
+load "Traffic, × today" { max: 50; default: 1 }
+
+param pods "App pods" { options: [2, 3, 4, 6, 8]; default: 3 }
+param cache "Cache sessions in memory" {
+  hint: "two queries a request instead of five"
+  default: false
+}
+
+scenario "Today" {}
+scenario "Proposed" { pods: 6; cache: true }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2×" { target: 2 }
+expect "Proposed keeps 4×" { scenario: Proposed; target: 4 }
+
+let queries = cache ? 2 : 5
+
+flow requests "requests" {
+  unit: "request"
+  rate: 150 * load
+  route: lb -> app -> db
+  from: browsers
+  color: accent
+}
+
+node browsers "Browsers"
+
+node lb "Load balancer" {
+  pass
+  short: "the load balancer"
+  demand: flows.requests
+  capacity: measured(10_000, "req/s", "the provider's documented limit")
+  over: "new connections are refused"
+}
+
+pool app "App" `${pods} pods × 4 workers` {
+  workers { pods: pods; perPod: 4 }
+  short: "the app pods"
+  plural: true
+  demand: flows.requests * 0.004
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "requests queue and time out"
+  describe: `${pods} pods, 1 core each, 4 ms of CPU a request`
+}
+
+node db "Postgres" "primary" {
+  shape: cylinder
+  store
+  short: "the database"
+  demand: flows.requests * queries
+  capacity: estimated(6_000 ± 30%, "queries/s", "a load test from last year")
+  over: "queries queue on the primary and every page slows down"
+}
+
+browsers -> lb: "HTTPS"
+lb -> app
+app -> db: `${compact(flows.requests * queries)} queries/s`

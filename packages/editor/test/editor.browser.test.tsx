@@ -1,13 +1,14 @@
+import { undo } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { decodeShare } from '@loadmap/dsl'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -35,7 +36,7 @@ async function mount(o: { source?: string; values?: Record<string, ParamValue>; 
       scrollIntoView: true,
     })
   }
-  return { host, handle: ref.current!, edit }
+  return { host, handle: ref.current!, edit, view }
 }
 
 const verdict = (host: HTMLElement) => host.querySelector('.lm-verdict')?.textContent ?? ''
@@ -109,6 +110,53 @@ describe('the editor', () => {
     // a new text compiles and lays out from scratch: on a busy machine that takes more than the default second
     await expect.poll(() => handle.loadmap()?.values().alertPods, { timeout: 5000 }).toBe(3)
     expect(handle.loadmap()!.values()).toMatchObject({ load: 10, posPods: 3 })
+  })
+
+  it('starts from a template', async () => {
+    const { host, handle } = await mount()
+    const menu = host.querySelector('select[aria-label="New from template"]') as HTMLSelectElement
+    expect([...menu.options].slice(1).map((o) => o.value)).toEqual(TEMPLATES.map((t) => t.id))
+    // the text is as it was loaded: no question
+    await userEvent.selectOptions(menu, 'queue-workers')
+    await expect.poll(() => host.querySelector('.lm h2')?.textContent).toBe('Queue and workers')
+    expect(handle.source()).toBe(TEMPLATES.find((t) => t.id === 'queue-workers')!.source)
+    await handle.loadmap()!.ready()
+    expect(host.querySelectorAll('.lme-preview [data-node]')).toHaveLength(5)
+    expect(menu.value).toBe('')
+  })
+
+  it('asks before replacing edited text, and undo brings it back', async () => {
+    const { host, handle, edit, view } = await mount()
+    edit('"Postgres primary"', '"Main database"')
+    const edited = handle.source()
+    const menu = host.querySelector('select[aria-label="New from template"]') as HTMLSelectElement
+    const asked: string[] = []
+    const confirm = window.confirm
+    try {
+      window.confirm = (q) => {
+        asked.push(String(q))
+        return false
+      }
+      await userEvent.selectOptions(menu, 'web-app')
+      expect(asked).toEqual(['Replace your text with “Web app and database”?'])
+      expect(handle.source()).toBe(edited)
+      window.confirm = () => true
+      await userEvent.selectOptions(menu, 'web-app')
+      expect(handle.source()).toBe(TEMPLATES[0]!.source)
+      undo(view)
+      expect(handle.source()).toBe(edited)
+    } finally {
+      window.confirm = confirm
+    }
+  })
+
+  it('hides the menu with templates={false}', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    root.render(<LoadmapEditor initial={checkout} templates={false} />)
+    await expect.poll(() => host.querySelector('.lme-bar')).toBeTruthy()
+    expect(host.querySelector('select[aria-label="New from template"]')).toBeNull()
   })
 
   it('reads values from a link by the kind of each parameter', async () => {

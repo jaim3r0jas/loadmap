@@ -1,0 +1,49 @@
+import batchImport from './templates/batch-import.loadmap?raw'
+import notifications from './templates/notifications.loadmap?raw'
+import queueWorkers from './templates/queue-workers.loadmap?raw'
+import readReplicas from './templates/read-replicas.loadmap?raw'
+import thirdPartyApi from './templates/third-party-api.loadmap?raw'
+import webApp from './templates/web-app.loadmap?raw'
+
+export interface Template {
+  id: string
+  title: string
+  /** One line for a menu or a gallery card. */
+  summary: string
+  source: string
+}
+
+/** Starters for "New from template": each compiles, keeps its expectations and lays out without collisions. */
+export const TEMPLATES: readonly Template[] = [
+  { id: 'web-app', title: 'Web app and database', summary: 'App pods in front of one database.', source: webApp },
+  {
+    id: 'read-replicas',
+    title: 'Reads on replicas',
+    summary: 'Reads on replicas, writes on a primary that ships them on.',
+    source: readReplicas,
+  },
+  {
+    id: 'queue-workers',
+    title: 'Queue and workers',
+    summary: 'An API that queues jobs for a pool of workers.',
+    source: queueWorkers,
+  },
+  {
+    id: 'notifications',
+    title: 'Notification fan-out',
+    summary: 'One event, several messages, a quota per provider.',
+    source: notifications,
+  },
+  {
+    id: 'batch-import',
+    title: 'Batch import',
+    summary: 'Upload, store, parse and load into a warehouse in batches.',
+    source: batchImport,
+  },
+  {
+    id: 'third-party-api',
+    title: 'Third-party API with a quota',
+    summary: 'A vendor’s rate limit, a cache, and a bigger plan.',
+    source: thirdPartyApi,
+  },
+]

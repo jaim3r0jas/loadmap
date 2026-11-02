@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands'
 import { bracketMatching, indentOnInput } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
@@ -17,6 +17,7 @@ import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { loadmapLanguage } from './language'
 import { injectEditorStyles } from './styles'
+import { TEMPLATES, type Template } from './templates'
 
 /** What a page can drive from outside. */
 export interface LoadmapEditorHandle {
@@ -43,6 +44,8 @@ export interface LoadmapEditorProps {
   onShare?: (hash: string) => void | Promise<void>
   /** More buttons for the bar: export, record. */
   actions?: ReactNode
+  /** The starters in the "New from template" menu; false hides it. Default: the six that come with the editor. */
+  templates?: readonly Template[] | false
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
   fileName?: string
   ref?: Ref<LoadmapEditorHandle>
@@ -67,6 +70,7 @@ export function LoadmapEditor({
   onShare,
   actions,
   fileName,
+  templates = TEMPLATES,
   ref,
 }: LoadmapEditorProps) {
   useEffect(() => injectEditorStyles(), [])
@@ -82,6 +86,8 @@ export function LoadmapEditor({
   const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
   // setSource starts the new text from its own defaults: the next compile must not carry the old values over
   const fresh = useRef(false)
+  // the text last loaded whole (the initial one or a template): replacing anything else asks first
+  const loaded = useRef(initial)
   const latest = useRef({ onChange, functions })
   latest.current = { onChange, functions }
 
@@ -136,6 +142,27 @@ export function LoadmapEditor({
   }, [])
 
   const def = state.good
+
+  /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
+  const replace = (source: string) => {
+    const v = view.current
+    if (!v) return
+    loaded.current = source
+    shown.current = {}
+    fresh.current = true
+    v.dispatch({
+      changes: { from: 0, to: v.state.doc.length, insert: source },
+      selection: { anchor: 0 },
+      // its own undo step, never merged with the typing just before it
+      annotations: isolateHistory.of('full'),
+    })
+  }
+  const startFrom = (t: Template) => {
+    const text = view.current?.state.doc.toString()
+    if (text != null && text !== loaded.current && !window.confirm(`Replace your text with “${t.title}”?`)) return
+    replace(t.source)
+    setNote(`New from “${t.title}”`)
+  }
   const shareHash = async () => {
     const h = preview.current
     const changed: Record<string, ParamValue> = {}
@@ -149,13 +176,7 @@ export function LoadmapEditor({
 
   useImperativeHandle(ref, () => ({
     source: () => view.current?.state.doc.toString() ?? state.source,
-    setSource: (source) => {
-      const v = view.current
-      if (!v) return
-      shown.current = {}
-      fresh.current = true
-      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: source }, selection: { anchor: 0 } })
-    },
+    setSource: replace,
     loadmap: () => preview.current,
     shareHash,
   }))
@@ -212,6 +233,24 @@ export function LoadmapEditor({
           {note}
         </span>
         <span className="lme-grow" />
+        {templates && templates.length > 0 && (
+          <select
+            className="lm-btn"
+            aria-label="New from template"
+            value=""
+            onChange={(e) => {
+              const t = templates.find((x) => x.id === e.target.value)
+              if (t) startFrom(t)
+            }}
+          >
+            <option value="">New from template…</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id} title={t.summary}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+        )}
         <button type="button" className="lm-btn" onClick={share}>
           Share link
         </button>

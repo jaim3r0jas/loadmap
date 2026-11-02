@@ -1,0 +1,70 @@
+loadmap 1
+# Requests are accepted fast and done later: an API puts jobs on a queue, a pool of workers drains it, and each job
+# ends in the database. Past capacity the queue grows instead of requests failing.
+title: "Queue and workers"
+speed: 10
+assume: "1× is the peak hour of an ordinary day."
+
+load "Jobs, × today" { max: 100; default: 5 }
+
+param pods "Worker pods" { options: [2, 3, 4, 6, 8]; default: 3 }
+param threads "Threads per pod" { options: [4, 8, 16]; default: 8 }
+
+scenario "Today" {}
+scenario "Proposed" { pods: 6 }
+growth { rate: 0.06; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 10×" { target: 10 }
+expect "Proposed keeps 20×" { scenario: Proposed; target: 20 }
+
+flow jobs "jobs" {
+  unit: "job"
+  rate: 20 * load
+  route: api -> topic -> workers -> db
+  from: clients
+  color: accent
+}
+
+node clients "Clients"
+
+node api "API" {
+  pass
+  short: "the API"
+  demand: flows.jobs
+  capacity: measured(3_000, "req/s", "load test, March")
+  over: "clients get 503s"
+}
+
+cluster broker "Queue" "jobs topic" {
+  members: 3
+  memberLabel: `broker ${i}`
+  queue topic { partitions { jobs: pods * threads } }
+  short: "the queue"
+  demand: flows.jobs * 4 / 1000
+  capacity: estimated(30, "MB/s", "vendor sizing guide")
+  over: "producing slows down and the API backs up"
+}
+
+pool workers "Workers" `${pods} pods × ${threads} threads` {
+  workers { pods: pods; perPod: threads }
+  short: "the workers"
+  plural: true
+  demand: flows.jobs * 0.01
+  capacity: measured(pods * 2, "cores", "pod CPU limit")
+  over: "jobs wait in the queue and the lag keeps growing"
+  describe: `${pods} pods, 2 cores each, 10 ms of CPU a job`
+}
+
+node db "Database" {
+  shape: cylinder
+  store
+  short: "the database"
+  demand: flows.jobs * 3
+  capacity: estimated(5_000 ± 30%, "writes/s")
+  over: "writes queue and the workers stall on them"
+}
+
+clients -> api: "POST /jobs"
+api -> broker: `${compact(flows.jobs)} jobs/s`
+broker -> workers
+workers -> db

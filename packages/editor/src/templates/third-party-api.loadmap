@@ -1,0 +1,51 @@
+loadmap 1
+# Your service depends on someone else's API with a rate quota. A cache in front cuts the calls; the plan sets the
+# quota. Which one buys more headroom for the money is the question this answers.
+title: "Third-party API with a quota"
+speed: 10
+assume: "1× is today's busiest minute."
+
+load "Traffic, × today" { max: 100; default: 1 }
+
+param pods "Service pods" { options: [2, 4, 6]; default: 2 }
+param hit "Cache hit ratio" { options: [0, 0.5, 0.8]; default: 0 }
+param quota "Vendor plan (requests/s)" { options: [50, 200, 1_000]; default: 50 }
+
+scenario "Today" {}
+scenario "Add a cache" { hit: 0.8 }
+scenario "Bigger plan" { quota: 200 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 1.5×" { target: 1.5 }
+
+let calls = flows.lookups * (1 - hit)
+
+flow lookups "lookups" {
+  unit: "lookup"
+  rate: 15 * load
+  route: service -> vendor
+  from: users
+  color: accent
+}
+
+node users "Users"
+
+pool service "Your service" `${pods} pods` {
+  workers { pods: pods; perPod: 8 }
+  short: "your service"
+  demand: flows.lookups * 0.01
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "requests queue in your service"
+}
+
+node vendor "Vendor API" `${quota} req/s plan` {
+  store
+  short: "the vendor API"
+  demand: calls
+  capacity: measured(quota, "req/s", "the plan's rate limit")
+  over: "calls get 429s and lookups fail"
+  describe: hit > 0 ? `${hit * 100} % served from the cache` : "every lookup calls it"
+}
+
+users -> service
+service -> vendor: `${compact(calls)} calls/s`

@@ -20,13 +20,18 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./templates": "./src/templates.ts"
   },
   "publishConfig": {
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./templates": {
+        "types": "./dist/templates.d.ts",
+        "import": "./dist/templates.js"
       }
     }
   },

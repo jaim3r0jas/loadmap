@@ -1,0 +1,67 @@
+loadmap 1
+# Files are uploaded, stored, parsed into rows and loaded into a warehouse in batches. Bigger batches cost the
+# warehouse less per row; more parsers only help until the warehouse is the limit.
+title: "Batch import"
+speed: 10
+assume: "1× is the nightly import; files average 5,000 rows."
+
+load "Files, × today" { max: 50; default: 1 }
+
+param parsers "Parser pods" { options: [2, 4, 8, 12]; default: 4 }
+param rows "Rows per insert" { options: [100, 1_000, 5_000]; default: 1_000 }
+
+scenario "Today" {}
+scenario "Bigger batches" { rows: 5_000; parsers: 8 }
+growth { rate: 0.1; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2×" { target: 2 }
+
+flow files "files" {
+  unit: "file"
+  rate: 4 * load
+  route: upload -> bucket -> parsers -> warehouse
+  from: partners
+  color: accent
+}
+
+node partners "Partners" "SFTP and HTTPS"
+
+node upload "Upload API" {
+  pass
+  short: "the upload API"
+  demand: flows.files
+  capacity: measured(200, "files/s", "load test")
+  over: "uploads fail and partners retry"
+}
+
+node bucket "Object store" {
+  pass
+  short: "the object store"
+  demand: flows.files * 2
+  capacity: measured(3_500, "requests/s", "provider limit per prefix")
+  over: "writes get 503 slow-downs"
+}
+
+pool parsers "Parsers" `${parsers} pods` {
+  workers { pods: parsers; perPod: 2 }
+  short: "the parsers"
+  plural: true
+  demand: flows.files * 0.1
+  capacity: measured(parsers * 1, "cores", "pod CPU limit")
+  over: "files wait in the bucket and the import runs into the morning"
+  describe: `${parsers} pods, 100 ms of CPU a file`
+}
+
+node warehouse "Warehouse" {
+  shape: cylinder
+  store
+  short: "the warehouse"
+  demand: flows.files * 5_000 / rows
+  capacity: estimated(200 ± 30%, "inserts/s", "a test on a smaller instance")
+  over: "inserts queue and the import misses its window"
+}
+
+partners -> upload
+upload -> bucket
+bucket -> parsers
+parsers -> warehouse: `${compact(rows)} rows an insert`
