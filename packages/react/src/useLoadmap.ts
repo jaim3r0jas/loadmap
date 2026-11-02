@@ -36,6 +36,8 @@ export interface LoadmapController<P = any> {
   setScenario: (label: string) => void
   /** The story step shown, by index; null outside the story. */
   step: number | null
+  /** The reader changed a value since the step was shown: its outline is gone. */
+  stepChanged: boolean
   /** Shows a story step (its values, its focus), or leaves the story with null. */
   setStep: (i: number | null) => void
   /** The component the story points at now. */
@@ -155,7 +157,11 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     },
     [model, setValues, engine],
   )
-  const focus = step == null ? null : (model.story[step]?.focus ?? null)
+  // a value the reader changed since the step was shown: the step's text and outline no longer describe the board
+  const shown = step == null ? undefined : model.story[step]
+  const stepChanged =
+    !!shown && Object.entries(shown.values).some(([k, v]) => (values as Record<string, unknown>)[k] !== v)
+  const focus = shown && !stepChanged ? (shown.focus ?? null) : null
   engine.wantFocus = focus
   engine.storyStep = step
 
@@ -167,6 +173,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     scenario,
     setScenario,
     step,
+    stepChanged,
     setStep,
     focus,
     ev,

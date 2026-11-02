@@ -31,7 +31,7 @@ export {
   type StoryStep,
   type StoryStepDef,
   sureness,
-  type Verdict,
+  type VerdictResult,
 } from './model'
 export {
   type AnyParamDef,

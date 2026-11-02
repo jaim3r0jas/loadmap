@@ -56,6 +56,15 @@ export function expand(md: string): string {
   })
 }
 
+/** The repository files the pages include, for the dev server to watch. */
+export function included(): string[] {
+  const files = new Set<string>()
+  for (const p of PAGES)
+    for (const [, path] of readFileSync(join(here, 'pages', p.file), 'utf8').matchAll(/^@include\(([^,)]+)/gm))
+      files.add(join(repo, path!.trim()))
+  return [...files]
+}
+
 /** A page's HTML: its Markdown with islands, heading anchors, and site links made relative to where it is served. */
 export function render(page: Page): { title: string; html: string } {
   const md = expand(readFileSync(join(here, 'pages', page.file), 'utf8'))

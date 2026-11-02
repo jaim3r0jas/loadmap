@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib'
 import { chromium } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { PAGES, relative, render } from '../pages'
+import { included, PAGES, relative, render } from '../pages'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
 const routeOf = (href: string, from: string) => new URL(href, `http://x/${from ? `${from}/` : ''}`).pathname
@@ -46,6 +46,11 @@ describe('the pages', () => {
     const island = readFileSync(join(import.meta.dirname, '../site/islands/quickstart-app.tsx'), 'utf8')
     expect(island.slice(island.indexOf('\n') + 1)).toBe(code)
     expect(rendered.find((r) => r.page.route === 'getting-started')!.html).toContain('defineView(shop, {')
+  })
+
+  it('tell the dev server which repository files they include', () => {
+    const files = included().map((f) => f.slice(f.lastIndexOf('/', f.lastIndexOf('/') - 1) + 1))
+    expect(files.sort()).toEqual(['docs/dsl.md', 'react/README.md'])
   })
 
   it('find the site root from any depth', () => {
@@ -110,6 +115,28 @@ describe('the built site', () => {
         expect(errors, route).toEqual([])
         await page.close()
       }
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('keeps the draft aside when an example takes its place in the editor', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}editor/`)
+      const mine = readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8').replace(
+        'title: "Photo uploads"',
+        'title: "My uploads"',
+      )
+      await page.evaluate((s) => localStorage.setItem('loadmap-editor-draft', s), mine)
+      await page.reload()
+      await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
+      await page.getByRole('button', { name: 'checkout', exact: true }).click()
+      await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'Checkout pipeline')
+      expect(await page.evaluate(() => localStorage.getItem('loadmap-editor-draft-earlier'))).toBe(mine)
+      await page.getByRole('button', { name: 'your earlier draft' }).click()
+      await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
     } finally {
       await browser.close()
     }

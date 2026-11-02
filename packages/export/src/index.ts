@@ -169,8 +169,9 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
     }
     return await sink.finish()
   } finally {
-    handle.setValues(before)
+    // the step first: showing it sets its values, which the reader's own values then replace
     if (handle.storyStep() !== beforeStep) handle.setStoryStep(beforeStep)
+    handle.setValues(before)
     handle.resume()
   }
 }

@@ -130,7 +130,7 @@ export interface ComponentResult<C extends string = string> {
   describe?: string
 }
 
-export interface Verdict {
+export interface VerdictResult {
   tier: 'ok' | 'warn' | 'over'
   text: string
 }
@@ -177,7 +177,7 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   target: CrossingRange | null
   /** Where the first component reaches 100 %, the same way. */
   full: CrossingRange | null
-  verdict: Verdict
+  verdict: VerdictResult
   /** Which capacity, once measured, would change or narrow the answer most; null when the range is narrow. */
   measure: MeasureHint<C> | null
   presets: readonly Preset<P>[]
@@ -650,7 +650,7 @@ function verdict(
   th: { target: number; full: number },
   searchMax: number,
   when: (x: number | null) => Date | null,
-): Verdict {
+): VerdictResult {
   const at = `At ${fmt(load)}×`
   const target = `${pct(th.target)} target`
   if (!first) return { tier: 'ok', text: `${at}, every component is switched off.` }

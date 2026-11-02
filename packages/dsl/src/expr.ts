@@ -50,6 +50,9 @@ interface Builtin {
 }
 
 const num = (f: (...a: number[]) => number): Builtin['fn'] => f as Builtin['fn']
+/** Functions renamed before 0.1: a definition from before says what to write instead. */
+const RENAMED: Readonly<Record<string, string>> = { kfmt: 'compact' }
+
 export const BUILTINS: Readonly<Record<string, Builtin>> = {
   min: { args: ['number'], variadic: true, min: 1, result: 'number', fn: num(Math.min) },
   max: { args: ['number'], variadic: true, min: 1, result: 'number', fn: num(Math.max) },
@@ -282,7 +285,9 @@ class Compiler {
     this.report.error(
       e.callee,
       `unknown function "${name}"`,
-      didYouMean(name, known) ?? 'a host page can provide it in compile(…, { functions })',
+      (own(RENAMED, name) ? `renamed to ${own(RENAMED, name)}()` : undefined) ??
+        didYouMean(name, known) ??
+        'a host page can provide it in compile(…, { functions })',
     )
     return bad
   }

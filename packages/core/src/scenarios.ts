@@ -1,6 +1,6 @@
 import type { CrossingRange } from './capacity'
 import { joinAnd, pct } from './format'
-import { type ComponentResult, type Model, reach, type Scenario, type Verdict } from './model'
+import { type ComponentResult, type Model, reach, type Scenario, type VerdictResult } from './model'
 import type { LooseValues, Values } from './params'
 
 /** One component in one scenario, against the baseline. */
@@ -32,7 +32,7 @@ export interface ScenarioRow<P = any, C extends string = string> {
   /** Both edges: every capacity at its low and at its high bound. */
   targetRange: CrossingRange | null
   fullRange: CrossingRange | null
-  verdict: Verdict
+  verdict: VerdictResult
   /** Every component, in the model's order. */
   components: readonly ComponentChange<C>[]
 }

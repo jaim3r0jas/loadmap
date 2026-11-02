@@ -306,7 +306,7 @@ class Compiler {
     }
     const story: Record<string, unknown>[] = []
     for (const b of byKind('step')) {
-      const st = this.step(b, scenarios, componentNames, params)
+      const st = this.step(b, scenarios, componentNames, params, load)
       if (st) story.push(st)
     }
     const growths = byKind('growth')
@@ -937,14 +937,28 @@ class Compiler {
     scenarios: Record<string, unknown>,
     components: Map<string, Span>,
     params: Block[],
+    load: { min: number; max: number } | undefined,
   ): Record<string, unknown> | undefined {
     const text = this.text(b.args.label)
+    // a parameter named like a step's own property cannot be set here: say so rather than read it as the property
+    for (const k of Object.keys(b.spec.props)) {
+      const at = b.props.get(k)?.[0]
+      if (at && params.some((x) => x.args.id?.name === k))
+        this.report.error(
+          at.key,
+          `"${k}" in a step is the step's own ${k}, not the parameter "${k}"`,
+          'rename the parameter to set it in a step',
+        )
+    }
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const focus = this.named(b, 'focus', [...components.keys()], 'component')
     const seconds = this.constProp<number>(b, 'seconds')
     if (seconds != null && !(seconds > 0 && Number.isFinite(seconds)))
       this.report.error(this.prop(b, 'seconds')!.value, 'seconds is a duration above 0')
     const set = this.preset(b, params)
+    const l = this.prop(b, 'load')
+    if (l && load && typeof set.load === 'number' && !(set.load >= load.min && set.load <= load.max))
+      this.report.error(l.value, `the load goes from ${load.min} to ${load.max}`)
     if (text == null || scenario === null || focus === null) return undefined
     return {
       text,

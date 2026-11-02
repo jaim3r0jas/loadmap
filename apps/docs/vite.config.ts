@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
-import { SITE, writePages } from './pages'
+import { included, SITE, writePages } from './pages'
 
 // DOCS_BASE is where the site is served: "/" here, "/loadmap/" on GitHub Pages
 const base = process.env.DOCS_BASE ?? '/'
@@ -15,10 +15,11 @@ function pages(): Plugin {
       return { build: { rolldownOptions: { input: files } } }
     },
     configureServer(server) {
-      const watched = [join(import.meta.dirname, 'pages'), join(import.meta.dirname, '../../docs')]
-      server.watcher.add(watched)
+      const pages = join(import.meta.dirname, 'pages')
+      const files = new Set(included())
+      server.watcher.add([pages, ...files])
       server.watcher.on('change', (file) => {
-        if (!watched.some((d) => file.startsWith(d))) return
+        if (!file.startsWith(pages) && !files.has(file)) return
         writePages(base)
         server.ws.send({ type: 'full-reload' })
       })

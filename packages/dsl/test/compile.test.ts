@@ -216,6 +216,23 @@ step "More pods at 8×." { scenario: More; load: 8; fast: true; focus: api; seco
     ])
   })
 
+  it('refuse a load out of range, and a parameter a step property would hide', () => {
+    const top = `param seconds "Timeout" { options: [10, 30]; default: 10 }
+step "x" { load: 50; seconds: 30 }`
+    expect(errors(def({ top }))).toEqual([
+      { message: 'the load goes from 1 to 10', hint: undefined, text: '50' },
+      {
+        message: '"seconds" in a step is the step\'s own seconds, not the parameter "seconds"',
+        hint: 'rename the parameter to set it in a step',
+        text: 'seconds',
+      },
+    ])
+  })
+
+  it('say what a function renamed before 0.1 is called now', () => {
+    expect(errors(def({ top: 'let x = kfmt(2)' }))[0]?.hint).toBe('renamed to compact()')
+  })
+
   it('point at the word that is wrong', () => {
     const top = `scenario "Today" {}
 step "x" { scenario: Later; focus: db; seconds: 0; pod: 2; pods: 9 }`

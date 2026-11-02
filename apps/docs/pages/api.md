@@ -55,7 +55,7 @@ Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layou
 | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | `<Loadmap model view />`                                                                                                             | The whole piece: scenarios, story, diagram, verdict, headroom, limits, controls |
 | `useLoadmap(model, view, options)`                                                                                                   | The state behind it, to build a layout of your own                              |
-| `LoadmapRoot`, `Diagram`, `Verdict`, `Limits`, `Meters`, `Controls`, `Assumptions`, `Scenarios`, `Story`, `HeadroomChart`, `Compare` | The pieces, each taking `lm` from `useLoadmap`                                  |
+| `LoadmapRoot`, `Diagram`, `Verdict` (the panel; the type of `ev.verdict` is `VerdictResult`), `Limits`, `Meters`, `Controls`, `Assumptions`, `Scenarios`, `Story`, `HeadroomChart`, `Compare` | The pieces, each taking `lm` from `useLoadmap`                                  |
 | `injectStyles()`, `LOADMAP_CSS`                                                                                                      | The styles (injected on first render), for a shadow root or server rendering    |
 
 `<Loadmap>` props: `model`, `view`, `theme` (`'auto'`, `'light'`, `'dark'`), `title`, `assumptions` (lines added before

@@ -11,7 +11,7 @@ import { useRecorder } from './recorder'
 
 const SOURCES = { uploads: uploadsSource, checkout: checkoutSource, alerts: alertsSource } as const
 const DRAFT = 'loadmap-editor-draft'
-/** The draft as it was before a link or a template was edited: their text takes the draft's place. */
+/** The reader's draft as it was before another text took its place. */
 const EARLIER = 'loadmap-editor-draft-earlier'
 
 function read(key: string): string | null {
@@ -29,6 +29,9 @@ function write(key: string, value: string) {
     // private windows refuse storage; the draft is a convenience
   }
 }
+
+/** Texts that come whole from the site: replacing a draft with one of them keeps the draft aside. */
+const WHOLE = new Set<string>([...TEMPLATES.map((t) => t.source), ...Object.values(SOURCES)])
 
 const readDraft = () => read(DRAFT)
 const fromLink = () => location.hash.startsWith('#v1.')
@@ -50,13 +53,15 @@ function Editor() {
   const outside = useRef(fromLink() || !!template())
   const [earlier, setEarlier] = useState(() => read(EARLIER))
   const save = (s: string) => {
+    // a whole new text (an example, a template, the first edit of a link) takes the draft's place: the reader's own
+    // draft is kept aside, one click away
+    const draft = readDraft()
+    if ((outside.current || WHOLE.has(s)) && draft != null && draft !== s && !WHOLE.has(draft)) {
+      write(EARLIER, draft)
+      setEarlier(draft)
+    }
     if (outside.current) {
       outside.current = false
-      const draft = readDraft()
-      if (draft != null && draft !== s) {
-        write(EARLIER, draft)
-        setEarlier(draft)
-      }
       history.replaceState(null, '', location.pathname)
     }
     write(DRAFT, s)

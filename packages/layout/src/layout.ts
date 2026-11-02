@@ -89,7 +89,14 @@ let local: Promise<ElkEngine> | null = null
 
 /** ELK on this thread, imported on first use: it is about 1.6 MB, so it stays out of a page's first load. */
 export function localElk(): Promise<ElkEngine> {
-  local ??= import('elkjs/lib/elk.bundled.js').then((m) => new m.default() as unknown as ElkEngine)
+  // a failed load (a network error, a chunk a deploy replaced) is not kept: the next layout tries again
+  local ??= import('elkjs/lib/elk.bundled.js').then(
+    (m) => new m.default() as unknown as ElkEngine,
+    (err) => {
+      local = null
+      throw err
+    },
+  )
   return local
 }
 

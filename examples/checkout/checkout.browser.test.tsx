@@ -242,6 +242,16 @@ describe('checkout in the browser', () => {
     expect(focused()).toEqual(['workers'])
     expect(button('Next')!.getAttribute('aria-disabled')).toBe('true')
     expect(handle.storyStep()).toBe(2)
+    // a value of the reader's own: the step says so and stops pointing; Next at the end leaves it alone
+    handle.setValues({ pods: 4 })
+    await expect.poll(focused).toEqual([])
+    expect(bar.querySelector('p')!.textContent).toContain('You changed the values since.')
+    // Playwright will not click an aria-disabled button; a reader can
+    button('Next')!.click()
+    expect(handle.values().pods).toBe(4)
+    await userEvent.click(button('Show again')!)
+    expect(handle.values().pods).toBe(6)
+    expect(focused()).toEqual(['workers'])
     await userEvent.keyboard('{ArrowLeft}')
     expect(focused()).toEqual(['gateway'])
     await userEvent.click(button('Done')!)
@@ -354,6 +364,12 @@ describe('export', () => {
     expect(await run()).toEqual(a)
     expect(handle.storyStep()).toBe(null)
     expect(handle.values().load).toBe(7)
+    // from inside the story, with a value changed: both come back as they were
+    handle.setStoryStep(0)
+    handle.setValues({ load: 12 })
+    await run()
+    expect(handle.storyStep()).toBe(0)
+    expect(handle.values().load).toBe(12)
   })
 
   it('records the same WebM frames twice', async () => {
