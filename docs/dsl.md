@@ -122,8 +122,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:73:17 error: unknown flow "order"
-  73 |   demand: flows.order + flows.events
+checkout.loadmap:78:17 error: unknown flow "order"
+  78 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -161,7 +161,7 @@ A loadmap definition.
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -251,6 +251,23 @@ growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 | `rate` (required) | number, constant | Growth per period, as a share: 0.06 is 6 %. |
 | `per` (required) | `month` \| `year` | month or year. |
 | `asOf` (required) | string, constant | The day the load is 1×: "2026-11-01". |
+
+### expect
+
+What must keep holding, on the pessimistic edge (every capacity at its low bound): `loadmap check` fails when it does not.
+
+```
+expect "Today keeps 7×" { target: 7 }
+```
+
+After the keyword: [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `scenario` | scenario, constant | The scenario whose values it checks; the defaults without one. |
+| `component` | component, constant | One component; the first limit without one. |
+| `target` | number, constant | The target holds up to at least this load multiple. |
+| `full` | number, constant | Nothing (or the component) runs out before this load multiple. |
 
 ### let
 
@@ -357,7 +374,7 @@ After the keyword: [id] [label].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source). |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -380,7 +397,7 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source). |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -406,7 +423,7 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source). |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -431,7 +448,7 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source). |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |

@@ -90,6 +90,14 @@ export function completions(source: string, offset: number, compiled?: CompileRe
     if (kind === 'route') return out(stages())
     if (kind === 'node') return out(nodes())
     if (kind === 'component') return out(ids('component').map((label) => ({ label, type: 'variable' })))
+    if (kind === 'scenario')
+      return out(
+        ids('scenario').map((label) => ({
+          label,
+          type: 'constant',
+          apply: /^[A-Za-z_]\w*$/.test(label) ? label : JSON.stringify(label),
+        })),
+      )
     if (kind === 'enum')
       return out((prop[1] === 'color' ? COLORS : (p?.values ?? [])).map((label) => ({ label, type: 'constant' })))
     if (kind === 'boolean' && p?.scope === 'const')

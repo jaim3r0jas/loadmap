@@ -6,8 +6,10 @@ export {
   type Definition,
   type DefinitionOptions,
   type DslSymbol,
+  type ExpectationResult,
   LANGUAGE_VERSION,
   LIMITS,
+  problems,
 } from './compile'
 export { type Completion, type Completions, completions } from './complete'
 export { closest, type Diagnostic, didYouMean, formatDiagnostic, Reporter, type Span } from './diagnostics'

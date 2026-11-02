@@ -1,4 +1,4 @@
-import { compare } from '@loadmap/core'
+import { compare, headroom } from '@loadmap/core'
 import { composeFrame, exportPng, exportSvg, recordPoster, recordVideo } from '@loadmap/export'
 import type { LoadmapHandle, Theme } from '@loadmap/react'
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
@@ -45,9 +45,27 @@ describe('checkout in the browser', () => {
     expect(el.querySelectorAll('[data-node]')).toHaveLength(5)
     expect(el.querySelectorAll('rect[data-slot]')).toHaveLength(24)
     expect(verdict(el)).toContain('At 10×, every component is under the 50 % target')
+    // the gateway's ±30 % puts it first on the pessimistic edge, and the hint says to measure it
     expect(
       el.querySelector('.lm-lim .lm-tag[data-kind="first"]')?.closest('.lm-lim')?.getAttribute('data-component'),
-    ).toBe('workers')
+    ).toBe('gateway')
+    expect(el.querySelector('.lm-lim[data-component="gateway"] .lm-tag[data-kind="estimated"]')?.textContent).toBe(
+      'estimate ±30 %',
+    )
+    expect(el.querySelector('.lm-lim[data-component="gateway"] small')?.textContent).toBe(
+      '50 % at 7.4×–13× · full at 14×–27×',
+    )
+    const hint = el.querySelector('.lm-measure')!
+    expect([hint.getAttribute('data-component'), hint.textContent]).toEqual([
+      'gateway',
+      checkout.evaluate({ load: 10 }).measure!.text,
+    ])
+    // two pods put the workers first at either bound: nothing to measure
+    const pods = [...el.querySelectorAll('label')].find((l) => l.textContent?.startsWith('Worker pods'))!
+    const select = pods.querySelector('select')!
+    select.value = '2'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await expect.poll(() => el.querySelector('.lm-measure')).toBeNull()
   })
 
   it('changes the verdict when the load slider moves', async () => {
@@ -55,7 +73,7 @@ describe('checkout in the browser', () => {
     const slider = el.querySelector<HTMLInputElement>('input[type=range]')!
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '40')
     slider.dispatchEvent(new Event('input', { bubbles: true }))
-    await expect.poll(() => verdict(el)).toContain('At 40×, the worker pool and API gateway are past capacity')
+    await expect.poll(() => verdict(el)).toContain('At 40×, the worker pool and the API gateway are past capacity')
     expect(el.querySelector('.lm-verdict')!.getAttribute('data-tier')).toBe('over')
   })
 
@@ -92,7 +110,9 @@ describe('checkout in the browser', () => {
       ['Proposed', 'false'],
     ])
     buttons[1]!.click()
-    await expect.poll(() => verdict(el)).toContain('holds up to 20× (around March 2031)')
+    await expect
+      .poll(() => verdict(el))
+      .toContain('holds up to between 14× and 20× (between September 2030 and March 2031)')
     expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true')
     // six pods change the layout; the queues and the dots carry on
     await handle.ready()
@@ -114,19 +134,21 @@ describe('checkout in the browser', () => {
     expect(el.querySelector('.lm-compare-text')!.textContent).toBe(c.text)
     const rows = [...el.querySelectorAll('.lm-compare tbody tr[data-scenario]')]
     expect(rows.map((r) => r.textContent)).toEqual([
-      'TodayWorker pool10×Feb 203020×Mar 2031',
-      'ProposedWorker pool20×Mar 203142×Mar 2032',
+      'TodayAPI gateway7.4×–10×Sep 2029–Feb 203014×–20×Sep 2030–Mar 2031',
+      'ProposedAPI gateway14×–20×Sep 2030–Mar 203129×–42×Sep 2031–Mar 2032',
     ])
-    expect(rows.map((r) => Number(r.querySelector('td[data-multiple]')!.getAttribute('data-multiple')))).toEqual(
-      c.rows.map((r) => r.target),
+    const cell = (r: Element, k: string) => Number(r.querySelector('td[data-multiple]')!.getAttribute(k))
+    expect(rows.map((r) => [cell(r, 'data-multiple'), cell(r, 'data-high')])).toEqual(
+      c.rows.map((r) => [r.targetRange!.low, r.targetRange!.high]),
     )
     const gateway = el.querySelector('.lm-compare tr[data-component="gateway"]')!
-    expect(gateway.textContent).toBe('API gateway10×21×+100 %')
+    expect(gateway.textContent).toBe('API gateway7.4×–13×14×–27×+100 %')
   })
 
   it('draws the headroom chart with its crossings where the limits are', async () => {
     const { el } = await mount()
     const c = compare(checkout, 10)
+    const h = headroom(checkout, { load: 10 })
     const dots = [...el.querySelectorAll('.lm-headroom circle[data-crossing]')]
     const at = (label: string, kind: string) =>
       Number(
@@ -134,10 +156,26 @@ describe('checkout in the browser', () => {
           .find((d) => d.getAttribute('data-scenario') === label && d.getAttribute('data-crossing') === kind)
           ?.getAttribute('data-multiple'),
       )
-    for (const r of c.rows) {
-      expect(at(r.label, 'target')).toBe(r.target)
-      expect(at(r.label, 'full')).toBe(r.full)
+    const range = (label: string, kind: string) => {
+      const g = el.querySelector(`.lm-headroom [data-range="${kind}"][data-scenario="${label}"]`)!
+      return [Number(g.getAttribute('data-low')), Number(g.getAttribute('data-high'))]
     }
+    for (const r of c.rows) {
+      // the dots at the stated capacities: the first component's own crossing
+      const ev = checkout.evaluate({ ...checkout.scenarios.find((s) => s.label === r.label)!.values, load: 10 })
+      const first = (k: 'target' | 'full') => Math.min(...Object.values(ev.components).map((x) => x[k] ?? Infinity))
+      expect(at(r.label, 'target')).toBe(first('target'))
+      expect(at(r.label, 'full')).toBe(first('full'))
+      // the brackets span the crossings at the capacity bounds, the comparison's ranges
+      expect(range(r.label, 'target')).toEqual([r.targetRange!.low, r.targetRange!.high])
+      expect(range(r.label, 'full')).toEqual([r.fullRange!.low, r.fullRange!.high])
+    }
+    expect([...el.querySelectorAll('.lm-headroom [data-band]')].map((p) => p.getAttribute('data-band'))).toEqual(
+      h.lines
+        .filter((l) => l.band)
+        .map((l) => l.label)
+        .reverse(),
+    )
     expect([...el.querySelectorAll('.lm-headroom [data-line]')].map((p) => p.getAttribute('data-line'))).toEqual([
       'Proposed',
       'Today',

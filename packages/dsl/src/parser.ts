@@ -260,6 +260,7 @@ class Parser {
     if (++this.depth > MAX_DEPTH) this.fail(this.peek(), `the formula is nested more than ${MAX_DEPTH} deep`)
     try {
       const test = this.binary(1)
+      if (this.is('±') || this.is('+/-')) return this.pm(test)
       if (!this.eat('?')) return test
       const then = this.expr()
       this.expect(':', '":" of the "?"')
@@ -268,6 +269,14 @@ class Parser {
     } finally {
       this.depth--
     }
+  }
+
+  /** `value ± within` or `value ± within%`: parsed anywhere, so the checker can say where it belongs. */
+  pm(value: Expr): Expr {
+    this.next()
+    const within = this.unary()
+    const percent = this.is('%') ? this.next() : null
+    return { t: 'pm', value, within, percent: !!percent, from: value.from, to: percent?.to ?? within.to }
   }
 
   binary(min: number): Expr {

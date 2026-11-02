@@ -17,6 +17,8 @@ export type Expr = Span &
     | { t: 'bin'; op: BinOp; left: Expr; right: Expr }
     | { t: 'cond'; test: Expr; then: Expr; else: Expr }
     | { t: 'array'; items: Expr[] }
+    /** `value ± within`, `value ± within%`: only as the first value of measured(…) or estimated(…). */
+    | { t: 'pm'; value: Expr; within: Expr; percent: boolean }
     | { t: 'error' }
   )
 

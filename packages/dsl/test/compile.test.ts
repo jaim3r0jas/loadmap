@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
+import { estimated } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, type Diagnostic } from '../src'
 
@@ -284,5 +285,77 @@ describe('the checker', () => {
       extra: 'cluster k "K" { members: pods * 100; queue q { partitions { req: 3 } } }',
     }).replace('route: api', 'route: q -> api')
     expect(errors(src)).toMatchObject([{ message: 'members is 200; at most 64', text: 'pods * 100' }])
+  })
+})
+
+describe('uncertainty and expectations', () => {
+  const api = (src: string) => compile(def({ api: src })).definition!.model.evaluate().components.api!.capacity
+
+  it('read a ± on a capacity as a share of its value', () => {
+    expect(api('estimated(800 ± 30%, "req/s", "vendor")')).toEqual(
+      estimated(800, 'req/s', { source: 'vendor', within: 0.3 }),
+    )
+    expect(api('measured(pods * 400 +/- 10%, "req/s")')).toMatchObject({ value: 800, within: 0.1 })
+    // without a %: in the capacity's unit
+    expect(api('measured(800 ± 200, "req/s")')).toMatchObject({ value: 800, within: 0.25 })
+  })
+
+  it('refuse a ± anywhere else, or one of 100 % or more', () => {
+    expect(errors(def({ top: 'let x = 3 ± 1' }))).toEqual([
+      { message: '"±" only goes in the first value of measured(…) or estimated(…)', hint: undefined, text: '3 ± 1' },
+    ])
+    expect(errors(def({ api: 'estimated(800, "req/s" ± 3)' }))).toEqual([
+      {
+        message: '"±" only goes in the first value of measured(…) or estimated(…)',
+        hint: undefined,
+        text: '"req/s" ± 3',
+      },
+    ])
+    expect(errors(def({ api: 'estimated(800 ± 100%, "req/s")' }))).toEqual([
+      {
+        message: '± 100% is not a share from 0 to below 100 %',
+        hint: undefined,
+        text: 'estimated(800 ± 100%, "req/s")',
+      },
+    ])
+  })
+
+  const scenarios = 'scenario "Today" {}\nscenario "Three pods" { pods: 3 }'
+
+  it('compile expect lines to the model, and check them where they are written', () => {
+    const src = def({
+      top: `${scenarios}\nexpect "keeps 3×" { target: 3 }\nexpect { scenario: "Three pods"; full: 12; component: api }`,
+    })
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.model.expectations).toEqual([
+      { label: 'keeps 3×', target: 3 },
+      { scenario: 'Three pods', component: 'api', full: 12 },
+    ])
+    expect(r.expectations.map((e) => [e.line, e.column, src.slice(e.at.from, e.at.to), e.result.ok])).toEqual([
+      [4, 1, 'expect "keeps 3×"', true],
+      [5, 1, 'expect', true],
+    ])
+    // 400 req/s a pod against 100 per 1×: 2 pods reach 50 % at 4×, 3 pods run out at 12×
+    const failing = compile(def({ top: 'expect "keeps 5×" { target: 5 }' }))
+    expect(failing.ok).toBe(true)
+    expect(failing.expectations.map((e) => [e.line, e.result.ok, e.result.message])).toEqual([
+      [2, false, 'expected at least 5×, but the 50 % target holds up to 4×, limited by API'],
+    ])
+  })
+
+  it('point at the word an expect line gets wrong', () => {
+    expect(errors(def({ top: `${scenarios}\nexpect { scenario: Today2; target: 1 }` }))).toEqual([
+      { message: 'unknown scenario "Today2"', hint: 'did you mean "Today"?', text: 'Today2' },
+    ])
+    expect(errors(def({ top: 'expect { component: apu; target: 1 }' }))).toEqual([
+      { message: 'unknown component "apu"', hint: 'did you mean "api"?', text: 'apu' },
+    ])
+    expect(errors(def({ top: 'expect "nothing" {}' }))).toEqual([
+      { message: 'an expect needs a target or a full multiple', hint: 'expect { target: 8 }', text: 'expect' },
+    ])
+    expect(errors(def({ top: 'expect { target: 0 }' }))).toEqual([
+      { message: 'target is a load multiple above 0', hint: undefined, text: '0' },
+    ])
   })
 })

@@ -11,6 +11,7 @@ import {
   encodeShare,
   type HostFunctions,
   lex,
+  problems,
   Reporter,
 } from '@loadmap/dsl'
 import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
@@ -195,9 +196,9 @@ export function LoadmapEditor({
     return () => clearTimeout(t)
   }, [note])
 
-  const problems = state.result.diagnostics
-  const errors = problems.filter((d) => d.severity === 'error').length
-  const warnings = problems.length - errors
+  const list = problems(state.result)
+  const errors = list.filter((d) => d.severity === 'error').length
+  const warnings = list.length - errors
   const stale = !state.result.ok && !!def
 
   return (
@@ -223,9 +224,9 @@ export function LoadmapEditor({
       <div className="lme-split">
         <div className="lme-left">
           <div className="lme-code" ref={host} />
-          {problems.length > 0 && (
+          {list.length > 0 && (
             <ul className="lme-problems">
-              {problems.map((d) => (
+              {list.map((d) => (
                 <li key={`${d.from}:${d.message}`} data-severity={d.severity}>
                   <button type="button" onClick={() => goTo(d)}>
                     <span className="lme-at">

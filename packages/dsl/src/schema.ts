@@ -23,6 +23,8 @@ export type ValueKind =
   /** The id of a node, a component, a flow. */
   | 'node'
   | 'component'
+  /** A scenario's label, bare or quoted: `scenario: Proposed`. */
+  | 'scenario'
   /** A list of options: `[2, 3, 4]`. */
   | 'options'
   /** A number, a switch or an option: a parameter's default. */
@@ -83,7 +85,7 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
   capacity: {
     value: 'capacity',
     scope: 'ctx',
-    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source).',
+    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is.',
   },
   when: { value: 'boolean', scope: 'ctx', doc: 'The component is switched off (no utilization) while this is false.' },
   over: { value: 'string', scope: 'ctx', doc: 'What happens past 100 %, as a clause: "clients get 429s".' },
@@ -129,6 +131,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'preset',
       'scenario',
       'growth',
+      'expect',
       'let',
       'fit',
       'flow',
@@ -207,6 +210,22 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       rate: { value: 'number', scope: 'const', required: true, doc: 'Growth per period, as a share: 0.06 is 6 %.' },
       per: { value: 'enum', scope: 'const', values: ['month', 'year'], required: true, doc: 'month or year.' },
       asOf: { value: 'string', scope: 'const', required: true, doc: 'The day the load is 1×: "2026-11-01".' },
+    },
+    children: [],
+  },
+  expect: {
+    doc: 'What must keep holding, on the pessimistic edge (every capacity at its low bound): `loadmap check` fails when it does not.',
+    example: 'expect "Today keeps 7×" { target: 7 }',
+    args: [{ name: 'label', kind: 'text', optional: true }],
+    props: {
+      scenario: {
+        value: 'scenario',
+        scope: 'const',
+        doc: 'The scenario whose values it checks; the defaults without one.',
+      },
+      component: { value: 'component', scope: 'const', doc: 'One component; the first limit without one.' },
+      target: { value: 'number', scope: 'const', doc: 'The target holds up to at least this load multiple.' },
+      full: { value: 'number', scope: 'const', doc: 'Nothing (or the component) runs out before this load multiple.' },
     },
     children: [],
   },

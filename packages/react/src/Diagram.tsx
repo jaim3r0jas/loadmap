@@ -1,4 +1,4 @@
-import { around, type ComponentState, fmt, kfmt, multiple, pct } from '@loadmap/core'
+import { type ComponentState, type CrossingRange, fmt, kfmt, months, multiple, multiples, pct } from '@loadmap/core'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
 import { memo, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { scenarioColor, useComparison } from './scenarios'
@@ -449,10 +449,10 @@ function Detail({
   const below = n.y + n.h / 2 < scene.height / 2
   const top = board.offsetTop + (below ? (n.y + n.h) * k + 6 : n.y * k - 6)
   const place = { top, transform: below ? undefined : 'translateY(-100%)' }
-  const date = (x: number | null) => {
-    const d = model.dateAt(x)
-    return d ? ` (${around(d)})` : ''
-  }
+  const at = (r: CrossingRange | null, x: number | null) =>
+    r
+      ? `${multiples(r, model.searchMax)}${months(model.dateAt(r.low), model.dateAt(r.high))}`
+      : multiple(x, model.searchMax)
   const num = (x: number) => (Math.abs(x) >= 1000 ? kfmt(x) : fmt(x))
   const cap = c.capacity
   return (
@@ -476,6 +476,7 @@ function Detail({
         <>
           <span>
             <strong>{pct(c.util)}</strong> · {num(c.demand ?? 0)} of {fmt(cap.value)} {cap.unit}
+            {cap.within ? ` ±${pct(cap.within)}` : ''}
           </span>
           <span className="lm-sub">
             capacity{' '}
@@ -485,12 +486,10 @@ function Detail({
             {cap.source ? `, ${cap.source}` : ''}
           </span>
           <span>
-            {pct(model.thresholds.target)} at {multiple(c.target, model.searchMax)}
-            {date(c.target)}
+            {pct(model.thresholds.target)} at {at(c.targetRange, c.target)}
           </span>
           <span>
-            {pct(model.thresholds.full)} at {multiple(c.full, model.searchMax)}
-            {date(c.full)}
+            {pct(model.thresholds.full)} at {at(c.fullRange, c.full)}
           </span>
           {c.over && (
             <span className="lm-sub">
@@ -508,7 +507,7 @@ function Detail({
               <span key={r.label} className="lm-nowrap">
                 {i > 0 && ' · '}
                 <b className="lm-key" style={{ background: scenarioColor(model, r.label) }} />
-                {r.label} {x?.target == null ? 'off' : multiple(x.target, model.searchMax)}
+                {r.label} {x?.targetRange == null ? 'off' : multiples(x.targetRange, model.searchMax, true)}
               </span>
             )
           })}

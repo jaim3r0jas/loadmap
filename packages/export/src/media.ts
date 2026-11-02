@@ -1,5 +1,5 @@
 // Media that stands alone: a caption around the board, the board as SVG, and a poster with the limits.
-import { compare, fmt, monthOf, multiple, parseAsOf, pct } from '@loadmap/core'
+import { type CrossingRange, compare, fmt, monthOf, multiple, multiples, parseAsOf, pct } from '@loadmap/core'
 import type { LoadmapHandle } from '@loadmap/react'
 
 /** A title line above the board and the verdict below it, so a frame says what it shows without the page. */
@@ -215,7 +215,9 @@ export async function drawPoster(
     const d = model.dateAt(x)
     return d ? ` (${monthOf(d, true)})` : ''
   }
-  const at = (x: number | null) => `${multiple(x, model.searchMax)}${date(x)}`
+  // a range with the date of its pessimistic edge: when it may already happen
+  const at = (r: CrossingRange | null, x: number | null) =>
+    r ? `${multiples(r, model.searchMax, true)}${date(r.low)}` : `${multiple(x, model.searchMax)}${date(x)}`
   const t = captionText(handle, {})
   const g = model.growth
   const sub = [t.where, g && `load grows ${fmt(g.rate * 100)} % a ${g.per} from ${monthOf(parseAsOf(g.asOf)!)}`]
@@ -233,6 +235,7 @@ export async function drawPoster(
     return wrap((s) => measure.measureText(s).width, text, width)
   }
   const verdict = lines(t.verdict, font(400, 15), inner - 20)
+  const hint = ev.measure ? lines(ev.measure.text, font(400, 13), inner - 20) : []
   const compared = rows ? lines(rows.text, font(400, 14), inner) : []
 
   // every block as [height, draw]: laid out once to size the canvas, then drawn
@@ -274,6 +277,15 @@ export async function drawPoster(
       })
     },
   ])
+  if (hint.length)
+    blocks.push([
+      hint.length * 18 + 6,
+      (ctx, y) => {
+        hint.forEach((l, i) => {
+          text(ctx, l, pad + 16, y + 14 + i * 18, font(400, 13), k.muted)
+        })
+      },
+    ])
   heading('Where it runs out, in order')
   const top = Math.max(1.5, model.thresholds.full * 1.5)
   blocks.push([
@@ -303,7 +315,7 @@ export async function drawPoster(
         const right =
           c.util == null
             ? 'switched off'
-            : `${pct(c.util)} now · ${pct(model.thresholds.target)} at ${at(c.target)} · ${pct(model.thresholds.full)} at ${at(c.full)}`
+            : `${pct(c.util)} now · ${pct(model.thresholds.target)} at ${at(c.targetRange, c.target)} · ${pct(model.thresholds.full)} at ${at(c.fullRange, c.full)}`
         text(ctx, right, W - pad, y + 16, font(400, 12, true), k.muted, 'right')
         ctx.fillStyle = k.bg
         ctx.fillRect(pad, y + 24, inner, 10)
@@ -333,7 +345,7 @@ export async function drawPoster(
           ctx.arc(pad + 5, y + 13, 5, 0, Math.PI * 2)
           ctx.fill()
           text(ctx, r.label, pad + 18, y + 18, font(600, 14), k.fg)
-          const what = `first limit ${r.firstLimit?.name ?? '—'} · ${pct(model.thresholds.target)} at ${at(r.target)} · runs out at ${at(r.full)}`
+          const what = `first limit ${r.firstLimit?.name ?? '—'} · ${pct(model.thresholds.target)} at ${at(r.targetRange, r.target)} · runs out at ${at(r.fullRange, r.full)}`
           text(ctx, what, W - pad, y + 18, font(400, 12, true), k.muted, 'right')
         },
       ])

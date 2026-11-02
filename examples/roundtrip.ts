@@ -1,5 +1,5 @@
 // Checks that a .loadmap definition and the TypeScript it mirrors give the same model, layout and dots.
-import { compare, type Evaluation, type Model } from '@loadmap/core'
+import { check, compare, type Evaluation, type Model } from '@loadmap/core'
 import { compile, type Definition, formatDiagnostic } from '@loadmap/dsl'
 import { labelsAt, layout, structureKey, type View } from '@loadmap/layout'
 import { createSim } from '@loadmap/sim'
@@ -21,6 +21,9 @@ function shown(ev: Evaluation) {
     ranked: ev.ranked.map((c) => c.id),
     firstLimit: ev.firstLimit?.id,
     firstFull: ev.firstFull?.id,
+    target: ev.target,
+    full: ev.full,
+    measure: ev.measure,
     verdict: ev.verdict,
     presets: ev.presets,
     assumptions: ev.assumptions.map((a) => (a.kind === 'fit' ? { ...a, fit: { ...a.fit } } : a)),
@@ -35,7 +38,8 @@ export function sameModel(ts: Model, dsl: Model, grid: readonly Record<string, u
     ts.params.map((p) => [p.id, p.def.kind, p.def.label]),
   )
   expect([dsl.flowIds, dsl.componentIds, dsl.stageIds]).toEqual([ts.flowIds, ts.componentIds, ts.stageIds])
-  expect([dsl.scenarios, dsl.growth]).toEqual([ts.scenarios, ts.growth])
+  expect([dsl.scenarios, dsl.growth, dsl.expectations]).toEqual([ts.scenarios, ts.growth, ts.expectations])
+  expect(check(dsl)).toEqual(check(ts))
   for (const load of [1, 10]) expect(compare(dsl, load)).toEqual(compare(ts, load))
   for (const v of grid) {
     expect(shown(dsl.evaluate(v as any)), JSON.stringify(v)).toEqual(shown(ts.evaluate(v as any)))

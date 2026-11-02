@@ -176,6 +176,9 @@ class Compiler {
       case 'array':
         this.report.error(e, 'a list is only allowed as the options of a parameter')
         return bad
+      case 'pm':
+        this.report.error(e, '"±" only goes in the first value of measured(…) or estimated(…)')
+        return bad
     }
   }
 
@@ -244,6 +247,8 @@ class Compiler {
 
   call(e: Extract<Expr, { t: 'call' }>): Formula {
     const name = e.callee.name
+    const pm = e.args[0]?.t === 'pm' ? e.args[0] : null
+    if (pm && (name === 'measured' || name === 'estimated')) return this.capacity(e, pm)
     const args = e.args.map((a) => this.compile(a))
     const runs = args.map((a) => a.run)
     const fit = this.names.fits.get(name)
@@ -279,6 +284,35 @@ class Compiler {
       didYouMean(name, known) ?? 'a host page can provide it in compile(…, { functions })',
     )
     return bad
+  }
+
+  /** measured(value ± within[%], unit, source): the ± becomes the capacity's `within`, a share of the value. */
+  capacity(e: Extract<Expr, { t: 'call' }>, pm: Extract<Expr, { t: 'pm' }>): Formula {
+    const fn = e.callee.name === 'measured' ? measured : estimated
+    const [value, within] = [this.compile(pm.value), this.compile(pm.within)]
+    const rest = e.args.slice(1).map((a) => this.compile(a))
+    this.want(pm.value, value, 'number')
+    this.want(pm.within, within, 'number')
+    if (rest.length < 1 || rest.length > 2)
+      this.report.error(e, `${e.callee.name}() takes 2 to 3 values, not ${rest.length + 1}`)
+    for (const [i, a] of rest.entries()) this.want(e.args[i + 1]!, a, 'string')
+    const [v, w] = [value.run, within.run]
+    const [unit, source] = rest.map((a) => a.run)
+    const { percent } = pm
+    return {
+      type: 'capacity',
+      constant: [value, within, ...rest].every((a) => a.constant),
+      run: (c, l) => {
+        const x = v(c, l) as number
+        const pmv = w(c, l) as number
+        const share = percent ? pmv / 100 : x ? pmv / x : 0
+        if (!(share >= 0 && share < 1)) {
+          const said = percent ? `${pmv}%` : `${pmv} of ${x}`
+          throw new Error(`± ${said} is not a share from 0 to below 100 %`)
+        }
+        return fn(x, unit?.(c, l) as string, { source: source?.(c, l) as string | undefined, within: share })
+      },
+    }
   }
 
   binary(e: Extract<Expr, { t: 'bin' }>): Formula {

@@ -1,21 +1,34 @@
-import { type Assumption, fmt, kfmt, multiple, pct, secs } from '@loadmap/core'
+import { type Assumption, type Capacity, fmt, kfmt, multiple, multiples, pct, secs } from '@loadmap/core'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { LoadmapController } from './useLoadmap'
 
-/** The model's one-sentence answer for the current values. */
+/** The model's one-sentence answer for the current values, and which capacity to measure when it is unsure. */
 export function Verdict({ lm }: { lm: LoadmapController }) {
+  const { measure } = lm.ev
   return (
-    <p className="lm-verdict" data-tier={lm.ev.verdict.tier} aria-live="polite">
-      {lm.ev.verdict.text}
-    </p>
+    <>
+      <p className="lm-verdict" data-tier={lm.ev.verdict.tier} aria-live="polite">
+        {lm.ev.verdict.text}
+      </p>
+      {measure && (
+        <p className="lm-measure" data-component={measure.component}>
+          {measure.text}
+        </p>
+      )}
+    </>
   )
 }
+
+/** "±30 %" for a capacity with a range. */
+const plusMinus = (c: Capacity | null) => (c?.within ? `±${pct(c.within)}` : '')
 
 /** Each component's utilization in the order they reach the target, with where they cross it and 100 %. */
 export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: LoadmapController; title?: ReactNode }) {
   const { ev, model } = lm
   const top = Math.max(1.5, model.thresholds.full * 1.5)
   const at = (u: number) => `${(u / top) * 100}%`
+  const span = (r: { low: number; high: number } | null, x: number | null) =>
+    r ? multiples(r, model.searchMax, true) : multiple(x, model.searchMax)
   return (
     <>
       <h3>{title}</h3>
@@ -40,10 +53,16 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                     first limit
                   </span>
                 )}
-                {c.capacity?.provenance === 'estimated' && (
+                {c.capacity?.provenance === 'estimated' ? (
                   <span className="lm-tag" data-kind="estimated">
-                    estimate
+                    estimate{c.capacity.within ? ` ${plusMinus(c.capacity)}` : ''}
                   </span>
+                ) : (
+                  c.capacity?.within && (
+                    <span className="lm-tag" data-kind="range">
+                      {plusMinus(c.capacity)}
+                    </span>
+                  )
                 )}
               </b>
               <span className="lm-sub">
@@ -64,7 +83,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               <small>
                 {c.util == null
                   ? 'switched off'
-                  : `${pct(model.thresholds.target)} at ${multiple(c.target, model.searchMax)} · full at ${multiple(c.full, model.searchMax)}`}
+                  : `${pct(model.thresholds.target)} at ${span(c.targetRange, c.target)} · full at ${span(c.fullRange, c.full)}`}
               </small>
             </div>
           </div>
@@ -264,7 +283,8 @@ function describe(a: Assumption): ReactNode {
     const c = a.capacity
     return (
       <>
-        <b>{a.name}:</b> {fmt(c.value)} {c.unit},{' '}
+        <b>{a.name}:</b> {fmt(c.value)} {c.unit}
+        {c.within ? ` ${plusMinus(c)}` : ''},{' '}
         <span className="lm-prov" data-kind={c.provenance}>
           {c.provenance}
         </span>

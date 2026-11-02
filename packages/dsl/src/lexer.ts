@@ -13,7 +13,8 @@ export interface Token extends Span {
   parts?: Span[]
 }
 
-const PUNCT = ['===', '!==', '->', '==', '!=', '<=', '>=', '&&', '||', ...'{}()[],;:.?+-*/%<>!=']
+// "+/-" is "±" for a keyboard without it; "a +/- b" means nothing else
+const PUNCT = ['===', '!==', '+/-', '->', '==', '!=', '<=', '>=', '&&', '||', ...'{}()[],;:.?+-*/%<>!=±']
 
 /** The token kinds and marks an editor needs to highlight the language like the parser reads it. */
 export const LEXICON = { punct: PUNCT, comment: '#' } as const

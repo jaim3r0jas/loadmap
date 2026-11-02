@@ -20,6 +20,11 @@ export const checkout = defineModel({
   // the design review: today against twice the gateways and the workers
   scenarios: { Today: {}, Proposed: { gateways: 2, pods: 6 } },
   growth: { rate: 0.06, per: 'month', asOf: '2026-11-01' },
+  // a change that loses headroom fails `pnpm test` (model.test.ts) and `loadmap check checkout.loadmap`
+  expect: [
+    { label: 'Today keeps 7×', target: 7 },
+    { label: 'Proposed keeps 14×', scenario: 'Proposed', target: 14 },
+  ],
   flows: {
     orders: { label: 'orders', rate: ({ load }) => 40 * load, unit: 'order', priority: 1 },
     events: {
@@ -33,8 +38,10 @@ export const checkout = defineModel({
   components: {
     gateway: {
       name: 'API gateway',
+      short: 'the API gateway',
       demand: ({ flows }) => flows.orders + flows.events,
-      capacity: ({ gateways }) => estimated(20_000 * gateways, 'req/s', 'vendor benchmark, not load-tested'),
+      capacity: ({ gateways }) =>
+        estimated(20_000 * gateways, 'req/s', { source: 'vendor benchmark, not load-tested', within: 0.3 }),
       over: 'clients get 429s',
     },
     workers: {
@@ -49,7 +56,7 @@ export const checkout = defineModel({
       name: 'Postgres primary',
       short: 'the database',
       demand: ({ flows, batch, rows }) => (batch ? flows.orders / rows : flows.orders),
-      capacity: estimated(4_000, 'commits/s'),
+      capacity: estimated(4_000, 'commits/s', { within: 0.3 }),
       over: 'commits queue on the primary',
     },
   },

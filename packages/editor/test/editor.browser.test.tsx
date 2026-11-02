@@ -28,7 +28,12 @@ async function mount(o: { source?: string; values?: Record<string, ParamValue>; 
   const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!
   const edit = (from: string, to: string) => {
     const at = view.state.doc.toString().indexOf(from)
-    view.dispatch({ changes: { from: at, to: at + from.length, insert: to } })
+    // CodeMirror draws only the lines in view: scroll to the change so its marks exist
+    view.dispatch({
+      changes: { from: at, to: at + from.length, insert: to },
+      selection: { anchor: at },
+      scrollIntoView: true,
+    })
   }
   return { host, handle: ref.current!, edit }
 }
@@ -41,8 +46,14 @@ describe('the editor', () => {
     handle.loadmap()!.setValues({ pods: 6 })
     expect(verdict(host)).toContain('At 10×, every component is under the 50 % target')
     edit('rate: 40 * load', 'rate: 400 * load')
-    await expect.poll(() => verdict(host)).toContain('but API gateway runs above the 50 % target')
+    await expect.poll(() => verdict(host)).toContain('but the API gateway runs above the 50 % target')
     expect(handle.loadmap()!.values().pods).toBe(6)
+    // ten times the orders breaks both promises: a warning on each line, the diagram still shown
+    await expect.poll(() => host.querySelector('.lme-status')!.textContent).toBe('2 warnings')
+    expect(host.querySelector('.lme-problems [data-severity="warning"]')!.textContent).toMatch(
+      /^\d+:1 "Today keeps 7×" fails: expected at least 7×, but the 50 % target holds up to between/,
+    )
+    expect(host.querySelector('.lme-preview')!.hasAttribute('data-stale')).toBe(false)
     edit('"Postgres primary"', '"Main database"')
     await expect
       .poll(() => host.querySelector('.lm-lim[data-component="db"] b')?.textContent)

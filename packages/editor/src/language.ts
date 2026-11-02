@@ -4,7 +4,7 @@ import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror
 import type { Extension } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
-import { BUILTINS, type CompileOptions, type CompileResult, compile, completions, SCHEMA } from '@loadmap/dsl'
+import { BUILTINS, type CompileOptions, type CompileResult, compile, completions, problems, SCHEMA } from '@loadmap/dsl'
 
 const KEYWORDS = new Set(Object.keys(SCHEMA).filter(Boolean))
 const FUNCTIONS = new Set(Object.keys(BUILTINS))
@@ -98,7 +98,7 @@ export function loadmapLanguage(
     const r = result(source)
     o.onResult?.(source, r)
     const end = source.length
-    return r.diagnostics.map((d) => ({
+    return problems(r).map((d) => ({
       from: Math.min(d.from, end),
       to: Math.min(Math.max(d.to, d.from), end),
       severity: d.severity,

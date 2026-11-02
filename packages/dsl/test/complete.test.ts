@@ -92,3 +92,13 @@ describe('share links', () => {
     expect(await decodeShare(bomb)).toEqual({ error: 'this link unpacks to more than 1 MB' })
   })
 })
+
+describe('completions for expect', () => {
+  it('offer the scenarios by their labels, quoted when they need it', () => {
+    const src = checkout.replace('scenario "Proposed"', 'scenario "Two gateways" { gateways: 2 }\nscenario "Proposed"')
+    const { labels, c } = at(`${src}\nexpect { scenario: | }`)
+    expect(labels).toEqual(['Today', 'Two gateways', 'Proposed'])
+    expect(c.options.map((o) => o.apply)).toEqual(['Today', '"Two gateways"', 'Proposed'])
+    expect(at(`${checkout}\nexpect { component: | }`).labels).toEqual(['gateway', 'workers', 'db'])
+  })
+})

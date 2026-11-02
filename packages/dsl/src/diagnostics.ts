@@ -36,6 +36,11 @@ export class Reporter {
     this.add('warning', at, message, hint)
   }
 
+  /** The 1-based line and column of an offset. */
+  position(offset: number): { line: number; column: number } {
+    return position(this.starts, offset)
+  }
+
   get failed() {
     return this.list.some((d) => d.severity === 'error')
   }

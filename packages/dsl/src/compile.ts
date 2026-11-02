@@ -1,5 +1,7 @@
 import {
   type Branch,
+  type CheckResult,
+  check,
   defineModel,
   fanout,
   type LinearFit,
@@ -78,7 +80,7 @@ export interface Definition {
 
 /** A name the definition declares, where: for autocomplete, and for finding a node's source. */
 export interface DslSymbol {
-  kind: 'param' | 'let' | 'fit' | 'flow' | 'node' | 'stage' | 'component'
+  kind: 'param' | 'let' | 'fit' | 'flow' | 'node' | 'stage' | 'component' | 'scenario'
   id: string
   /** The id where it is written (or the keyword, for an id taken from its box). */
   span: Span
@@ -88,11 +90,22 @@ export interface DslSymbol {
   detail?: string
 }
 
+/** An `expect` line: where it is and whether it holds. */
+export interface ExpectationResult {
+  /** The keyword and the label. */
+  at: Span
+  line: number
+  column: number
+  result: CheckResult
+}
+
 export interface CompileResult {
   ok: boolean
   diagnostics: Diagnostic[]
   /** Only when there are no errors. */
   definition?: Definition
+  /** Each `expect` line, tested on the pessimistic edge; empty when the definition has errors. */
+  expectations: ExpectationResult[]
   symbols: DslSymbol[]
   doc: Document
 }
@@ -103,15 +116,38 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
   const c = new Compiler(source, report, o.functions ?? {})
   let doc: Document = { body: [] }
   let definition: Definition | undefined
+  let expectations: ExpectationResult[] = []
   try {
     doc = parse(source, report).doc
     definition = c.run(doc)
+    if (definition)
+      expectations = check(definition.model).map((result, i) => {
+        const at = c.expectSpans[i]!
+        return { at, ...report.position(at.from), result }
+      })
   } catch (err) {
+    // a formula that fails only at a capacity bound, while checking: it has its place
+    if (err instanceof FormulaError) report.error(err.span, err.message)
     // a bug must not take the editor down with it: say so where the user looks
-    if (!(err instanceof Bail)) report.error({ from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
+    else if (!(err instanceof Bail))
+      report.error({ from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
   }
   const diagnostics = [...report.list].sort((a, b) => a.from - b.from)
-  return { ok: !report.failed && !!definition, diagnostics, definition, symbols: c.symbols, doc }
+  return { ok: !report.failed && !!definition, diagnostics, definition, expectations, symbols: c.symbols, doc }
+}
+
+/**
+ * The diagnostics and every failing expectation, in source order: an editor marks a failure as a warning (the
+ * diagram still shows), `loadmap check` as an error.
+ */
+export function problems(r: CompileResult, failed: Diagnostic['severity'] = 'warning'): Diagnostic[] {
+  const out = [...r.diagnostics]
+  for (const e of r.expectations)
+    if (!e.result.ok) {
+      const name = e.result.expectation.label ? `"${e.result.expectation.label}" fails: ` : ''
+      out.push({ severity: failed, message: `${name}${e.result.message}`, ...e.at, line: e.line, column: e.column })
+    }
+  return out.sort((a, b) => a.from - b.from)
 }
 
 /** Stops compiling after an error that leaves nothing sensible to check. */
@@ -150,6 +186,8 @@ interface Box {
 
 class Compiler {
   readonly symbols: DslSymbol[] = []
+  /** Where each expectation of the model is written, in order. */
+  readonly expectSpans: Span[] = []
   names!: Names
   private fits = new Map<string, LinearFit | null>()
   private lets = new Map<string, Type>()
@@ -257,6 +295,14 @@ class Compiler {
       if (label == null) continue
       if (Object.hasOwn(scenarios, label)) this.report.error(b.args.label!, `scenario "${label}" is declared twice`)
       else scenarios[label] = this.preset(b, params, 'scenario')
+      this.symbols.push({ kind: 'scenario', id: label, span: b.args.label!, decl: b.decl ?? b.at })
+    }
+    const expects: Record<string, unknown>[] = []
+    for (const b of byKind('expect')) {
+      const e = this.expectation(b, scenarios, componentNames)
+      if (!e) continue
+      expects.push(e)
+      this.expectSpans.push({ from: b.at.from, to: b.args.label?.to ?? b.at.to })
     }
     const growths = byKind('growth')
     for (const extra of growths.slice(1)) this.report.error(extra.at, 'only one growth line is allowed')
@@ -364,6 +410,7 @@ class Compiler {
     if (Object.keys(presets).length) model.presets = presets
     if (Object.keys(scenarios).length) model.scenarios = scenarios
     if (growth) model.growth = growth
+    if (expects.length) model.expect = expects
     if (Object.keys(derived).length) model.derived = derived
     if (Object.keys(calibration).length) model.calibration = calibration
     const th = byKind('thresholds')[0]
@@ -836,6 +883,42 @@ class Compiler {
       out[k] = v
     }
     return out
+  }
+
+  /** An `expect` line as the model takes it: names checked here, so a mistake points at its word. */
+  private expectation(
+    b: Block,
+    scenarios: Record<string, unknown>,
+    components: Map<string, Span>,
+  ): Record<string, unknown> | undefined {
+    const e: Record<string, unknown> = {}
+    const label = this.text(b.args.label)
+    if (label != null) e.label = label
+    const name = (key: string, known: readonly string[], what: string) => {
+      const p = this.prop(b, key)
+      if (!p) return undefined
+      const v = p.value.t === 'id' ? p.value.name : p.value.t === 'str' ? p.value.value : undefined
+      if (v == null) this.report.error(p.value, `${key} is the name of a ${what}`)
+      else if (!known.includes(v)) this.report.error(p.value, `unknown ${what} "${v}"`, didYouMean(v, known))
+      else return v
+      return null
+    }
+    const scenario = name('scenario', Object.keys(scenarios), 'scenario')
+    const component = name('component', [...components.keys()], 'component')
+    if (scenario === null || component === null) return undefined
+    if (scenario != null) e.scenario = scenario
+    if (component != null) e.component = component
+    for (const k of ['target', 'full']) {
+      const v = this.constProp<number>(b, k)
+      if (v == null) continue
+      if (!(v > 0 && Number.isFinite(v))) this.report.error(this.prop(b, k)!.value, `${k} is a load multiple above 0`)
+      else e[k] = v
+    }
+    if (!b.props.has('target') && !b.props.has('full')) {
+      this.report.error(b.at, 'an expect needs a target or a full multiple', 'expect { target: 8 }')
+      return undefined
+    }
+    return e.target != null || e.full != null ? e : undefined
   }
 
   private growth(b: Block): { rate: number; per: string; asOf: string } | undefined {

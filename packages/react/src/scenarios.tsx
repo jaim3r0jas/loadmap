@@ -1,5 +1,6 @@
 import {
   type Comparison,
+  type CrossingRange,
   compare,
   fmt,
   type Headroom,
@@ -8,6 +9,7 @@ import {
   type Model,
   monthOf,
   multiple,
+  multiples,
   pct,
   type Series,
 } from '@loadmap/core'
@@ -39,6 +41,13 @@ const lineName = (l: HeadroomLine) => l.label ?? 'These values'
 function when(model: Model, x: number | null): string {
   const d = model.dateAt(x)
   return d ? monthOf(d, true) : x != null && x <= 1 && model.growth ? 'now' : ''
+}
+
+/** The months of both edges: "Sep 2029–Feb 2030", or one month when they agree. */
+function whenRange(model: Model, r: CrossingRange | null): string {
+  if (!r) return ''
+  const [lo, hi] = [when(model, r.low), when(model, r.high)]
+  return !hi || lo === hi ? lo : `${lo}–${hi}`
 }
 
 /** The comparison at the shown load: crossings do not depend on it, the verdicts do. */
@@ -82,10 +91,11 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
   const c = useComparison(lm)
   if (c.rows.length < 2) return null
   const target = `${pct(model.thresholds.target)} target`
-  const at = (x: number | null) => (
+  // the pessimistic edge first: data-multiple is where it may already happen
+  const at = (r: CrossingRange | null) => (
     <>
-      {multiple(x, model.searchMax)}
-      {when(model, x) && <small>{when(model, x)}</small>}
+      {r ? multiples(r, model.searchMax, true) : multiple(null)}
+      {whenRange(model, r) && <small>{whenRange(model, r)}</small>}
     </>
   )
   return (
@@ -110,8 +120,12 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
                   {r.label}
                 </th>
                 <td className="lm-text">{r.firstLimit?.name ?? '—'}</td>
-                <td data-multiple={r.target ?? ''}>{at(r.target)}</td>
-                <td data-multiple={r.full ?? ''}>{at(r.full)}</td>
+                <td data-multiple={r.target ?? ''} data-high={r.targetRange?.high ?? ''}>
+                  {at(r.targetRange)}
+                </td>
+                <td data-multiple={r.full ?? ''} data-high={r.fullRange?.high ?? ''}>
+                  {at(r.fullRange)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -138,7 +152,7 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
                   const x = r.components[k]!
                   return (
                     <td key={r.label} data-multiple={x.target ?? ''}>
-                      {x.target == null ? 'off' : multiple(x.target, model.searchMax)}
+                      {x.targetRange == null ? 'off' : multiples(x.targetRange, model.searchMax, true)}
                       {i > 0 && change(x.change) && <small>{change(x.change)}</small>}
                     </td>
                   )
@@ -183,7 +197,9 @@ function ticks(from: number, to: number, roomy: boolean): number[] {
 /**
  * Utilization over the load multiple. Each scenario's line is its highest utilization, so it crosses the target and
  * 100 % exactly where its first limit does; the dots are those crossings, taken from the limits, not from the line.
- * The shown scenario's components are the thin lines under it. Hover or arrow keys read every line at one load.
+ * With a ± on a capacity, a band shows the line at every capacity's low and high bound, and a bracket on the target
+ * and 100 % lines spans where the band crosses them. The shown scenario's components are the thin lines under it.
+ * Hover or arrow keys read every line at one load.
  */
 export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapController; title?: ReactNode }) {
   const { model, values } = lm
@@ -240,10 +256,23 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
     } else if (e.key === 'Escape') setHover(null)
   }
 
+  const area = (b: NonNullable<HeadroomLine['band']>) => {
+    const both = b.upper.flatMap(([x, u], i) => {
+      const v = b.lower[i]![1]
+      return u == null || v == null ? [] : [[x, u, v] as const]
+    })
+    if (both.length < 2) return ''
+    const up = both.map(([x, u]) => `${lx(x).toFixed(1)} ${ly(u).toFixed(1)}`)
+    const down = both.map(([x, , v]) => `${lx(x).toFixed(1)} ${ly(v).toFixed(1)}`).reverse()
+    return `M${up.join('L')}L${down.join('L')}Z`
+  }
+  const reaches = (r: CrossingRange | null, x: number | null) =>
+    r && l0(r) ? `between ${multiples(r, model.searchMax, true)}` : multiple(x, model.searchMax)
+  const l0 = (r: CrossingRange) => multiple(r.low, model.searchMax) !== multiple(r.high, model.searchMax)
   const summary = h.lines
     .map(
       (l) =>
-        `${lineName(l)} reaches the ${pct(model.thresholds.target)} target at ${multiple(l.target, model.searchMax)} and ${pct(model.thresholds.full)} at ${multiple(l.full, model.searchMax)}`,
+        `${lineName(l)} reaches the ${pct(model.thresholds.target)} target at ${reaches(l.targetRange, l.target)} and ${pct(model.thresholds.full)} at ${reaches(l.fullRange, l.full)}`,
     )
     .join('; ')
   const loadX = lx(Math.min(h.to, Math.max(h.from, values.load)))
@@ -316,6 +345,20 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
             </g>
           ))}
           <g clipPath={`url(#${clip})`}>
+            {/* the bands under everything: the shown one stronger */}
+            {[...h.lines]
+              .sort((a, b) => Number(a.selected) - Number(b.selected))
+              .map((l) =>
+                l.band ? (
+                  <path
+                    key={lineName(l)}
+                    data-band={lineName(l)}
+                    d={area(l.band)}
+                    fill={scenarioColor(model, l.label)}
+                    fillOpacity={l.selected ? 0.2 : 0.08}
+                  />
+                ) : null,
+              )}
             {selected?.components.map((c) => (
               <path
                 key={c.id}
@@ -349,10 +392,38 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
           {h.lines.flatMap((l) =>
             (
               [
-                ['target', l.target, model.thresholds.target],
-                ['full', l.full, model.thresholds.full],
+                ['target', l.targetRange, model.thresholds.target],
+                ['full', l.fullRange, model.thresholds.full],
               ] as const
-            ).map(([kind, x, u]) =>
+            ).map(([kind, r, u]) => {
+              if (!l.band || !r || !Number.isFinite(r.low) || r.low > h.to) return null
+              const [x1, x2] = [lx(Math.max(h.from, r.low)), lx(Math.min(h.to, r.high))]
+              const y = ly(u)
+              return (
+                <g
+                  key={`${lineName(l)}/${kind}/range`}
+                  data-range={kind}
+                  data-scenario={lineName(l)}
+                  data-low={r.low}
+                  data-high={r.high}
+                  stroke={scenarioColor(model, l.label)}
+                  strokeWidth={l.selected ? 3 : 2}
+                  strokeOpacity={l.selected ? 1 : 0.6}
+                >
+                  <line x1={x1} x2={x2} y1={y} y2={y} />
+                  <line x1={x1} x2={x1} y1={y - 5} y2={y + 5} />
+                  {Number.isFinite(r.high) && r.high <= h.to && <line x1={x2} x2={x2} y1={y - 5} y2={y + 5} />}
+                </g>
+              )
+            }),
+          )}
+          {h.lines.flatMap((l) =>
+            (
+              [
+                ['target', l.target, l.targetRange, model.thresholds.target],
+                ['full', l.full, l.fullRange, model.thresholds.full],
+              ] as const
+            ).map(([kind, x, r, u]) =>
               x != null && Number.isFinite(x) && x >= h.from && x <= h.to ? (
                 <g key={`${lineName(l)}/${kind}`}>
                   <circle
@@ -366,9 +437,15 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
                     stroke="var(--lm-surface)"
                     strokeWidth="2"
                   />
+                  {/* a range is labelled at its pessimistic end */}
                   {l.selected && (
-                    <text x={lx(x) - 6} y={ly(u) - 8} textAnchor="end" className="lm-mark">
-                      {multiple(x, model.searchMax)}
+                    <text
+                      x={lx(r && l0(r) ? Math.max(h.from, r.low) : x) - 6}
+                      y={ly(u) - 8}
+                      textAnchor="end"
+                      className="lm-mark"
+                    >
+                      {r && l0(r) ? multiples(r, model.searchMax, true) : multiple(x, model.searchMax)}
                     </text>
                   )}
                 </g>

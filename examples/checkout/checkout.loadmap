@@ -19,6 +19,10 @@ scenario "Today" {}
 scenario "Proposed" { gateways: 2; pods: 6 }
 growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
+# a change that loses headroom fails `loadmap check checkout.loadmap`
+expect "Today keeps 7×" { target: 7 }
+expect "Proposed keeps 14×" { scenario: Proposed; target: 14 }
+
 # cost = a + b × rate, fitted from the measured series
 fit workerCores "Worker CPU per request" {
   source: "Grafana, peak week"
@@ -70,8 +74,9 @@ node phones "Phones" "app checkout"
 
 node gateway "API gateway" {
   pass
+  short: "the API gateway"
   demand: flows.orders + flows.events
-  capacity: estimated(20_000 * gateways, "req/s", "vendor benchmark, not load-tested")
+  capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")
   over: "clients get 429s"
 }
 
@@ -97,7 +102,7 @@ node db "Postgres" "primary" {
   name: "Postgres primary"
   short: "the database"
   demand: batch ? flows.orders / rows : flows.orders
-  capacity: estimated(4_000, "commits/s")
+  capacity: estimated(4_000 ± 30%, "commits/s")
   over: "commits queue on the primary"
 }
 
