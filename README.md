@@ -86,8 +86,8 @@ capacity: ({ gateways }) =>
 // …
 expect: [{ label: 'Today keeps 7×', target: 7 }, { scenario: 'Proposed', target: 14 }],
 
-checkout.evaluate().verdict.text
-// "At 10×, every component is under the 50 % target. It holds up to between 7.4× and 10× (…); the API gateway is
+checkout.evaluate({ load: 1 }).verdict.text
+// "At 1×, every component is under the 50 % target. It holds up to between 7.4× and 10× (…); the API gateway is
 //  the first limit (capacity estimated ±30 %)."
 checkout.evaluate().measure?.text
 // "Measuring the API gateway would change the answer: at its stated capacity, the worker pool is the first limit

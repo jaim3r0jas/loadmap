@@ -53,6 +53,9 @@ describe('arguments', () => {
   it('takes a .loadmap file in place of a URL', async () => {
     expect(await parseRecord(['m.loadmap', '--out', 'a.gif'])).toMatchObject({ url: '', file: 'm.loadmap' })
     expect(await parseRecord(['http://x/m.loadmap.html', '--out', 'a.gif'])).not.toHaveProperty('file')
+    // a URL is a page, whatever its path ends in
+    for (const url of ['https://host/m.loadmap', 'http://localhost:5173/?file=a.loadmap'])
+      expect(await parseRecord([url, '--out', 'a.gif'])).toMatchObject({ url })
   })
 })
 

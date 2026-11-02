@@ -63,9 +63,18 @@ describe('checkout model', () => {
       tier: 'ok',
       text: 'At 1×, every component is under the 50 % target. It holds up to between 7.4× and 10× (between September 2029 and February 2030); the API gateway is the first limit (capacity estimated ±30 %).',
     })
+    expect(checkout.evaluate({ load: 12 }).verdict).toEqual({
+      tier: 'warn',
+      text: 'At 12×, everything still fits, but the API gateway and the worker pool run above the 50 % target. The 50 % target holds up to between 7.4× and 10× (between September 2029 and February 2030), limited by the API gateway (capacity estimated ±30 %).',
+    })
+    // past a pessimistic edge the verdict says what may already be happening: the gateway at 14,000 req/s
     expect(checkout.evaluate({ load: 15 }).verdict).toEqual({
       tier: 'warn',
-      text: 'At 15×, everything still fits, but the API gateway and the worker pool run above the 50 % target. The 50 % target holds up to between 7.4× and 10× (between September 2029 and February 2030), limited by the API gateway (capacity estimated ±30 %).',
+      text: 'At 15×, everything fits at the stated capacities, but the API gateway may already be past capacity: clients get 429s. The 50 % target holds up to between 7.4× and 10× (between September 2029 and February 2030), limited by the API gateway (capacity estimated ±30 %).',
+    })
+    expect(checkout.evaluate({ load: 8 }).verdict).toEqual({
+      tier: 'warn',
+      text: 'At 8×, every component is under the 50 % target at its stated capacity, but the API gateway may already be above it. The 50 % target holds up to between 7.4× and 10× (between September 2029 and February 2030), limited by the API gateway (capacity estimated ±30 %).',
     })
     expect(checkout.evaluate({ load: 60, pods: 2 }).verdict).toEqual({
       tier: 'over',

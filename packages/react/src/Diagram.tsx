@@ -1,4 +1,4 @@
-import { type ComponentState, type CrossingRange, fmt, kfmt, months, multiple, multiples, pct } from '@loadmap/core'
+import { type ComponentState, type CrossingRange, fmt, kfmt, multiple, multiples, pct, reach } from '@loadmap/core'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
 import { memo, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { scenarioColor, useComparison } from './scenarios'
@@ -450,9 +450,7 @@ function Detail({
   const top = board.offsetTop + (below ? (n.y + n.h) * k + 6 : n.y * k - 6)
   const place = { top, transform: below ? undefined : 'translateY(-100%)' }
   const at = (r: CrossingRange | null, x: number | null) =>
-    r
-      ? `${multiples(r, model.searchMax)}${months(model.dateAt(r.low), model.dateAt(r.high))}`
-      : multiple(x, model.searchMax)
+    r ? reach(r, model.searchMax, model.dateAt) : multiple(x, model.searchMax)
   const num = (x: number) => (Math.abs(x) >= 1000 ? kfmt(x) : fmt(x))
   const cap = c.capacity
   return (

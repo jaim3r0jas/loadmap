@@ -298,7 +298,9 @@ describe('export', () => {
     expect(text).not.toContain('var(--lm-')
     expect(text).not.toContain('tabindex')
     expect(doc.documentElement.textContent).toContain('Checkout pipeline')
-    expect(doc.documentElement.textContent).toContain('At 10×, every component is under the 50 % target.')
+    expect(doc.documentElement.textContent).toContain(
+      'At 10×, every component is under the 50 % target at its stated capacity, but the API gateway may already be above it.',
+    )
   })
 
   it('records the same WebM frames twice', async () => {

@@ -307,7 +307,7 @@ class Compiler {
         const pmv = w(c, l) as number
         const share = percent ? pmv / 100 : x ? pmv / x : 0
         if (!(share >= 0 && share < 1)) {
-          const said = percent ? `${pmv}%` : `${pmv} of ${x}`
+          const said = percent ? `${pmv} %` : `${pmv} of ${x}`
           throw new Error(`± ${said} is not a share from 0 to below 100 %`)
         }
         return fn(x, unit?.(c, l) as string, { source: source?.(c, l) as string | undefined, within: share })

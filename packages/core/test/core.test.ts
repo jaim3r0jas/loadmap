@@ -452,6 +452,19 @@ describe('uncertainty', () => {
     expect(ev.presets.map((p) => p.label)).toEqual(['Today · 1×', '50 % target · 4.2×', 'Runs out · 8.4×'])
   })
 
+  it('says what may already be happening past a pessimistic edge', () => {
+    // the cache's 50 % at 4.2× to 6× (the API's 5× caps it), 100 % at 8.4× to 15.6×
+    expect(unsure().evaluate({ load: 4.5 }).verdict).toEqual({
+      tier: 'warn',
+      text: 'At 4.5×, every component is under the 50 % target at its stated capacity, but the cache may already be above it. The 50 % target holds up to between 4.2× and 5×, limited by the cache (capacity estimated ±30 %).',
+    })
+    expect(unsure().evaluate({ load: 9 }).verdict.text).toMatch(
+      /^At 9×, everything fits at the stated capacities, but the cache may already be past capacity: y\. /,
+    )
+    // without a ± nothing may: the stated tiers alone
+    expect(sized.evaluate({ load: 4 }).verdict.tier).toBe('ok')
+  })
+
   it('names the capacity whose measurement would change the answer', () => {
     const ev = unsure().evaluate()
     expect(ev.measure?.component).toBe('cache')
@@ -498,6 +511,22 @@ describe('uncertainty', () => {
     // the stated line crosses at the first stated crossing: the API's 5×
     expect(round(line.target)).toBe(5)
     expect(headroom(sized).lines[0]!.band).toBeNull()
+    // an optimistic edge that never comes: the axis still reaches the pessimistic one
+    // (100 req/s per 1× against 1,000 ±50 %: 100 % at 5× to 15×, but the search ends at 12×)
+    const far = tiny({
+      load: p.load({ max: 2 }),
+      searchMax: 12,
+      components: {
+        api: {
+          name: 'API',
+          demand: ({ flows }: any) => flows.req,
+          capacity: estimated(1000, 'req/s', { within: 0.5 }),
+          over: 'x',
+        },
+      },
+    } as any)
+    expect(far.evaluate().full).toEqual({ low: 5, high: Number.POSITIVE_INFINITY })
+    expect(headroom(far, {}, { samples: 8 }).to).toBe(6.25)
   })
 })
 

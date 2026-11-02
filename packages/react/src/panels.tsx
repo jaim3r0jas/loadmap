@@ -58,7 +58,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                     estimate{c.capacity.within ? ` ${plusMinus(c.capacity)}` : ''}
                   </span>
                 ) : (
-                  c.capacity?.within && (
+                  !!c.capacity?.within && (
                     <span className="lm-tag" data-kind="range">
                       {plusMinus(c.capacity)}
                     </span>

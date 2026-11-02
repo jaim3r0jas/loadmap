@@ -94,7 +94,9 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   })
   const target = positionals[0]
   if (!target || !v.out) throw new Error(`loadmap record needs a URL or a .loadmap file and --out\n\n${USAGE}`)
-  const file = extname(target).toLowerCase() === '.loadmap' ? target : undefined
+  // a URL is a page, whatever its path ends in
+  const file =
+    !/^[a-z][a-z\d+.-]*:\/\//i.test(target) && extname(target).toLowerCase() === '.loadmap' ? target : undefined
   const num = (x: string | undefined, name: string) => {
     if (x == null) return undefined
     const n = Number(x)
@@ -176,8 +178,8 @@ async function serve(source: string, dir: string): Promise<{ url: string; close:
     throw new Error(`no viewer in ${dir}: build the CLI first (pnpm --filter @loadmap/cli build)`)
   }
   const server = createServer(async (req, res) => {
-    const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)).replace(/^[/\\]+/, '')
     try {
+      const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)).replace(/^[/\\]+/, '')
       if (path.split(/[/\\]/).includes('..')) throw new Error('outside the viewer')
       const file = path || 'index.html'
       const body = file === 'definition.loadmap' ? Buffer.from(source) : await readFile(join(dir, file))

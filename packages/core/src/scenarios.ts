@@ -179,7 +179,10 @@ export function headroom<P, C extends string>(
   const evs = sets.map((s) => ({ ...s, ev: model.evaluate(s.values as Partial<Values<P>>) }))
 
   const from = Math.max(0.1, Math.min(1, model.load.min))
-  const ends = evs.map((e) => e.ev.full?.high).filter((x): x is number => x != null && Number.isFinite(x))
+  // the optimistic edge, so the band's crossing shows; the pessimistic one where the optimistic never comes
+  const ends = evs
+    .map((e) => (e.ev.full && Number.isFinite(e.ev.full.high) ? e.ev.full.high : e.ev.full?.low))
+    .filter((x): x is number => x != null && Number.isFinite(x))
   const to = Math.min(model.searchMax, Math.max(model.load.max, ...ends.map((x) => x * 1.25)))
   const n = Math.max(2, o.samples ?? 120)
   const xs = Array.from({ length: n }, (_, i) => from * (to / from) ** (i / (n - 1)))

@@ -267,7 +267,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
     return `M${up.join('L')}L${down.join('L')}Z`
   }
   const reaches = (r: CrossingRange | null, x: number | null) =>
-    r && l0(r) ? `between ${multiples(r, model.searchMax, true)}` : multiple(x, model.searchMax)
+    r && l0(r) ? multiples(r, model.searchMax) : multiple(x, model.searchMax)
   const l0 = (r: CrossingRange) => multiple(r.low, model.searchMax) !== multiple(r.high, model.searchMax)
   const summary = h.lines
     .map(

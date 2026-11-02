@@ -315,7 +315,9 @@ export function defineModel<
       const f = both(thresholds.full)
       components[c] = { target: t.x, full: f.x, targetRange: t.range, fullRange: f.range }
     }
-    const out: Crossings = { components, measure: measure(values, uncertain, components) }
+    // the hint costs two crossings per uncertain capacity: only when someone reads it
+    let hint: ReturnType<Crossings['measure']> | undefined
+    const out: Crossings = { components, measure: () => (hint ??= measure(values, uncertain, components)) }
     if (crossingCache.size > 64) crossingCache.delete(crossingCache.keys().next().value!)
     crossingCache.set(key, out)
     return out
@@ -329,7 +331,7 @@ export function defineModel<
     values: LooseValues,
     uncertain: readonly string[],
     components: Crossings['components'],
-  ): Crossings['measure'] => {
+  ): ReturnType<Crossings['measure']> => {
     const ranges = Object.values(components).flatMap((r) => (r.targetRange ? [r.targetRange] : []))
     if (!uncertain.length || !ranges.length) return null
     const now = { low: Math.min(...ranges.map((r) => r.low)), high: Math.min(...ranges.map((r) => r.high)) }
@@ -439,7 +441,9 @@ export function defineModel<
       target,
       full,
       verdict: verdict(values.load, live, firstLimit, target, thresholds, searchMax, when),
-      measure: measureText(crossings.measure, components, firstLimit, thresholds, searchMax),
+      get measure() {
+        return measureText(crossings.measure(), components, firstLimit, thresholds, searchMax)
+      },
       presets: presets(def, target, full, thresholds, searchMax),
       assumptions,
       stages,
@@ -612,6 +616,16 @@ function verdict(
       text: `${at}, ${what} ${verb(overs, 'is', 'are')} past capacity: ${overs.map((c) => c.over).join('; ')}. ${holds}`,
     }
   }
+  // past a pessimistic edge the stated capacities are not the whole answer: say what may already be happening
+  const may = (k: 'targetRange' | 'fullRange') => live.filter((c) => c[k] != null && load > c[k].low)
+  const mayOver = may('fullRange')
+  if (mayOver.length) {
+    const what = joinAnd(mayOver.map((c) => c.short))
+    return {
+      tier: 'warn',
+      text: `${at}, everything fits at the stated capacities, but ${what} may already be past capacity: ${mayOver.map((c) => c.over).join('; ')}. ${holds}`,
+    }
+  }
   const warns = live.filter((c) => (c.util ?? 0) > th.target)
   if (warns.length) {
     const what = joinAnd(warns.map((c) => c.short))
@@ -620,6 +634,12 @@ function verdict(
       text: `${at}, everything still fits, but ${what} ${verb(warns, 'runs', 'run')} above the ${target}. ${holds}`,
     }
   }
+  const mayWarn = may('targetRange')
+  if (mayWarn.length)
+    return {
+      tier: 'warn',
+      text: `${at}, every component is under the ${target} at its stated capacity, but ${joinAnd(mayWarn.map((c) => c.short))} may already be above it. ${holds}`,
+    }
   return {
     tier: 'ok',
     text: `${at}, every component is under the ${target}. It holds up to ${upTo}; ${first.short} ${verb([first], 'is', 'are')} the first limit${est(first)}.`,
@@ -627,7 +647,7 @@ function verdict(
 }
 
 function measureText<C extends string>(
-  m: Crossings['measure'],
+  m: ReturnType<Crossings['measure']>,
   components: Readonly<Record<C, ComponentResult<C>>>,
   first: ComponentResult<C> | null,
   th: { target: number; full: number },
@@ -669,5 +689,5 @@ function presets<P>(
 
 interface Crossings {
   components: Record<string, Pick<ComponentResult, 'target' | 'full' | 'targetRange' | 'fullRange'>>
-  measure: { component: string; target: CrossingRange; firstLimit: string } | null
+  measure: () => { component: string; target: CrossingRange; firstLimit: string } | null
 }

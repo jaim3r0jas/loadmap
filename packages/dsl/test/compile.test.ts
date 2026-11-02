@@ -313,7 +313,7 @@ describe('uncertainty and expectations', () => {
     ])
     expect(errors(def({ api: 'estimated(800 ± 100%, "req/s")' }))).toEqual([
       {
-        message: '± 100% is not a share from 0 to below 100 %',
+        message: '± 100 % is not a share from 0 to below 100 %',
         hint: undefined,
         text: 'estimated(800 ± 100%, "req/s")',
       },
