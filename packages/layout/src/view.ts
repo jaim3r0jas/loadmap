@@ -67,7 +67,7 @@ export interface View<F extends string = string, S extends string = string, N ex
   def: ViewDef<F, S, N>
 }
 
-export function topology<P, F extends string, C extends string, S extends string, const N extends string>(
+export function defineView<P, F extends string, C extends string, S extends string, const N extends string>(
   model: Model<P, F, C, S>,
   def: ViewDef<F, S, N>,
 ): View<F, S, N> {

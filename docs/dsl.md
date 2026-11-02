@@ -2,7 +2,7 @@
 
 A `.loadmap` file defines a whole loadmap as text: the load and the controls, the flows and their routes, the boxes
 of the diagram with what each one does and what can run out. `@loadmap/dsl` reads it into the same `model` and
-`view` that `defineModel` and `topology` build in TypeScript, so `<Loadmap>` draws it the same way. The editor
+`view` that `defineModel` and `defineView` build in TypeScript, so `<Loadmap>` draws it the same way. The editor
 (`@loadmap/editor`, the playground's Editor tab) shows it live as you type.
 
 ```
@@ -622,6 +622,6 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 
 ### Functions
 
-`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `fmt`, `kfmt`, `pct`, `secs`, `measured`, `estimated`
+`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`
 
 <!-- end of reference -->

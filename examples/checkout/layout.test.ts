@@ -55,7 +55,7 @@ describe('checkout layout', () => {
 describe('layout cache', () => {
   it('tells apart structures with the same sizes but cells split differently', async () => {
     const { defineModel, measured, p, pass, queue } = await import('@loadmap/core')
-    const { cluster, topology } = await import('@loadmap/layout')
+    const { cluster, defineView } = await import('@loadmap/layout')
     const m = defineModel({
       load: p.load({ max: 10 }),
       params: { swap: p.switch({ label: 'Swap', default: false }) },
@@ -67,7 +67,7 @@ describe('layout cache', () => {
       },
       routes: { a: ['q', 'out'], b: ['q', 'out'] },
     })
-    const v = topology(m, {
+    const v = defineView(m, {
       nodes: {
         q: cluster({ label: 'Queue', members: 3, stage: 'q' }),
         out: { kind: 'node', label: 'Out', stage: 'out', shape: 'box' },

@@ -1,4 +1,5 @@
-import { type Evaluation, type Model, niceStep, type ResolvedStage } from '@loadmap/core'
+import type { Evaluation, Model, ResolvedStage } from '@loadmap/core'
+import { niceStep } from '@loadmap/core/format'
 import { busyOf, type Fill, fillOrder } from './fill'
 import { rng } from './rng'
 

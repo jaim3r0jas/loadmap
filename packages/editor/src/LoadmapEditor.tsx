@@ -10,10 +10,9 @@ import {
   type Diagnostic,
   encodeShare,
   type HostFunctions,
-  lex,
   problems,
-  Reporter,
 } from '@loadmap/dsl'
+import { lex, Reporter } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { loadmapLanguage } from './language'

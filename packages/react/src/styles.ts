@@ -10,7 +10,7 @@ const DARK = `
   --lm-s1: #3987e5; --lm-s2: #d95926; --lm-s3: #9085e9; --lm-s4: #c98500; color-scheme: dark;`
 
 /** Theme tokens and the layout of every piece. Scoped to `.lm`; override any `--lm-*` token to restyle. */
-export const CSS = `
+export const LOADMAP_CSS = `
 .lm { ${LIGHT}
   --lm-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --lm-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -129,6 +129,6 @@ export function injectStyles(doc: Document = document): void {
   if (doc.getElementById('loadmap-css')) return
   const el = doc.createElement('style')
   el.id = 'loadmap-css'
-  el.textContent = CSS
+  el.textContent = LOADMAP_CSS
   doc.head.appendChild(el)
 }

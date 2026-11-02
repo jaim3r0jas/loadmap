@@ -4,7 +4,8 @@ import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror
 import type { Extension } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
-import { BUILTINS, type CompileOptions, type CompileResult, compile, completions, problems, SCHEMA } from '@loadmap/dsl'
+import { type CompileOptions, type CompileResult, compile, completions, problems } from '@loadmap/dsl'
+import { BUILTINS, SCHEMA } from '@loadmap/dsl/internal'
 
 const KEYWORDS = new Set(Object.keys(SCHEMA).filter(Boolean))
 const FUNCTIONS = new Set(Object.keys(BUILTINS))

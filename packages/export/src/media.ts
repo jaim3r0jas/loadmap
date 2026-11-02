@@ -1,5 +1,6 @@
 // Media that stands alone: a caption around the board, the board as SVG, and a poster with the limits.
-import { type CrossingRange, compare, fmt, monthOf, multiple, multiples, parseAsOf, pct } from '@loadmap/core'
+import { type CrossingRange, compare, parseAsOf } from '@loadmap/core'
+import { fmt, monthOf, multiple, multiples, pct } from '@loadmap/core/format'
 import type { LoadmapHandle } from '@loadmap/react'
 
 /** A title line above the board and the verdict below it, so a frame says what it shows without the page. */

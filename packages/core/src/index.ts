@@ -10,7 +10,6 @@ export {
   type Provenance,
 } from './capacity'
 export { assertHolds, type CheckResult, check, type Expectation } from './check'
-export { around, fmt, joinAnd, kfmt, monthOf, months, multiple, multiples, niceStep, pct, secs } from './format'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
 export {
   type Assumption,
@@ -22,7 +21,7 @@ export {
   defineModel,
   type Evaluation,
   type FlowDef,
-  type Measure,
+  type MeasureHint,
   type Model,
   type ModelDef,
   type Overload,

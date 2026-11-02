@@ -12,11 +12,12 @@ export {
   structureKey,
   type TextSpot,
 } from './layout'
-export { estimateText, type Measure } from './text'
+export { estimateText, type TextMeasure } from './text'
 export {
   type AnyNodeDef,
   type ClusterDef,
   cluster,
+  defineView,
   type EdgeDef,
   edge,
   type FlowColor,
@@ -26,7 +27,6 @@ export {
   node,
   type PoolDef,
   pool,
-  topology,
   type View,
   type ViewDef,
 } from './view'

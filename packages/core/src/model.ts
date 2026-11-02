@@ -126,7 +126,7 @@ export interface Scenario<P = any> {
 }
 
 /** The capacity whose ± matters most to where the target holds. */
-export interface Measure<C extends string = string> {
+export interface MeasureHint<C extends string = string> {
   component: C
   /** Where the target would hold with that capacity at its stated value and the others still ranged. */
   target: CrossingRange
@@ -156,7 +156,7 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   full: CrossingRange | null
   verdict: Verdict
   /** Which capacity, once measured, would change or narrow the answer most; null when the range is narrow. */
-  measure: Measure<C> | null
+  measure: MeasureHint<C> | null
   presets: readonly Preset<P>[]
   assumptions: readonly Assumption[]
   stages: Readonly<Record<S, ResolvedStage>>
@@ -652,7 +652,7 @@ function measureText<C extends string>(
   first: ComponentResult<C> | null,
   th: { target: number; full: number },
   searchMax: number,
-): Measure<C> | null {
+): MeasureHint<C> | null {
   if (!m || !first) return null
   const k = components[m.component as C]
   const then = components[m.firstLimit as C]

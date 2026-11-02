@@ -1,8 +1,8 @@
-import { kfmt } from '@loadmap/core'
-import { cluster, edge, node, pool, topology } from '@loadmap/layout'
+import { compact } from '@loadmap/core/format'
+import { cluster, defineView, edge, node, pool } from '@loadmap/layout'
 import { alerts } from './model'
 
-export const view = topology(alerts, {
+export const view = defineView(alerts, {
   nodes: {
     phones: node({ label: 'Devices', sub: 'alerts and positions' }),
     gateway: node({ label: 'Gateway', stage: 'gateway' }),
@@ -27,7 +27,7 @@ export const view = topology(alerts, {
   },
   edges: [
     edge('phones', 'gateway', { label: 'POST /events' }),
-    edge('gateway', 'brokers', { label: ({ flows }) => `${kfmt(flows.positions)} positions/s` }),
+    edge('gateway', 'brokers', { label: ({ flows }) => `${compact(flows.positions)} positions/s` }),
     edge('brokers', 'alertPods'),
     edge('brokers', 'posPods'),
     edge('alertPods', 'db', { label: 'state writes' }),

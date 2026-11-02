@@ -1,7 +1,7 @@
 import { dyn, type Evaluation, type LooseValues, type ResolvedStage } from '@loadmap/core'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
-import { estimateText, type Measure } from './text'
+import { estimateText, type TextMeasure } from './text'
 import type { AnyNodeDef, EdgeDef, Label, View } from './view'
 
 export type Direction = 'RIGHT' | 'DOWN'
@@ -70,7 +70,7 @@ export interface Scene {
 
 export interface LayoutOptions {
   direction?: Direction
-  measure?: Measure
+  measure?: TextMeasure
 }
 
 const T_TITLE = { size: 13, weight: 600 }
@@ -88,7 +88,7 @@ const LABEL_H = 16
 const elk = new ELK()
 const scenes = new WeakMap<View, Map<string, Promise<Scene>>>()
 // per measurer and view, per combination of values other than the load: the contexts labels are sized against
-const sampleCache = new WeakMap<Measure, WeakMap<View, Map<string, Sampled>>>()
+const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
 
 interface Sampled {
   contexts: LooseValues[]
@@ -147,7 +147,7 @@ interface Prepared {
   flowFrom: Record<string, string>
 }
 
-function prepare(view: View, ev: Evaluation, direction: Direction, measure: Measure): Prepared {
+function prepare(view: View, ev: Evaluation, direction: Direction, measure: TextMeasure): Prepared {
   const widest = labelWidths(view, ev, measure)
 
   const stageNode: Record<string, string> = {}
@@ -184,7 +184,7 @@ function prepare(view: View, ev: Evaluation, direction: Direction, measure: Meas
  * Labels are sized for their widest text over every load the slider can reach, so moving the load never moves the
  * layout. Text width does not grow steadily with a number ("9.9k" is wider than "10k"), hence every step, not a few.
  */
-function labelWidths(view: View, ev: Evaluation, measure: Measure) {
+function labelWidths(view: View, ev: Evaluation, measure: TextMeasure) {
   const { load: _, ...rest } = ev.values
   const key = JSON.stringify(rest)
   const byView = sampleCache.get(measure) ?? new WeakMap<View, Map<string, Sampled>>()
@@ -333,7 +333,7 @@ function clusterInner(
   direction: Direction,
   titleW: number,
   subW: number,
-  measure: Measure,
+  measure: TextMeasure,
   view: View,
 ): Inner {
   const m = Math.max(1, dyn(def.members, ctx))

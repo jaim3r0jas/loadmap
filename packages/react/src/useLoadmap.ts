@@ -1,5 +1,13 @@
 import type { Evaluation, Model, Scenario, Values } from '@loadmap/core'
-import { type Direction, labelsAt, layout, type Measure, type Scene, structureKey, type View } from '@loadmap/layout'
+import {
+  type Direction,
+  labelsAt,
+  layout,
+  type Scene,
+  structureKey,
+  type TextMeasure,
+  type View,
+} from '@loadmap/layout'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Engine } from './engine'
@@ -60,7 +68,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const wide = o.direction ?? 'RIGHT'
   const [direction, setDirection] = useState<Direction>(wide)
-  const [measure, setMeasure] = useState<Measure | null>(null)
+  const [measure, setMeasure] = useState<TextMeasure | null>(null)
   const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
   const scene = laid?.view === view ? laid.scene : null
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
@@ -155,7 +163,7 @@ export function useMediaQuery(q: string): boolean {
   return on
 }
 
-function canvasMeasure(fontFamily: string): Measure {
+function canvasMeasure(fontFamily: string): TextMeasure {
   const ctx = document.createElement('canvas').getContext('2d')
   if (!ctx) return (t, size) => t.length * size * 0.6
   return (text, size, weight = 400) => {

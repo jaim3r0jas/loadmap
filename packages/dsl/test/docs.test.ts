@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
-import { compile, formatDiagnostic, reference } from '../src'
+import { compile, formatDiagnostic } from '../src'
+import { reference } from '../src/internal'
 
 const file = new URL('../../../docs/dsl.md', import.meta.url)
 const START = '<!-- reference: written by reference() in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->'

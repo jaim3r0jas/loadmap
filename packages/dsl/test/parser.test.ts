@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { compile, formatDiagnostic, lex, parse, Reporter } from '../src'
+import { compile, formatDiagnostic } from '../src'
+import { lex, parse, Reporter } from '../src/internal'
 
 const examples = ['checkout/checkout.loadmap', 'alerts/alerts.loadmap'].map((f) =>
   readFileSync(new URL(`../../../examples/${f}`, import.meta.url), 'utf8'),
@@ -16,7 +17,7 @@ function at(src: string, needle: string) {
 
 describe('lex', () => {
   it('reads numbers, texts, templates and comments with their places', () => {
-    const src = 'cap: 20_000 # a comment\nlabel: "a \\"b\\"" `x ${kfmt(flows.a)} y`'
+    const src = 'cap: 20_000 # a comment\nlabel: "a \\"b\\"" `x ${compact(flows.a)} y`'
     const toks = lex(src, new Reporter(src))
     expect(toks.map((t) => t.kind)).toEqual([
       'ident',
@@ -33,7 +34,7 @@ describe('lex', () => {
     expect(toks[6]!.value).toBe('a "b"')
     const tpl = toks[7]!
     expect(tpl.quasis).toEqual(['x ', ' y'])
-    expect(src.slice(tpl.parts![0]!.from, tpl.parts![0]!.to)).toBe('kfmt(flows.a)')
+    expect(src.slice(tpl.parts![0]!.from, tpl.parts![0]!.to)).toBe('compact(flows.a)')
   })
 
   it('lets a formula wrap inside parentheses', () => {

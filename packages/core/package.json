@@ -5,7 +5,8 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./calibrate": "./src/calibrate.ts"
+    "./calibrate": "./src/calibrate.ts",
+    "./format": "./src/format.ts"
   },
   "publishConfig": {
     "exports": {
@@ -16,6 +17,10 @@
       "./calibrate": {
         "types": "./dist/calibrate.d.ts",
         "import": "./dist/calibrate.js"
+      },
+      "./format": {
+        "types": "./dist/format.d.ts",
+        "import": "./dist/format.js"
       }
     }
   },

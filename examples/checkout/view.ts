@@ -1,8 +1,8 @@
-import { kfmt } from '@loadmap/core'
-import { cluster, edge, node, pool, topology } from '@loadmap/layout'
+import { compact } from '@loadmap/core/format'
+import { cluster, defineView, edge, node, pool } from '@loadmap/layout'
 import { checkout } from './model'
 
-export const view = topology(checkout, {
+export const view = defineView(checkout, {
   nodes: {
     phones: node({ label: 'Phones', sub: 'app checkout' }),
     gateway: node({ label: 'API gateway', stage: 'gateway' }),
@@ -22,7 +22,7 @@ export const view = topology(checkout, {
   },
   edges: [
     edge('phones', 'gateway', { label: 'POST /checkout' }),
-    edge('gateway', 'kafka', { label: ({ flows }) => `${kfmt(flows.orders)} orders/s` }),
+    edge('gateway', 'kafka', { label: ({ flows }) => `${compact(flows.orders)} orders/s` }),
     edge('kafka', 'workers'),
     edge('workers', 'db', { label: ({ batch, rows }) => (batch ? `${rows} rows a commit` : 'a commit per order') }),
   ],

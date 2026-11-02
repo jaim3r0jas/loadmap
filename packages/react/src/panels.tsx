@@ -1,4 +1,5 @@
-import { type Assumption, type Capacity, fmt, kfmt, multiple, multiples, pct, secs } from '@loadmap/core'
+import type { Assumption, Capacity } from '@loadmap/core'
+import { compact, fmt, multiple, multiples, pct, secs } from '@loadmap/core/format'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { LoadmapController } from './useLoadmap'
 
@@ -118,14 +119,14 @@ export function Meters({ lm }: { lm: LoadmapController }) {
         if (rules.merge)
           items.push({
             key: `${s.id}/${f}/merge`,
-            value: kfmt(q.merged),
+            value: compact(q.merged),
             label: `${flowLabel(f)} superseded /s (${rules.merge.reason ?? 'newest kept'})`,
             state: q.merged > 0.5 ? 'warn' : 'ok',
           })
         if (rules.drop)
           items.push({
             key: `${s.id}/${f}/drop`,
-            value: kfmt(q.dropped),
+            value: compact(q.dropped),
             label: `${flowLabel(f)} dropped /s (${rules.drop.reason ?? 'too old'})`,
             state: q.dropped > 0.5 ? 'over' : 'ok',
           })
@@ -305,6 +306,6 @@ function describe(a: Assumption): ReactNode {
 }
 
 /** Exact below 1,000 (3.9 cores), compact above (12k req/s). */
-const num = (x: number) => (Math.abs(x) >= 1000 ? kfmt(x) : fmt(x))
+const num = (x: number) => (Math.abs(x) >= 1000 ? compact(x) : fmt(x))
 
 const sig = (x: number) => Number(x.toPrecision(3)).toString()

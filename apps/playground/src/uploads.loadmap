@@ -53,6 +53,6 @@ node bucket "Object store" {
 }
 
 phones -> api: "POST /photos"
-api -> broker: `${kfmt(flows.photos)} photos/s`
+api -> broker: `${compact(flows.photos)} photos/s`
 broker -> resizers
 resizers -> bucket: `${files} files a photo`

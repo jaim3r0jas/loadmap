@@ -2,17 +2,13 @@ import {
   type Comparison,
   type CrossingRange,
   compare,
-  fmt,
   type Headroom,
   type HeadroomLine,
   headroom,
   type Model,
-  monthOf,
-  multiple,
-  multiples,
-  pct,
   type Series,
 } from '@loadmap/core'
+import { fmt, monthOf, multiple, multiples, pct } from '@loadmap/core/format'
 import {
   type KeyboardEvent,
   type PointerEvent,

@@ -107,6 +107,6 @@ node db "Postgres" "primary" {
 }
 
 phones -> gateway: "POST /checkout"
-gateway -> kafka: `${kfmt(flows.orders)} orders/s`
+gateway -> kafka: `${compact(flows.orders)} orders/s`
 kafka -> workers
 workers -> db: batch ? `${rows} rows a commit` : "a commit per order"

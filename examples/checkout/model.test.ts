@@ -1,4 +1,5 @@
-import { around, assertHolds, check, compare } from '@loadmap/core'
+import { assertHolds, check, compare } from '@loadmap/core'
+import { around } from '@loadmap/core/format'
 import { describe, expect, it } from 'vitest'
 import { checkout, workerCores } from './model'
 

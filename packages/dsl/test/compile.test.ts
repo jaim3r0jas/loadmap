@@ -93,7 +93,7 @@ describe('formulas', () => {
   })
 
   it('fill templates', () => {
-    expect(value('`${pods} pods × ${kfmt(flows.req * 100)} = ${pct(0.5)}`')).toBe('2 pods × 20k = 50 %')
+    expect(value('`${pods} pods × ${compact(flows.req * 100)} = ${pct(0.5)}`')).toBe('2 pods × 20k = 50 %')
     expect(value('"plain"')).toBe('plain')
   })
 

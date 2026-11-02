@@ -28,7 +28,15 @@ export interface LoadmapHandle {
 }
 
 /** The root element: theme tokens, styles, and the size the layout direction follows. */
-export function Root({ lm, theme = 'auto', children }: { lm: LoadmapController; theme?: Theme; children: ReactNode }) {
+export function LoadmapRoot({
+  lm,
+  theme = 'auto',
+  children,
+}: {
+  lm: LoadmapController
+  theme?: Theme
+  children: ReactNode
+}) {
   useEffect(() => injectStyles(), [])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new theme changes the tokens, so read them again
   useEffect(() => {
@@ -77,7 +85,7 @@ export function Loadmap<P>({
   useImperativeHandle(ref, () => handleOf(lm), [lm])
   const side = compare && model.scenarios.length > 1
   return (
-    <Root lm={lm} theme={theme}>
+    <LoadmapRoot lm={lm} theme={theme}>
       {title !== false && <h2>{title ?? model.title}</h2>}
       <Scenarios lm={lm} />
       <Diagram lm={lm} />
@@ -96,7 +104,7 @@ export function Loadmap<P>({
         <Controls lm={lm} />
       </div>
       <Assumptions lm={lm} extra={assumptions} />
-    </Root>
+    </LoadmapRoot>
   )
 }
 

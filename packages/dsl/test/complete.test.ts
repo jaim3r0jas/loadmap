@@ -39,7 +39,7 @@ describe('completions', () => {
   it('offers the names a formula can read', () => {
     const { labels } = at(inside('flow orders "orders" {', 'rate: |'))
     expect(labels).toEqual(
-      expect.arrayContaining(['load', 'pods', 'batch', 'flows', 'workerCores', 'kfmt', 'measured']),
+      expect.arrayContaining(['load', 'pods', 'batch', 'flows', 'workerCores', 'compact', 'measured']),
     )
     expect(at(inside('param rows "Rows per batch" {', 'hint: |')).labels).toEqual([])
     expect(at(`${checkout.replace('title: "Checkout pipeline"', 'title: |')}`).labels).toEqual([])

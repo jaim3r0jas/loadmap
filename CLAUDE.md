@@ -72,6 +72,9 @@ The browser tests need Chromium once: `pnpm exec playwright install chromium`. T
 - Model functions take one context object (`({ load, flows, util, demand, derived, ...params })`); `load`, `flows`,
   `demand`, `util` and `derived` are reserved parameter names.
 - Imports without extensions; package `exports` point at `src` for the workspace, `publishConfig.exports` at `dist`.
+- **The public API is what a stranger imports**: `@loadmap/react` re-exports the model and view API (one install);
+  format helpers live in `@loadmap/core/format`; what only loadmap's own packages need goes in a `./internal` entry
+  (`@loadmap/dsl/internal`), which promises nothing between versions. A new export takes its final name now.
 - Code style is Biome's (single quotes, no semicolons, 120 columns). Comments say why, not what.
 - Text in the UI and the verdict: short plain sentences, numbers with units, `×` for load multiples, `%` with a space.
 - The example and docs are generic: no figures, component names or links from anyone's employer.

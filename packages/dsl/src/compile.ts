@@ -20,10 +20,10 @@ import { fitLinear } from '@loadmap/core/calibrate'
 import {
   type AnyNodeDef,
   type Direction,
+  defineView,
   type EdgeDef,
   type FlowView,
   labelsAt,
-  topology,
   type View,
 } from '@loadmap/layout'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
@@ -459,7 +459,7 @@ class Compiler {
     let view: View
     try {
       model = defineModel(modelDef as any)
-      view = topology(model, viewDef as any)
+      view = defineView(model, viewDef as any)
     } catch (err) {
       this.report.error(top, err instanceof Error ? err.message.replace(/^loadmap: /, '') : String(err))
       return undefined

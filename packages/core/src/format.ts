@@ -6,7 +6,7 @@ export function fmt(n: number): string {
 }
 
 /** A compact number: 980 / 1.2k / 34k / 1.5M. */
-export function kfmt(n: number): string {
+export function compact(n: number): string {
   if (!Number.isFinite(n)) return n > 0 ? '∞' : '—'
   const a = Math.abs(n)
   if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`

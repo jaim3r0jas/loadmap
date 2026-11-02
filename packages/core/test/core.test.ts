@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  around,
   assertHolds,
   check,
   compare,
@@ -11,14 +10,12 @@ import {
   growth,
   headroom,
   measured,
-  multiple,
-  multiples,
-  niceStep,
   p,
   parseAsOf,
   pass,
 } from '../src'
 import { fitLinear } from '../src/calibrate'
+import { around, multiple, multiples, niceStep } from '../src/format'
 
 const tiny = (over: Partial<Parameters<typeof defineModel>[0]> = {}) =>
   defineModel({

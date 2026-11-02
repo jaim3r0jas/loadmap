@@ -1,4 +1,5 @@
-import { type Capacity, estimated, fmt, kfmt, type LinearFit, measured, pct, secs } from '@loadmap/core'
+import { type Capacity, estimated, type LinearFit, measured } from '@loadmap/core'
+import { compact, fmt, pct, secs } from '@loadmap/core/format'
 import type { Expr } from './ast'
 import { didYouMean, type Reporter, type Span } from './diagnostics'
 import { own, type Scope } from './schema'
@@ -61,7 +62,7 @@ export const BUILTINS: Readonly<Record<string, Builtin>> = {
   exp: { args: ['number'], result: 'number', fn: num(Math.exp) },
   pow: { args: ['number', 'number'], result: 'number', fn: num(Math.pow) },
   fmt: { args: ['number'], result: 'string', fn: fmt },
-  kfmt: { args: ['number'], result: 'string', fn: kfmt },
+  compact: { args: ['number'], result: 'string', fn: compact },
   pct: { args: ['number'], result: 'string', fn: pct },
   secs: { args: ['number'], result: 'string', fn: secs },
   measured: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: measured },

@@ -138,7 +138,7 @@ node responders "Responders" "on duty" { sink "responders" }
 node watchers "Watchers" "following live" { sink "watchers" }
 
 phones -> gateway: "POST /events"
-gateway -> brokers: `${kfmt(flows.positions)} positions/s`
+gateway -> brokers: `${compact(flows.positions)} positions/s`
 brokers -> alertPods
 brokers -> posPods
 alertPods -> db: "state writes"
