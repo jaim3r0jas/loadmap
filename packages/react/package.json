@@ -23,7 +23,8 @@
   "dependencies": {
     "@loadmap/core": "workspace:*",
     "@loadmap/sim": "workspace:*",
-    "@loadmap/layout": "workspace:*"
+    "@loadmap/layout": "workspace:*",
+    "elkjs": "0.12.1"
   },
   "peerDependencies": {
     "react": "^19",

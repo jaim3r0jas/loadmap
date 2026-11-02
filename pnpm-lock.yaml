@@ -407,6 +407,9 @@ importers:
       '@loadmap/sim':
         specifier: workspace:*
         version: link:../sim
+      elkjs:
+        specifier: 0.12.1
+        version: 0.12.1
       react:
         specifier: ^19
         version: 19.3.1

@@ -1,6 +1,7 @@
 import type { Evaluation, Model, Scenario, Values } from '@loadmap/core'
 import {
   type Direction,
+  type ElkEngine,
   labelsAt,
   layout,
   type Scene,
@@ -10,11 +11,14 @@ import {
 } from '@loadmap/layout'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { pageElk } from './elk'
 import { Engine } from './engine'
 
 export interface LoadmapOptions<P> extends SimOptions {
   /** Values to start from instead of the model's defaults. */
   initial?: Partial<Values<P>>
+  /** Where ELK lays the diagram out. Default: one worker shared by the page, or the main thread if it cannot start. */
+  elk?: ElkEngine
   /** Below this container width the diagram is laid out top to bottom. Default 640. */
   narrowBelow?: number
   /** Which way the diagram runs where there is room. Default RIGHT; below `narrowBelow` it is always DOWN. */
@@ -92,10 +96,11 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     [view, ev, direction, measure],
   )
   engine.wantKey = key
+  const elk = o.elk
   useEffect(() => {
     if (!measure || !key) return
     let live = true
-    layout(view, engine.ev, { direction, measure }).then(
+    layout(view, engine.ev, { direction, measure, elk: elk ?? pageElk() }).then(
       (s) => {
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
         if (live) setLaid({ view, scene: s })
@@ -105,7 +110,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => {
       live = false
     }
-  }, [key, view, engine, direction, measure])
+  }, [key, view, engine, direction, measure, elk])
 
   const labels = useMemo(() => labelsAt(view, ev), [view, ev])
   const valuesRef = useRef(values)

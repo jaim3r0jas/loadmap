@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// elkjs is about 1.5 MB on its own; moving it into a worker is milestone 2
+// elkjs (about 1.5 MB) runs in a worker chunk of its own, loaded on the first layout
 export default defineConfig({ plugins: [react()], build: { chunkSizeWarningLimit: 2500 } })

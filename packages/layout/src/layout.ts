@@ -1,5 +1,4 @@
 import { dyn, type Evaluation, type LooseValues, type ResolvedStage } from '@loadmap/core'
-import ELK from 'elkjs/lib/elk.bundled.js'
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
 import { estimateText, type TextMeasure } from './text'
 import type { AnyNodeDef, EdgeDef, Label, View } from './view'
@@ -71,6 +70,21 @@ export interface Scene {
 export interface LayoutOptions {
   direction?: Direction
   measure?: TextMeasure
+  /** Where ELK runs. Default: on this thread, loaded on first use. */
+  elk?: ElkEngine
+}
+
+/** Lays out an ELK graph: ELK on this thread, or in a worker. Every engine gives the same result for a graph. */
+export interface ElkEngine {
+  layout(graph: ElkNode): Promise<ElkNode>
+}
+
+let local: Promise<ElkEngine> | null = null
+
+/** ELK on this thread, imported on first use: it is about 1.6 MB, so it stays out of a page's first load. */
+export function localElk(): Promise<ElkEngine> {
+  local ??= import('elkjs/lib/elk.bundled.js').then((m) => new m.default())
+  return local
 }
 
 const T_TITLE = { size: 13, weight: 600 }
@@ -85,7 +99,6 @@ const SLOT = 10
 const SLOT_GAP = 3
 const LABEL_H = 16
 
-const elk = new ELK()
 const scenes = new WeakMap<View, Map<string, Promise<Scene>>>()
 // per measurer and view, per combination of values other than the load: the contexts labels are sized against
 const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
@@ -121,7 +134,7 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   scenes.set(view, cache)
   let hit = cache.get(prep.key)
   if (!hit) {
-    hit = run(prep).catch((err) => {
+    hit = run(prep, o.elk).catch((err) => {
       cache.delete(prep.key)
       throw err
     })
@@ -219,7 +232,7 @@ function labelWidths(view: View, ev: Evaluation, measure: TextMeasure) {
   }
 }
 
-async function run(prep: Prepared): Promise<Scene> {
+async function run(prep: Prepared, elk?: ElkEngine): Promise<Scene> {
   const graph: ElkNode = {
     id: 'root',
     layoutOptions: {
@@ -257,7 +270,7 @@ async function run(prep: Prepared): Promise<Scene> {
       }),
     ),
   }
-  const out = await elk.layout(graph)
+  const out = await (elk ?? (await localElk())).layout(graph)
 
   const placed = new Map((out.children ?? []).map((c) => [c.id, c]))
   const nodes: SceneNode[] = prep.nodes.map(({ id, def, inner }) => {

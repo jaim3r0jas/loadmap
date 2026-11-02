@@ -99,8 +99,7 @@ lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 
 ## Not yet
 
-ELK in a Web Worker (it is ~1.5 MB of the playground bundle, and live editing relayouts on the main thread), state in
-the URL for TypeScript pages (editor links carry it), a docs site, publishing. Two live diagrams side by side, cost per
+State in the URL for TypeScript pages (editor links carry it), a docs site, publishing. Two live diagrams side by side, cost per
 scenario, goal seek; ranges for fits, Monte Carlo. In the editor:
 editing in the UI (an inspector that writes text edits, a click on a node that jumps to its source), hover help, a
 formatter, Export → TypeScript, the source in exported PNGs, a Vite plugin for
