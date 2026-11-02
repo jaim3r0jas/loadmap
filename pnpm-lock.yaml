@@ -293,16 +293,34 @@ importers:
 
   packages/cli:
     dependencies:
+      elkjs:
+        specifier: 0.12.1
+        version: 0.12.1
       playwright:
         specifier: 1.64.1
         version: 1.64.1
     devDependencies:
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:../dsl
       '@loadmap/export':
         specifier: workspace:*
         version: link:../export
+      '@loadmap/react':
+        specifier: workspace:*
+        version: link:../react
       mediabunny:
         specifier: 1.65.0
         version: 1.65.0
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+      vite:
+        specifier: 8.3.5
+        version: 8.3.5(@types/node@24.19.2)
 
   packages/core: {}
 

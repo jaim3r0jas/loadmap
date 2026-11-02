@@ -1,13 +1,26 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { extname } from 'node:path'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { extname, join, normalize } from 'node:path'
 import { parseArgs } from 'node:util'
+import { compile, formatDiagnostic } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { chromium } from 'playwright'
+import { check } from './check'
 
-export const USAGE = `loadmap record <url> --out <file.gif|.webm|.mp4|.png|.svg> [options]
+export { type CheckOptions, check, github } from './check'
 
-Opens the page in headless Chromium, finds the loadmap it exposes (expose() from @loadmap/export) and records it
-on a fixed clock, so the same options give the same file.
+export const USAGE = `loadmap check <file.loadmap>… [--format text|github]
+loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
+
+check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
+bound). It exits 1 when a definition has an error or an expectation fails, 0 when everything holds.
+
+  --format <f>          text, or github to add annotations on the lines (the default under GitHub Actions)
+
+record opens the page in headless Chromium, finds the loadmap it exposes (expose() from @loadmap/export) and
+records it on a fixed clock, so the same options give the same file. A .loadmap file is drawn by the viewer that
+comes with the command.
 
   --out <file>          the extension picks the format: gif, webm, mp4, png or svg
   --script <file.json>  [{ "at": 0, "set": { "load": 5 } }, { "at": 3, "scenario": "Proposed" }, …]
@@ -25,7 +38,10 @@ on a fixed clock, so the same options give the same file.
   --color-scheme <s>    light or dark, for a page that follows the system theme (default light)`
 
 export interface RecordArgs {
+  /** A page that calls expose(); empty with `file`. */
   url: string
+  /** A .loadmap definition to draw instead of a page. */
+  file?: string
   out: string
   script?: { at: number; scenario?: string; set?: Record<string, string | number | boolean> }[]
   scenario?: string
@@ -44,6 +60,7 @@ export interface RecordArgs {
 /** Runs the command line; resolves to the exit code. */
 export async function main(argv: string[], log: (s: string) => void = console.log): Promise<number> {
   const [command, ...rest] = argv
+  if (command === 'check') return check(rest, { log })
   if (command !== 'record') {
     log(USAGE)
     return command === '--help' || command === '-h' ? 0 : 2
@@ -75,8 +92,9 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
       'color-scheme': { type: 'string' },
     },
   })
-  const url = positionals[0]
-  if (!url || !v.out) throw new Error(`loadmap record needs a URL and --out\n\n${USAGE}`)
+  const target = positionals[0]
+  if (!target || !v.out) throw new Error(`loadmap record needs a URL or a .loadmap file and --out\n\n${USAGE}`)
+  const file = extname(target).toLowerCase() === '.loadmap' ? target : undefined
   const num = (x: string | undefined, name: string) => {
     if (x == null) return undefined
     const n = Number(x)
@@ -104,7 +122,8 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   if (v.poster && extname(v.out).toLowerCase() !== '.png')
     throw new Error('--poster writes a PNG: --out must end in .png')
   return {
-    url,
+    url: file ? '' : target,
+    ...(file ? { file } : {}),
     out: v.out,
     script,
     scenario: v.scenario,
@@ -121,11 +140,59 @@ export async function parseRecord(argv: string[]): Promise<RecordArgs> {
   }
 }
 
-/** Records in a fresh headless Chromium and returns the file's bytes. */
-export async function record(a: RecordArgs): Promise<Buffer> {
+/**
+ * Records in a fresh headless Chromium and returns the file's bytes. A .loadmap file is compiled here first (its
+ * errors are thrown, formatted), then drawn by the viewer in `o.viewer`: by default the one the build puts in
+ * dist/viewer.
+ */
+export async function record(a: RecordArgs, o: { viewer?: string } = {}): Promise<Buffer> {
   const format = extname(a.out).slice(1).toLowerCase()
   if (!['gif', 'webm', 'mp4', 'png', 'svg'].includes(format))
     throw new Error(`--out must end in .gif, .webm, .mp4, .png or .svg`)
+  if (!a.file) return recordPage(a, format)
+  const source = await readFile(a.file, 'utf8')
+  const r = compile(source)
+  if (!r.ok) throw new Error(r.diagnostics.map((d) => formatDiagnostic(d, source, a.file)).join('\n'))
+  const server = await serve(source, o.viewer ?? join(import.meta.dirname, '../dist/viewer'))
+  try {
+    return await recordPage({ ...a, url: server.url }, format)
+  } finally {
+    await server.close()
+  }
+}
+
+const TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.loadmap': 'text/plain; charset=utf-8',
+}
+
+/** The viewer and the definition, on a port of 127.0.0.1 for as long as the recording takes. */
+async function serve(source: string, dir: string): Promise<{ url: string; close: () => Promise<void> }> {
+  try {
+    await readFile(join(dir, 'index.html'))
+  } catch {
+    throw new Error(`no viewer in ${dir}: build the CLI first (pnpm --filter @loadmap/cli build)`)
+  }
+  const server = createServer(async (req, res) => {
+    const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)).replace(/^[/\\]+/, '')
+    try {
+      if (path.split(/[/\\]/).includes('..')) throw new Error('outside the viewer')
+      const file = path || 'index.html'
+      const body = file === 'definition.loadmap' ? Buffer.from(source) : await readFile(join(dir, file))
+      res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' })
+      res.end(body)
+    } catch {
+      res.writeHead(404).end()
+    }
+  })
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+  const { port } = server.address() as AddressInfo
+  return { url: `http://127.0.0.1:${port}/`, close: () => new Promise((done) => server.close(() => done())) }
+}
+
+async function recordPage(a: RecordArgs, format: string): Promise<Buffer> {
   const browser = await chromium.launch()
   try {
     const page = await browser.newPage({ viewport: { width: a.width, height: 900 }, colorScheme: a.colorScheme })

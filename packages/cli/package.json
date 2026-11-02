@@ -20,13 +20,19 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown && vite build --config viewer/vite.config.ts"
   },
   "dependencies": {
+    "elkjs": "0.12.1",
     "playwright": "1.64.1"
   },
   "devDependencies": {
+    "@loadmap/dsl": "workspace:*",
     "@loadmap/export": "workspace:*",
-    "mediabunny": "1.65.0"
+    "@loadmap/react": "workspace:*",
+    "mediabunny": "1.65.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "vite": "8.3.5"
   }
 }

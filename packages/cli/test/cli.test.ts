@@ -2,9 +2,11 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
-import { createServer, type ViteDevServer } from 'vite'
+import { build, createServer, type ViteDevServer } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { main, parseRecord, record } from '../src'
+import { check, main, parseRecord, record } from '../src'
+
+const checkout = join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap')
 
 describe('arguments', () => {
   it('reads values, numbers and a script file', async () => {
@@ -44,8 +46,13 @@ describe('arguments', () => {
   it('explains itself without a command, and asks for --out', async () => {
     const out: string[] = []
     expect(await main([], (s) => out.push(s))).toBe(2)
-    expect(out[0]).toContain('loadmap record <url> --out')
-    await expect(parseRecord(['http://x/'])).rejects.toThrow(/needs a URL and --out/)
+    expect(out[0]).toContain('loadmap record <url | file.loadmap> --out')
+    await expect(parseRecord(['http://x/'])).rejects.toThrow(/needs a URL or a .loadmap file and --out/)
+  })
+
+  it('takes a .loadmap file in place of a URL', async () => {
+    expect(await parseRecord(['m.loadmap', '--out', 'a.gif'])).toMatchObject({ url: '', file: 'm.loadmap' })
+    expect(await parseRecord(['http://x/m.loadmap.html', '--out', 'a.gif'])).not.toHaveProperty('file')
   })
 })
 
@@ -139,4 +146,106 @@ describe('recording the playground', () => {
   it('names the missing expose() call', async () => {
     await expect(record(await args('x.gif', ['--name', 'nope']))).rejects.toThrow(/must call expose\(handle, 'nope'\)/)
   }, 60_000)
+})
+
+describe('loadmap check', () => {
+  let dir: string
+  let failing: string
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'loadmap-check-'))
+    failing = join(dir, 'checkout.loadmap')
+    // the same definition, promising 8× today: the pessimistic edge is 7.4×
+    const src = (await readFile(checkout, 'utf8')).replace('{ target: 7 }', '{ target: 8 }')
+    await writeFile(failing, src)
+  })
+  afterAll(async () => {
+    if (dir) await rm(dir, { recursive: true })
+  })
+
+  const run = async (argv: string[], env: Record<string, string> = {}) => {
+    const out: string[] = []
+    const code = await check(argv, { log: (s) => out.push(s), env })
+    return { code, out: out.join('\n') }
+  }
+
+  it('passes checkout, whose expectations hold', async () => {
+    const { code, out } = await run([checkout])
+    expect(code).toBe(0)
+    expect(out).toContain('checkout.loadmap: 2 expectations hold')
+    expect(out).toContain('  ✓ Today keeps 7×: the 50 % target holds up to between 7.4× and 10×')
+  })
+
+  it('exits 1 on a failing expectation, with its line and column', async () => {
+    const { code, out } = await run([failing])
+    expect(code).toBe(1)
+    const line = (await readFile(failing, 'utf8')).split('\n').findIndex((l) => l.startsWith('expect "Today')) + 1
+    expect(out).toContain(
+      `${failing}:${line}:1 error: "Today keeps 7×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×`,
+    )
+    expect(out).toContain(`${line} | expect "Today keeps 7×" { target: 8 }`)
+    expect(out).toContain('checkout.loadmap: 1 of 2 expectations failed')
+    // the command line gives the same code
+    expect(await main(['check', failing], () => {})).toBe(1)
+  })
+
+  it('annotates the line for GitHub, by flag or under GitHub Actions', async () => {
+    const line = (await readFile(failing, 'utf8')).split('\n').findIndex((l) => l.startsWith('expect "Today')) + 1
+    const file = failing.replaceAll(':', '%3A').replaceAll(',', '%2C')
+    const annotation = `::error file=${file},line=${line},col=1,endLine=${line},endColumn=24,title=loadmap check::"Today keeps 7×" fails: expected at least 8×, but the 50 %25 target holds up to`
+    expect((await run(['--format', 'github', failing])).out).toContain(annotation)
+    expect((await run([failing], { GITHUB_ACTIONS: 'true' })).out).toContain(annotation)
+    expect((await run([failing])).out).not.toContain('::error')
+  })
+
+  it('fails on a definition with an error or a missing file, and explains its usage', async () => {
+    const broken = join(dir, 'broken.loadmap')
+    await writeFile(broken, 'loadmap 1\nload { max: 3 }\n')
+    const b = await run([broken, checkout])
+    expect(b.code).toBe(1)
+    expect(b.out).toContain(`${broken}:1:1 error: a definition needs at least one flow`)
+    expect(b.out).toContain('broken.loadmap: does not compile (1 error)')
+    expect(b.out).toContain('checkout.loadmap: 2 expectations hold')
+    expect((await run([join(dir, 'nope.loadmap')])).out).toMatch(/nope\.loadmap: cannot read it \(ENOENT\)/)
+    expect(await run([])).toMatchObject({ code: 2, out: 'loadmap check needs one or more .loadmap files' })
+    expect((await run(['--format', 'xml', checkout])).code).toBe(2)
+  })
+})
+
+describe('recording a .loadmap', () => {
+  let viewer: string
+  let dir: string
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'loadmap-viewer-'))
+    viewer = join(dir, 'viewer')
+    await build({
+      configFile: join(import.meta.dirname, '../viewer/vite.config.ts'),
+      build: { outDir: viewer, emptyOutDir: true },
+      logLevel: 'error',
+    })
+  }, 120_000)
+  afterAll(async () => {
+    if (dir) await rm(dir, { recursive: true })
+  })
+
+  const args = (out: string, extra: string[] = []) =>
+    parseRecord([checkout, '--out', join(dir, out), '--seconds', '1', '--fps', '8', '--scale', '0.5', ...extra])
+
+  it('makes the same GIF twice', async () => {
+    const a = await record(await args('a.gif', ['--set', 'load=30']), { viewer })
+    const b = await record(await args('b.gif', ['--set', 'load=30']), { viewer })
+    expect(a.subarray(0, 6).toString('latin1')).toBe('GIF89a')
+    expect(a.equals(b)).toBe(true)
+    // the definition is what is drawn: its title is in the SVG
+    const svg = (await record(await args('b.svg', ['--caption']), { viewer })).toString('utf8')
+    expect(svg).toContain('Checkout pipeline')
+  }, 120_000)
+
+  it('stops on a definition with an error, before opening a browser', async () => {
+    const broken = join(dir, 'broken.loadmap')
+    await writeFile(broken, 'loadmap 1\nload { max: 3 }\n')
+    await expect(record(await parseRecord([broken, '--out', join(dir, 'x.gif')]), { viewer })).rejects.toThrow(
+      `${broken}:1:1 error: a definition needs at least one flow`,
+    )
+    await expect(record(await args('y.gif'), { viewer: join(dir, 'none') })).rejects.toThrow(/no viewer in/)
+  })
 })

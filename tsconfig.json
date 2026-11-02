@@ -18,6 +18,7 @@
   "include": [
     "packages/*/src",
     "packages/*/test",
+    "packages/*/viewer",
     "examples",
     "apps/*/src",
     "apps/*/vite.config.ts",
