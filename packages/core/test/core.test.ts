@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   around,
+  assertHolds,
+  check,
   compare,
+  crossing,
   dateAt,
   defineModel,
   estimated,
@@ -9,6 +12,7 @@ import {
   headroom,
   measured,
   multiple,
+  multiples,
   niceStep,
   p,
   parseAsOf,
@@ -172,7 +176,7 @@ describe('format', () => {
 })
 
 /** Bisection lands within 1e-12 of a crossing: compare to 6 places. */
-const round = (x: number | null) => (x == null ? x : Number(x.toFixed(6)))
+const round = (x: number | null | undefined) => (x == null ? x : Number(x.toFixed(6)))
 
 // the API carries 100 req/s per 1× against 1,000 per node: 50 % at 5× a node, 100 % at 10× a node. The database
 // carries half of it (a quarter with the cache) against 1,500 q/s: 50 % at 15×, at 30× with the cache.
@@ -363,5 +367,175 @@ describe('headroom', () => {
       ['Two nodes', false, 10],
       ['Cache', false, 5],
     ])
+  })
+})
+
+// the API carries 100 req/s per 1× against 1,000 (exact); the cache 100 per 1× against an estimated 1,200 ±30 %:
+// 50 % at 6× stated, 4.2× at 840 and 7.8× at 1,560. The API's 5× lies between, so the cache may come first.
+const unsure = (cache: Parameters<typeof estimated>[2] = { within: 0.3 }, expect?: any) =>
+  defineModel({
+    load: p.load({ max: 100 }),
+    params: { big: p.switch({ label: 'Big cache', default: false }) },
+    scenarios: { Today: {}, Big: { big: true } },
+    flows: { req: { rate: ({ load }: any) => 100 * load } },
+    components: {
+      api: {
+        name: 'API',
+        short: 'the API',
+        demand: ({ flows }: any) => flows.req,
+        capacity: measured(1000, 'req/s'),
+        over: 'x',
+      },
+      cache: {
+        name: 'Cache',
+        short: 'the cache',
+        demand: ({ flows }: any) => flows.req,
+        capacity: ({ big }: any) => estimated(big ? 2400 : 1200, 'req/s', cache),
+        over: 'y',
+      },
+    },
+    stages: { api: pass('api') },
+    routes: { req: ['api'] },
+    expect,
+  } as any)
+
+describe('uncertainty', () => {
+  it('keeps the ± on a capacity, and a source as the third argument still works', () => {
+    expect(estimated(10, 'x', { source: 's', within: 0.3 })).toEqual({
+      value: 10,
+      unit: 'x',
+      provenance: 'estimated',
+      source: 's',
+      within: 0.3,
+    })
+    expect(measured(10, 'x', 's')).toEqual({ value: 10, unit: 'x', provenance: 'measured', source: 's' })
+    expect(measured(10, 'x', { within: 0 })).not.toHaveProperty('within')
+    for (const w of [-0.1, 1, Number.NaN]) expect(() => estimated(10, 'x', { within: w })).toThrow(/within/)
+  })
+
+  it('puts the edges of a range at the crossings at the capacity bounds', () => {
+    const r = unsure().evaluate().components.cache!
+    expect([r.target, r.targetRange?.low, r.targetRange?.high].map(round)).toEqual([6, 4.2, 7.8])
+    expect([r.full, r.fullRange?.low, r.fullRange?.high].map(round)).toEqual([12, 8.4, 15.6])
+    // the same as crossing() on the utilization at the bounds, and as a model whose capacity is the bound
+    const util = (cap: number) => (load: number) => (100 * load) / cap
+    expect(r.targetRange!.low).toBe(crossing(util(1200 * 0.7), 0.5, 2000))
+    expect(r.targetRange!.high).toBe(crossing(util(1200 * 1.3), 0.5, 2000))
+    for (const [w, edge] of [
+      [-0.3, 'low'],
+      [0.3, 'high'],
+    ] as const) {
+      const fixed = defineModel({
+        ...(unsure().def as any),
+        components: {
+          ...unsure().def.components,
+          cache: { ...unsure().def.components.cache, capacity: estimated(1200 * (1 + w), 'req/s') },
+        },
+      })
+      expect(r.targetRange![edge]).toBe(fixed.evaluate().components.cache!.target)
+      expect(r.fullRange![edge]).toBe(fixed.evaluate().components.cache!.full)
+    }
+    // an exact capacity has a range of one point
+    const api = unsure().evaluate().components.api!
+    expect(api.targetRange).toEqual({ low: api.target, high: api.target })
+  })
+
+  it('ranks on the pessimistic edge and says so in the verdict', () => {
+    const ev = unsure().evaluate({ load: 2 })
+    expect(ev.ranked.map((c) => c.id)).toEqual(['cache', 'api'])
+    expect(ev.firstLimit?.id).toBe('cache')
+    expect([ev.target?.low, ev.target?.high].map(round)).toEqual([4.2, 5])
+    expect([ev.full?.low, ev.full?.high].map(round)).toEqual([8.4, 10])
+    expect(ev.verdict.text).toBe(
+      'At 2×, every component is under the 50 % target. It holds up to between 4.2× and 5×; the cache is the first limit (capacity estimated ±30 %).',
+    )
+    expect(ev.presets.map((p) => p.label)).toEqual(['Today · 1×', '50 % target · 4.2×', 'Runs out · 8.4×'])
+  })
+
+  it('names the capacity whose measurement would change the answer', () => {
+    const ev = unsure().evaluate()
+    expect(ev.measure?.component).toBe('cache')
+    expect(ev.measure?.firstLimit).toBe('api')
+    expect(ev.measure?.text).toBe(
+      'Measuring the cache would change the answer: at its stated capacity, the API is the first limit and the 50 % target holds up to 5×.',
+    )
+    // a big cache is past the API at either bound: measuring it would only narrow its own range, not the answer
+    expect(unsure().evaluate({ big: true } as any).measure).toBeNull()
+    // ±3 % is narrow enough
+    expect(unsure({ within: 0.03 }).evaluate().measure).toBeNull()
+  })
+
+  it('formats a range of multiples', () => {
+    expect(multiples({ low: 4.27, high: 13.8 })).toBe('between 4.2× and 13×')
+    expect(multiples({ low: 4.27, high: 13.8 }, 2000, true)).toBe('4.2×–13×')
+    expect(multiples({ low: 4.27, high: 4.29 })).toBe('4.2×')
+    expect(multiples({ low: 4.2, high: Number.POSITIVE_INFINITY })).toBe('4.2× or more')
+  })
+
+  it('compares scenarios on the pessimistic edge', () => {
+    const c = compare(unsure())
+    expect(c.rows.map((r) => [r.label, round(r.target), round(r.targetRange?.high ?? null)])).toEqual([
+      ['Today', 4.2, 5],
+      ['Big', 5, 5],
+    ])
+    expect(c.text).toBe(
+      'Big buys more headroom: the 50 % target holds up to 5×, limited by the API, against between 4.2× and 5× in Today.',
+    )
+  })
+
+  it('draws a band whose edges cross where the range says', () => {
+    const line = headroom(unsure()).lines[0]!
+    expect(line.band).not.toBeNull()
+    for (const [edge, series] of [
+      ['low', line.band!.upper],
+      ['high', line.band!.lower],
+    ] as const) {
+      const x = line.targetRange![edge]
+      const i = series.findIndex(([, u]) => (u ?? 0) >= 0.5)
+      expect(series[i - 1]![0]).toBeLessThan(x)
+      expect(series[i]![0]).toBeGreaterThanOrEqual(x)
+    }
+    // the stated line crosses at the first stated crossing: the API's 5×
+    expect(round(line.target)).toBe(5)
+    expect(headroom(sized).lines[0]!.band).toBeNull()
+  })
+})
+
+describe('expectations', () => {
+  it('hold on the pessimistic edge', () => {
+    const m = unsure(undefined, [
+      { label: 'Today keeps 4×', target: 4 },
+      { scenario: 'Big', target: 5, full: 10 },
+      { component: 'api', full: 10 },
+    ])
+    expect(check(m).map((r) => [r.ok, r.message])).toEqual([
+      [true, 'the 50 % target holds up to between 4.2× and 5×, limited by the cache (capacity estimated ±30 %)'],
+      [true, 'the 50 % target holds up to 5× in Big, limited by the API; the API runs out at 10× in Big'],
+      [true, 'the API runs out at 10×'],
+    ])
+    expect(() => assertHolds(m)).not.toThrow()
+  })
+
+  it('fail with what was expected and what was found', () => {
+    const m = unsure(undefined, [{ label: 'Today keeps 5×', target: 5 }, { full: 9 }])
+    expect(check(m).map((r) => [r.ok, r.message])).toEqual([
+      [
+        false,
+        'expected at least 5×, but the 50 % target holds up to between 4.2× and 5×, limited by the cache (capacity estimated ±30 %)',
+      ],
+      [false, 'expected at least 9×, but the cache runs out at between 8.4× and 10× (capacity estimated ±30 %)'],
+    ])
+    expect(() => assertHolds(m)).toThrow(
+      '2 of 2 expectations failed:\n- Today keeps 5×: expected at least 5×, but the 50 % target holds up to between 4.2× and 5×, limited by the cache (capacity estimated ±30 %)\n- expected at least 9×, but the cache runs out at between 8.4× and 10× (capacity estimated ±30 %)',
+    )
+    // the same expectations can be passed in
+    expect(check(unsure(), [{ target: 4 }])[0]!.ok).toBe(true)
+  })
+
+  it('are checked when the model is defined', () => {
+    expect(() => unsure(undefined, [{ scenario: 'Later', target: 1 }])).toThrow(/unknown scenario "Later"/)
+    expect(() => unsure(undefined, [{ component: 'db', target: 1 }])).toThrow(/unknown component "db"/)
+    expect(() => unsure(undefined, [{ label: 'empty' }])).toThrow(/expectation "empty" needs a target or a full/)
+    expect(() => unsure(undefined, [{ target: 0 }])).toThrow(/above 0/)
   })
 })

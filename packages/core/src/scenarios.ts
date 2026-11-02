@@ -1,14 +1,18 @@
-import { around, joinAnd, multiple, pct } from './format'
-import type { ComponentResult, Model, Scenario, Verdict } from './model'
+import type { CrossingRange } from './capacity'
+import { joinAnd, pct } from './format'
+import { type ComponentResult, type Model, reach, type Scenario, type Verdict } from './model'
 import type { LooseValues, Values } from './params'
 
 /** One component in one scenario, against the baseline. */
 export interface ComponentChange<C extends string = string> {
   id: C
   name: string
-  /** The load multiple at the target; null when switched off. */
+  /** The load multiple at the target at the stated capacities; null when switched off. */
   target: number | null
   full: number | null
+  /** The same with every capacity at its low and at its high bound. */
+  targetRange: CrossingRange | null
+  fullRange: CrossingRange | null
   /** This scenario's target multiple ÷ the baseline's: 2 is twice the headroom. Null when either is off. */
   change: number | null
 }
@@ -19,12 +23,15 @@ export interface ScenarioRow<P = any, C extends string = string> {
   values: Values<P>
   firstLimit: ComponentResult<C> | null
   firstFull: ComponentResult<C> | null
-  /** Where the first limit reaches the target, and when, with growth. */
+  /** Where the first limit reaches the target on the pessimistic edge, and when, with growth. */
   target: number | null
   targetDate: Date | null
-  /** Where the first component reaches 100 %, and when. */
+  /** Where the first component reaches 100 % on the pessimistic edge, and when. */
   full: number | null
   fullDate: Date | null
+  /** Both edges: every capacity at its low and at its high bound. */
+  targetRange: CrossingRange | null
+  fullRange: CrossingRange | null
   verdict: Verdict
   /** Every component, in the model's order. */
   components: readonly ComponentChange<C>[]
@@ -44,8 +51,8 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
   const evs = model.scenarios.map((s) => ({ s, ev: model.evaluate({ ...s.values, load } as Partial<Values<P>>) }))
   const base = evs[0]?.ev
   const rows = evs.map(({ s, ev }): ScenarioRow<P, C> => {
-    const target = ev.firstLimit?.target ?? null
-    const full = ev.firstFull?.full ?? null
+    const target = ev.target?.low ?? null
+    const full = ev.full?.low ?? null
     return {
       label: s.label,
       values: ev.values,
@@ -55,6 +62,8 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
       targetDate: model.dateAt(target),
       full,
       fullDate: model.dateAt(full),
+      targetRange: ev.target,
+      fullRange: ev.full,
       verdict: ev.verdict,
       components: model.componentIds.map((c) => {
         const r = ev.components[c]
@@ -63,6 +72,8 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
           name: r.name,
           target: r.target,
           full: r.full,
+          targetRange: r.targetRange,
+          fullRange: r.fullRange,
           change: ratio(r.target, base!.components[c].target),
         }
       }),
@@ -71,8 +82,8 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
   if (rows.length < 2) return { rows, best: null, text: '' }
 
   const th = pct(model.thresholds.target)
-  const at = (x: number | null, d: Date | null) => `${multiple(x, model.searchMax)}${d ? ` (${around(d)})` : ''}`
-  const upTo = (r: ScenarioRow<P, C>) => at(r.target, r.targetDate)
+  const at = (x: CrossingRange | null) => reach(x, model.searchMax, model.dateAt)
+  const upTo = (r: ScenarioRow<P, C>) => at(r.targetRange)
   // the target first; between equal targets, the one that runs out later
   const order = (x: number | null) => (x == null ? Number.NEGATIVE_INFINITY : x)
   const sameTarget = (a: ScenarioRow<P, C>, b: ScenarioRow<P, C>) => order(a.target) === order(b.target)
@@ -87,9 +98,7 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
     rows
       .filter((r) => !leaders.includes(r))
       .map((r) =>
-        sameTarget(r, top)
-          ? `${upTo(r)} in ${r.label} (runs out at ${at(r.full, r.fullDate)})`
-          : `${upTo(r)} in ${r.label}`,
+        sameTarget(r, top) ? `${upTo(r)} in ${r.label} (runs out at ${at(r.fullRange)})` : `${upTo(r)} in ${r.label}`,
       ),
   )
   if (leaders.length > 1)
@@ -100,7 +109,7 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
     }
   const by = top.firstLimit ? `, limited by ${top.firstLimit.short}` : ''
   const later = rows.some((r) => r !== top && sameTarget(r, top))
-    ? `${by ? ',' : ''} and runs out at ${at(top.full, top.fullDate)}`
+    ? `${by ? ',' : ''} and runs out at ${at(top.fullRange)}`
     : ''
   return {
     rows,
@@ -128,9 +137,14 @@ export interface HeadroomLine<C extends string = string> {
   selected: boolean
   /** The highest utilization of any component at each load: the line that crosses where the first limit does. */
   envelope: Series
-  /** Exactly where the envelope reaches the target and 100 %: the first limit's crossings, not read off the line. */
+  /** Exactly where the envelope reaches the target and 100 %: the first crossings, not read off the line. */
   target: number | null
   full: number | null
+  /** The envelope with every capacity at its low bound (`upper`) and its high bound (`lower`); null without a ±. */
+  band: { upper: Series; lower: Series } | null
+  /** Where the band reaches the target and 100 %: the first crossings at the low and at the high bounds. */
+  targetRange: CrossingRange | null
+  fullRange: CrossingRange | null
   /** Each component's own line. */
   components: readonly { id: C; name: string; points: Series; target: number | null; full: number | null }[]
 }
@@ -165,13 +179,20 @@ export function headroom<P, C extends string>(
   const evs = sets.map((s) => ({ ...s, ev: model.evaluate(s.values as Partial<Values<P>>) }))
 
   const from = Math.max(0.1, Math.min(1, model.load.min))
-  const ends = evs.map((e) => e.ev.firstFull?.full).filter((x): x is number => x != null && Number.isFinite(x))
+  const ends = evs.map((e) => e.ev.full?.high).filter((x): x is number => x != null && Number.isFinite(x))
   const to = Math.min(model.searchMax, Math.max(model.load.max, ...ends.map((x) => x * 1.25)))
   const n = Math.max(2, o.samples ?? 120)
   const xs = Array.from({ length: n }, (_, i) => from * (to / from) ** (i / (n - 1)))
 
   const lines = evs.map(({ label, values: v, ev }): HeadroomLine<C> => {
     const at = xs.map((x) => model.utilization({ ...v, load: x } as Partial<Values<P>>))
+    const top = (u: Readonly<Record<C, number | null>>) => {
+      const live = Object.values(u).filter((x): x is number => x != null)
+      return live.length ? Math.max(...live) : null
+    }
+    const ranged = Object.values(ev.components).some((c) => (c as ComponentResult<C>).capacity?.within)
+    const edge = (bound: 'low' | 'high'): Series =>
+      xs.map((x) => [x, top(model.utilization({ ...v, load: x } as Partial<Values<P>>, bound))] as const)
     const components = model.componentIds.map((c) => ({
       id: c,
       name: ev.components[c].name,
@@ -179,16 +200,23 @@ export function headroom<P, C extends string>(
       target: ev.components[c].target,
       full: ev.components[c].full,
     }))
-    const envelope = xs.map((x, i) => {
-      const live = Object.values(at[i]!).filter((u): u is number => u != null)
-      return [x, live.length ? Math.max(...live) : null] as const
-    })
+    const envelope = xs.map((x, i) => [x, top(at[i]!)] as const)
+    const first = (k: 'target' | 'full') => {
+      const xs = Object.values(ev.components).flatMap((c) => {
+        const x = (c as ComponentResult<C>)[k]
+        return x == null ? [] : [x]
+      })
+      return xs.length ? Math.min(...xs) : null
+    }
     return {
       label,
       selected: label == null || label === match?.label,
       envelope,
-      target: ev.firstLimit?.target ?? null,
-      full: ev.firstFull?.full ?? null,
+      target: first('target'),
+      full: first('full'),
+      band: ranged ? { upper: edge('low'), lower: edge('high') } : null,
+      targetRange: ev.target,
+      fullRange: ev.full,
       components,
     }
   })

@@ -22,6 +22,24 @@ export function multiple(u: number | null, searchMax = 2000): string {
   return u >= 10 ? `${Math.floor(u)}×` : `${Math.floor(u * 10) / 10}×`
 }
 
+/**
+ * Two load multiples: "7.4×" when both edges read the same, else "between 7.4× and 10×" or, short, "7.4×–10×". An
+ * edge that never comes reads "7.4× or more" ("≥ 7.4×").
+ */
+export function multiples(r: { low: number; high: number }, searchMax = 2000, short = false): string {
+  const [lo, hi] = [multiple(r.low, searchMax), multiple(r.high, searchMax)]
+  if (lo === hi) return lo
+  if (!Number.isFinite(r.high)) return short ? `≥ ${lo}` : `${lo} or more`
+  return short ? `${lo}–${hi}` : `between ${lo} and ${hi}`
+}
+
+/** When two edges are reached: "(around March 2029)", "(between March 2029 and May 2030)" or "(… or later)". */
+export function months(low: Date | null, high: Date | null): string {
+  if (!low) return ''
+  if (!high) return ` (${around(low)} or later)`
+  return monthOf(low) === monthOf(high) ? ` (${around(low)})` : ` (between ${monthOf(low)} and ${monthOf(high)})`
+}
+
 /** A percentage of a 0–1 share: 50 %. */
 export function pct(share: number): string {
   return `${Math.round(share * 100)} %`

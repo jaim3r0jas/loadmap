@@ -1,6 +1,7 @@
 import type { LinearFit } from './calibrate'
-import type { Capacity } from './capacity'
-import { around, fmt, joinAnd, multiple, pct } from './format'
+import { type Bound, boundOf, type Capacity, type CrossingRange } from './capacity'
+import type { Expectation } from './check'
+import { fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import { type ResolvedStage, resolveStage, type StageDef } from './stages'
@@ -79,6 +80,8 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   thresholds?: { target?: number; full?: number }
   /** The highest load multiple the limits search; beyond it a component "never" runs out. Default 2000. */
   searchMax?: number
+  /** What must keep holding: `check()`, `assertHolds()` and `loadmap check` test them. */
+  expect?: readonly Expectation<NoInfer<C>>[]
 }
 
 export type ComponentState = 'off' | 'ok' | 'warn' | 'over'
@@ -97,6 +100,9 @@ export interface ComponentResult<C extends string = string> {
   target: number | null
   /** The load multiple at which utilization reaches 100 %. */
   full: number | null
+  /** Where it reaches the target with every capacity at its low and at its high bound; null when off. */
+  targetRange: CrossingRange | null
+  fullRange: CrossingRange | null
   over: string
   describe?: string
 }
@@ -119,6 +125,17 @@ export interface Scenario<P = any> {
   values: Omit<Values<P>, 'load'>
 }
 
+/** The capacity whose ± matters most to where the target holds. */
+export interface Measure<C extends string = string> {
+  component: C
+  /** Where the target would hold with that capacity at its stated value and the others still ranged. */
+  target: CrossingRange
+  /** The first limit then: another component when measuring would change the answer. */
+  firstLimit: C
+  /** "Measuring the API gateway would change the answer: …" */
+  text: string
+}
+
 export type Assumption =
   | { kind: 'capacity'; component: string; name: string; capacity: Capacity }
   | { kind: 'fit'; name: string; fit: LinearFit }
@@ -127,13 +144,19 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   values: Values<P>
   flows: Readonly<Record<F, number>>
   components: Readonly<Record<C, ComponentResult<C>>>
-  /** Components in the order they reach the target. */
+  /** Components in the order they reach the target, on the pessimistic edge (every capacity at its low bound). */
   ranked: readonly ComponentResult<C>[]
-  /** The component that reaches the target first. */
+  /** The component that reaches the target first, on the pessimistic edge. */
   firstLimit: ComponentResult<C> | null
-  /** The component that reaches 100 % first. */
+  /** The component that reaches 100 % first, on the pessimistic edge. */
   firstFull: ComponentResult<C> | null
+  /** Where the first component reaches the target with every capacity at its low bound, and at its high bound. */
+  target: CrossingRange | null
+  /** Where the first component reaches 100 %, the same way. */
+  full: CrossingRange | null
   verdict: Verdict
+  /** Which capacity, once measured, would change or narrow the answer most; null when the range is narrow. */
+  measure: Measure<C> | null
   presets: readonly Preset<P>[]
   assumptions: readonly Assumption[]
   stages: Readonly<Record<S, ResolvedStage>>
@@ -158,12 +181,17 @@ export interface Model<P = any, F extends string = string, C extends string = st
   searchMax: number
   /** Declared scenarios in order; the first is the baseline. */
   scenarios: readonly Scenario<P>[]
+  /** What must keep holding, as declared. */
+  expectations: readonly Expectation<C>[]
   growth?: Growth
   defaults(): Values<P>
   isEnabled(id: string, values: LooseValues): boolean
   evaluate(values?: Partial<Values<P>>): Evaluation<P, F, C, S>
-  /** Each component's utilization at these values: what `evaluate` computes first, without the crossings. */
-  utilization(values?: Partial<Values<P>>): Readonly<Record<C, number | null>>
+  /**
+   * Each component's utilization at these values: what `evaluate` computes first, without the crossings. With a
+   * bound, every capacity is read at its low or high bound.
+   */
+  utilization(values?: Partial<Values<P>>, bound?: Bound): Readonly<Record<C, number | null>>
   /** The scenario whose values these are, ignoring the load; null when they match none. */
   scenarioOf(values: LooseValues): Scenario<P> | null
   /**
@@ -234,22 +262,97 @@ export function defineModel<
   const scenarioOf = (values: LooseValues) =>
     scenarios.find((s) => Object.entries(s.values).every(([k, v]) => values[k] === v)) ?? null
 
+  const expectations = (def.expect ?? []).map((e) => {
+    const name = e.label ? `expectation "${e.label}"` : 'an expectation'
+    if (e.scenario != null && !scenarios.some((s) => s.label === e.scenario))
+      throw new Error(`loadmap: ${name} names unknown scenario "${e.scenario}"`)
+    if (e.component != null && !componentIds.includes(e.component))
+      throw new Error(`loadmap: ${name} names unknown component "${e.component}"`)
+    if (e.target == null && e.full == null) throw new Error(`loadmap: ${name} needs a target or a full multiple`)
+    for (const k of ['target', 'full'] as const) {
+      const x = e[k]
+      if (x != null && !(x > 0 && Number.isFinite(x)))
+        throw new Error(`loadmap: ${name} needs a ${k} multiple above 0, not ${x}`)
+    }
+    return { ...e } as Expectation<C>
+  })
+
+  const utilAt = (values: LooseValues, bound?: Bound, pinned?: string) => (load: number) =>
+    context(def as any, { ...values, load }, bound, pinned).ctx.util
+  /** The highest utilization of any live component: it crosses a threshold where the first of them does. */
+  const envelope = (values: LooseValues, bound?: Bound, pinned?: string) => (load: number) => {
+    const util = utilAt(values, bound, pinned)(load)
+    let top: number | null = null
+    for (const c of componentIds) {
+      const u = util[c] as number | null
+      if (u != null && (top == null || u > top)) top = u
+    }
+    return top
+  }
+
   // crossings depend on every value but the load: cache them per combination
-  const crossingCache = new Map<string, Record<string, { target: number | null; full: number | null }>>()
-  const crossingsFor = (values: LooseValues) => {
+  const crossingCache = new Map<string, Crossings>()
+  const crossingsFor = (values: LooseValues): Crossings => {
     const { load: _, ...rest } = values
     const key = JSON.stringify(rest)
-    let hit = crossingCache.get(key)
-    if (!hit) {
-      hit = {}
-      for (const c of componentIds) {
-        const at = (load: number) => context(def as any, { ...values, load }).ctx.util[c] as number | null
-        hit[c] = { target: crossing(at, thresholds.target, searchMax), full: crossing(at, thresholds.full, searchMax) }
+    const hit = crossingCache.get(key)
+    if (hit) return hit
+    const stated = context(def as any, values)
+    const uncertain = componentIds.filter((c) => (stated.capacity(c).within ?? 0) > 0)
+    const components: Crossings['components'] = {}
+    for (const c of componentIds) {
+      const at = (bound?: Bound) => (load: number) => utilAt(values, bound)(load)[c] as number | null
+      const both = (th: number) => {
+        const x = crossing(at(), th, searchMax)
+        if (x == null) return { x, range: null }
+        // without a ± anywhere, every bound is the stated value
+        if (!uncertain.length) return { x, range: { low: x, high: x } }
+        const low = crossing(at('low'), th, searchMax) ?? x
+        const high = crossing(at('high'), th, searchMax) ?? x
+        return { x, range: { low, high } }
       }
-      if (crossingCache.size > 64) crossingCache.delete(crossingCache.keys().next().value!)
-      crossingCache.set(key, hit)
+      const t = both(thresholds.target)
+      const f = both(thresholds.full)
+      components[c] = { target: t.x, full: f.x, targetRange: t.range, fullRange: f.range }
     }
-    return hit
+    const out: Crossings = { components, measure: measure(values, uncertain, components) }
+    if (crossingCache.size > 64) crossingCache.delete(crossingCache.keys().next().value!)
+    crossingCache.set(key, out)
+    return out
+  }
+
+  /**
+   * The capacity whose ± matters most: with it at its stated value (the others still ranged), the target range
+   * narrows the most. Only when the range is wider than 10 %.
+   */
+  const measure = (
+    values: LooseValues,
+    uncertain: readonly string[],
+    components: Crossings['components'],
+  ): Crossings['measure'] => {
+    const ranges = Object.values(components).flatMap((r) => (r.targetRange ? [r.targetRange] : []))
+    if (!uncertain.length || !ranges.length) return null
+    const now = { low: Math.min(...ranges.map((r) => r.low)), high: Math.min(...ranges.map((r) => r.high)) }
+    const width = (r: CrossingRange) => Math.log(Math.min(r.high, searchMax * 2) / r.low)
+    if (!(now.low > 0 && Number.isFinite(now.low)) || width(now) <= Math.log(1.1)) return null
+    let best: { component: string; target: CrossingRange; gain: number } | null = null
+    for (const k of uncertain) {
+      const low = crossing(envelope(values, 'low', k), thresholds.target, searchMax)
+      const high = crossing(envelope(values, 'high', k), thresholds.target, searchMax)
+      if (low == null || high == null || !(low > 0)) continue
+      const target = { low, high }
+      const gain = width(now) - width(target)
+      if (gain > 0.01 && (!best || gain > best.gain)) best = { component: k, target, gain }
+    }
+    if (!best) return null
+    // the first limit then: whichever is highest where the pessimistic edge is reached
+    const util = utilAt(values, 'low', best.component)(best.target.low)
+    let first = best.component
+    for (const c of componentIds) {
+      const u = util[c] as number | null
+      if (u != null && u > ((util[first] as number | null) ?? Number.NEGATIVE_INFINITY)) first = c
+    }
+    return { component: best.component, target: best.target, firstLimit: first }
   }
 
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
@@ -271,8 +374,7 @@ export function defineModel<
         demand: off ? null : (ctx.demand[c] as number),
         capacity: off ? null : capacity(c),
         state: off ? 'off' : util > thresholds.full ? 'over' : util > thresholds.target ? 'warn' : 'ok',
-        target: crossings[c]!.target,
-        full: crossings[c]!.full,
+        ...crossings.components[c]!,
         over: over(c),
         describe: describe(c),
       }
@@ -281,13 +383,25 @@ export function defineModel<
     const all = componentIds.map((c) => components[c])
     const live = all.filter((r) => r.util != null)
     // switched-off components go last, after live ones that never reach the target
-    const order = (x: number | null) => (x == null ? Number.POSITIVE_INFINITY : x)
-    const cmp = (x: number | null, y: number | null) => (order(x) === order(y) ? 0 : order(x) < order(y) ? -1 : 1)
+    const order = (x: number | null | undefined) => (x == null ? Number.POSITIVE_INFINITY : x)
+    const cmp = (x: number | null | undefined, y: number | null | undefined) =>
+      order(x) === order(y) ? 0 : order(x) < order(y) ? -1 : 1
+    // on the pessimistic edge first: a limit that may come early outranks one that surely comes a little later
     const ranked = [...all].sort(
-      (a, b) => Number(a.util == null) - Number(b.util == null) || cmp(a.target, b.target) || cmp(a.full, b.full),
+      (a, b) =>
+        Number(a.util == null) - Number(b.util == null) ||
+        cmp(a.targetRange?.low, b.targetRange?.low) ||
+        cmp(a.target, b.target) ||
+        cmp(a.fullRange?.low, b.fullRange?.low),
     )
-    const firstLimit = live.length ? live.reduce((a, b) => (order(b.target) < order(a.target) ? b : a)) : null
-    const firstFull = live.length ? live.reduce((a, b) => (order(b.full) < order(a.full) ? b : a)) : null
+    const firstLimit = live.length ? ranked[0]! : null
+    const firstFull = live.length ? live.reduce((a, b) => (cmp(b.fullRange?.low, a.fullRange?.low) < 0 ? b : a)) : null
+    const edges = (k: 'targetRange' | 'fullRange'): CrossingRange | null => {
+      const rs = live.flatMap((r) => (r[k] ? [r[k]] : []))
+      return rs.length ? { low: Math.min(...rs.map((r) => r.low)), high: Math.min(...rs.map((r) => r.high)) } : null
+    }
+    const target = edges('targetRange')
+    const full = edges('fullRange')
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
@@ -322,8 +436,11 @@ export function defineModel<
       ranked,
       firstLimit,
       firstFull,
-      verdict: verdict(values.load, live, firstLimit, thresholds, searchMax, when),
-      presets: presets(def, firstLimit, firstFull, thresholds, searchMax),
+      target,
+      full,
+      verdict: verdict(values.load, live, firstLimit, target, thresholds, searchMax, when),
+      measure: measureText(crossings.measure, components, firstLimit, thresholds, searchMax),
+      presets: presets(def, target, full, thresholds, searchMax),
       assumptions,
       stages,
       routes: def.routes as Record<F, readonly S[]>,
@@ -343,6 +460,7 @@ export function defineModel<
     thresholds,
     searchMax,
     scenarios,
+    expectations,
     growth,
     defaults,
     isEnabled: (id, values) => {
@@ -350,8 +468,8 @@ export function defineModel<
       return d ? isEnabled(d, values) : false
     },
     evaluate,
-    utilization: (partial) => {
-      const util = context(def as any, { ...defaults(), ...partial }).ctx.util as Record<C, number | null>
+    utilization: (partial, bound) => {
+      const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
       return Object.fromEntries(componentIds.map((c) => [c, util[c]])) as Record<C, number | null>
     },
     scenarioOf,
@@ -363,7 +481,13 @@ export function defineModel<
  * The model's numbers for one set of values. Every number is computed on first use and kept, so a model function
  * may read any other; a value that needs itself throws, naming the loop.
  */
-function context(def: ModelDef<any, string, string, string, string>, values: LooseValues) {
+function context(
+  def: ModelDef<any, string, string, string, string>,
+  values: LooseValues,
+  bound?: Bound,
+  /** A component whose capacity stays at its stated value under a bound. */
+  pinned?: string,
+) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
   const memo = <T>(key: string, f: () => T): T => {
@@ -399,7 +523,7 @@ function context(def: ModelDef<any, string, string, string, string>, values: Loo
   ctx.util = table(componentIds, (c) =>
     memo(`utilization of ${c}`, () => {
       if (!enabled(c)) return null
-      const cap = capacity(c).value
+      const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
       const d = ctx.demand[c] as number
       return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
     }),
@@ -446,10 +570,27 @@ export function crossing(util: (load: number) => number | null, th: number, max:
   return Number.POSITIVE_INFINITY
 }
 
+/** Where a range of multiples is reached, with its dates: "between 7.4× and 10× (between May 2029 and …)". */
+export function reach(
+  r: CrossingRange | null,
+  searchMax: number,
+  when: (x: number | null) => Date | null = () => null,
+): string {
+  if (!r) return multiple(null)
+  return `${multiples(r, searchMax)}${months(when(r.low), when(r.high))}`
+}
+
+/** " (capacity estimated ±30 %)"; nothing for a measured capacity without a ±. */
+export function sureness(c: Capacity | null): string {
+  if (!c || (c.provenance === 'measured' && !c.within)) return ''
+  return ` (capacity ${c.provenance}${c.within ? ` ±${pct(c.within)}` : ''})`
+}
+
 function verdict(
   load: number,
   live: readonly ComponentResult[],
   first: ComponentResult | null,
+  range: CrossingRange | null,
   th: { target: number; full: number },
   searchMax: number,
   when: (x: number | null) => Date | null,
@@ -457,9 +598,8 @@ function verdict(
   const at = `At ${fmt(load)}×`
   const target = `${pct(th.target)} target`
   if (!first) return { tier: 'ok', text: `${at}, every component is switched off.` }
-  const est = (c: ComponentResult) => (c.capacity?.provenance === 'estimated' ? ' (capacity estimated)' : '')
-  const date = when(first.target)
-  const upTo = `${multiple(first.target, searchMax)}${date ? ` (${around(date)})` : ''}`
+  const est = (c: ComponentResult) => sureness(c.capacity)
+  const upTo = reach(range, searchMax, when)
   const holds = `The ${target} holds up to ${upTo}, limited by ${first.short}${est(first)}.`
   const verb = (list: readonly ComponentResult[], one: string, many: string) =>
     list.length > 1 || list[0]?.plural ? many : one
@@ -486,10 +626,28 @@ function verdict(
   }
 }
 
+function measureText<C extends string>(
+  m: Crossings['measure'],
+  components: Readonly<Record<C, ComponentResult<C>>>,
+  first: ComponentResult<C> | null,
+  th: { target: number; full: number },
+  searchMax: number,
+): Measure<C> | null {
+  if (!m || !first) return null
+  const k = components[m.component as C]
+  const then = components[m.firstLimit as C]
+  const holds = `the ${pct(th.target)} target holds up to ${multiples(m.target, searchMax)}`
+  const text =
+    then.id !== first.id
+      ? `Measuring ${k.short} would change the answer: at its stated capacity, ${then.short} ${then.plural ? 'are' : 'is'} the first limit and ${holds}.`
+      : `Measuring ${k.short} would narrow this most: at its stated capacity, ${holds}.`
+  return { component: k.id, target: m.target, firstLimit: then.id, text }
+}
+
 function presets<P>(
   def: ModelDef<P, string, string, string, string>,
-  first: ComponentResult | null,
-  firstFull: ComponentResult | null,
+  target: CrossingRange | null,
+  full: CrossingRange | null,
   th: { target: number; full: number },
   searchMax: number,
 ): Preset<P>[] {
@@ -503,7 +661,13 @@ function presets<P>(
     const load = Math.min(max, Math.floor(x / step) * step)
     out.push({ label: `${label} · ${multiple(x, searchMax)}`, values: { load } as Partial<Values<P>>, derived: true })
   }
-  at(`${pct(th.target)} target`, first?.target)
-  at('Runs out', firstFull?.full)
+  // the pessimistic edge: where it may already happen
+  at(`${pct(th.target)} target`, target?.low)
+  at('Runs out', full?.low)
   return out
+}
+
+interface Crossings {
+  components: Record<string, Pick<ComponentResult, 'target' | 'full' | 'targetRange' | 'fullRange'>>
+  measure: { component: string; target: CrossingRange; firstLimit: string } | null
 }

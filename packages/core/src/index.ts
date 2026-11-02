@@ -1,6 +1,16 @@
 export type { LinearFit } from './calibrate'
-export { type Capacity, estimated, measured, type Provenance } from './capacity'
-export { around, fmt, joinAnd, kfmt, monthOf, multiple, niceStep, pct, secs } from './format'
+export {
+  type Bound,
+  boundOf,
+  type Capacity,
+  type CapacityOptions,
+  type CrossingRange,
+  estimated,
+  measured,
+  type Provenance,
+} from './capacity'
+export { assertHolds, type CheckResult, check, type Expectation } from './check'
+export { around, fmt, joinAnd, kfmt, monthOf, months, multiple, multiples, niceStep, pct, secs } from './format'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
 export {
   type Assumption,
@@ -12,11 +22,14 @@ export {
   defineModel,
   type Evaluation,
   type FlowDef,
+  type Measure,
   type Model,
   type ModelDef,
   type Overload,
   type Preset,
+  reach,
   type Scenario,
+  sureness,
   type Verdict,
 } from './model'
 export {
