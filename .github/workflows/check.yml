@@ -1,0 +1,21 @@
+# pnpm check on every push and pull request: typecheck, lint, every test (Node and Chromium), build, bundle budget
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check
+      # the tarballs in a fresh app, as a stranger installs them
+      - run: pnpm verify:pack
