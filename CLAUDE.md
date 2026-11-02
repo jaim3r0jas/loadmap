@@ -39,6 +39,17 @@ Pieces: `pnpm typecheck`, `pnpm lint` (`pnpm format` fixes), `pnpm test:node`, `
 The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
 `__screenshots__/` next to each test (ignored by git). Commit only with `pnpm check && git commit`.
 
+- Load nvm in every new shell before pnpm: `. ~/.nvm/nvm.sh && nvm use`. The default node on `PATH` can be a broken
+  Homebrew build.
+- "Cannot find native binding" from Vitest or tsdown: `pnpm install --force`. The lockfile has every platform, but a
+  checkout installed on another Mac lacks this machine's binding.
+- Tests never depend on the wall clock: a busy machine (load 30+) breaks them. Time code with
+  `process.threadCpuUsage()` (`process.cpuUsage()` counts every Vitest thread), and give an `expect.poll` after a new
+  layout `{ timeout: 5000 }`.
+- A browser test that compares two boards waits two frames after `ready()` before stepping (the board's
+  ResizeObserver clears the canvas a frame later) and leaves out `.lm-meters` (they refresh on a 250 ms wall-clock
+  timer).
+
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
 
