@@ -125,7 +125,7 @@ story: [
 ## Or as text
 
 The same model and view can be written as a `.loadmap` definition and edited next to its live diagram (`pnpm dev`,
-then the editor tab). `@loadmap/dsl` compiles it to what `<Loadmap>` takes:
+then the editor page). `@loadmap/dsl` compiles it to what `<Loadmap>` takes:
 
 ```
 loadmap 1
@@ -159,7 +159,7 @@ Formulas are a small subset of TypeScript expressions, never `eval`, so a defini
 ```bash
 nvm use && corepack enable pnpm && pnpm install
 pnpm exec playwright install chromium   # once, for the browser tests
-pnpm dev                                # the playground
+pnpm dev                                # the docs site: the examples, the templates, the editor
 pnpm check                              # typecheck, lint, tests, build, bundle budget
 pnpm verify:pack                        # the tarballs in a fresh Vite app outside the monorepo
 ```
@@ -173,15 +173,15 @@ A `.loadmap` records without a page of its own: `pnpm record examples/checkout/c
 
 ```bash
 pnpm dev &   # or any page that calls expose(handle) from @loadmap/export
-pnpm record 'http://localhost:5173/?example=alerts' --out alerts.gif --script ramp.json
+pnpm record 'http://localhost:5173/examples/alerts/' --out alerts.gif --script ramp.json
 ```
 
 `ramp.json` is `[{ "at": 0, "set": { "load": 5 } }, { "at": 3, "scenario": "Proposed" }]`; `--out` picks GIF,
 WebM, MP4, PNG or SVG. The clock is fixed, so the same options give the same file. Media can stand alone:
 
 ```bash
-pnpm record 'http://localhost:5173/?example=checkout' --out checkout.gif --caption --script ramp.json
-pnpm record 'http://localhost:5173/?example=checkout' --out poster.png --poster --scenario Proposed
+pnpm record 'http://localhost:5173/examples/checkout/' --out checkout.gif --caption --script ramp.json
+pnpm record 'http://localhost:5173/examples/checkout/' --out poster.png --poster --scenario Proposed
 ```
 
 `--caption` puts the title, scenario and load above the board and the verdict below it; `--poster` draws the board

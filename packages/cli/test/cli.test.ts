@@ -59,15 +59,14 @@ describe('arguments', () => {
   })
 })
 
-describe('recording the playground', () => {
+describe('recording the docs site', () => {
   let server: ViteDevServer
   let url: string
   let dir: string
 
   beforeAll(async () => {
     server = await createServer({
-      root: join(import.meta.dirname, '../../../apps/playground'),
-      configFile: join(import.meta.dirname, '../../../apps/playground/vite.config.ts'),
+      configFile: join(import.meta.dirname, '../../../apps/docs/vite.config.ts'),
       server: { port: 0, host: '127.0.0.1' },
       logLevel: 'error',
     })
@@ -83,7 +82,7 @@ describe('recording the playground', () => {
 
   const args = (out: string, extra: string[] = []) =>
     parseRecord([
-      `${url}?example=checkout`,
+      `${url}examples/checkout/`,
       '--out',
       join(dir, out),
       '--seconds',
@@ -118,7 +117,7 @@ describe('recording the playground', () => {
   it('writes a PNG through the command line', async () => {
     const out: string[] = []
     const png = join(dir, 'still.png')
-    expect(await main(['record', `${url}?example=alerts`, '--out', png, '--set', 'load=30'], (s) => out.push(s))).toBe(
+    expect(await main(['record', `${url}examples/alerts/`, '--out', png, '--set', 'load=30'], (s) => out.push(s))).toBe(
       0,
     )
     expect((await readFile(png)).subarray(1, 4).toString('latin1')).toBe('PNG')

@@ -3,7 +3,7 @@
 A `.loadmap` file defines a whole loadmap as text: the load and the controls, the flows and their routes, the boxes
 of the diagram with what each one does and what can run out. `@loadmap/dsl` reads it into the same `model` and
 `view` that `defineModel` and `defineView` build in TypeScript, so `<Loadmap>` draws it the same way. The editor
-(`@loadmap/editor`, the playground's Editor tab) shows it live as you type.
+(`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```
 loadmap 1

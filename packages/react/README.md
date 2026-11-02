@@ -32,12 +32,15 @@ const shop = defineModel({
   components: {
     app: {
       name: 'App pods',
-      demand: ({ flows }) => flows.requests * 0.002,
+      short: 'the app pods',
+      plural: true,
+      demand: ({ flows }) => flows.requests * 0.003,
       capacity: ({ pods }) => measured(pods * 2, 'cores', 'pod CPU limit'),
       over: 'requests wait and time out',
     },
     db: {
       name: 'Postgres',
+      short: 'the database',
       demand: ({ flows }) => flows.requests * 2,
       capacity: estimated(5_000, 'queries/s', { source: 'last year’s load test', within: 0.3 }),
       over: 'queries queue on the primary',

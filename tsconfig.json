@@ -20,8 +20,9 @@
     "packages/*/test",
     "packages/*/viewer",
     "examples",
-    "apps/*/src",
-    "apps/*/vite.config.ts",
+    "apps/docs/site",
+    "apps/docs/test",
+    "apps/docs/*.ts",
     "vitest.config.ts",
     "scripts/budget"
   ],

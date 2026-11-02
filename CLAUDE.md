@@ -24,8 +24,8 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws
-(`definition.test.ts`, `examples/roundtrip.ts`). `apps/playground` shows both and the editor (`pnpm dev`,
-`?example=alerts`, `?example=editor`). `docs/dsl.md` is the language guide.
+(`definition.test.ts`, `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): both examples, the templates and the editor
+live. `docs/dsl.md` is the language guide; the site includes it.
 
 ## Verification
 
@@ -90,22 +90,32 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
 - A feature of the TypeScript API that the language should express gets a line in both examples' `.loadmap` or a
   `compile.test.ts` case; the round-trip tests catch a drift.
 
+## Docs
+
+`apps/docs` is the site (Vite + React, static HTML). Pages are Markdown in `apps/docs/pages`, listed in `PAGES`
+(`apps/docs/pages.ts`), written into `apps/docs/site/` (the Vite root; the HTML is ignored by git) before Vite runs.
+`@include(path, "from", "to")` pulls lines from a repository file (the guide and the reference come from
+`docs/dsl.md`, the quick start from `packages/react/README.md`); site links are written from the root (`/language/`)
+and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
+under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
+`<div class="island" data-island="example|editor|templates|quickstart">`. `apps/docs/test/site.test.ts` builds the
+site, checks every link, and draws the live pages in Chromium.
+
 ## Recording
 
 A page calls `expose(handle)` (`@loadmap/export`); then `pnpm record <url> --out demo.gif [--script s.json]
 [--set load=30]` records it in headless Chromium on a fixed clock: the same options give the same GIF, byte for byte.
-The playground exposes the shown example: `pnpm dev`, then `pnpm record 'http://localhost:5173/?example=alerts'
---out alerts.gif`. `--caption` adds the title, scenario, load and verdict to every frame, `--scenario <label>`
+Each example page of the docs exposes its example: `pnpm dev`, then
+`pnpm record 'http://localhost:5173/examples/alerts/' --out alerts.gif`. `--caption` adds the title, scenario, load and verdict to every frame, `--scenario <label>`
 starts from a scenario, `--poster` (with `.png`) draws the board with the limits and the scenarios compared, and
 `.svg` writes the board as a file. `--story` plays the model's `story` steps (each step resolved from the defaults, so
-any step looks the same whichever came before). `pnpm record x.loadmap --out x.gif` compiles the definition and draws it in the
-viewer built into `packages/cli/dist/viewer` (`pnpm record` builds it). `loadmap check x.loadmap` runs its `expect`
+any step looks the same whichever came before). `pnpm record x.loadmap --out x.gif` compiles the definition and draws
+it in the viewer built into `packages/cli/dist/viewer` (`pnpm record` builds it). `loadmap check x.loadmap` runs its `expect`
 lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 
 ## Not yet
 
-State in the URL for TypeScript pages (editor links carry it), a docs site, publishing. Two live diagrams side by side, cost per
-scenario, goal seek; ranges for fits, Monte Carlo. In the editor:
-editing in the UI (an inspector that writes text edits, a click on a node that jumps to its source), hover help, a
-formatter, Export → TypeScript, the source in exported PNGs, a Vite plugin for
-`import m from './m.loadmap'`.
+State in the URL for TypeScript pages (editor links carry it), search in the docs. Two live diagrams side by side,
+cost per scenario, goal seek; ranges for fits, Monte Carlo. In the editor: editing in the UI (an inspector that writes
+text edits, a click on a node that jumps to its source), hover help, a formatter, Export → TypeScript, the source in
+exported PNGs, a Vite plugin for `import m from './m.loadmap'`.

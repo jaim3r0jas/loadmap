@@ -1,5 +1,5 @@
 {
-  "name": "playground",
+  "name": "docs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,12 +8,14 @@
     "preview": "node ../../scripts/node-version.mjs && vite preview"
   },
   "dependencies": {
+    "@loadmap/core": "workspace:*",
     "@loadmap/dsl": "workspace:*",
     "@loadmap/editor": "workspace:*",
     "@loadmap/example-alerts": "workspace:*",
     "@loadmap/example-checkout": "workspace:*",
     "@loadmap/export": "workspace:*",
     "@loadmap/react": "workspace:*",
+    "marked": "18.1.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   }
