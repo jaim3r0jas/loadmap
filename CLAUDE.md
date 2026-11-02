@@ -13,12 +13,12 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
 | Package           | What                                                                                       | Depends on                      |
 | ----------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
-| `@loadmap/core`   | params, limits, verdict, presets, scenarios, growth, compare, headroom; `core/calibrate`   | nothing                         |
+| `@loadmap/core`   | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate  | nothing                         |
 | `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                          | core                            |
 | `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                     |
 | `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme       | core, sim, layout; react (peer) |
 | `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI         | react, mediabunny               |
-| `@loadmap/cli`    | `loadmap record`: a page that calls `expose()` as GIF, WebM, MP4, PNG, poster or SVG       | playwright                      |
+| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations); `loadmap record` of a page or a `.loadmap` | dsl (bundled), playwright       |
 | `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, completions, share links    | core, layout                    |
 | `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 next to a live `<Loadmap>`, inline errors, share, download | dsl, react, @codemirror/*       |
 
@@ -57,7 +57,9 @@ The browser tests need Chromium once: `pnpm exec playwright install chromium`. T
 
 - **No DOM or React in core, sim or layout.** They run in Node tests; React is only the binding.
 - **Every capacity says where it came from**: `measured(...)`, `estimated(...)` or a `fitLinear(...)` result. The
-  verdict and the assumptions list show it; never add a bare number as a capacity.
+  verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`± 30%` in the
+  language) makes every crossing a range; the ranking, the first limit, presets, `compare()` and expectations use
+  its pessimistic edge (every capacity at its low bound), and without a ± every text reads as before.
 - **Dates only from `growth.asOf`**, never `Date.now()` or the locale: a page and its recordings say the same date
   on any day, on any machine.
 - **Randomness only through `rng(seed)`** (`@loadmap/sim`). `Math.random` anywhere in sim, layout, engine or export
@@ -87,13 +89,15 @@ A page calls `expose(handle)` (`@loadmap/export`); then `pnpm record <url> --out
 The playground exposes the shown example: `pnpm dev`, then `pnpm record 'http://localhost:5173/?example=alerts'
 --out alerts.gif`. `--caption` adds the title, scenario, load and verdict to every frame, `--scenario <label>`
 starts from a scenario, `--poster` (with `.png`) draws the board with the limits and the scenarios compared, and
-`.svg` writes the board as a file.
+`.svg` writes the board as a file. `pnpm record x.loadmap --out x.gif` compiles the definition and draws it in the
+viewer built into `packages/cli/dist/viewer` (`pnpm record` builds it). `loadmap check x.loadmap` runs its `expect`
+lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 
 ## Not yet
 
 ELK in a Web Worker (it is ~1.5 MB of the playground bundle, and live editing relayouts on the main thread), state in
 the URL for TypeScript pages (editor links carry it), a docs site, publishing. Two live diagrams side by side, cost per
-scenario, goal seek; ranges on capacities (M4). In the editor:
+scenario, goal seek; ranges for fits, Monte Carlo. In the editor:
 editing in the UI (an inspector that writes text edits, a click on a node that jumps to its source), hover help, a
-formatter, Export → TypeScript, the source in exported PNGs, `loadmap record x.loadmap`, a Vite plugin for
+formatter, Export → TypeScript, the source in exported PNGs, a Vite plugin for
 `import m from './m.loadmap'`.

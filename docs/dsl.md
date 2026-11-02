@@ -105,6 +105,48 @@ from `asOf` alone, never from today's date, so a page and its recordings say the
 A share link carries the scenarios in the text and the shown one in its values (`&gateways=2&pods=6`), so it opens
 with that scenario's button pressed.
 
+### How sure, and what must hold
+
+A capacity says how sure it is with a `±` in its value, as a share (`30%`) or in its unit (`± 1`). `+/-` is the same
+for a keyboard without `±`:
+
+```
+capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")
+capacity: measured(pods * 2 +/- 5%, "cores", "pod CPU limit")
+```
+
+Every crossing is then also found with each capacity at its low bound and at its high bound, and the limits become
+ranges: "the 50 % target holds up to between 7.4× and 10×". The ranking, the first limit and the presets use the
+pessimistic edge (every capacity low), where it may already happen. The headroom chart draws each scenario as a band
+with a bracket where it crosses the target and 100 %, and when the range is wide, a line under the verdict names the
+capacity whose measurement would change or narrow the answer most. Fits stay exact.
+
+An **expect** line is something that must keep holding, as minimum load multiples on that pessimistic edge:
+
+```
+expect "Today keeps 7×" { target: 7 }
+expect "Proposed keeps 14×" { scenario: Proposed; target: 14 }
+expect { component: db; full: 100 }
+```
+
+`target` is where the 50 % target is reached (by the first limit, or by `component`), `full` where 100 % is; without
+a `scenario` the defaults are checked. The editor marks a failing expectation as a warning on its line and still
+draws the diagram. `loadmap check` fails on it, so a change that loses headroom cannot land unseen:
+
+```bash
+loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectation fails or the file has an error
+```
+
+```
+checkout.loadmap:23:1 error: "Today keeps 8×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
+  23 | expect "Today keeps 8×" { target: 8 }
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+checkout.loadmap: 1 of 2 expectations failed
+```
+
+Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
+line in the pull request.
+
 ### What stays code
 
 A host page can give formulas more functions:
@@ -141,6 +183,8 @@ const { model, view, options } = r.definition!
 // <Loadmap model={model} view={view} {...options} />
 ```
 
+`r.expectations` holds each `expect` line with its place and its `check()` result; `problems(r)` returns the
+diagnostics with every failing expectation added (as a warning, or as `problems(r, 'error')`).
 `completions(source, offset)` lists what may be typed at a place. `encodeShare` and `decodeShare` write and read share
 links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.

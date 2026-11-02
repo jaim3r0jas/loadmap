@@ -75,6 +75,31 @@ compare(checkout).text
 its crossings exactly where the limits are) and the scenarios side by side. Hovering or focusing a box tells its
 utilization, capacity and where it runs out. `compare()` and `headroom()` give the same numbers without React.
 
+## Numbers you can defend
+
+A capacity can say how sure it is. The limits then become ranges, ranked on the pessimistic edge, and a model can
+promise headroom that a test or CI checks:
+
+```ts
+capacity: ({ gateways }) =>
+  estimated(20_000 * gateways, 'req/s', { source: 'vendor benchmark, not load-tested', within: 0.3 }),
+// …
+expect: [{ label: 'Today keeps 7×', target: 7 }, { scenario: 'Proposed', target: 14 }],
+
+checkout.evaluate().verdict.text
+// "At 10×, every component is under the 50 % target. It holds up to between 7.4× and 10× (…); the API gateway is
+//  the first limit (capacity estimated ±30 %)."
+checkout.evaluate().measure?.text
+// "Measuring the API gateway would change the answer: at its stated capacity, the worker pool is the first limit
+//  and the 50 % target holds up to 10×."
+
+it('keeps its headroom', () => assertHolds(checkout))   // throws, listing every failed expectation
+```
+
+The headroom chart draws a band per scenario. In a `.loadmap` it reads `estimated(20_000 ± 30%, …)` and
+`expect "Today keeps 7×" { target: 7 }`; `loadmap check checkout.loadmap` exits 1 when one fails, with its line and
+column, and writes GitHub annotations under Actions.
+
 ## Or as text
 
 The same model and view can be written as a `.loadmap` definition and edited next to its live diagram (`pnpm dev`,
@@ -117,6 +142,9 @@ pnpm check                              # typecheck, lint, tests, build
 ```
 
 ## Record a scenario
+
+A `.loadmap` records without a page of its own: `pnpm record examples/checkout/checkout.loadmap --out checkout.gif`.
+
 
 ```bash
 pnpm dev &   # or any page that calls expose(handle) from @loadmap/export
