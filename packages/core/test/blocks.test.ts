@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { cache, configured, defineModel, estimated, limit, measured, p, pass, queue, store, workers } from '../src'
+import {
+  cache,
+  configured,
+  defineModel,
+  estimated,
+  fanout,
+  limit,
+  measured,
+  p,
+  pass,
+  queue,
+  sink,
+  store,
+  workers,
+} from '../src'
 
 describe('cache', () => {
   // 1,000 lookups/s at 1×; 80 % are answered by the cache, so the database sees 200/s against 500/s
@@ -174,7 +188,7 @@ describe('retries', () => {
   const m = (retry?: { times: number; budget?: number }, within = 0) =>
     defineModel({
       load: p.load({ max: 10, step: 0.1 }),
-      flows: { req: { rate: ({ load }) => 1000 * load, ...(retry ? { overload: { retry } } : {}) } },
+      flows: { req: { rate: ({ load }) => 1000 * load, ...(retry ? { retry } : {}) } },
       components: {
         gateway: { name: 'Gateway', capacity: measured(2000, 'req/s'), over: 'x' },
         service: { name: 'Service', capacity: estimated(1000, 'req/s', { within }), over: 'clients get 503s' },
@@ -185,6 +199,7 @@ describe('retries', () => {
 
   it('change nothing below capacity: one attempt each', () => {
     expect(m({ times: 3 }).evaluate({ load: 0.9 }).retry.req).toEqual({
+      times: 3,
       rate: 900,
       attempts: 900,
       rejected: 0,
@@ -234,8 +249,8 @@ describe('retries', () => {
     const two = defineModel({
       load: p.load({ max: 10 }),
       flows: {
-        a: { rate: ({ load }) => 600 * load, overload: { retry: { times: 3 } } },
-        b: { rate: ({ load }) => 400 * load, overload: { retry: { times: 3 } } },
+        a: { rate: ({ load }) => 600 * load, retry: { times: 3 } },
+        b: { rate: ({ load }) => 400 * load, retry: { times: 3 } },
       },
       components: { service: { name: 'Service', capacity: measured(1000, 'req/s'), over: 'x' } },
       stages: { service: pass('service') },
@@ -264,5 +279,67 @@ describe('retries', () => {
     model.evaluate({ load: 3 })
     const ms = (process.threadCpuUsage(t0).user + process.threadCpuUsage(t0).system) / 1000
     expect(ms).toBeLessThan(1000)
+  })
+})
+
+describe('review fixes', () => {
+  it('evaluate a rate limiter in front of a fan-out', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 1000 * load } },
+      components: { gw: { name: 'Limiter', capacity: configured(1500, 'req/s'), over: '' } },
+      stages: { g: limit('gw'), f: fanout({ to: [{ stage: 'out', share: 2 }] }), out: sink() },
+      routes: { a: ['g', 'f'] },
+    })
+    const ev = m.evaluate({ load: 3 })
+    expect((ev.stages.g as { rejects: number }).rejects).toBeCloseTo(0.5)
+    // the limiter lets 1,500 through, and the fan-out copies each twice
+    expect(ev.at.out.a).toBeCloseTo(3000)
+  })
+
+  it('let an overload rule read the model, as before retries', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: {
+        a: {
+          rate: ({ load }) => 100 * load,
+          overload: ({ util }) => ((util.db ?? 0) > 1 ? { drop: { olderThan: 30 } } : {}),
+        },
+      },
+      components: { db: { name: 'DB', demand: ({ flows }) => flows.a, capacity: measured(200, 'u/s'), over: '' } },
+      stages: { q: queue({ partitions: { a: 1 } }), db: workers('db', { pods: 1, perPod: 1 }) },
+      routes: { a: ['q', 'db'] },
+    })
+    expect(m.evaluate({ load: 1 }).overload.a).toEqual({})
+    expect(m.evaluate({ load: 3 }).overload.a).toEqual({ drop: { olderThan: 30 } })
+  })
+
+  it('turn away a share of what actually reaches a stage, behind one that cut first', () => {
+    // 4,000 offered; the gateway takes 2,000, so the service turns away half of what reaches it, a quarter offered
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 1000 * load } },
+      components: {
+        gateway: { name: 'Gateway', capacity: measured(2000, 'req/s'), over: '' },
+        service: { name: 'Service', capacity: measured(1000, 'req/s'), over: '' },
+      },
+      stages: { gateway: pass('gateway'), service: pass('service') },
+      routes: { a: ['gateway', 'service'] },
+    })
+    const ev = m.evaluate({ load: 4 })
+    expect(ev.stages.gateway).toMatchObject({ rejects: 0.5, shed: 0.5 })
+    expect(ev.stages.service).toMatchObject({ rejects: 0.75, shed: 0.5 })
+  })
+
+  it('turn away copies at a branch of a fan-out', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load } },
+      components: { push: { name: 'Push', capacity: measured(100, 'u/s'), over: '' } },
+      stages: { f: fanout({ to: [{ stage: 'push', share: 2 }] }), push: pass('push') },
+      routes: { a: ['f'] },
+    })
+    // 200 copies a second against 100
+    expect(m.evaluate({ load: 1 }).stages.push).toMatchObject({ rejects: 0.5, shed: 0.5 })
   })
 })

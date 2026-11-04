@@ -558,8 +558,8 @@ function blocks(lm: LoadmapController, n: SceneNode): string[] {
     if (s?.kind === 'workers' && s.autoscale)
       out.push(`${s.running} of ${s.pods} pods running, each held near ${pct(s.autoscale.target)}`)
     if (s?.kind === 'cache') out.push(`${pct(s.hit)} answered here`)
-    if ((s?.kind === 'pass' || s?.kind === 'limit' || s?.kind === 'cache') && s.rejects > 0)
-      out.push(`${pct(s.rejects)} of what reaches it turned away`)
+    if ((s?.kind === 'pass' || s?.kind === 'limit' || s?.kind === 'cache') && s.shed > 0)
+      out.push(`${pct(s.shed)} of what reaches it turned away`)
   }
   return out
 }

@@ -32,9 +32,14 @@ export interface FlowDef<X> {
   priority?: number
   /** What happens to this flow's backlog in a queue; may depend on the values. Without a rule it waits. */
   overload?: Overload | ((ctx: X) => Overload)
+  /**
+   * Units turned away on the route are sent again. It reads only the load and the parameters: retries change every
+   * number the model computes, so they cannot depend on one.
+   */
+  retry?: RetryRule | ((values: LooseValues) => RetryRule | undefined)
 }
 
-/** What happens to a flow under overload: its backlog in a queue, and its retries. */
+/** Rules for a flow's backlog in a queue. */
 export interface Overload {
   /** Units older than `olderThan` simulated seconds are dropped before they are handled. */
   drop?: { olderThan: number; reason?: string }
@@ -43,7 +48,6 @@ export interface Overload {
    * unit of the same key: it leaves the queue without using capacity. Keep-newest-per-key, as a share.
    */
   merge?: { share: number; reason?: string }
-  retry?: RetryRule
 }
 
 /**
@@ -60,6 +64,8 @@ export interface RetryRule {
 
 /** A flow's retries worked out for one set of values. */
 export interface Retry {
+  /** Retries after the first attempt. */
+  times: number
   /** Units per second the flow sends, before retries. */
   rate: number
   /** Attempts per second, retries included: what every stage on its route sees. */
@@ -465,7 +471,7 @@ export function defineModel<
 
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
     const values = { ...defaults(), ...partial } as Values<P>
-    const { ctx, capacity, over, describe, overload: overloadOf, retries } = context(def as any, values)
+    const { ctx, capacity, over, describe, overload: overloadOf, retries, shed } = context(def as any, values)
     const crossings = crossingsFor(values)
 
     const components = {} as Record<C, ComponentResult<C>>
@@ -514,7 +520,10 @@ export function defineModel<
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
     const stages = {} as Record<S, ResolvedStage>
-    for (const s of stageIds) stages[s] = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
+    for (const s of stageIds) {
+      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
+      stages[s] = st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' ? { ...st, shed: shed(s) } : st
+    }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
         for (const b of Object.values(st.to).flat()) {
@@ -647,7 +656,8 @@ function context(
       return (typeof o === 'function' ? o(ctx as any) : o) ?? {}
     })
   const retryOf = (f: string) => {
-    const r = overload(f).retry
+    const rule = def.flows[f]!.retry
+    const r = typeof rule === 'function' ? rule(values) : rule
     if (!r) return undefined
     if (!(Number.isInteger(r.times) && r.times >= 0))
       throw new Error(`loadmap: flow "${f}" retries a whole number of times, not ${r.times}`)
@@ -667,7 +677,8 @@ function context(
   const rejects = (s: string) =>
     memo(`rejects at ${s}`, () => {
       const st = stages[s]!
-      if (!(st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache') || !st.component) return 0
+      if (!(st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'fanout') || !st.component)
+        return 0
       return rejectShare(ctx.util[st.component] as number | null, full)
     })
   const hit = (s: string) => memo(`hit at ${s}`, () => hitOf(s, stages[s] as Extract<StageDef, { kind: 'cache' }>, ctx))
@@ -676,22 +687,30 @@ function context(
     const st = stages[s]!
     return st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1
   }
+  /** Copies per unit of a flow that a fan-out at t sends to s: 0 unless t is a fan-out with a branch there. */
+  const copies = (t: string, f: string, s: string) => {
+    const st = stages[t]!
+    if (st.kind !== 'fanout') return 0
+    const to = memo(`branches of ${t}`, () => dyn(st.to, ctx)) as
+      | readonly Branch[]
+      | Readonly<Record<string, readonly Branch[]>>
+    let n = 0
+    for (const b of Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? []))
+      if ((b as Branch).stage === s) n += (b as Branch).share
+    return n
+  }
   const arriving = (s: string, f: string) =>
     memo(`${f} at ${s}`, () => {
       const route = routes[f] ?? []
-      // past the last place it can reach s (the stage itself, or a fan-out that copies to it) nothing counts
-      const last = route.findLastIndex((t) => t === s || stages[t]!.kind === 'fanout')
+      // past the last place that reaches s (the stage itself, or a fan-out that copies to it) nothing counts, so a
+      // stage never needs what it lets through to know what reaches it
+      const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
       let total = 0
       let r = ctx.flows[f] as number
       for (const [i, t] of route.entries()) {
         if (t === s) total += r
-        const st = stages[t]!
-        if (st.kind === 'fanout') {
-          const to = dyn(st.to, ctx) as readonly Branch[] | Readonly<Record<string, readonly Branch[]>>
-          for (const b of Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? []))
-            if (b.stage === s) total += r * (b as Branch).share
-        }
-        if (i === last) break
+        total += r * copies(t, f, s)
+        if (i >= last) break
         r *= onward(t)
       }
       return total
@@ -716,7 +735,8 @@ function context(
       let actual = 1
       let answered = 0
       for (const s of routes[f] ?? []) {
-        const r = rejects(s)
+        // a fan-out turns away copies, not the unit
+        const r = stages[s]!.kind === 'fanout' ? 0 : rejects(s)
         if (r > 0) actual = Math.min(actual, offered * (1 - r))
         if (stages[s]!.kind === 'cache') {
           answered += actual * hit(s)
@@ -725,6 +745,41 @@ function context(
         offered *= onward(s)
       }
       return Math.max(0, 1 - answered - actual)
+    })
+
+  /**
+   * What actually reaches a stage, per second: like `at`, less what stages before it turned away. A stage takes up to
+   * what is offered to it × (1 − rejects), so behind another stage that turns work away the bottleneck decides.
+   */
+  const actual = (s: string, f: string) =>
+    memo(`${f} reaching ${s}`, () => {
+      const route = routes[f] ?? []
+      const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
+      let total = 0
+      let r = ctx.flows[f] as number
+      for (const [i, t] of route.entries()) {
+        if (t === s) total += r
+        // a fan-out's copies, less the share it turns away
+        total += r * copies(t, f, s) * (1 - rejects(t))
+        if (i >= last) break
+        const cut = rejects(t)
+        if (cut > 0) r = Math.min(r, arriving(t, f) * (1 - cut))
+        if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
+      }
+      return total
+    })
+  /** The share of what actually reaches a stage that it turns away: the one number the sim and the meters show. */
+  const shed = (s: string) =>
+    memo(`shed at ${s}`, () => {
+      const r = rejects(s)
+      if (!r) return 0
+      let offered = 0
+      let reaching = 0
+      for (const f of flowIds) {
+        offered += arriving(s, f)
+        reaching += actual(s, f)
+      }
+      return reaching > 0 ? Math.max(0, 1 - (offered * (1 - r)) / reaching) : 0
     })
 
   const retries = (): Record<string, Retry> =>
@@ -775,7 +830,14 @@ function context(
             // with a budget only a share q of rejections is sent again: pq solves pq + … + (pq)ⁿ = the excess
             const retried =
               p > 0 && excess(p, times) > e[f]! * (1 + 1e-12) ? root((y) => excess(y, times), e[f]!, p) / p : 1
-            out[f] = { rate: l, attempts: a[f]!, rejected: p, retried, failed: l > 0 ? 1 - (1 - p) * (1 + e[f]!) : 0 }
+            out[f] = {
+              times,
+              rate: l,
+              attempts: a[f]!,
+              rejected: p,
+              retried,
+              failed: l > 0 ? 1 - (1 - p) * (1 + e[f]!) : 0,
+            }
           }
           return out
         }
@@ -827,6 +889,7 @@ function context(
     capacity,
     overload,
     failure,
+    shed,
     retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
     describe: (c: string) => text(def.components[c]!.describe),

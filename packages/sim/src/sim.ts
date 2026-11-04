@@ -163,45 +163,39 @@ export class Sim {
 
     const full = this.#model.thresholds.full
     const stages = Object.values(ev.stages) as ResolvedStage[]
-    const rejects = (s: ResolvedStage) => ('rejects' in s ? s.rejects : 0)
-    const offered = (s: string) => this.#model.flowIds.reduce((a, f) => a + (ev.at[s]?.[f] ?? 0), 0)
-    // The model counts a stage's rejections against what is offered to it; behind another stage that turns work
-    // away less arrives, and the stage takes up to offered × (1 − rejects) of it: the bottleneck decides, as in the
-    // model's retries. A fan-out rejects copies, not arrivals. Routes run forward, so a pass per stage on the longest
-    // route settles it.
+    // what each stage turns away of what actually reaches it, worked out by the model (the bottleneck decides)
     this.#shed.clear()
-    for (const s of stages) this.#shed.set(s.id, s.kind === 'fanout' ? s.rejects : 0)
-    const longest = Math.max(1, ...this.#model.flowIds.map((f) => ev.routes[f]?.length ?? 0))
-    for (let pass = 0; pass <= longest; pass++) {
-      this.#inflow.clear()
-      for (const f of this.#model.flowIds) {
-        let rate = ev.flows[f] ?? 0
-        for (const st of ev.routes[f] ?? []) {
-          this.#inflow.set(`${st}/${f}`, rate)
-          const s = ev.stages[st] as ResolvedStage
-          rate *= 1 - (s.kind === 'fanout' ? 0 : (this.#shed.get(st) ?? 0))
-          if (s.kind === 'cache') rate *= 1 - s.hit
-        }
-      }
-      for (const s of stages) {
-        const r = rejects(s)
-        if (s.kind === 'fanout' || !r) continue
-        const arriving = this.#model.flowIds.reduce((a, f) => a + (this.#inflow.get(`${s.id}/${f}`) ?? 0), 0)
-        this.#shed.set(s.id, arriving > 0 ? Math.max(0, 1 - (offered(s.id) * (1 - r)) / arriving) : 0)
+    for (const s of stages) this.#shed.set(s.id, 'shed' in s ? s.shed : 0)
+    this.#inflow.clear()
+    for (const f of this.#model.flowIds) {
+      let rate = ev.flows[f] ?? 0
+      for (const st of ev.routes[f] ?? []) {
+        this.#inflow.set(`${st}/${f}`, rate)
+        const s = ev.stages[st] as ResolvedStage
+        // a fan-out turns away copies, not arrivals
+        if (s.kind !== 'fanout') rate *= 1 - (this.#shed.get(st) ?? 0)
+        if (s.kind === 'cache') rate *= 1 - s.hit
       }
     }
     // a stage drains what reaches it at the load where its component runs out, the same point the limits show
     this.#capacity.clear()
+    // one evaluation per load where something runs out: with retries each one solves them again
+    const atFull = new Map<number, Evaluation>()
     for (const s of stages) {
       const c = s.component ? ev.components[s.component] : undefined
       let cap = Number.POSITIVE_INFINITY
       if (c && c.util != null && c.full != null && Number.isFinite(c.full)) {
         if (c.full > 0) {
-          const at = this.#model.evaluate({ ...ev.values, load: c.full })
+          let at = atFull.get(c.full)
+          if (!at) {
+            at = this.#model.evaluate({ ...ev.values, load: c.full })
+            atFull.set(c.full, at)
+          }
           cap = this.#model.flowIds.reduce((a, f) => a + (at.at[s.id]?.[f] ?? 0), 0)
         } else {
           // already past "full" at no load: scale what reaches it now
-          cap = c.util > 0 ? (offered(s.id) * full) / c.util : 0
+          const offered = this.#model.flowIds.reduce((x, f) => x + (ev.at[s.id]?.[f] ?? 0), 0)
+          cap = c.util > 0 ? (offered * full) / c.util : 0
         }
       }
       this.#capacity.set(s.id, cap)
@@ -251,6 +245,11 @@ export class Sim {
       this.#fills.set(key, f)
     }
     return busyOf(i, f, this.busy(stage))
+  }
+
+  /** Units per second actually reaching a stage on the flows' routes, after what stages before it turned away. */
+  arriving(stage: string): number {
+    return this.#model.flowIds.reduce((a, f) => a + (this.#inflow.get(`${stage}/${f}`) ?? 0), 0)
   }
 
   /** The pods a workers stage runs: fewer than it draws while an autoscaler holds it small. */
@@ -391,10 +390,9 @@ export class Sim {
 
   /** A unit turned away, sent again from its source while it has retries left and the budget allows. */
   #retry(d: Particle): Particle | null {
-    const rule = this.#ev.overload[d.flow]?.retry
     const r = this.#ev.retry[d.flow]
     const attempt = (d.attempt ?? 0) + 1
-    if (!rule || !r || attempt > rule.times || this.#r() >= r.retried) return null
+    if (!r || attempt > r.times || this.#r() >= r.retried) return null
     return {
       id: this.#nextId++,
       flow: d.flow,
@@ -512,7 +510,8 @@ export class Sim {
       const n = s.partitions[flow] ?? 0
       return n > 0 ? { stage, cell: Math.floor(this.#r() * n) } : { stage }
     }
-    if (s?.kind === 'workers') return { stage, cell: this.#pickWorker(s.id, s.pods * s.perPod) }
+    // only among the running pods: the ones an autoscaler has not started take no work
+    if (s?.kind === 'workers') return { stage, cell: this.#pickWorker(s.id, s.running * s.perPod) }
     return { stage }
   }
 

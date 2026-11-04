@@ -161,14 +161,14 @@ export async function exportSvg(handle: LoadmapHandle, o: { caption?: boolean | 
     dots.appendChild(
       el(
         'circle',
-        d.hollow
+        d.ring
           ? {
               cx: d.x.toFixed(2),
               cy: d.y.toFixed(2),
-              r: d.r - 0.7,
+              r: d.r - d.ring / 2,
               fill: 'none',
               stroke: d.color,
-              'stroke-width': 1.4,
+              'stroke-width': d.ring,
               ...(d.alpha < 1 ? { 'stroke-opacity': d.alpha.toFixed(3) } : {}),
             }
           : {

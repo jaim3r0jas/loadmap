@@ -88,6 +88,7 @@ export const LOADMAP_CSS = `
 .lm-facts li { margin-bottom: 8px; break-inside: avoid; }
 .lm-prov { font: 600 .66rem var(--lm-font); text-transform: uppercase; letter-spacing: .06em; }
 .lm-prov[data-kind="measured"] { color: var(--lm-ok); } .lm-prov[data-kind="estimated"] { color: var(--lm-warn); }
+.lm-prov[data-kind="configured"] { color: var(--lm-accent); }
 
 /* scenario identity colours (s1–s4) are checked for colour-blind separation on both surfaces; text never wears them */
 .lm-scenarios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }

@@ -13,8 +13,8 @@ export interface Dot {
   r: number
   color: string
   alpha: number
-  /** A retry: drawn as a ring. */
-  hollow?: boolean
+  /** A retry: drawn as a ring of this stroke width, inside r. */
+  ring?: number
 }
 
 /**
@@ -158,7 +158,7 @@ export class Engine {
         r: inCell ? 3 : 3.4,
         color: d.phase === 'fade' ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
         alpha: d.phase === 'fade' ? Math.max(0, 1 - d.t / d.dur) : 1,
-        ...(d.attempt ? { hollow: true } : {}),
+        ...(d.attempt ? { ring: RING } : {}),
       })
     }
     for (const id of this.#paths.keys()) if (!live.has(id)) this.#paths.delete(id)
@@ -173,11 +173,11 @@ export class Engine {
     for (const d of this.dots()) {
       ctx.globalAlpha = d.alpha
       ctx.beginPath()
-      if (d.hollow) {
+      if (d.ring) {
         // a retry: a ring, so the extra attempts show against the units sent once
         ctx.strokeStyle = d.color
-        ctx.lineWidth = RING
-        ctx.arc(d.x, d.y, d.r - RING / 2, 0, Math.PI * 2)
+        ctx.lineWidth = d.ring
+        ctx.arc(d.x, d.y, d.r - d.ring / 2, 0, Math.PI * 2)
         ctx.stroke()
       } else {
         ctx.fillStyle = d.color

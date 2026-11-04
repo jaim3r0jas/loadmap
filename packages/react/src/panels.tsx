@@ -156,10 +156,9 @@ export function Meters({ lm }: { lm: LoadmapController }) {
         })
     }
     if (s.kind === 'cache') {
-      const reaching = model.flowIds.reduce((a, f) => a + (ev.at[s.id]?.[f] ?? 0), 0)
       items.push({
         key: `${s.id}/hits`,
-        value: compact(reaching * (1 - sim.shed(s.id)) * s.hit),
+        value: compact(sim.arriving(s.id) * (1 - sim.shed(s.id)) * s.hit),
         label: `answered at ${s.label} /s (${pct(s.hit)} hits)`,
         state: 'ok',
       })
@@ -169,8 +168,7 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   }
   for (const f of model.flowIds) {
     const r = ev.retry[f]
-    const rule = ev.overload[f]?.retry
-    if (!r || !rule || !(r.rate > 0)) continue
+    if (!r || !(r.rate > 0)) continue
     const per = r.attempts / r.rate
     items.push({
       key: `${f}/attempts`,
@@ -181,7 +179,7 @@ export function Meters({ lm }: { lm: LoadmapController }) {
     items.push({
       key: `${f}/failed`,
       value: pct(r.failed),
-      label: `${flowLabel(f)} failing after ${rule.times} ${rule.times === 1 ? 'retry' : 'retries'}`,
+      label: `${flowLabel(f)} failing after ${r.times} ${r.times === 1 ? 'retry' : 'retries'}`,
       state: r.failed > 0.005 ? 'over' : 'ok',
     })
   }

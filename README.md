@@ -120,7 +120,7 @@ stages: {
   api: workers('api', { perPod: 4, autoscale: { min: 2, max: 12, target: 0.7 } }),
   limiter: limit('limiter'),                                               // capacity: configured(1_500, 'req/s')
 },
-flows: { requests: { rate: ({ load }) => 1000 * load, overload: { retry: { times: 3, budget: 0.1 } } } },
+flows: { requests: { rate: ({ load }) => 1000 * load, retry: { times: 3, budget: 0.1 } } },
 ```
 
 What reaches each stage is in `at` (`at.db.reads`): a cache's hits and a limiter's rejections are gone from the

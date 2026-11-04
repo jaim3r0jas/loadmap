@@ -491,12 +491,31 @@ describe('building blocks', () => {
       expect(pod(9)).toBe(0)
     })
 
+    it('puts its dots only in the pods it runs', () => {
+      const sim = at(m, 0.3, 60)
+      expect(sim.running('api')).toBe(2)
+      const cells = sim.particles.flatMap((d) => [d.from, d.to]).filter((x) => x.stage === 'api' && x.cell != null)
+      expect(cells.length).toBeGreaterThan(0)
+      expect(cells.every((x) => x.cell! < 2 * 4)).toBe(true)
+    })
+
     it('backs up only past the full the bars show, at max pods', () => {
       const full = m.evaluate().components.api.full!
       expect(at(m, full * 0.99, 120).queue('topic', 'req').backlog).toBe(0)
       expect(at(m, full * 1.01, 120).queue('topic', 'req').backlog).toBeGreaterThan(0)
       expect(at(m, full * 1.01, 10).running('api')).toBe(10)
     })
+  })
+
+  it('turns away copies at a branch of a fan-out, as the bars say', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load } },
+      components: { push: { name: 'Push', capacity: measured(100, 'u/s'), over: '' } },
+      stages: { f: fanout({ to: [{ stage: 'push', share: 2 }] }), push: pass('push') },
+      routes: { a: ['f'] },
+    })
+    expect(createSim(m, m.evaluate({ load: 1 })).shed('push')).toBeCloseTo(0.5)
   })
 
   describe('rate limiter', () => {
@@ -527,7 +546,7 @@ describe('building blocks', () => {
     // a gateway of 2,000 in front of a service of 1,000; three retries
     const m = defineModel({
       load: p.load({ max: 10, step: 0.1 }),
-      flows: { req: { rate: ({ load }) => 1000 * load, overload: { retry: { times: 3 } } } },
+      flows: { req: { rate: ({ load }) => 1000 * load, retry: { times: 3 } } },
       components: {
         gateway: { name: 'Gateway', capacity: measured(2000, 'req/s'), over: '' },
         service: { name: 'Service', capacity: measured(1000, 'req/s'), over: '' },

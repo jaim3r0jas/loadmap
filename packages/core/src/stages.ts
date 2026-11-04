@@ -148,7 +148,14 @@ export function fanout<const C extends string = never>(
 
 /** A stage with its numbers worked out for one set of values. */
 export type ResolvedStage = { id: string; label: string } & (
-  | { kind: 'pass' | 'limit'; component: string; rejects: number }
+  | {
+      kind: 'pass' | 'limit'
+      component: string
+      /** The share of what is offered (`at`) above its capacity. */
+      rejects: number
+      /** The share of what actually reaches it that it turns away: less than `rejects` behind a stage that cut first. */
+      shed: number
+    }
   | { kind: 'store'; component: string }
   | { kind: 'sink'; component?: undefined }
   | { kind: 'queue'; component?: string; partitions: Readonly<Record<string, number>> }
@@ -163,8 +170,15 @@ export type ResolvedStage = { id: string; label: string } & (
       running: number
       autoscale?: { min: number; max: number; target: number }
     }
-  | { kind: 'fanout'; component?: string; to: Readonly<Record<string, readonly Branch[]>>; rejects: number }
-  | { kind: 'cache'; component?: string; hit: number; rejects: number }
+  | {
+      kind: 'fanout'
+      component?: string
+      to: Readonly<Record<string, readonly Branch[]>>
+      rejects: number
+      /** The share of its copies it turns away. */
+      shed: number
+    }
+  | { kind: 'cache'; component?: string; hit: number; rejects: number; shed: number }
 )
 
 /** The share a stage turns away when its component is past `full`: what is above it. */
@@ -203,16 +217,16 @@ export function resolveStage(
       const to = dyn(s.to, ctx)
       const perFlow: Record<string, readonly Branch[]> = {}
       for (const f of flowIds) perFlow[f] = Array.isArray(to) ? to : ((to as Record<string, Branch[]>)[f] ?? [])
-      return { id, label, kind: 'fanout', component: s.component, to: perFlow, rejects }
+      return { id, label, kind: 'fanout', component: s.component, to: perFlow, rejects, shed: rejects }
     }
     case 'cache':
-      return { id, label, kind: 'cache', component: s.component, hit: hitOf(id, s, ctx), rejects }
+      return { id, label, kind: 'cache', component: s.component, hit: hitOf(id, s, ctx), rejects, shed: rejects }
     case 'sink':
       return { id, label, kind: 'sink' }
     case 'store':
       return { id, label, kind: 'store', component: s.component }
     default:
-      return { id, label, kind: s.kind, component: s.component, rejects }
+      return { id, label, kind: s.kind, component: s.component, rejects, shed: rejects }
   }
 }
 

@@ -196,7 +196,8 @@ takes no `±`. Above it the share over is turned away ("17 % rejected at the lim
 only what got through, so the service behind a limit may never run out.
 
 **Retries** send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
-more times. A `budget` caps the extra attempts at that share of the flow:
+more times. A `budget` caps the extra attempts at that share of the flow. A retry rule reads only the load and the
+parameters: retries change every other number, so they cannot depend on one.
 
 ```
 flow requests "requests" {
@@ -514,9 +515,9 @@ retry { times: 3; budget: 0.1 }
 
 | Property | Value | |
 | --- | --- | --- |
-| `times` (required) | number, formula | Retries after the first attempt: a whole number. |
-| `budget` | number, formula | At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. |
-| `when` | boolean, formula | The rule applies only while this is true. |
+| `times` (required) | number, formula of parameters | Retries after the first attempt: a whole number. Reads only the parameters. |
+| `budget` | number, formula of parameters | At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. |
+| `when` | boolean, formula of parameters | The rule applies only while this is true; it reads only parameters. |
 
 ### component
 

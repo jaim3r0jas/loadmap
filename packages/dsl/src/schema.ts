@@ -331,13 +331,22 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'retry { times: 3; budget: 0.1 }',
     args: [],
     props: {
-      times: { value: 'number', scope: 'ctx', doc: 'Retries after the first attempt: a whole number.', required: true },
+      times: {
+        value: 'number',
+        scope: 'values',
+        doc: 'Retries after the first attempt: a whole number. Reads only the parameters.',
+        required: true,
+      },
       budget: {
         value: 'number',
-        scope: 'ctx',
+        scope: 'values',
         doc: 'At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent.',
       },
-      when: OVERLOAD_WHEN,
+      when: {
+        value: 'boolean',
+        scope: 'values',
+        doc: 'The rule applies only while this is true; it reads only parameters.',
+      },
     },
     children: [],
   },

@@ -13,6 +13,7 @@ import {
   parseAsOf,
   pass,
   queue,
+  type RetryRule,
   type StageDef,
   sink,
   store,
@@ -352,6 +353,8 @@ class Compiler {
       if (priority != null) def.priority = priority
       const overload = this.overload(b)
       if (overload) def.overload = overload
+      const retry = this.retry(b)
+      if (retry) def.retry = retry
       flowDefs[id.name] = def
 
       const route = this.prop(b, 'route')
@@ -1026,16 +1029,12 @@ class Compiler {
   }
 
   private overload(b: Block): Overload | ((ctx: any) => Overload) | undefined {
-    const rules = b.children.filter((c) => c.keyword === 'drop' || c.keyword === 'merge' || c.keyword === 'retry')
+    const rules = b.children.filter((c) => c.keyword === 'drop' || c.keyword === 'merge')
     if (!rules.length) return undefined
     const seen = new Set<string>()
-    type Key = 'drop' | 'merge' | 'retry'
+    type Key = 'drop' | 'merge'
     const parts: { key: Key; when?: (c: any) => unknown; fields: [string, unknown][] }[] = []
-    const props: Record<Key, readonly string[]> = {
-      drop: ['olderThan', 'reason'],
-      merge: ['share', 'reason'],
-      retry: ['times', 'budget'],
-    }
+    const props: Record<Key, readonly string[]> = { drop: ['olderThan', 'reason'], merge: ['share', 'reason'] }
     for (const r of rules) {
       const key = r.keyword as Key
       if (seen.has(key)) this.report.error(r.at, `"${key}" is set twice in this flow`)
@@ -1060,6 +1059,25 @@ class Compiler {
       return o
     }
     return fixed ? at(undefined) : at
+  }
+
+  /** A flow's retry rule: it reads only the load and the parameters, since retries change every other number. */
+  private retry(b: Block): RetryRule | ((values: any) => RetryRule | undefined) | undefined {
+    const r = b.children.filter((c) => c.keyword === 'retry')
+    if (!r.length) return undefined
+    if (r.length > 1) this.report.error(r[1]!.at, '"retry" is set twice in this flow')
+    const rule = r[0]!
+    const times = this.dynProp<number>(rule, 'times', 'number')
+    const budget = this.dynProp<number>(rule, 'budget', 'number')
+    const w = this.prop(rule, 'when')
+    const when = w && placed(w.value, this.formula(w.value, 'values').run)
+    const at = (v: any): RetryRule | undefined => {
+      if (when && !when(v)) return undefined
+      const out: RetryRule = { times: (typeof times === 'function' ? times(v) : times) ?? 0 }
+      if (budget !== undefined) out.budget = typeof budget === 'function' ? budget(v) : budget
+      return out
+    }
+    return !when && typeof times !== 'function' && typeof budget !== 'function' ? at(undefined) : at
   }
 
   private component(b: Block, box?: Block) {

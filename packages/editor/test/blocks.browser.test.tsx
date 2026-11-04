@@ -67,7 +67,7 @@ describe('the building blocks in the browser', () => {
     const { host, handle } = await mount('retry-storm', { load: 4 })
     handle.pause()
     for (let i = 0; i < 120; i++) handle.step(1 / 30)
-    expect(handle.engine.dots().some((d) => d.hollow)).toBe(true)
+    expect(handle.engine.dots().some((d) => d.ring)).toBe(true)
     const r = handle.engine.sim.particles.filter((d) => d.attempt)
     expect(r.length).toBeGreaterThan(0)
     await expect.poll(() => meter(host, 'attempts per request')).toMatch(/^[23]\.\d×$/)

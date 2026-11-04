@@ -602,12 +602,12 @@ client -> gateway -> service
         req: {
           label: 'requests',
           rate: ({ load }) => 1000 * load,
-          overload: ({ tries }) => ({ retry: { times: tries } }),
+          retry: ({ tries }) => ({ times: tries as number }),
         },
         capped: {
           label: 'capped requests',
           rate: ({ load }) => 100 * load,
-          overload: ({ capped }) => (capped ? { retry: { times: 3, budget: 0.1 } } : {}),
+          retry: ({ capped }) => (capped ? { times: 3, budget: 0.1 } : undefined),
         },
       },
       components: {
@@ -640,6 +640,9 @@ client -> x
     ).toContain('an autoscaled pool has no fixed pods')
     expect(at('node x "X" {\n  pass\n  capacity: configured(1 ± 10%, "req/s")\n  over: ""\n}')).toContain(
       '"±" only goes in the first value of measured(…) or estimated(…)',
+    )
+    expect(errors(def({ flow: 'retry { times: 3; when: util.api > 0.8 }' })).map((e) => e.message)).toContain(
+      'this formula reads only parameters; it cannot read util.api',
     )
     expect(
       errors(def({ extra: 'component spare "Spare" { capacity: measured(1, "x"); over: "" }' })).map((e) => e.message),
