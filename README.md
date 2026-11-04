@@ -109,6 +109,25 @@ The headroom chart draws a band per scenario. In a `.loadmap` it reads `estimate
 `expect "Today keeps 7×" { target: 7 }`; `loadmap check checkout.loadmap` exits 1 when one fails, with its line and
 column, and writes GitHub annotations under Actions.
 
+## Building blocks
+
+A cache, an autoscaled pool, a rate limiter and retries are stages and rules of their own, so a model says what they
+do instead of working it out in formulas:
+
+```ts
+stages: {
+  cache: cache({ hit: ({ hit }) => hit, component: 'redis' }),            // hits go back, misses carry on
+  api: workers('api', { perPod: 4, autoscale: { min: 2, max: 12, target: 0.7 } }),
+  limiter: limit('limiter'),                                               // capacity: configured(1_500, 'req/s')
+},
+flows: { requests: { rate: ({ load }) => 1000 * load, overload: { retry: { times: 3, budget: 0.1 } } } },
+```
+
+What reaches each stage is in `at` (`at.db.reads`): a cache's hits and a limiter's rejections are gone from the
+stages after them, and a component without a `demand` takes what reaches its stages. Retries settle where the
+attempts and the rejections they cause agree, so past capacity they multiply what the boxes in front see. Each block
+has a template in the editor.
+
 ## Tell it as a story
 
 A model can carry the walk a design review takes: a step at a time, each with its text, its values and the box it

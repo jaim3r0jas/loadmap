@@ -54,8 +54,8 @@ tests check that each draws exactly what its TypeScript draws.
 
 A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things can live in a box:
 
-- **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink` or `fanout` in
-  a node, one or more `queue` in a cluster, one `workers` in a pool. Its id is the box's id unless you give it one.
+- **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink`, `fanout`,
+  `cache` or `limit` in a node, one or more `queue` in a cluster, one `workers` in a pool. Its id is the box's id unless you give it one.
   A label after the keyword names it in the meters: `pass "the gateway"`.
 - **A component:** what can run out. Write its lines on the box: `demand`, `capacity`, `over`, and optionally
   `name`, `short`, `plural`, `describe` and `when`. Its id is the box's id and its name is the box's label. A stage in
@@ -74,16 +74,18 @@ as it is.
 - **Names:**
   - `load` and the parameters by their id;
   - `let` names;
-  - `flows.x`, `demand.x`, `util.x` and `derived.x` for the model's tables;
+  - `flows.x`, `at.stage.x`, `demand.x`, `util.x` and `derived.x` for the model's tables (`at.stage` alone is every
+    flow reaching that stage);
   - `i` inside `memberLabel` and `podLabel`, and `value` inside `format`.
 - **Calls:** the built-in functions (listed at the end), the fits by their id, and the functions a host page provides.
-- **Capacities** come only from `measured(value, unit, source)` or `estimated(value, unit, source)`. A bare number is
-  an error, so every capacity says where it came from.
+- **Capacities** come only from `measured(value, unit, source)`, `estimated(value, unit, source)` or, for a limit
+  someone set, `configured(value, unit, source)`. A bare number is an error, so every capacity says where it came
+  from.
 
 Some properties must be constants (a `priority`, a `unit`). Others may read only the parameters (`enabled`).
 
 **Formulas are safe to share.** The text is parsed into a tree and run as closures. There is no `eval` or
-`new Function`, no global name, no property but the four tables, and caps on size and depth. Counts that size the
+`new Function`, no global name, no property but the five tables, and caps on size and depth. Counts that size the
 drawing are capped too: at most 64 members, 256 pods, 256 workers a pod and 1,024 partitions a flow.
 
 ### Scenarios and growth
@@ -146,6 +148,71 @@ checkout.loadmap: 1 of 2 expectations failed
 
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
 line in the pull request.
+
+### Building blocks
+
+Four shapes of real systems have statements of their own, so a model says what they do instead of working it out in
+formulas. Each has a template to start from.
+
+**What reaches a stage.** `at.db.reads` is the rate of `reads` reaching the stage `db`, and `at.db` every flow's. It
+is the flow's rate, less what a cache answered and what a rate limiter turned away before it; an overloaded `pass`
+does not cut it, so each component's limit stays the one it has if what is in front keeps up. A component without a
+`demand` line handles what reaches its stages, in units per second:
+
+```
+node db "Database" {
+  store
+  capacity: estimated(3_000 ± 30%, "queries/s")   # no demand: the misses the cache lets through
+  over: "queries queue on the primary"
+}
+```
+
+**A cache** answers a share of the units and sends them back where they came from; the rest carry on. With capacity
+lines it is a component too, and past capacity it rejects like a `pass`:
+
+```
+node cache "Cache" {
+  cache { hit: hit }
+  capacity: estimated(50_000, "ops/s")
+  over: "lookups time out and fall through"
+}
+```
+
+**An autoscaled pool** adds pods while the running ones are above `target`, between `min` and `max`. Its capacity is
+the pool at `max` pods, so it runs out where it cannot grow further; the box draws every pod it may run and dashes
+the ones it does not run now, and a meter counts them:
+
+```
+pool api "API" {
+  workers { perPod: 4; autoscale { min: 2; max: maxPods; target: 0.7 } }
+  demand: flows.requests * 0.005
+  capacity: measured(maxPods * 1, "cores", "1 core a pod, at most pods")
+  over: "the pool is at its maximum and requests queue"
+}
+```
+
+**A rate limiter** is a `limit` stage. Its capacity is the limit, `configured(…)`: a number someone set, exact, so it
+takes no `±`. Above it the share over is turned away ("17 % rejected at the limiter"), and the stages after it see
+only what got through, so the service behind a limit may never run out.
+
+**Retries** send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
+more times. A `budget` caps the extra attempts at that share of the flow:
+
+```
+flow requests "requests" {
+  rate: 1_000 * load
+  retry { times: 3; budget: 0.1 }
+  route: gateway -> service
+  from: clients
+}
+```
+
+The attempts and the rejections depend on each other, so loadmap solves for where they agree: with `n` retries
+against a bottleneck of capacity `C`, each attempt fails with share `p = (1 − C/λ)^(1/(n+1))` and the attempts are
+`C ÷ (1 − p)`. Below capacity nothing changes. Past it, retries save no one (the same `λ − C` fail, after more
+tries) but multiply what everything in front sees: with 3 retries a gateway of 2,000 req/s before a service of
+1,000 runs out at 1,067 req/s instead of 2,000. `flows.requests` is the attempts; the meters show the attempts per
+request and the share failing after every retry, and the retries are drawn as rings.
 
 ### A story
 

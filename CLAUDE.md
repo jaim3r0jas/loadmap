@@ -77,8 +77,13 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
   `thresholds.full`; do not give the sim its own capacity numbers.
 - **The load never moves the layout.** Labels reserve their widest text across the load range; anything that changes
   the structure key re-runs ELK. `examples/checkout/layout.test.ts` holds both promises and the no-collision one.
-- Model functions take one context object (`({ load, flows, util, demand, derived, ...params })`); `load`, `flows`,
-  `demand`, `util` and `derived` are reserved parameter names.
+- Model functions take one context object (`({ load, flows, at, util, demand, derived, ...params })`); `load`,
+  `flows`, `at`, `demand`, `util` and `derived` are reserved parameter names.
+- **`at.<stage>.<flow>` is what reaches a stage**: cache hits and a limiter's rejections are gone after them, an
+  overloaded `pass` does not cut it (each limit stays "as if what is in front kept up"). The sim drains `at` and
+  counts a stage's rejections against what is offered to it, as the retries do.
+- **Retries are the one loop that is solved** (the least fixed point, on the excess attempts); any other loop between
+  model functions stays an error that names it.
 - Imports without extensions; package `exports` point at `src` for the workspace, `publishConfig.exports` at `dist`.
 - **The public API is what a stranger imports**: `@loadmap/react` re-exports the model and view API (one install);
   format helpers live in `@loadmap/core/format`; what only loadmap's own packages need goes in a `./internal` entry
