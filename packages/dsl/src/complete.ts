@@ -32,19 +32,25 @@ export function completions(source: string, offset: number, compiled?: CompileRe
   const out = (options: Completion[]) => ({ from, to: offset, options })
   const ids = (kind: DslSymbol['kind']) => [...new Set(r.symbols.filter((s) => s.kind === kind).map((s) => s.id))]
 
-  // flows.|  demand.|  util.|  derived.|
+  // flows.|  at.|  at.db.|  demand.|  util.|  derived.|
   if (source[from - 1] === '.') {
     let t = from - 1
     while (t > 0 && /\w/.test(source[t - 1]!)) t--
     const table = source.slice(t, from - 1)
+    let u = t - 1
+    while (u > 0 && /\w/.test(source[u - 1]!)) u--
+    if (source[t - 1] === '.' && source.slice(u, t - 1) === 'at')
+      return out(ids('flow').map((label) => ({ label, type: 'variable', detail: `at.${table}` })))
     const pool =
       table === 'flows'
         ? ids('flow')
-        : table === 'demand' || table === 'util'
-          ? ids('component')
-          : table === 'derived'
-            ? ids('let')
-            : []
+        : table === 'at'
+          ? ids('stage')
+          : table === 'demand' || table === 'util'
+            ? ids('component')
+            : table === 'derived'
+              ? ids('let')
+              : []
     return out(pool.map((label) => ({ label, type: 'variable', detail: table })))
   }
 
@@ -143,7 +149,11 @@ function formulaNames(r: CompileResult, scope: string): Completion[] {
     ...r.symbols
       .filter((s) => s.kind === 'let')
       .map((s) => ({ label: s.id, type: 'variable' as const, detail: 'let' })),
-    ...['flows', 'demand', 'util', 'derived'].map((label) => ({ label, type: 'type' as const, apply: `${label}.` })),
+    ...['flows', 'at', 'demand', 'util', 'derived'].map((label) => ({
+      label,
+      type: 'type' as const,
+      apply: `${label}.`,
+    })),
     ...r.symbols
       .filter((s) => s.kind === 'fit')
       .map((s) => ({ label: s.id, type: 'function' as const, detail: 'fit' })),

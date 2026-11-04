@@ -81,11 +81,15 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
   name: { value: 'string', scope: 'const', doc: "The component's name in the limits list. Defaults to the label." },
   short: { value: 'string', scope: 'const', doc: 'The name inside a sentence, with its article: "the database".' },
   plural: { value: 'boolean', scope: 'const', doc: '"are past capacity" instead of "is".' },
-  demand: { value: 'number', scope: 'ctx', doc: "What the component must handle, in its capacity's unit." },
+  demand: {
+    value: 'number',
+    scope: 'ctx',
+    doc: "What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages.",
+  },
   capacity: {
     value: 'capacity',
     scope: 'ctx',
-    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is.',
+    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set.',
   },
   when: { value: 'boolean', scope: 'ctx', doc: 'The component is switched off (no utilization) while this is false.' },
   over: { value: 'string', scope: 'ctx', doc: 'What happens past 100 %, as a clause: "clients get 429s".' },
@@ -298,7 +302,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes.',
       },
     },
-    children: ['drop', 'merge'],
+    children: ['drop', 'merge', 'retry'],
   },
   drop: {
     doc: 'Units older than olderThan simulated seconds are dropped before they are handled.',
@@ -322,6 +326,21 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     },
     children: [],
   },
+  retry: {
+    doc: 'A unit turned away on the route (by a pass, limit or cache stage past capacity) is sent again, up to times more times. The attempts settle where the retries they cause are the ones assumed.',
+    example: 'retry { times: 3; budget: 0.1 }',
+    args: [],
+    props: {
+      times: { value: 'number', scope: 'ctx', doc: 'Retries after the first attempt: a whole number.', required: true },
+      budget: {
+        value: 'number',
+        scope: 'ctx',
+        doc: 'At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent.',
+      },
+      when: OVERLOAD_WHEN,
+    },
+    children: [],
+  },
   component: {
     doc: 'Something that can run out: its demand against its capacity. On a box, write these lines on the box.',
     example: 'component cache "Cache" { demand: flows.reads; capacity: estimated(9000, "req/s") }',
@@ -341,7 +360,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       shape: { value: 'enum', scope: 'const', values: ['box', 'cylinder'], doc: 'box (the default) or cylinder.' },
       ...COMPONENT_PROPS,
     },
-    children: ['pass', 'store', 'sink', 'fanout', 'component'],
+    children: ['pass', 'store', 'sink', 'fanout', 'cache', 'limit', 'component'],
   },
   cluster: {
     doc: 'Members (brokers) holding the partitions of one or more queues (topics).',
@@ -369,6 +388,23 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   pass: {
     doc: 'Flows pass through; past capacity the share above 100 % is rejected.',
     example: 'pass "the gateway"',
+    args: STAGE_LABEL,
+    props: { component: STAGE_COMPONENT },
+    children: [],
+  },
+  cache: {
+    doc: 'A share of the units (hit) is answered here and goes no further; the rest carry on to the next stage. Past capacity the share above 100 % is rejected.',
+    example: 'cache { hit: 0.8 }',
+    args: STAGE_LABEL,
+    props: {
+      hit: { value: 'number', scope: 'ctx', doc: 'The share answered here, 0 to 1.', required: true },
+      component: STAGE_COMPONENT,
+    },
+    children: [],
+  },
+  limit: {
+    doc: "A rate limiter: its component's capacity is the limit. Above it the share over is turned away, and the stages after it see only what got through.",
+    example: 'limit',
     args: STAGE_LABEL,
     props: { component: STAGE_COMPONENT },
     children: [],
@@ -407,7 +443,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'workers { pods: pods; perPod: 8 }',
     args: STAGE_LABEL,
     props: {
-      pods: { value: 'number', scope: 'ctx', doc: 'How many pods.', required: true },
+      pods: { value: 'number', scope: 'ctx', doc: 'How many pods; an autoscaled pool has autoscale instead.' },
       perPod: { value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
       fill: {
         value: 'enum',
@@ -416,6 +452,22 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'round-robin spreads work across pods (the default); in-order fills pod 0 first.',
       },
       component: STAGE_COMPONENT,
+    },
+    children: ['autoscale'],
+  },
+  autoscale: {
+    doc: "Pods are added and removed to hold each running pod near target, between min and max. The component's capacity is the pool at max pods: it runs out when the pool cannot grow further.",
+    example: 'autoscale { min: 2; max: 10; target: 0.7 }',
+    args: [],
+    props: {
+      min: { value: 'number', scope: 'ctx', doc: 'The fewest pods, at least 1.', required: true },
+      max: { value: 'number', scope: 'ctx', doc: 'The most pods.', required: true },
+      target: {
+        value: 'number',
+        scope: 'ctx',
+        doc: 'The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %.',
+        required: true,
+      },
     },
     children: [],
   },
@@ -446,4 +498,4 @@ export const EDGE_PROPS: Readonly<Record<string, PropSpec>> = {
 }
 
 export const BOXES = ['node', 'cluster', 'pool'] as const
-export const STAGES = ['pass', 'store', 'sink', 'queue', 'workers', 'fanout'] as const
+export const STAGES = ['pass', 'store', 'sink', 'queue', 'workers', 'fanout', 'cache', 'limit'] as const

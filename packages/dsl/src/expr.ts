@@ -1,4 +1,4 @@
-import { type Capacity, estimated, type LinearFit, measured } from '@loadmap/core'
+import { type Capacity, configured, estimated, type LinearFit, measured } from '@loadmap/core'
 import { compact, fmt, pct, secs } from '@loadmap/core/format'
 import type { Expr } from './ast'
 import { didYouMean, type Reporter, type Span } from './diagnostics'
@@ -25,6 +25,7 @@ export interface Names {
   /** `let` names; their type, once known. */
   lets: ReadonlyMap<string, Type>
   flows: ReadonlySet<string>
+  stages: ReadonlySet<string>
   components: ReadonlySet<string>
   fits: ReadonlyMap<string, LinearFit | null>
   functions: HostFunctions
@@ -70,10 +71,11 @@ export const BUILTINS: Readonly<Record<string, Builtin>> = {
   secs: { args: ['number'], result: 'string', fn: secs },
   measured: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: measured },
   estimated: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: estimated },
+  configured: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: configured },
 }
 
-/** The tables a formula may read with a ".": flows.orders, demand.db, util.db, derived.x. */
-const TABLES = ['flows', 'demand', 'util', 'derived'] as const
+/** The tables a formula may read with a ".": flows.orders, at.db.orders, demand.db, util.db, derived.x. */
+const TABLES = ['flows', 'at', 'demand', 'util', 'derived'] as const
 /** Names a declaration cannot take: the tables, the locals, the literals and what plain objects already have. */
 export const RESERVED = new Set<string>([
   'load',
@@ -219,13 +221,20 @@ class Compiler {
 
   example(table: string) {
     const pool =
-      table === 'flows' ? this.names.flows : table === 'derived' ? this.names.lets.keys() : this.names.components
+      table === 'flows'
+        ? this.names.flows
+        : table === 'at'
+          ? this.names.stages
+          : table === 'derived'
+            ? this.names.lets.keys()
+            : this.names.components
     return [...pool][0] ?? 'x'
   }
 
   member(e: Extract<Expr, { t: 'member' }>): Formula {
     const table = e.object.name
     const key = e.prop.name
+    if (table === 'at') return this.at(e)
     const pool: Iterable<string> | undefined =
       table === 'flows'
         ? this.names.flows
@@ -235,7 +244,7 @@ class Compiler {
             ? this.names.lets.keys()
             : undefined
     if (!pool) {
-      this.report.error(e.object, `"${table}" has no entries: only flows., demand., util. and derived. do`)
+      this.report.error(e.object, `"${table}" has no entries: only flows., at., demand., util. and derived. do`)
       return bad
     }
     const has = table === 'derived' ? this.names.lets.has(key) : (pool as ReadonlySet<string>).has(key)
@@ -247,6 +256,30 @@ class Compiler {
     if (!this.canRead(e, `${table}.${key}`)) return bad
     const type = table === 'derived' ? this.names.lets.get(key)! : 'number'
     return { type, constant: false, run: (c) => c[table][key] }
+  }
+
+  /** at.db: every flow reaching the stage, per second; at.db.orders: one flow. */
+  at(e: Extract<Expr, { t: 'member' }>): Formula {
+    const stage = e.prop.name
+    if (!this.names.stages.has(stage)) {
+      this.report.error(e.prop, `unknown stage "${stage}"`, didYouMean(stage, this.names.stages))
+      return bad
+    }
+    const flow = e.flow?.name
+    if (flow != null && !this.names.flows.has(flow)) {
+      this.report.error(e.flow!, `unknown flow "${flow}"`, didYouMean(flow, this.names.flows))
+      return bad
+    }
+    if (!this.canRead(e, flow == null ? `at.${stage}` : `at.${stage}.${flow}`)) return bad
+    const flows = [...this.names.flows]
+    return {
+      type: 'number',
+      constant: false,
+      run:
+        flow == null
+          ? (c) => flows.reduce((a, f) => a + (c.at[stage][f] as number), 0)
+          : (c) => c.at[stage][flow] as number,
+    }
   }
 
   call(e: Extract<Expr, { t: 'call' }>): Formula {

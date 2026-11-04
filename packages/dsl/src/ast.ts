@@ -11,7 +11,8 @@ export type Expr = Span &
     | { t: 'bool'; value: boolean }
     | { t: 'tpl'; quasis: string[]; parts: Expr[] }
     | { t: 'id'; name: string }
-    | { t: 'member'; object: Ident; prop: Ident }
+    /** `flows.orders`; `at.db.orders` has a second name, the flow. */
+    | { t: 'member'; object: Ident; prop: Ident; flow?: Ident }
     | { t: 'call'; callee: Ident; args: Expr[] }
     | { t: 'unary'; op: '-' | '+' | '!'; arg: Expr }
     | { t: 'bin'; op: BinOp; left: Expr; right: Expr }

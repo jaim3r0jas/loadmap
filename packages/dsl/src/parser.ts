@@ -334,6 +334,13 @@ class Parser {
           this.next()
           const prop = this.ident('a name after "."')
           if (!this.is('(')) {
+            // at.<stage>.<flow>: the one table with two names
+            if (callee.name === 'at' && this.is('.')) {
+              this.next()
+              const flow = this.ident('a flow after "at.<stage>."')
+              if (this.is('.')) this.fail(this.peek(), 'at takes two names: at.db.orders')
+              return { t: 'member', object: callee, prop, flow, from: t.from, to: flow.to }
+            }
             if (this.is('.')) this.fail(this.peek(), 'only one "." is allowed: flows.orders, util.db')
             return { t: 'member', object: callee, prop, from: t.from, to: prop.to }
           }

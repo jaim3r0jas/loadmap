@@ -20,12 +20,14 @@ describe('completions', () => {
   it('offers the entries of a table after its dot', () => {
     expect(at(inside('flow orders "orders" {', 'rate: flows.ev|')).labels).toEqual(['orders', 'events'])
     expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual(['gateway', 'workers', 'db'])
+    expect(at(inside('flow orders "orders" {', 'rate: at.|')).labels).toEqual(['gateway', 'topic', 'workers', 'db'])
+    expect(at(inside('flow orders "orders" {', 'rate: at.db.o|')).labels).toEqual(['orders', 'events'])
   })
 
   it("offers a block's properties and statements at the start of a line", () => {
     const { labels, word, c } = at(inside('flow orders "orders" {', 'pri|'))
     expect(word).toBe('pri')
-    expect(labels).toEqual(['unit', 'rate', 'priority', 'route', 'from', 'color', 'drop', 'merge'])
+    expect(labels).toEqual(['unit', 'rate', 'priority', 'route', 'from', 'color', 'drop', 'merge', 'retry'])
     expect(c.options.find((o) => o.label === 'rate')).toMatchObject({ apply: 'rate: ', detail: 'required' })
   })
 

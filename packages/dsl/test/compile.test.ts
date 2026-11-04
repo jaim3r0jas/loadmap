@@ -1,5 +1,18 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { estimated } from '@loadmap/core'
+import {
+  cache,
+  configured,
+  defineModel,
+  estimated,
+  limit,
+  type Model,
+  measured,
+  p,
+  pass,
+  queue,
+  store,
+  workers,
+} from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, type Diagnostic } from '../src'
 
@@ -122,7 +135,10 @@ describe('formulas', () => {
       ['flows.__proto__', 'unknown flow "__proto__"'],
       ['Math.constructor(1)', 'unknown function "constructor"'],
       ['window.alert(1)', '"window.alert(…)" is not a function'],
-      ['x.y', '"x" has no entries: only flows., demand., util. and derived. do'],
+      ['x.y', '"x" has no entries: only flows., at., demand., util. and derived. do'],
+      ['at.constructor.req', 'unknown stage "constructor"'],
+      ['at.api.__proto__', 'unknown flow "__proto__"'],
+      ['flows.req.x', 'only one "." is allowed: flows.orders, util.db'],
       ['eval(1)', 'unknown function "eval"'],
     ] as const)
       expect(errors(def({ top: `let x = ${formula}` }))[0]?.message, formula).toBe(message)
@@ -406,5 +422,227 @@ describe('uncertainty and expectations', () => {
     expect(errors(def({ top: 'expect { target: 0 }' }))).toEqual([
       { message: 'target is a load multiple above 0', hint: undefined, text: '0' },
     ])
+  })
+})
+
+/** The model a definition compiles to, which must not report anything. */
+function model(src: string): Model {
+  const r = compile(src)
+  expect(r.diagnostics.map((d) => `${d.message} at "${src.slice(d.from, d.to)}"`)).toEqual([])
+  return r.definition!.model
+}
+
+/** What the page and the sim read from an evaluation, the same for the definition and its TypeScript twin. */
+function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[]) {
+  expect([dsl.flowIds, dsl.componentIds, dsl.stageIds]).toEqual([ts.flowIds, ts.componentIds, ts.stageIds])
+  for (const v of values) {
+    const [a, b] = [ts.evaluate(v as any), dsl.evaluate(v as any)]
+    const shown = (ev: typeof a) => ({
+      flows: ev.flows,
+      at: ev.at,
+      retry: ev.retry,
+      components: ev.components,
+      stages: ev.stages,
+      overload: ev.overload,
+      verdict: ev.verdict,
+    })
+    expect(shown(b), JSON.stringify(v)).toEqual(shown(a))
+  }
+}
+
+const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
+
+describe('building blocks', () => {
+  it('compile a cache, whose hits are gone from the stages after it', () => {
+    const dsl = model(`loadmap 1
+load "Load" { max: 10; default: 1 }
+param hit "Hit ratio" { options: [0.5, 0.8]; default: 0.8 }
+flow reads "reads" { rate: 1000 * load; route: cache -> db; from: client }
+node client "Client"
+node cache "Cache" {
+  cache { hit: hit }
+  capacity: measured(20_000, "ops/s")
+  over: "lookups time out"
+}
+node db "DB" {
+  store
+  capacity: measured(500, "queries/s")
+  over: "queries queue"
+}
+client -> cache
+cache -> db: \`\${compact(at.db.reads)} misses/s\`
+`)
+    const ts = defineModel({
+      load: p.load({ label: 'Load', max: 10, default: 1 }),
+      params: { hit: p.select({ label: 'Hit ratio', options: [0.5, 0.8], default: 0.8 }) },
+      flows: { reads: { label: 'reads', rate: ({ load }) => 1000 * load } },
+      components: {
+        cache: { name: 'Cache', capacity: measured(20_000, 'ops/s'), over: 'lookups time out' },
+        db: { name: 'DB', capacity: measured(500, 'queries/s'), over: 'queries queue' },
+      },
+      stages: { cache: cache({ hit: ({ hit }) => hit, component: 'cache' }), db: store('db') },
+      routes: { reads: ['cache', 'db'] },
+    })
+    same(ts, dsl, [...loads, { hit: 0.5 }])
+    expect(dsl.evaluate().at.db!.reads).toBeCloseTo(200)
+  })
+
+  it('compile an autoscaled pool', () => {
+    const dsl = model(`loadmap 1
+load "Load" { max: 10; default: 1 }
+param most "Most pods" { options: [6, 10]; default: 10 }
+flow req "requests" { rate: 300 * load; route: topic -> api; from: client }
+node client "Client"
+cluster broker "Broker" {
+  members: 1
+  queue topic { partitions { req: 4 } }
+}
+pool api "API" {
+  workers {
+    perPod: 4
+    autoscale { min: 2; max: most; target: 0.7 }
+  }
+  demand: flows.req * 0.01
+  capacity: measured(most * 1, "cores")
+  over: "requests queue"
+}
+client -> broker
+broker -> api
+`)
+    const ts = defineModel({
+      load: p.load({ label: 'Load', max: 10, default: 1 }),
+      params: { most: p.select({ label: 'Most pods', options: [6, 10], default: 10 }) },
+      flows: { req: { label: 'requests', rate: ({ load }) => 300 * load } },
+      components: {
+        api: {
+          name: 'API',
+          demand: ({ flows }) => flows.req * 0.01,
+          capacity: ({ most }) => measured(most * 1, 'cores'),
+          over: 'requests queue',
+        },
+      },
+      stages: {
+        topic: queue({ partitions: { req: 4 } }),
+        api: workers('api', { perPod: 4, autoscale: { min: 2, max: ({ most }) => most, target: 0.7 } }),
+      },
+      routes: { req: ['topic', 'api'] },
+    })
+    same(ts, dsl, [...loads, { most: 6 }])
+    expect(dsl.evaluate().stages.api).toMatchObject({ pods: 10, running: 5 })
+  })
+
+  it('compile a rate limiter with a configured limit', () => {
+    const dsl = model(`loadmap 1
+load "Load" { max: 10; default: 1 }
+flow req "requests" { rate: 1000 * load; route: limiter -> db; from: client }
+node client "Client"
+node limiter "Limiter" {
+  limit
+  capacity: configured(1_000, "req/s", "gateway config")
+  over: "clients get 429s"
+}
+node db "DB" {
+  store
+  capacity: measured(2_000, "queries/s")
+  over: "queries queue"
+}
+client -> limiter -> db
+`)
+    const ts = defineModel({
+      load: p.load({ label: 'Load', max: 10, default: 1 }),
+      flows: { req: { label: 'requests', rate: ({ load }) => 1000 * load } },
+      components: {
+        limiter: { name: 'Limiter', capacity: configured(1000, 'req/s', 'gateway config'), over: 'clients get 429s' },
+        db: { name: 'DB', capacity: measured(2000, 'queries/s'), over: 'queries queue' },
+      },
+      stages: { limiter: limit('limiter'), db: store('db') },
+      routes: { req: ['limiter', 'db'] },
+    })
+    same(ts, dsl, loads)
+    expect(dsl.evaluate({ load: 1.5 }).at.db!.req).toBeCloseTo(1000)
+  })
+
+  it('compile retries with a budget, switched by a parameter', () => {
+    const dsl = model(`loadmap 1
+load "Load" { max: 10; default: 1 }
+param tries "Retries" { options: [0, 3]; default: 3 }
+param capped "Retry budget" { default: false }
+flow req "requests" {
+  rate: 1000 * load
+  retry { times: tries }
+  route: gateway -> service
+  from: client
+}
+flow capped "capped requests" {
+  rate: 100 * load
+  retry { times: 3; budget: 0.1; when: capped }
+  route: gateway -> service
+  from: client
+}
+node client "Client"
+node gateway "Gateway" {
+  pass
+  capacity: measured(5_000, "req/s")
+  over: "everyone gets errors"
+}
+node service "Service" {
+  pass
+  capacity: measured(1_000, "req/s")
+  over: "requests get 503s"
+}
+client -> gateway -> service
+`)
+    const ts = defineModel({
+      load: p.load({ label: 'Load', max: 10, default: 1 }),
+      params: {
+        tries: p.select({ label: 'Retries', options: [0, 3], default: 3 }),
+        capped: p.switch({ label: 'Retry budget', default: false }),
+      },
+      flows: {
+        req: {
+          label: 'requests',
+          rate: ({ load }) => 1000 * load,
+          overload: ({ tries }) => ({ retry: { times: tries } }),
+        },
+        capped: {
+          label: 'capped requests',
+          rate: ({ load }) => 100 * load,
+          overload: ({ capped }) => (capped ? { retry: { times: 3, budget: 0.1 } } : {}),
+        },
+      },
+      components: {
+        gateway: { name: 'Gateway', capacity: measured(5000, 'req/s'), over: 'everyone gets errors' },
+        service: { name: 'Service', capacity: measured(1000, 'req/s'), over: 'requests get 503s' },
+      },
+      stages: { gateway: pass('gateway'), service: pass('service') },
+      routes: { req: ['gateway', 'service'], capped: ['gateway', 'service'] },
+    })
+    same(ts, dsl, [...loads, { tries: 0 }, { capped: true, load: 2 }])
+    expect(dsl.evaluate({ load: 2 }).retry.req!.attempts).toBeGreaterThan(2000)
+  })
+
+  it('point at what a block is missing', () => {
+    const at = (box: string) =>
+      errors(`loadmap 1
+load { max: 10 }
+flow req "r" { rate: load; route: x; from: client }
+node client "Client"
+${box}
+client -> x
+`).map((e) => e.message)
+    expect(at('pool x "X" {\n  workers { perPod: 4 }\n  capacity: measured(1, "cores")\n  over: ""\n}')).toContain(
+      'a workers stage needs pods, or autoscale',
+    )
+    expect(
+      at(
+        'pool x "X" {\n  workers { pods: 2; perPod: 4; autoscale { min: 1; max: 2; target: 0.7 } }\n  capacity: measured(1, "cores")\n  over: ""\n}',
+      ),
+    ).toContain('an autoscaled pool has no fixed pods')
+    expect(at('node x "X" {\n  pass\n  capacity: configured(1 ± 10%, "req/s")\n  over: ""\n}')).toContain(
+      '"±" only goes in the first value of measured(…) or estimated(…)',
+    )
+    expect(
+      errors(def({ extra: 'component spare "Spare" { capacity: measured(1, "x"); over: "" }' })).map((e) => e.message),
+    ).toContain('the component "spare" needs "demand: …": no stage uses it')
   })
 })

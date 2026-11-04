@@ -1,10 +1,12 @@
 import {
   type Branch,
   type CheckResult,
+  cache,
   check,
   defineModel,
   fanout,
   type LinearFit,
+  limit,
   type Model,
   type Overload,
   p,
@@ -259,6 +261,7 @@ class Compiler {
       params: paramTypes,
       lets: this.lets,
       flows: new Set(flowNames.keys()),
+      stages: new Set(stageNames.keys()),
       components: new Set(componentNames.keys()),
       fits: this.fits,
       functions: this.functions,
@@ -395,6 +398,14 @@ class Compiler {
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout')
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
+    const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
+    for (const [id, c] of Object.entries(componentDefs))
+      if (!(c as { demand?: unknown }).demand && !used.has(id))
+        this.report.error(
+          componentNames.get(id)!,
+          `the component "${id}" needs "demand: …": no stage uses it`,
+          COMPONENT_PROPS.demand!.doc,
+        )
 
     const calibration: Record<string, LinearFit> = {}
     for (const f of fits) {
@@ -1015,17 +1026,22 @@ class Compiler {
   }
 
   private overload(b: Block): Overload | ((ctx: any) => Overload) | undefined {
-    const rules = b.children.filter((c) => c.keyword === 'drop' || c.keyword === 'merge')
+    const rules = b.children.filter((c) => c.keyword === 'drop' || c.keyword === 'merge' || c.keyword === 'retry')
     if (!rules.length) return undefined
     const seen = new Set<string>()
-    const parts: { key: 'drop' | 'merge'; when?: (c: any) => unknown; fields: [string, unknown][] }[] = []
+    type Key = 'drop' | 'merge' | 'retry'
+    const parts: { key: Key; when?: (c: any) => unknown; fields: [string, unknown][] }[] = []
+    const props: Record<Key, readonly string[]> = {
+      drop: ['olderThan', 'reason'],
+      merge: ['share', 'reason'],
+      retry: ['times', 'budget'],
+    }
     for (const r of rules) {
-      const key = r.keyword as 'drop' | 'merge'
+      const key = r.keyword as Key
       if (seen.has(key)) this.report.error(r.at, `"${key}" is set twice in this flow`)
       seen.add(key)
       const fields: [string, unknown][] = []
-      const first = key === 'drop' ? 'olderThan' : 'share'
-      for (const k of [first, 'reason']) {
+      for (const k of props[key]) {
         const v = this.dynProp(r, k, k === 'reason' ? 'string' : 'number')
         if (v !== undefined) fields.push([k, v])
       }
@@ -1070,13 +1086,14 @@ class Compiler {
       const check =
         k === 'capacity'
           ? (v: unknown) => {
-              if (!isCapacity(v)) throw new Error('a capacity comes from measured(…) or estimated(…)')
+              if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
             }
           : undefined
       o[k] = this.dyn(prop.value, want, 'ctx', check)
     }
     const at = box ? (box.args.id ?? box.at) : b.at
-    for (const k of ['demand', 'capacity', 'over'])
+    // without a demand line the component handles what reaches its stages: checked once the stages are known
+    for (const k of ['capacity', 'over'])
       if (!(k in o)) this.report.error(at, `the component needs "${k}: …"`, COMPONENT_PROPS[k]!.doc)
     return o
   }
@@ -1109,16 +1126,39 @@ class Compiler {
     switch (b.keyword) {
       case 'pass':
         return component ? pass(component, base) : needs()
+      case 'limit':
+        return component ? limit(component, base) : needs()
+      case 'cache': {
+        const hit = this.dynProp<number>(b, 'hit', 'number')
+        return cache({ ...base, hit: hit ?? 0, ...(component ? { component } : {}) })
+      }
       case 'store':
         return component ? store(component, base) : needs()
       case 'sink':
         return sink(base)
       case 'workers': {
         if (!component) return needs()
-        const pods = this.dynProp<number>(b, 'pods', 'number', this.count('pods'))
         const perPod = this.dynProp<number>(b, 'perPod', 'number', this.count('perPod'))
         const fill = this.constProp<'round-robin' | 'in-order'>(b, 'fill')
-        return workers(component, { ...base, pods: pods ?? 0, perPod: perPod ?? 0, ...(fill ? { fill } : {}) })
+        const rest = { ...base, perPod: perPod ?? 0, ...(fill ? { fill } : {}) }
+        const scale = b.children.find((c) => c.keyword === 'autoscale')
+        if (scale) {
+          if (this.prop(b, 'pods'))
+            this.report.error(this.prop(b, 'pods')!.key, 'an autoscaled pool has no fixed pods', 'leave out pods')
+          const min = this.dynProp<number>(scale, 'min', 'number') ?? 1
+          // max is the pods drawn: the same bound as pods
+          const max = this.dynProp<number>(scale, 'max', 'number', this.count('pods')) ?? 1
+          const target = this.dynProp<number>(scale, 'target', 'number') ?? 1
+          return workers(component, { ...rest, autoscale: { min, max, target } })
+        }
+        const pods = this.dynProp<number>(b, 'pods', 'number', this.count('pods'))
+        if (!this.prop(b, 'pods'))
+          this.report.error(
+            b.at,
+            'a workers stage needs pods, or autoscale',
+            'pods: 3, or autoscale { min: 2; max: 10; target: 0.7 }',
+          )
+        return workers(component, { ...rest, pods: pods ?? 0 })
       }
       case 'queue': {
         const block = b.children.find((c) => c.keyword === 'partitions')

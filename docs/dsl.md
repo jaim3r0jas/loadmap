@@ -407,7 +407,7 @@ After the keyword: id [label].
 | `from` (required) | node, constant | The node its dots start from. |
 | `color` | `accent` \| `alt` \| `ok` \| `warn` \| `drop` \| `muted` | A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes. |
 
-Holds: `drop`, `merge`.
+Holds: `drop`, `merge`, `retry`.
 
 ### drop
 
@@ -437,6 +437,20 @@ merge { share: 0.37; reason: "newest kept" }
 | `reason` | string, formula | Shown with the meter. |
 | `when` | boolean, formula | The rule applies only while this is true. |
 
+### retry
+
+A unit turned away on the route (by a pass, limit or cache stage past capacity) is sent again, up to times more times. The attempts settle where the retries they cause are the ones assumed.
+
+```
+retry { times: 3; budget: 0.1 }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `times` (required) | number, formula | Retries after the first attempt: a whole number. |
+| `budget` | number, formula | At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. |
+| `when` | boolean, formula | The rule applies only while this is true. |
+
 ### component
 
 Something that can run out: its demand against its capacity. On a box, write these lines on the box.
@@ -452,8 +466,8 @@ After the keyword: [id] [label].
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
-| `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
+| `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -475,13 +489,13 @@ After the keyword: id [label] [sub].
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
-| `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
+| `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `fanout`, `component`.
+Holds: `pass`, `store`, `sink`, `fanout`, `cache`, `limit`, `component`.
 
 ### cluster
 
@@ -501,8 +515,8 @@ After the keyword: id [label] [sub].
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
-| `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
+| `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -526,8 +540,8 @@ After the keyword: id [label] [sub].
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
-| `demand` | number, formula | What the component must handle, in its capacity's unit. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source); `value ± 30%` says how sure it is. |
+| `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -540,6 +554,35 @@ Flows pass through; past capacity the share above 100 % is rejected.
 
 ```
 pass "the gateway"
+```
+
+After the keyword: [id] [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
+
+### cache
+
+A share of the units (hit) is answered here and goes no further; the rest carry on to the next stage. Past capacity the share above 100 % is rejected.
+
+```
+cache { hit: 0.8 }
+```
+
+After the keyword: [id] [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `hit` (required) | number, formula | The share answered here, 0 to 1. |
+| `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
+
+### limit
+
+A rate limiter: its component's capacity is the limit. Above it the share over is turned away, and the stages after it see only what got through.
+
+```
+limit
 ```
 
 After the keyword: [id] [label].
@@ -610,10 +653,26 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `pods` (required) | number, formula | How many pods. |
+| `pods` | number, formula | How many pods; an autoscaled pool has autoscale instead. |
 | `perPod` (required) | number, formula | Workers per pod. |
 | `fill` | `round-robin` \| `in-order` | round-robin spreads work across pods (the default); in-order fills pod 0 first. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
+
+Holds: `autoscale`.
+
+### autoscale
+
+Pods are added and removed to hold each running pod near target, between min and max. The component's capacity is the pool at max pods: it runs out when the pool cannot grow further.
+
+```
+autoscale { min: 2; max: 10; target: 0.7 }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `min` (required) | number, formula | The fewest pods, at least 1. |
+| `max` (required) | number, formula | The most pods. |
+| `target` (required) | number, formula | The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %. |
 
 ### fanout
 
@@ -657,6 +716,6 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 
 ### Functions
 
-`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`
+`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`, `configured`
 
 <!-- end of reference -->
