@@ -25,7 +25,10 @@ expect "Proposed keeps 14×" { scenario: Proposed; target: 14 }
 
 # the walk a design review takes: the page steps through it, `loadmap record --story` plays it
 step "An ordinary peak: every box is under half its capacity." { load: 1 }
-step "At 20×, the gateway and the workers are near full, and the gateway is only an estimate." { load: 20; focus: gateway }
+step "At 20×, the gateway and the workers are near full, and the gateway is only an estimate." {
+  load: 20
+  focus: gateway
+}
 step "The proposal doubles the gateways and the worker pods: at 20× both are back under half." {
   scenario: Proposed
   load: 20
@@ -36,27 +39,27 @@ step "The proposal doubles the gateways and the worker pods: at 20× both are ba
 fit workerCores "Worker CPU per request" {
   source: "Grafana, peak week"
   points rate cores {
-      200 0.2599
-      350 0.3061
-      500 0.3419
-      650 0.3889
-      800 0.4385
-      950 0.4852
-      1100 0.5166
-      1250 0.5881
-      1400 0.6233
-      1550 0.6614
-      1700 0.7008
-      1850 0.7677
-      2000 0.8076
-      2150 0.8235
-      2300 0.8899
-      2450 0.9201
-      2600 0.9901
-      2750 1.004
-      2900 1.0739
-      3050 1.1141
-      3200 1.1375
+    200 0.2599
+    350 0.3061
+    500 0.3419
+    650 0.3889
+    800 0.4385
+    950 0.4852
+    1100 0.5166
+    1250 0.5881
+    1400 0.6233
+    1550 0.6614
+    1700 0.7008
+    1850 0.7677
+    2000 0.8076
+    2150 0.8235
+    2300 0.8899
+    2450 0.9201
+    2600 0.9901
+    2750 1.004
+    2900 1.0739
+    3050 1.1141
+    3200 1.1375
   }
 }
 

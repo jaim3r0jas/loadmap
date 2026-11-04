@@ -249,8 +249,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:87:17 error: unknown flow "order"
-  87 |   demand: flows.order + flows.events
+checkout.loadmap:90:17 error: unknown flow "order"
+  90 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 

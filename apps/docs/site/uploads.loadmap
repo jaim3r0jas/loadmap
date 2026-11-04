@@ -8,7 +8,7 @@ param pods "Resizer pods" { options: [2, 4, 8]; default: 4 }
 param webp "Also make WebP copies" { default: true }
 preset "Holiday peak" { load: 30; pods: 8 }
 
-let files = webp ? 6 : 3                       # files written per photo
+let files = webp ? 6 : 3 # files written per photo
 
 flow photos "photos" {
   unit: "photo"
@@ -38,7 +38,7 @@ pool resizers "Resizers" `${pods} pods × 4 threads` {
   workers { pods: pods; perPod: 4 }
   short: "the resizers"
   plural: true
-  demand: flows.photos * files * 0.005         # 5 ms of CPU per file
+  demand: flows.photos * files * 0.005 # 5 ms of CPU per file
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "photos wait in the queue and the lag grows"
 }

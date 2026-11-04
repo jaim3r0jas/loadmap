@@ -1,6 +1,6 @@
 import type { Reporter, Span } from './diagnostics'
 
-export type TokenKind = 'ident' | 'number' | 'string' | 'template' | 'punct' | 'newline' | 'eof'
+export type TokenKind = 'ident' | 'number' | 'string' | 'template' | 'punct' | 'newline' | 'comment' | 'eof'
 
 export interface Token extends Span {
   kind: TokenKind
@@ -22,8 +22,11 @@ export const LEXICON = { punct: PUNCT, comment: '#' } as const
 /**
  * Splits `source[from, to)` into tokens. Newlines end statements, except inside parentheses and brackets, so a long
  * formula can wrap there. `#` starts a comment to the end of the line.
+ *
+ * With `trivia` (for the formatter, never the parser) every newline is a token, blank lines and wrapped formulas
+ * included, and so is every comment.
  */
-export function lex(source: string, report: Reporter, from = 0, to = source.length): Token[] {
+export function lex(source: string, report: Reporter, from = 0, to = source.length, trivia = false): Token[] {
   const out: Token[] = []
   let depth = 0
   let i = from
@@ -31,11 +34,14 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
   while (i < to) {
     const c = source[i]!
     if (c === '\n') {
-      if (depth === 0 && out.at(-1)?.kind !== 'newline') push({ kind: 'newline', text: '\n', from: i, to: i + 1 })
+      if (trivia || (depth === 0 && out.at(-1)?.kind !== 'newline'))
+        push({ kind: 'newline', text: '\n', from: i, to: i + 1 })
       i++
     } else if (c === ' ' || c === '\t' || c === '\r') i++
     else if (c === '#') {
+      const s = i
       while (i < to && source[i] !== '\n') i++
+      if (trivia) push({ kind: 'comment', text: source.slice(s, i).trimEnd(), from: s, to: i })
     } else if (isIdStart(c)) {
       const s = i
       while (i < to && isIdPart(source[i]!)) i++
