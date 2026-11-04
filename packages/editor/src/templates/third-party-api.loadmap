@@ -1,6 +1,6 @@
 loadmap 1
-# Your service depends on someone else's API with a rate quota. A cache in front cuts the calls; the plan sets the
-# quota. Which one buys more headroom for the money is the question this answers.
+# Your service depends on someone else's API with a rate quota. A cache in front answers the repeated lookups; the
+# plan sets the quota, and above it the vendor answers 429s. Which one buys more headroom is the question this answers.
 title: "Third-party API with a quota"
 speed: 10
 assume: "1× is today's busiest minute."
@@ -18,12 +18,10 @@ growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 1.5×" { target: 1.5 }
 
-let calls = flows.lookups * (1 - hit)
-
 flow lookups "lookups" {
   unit: "lookup"
   rate: 15 * load
-  route: service -> vendor
+  route: service -> cache -> vendor
   from: users
   color: accent
 }
@@ -38,14 +36,19 @@ pool service "Your service" `${pods} pods` {
   over: "requests queue in your service"
 }
 
+node cache "Cache" {
+  sub: hit > 0 ? `${hit * 100} % hits` : "off"
+  cache { hit: hit }
+}
+
 node vendor "Vendor API" `${quota} req/s plan` {
-  store
+  limit
   short: "the vendor API"
-  demand: calls
-  capacity: measured(quota, "req/s", "the plan's rate limit")
+  # no demand line: the lookups the cache does not answer
+  capacity: configured(quota, "req/s", "the plan's rate limit")
   over: "calls get 429s and lookups fail"
-  describe: hit > 0 ? `${hit * 100} % served from the cache` : "every lookup calls it"
 }
 
 users -> service
-service -> vendor: `${compact(calls)} calls/s`
+service -> cache
+cache -> vendor: `${compact(at.vendor.lookups)} calls/s`

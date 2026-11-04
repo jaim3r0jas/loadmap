@@ -1,0 +1,55 @@
+loadmap 1
+# Reads go through a cache: the hits are answered there and only the misses reach the database. The hit ratio decides
+# how much of the load the database ever sees.
+title: "Cache in front of a database"
+speed: 10
+assume: "1× is today's busiest hour; the hit ratio holds as the load grows."
+
+load "Traffic, × today" { max: 50; default: 1 }
+
+param pods "API pods" { options: [2, 4, 6]; default: 2 }
+param hit "Cache hit ratio" { options: [0.5, 0.8, 0.95]; default: 0.8 }
+
+scenario "Today" {}
+scenario "Warmer cache" { hit: 0.95 }
+growth { rate: 0.04; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2×" { target: 2 }
+
+flow reads "reads" {
+  unit: "read"
+  rate: 2_000 * load
+  route: api -> cache -> db
+  from: clients
+  color: accent
+}
+
+node clients "Clients" "web and mobile"
+
+pool api "API" `${pods} pods` {
+  workers { pods: pods; perPod: 8 }
+  short: "the API"
+  demand: flows.reads * 0.0001
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "requests queue in the API"
+}
+
+node cache "Cache" `${hit * 100} % hits` {
+  cache { hit: hit }
+  short: "the cache"
+  capacity: estimated(50_000, "ops/s", "vendor sizing for this node")
+  over: "lookups time out and fall through"
+}
+
+node db "Database" "primary" {
+  shape: cylinder
+  store
+  short: "the database"
+  # no demand line: what reaches it, the misses
+  capacity: estimated(3_000 ± 30%, "queries/s", "load test of a replica")
+  over: "queries queue and the API waits on them"
+}
+
+clients -> api
+api -> cache: "every read"
+cache -> db: `${compact(at.db.reads)} misses/s`

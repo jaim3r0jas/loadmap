@@ -1,0 +1,54 @@
+loadmap 1
+# A rate limiter in front of a service that cannot take every request: above the limit clients get 429s, and what
+# gets through never exceeds what the service and its database can take.
+title: "Rate limiter"
+speed: 10
+assume: "1× is today's busiest minute; one global limit, not per client."
+
+load "Traffic, × today" { max: 20; default: 1 }
+
+param limit "Limit (req/s)" { options: [1_500, 2_500, 4_000]; default: 1_500 }
+param pods "Service pods" { options: [2, 4]; default: 2 }
+
+scenario "Today" {}
+scenario "Raise the limit" { limit: 2_500; pods: 4 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "No 429s below 2×" { component: limiter; full: 2 }
+
+flow requests "requests" {
+  unit: "request"
+  rate: 600 * load
+  route: limiter -> service -> db
+  from: clients
+  color: accent
+}
+
+node clients "Clients"
+
+node limiter "Rate limiter" `${compact(limit)} req/s` {
+  limit
+  short: "the rate limiter"
+  capacity: configured(limit, "req/s", "gateway config")
+  over: "clients above the limit get 429s"
+}
+
+pool service "Service" `${pods} pods` {
+  workers { pods: pods; perPod: 8 }
+  short: "the service"
+  demand: at.service.requests * 0.002
+  capacity: measured(pods * 2, "cores", "pod CPU limit")
+  over: "requests queue in the service"
+}
+
+node db "Database" {
+  shape: cylinder
+  store
+  short: "the database"
+  capacity: estimated(3_000 ± 30%, "queries/s", "vendor sizing")
+  over: "queries queue on the primary"
+}
+
+clients -> limiter
+limiter -> service: `${compact(at.service.requests)} req/s let through`
+service -> db

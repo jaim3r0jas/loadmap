@@ -1,0 +1,56 @@
+loadmap 1
+# An API that scales its pods with the load: the autoscaler adds a pod whenever the running ones pass their target,
+# up to a maximum. It runs out only when it cannot grow further.
+title: "Autoscaled API"
+speed: 10
+assume: "1× is today's busiest hour; a new pod takes a minute to start, which this leaves out."
+
+load "Traffic, × today" { max: 50; default: 2 }
+
+param maxPods "Most pods" { options: [8, 12, 20]; default: 12 }
+param scaleAt "Scale out above" { options: [0.5, 0.7]; default: 0.7; format: `${value * 100} %` }
+
+scenario "Today" {}
+scenario "Higher ceiling" { maxPods: 20 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2.5×" { target: 2.5 }
+
+flow requests "requests" {
+  unit: "request"
+  rate: 400 * load
+  route: lb -> api -> db
+  from: clients
+  color: accent
+}
+
+node clients "Clients"
+
+node lb "Load balancer" {
+  pass
+  short: "the load balancer"
+  capacity: estimated(40_000, "req/s", "vendor figure")
+  over: "connections are refused"
+}
+
+pool api "API" `2 to ${maxPods} pods` {
+  workers { perPod: 4; autoscale { min: 2; max: maxPods; target: scaleAt } }
+  short: "the API"
+  demand: flows.requests * 0.005
+  capacity: measured(maxPods * 1, "cores", "1 core a pod, at most pods")
+  over: "the pool is at its maximum and requests queue"
+  describe: `2 to ${maxPods} pods, held near ${scaleAt * 100} % each`
+}
+
+node db "Database" {
+  shape: cylinder
+  store
+  short: "the database"
+  demand: flows.requests * 2
+  capacity: estimated(12_000 ± 30%, "queries/s", "vendor sizing")
+  over: "queries queue on the primary"
+}
+
+clients -> lb
+lb -> api
+api -> db: "2 queries a request"

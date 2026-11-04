@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 import { TEMPLATES } from '../src/templates'
 
 describe('templates', () => {
-  it('are six, with unique ids and the title their source declares', () => {
-    expect(TEMPLATES).toHaveLength(6)
-    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(6)
+  it('are ten, with unique ids and the title their source declares', () => {
+    expect(TEMPLATES).toHaveLength(10)
+    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(10)
     for (const t of TEMPLATES) expect(t.source).toContain(`title: "${t.title}"`)
   })
 
