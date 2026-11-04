@@ -71,6 +71,10 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   headroom?: boolean
   /** The scenarios side by side, when the model declares two or more. Default true. */
   compare?: boolean
+  /** A click (or Enter) on a box of the diagram, by its id: every box is a button then. */
+  onNodeClick?: (id: string) => void
+  /** The box drawn as selected, by its id. */
+  selected?: string | null
   ref?: Ref<LoadmapHandle>
 }
 
@@ -83,6 +87,8 @@ export function Loadmap<P>({
   assumptions,
   headroom = true,
   compare = true,
+  onNodeClick,
+  selected,
   ref,
   ...o
 }: LoadmapProps<P>) {
@@ -94,7 +100,7 @@ export function Loadmap<P>({
       {title !== false && <h2>{title ?? model.title}</h2>}
       <Scenarios lm={lm} />
       <Story lm={lm} />
-      <Diagram lm={lm} />
+      <Diagram lm={lm} onNodeClick={onNodeClick} selected={selected} />
       <Verdict lm={lm} />
       {(headroom || side) && (
         <div className={headroom && side ? 'lm-strip' : undefined}>

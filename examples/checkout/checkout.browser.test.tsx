@@ -1,6 +1,6 @@
 import { compare, headroom } from '@loadmap/core'
 import { composeFrame, exportPng, exportSvg, recordPoster, recordVideo } from '@loadmap/export'
-import type { LoadmapHandle, Theme } from '@loadmap/react'
+import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { Checkout } from './Checkout'
 import { checkout } from './model'
+import { view } from './view'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -212,6 +213,43 @@ describe('checkout in the browser', () => {
     await expect.poll(detail).toContain('capacity estimated, vendor benchmark, not load-tested')
     // a box without a component has nothing to tell
     expect(el.querySelector('[data-node="phones"]')!.getAttribute('tabindex')).toBeNull()
+  })
+
+  it('reports a click on any box, and draws the one selected', async () => {
+    await page.viewport(1280, 900)
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapHandle>()
+    const clicks: string[] = []
+    root = createRoot(host)
+    const draw = (selected: string | null) =>
+      root!.render(
+        <Loadmap ref={ref} model={checkout} view={view} onNodeClick={(id) => clicks.push(id)} selected={selected} />,
+      )
+    draw(null)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    const el = host.querySelector<HTMLElement>('.lm')!
+    // a box without a component is a button too now, named by its title
+    const phones = el.querySelector<SVGGElement>('[data-node="phones"]')!
+    expect([phones.getAttribute('role'), phones.getAttribute('tabindex'), phones.getAttribute('aria-label')]).toEqual([
+      'button',
+      '0',
+      'Phones',
+    ])
+    await userEvent.click(phones)
+    phones.focus()
+    await userEvent.keyboard('{Enter}')
+    // a box with a component still pins its detail
+    await userEvent.click(el.querySelector<SVGGElement>('[data-node="gateway"]')!)
+    await expect.poll(() => el.querySelector('.lm-detail')?.textContent ?? '').toContain('capacity estimated')
+    expect(clicks).toEqual(['phones', 'phones', 'gateway'])
+    expect(el.querySelector('.lm-selected')).toBeNull()
+    draw('db')
+    await expect.poll(() => el.querySelectorAll('.lm-selected').length).toBe(1)
+    expect(el.querySelector('[data-node="db"] .lm-selected')).not.toBeNull()
+    expect(el.querySelector('[data-node="db"]')!.getAttribute('aria-pressed')).toBe('true')
+    expect(el.querySelector('[data-node="gateway"]')!.getAttribute('aria-pressed')).toBe('false')
   })
 
   for (const theme of ['light', 'dark'] as const)

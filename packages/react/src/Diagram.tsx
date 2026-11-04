@@ -15,8 +15,21 @@ const STATE_STROKE: Record<ComponentState, string> = {
 const tokenColor = (c: string) => (['accent', 'alt', 'ok', 'warn', 'drop', 'muted'].includes(c) ? `var(--lm-${c})` : c)
 
 /** The architecture: SVG for the structure, a canvas on top for the dots. Expands to full screen. */
-export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?: boolean }) {
+export interface DiagramProps {
+  lm: LoadmapController
+  legend?: boolean
+  /** A click (or Enter) on a box, by its id. Every box is a button then, one without a component too. */
+  onNodeClick?: (id: string) => void
+  /** The box drawn as selected, by its id. */
+  selected?: string | null
+}
+
+export function Diagram({ lm, legend = true, onNodeClick, selected = null }: DiagramProps) {
   const { scene, engine, reducedMotion } = lm
+  // read when a box is pressed, so a new function each render does not redraw every box
+  const click = useRef(onNodeClick)
+  click.current = onNodeClick
+  const [onClick] = useState(() => (id: string) => click.current?.(id))
   const svgRef = useRef<SVGSVGElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -87,7 +100,17 @@ export function Diagram({ lm, legend = true }: { lm: LoadmapController; legend?:
         ref={boardRef}
         style={scene ? { aspectRatio: `${scene.width} / ${scene.height}` } : { minHeight: 240 }}
       >
-        {scene && <Structure lm={lm} scene={scene} svgRef={svgRef} rates={reducedMotion} setTip={setTip} />}
+        {scene && (
+          <Structure
+            lm={lm}
+            scene={scene}
+            svgRef={svgRef}
+            rates={reducedMotion}
+            setTip={setTip}
+            onClick={onNodeClick ? onClick : undefined}
+            selected={selected}
+          />
+        )}
         <canvas ref={canvasRef} hidden={reducedMotion} />
       </div>
       {/* outside the board, which clips: a detail taller than the room beside its box still shows whole */}
@@ -145,12 +168,16 @@ const Structure = memo(function Structure({
   svgRef,
   rates,
   setTip,
+  onClick,
+  selected,
 }: {
   lm: LoadmapController
   scene: Scene
   svgRef: React.RefObject<SVGSVGElement | null>
   rates: boolean
   setTip: (t: Tip | ((t: Tip) => Tip)) => void
+  onClick?: (id: string) => void
+  selected: string | null
 }) {
   const marker = useId().replace(/:/g, '')
   const { labels, ev } = lm
@@ -163,24 +190,45 @@ const Structure = memo(function Structure({
   const handlers = (n: SceneNode) => {
     const cid = componentOf(lm, n)
     const c = cid ? ev.components[cid] : undefined
-    if (!c) return {}
     const title = labels.nodes[n.id]?.title
+    if (!c) {
+      if (!onClick) return {}
+      return {
+        tabIndex: 0,
+        role: 'button',
+        className: 'lm-node',
+        'aria-label': title ?? n.id,
+        'aria-pressed': selected === n.id,
+        onClick: () => onClick(n.id),
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onClick(n.id)
+          }
+        },
+      }
+    }
+    const press = () => {
+      setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true }))
+      onClick?.(n.id)
+    }
     return {
       tabIndex: 0,
       role: 'button',
       className: 'lm-node',
       'aria-label': `${title && title !== c.name ? `${title}, ` : ''}${c.name}: ${c.util == null ? 'switched off' : pct(c.util)}`,
+      ...(onClick ? { 'aria-pressed': selected === n.id } : {}),
       onPointerEnter: (e: React.PointerEvent) =>
         e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
       onPointerLeave: (e: React.PointerEvent) => e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : null)),
       onFocus: () => setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),
       onBlur: () => setTip((t) => (t?.pinned ? t : null)),
-      onClick: () => setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true })),
+      onClick: press,
       onKeyDown: (e: React.KeyboardEvent) => {
         if (e.key === 'Escape') setTip(null)
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          setTip((t) => (t?.pinned && t.id === n.id ? null : { id: n.id, pinned: true }))
+          press()
         }
       },
     }
@@ -216,6 +264,7 @@ const Structure = memo(function Structure({
           sub={labels.nodes[n.id]?.sub}
           lm={lm}
           focused={!!lm.focus && componentOf(lm, n) === lm.focus}
+          selected={selected === n.id}
           handlers={handlers(n)}
         />
       ))}
@@ -310,6 +359,7 @@ function Node({
   sub,
   lm,
   focused,
+  selected,
   handlers,
 }: {
   n: SceneNode
@@ -318,6 +368,7 @@ function Node({
   sub?: string
   lm: LoadmapController
   focused: boolean
+  selected: boolean
   handlers: React.SVGProps<SVGGElement>
 }) {
   const stroke = state ? STATE_STROKE[state] : 'var(--lm-line)'
@@ -327,7 +378,13 @@ function Node({
   const running = st?.kind === 'workers' ? st.running : n.members.length
   const e = 6
   return (
-    <g style={{ color: 'var(--lm-fg)' }} data-node={n.id} data-focus={focused || undefined} {...handlers}>
+    <g
+      style={{ color: 'var(--lm-fg)' }}
+      data-node={n.id}
+      data-focus={focused || undefined}
+      data-selected={selected || undefined}
+      {...handlers}
+    >
       {n.shape === 'cylinder' ? (
         <>
           <path
@@ -428,6 +485,19 @@ function Node({
         </g>
       ))}
       {/* last, so the keyboard focus style (on the first child) stays on the box */}
+      {selected && (
+        <rect
+          className="lm-selected"
+          x={n.x - 3}
+          y={n.y - 3}
+          width={n.w + 6}
+          height={n.h + 6}
+          rx="8"
+          fill="none"
+          stroke="var(--lm-accent)"
+          strokeWidth="2.5"
+        />
+      )}
       {focused && (
         <rect
           className="lm-focus"
