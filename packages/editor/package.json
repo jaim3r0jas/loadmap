@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "<LoadmapEditor>: a .loadmap editor next to its live diagram, with inline errors, completions and share links.",
   "keywords": [
     "loadmap",
