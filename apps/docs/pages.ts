@@ -2,7 +2,7 @@
 // parts are islands the client mounts: a ```loadmap live fence, or a <div data-island="…"> in the Markdown.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Marked } from 'marked'
+import { Marked, type Token } from 'marked'
 
 export interface Page {
   /** Where it is served, without slashes: "" for the home page, "examples/checkout". */
@@ -16,13 +16,13 @@ export interface Page {
 }
 
 export const PAGES: readonly Page[] = [
-  { route: '', file: 'index.md', nav: 'Home' },
-  { route: 'getting-started', file: 'getting-started.md', nav: 'Getting started' },
-  { route: 'concepts', file: 'concepts.md', nav: 'Concepts' },
-  { route: 'language', file: 'language.md', nav: 'The language' },
-  { route: 'reference', file: 'reference.md', nav: 'Reference' },
-  { route: 'api', file: 'api.md', nav: 'API' },
-  { route: 'recording', file: 'recording.md', nav: 'Recording and CI' },
+  { route: '', file: 'index.md', nav: 'Home', group: 'Start' },
+  { route: 'getting-started', file: 'getting-started.md', nav: 'Getting started', group: 'Start' },
+  { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
+  { route: 'language', file: 'language.md', nav: 'The language', group: 'The language' },
+  { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
+  { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
+  { route: 'recording', file: 'recording.md', nav: 'Recording and CI', group: 'Use it' },
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },
   { route: 'examples/alerts', file: 'alerts.md', nav: 'Alerts', group: 'Examples' },
   { route: 'templates', file: 'templates.md', nav: 'Templates', group: 'Examples' },
@@ -65,16 +65,40 @@ export function included(): string[] {
   return [...files]
 }
 
-/** A page's HTML: its Markdown with islands, heading anchors, and site links made relative to where it is served. */
-export function render(page: Page): { title: string; html: string } {
+export interface Heading {
+  depth: 2 | 3
+  id: string
+  /** Its inline HTML, without links: it goes inside a link in the contents. */
+  html: string
+}
+
+/** Where the shell puts the group above the title, and the folded contents after the introduction. */
+const EYEBROW = '<!--eyebrow-->'
+const CONTENTS = '<!--contents-->'
+
+/**
+ * A page's HTML: its Markdown with islands, heading anchors, and site links made relative to where it is served; and
+ * its h2 and h3 headings, for the contents. Marks EYEBROW before the title and CONTENTS after the introduction (the
+ * paragraph right after the title, if there is one).
+ */
+export function render(page: Page): { title: string; html: string; headings: Heading[] } {
   const md = expand(readFileSync(join(here, 'pages', page.file), 'utf8'))
   const title = /^# (.+)$/m.exec(md)?.[1]?.replace(/`/g, '') ?? page.nav
   const up = relative(page.route)
+  const headings: Heading[] = []
+  const ids = new Map<string, number>()
   const marked = new Marked({
     renderer: {
       heading({ tokens, depth }) {
         const text = this.parser.parseInline(tokens)
-        return depth === 1 ? `<h1>${text}</h1>\n` : `<h${depth} id="${slug(text)}">${text}</h${depth}>\n`
+        if (depth === 1) return `<h1>${text}</h1>\n`
+        // a second heading with the same text gets "-2", so each entry of the contents finds its own
+        const base = slug(text)
+        const n = (ids.get(base) ?? 0) + 1
+        ids.set(base, n)
+        const id = n > 1 ? `${base}-${n}` : base
+        if (depth === 2 || depth === 3) headings.push({ depth, id, html: text.replace(/<\/?a\b[^>]*>/g, '') })
+        return `<h${depth} id="${id}">${text}</h${depth}>\n`
       },
       code({ text, lang }) {
         if (lang === 'loadmap live')
@@ -88,14 +112,28 @@ export function render(page: Page): { title: string; html: string } {
       },
     },
   })
-  return { title, html: marked.parse(md, { async: false }) }
+  const tokens = marked.lexer(md)
+  const mark = (text: string): Token => ({ type: 'html', block: true, pre: false, raw: text, text })
+  const h1 = tokens.findIndex((t) => t.type === 'heading' && t.depth === 1)
+  if (h1 >= 0) {
+    let intro = h1 + 1
+    while (tokens[intro]?.type === 'space') intro++
+    const next = tokens[intro]
+    const after =
+      next && (next.type === 'paragraph' || (next.type === 'html' && /^<p[ >]/.test(next.text))) ? intro : h1
+    tokens.splice(after + 1, 0, mark(CONTENTS))
+    tokens.splice(h1, 0, mark(EYEBROW))
+  }
+  return { title, html: marked.parser(tokens), headings }
 }
 
 /** From a page's route back to the site's root: "" at the root, "../../" two levels down. */
 export const relative = (route: string) => (route ? '../'.repeat(route.split('/').length) : './')
 
-function shell(page: Page, title: string, body: string): string {
-  const up = relative(page.route)
+const href = (up: string, p: Page) => `${up}${p.route ? `${p.route}/` : ''}`
+
+/** The pages grouped as the sidebar and the phone's menu list them, the current one marked. */
+function pageList(page: Page, up: string): string {
   const nav: string[] = []
   PAGES.forEach((p, i) => {
     if (i === 0 || p.group !== PAGES[i - 1]!.group) {
@@ -104,9 +142,46 @@ function shell(page: Page, title: string, body: string): string {
       nav.push('<ul>')
     }
     const current = p === page ? ' aria-current="page"' : ''
-    nav.push(`<li><a href="${up}${p.route ? `${p.route}/` : ''}"${current}>${esc(p.nav)}</a></li>`)
+    nav.push(`<li><a href="${href(up, p)}"${current}>${esc(p.nav)}</a></li>`)
   })
   nav.push('</ul>')
+  return nav.join('')
+}
+
+/**
+ * The page's sections, when it has enough of them to need a map: beside the text on a wide screen, folded under the
+ * introduction on a narrow one (only the h2s there, when there are a few).
+ */
+function contents(headings: readonly Heading[]): { aside: string; folded: string } | undefined {
+  const h2 = headings.filter((h) => h.depth === 2)
+  if (h2.length < 3 && headings.length < 6) return undefined
+  const list = (hs: readonly Heading[]) =>
+    `<ul>${hs.map((h) => `<li class="h${h.depth}"><a href="#${h.id}">${h.html}</a></li>`).join('')}</ul>`
+  return {
+    aside: `<aside class="toc" aria-label="On this page"><p>On this page</p>${list(headings)}</aside>`,
+    folded: `<details class="toc-folded"><summary>On this page</summary>${list(h2.length >= 3 ? h2 : headings)}</details>`,
+  }
+}
+
+/** Previous and next in the sidebar's order. */
+function pager(page: Page, up: string): string {
+  const i = PAGES.indexOf(page)
+  if (i < 0) return ''
+  const prev = PAGES[i - 1]
+  const next = PAGES[i + 1]
+  const link = (p: Page, rel: 'prev' | 'next') =>
+    `<a class="${rel}" rel="${rel}" href="${href(up, p)}"><small>${rel === 'prev' ? '← Previous' : 'Next →'}</small>${esc(p.nav)}</a>`
+  return `<nav class="pager" aria-label="Previous and next">${prev ? link(prev, 'prev') : ''}${next ? link(next, 'next') : ''}</nav>`
+}
+
+function shell(page: Page, title: string, body: string, headings: readonly Heading[] = []): string {
+  const up = relative(page.route)
+  const list = pageList(page, up)
+  const toc = contents(headings)
+  const out = `<a href="https://www.npmjs.com/package/@loadmap/react" rel="noopener">npm</a>
+        <a href="https://github.com/jaim3r0jas/loadmap" rel="noopener">GitHub</a>`
+  const eyebrow = page.route && page.group ? `<p class="eyebrow">${esc(page.group)}</p>` : ''
+  const text = body.replace(EYEBROW, () => eyebrow).replace(CONTENTS, () => toc?.folded ?? '')
   const head = page.route ? `${title} · loadmap` : 'loadmap: interactive capacity models'
   return `<!doctype html>
 <html lang="en">
@@ -119,16 +194,25 @@ function shell(page: Page, title: string, body: string): string {
   </head>
   <body${page.wide ? ' class="wide"' : ''}>
     <header class="top">
-      <a class="brand" href="${up}">loadmap</a>
-      <span class="version">0.1</span>
-      <span class="grow"></span>
-      <a href="https://www.npmjs.com/package/@loadmap/react" rel="noopener">npm</a>
-      <a href="https://github.com/jaim3r0jas/loadmap" rel="noopener">GitHub</a>
+      <div class="bar">
+        <a class="brand" href="${up}">loadmap</a>
+        <span class="version">0.1</span>
+        <span class="grow"></span>
+        <span class="out">${out}</span>
+        <details class="menu">
+          <summary><span aria-hidden="true">☰</span> ${esc(page.nav || 'Pages')}</summary>
+          <nav class="panel" aria-label="Pages">${list}<p class="out">${out}</p></nav>
+        </details>
+      </div>
     </header>
-    <nav class="side" aria-label="Pages">${nav.join('')}</nav>
-    <main>
-${body}
-    </main>
+    <div class="frame${toc ? ' has-toc' : ''}">
+      <nav class="side" aria-label="Pages">${list}</nav>
+      <main>
+${text}
+${pager(page, up)}
+      </main>
+      ${toc?.aside ?? ''}
+    </div>
     <script type="module" src="/client.tsx"></script>
   </body>
 </html>
@@ -142,15 +226,15 @@ ${body}
 export function writePages(base = '/'): string[] {
   const files: string[] = []
   for (const page of PAGES) {
-    const { title, html } = render(page)
+    const { title, html, headings } = render(page)
     const file = join(SITE, page.route, 'index.html')
     mkdirSync(dirname(file), { recursive: true })
-    update(file, shell(page, title, html))
+    update(file, shell(page, title, html, headings))
     files.push(file)
   }
   const missing = join(SITE, '404.html')
   const notFound = { route: '', file: '', nav: '' }
-  const body = '<h1>Not found</h1>\n<p>No page here. The sidebar lists every page.</p>'
+  const body = '<h1>Not found</h1>\n<p>No page here. Every page is in the list of pages.</p>'
   update(missing, shell(notFound, 'Not found', body).replace(/href="\.\//g, `href="${base}`))
   files.push(missing)
   return files

@@ -10,6 +10,19 @@ import { included, PAGES, relative, render } from '../pages'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
 const routeOf = (href: string, from: string) => new URL(href, `http://x/${from ? `${from}/` : ''}`).pathname
+const routes = new Set(PAGES.map((p) => `/${p.route ? `${p.route}/` : ''}`))
+
+/** Every link of a page leads to a page of the site, or to a heading on the same page. */
+function expectLinks(html: string, route: string, label: string) {
+  for (const [, href] of html.matchAll(/href="([^"]+)"/g)) {
+    if (/^(https?:|mailto:|\/assets\/)/.test(href!)) continue
+    if (href!.startsWith('#')) expect(html, `${label} links to ${href}`).toContain(`id="${href!.slice(1)}"`)
+    else {
+      const path = routeOf(href!, route).replace(/#.*$/, '')
+      expect(routes.has(path), `${label} links to ${href} (${path})`).toBe(true)
+    }
+  }
+}
 
 describe('the pages', () => {
   const rendered = PAGES.map((p) => ({ page: p, ...render(p) }))
@@ -23,13 +36,7 @@ describe('the pages', () => {
   })
 
   it('link only to pages that exist', () => {
-    const routes = new Set(PAGES.map((p) => `/${p.route ? `${p.route}/` : ''}`))
-    for (const { page, html } of rendered)
-      for (const [, href] of html.matchAll(/href="([^"]+)"/g)) {
-        if (/^(https?:|#|mailto:)/.test(href!)) continue
-        const path = routeOf(href!, page.route).replace(/#.*$/, '')
-        expect(routes.has(path), `${page.file} links to ${href} (${path})`).toBe(true)
-      }
+    for (const { page, html } of rendered) expectLinks(html, page.route, page.file)
   })
 
   it('carry the language guide and the whole reference from docs/dsl.md', () => {
@@ -84,6 +91,30 @@ describe('the built site', () => {
     expect(existsSync(join(out, '404.html'))).toBe(true)
   })
 
+  it('marks the current page, and links the previous, the next and its sections only to what exists', () => {
+    PAGES.forEach((p, i) => {
+      const html = readFileSync(join(out, p.route, 'index.html'), 'utf8')
+      const side = /<nav class="side"[^>]*>([\s\S]*?)<\/nav>/.exec(html)![1]!
+      expect(
+        [...side.matchAll(/aria-current="page">([^<]+)</g)].map((m) => m[1]),
+        p.route,
+      ).toEqual([p.nav])
+      const pager = /<nav class="pager"[^>]*>([\s\S]*?)<\/nav>/.exec(html)![1]!
+      expect(pager.includes('rel="prev"'), p.route).toBe(i > 0)
+      expect(pager.includes('rel="next"'), p.route).toBe(i < PAGES.length - 1)
+      expectLinks(html, p.route, p.route || 'home')
+    })
+    const reference = readFileSync(join(out, 'reference/index.html'), 'utf8')
+    expect(reference).toContain('<aside class="toc"')
+    expect(reference).toContain('<a href="#flow">flow</a>')
+    expect(readFileSync(join(out, 'examples/checkout/index.html'), 'utf8')).not.toContain('class="toc')
+    // folded under the introduction, before the first section
+    const concepts = readFileSync(join(out, 'concepts/index.html'), 'utf8')
+    const intro = concepts.indexOf('</p>', concepts.indexOf('</h1>'))
+    expect(concepts.slice(intro, concepts.indexOf('<h2'))).toMatch(/^<\/p>\s*<details class="toc-folded">/)
+    expect(concepts).toMatch(/<p class="eyebrow">Start<\/p>\s*<h1>/)
+  })
+
   it('loads a few kB on a page of text: the islands come only where they are', () => {
     const html = readFileSync(join(out, 'recording/index.html'), 'utf8')
     const first = [...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]!)
@@ -115,6 +146,78 @@ describe('the built site', () => {
         expect(errors, route).toEqual([])
         await page.close()
       }
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('centers the page, keeps the text to a readable line and gives the diagrams the width', async () => {
+    const browser = await chromium.launch()
+    try {
+      for (const width of [390, 1366, 1920]) {
+        for (const route of ['', 'concepts/', 'reference/', 'editor/']) {
+          const page = await browser.newPage({ viewport: { width, height: 900 } })
+          await page.goto(`${url}${route}`)
+          if (route !== 'reference/')
+            await page.waitForFunction(() => document.querySelectorAll('[data-node]').length > 0, null, {
+              timeout: 30_000,
+            })
+          const at = `${route || 'home'} at ${width}`
+          const m = await page.evaluate(() => {
+            const box = (s: string) => document.querySelector(s)?.getBoundingClientRect()
+            const frame = box('.frame')!
+            return {
+              scroll: document.documentElement.scrollWidth,
+              left: frame.left,
+              right: innerWidth - frame.right,
+              text: Math.max(...[...document.querySelectorAll('main > p')].map((p) => p.getBoundingClientRect().width)),
+              island: box('main > .island')?.width ?? 0,
+            }
+          })
+          expect(m.scroll, at).toBeLessThanOrEqual(width)
+          expect(m.text, at).toBeLessThanOrEqual(760)
+          if (width === 1920 && route !== 'editor/') expect(Math.abs(m.left - m.right), at).toBeLessThanOrEqual(1)
+          if (width >= 1366 && m.island) expect(m.island, at).toBeGreaterThan(m.text + 50)
+          await page.close()
+        }
+      }
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('keeps the pages and the sections in view, and lists every page in the phone menu', async () => {
+    const browser = await chromium.launch()
+    try {
+      const wide = await browser.newPage({ viewport: { width: 1366, height: 900 } })
+      await wide.goto(`${url}reference/`)
+      await wide.evaluate(() => document.getElementById('flow')!.scrollIntoView())
+      await wide.waitForFunction(() => document.querySelector('.toc a[aria-current]')?.textContent === 'flow')
+      await wide.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
+      const side = await wide.evaluate(() => document.querySelector('.side')!.getBoundingClientRect().top)
+      expect(side).toBeGreaterThanOrEqual(0)
+      expect(side).toBeLessThan(100)
+      // the last sections are too short to reach the top third: at the end of the page the last one is marked
+      await wide.waitForFunction(() => document.querySelector('.toc li:last-child a')?.hasAttribute('aria-current'))
+      expect(await wide.locator('.toc a[aria-current]').count()).toBe(1)
+
+      const editor = await browser.newPage({ viewport: { width: 1366, height: 900 } })
+      await editor.goto(`${url}editor/`)
+      await editor.waitForSelector('.lme-left')
+      await editor.evaluate(() => scrollTo(0, 600))
+      const pane = await editor.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().top)
+      const bar = await editor.evaluate(() => document.querySelector('.top')!.getBoundingClientRect().bottom)
+      expect(pane).toBeGreaterThanOrEqual(bar)
+      expect(await wide.locator('.menu').isVisible()).toBe(false)
+
+      const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      await phone.goto(`${url}reference/`)
+      expect(await phone.locator('.side').isVisible()).toBe(false)
+      await phone.locator('.menu summary').click()
+      const links = phone.locator('.menu .panel ul a')
+      expect(await links.count()).toBe(PAGES.length)
+      for (const link of await links.all()) expect(await link.isVisible()).toBe(true)
+      expect(await phone.locator('.menu [aria-current="page"]').textContent()).toBe('Reference')
     } finally {
       await browser.close()
     }
