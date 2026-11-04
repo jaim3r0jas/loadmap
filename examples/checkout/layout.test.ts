@@ -21,6 +21,14 @@ describe('checkout layout', () => {
     expect(labelsAt(view, checkout.evaluate({ load: 100 })).edges.e1).toBe('4.0k orders/s')
   })
 
+  it('runs a leg backwards along the edge the other way, for a cache hit heading back', async () => {
+    const scene = await layout(view, checkout.evaluate())
+    const forth = legPath(scene, { stage: 'workers' }, { stage: 'db' }, 'orders')
+    const back = legPath(scene, { stage: 'db' }, { stage: 'workers' }, 'orders')
+    expect(forth.length).toBeGreaterThan(2)
+    expect(back).toEqual([...forth].reverse())
+  })
+
   it('moves when the shape changes', () => {
     const key = (v: object) => structureKey(view, checkout.evaluate(v))
     expect(key({ pods: 6 })).not.toBe(key({ pods: 3 }))

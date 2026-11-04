@@ -3,6 +3,19 @@ import { anchor, legPath, type Point, pointAt, type Scene, type View } from '@lo
 import { createSim, type Particle, type Sim, type SimOptions } from '@loadmap/sim'
 
 const TOKENS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted', 'fg', 'surface', 'line'] as const
+/** The stroke of a hollow dot, in scene units. */
+const RING = 1.4
+
+/** A dot as it is drawn now, in scene units. */
+export interface Dot {
+  x: number
+  y: number
+  r: number
+  color: string
+  alpha: number
+  /** A retry: drawn as a ring. */
+  hollow?: boolean
+}
 
 /**
  * Everything that moves, without React: the sim, the dots on the canvas and the worker fills in the SVG. React
@@ -129,21 +142,23 @@ export class Engine {
   }
 
   /** Every dot as it is drawn now, in scene units: for the canvas, and for an SVG export. */
-  dots(): { x: number; y: number; r: number; color: string; alpha: number }[] {
+  dots(): Dot[] {
     const scene = this.scene
     if (!scene) return []
-    const out: { x: number; y: number; r: number; color: string; alpha: number }[] = []
+    const out: Dot[] = []
     const live = new Set<number>()
     for (const d of this.sim.particles) {
       live.add(d.id)
       const [x, y] = this.#position(scene, d)
       const inCell = d.to.cell != null && d.phase !== 'move'
+      const done = d.outcome === 'delivered' || d.outcome === 'answered'
       out.push({
         x,
-        y: y - (d.phase === 'fade' && d.outcome !== 'delivered' ? (d.t / d.dur) * 8 : 0),
+        y: y - (d.phase === 'fade' && !done ? (d.t / d.dur) * 8 : 0),
         r: inCell ? 3 : 3.4,
         color: d.phase === 'fade' ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
         alpha: d.phase === 'fade' ? Math.max(0, 1 - d.t / d.dur) : 1,
+        ...(d.attempt ? { hollow: true } : {}),
       })
     }
     for (const id of this.#paths.keys()) if (!live.has(id)) this.#paths.delete(id)
@@ -157,10 +172,18 @@ export class Engine {
     ctx.transform(scale, 0, 0, scale, 0, 0)
     for (const d of this.dots()) {
       ctx.globalAlpha = d.alpha
-      ctx.fillStyle = d.color
       ctx.beginPath()
-      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2)
-      ctx.fill()
+      if (d.hollow) {
+        // a retry: a ring, so the extra attempts show against the units sent once
+        ctx.strokeStyle = d.color
+        ctx.lineWidth = RING
+        ctx.arc(d.x, d.y, d.r - RING / 2, 0, Math.PI * 2)
+        ctx.stroke()
+      } else {
+        ctx.fillStyle = d.color
+        ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2)
+        ctx.fill()
+      }
     }
     ctx.restore()
   }

@@ -159,13 +159,26 @@ export async function exportSvg(handle: LoadmapHandle, o: { caption?: boolean | 
   const dots = el('g', {})
   for (const d of handle.engine.dots())
     dots.appendChild(
-      el('circle', {
-        cx: d.x.toFixed(2),
-        cy: d.y.toFixed(2),
-        r: d.r,
-        fill: d.color,
-        ...(d.alpha < 1 ? { 'fill-opacity': d.alpha.toFixed(3) } : {}),
-      }),
+      el(
+        'circle',
+        d.hollow
+          ? {
+              cx: d.x.toFixed(2),
+              cy: d.y.toFixed(2),
+              r: d.r - 0.7,
+              fill: 'none',
+              stroke: d.color,
+              'stroke-width': 1.4,
+              ...(d.alpha < 1 ? { 'stroke-opacity': d.alpha.toFixed(3) } : {}),
+            }
+          : {
+              cx: d.x.toFixed(2),
+              cy: d.y.toFixed(2),
+              r: d.r,
+              fill: d.color,
+              ...(d.alpha < 1 ? { 'fill-opacity': d.alpha.toFixed(3) } : {}),
+            },
+      ),
     )
   board.appendChild(dots)
   const cap = captionOf(o.caption)

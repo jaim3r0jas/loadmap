@@ -322,6 +322,9 @@ function Node({
 }) {
   const stroke = state ? STATE_STROKE[state] : 'var(--lm-line)'
   const flows = lm.view.def.flows as Record<string, { color: string }>
+  // an autoscaled pool draws every pod it may run; the ones it does not run now are dashed and faint
+  const st = n.kind === 'pool' ? lm.ev.stages[n.stages[0] ?? ''] : undefined
+  const running = st?.kind === 'workers' ? st.running : n.members.length
   const e = 6
   return (
     <g style={{ color: 'var(--lm-fg)' }} data-node={n.id} data-focus={focused || undefined} {...handlers}>
@@ -358,9 +361,18 @@ function Node({
           {sub}
         </Txt>
       )}
-      {n.members.map((m) => (
-        <g key={m.label}>
-          <rect x={m.x} y={m.y} width={m.w} height={m.h} rx="4" fill="none" stroke="var(--lm-line)" />
+      {n.members.map((m, i) => (
+        <g key={m.label} data-idle={i >= running || undefined} opacity={i >= running ? 0.45 : undefined}>
+          <rect
+            x={m.x}
+            y={m.y}
+            width={m.w}
+            height={m.h}
+            rx="4"
+            fill="none"
+            stroke="var(--lm-line)"
+            strokeDasharray={i >= running ? '3 3' : undefined}
+          />
           <Txt s={m.spot} anchor="start" fill="var(--lm-muted)">
             {m.label}
           </Txt>
@@ -509,6 +521,9 @@ function Detail({
           <span>
             {pct(model.thresholds.full)} at {at(c.fullRange, c.full)}
           </span>
+          {blocks(lm, n).map((line) => (
+            <span key={line}>{line}</span>
+          ))}
           {c.over && (
             <span className="lm-sub">
               Past {pct(model.thresholds.full)}: {c.over}.
@@ -533,4 +548,18 @@ function Detail({
       )}
     </div>
   )
+}
+
+/** What a box's building blocks do at these values: pods running, cache answers, what a stage turns away. */
+function blocks(lm: LoadmapController, n: SceneNode): string[] {
+  const out: string[] = []
+  for (const id of n.stages) {
+    const s = lm.ev.stages[id]
+    if (s?.kind === 'workers' && s.autoscale)
+      out.push(`${s.running} of ${s.pods} pods running, each held near ${pct(s.autoscale.target)}`)
+    if (s?.kind === 'cache') out.push(`${pct(s.hit)} answered here`)
+    if ((s?.kind === 'pass' || s?.kind === 'limit' || s?.kind === 'cache') && s.rejects > 0)
+      out.push(`${pct(s.rejects)} of what reaches it turned away`)
+  }
+  return out
 }

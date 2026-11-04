@@ -94,7 +94,10 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
   )
 }
 
-/** Live numbers from the sim: lag and drops per queue, busy workers, rejected requests. */
+/**
+ * Live numbers: from the sim, lag and drops per queue, busy workers, rejected requests; from the model, pods running,
+ * cache answers and retries.
+ */
 export function Meters({ lm }: { lm: LoadmapController }) {
   const [, tick] = useState(0)
   useEffect(() => {
@@ -139,9 +142,48 @@ export function Meters({ lm }: { lm: LoadmapController }) {
         label: `${s.label} busy`,
         state: b > 0.95 ? 'over' : b > 0.5 ? 'warn' : 'ok',
       })
+      if (s.autoscale)
+        items.push({
+          key: `${s.id}/pods`,
+          value: `${s.running} of ${s.pods}`,
+          label: `${s.label} pods running`,
+          state:
+            s.running < s.pods
+              ? 'ok'
+              : (ev.components[s.component]?.util ?? 0) > model.thresholds.full
+                ? 'over'
+                : 'warn',
+        })
     }
-    if (s.kind === 'pass' && sim.shed(s.id) > 0)
+    if (s.kind === 'cache') {
+      const reaching = model.flowIds.reduce((a, f) => a + (ev.at[s.id]?.[f] ?? 0), 0)
+      items.push({
+        key: `${s.id}/hits`,
+        value: compact(reaching * (1 - sim.shed(s.id)) * s.hit),
+        label: `answered at ${s.label} /s (${pct(s.hit)} hits)`,
+        state: 'ok',
+      })
+    }
+    if ((s.kind === 'pass' || s.kind === 'limit' || s.kind === 'cache') && sim.shed(s.id) > 0)
       items.push({ key: `${s.id}/shed`, value: pct(sim.shed(s.id)), label: `rejected at ${s.label}`, state: 'over' })
+  }
+  for (const f of model.flowIds) {
+    const r = ev.retry[f]
+    const rule = ev.overload[f]?.retry
+    if (!r || !rule || !(r.rate > 0)) continue
+    const per = r.attempts / r.rate
+    items.push({
+      key: `${f}/attempts`,
+      value: `${fmt(per)}×`,
+      label: `${flowLabel(f)} attempts per ${model.def.flows[f]?.unit ?? 'unit'}`,
+      state: per > 1.05 ? 'warn' : 'ok',
+    })
+    items.push({
+      key: `${f}/failed`,
+      value: pct(r.failed),
+      label: `${flowLabel(f)} failing after ${rule.times} ${rule.times === 1 ? 'retry' : 'retries'}`,
+      state: r.failed > 0.005 ? 'over' : 'ok',
+    })
   }
   return (
     <>

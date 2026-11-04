@@ -41,7 +41,10 @@ export function anchor(scene: Scene, place: { stage: string | null; cell?: numbe
   return centre(n)
 }
 
-/** The path a dot takes between two places: along the edge between their nodes when there is one. */
+/**
+ * The path a dot takes between two places: along the edge between their nodes when there is one, backwards along
+ * the edge the other way when that is the only one (a cache hit heading back).
+ */
 export function legPath(
   scene: Scene,
   from: { stage: string | null; cell?: number },
@@ -53,7 +56,9 @@ export function legPath(
   const na = nodeOf(scene, from.stage, flow)
   const nb = nodeOf(scene, to.stage, flow)
   const e = na && nb ? scene.edges.find((x) => x.from === na.id && x.to === nb.id) : undefined
-  return e?.points.length ? [a, ...e.points, b] : [a, b]
+  if (e?.points.length) return [a, ...e.points, b]
+  const back = na && nb ? scene.edges.find((x) => x.from === nb.id && x.to === na.id) : undefined
+  return back?.points.length ? [a, ...[...back.points].reverse(), b] : [a, b]
 }
 
 /** The point a share `t` (0–1) along a polyline, by length. */

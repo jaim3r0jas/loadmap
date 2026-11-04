@@ -20,7 +20,7 @@ export {
   type ViewDef,
 } from '@loadmap/layout'
 export { Diagram } from './Diagram'
-export type { Engine } from './engine'
+export type { Dot, Engine } from './engine'
 export { handleOf, Loadmap, type LoadmapHandle, type LoadmapProps, LoadmapRoot, type Theme } from './Loadmap'
 export { Assumptions, Controls, Limits, Meters, Verdict } from './panels'
 export { Compare, HeadroomChart, Scenarios, scenarioColor, useComparison } from './scenarios'
