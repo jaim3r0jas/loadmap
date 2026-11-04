@@ -1,6 +1,14 @@
-import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from '@codemirror/commands'
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  isolateHistory,
+  undo,
+  undoDepth,
+} from '@codemirror/commands'
 import { bracketMatching, indentOnInput } from '@codemirror/language'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import type { Model, ParamValue, Values } from '@loadmap/core'
 import {
@@ -8,13 +16,16 @@ import {
   compile,
   type Definition,
   type Diagnostic,
+  type DslSymbol,
   encodeShare,
+  format,
   type HostFunctions,
   problems,
 } from '@loadmap/dsl'
-import { lex, Reporter } from '@loadmap/dsl/internal'
+import { type EditValue, edit, inspect, lex, Reporter } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
-import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Inspector, type InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
 import { injectEditorStyles } from './styles'
 import { TEMPLATES, type Template } from './templates'
@@ -28,7 +39,12 @@ export interface LoadmapEditorHandle {
   loadmap(): LoadmapHandle | null
   /** The hash of a link to this definition at the current values: `v1.…&load=30`. */
   shareHash(): Promise<string>
+  /** Lays the text out the one way (`format()`); false when it has a syntax error. */
+  format(): boolean
 }
+
+/** `code`: the text beside the diagram. `reader`: the diagram with an inspector, the text hidden. */
+export type EditorLayout = 'code' | 'reader'
 
 export interface LoadmapEditorProps {
   /** The text to start from. */
@@ -48,6 +64,12 @@ export interface LoadmapEditorProps {
   templates?: readonly Template[] | false
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
   fileName?: string
+  /**
+   * How it opens. `reader` shows the diagram with an inspector beside it: a click on a box shows its label, its
+   * capacity and its parameters to change, each change a small edit of the text. "Show code" switches. Default `code`,
+   * where a click on a box selects its lines in the text.
+   */
+  layout?: EditorLayout
   ref?: Ref<LoadmapEditorHandle>
 }
 
@@ -71,6 +93,7 @@ export function LoadmapEditor({
   actions,
   fileName,
   templates = TEMPLATES,
+  layout: initialLayout = 'code',
   ref,
 }: LoadmapEditorProps) {
   useEffect(() => injectEditorStyles(), [])
@@ -90,6 +113,16 @@ export function LoadmapEditor({
   const loaded = useRef(initial)
   const latest = useRef({ onChange, functions })
   latest.current = { onChange, functions }
+  const [layout, setLayout] = useState<EditorLayout>(initialLayout)
+  // the text as it is now (the compile follows a moment later), and whether there is a change to undo
+  const [text, setText] = useState(initial)
+  const [canUndo, setCanUndo] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [tab, setTab] = useState<InspectorTab>('box')
+  // where each box is written, from the last compile: the cursor in a box's lines selects it
+  const symbols = useRef<DslSymbol[]>(state.result.symbols)
+  symbols.current = state.result.symbols
+  const formatRef = useRef<() => boolean>(() => false)
 
   const accept = (source: string, result: CompileResult) => {
     const h = preview.current
@@ -120,7 +153,18 @@ export function LoadmapEditor({
           history(),
           indentOnInput(),
           bracketMatching(),
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          keymap.of([
+            {
+              key: 'Shift-Alt-f',
+              run: () => {
+                formatRef.current()
+                return true
+              },
+            },
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
           EditorState.tabSize.of(2),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': 'loadmap definition' }),
@@ -129,7 +173,18 @@ export function LoadmapEditor({
             onResult: (source, result) => acceptRef.current(source, result),
           }),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) latest.current.onChange?.(u.state.doc.toString())
+            if (u.docChanged) {
+              const doc = u.state.doc.toString()
+              setText(doc)
+              latest.current.onChange?.(doc)
+            }
+            setCanUndo(undoDepth(u.state) > 0)
+            // the cursor in a box's lines selects the box
+            if (u.selectionSet && u.view.hasFocus) {
+              const at = u.state.selection.main.head
+              const box = symbols.current.find((s) => s.kind === 'node' && s.decl.from <= at && at <= s.decl.to)
+              if (box) setSelected(box.id)
+            }
           }),
         ],
       }),
@@ -174,11 +229,68 @@ export function LoadmapEditor({
     return encodeShare(view.current?.state.doc.toString() ?? state.source, changed)
   }
 
+  /** One change from the inspector: the smallest edit of the text, its own undo step. */
+  const change = (key: string, value: EditValue): string | null => {
+    const v = view.current
+    if (!v) return 'the editor is not ready'
+    const r = edit(v.state.doc.toString(), key, value, { functions })
+    if ('error' in r) return r.error
+    if (r.changes.length)
+      v.dispatch({
+        changes: r.changes,
+        annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.inspector')],
+      })
+    return null
+  }
+  const formatText = () => {
+    const v = view.current
+    if (!v) return false
+    const doc = v.state.doc.toString()
+    const r = format(doc)
+    if (!r.ok) {
+      setNote('Fix the syntax errors first')
+      return false
+    }
+    if (r.text !== doc) {
+      // only the part that changed, so the cursor stays where it was
+      let from = 0
+      while (from < doc.length && doc[from] === r.text[from]) from++
+      let tail = 0
+      while (tail < doc.length - from && doc[doc.length - 1 - tail] === r.text[r.text.length - 1 - tail]) tail++
+      v.dispatch({
+        changes: { from, to: doc.length - tail, insert: r.text.slice(from, r.text.length - tail) },
+        annotations: isolateHistory.of('full'),
+      })
+    }
+    setNote('Formatted')
+    return true
+  }
+  formatRef.current = formatText
+  /** A click on a box: its lines in the text, or its fields in the inspector. */
+  const clickNode = (id: string) => {
+    setSelected(id)
+    setTab('box')
+    const v = view.current
+    const box = symbols.current.find((s) => s.kind === 'node' && s.id === id)
+    if (layout !== 'code' || !v || !box) return
+    const end = Math.min(box.decl.to, v.state.doc.length)
+    v.dispatch({
+      selection: { anchor: box.decl.from, head: end },
+      effects: EditorView.scrollIntoView(box.decl.from, { y: 'start', yMargin: 24 }),
+    })
+    v.focus()
+  }
+  // the text was hidden: CodeMirror measures it again once it shows
+  useEffect(() => {
+    if (layout === 'code') view.current?.requestMeasure()
+  }, [layout])
+
   useImperativeHandle(ref, () => ({
     source: () => view.current?.state.doc.toString() ?? state.source,
     setSource: replace,
     loadmap: () => preview.current,
     shareHash,
+    format: formatText,
   }))
 
   const share = async () => {
@@ -220,6 +332,11 @@ export function LoadmapEditor({
   const errors = list.filter((d) => d.severity === 'error').length
   const warnings = list.length - errors
   const stale = !state.result.ok && !!def
+  const reader = layout === 'reader'
+  const inspection = useMemo(
+    () => (tab === 'model' ? inspect(text, 'model') : selected ? inspect(text, { node: selected }) : null),
+    [text, tab, selected],
+  )
 
   return (
     <div className="lm lme" data-theme={theme === 'auto' || !theme ? undefined : theme}>
@@ -233,7 +350,30 @@ export function LoadmapEditor({
           {note}
         </span>
         <span className="lme-grow" />
-        {templates && templates.length > 0 && (
+        {reader && (
+          <button
+            type="button"
+            className="lm-btn"
+            aria-disabled={!canUndo}
+            onClick={() => canUndo && view.current && undo(view.current)}
+          >
+            Undo
+          </button>
+        )}
+        <button
+          type="button"
+          className="lm-btn"
+          aria-pressed={!reader}
+          onClick={() => setLayout(reader ? 'code' : 'reader')}
+        >
+          {reader ? 'Show code' : 'Hide code'}
+        </button>
+        {!reader && (
+          <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+            Format
+          </button>
+        )}
+        {!reader && templates && templates.length > 0 && (
           <select
             className="lm-btn"
             aria-label="New from template"
@@ -259,8 +399,8 @@ export function LoadmapEditor({
         </button>
         {actions}
       </div>
-      <div className="lme-split">
-        <div className="lme-left">
+      <div className="lme-split" data-layout={layout}>
+        <div className="lme-left" hidden={reader}>
           <div className="lme-code" ref={host} />
           {list.length > 0 && (
             <ul className="lme-problems">
@@ -288,11 +428,24 @@ export function LoadmapEditor({
               theme={theme}
               {...pageOptions(def)}
               initial={valuesFor(def.model, shown.current)}
+              onNodeClick={clickNode}
+              selected={selected}
             />
           ) : (
-            <p className="lme-empty">Fix the errors on the left to see the diagram.</p>
+            <p className="lme-empty">Fix the errors in the text to see the diagram.</p>
           )}
         </div>
+        {reader && (
+          <Inspector
+            inspection={inspection}
+            tab={tab}
+            onTab={setTab}
+            onEdit={change}
+            blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
+            gone={tab === 'box' && !!selected && !inspection}
+            onClose={() => setSelected(null)}
+          />
+        )}
       </div>
     </div>
   )

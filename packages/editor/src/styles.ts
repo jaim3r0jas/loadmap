@@ -9,6 +9,9 @@ export const EDITOR_CSS = `
 .lme-split { display: grid; grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr); gap: 14px; align-items: start; min-width: 0; }
 @container (max-width: 980px) { .lme-split { grid-template-columns: minmax(0, 1fr); } }
 .lme-left { display: grid; gap: 8px; min-width: 0; position: sticky; top: 8px; }
+.lme-left[hidden] { display: none; }
+.lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
+@container (max-width: 980px) { .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 980px) { .lme-left { position: static; } }
 .lme-code { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; min-width: 0; }
 .lme-code .cm-editor { height: min(78vh, 900px); font: 13px/1.5 var(--lm-mono); color: var(--lm-fg); background: var(--lm-surface); }
@@ -38,6 +41,35 @@ export const EDITOR_CSS = `
 .lme-preview > .lm { padding: 0; }
 .lme-preview[data-stale] > .lm { opacity: .55; }
 .lme-stale { margin: 0 0 8px; font-size: .8rem; color: var(--lm-warn); }
+.lme-inspector { position: sticky; z-index: 3; top: 8px; max-height: calc(100vh - 16px); overflow: auto; display: grid; gap: 10px; align-content: start; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; padding: 10px 12px; font-size: .84rem; min-width: 0; }
+/* on a narrow page the inspector sits at the bottom of the screen, over the long page above it */
+@container (max-width: 980px) { .lme-inspector { top: auto; bottom: 0; max-height: 50vh; box-shadow: 0 -6px 18px rgb(0 0 0 / .12); } }
+.lme-inspector h3 { margin: 0; font: 600 1rem var(--lm-font); text-transform: none; letter-spacing: 0; color: var(--lm-fg); }
+.lme-tabs { display: flex; gap: 6px; }
+.lme-tabs [aria-selected="true"] { background: var(--lm-accent); color: var(--lm-surface); border-color: var(--lm-accent); }
+.lme-hint { margin: 0; color: var(--lm-muted); }
+.lme-hint[data-kind="blocked"] { color: var(--lm-drop); }
+.lme-section { border: 0; border-top: 1px solid var(--lm-line); margin: 0; padding: 8px 0 0; display: grid; gap: 8px; min-width: 0; }
+.lme-section > legend { padding: 0 6px 0 0; font-weight: 600; color: var(--lm-muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .03em; }
+.lme-section details { display: grid; gap: 8px; }
+.lme-section summary { cursor: pointer; color: var(--lm-muted); font-size: .8rem; }
+.lme-section details[open] > summary { margin-bottom: 8px; }
+.lme-field { display: grid; gap: 3px; min-width: 0; border: 0; margin: 0; padding: 0; }
+.lme-field > legend { padding: 0; margin-bottom: 3px; }
+.lme-field > label, .lme-field > legend { font-weight: 500; }
+.lme-field[data-kind="boolean"] { grid-template-columns: auto 1fr; align-items: center; }
+.lme-field[data-kind="boolean"] > label { order: 2; }
+.lme-inspector input[type="text"], .lme-inspector select { min-width: 0; font: 400 .84rem var(--lm-font); color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 5px; padding: 4px 7px; }
+.lme-inspector input[type="checkbox"] { accent-color: var(--lm-accent); margin: 0; }
+.lme-inspector input:disabled { opacity: .6; }
+.lme-capacity { gap: 6px; }
+.lme-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.lme-row > :last-child:nth-child(2) { grid-column: 2 / 4; }
+.lme-formula { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.lme-formula code { font: 12px/1.4 var(--lm-mono); color: var(--lm-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lme-formula input[type="text"] { width: auto; font-family: var(--lm-mono); }
+.lme-field small { color: var(--lm-muted); font-size: .74rem; }
+.lme-field .lme-error { color: var(--lm-drop); }
 .lme-empty { margin: 0; padding: 40px 16px; text-align: center; color: var(--lm-muted); border: 1px dashed var(--lm-line); border-radius: 8px; }
 `
 

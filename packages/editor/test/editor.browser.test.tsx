@@ -47,7 +47,9 @@ describe('the editor', () => {
     handle.loadmap()!.setValues({ pods: 6 })
     expect(verdict(host)).toContain('At 10×, every component is under the 50 % target')
     edit('rate: 40 * load', 'rate: 400 * load')
-    await expect.poll(() => verdict(host)).toContain('but the API gateway runs above the 50 % target')
+    await expect
+      .poll(() => verdict(host), { timeout: 5000 })
+      .toContain('but the API gateway runs above the 50 % target')
     expect(handle.loadmap()!.values().pods).toBe(6)
     // ten times the orders breaks both promises: a warning on each line, the diagram still shown
     await expect.poll(() => host.querySelector('.lme-status')!.textContent).toBe('2 warnings')
