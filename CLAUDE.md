@@ -47,6 +47,10 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
   Homebrew build.
 - "Cannot find native binding" from Vitest or tsdown: `pnpm install --force`. The lockfile has every platform, but a
   checkout installed on another Mac lacks this machine's binding.
+- On a loaded machine (load 15+) `pnpm check` can time out the docs-site and recording tests (Chromium contention):
+  run the failing test alone before suspecting a hang.
+- Never run `pnpm check && git commit -a` in the background while still editing: it sweeps in files mid-edit. Commit
+  by path once the check is green.
 - Tests never depend on the wall clock: a busy machine (load 30+) breaks them. Time code with
   `process.threadCpuUsage()` (`process.cpuUsage()` counts every Vitest thread), and give an `expect.poll` after a new
   layout `{ timeout: 5000 }`.
