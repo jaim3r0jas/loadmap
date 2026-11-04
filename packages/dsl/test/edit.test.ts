@@ -109,6 +109,20 @@ describe('inspect', () => {
     expect(retry.get('flow:requests/retry/times')).toMatchObject({ kind: 'formula', parts: ['retries'], more: false })
   })
 
+  it('tells sections apart by their place, also two flows with the same rule', () => {
+    const src = mini(
+      'flow g { rate: load; route: b; from: a; retry { times: 3 } }',
+      'node a',
+      'node b { pass; capacity: measured(9, "x"); over: "y" }',
+    ).replace(
+      'flow f { rate: load; route: b; from: a }',
+      'flow f { rate: load; route: b; from: a; retry { times: 2 } }',
+    )
+    const paths = inspect(src, 'model')!.sections.map((s) => s.path)
+    expect(paths.filter((p) => p.endsWith('/retry'))).toEqual(['flow:f/retry', 'flow:g/retry'])
+    expect(new Set(paths).size).toBe(paths.length)
+  })
+
   it('finds nothing in a text with a syntax error, or for a box that is not there', () => {
     expect(inspect('node a {', { node: 'a' })).toBeNull()
     expect(inspect(checkout, { node: 'nope' })).toBeNull()
@@ -211,6 +225,20 @@ describe('edit', () => {
     expect(diff(limit, 'node:limiter/capacity.unit', 'calls/s')[1]).toBe(
       '+  capacity: configured(limit, "calls/s", "gateway config")',
     )
+  })
+
+  it('writes a text in parentheses in its own quotes', () => {
+    const src = checkout.replace('short: "the API gateway"', 'short: ("the API gateway")')
+    expect(diff(src, 'node:gateway/short', 'the gate')).toEqual([
+      '-  short: ("the API gateway")',
+      '+  short: "the gate"',
+    ])
+  })
+
+  it('refuses only the errors an edit brings, not one the text already had', () => {
+    const src = checkout.replace('demand: flows.orders + flows.events', 'demand: flows.orders + flows.evnts')
+    expect(diff(src, '/title', 'Checkout')).toEqual(['-title: "Checkout pipeline"', '+title: "Checkout"'])
+    expect(refused(src, 'param:pods/options', [2, 4, 8])).toBe('6 is not an option of "pods"')
   })
 
   it('refuses what does not fit, and what would break the definition', () => {

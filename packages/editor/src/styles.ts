@@ -10,8 +10,9 @@ export const EDITOR_CSS = `
 @container (max-width: 980px) { .lme-split { grid-template-columns: minmax(0, 1fr); } }
 .lme-left { display: grid; gap: 8px; min-width: 0; position: sticky; top: 8px; }
 .lme-left[hidden] { display: none; }
-.lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
-@container (max-width: 980px) { .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr); } }
+/* the reader keeps the inspector beside the diagram down to a docs column; below that it is a sheet */
+.lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(220px, 260px); }
+@container (max-width: 720px) { .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 980px) { .lme-left { position: static; } }
 .lme-code { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; min-width: 0; }
 .lme-code .cm-editor { height: min(78vh, 900px); font: 13px/1.5 var(--lm-mono); color: var(--lm-fg); background: var(--lm-surface); }
@@ -43,7 +44,9 @@ export const EDITOR_CSS = `
 .lme-stale { margin: 0 0 8px; font-size: .8rem; color: var(--lm-warn); }
 .lme-inspector { position: sticky; z-index: 3; top: 8px; max-height: calc(100vh - 16px); overflow: auto; display: grid; gap: 10px; align-content: start; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; padding: 10px 12px; font-size: .84rem; min-width: 0; }
 /* on a narrow page the inspector sits at the bottom of the screen, over the long page above it */
-@container (max-width: 980px) { .lme-inspector { top: auto; bottom: 0; max-height: 50vh; box-shadow: 0 -6px 18px rgb(0 0 0 / .12); } }
+@container (max-width: 720px) { .lme-inspector { top: auto; bottom: 0; max-height: 50vh; box-shadow: 0 -6px 18px rgb(0 0 0 / .12); } }
+.lme-inspector:focus { outline: none; }
+.lme-inspector:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
 .lme-inspector h3 { margin: 0; font: 600 1rem var(--lm-font); text-transform: none; letter-spacing: 0; color: var(--lm-fg); }
 .lme-tabs { display: flex; gap: 6px; }
 .lme-tabs [aria-selected="true"] { background: var(--lm-accent); color: var(--lm-surface); border-color: var(--lm-accent); }

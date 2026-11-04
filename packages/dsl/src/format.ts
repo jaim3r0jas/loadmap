@@ -1,4 +1,4 @@
-import type { Expr, Stmt } from './ast'
+import { childrenOf, type Expr, type Stmt } from './ast'
 import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
@@ -90,8 +90,10 @@ function layout(toks: Token[], match: Map<number, number>, multi: (i: number) =>
       end()
       newlines++
     } else if (isPunct(t, ';')) {
-      if (blocks.at(-1)) end()
-      else {
+      // a statement a line: the ";" goes, and a comment after it stays on the statement's line
+      if (blocks.at(-1)) {
+        if (toks[i + 1]?.kind !== 'comment') end()
+      } else {
         // in a one-line block, a ";" that separates nothing goes
         const next = toks[i + 1]
         const last = cur.at(-1)
@@ -164,7 +166,8 @@ function marksOf(body: Stmt[], toks: Token[]): Marks {
       m.unary.add(at)
     } else if (e.t === 'pm' && e.percent) m.percent.add(find(e.within.to, '%'))
     else if (e.t === 'cond') m.ternary.add(find(e.then.to, ':'))
-    for (const k of children(e)) expr(k)
+    // a template is printed as written: its parts are left out
+    for (const k of childrenOf(e)) expr(k)
   }
   const stmt = (s: Stmt) => {
     if (s.kind === 'row') s.values.forEach(expr)
@@ -179,26 +182,6 @@ function marksOf(body: Stmt[], toks: Token[]): Marks {
   }
   body.forEach(stmt)
   return m
-}
-
-/** A template's parts are left out: a template is printed as written. */
-function children(e: Expr): Expr[] {
-  switch (e.t) {
-    case 'unary':
-      return [e.arg]
-    case 'pm':
-      return [e.value, e.within]
-    case 'cond':
-      return [e.test, e.then, e.else]
-    case 'bin':
-      return [e.left, e.right]
-    case 'call':
-      return e.args
-    case 'array':
-      return e.items
-    default:
-      return []
-  }
 }
 
 function join(toks: Token[], m: Marks): string {

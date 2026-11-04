@@ -85,6 +85,8 @@ export interface BlockSpec {
   edges?: 'edges' | 'branches'
   /** It holds rows of numbers. */
   rows?: boolean
+  /** The inspector's Model tab shows it (a top-level statement). */
+  inspector?: 'model'
 }
 
 const STAGE_LABEL: ArgSpec[] = [
@@ -179,6 +181,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   load: {
+    inspector: 'model',
     doc: 'The load, as a multiple of today. It drives the limits.',
     example: 'load "Users, × today" { max: 100; default: 10 }',
     args: [{ name: 'label', kind: 'text', optional: true }],
@@ -202,6 +205,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   param: {
+    inspector: 'model',
     doc: 'A control: options make a select, min and max a slider, a true or false default a switch.',
     example: 'param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }',
     args: [
@@ -247,6 +251,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     open: { names: 'params', spec: { value: 'value', scope: 'const', doc: 'A value of a parameter.' } },
   },
   growth: {
+    inspector: 'model',
     doc: 'How fast the load grows, compounded from asOf, where it is 1×: load multiples become dates.',
     example: 'growth { rate: 0.06; per: month; asOf: "2026-11-01" }',
     args: [],
@@ -296,6 +301,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
   },
   let: {
+    inspector: 'model',
     doc: 'A named formula other formulas can use by its name.',
     example: 'let perPosition = watchOnly ? 0.3 : 1.2',
     args: [{ name: 'id', kind: 'id' }],
@@ -304,6 +310,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   fit: {
+    inspector: 'model',
     doc: 'cost = a + b × x, fitted from measured points. Call it like a function: workerCores(rate).',
     example: 'fit workerCores "Worker CPU per request" { source: "load test"; points rate cores { 200 0.26 } }',
     args: [
@@ -328,6 +335,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     rows: true,
   },
   flow: {
+    inspector: 'model',
     doc: 'Something that moves through the system, with its rate and its route.',
     example: 'flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workers }',
     args: [
@@ -548,6 +556,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     edges: 'branches',
   },
   thresholds: {
+    inspector: 'model',
     doc: 'The utilization of the target and of "runs out".',
     example: 'thresholds { target: 0.5; full: 1 }',
     args: [],

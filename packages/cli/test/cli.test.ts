@@ -262,6 +262,10 @@ describe('loadmap fmt', () => {
     expect(r.code).toBe(1)
     expect(r.out).toContain(`${a}:2:13 error: "max" has no value`)
     expect(r.out).toContain(`${a}: left as it is, it has a syntax error`)
+    expect(r.out).toContain('0 of 1 file formatted; 1 left out (unreadable or a syntax error)')
+    expect((await run(['--check', a, checkout])).out).toContain(
+      '1 of 2 files laid out already; 1 left out (unreadable or a syntax error)',
+    )
     expect(await readFile(a, 'utf8')).toBe(src)
     expect((await run([join(dir, 'nope.loadmap')])).out).toMatch(/nope\.loadmap: cannot read it \(ENOENT\)/)
   })

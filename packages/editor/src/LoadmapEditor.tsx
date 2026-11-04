@@ -114,6 +114,9 @@ export function LoadmapEditor({
   const latest = useRef({ onChange, functions })
   latest.current = { onChange, functions }
   const [layout, setLayout] = useState<EditorLayout>(initialLayout)
+  // the update listener is made once: it reads the layout through this
+  const shownLayout = useRef(layout)
+  shownLayout.current = layout
   // the text as it is now (the compile follows a moment later), and whether there is a change to undo
   const [text, setText] = useState(initial)
   const [canUndo, setCanUndo] = useState(false)
@@ -175,7 +178,8 @@ export function LoadmapEditor({
           EditorView.updateListener.of((u) => {
             if (u.docChanged) {
               const doc = u.state.doc.toString()
-              setText(doc)
+              // only the inspector reads it: typing in the code layout re-renders nothing
+              if (shownLayout.current === 'reader') setText(doc)
               latest.current.onChange?.(doc)
             }
             setCanUndo(undoDepth(u.state) > 0)
@@ -252,15 +256,7 @@ export function LoadmapEditor({
       return false
     }
     if (r.text !== doc) {
-      // only the part that changed, so the cursor stays where it was
-      let from = 0
-      while (from < doc.length && doc[from] === r.text[from]) from++
-      let tail = 0
-      while (tail < doc.length - from && doc[doc.length - 1 - tail] === r.text[r.text.length - 1 - tail]) tail++
-      v.dispatch({
-        changes: { from, to: doc.length - tail, insert: r.text.slice(from, r.text.length - tail) },
-        annotations: isolateHistory.of('full'),
-      })
+      v.dispatch({ changes: between(doc, r.text), annotations: isolateHistory.of('full') })
     }
     setNote('Formatted')
     return true
@@ -280,9 +276,10 @@ export function LoadmapEditor({
     })
     v.focus()
   }
-  // the text was hidden: CodeMirror measures it again once it shows
+  // the text was hidden: CodeMirror measures it again once it shows; the inspector starts from the text as it is
   useEffect(() => {
     if (layout === 'code') view.current?.requestMeasure()
+    else if (view.current) setText(view.current.state.doc.toString())
   }, [layout])
 
   useImperativeHandle(ref, () => ({
@@ -334,8 +331,9 @@ export function LoadmapEditor({
   const stale = !state.result.ok && !!def
   const reader = layout === 'reader'
   const inspection = useMemo(
-    () => (tab === 'model' ? inspect(text, 'model') : selected ? inspect(text, { node: selected }) : null),
-    [text, tab, selected],
+    () =>
+      !reader ? null : tab === 'model' ? inspect(text, 'model') : selected ? inspect(text, { node: selected }) : null,
+    [reader, text, tab, selected],
   )
 
   return (
@@ -459,6 +457,17 @@ function pageOptions(def: Definition) {
     ...(direction ? { direction } : {}),
     ...(assumptions.length ? { assumptions } : {}),
   }
+}
+
+/** The one change from `a` to `b`: only the part that differs, so the cursor stays where it was. */
+export function between(a: string, b: string): { from: number; to: number; insert: string } {
+  let from = 0
+  while (from < a.length && from < b.length && a[from] === b[from]) from++
+  // the common end may not reach back into the common start of the shorter text
+  let tail = 0
+  const room = Math.min(a.length, b.length) - from
+  while (tail < room && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++
+  return { from, to: a.length - tail, insert: b.slice(from, b.length - tail) }
 }
 
 /** The tokens of the text: two texts with the same tokens define the same diagram. */

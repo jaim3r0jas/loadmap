@@ -34,6 +34,7 @@ export async function fmt(argv: string[], o: FmtOptions = {}): Promise<number> {
   }
   let failed = false
   let changed = 0
+  let skipped = 0
   for (const file of parsed.files) {
     let source: string
     try {
@@ -41,6 +42,7 @@ export async function fmt(argv: string[], o: FmtOptions = {}): Promise<number> {
     } catch (err) {
       log(`${file}: cannot read it (${(err as NodeJS.ErrnoException).code ?? (err as Error).message})`)
       failed = true
+      skipped++
       continue
     }
     const r = format(source)
@@ -48,6 +50,7 @@ export async function fmt(argv: string[], o: FmtOptions = {}): Promise<number> {
       for (const d of r.diagnostics) log(formatDiagnostic(d, source, file))
       log(`${file}: left as it is, it has a syntax error`)
       failed = true
+      skipped++
     } else if (r.text !== source) {
       changed++
       if (parsed.check) {
@@ -61,8 +64,12 @@ export async function fmt(argv: string[], o: FmtOptions = {}): Promise<number> {
   }
   const n = parsed.files.length
   const files = (k: number) => `${k} ${k === 1 ? 'file' : 'files'}`
-  if (parsed.check) log(changed ? `${changed} of ${files(n)} need loadmap fmt` : `${files(n)} laid out already`)
-  else log(`${changed} of ${files(n)} formatted`)
+  const left = skipped ? `; ${skipped} left out (unreadable or a syntax error)` : ''
+  let summary = `${changed} of ${files(n)} formatted`
+  if (parsed.check && changed) summary = `${changed} of ${files(n)} need loadmap fmt`
+  else if (parsed.check)
+    summary = skipped ? `${n - skipped} of ${files(n)} laid out already` : `${files(n)} laid out already`
+  log(summary + left)
   return failed ? 1 : 0
 }
 

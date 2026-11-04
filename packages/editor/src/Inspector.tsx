@@ -7,7 +7,7 @@ import type {
   OptionValue,
   Provenance,
 } from '@loadmap/dsl/internal'
-import { type KeyboardEvent, type ReactNode, useId, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'react'
 
 export type InspectorTab = 'box' | 'model'
 
@@ -31,8 +31,10 @@ export interface InspectorProps {
  * as the smallest edit; a change the definition would not take is refused under its field.
  */
 export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClose }: InspectorProps) {
+  // Close goes away when pressed: the focus moves to the panel, not to the page
+  const self = useRef<HTMLElement>(null)
   return (
-    <aside className="lme-inspector" aria-label="Inspector">
+    <aside className="lme-inspector" aria-label="Inspector" ref={self} tabIndex={-1}>
       <div className="lme-tabs" role="tablist">
         {(['box', 'model'] as const).map((t) => (
           <button
@@ -48,7 +50,15 @@ export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClo
         ))}
         <span className="lme-grow" />
         {onClose && tab === 'box' && inspection && (
-          <button type="button" className="lm-btn" aria-label="Close" onClick={onClose}>
+          <button
+            type="button"
+            className="lm-btn"
+            aria-label="Close"
+            onClick={() => {
+              self.current?.focus()
+              onClose()
+            }}
+          >
             ✕
           </button>
         )}
@@ -65,7 +75,7 @@ export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClo
         <>
           <h3>{inspection.title}</h3>
           {inspection.sections.map((s) => (
-            <Section key={`${s.keyword}:${s.id ?? s.title}`} s={s} onEdit={onEdit} />
+            <Section key={s.path} s={s} onEdit={onEdit} />
           ))}
         </>
       )}

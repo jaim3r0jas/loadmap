@@ -1,4 +1,4 @@
-import type { Decl, Expr, Property, Stmt } from './ast'
+import { childrenOf, type Decl, type Expr, type Property, type Stmt } from './ast'
 import { type CompileOptions, compile } from './compile'
 import { parse } from './parser'
 import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, SCHEMA } from './schema'
@@ -50,6 +50,8 @@ export type InspectField = FieldBase &
   )
 
 export interface InspectSection {
+  /** Where it is in the text, unique in one inspection: what its fields' keys start with. */
+  path: string
   /** The statement's keyword: node, workers, autoscale, param, flow, … */
   keyword: string
   id?: string
@@ -79,17 +81,17 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
   const w = walk(source)
   if (!w) return null
   if (target === 'model') {
-    const top = w.owners.filter((o) => o.depth === 1 && MODEL.has(o.keyword))
+    const top = w.owners.filter((o) => o.depth === 1 && own(SCHEMA, o.keyword)?.inspector === 'model')
     const sections = [w.root, ...top.flatMap((o) => [o, ...descendants(o)])].map(section).filter((s) => s.fields.length)
     return { title: w.root.title, sections }
   }
   const box = w.owners.find((o) => o.depth === 1 && isBox(o.keyword) && o.id === target.node)
   if (!box) return null
-  const own = [box, ...descendants(box)]
-  // a stage may use a component declared on its own; and the parameters its formulas read (through lets too) come along
-  const components = new Set(own.flatMap((o) => o.uses))
+  const mine = [box, ...descendants(box)]
+  // a stage may use a component declared on its mine; and the parameters its formulas read (through lets too) come along
+  const components = new Set(mine.flatMap((o) => o.uses))
   const lets = new Map(w.owners.filter((o) => o.depth === 1 && o.keyword === 'let').map((o) => [o.id, o.reads]))
-  const reads = new Set(own.flatMap((o) => [...o.reads]))
+  const reads = new Set(mine.flatMap((o) => [...o.reads]))
   for (const r of reads) for (const x of lets.get(r) ?? []) reads.add(x)
   const extra = w.owners.filter(
     (o) =>
@@ -97,7 +99,7 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
       !!o.id &&
       ((o.keyword === 'component' && components.has(o.id)) || (o.keyword === 'param' && reads.has(o.id))),
   )
-  return { title: box.title, sections: [...own, ...extra].map(section).filter((s) => s.fields.length) }
+  return { title: box.title, sections: [...mine, ...extra].map(section).filter((s) => s.fields.length) }
 }
 
 /**
@@ -115,15 +117,23 @@ export function edit(source: string, key: string, value: EditValue, options?: Co
   changes.sort((a, b) => b.from - a.from)
   let next = source
   for (const c of changes) next = next.slice(0, c.from) + c.insert + next.slice(c.to)
-  const broken = compile(next, options).diagnostics.find((d) => d.severity === 'error')
-  if (broken) return { error: broken.message }
+  // refused for an error it brings, not for one the text already had
+  const errors = (src: string) =>
+    compile(src, options)
+      .diagnostics.filter((d) => d.severity === 'error')
+      .map((d) => d.message)
+  const before = errors(source)
+  const broken = errors(next).find((m) => {
+    const i = before.indexOf(m)
+    if (i < 0) return true
+    before.splice(i, 1)
+    return false
+  })
+  if (broken) return { error: broken }
   return { source: next, changes: changes.reverse() }
 }
 
 // -- reading the text -----------------------------------------------------------------------------------------
-
-/** The statements of the model tab, in the order they come in the text. */
-const MODEL = new Set(['load', 'growth', 'param', 'flow', 'let', 'thresholds', 'fit'])
 
 interface Entry {
   field: InspectField
@@ -133,6 +143,7 @@ interface Entry {
 
 /** A statement and the fields of its own lines. */
 interface Owner {
+  path: string
   keyword: string
   id?: string
   title: string
@@ -147,6 +158,7 @@ interface Owner {
 const isBox = (k: string) => (BOXES as readonly string[]).includes(k)
 const descendants = (o: Owner): Owner[] => o.children.flatMap((c) => [c, ...descendants(c)])
 const section = (o: Owner): InspectSection => ({
+  path: o.path,
   keyword: o.keyword,
   ...(o.id ? { id: o.id } : {}),
   title: o.title,
@@ -173,6 +185,7 @@ function walk(source: string) {
     const label = arg('label')
     const here = `${path}${path ? '/' : ''}${keyword}${id ? `:${id}` : ''}`
     const o: Owner = {
+      path: here,
       keyword,
       ...(id ? { id } : {}),
       title: label?.t === 'str' ? label.value : (id ?? words(keyword || 'model')),
@@ -373,36 +386,15 @@ function literal(e: Expr): number | undefined {
 /** The number literals of a formula, in the order they are written (template parts included). */
 function numbers(e: Expr, out: Extract<Expr, { t: 'num' }>[] = []) {
   if (e.t === 'num') out.push(e)
-  for (const k of kids(e)) numbers(k, out)
+  for (const k of childrenOf(e, true)) numbers(k, out)
   return out.sort((a, b) => a.from - b.from)
-}
-
-function kids(e: Expr): Expr[] {
-  switch (e.t) {
-    case 'unary':
-      return [e.arg]
-    case 'pm':
-      return [e.value, e.within]
-    case 'cond':
-      return [e.test, e.then, e.else]
-    case 'bin':
-      return [e.left, e.right]
-    case 'call':
-      return e.args
-    case 'array':
-      return e.items
-    case 'tpl':
-      return e.parts
-    default:
-      return []
-  }
 }
 
 /** The names a formula reads: parameters, lets, fits. */
 function names(e: Expr, out: Set<string>) {
   if (e.t === 'id') out.add(e.name)
   if (e.t === 'call') out.add(e.callee.name)
-  for (const k of kids(e)) names(k, out)
+  for (const k of childrenOf(e, true)) names(k, out)
 }
 
 /** What turns values into text: numbers, quotes and formula pieces written like the text they replace. */
@@ -433,7 +425,8 @@ function writer(source: string) {
 
   /** A text in the quotes of the one it replaces (double quotes for a new one). */
   const quote = (s: string, like?: Expr): string => {
-    const q = like ? (text(like)[0] ?? '"') : '"'
+    // a parenthesized text's span starts at its "(": the quote is the first one in it
+    const q = (like && /["'`]/.exec(text(like))?.[0]) || '"'
     const esc = s.replaceAll('\\', '\\\\').replaceAll(q, `\\${q}`).replaceAll('\n', '\\n').replaceAll('\t', '\\t')
     return `${q}${q === '`' ? esc.replaceAll('${', '\\${') : esc}${q}`
   }

@@ -159,6 +159,19 @@ describe('the editor for readers', () => {
     expect(host.querySelector('.lme-inspector')).toBeNull()
   })
 
+  it('formats a text that gets shorter, and one that gets longer', async () => {
+    // the spaces and blank lines go: the common start and end of the two texts overlap
+    const longer = checkout
+      .replace('title: "Checkout pipeline"', 'title:    "Checkout pipeline"')
+      .replace('\n\nload "Users', '\n\n\n\nload "Users')
+    const { handle } = await mount({ source: longer })
+    await userEvent.click(page.getByRole('button', { name: 'Format' }))
+    expect(handle.source()).toBe(checkout)
+    handle.setSource('let x = 1    # c\n')
+    handle.format()
+    expect(handle.source()).toBe('let x = 1 # c\n')
+  })
+
   it('formats the text in one undo step', async () => {
     const messy = checkout.replace(
       'load "Users, × today" { max: 100; default: 10 }',
@@ -173,15 +186,21 @@ describe('the editor for readers', () => {
     expect(handle.source()).toBe(messy)
   })
 
-  for (const width of [390, 1440])
+  // 960: about the docs site's column on a laptop, where the inspector must still sit beside the diagram
+  for (const width of [390, 960, 1440])
     it(`lays the reader out at ${width} px, without sideways scroll`, async () => {
       const { host } = await mount({ layout: 'reader', width })
       await userEvent.click(box(host, 'gateway'))
       await expect.poll(() => host.querySelector('.lme-inspector h3')?.textContent).toBe('API gateway')
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
+      const panel = host.querySelector('.lme-inspector')!.getBoundingClientRect()
+      const preview = host.querySelector('.lme-preview')!.getBoundingClientRect()
+      expect(panel.left >= preview.right, 'the inspector beside the diagram').toBe(width > 720)
       await page.screenshot({ path: `__screenshots__/reader-${width}.png`, element: host })
       await userEvent.click(page.getByRole('button', { name: 'Close' }))
       await expect.poll(() => host.querySelector('.lme-inspector h3')).toBeNull()
+      // the button went away with the box: the focus is on the panel, not lost to the page
+      expect(document.activeElement).toBe(host.querySelector('.lme-inspector'))
       expect(box(host, 'gateway').getAttribute('aria-pressed')).toBe('false')
     })
 })

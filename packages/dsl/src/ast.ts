@@ -65,3 +65,25 @@ export type Stmt = Property | Decl | Edge | Row
 export interface Document {
   body: Stmt[]
 }
+
+/** The formulas directly inside a formula, in order; a template's parts only when asked (they are its own text). */
+export function childrenOf(e: Expr, templates = false): Expr[] {
+  switch (e.t) {
+    case 'unary':
+      return [e.arg]
+    case 'pm':
+      return [e.value, e.within]
+    case 'cond':
+      return [e.test, e.then, e.else]
+    case 'bin':
+      return [e.left, e.right]
+    case 'call':
+      return e.args
+    case 'array':
+      return e.items
+    case 'tpl':
+      return templates ? e.parts : []
+    default:
+      return []
+  }
+}

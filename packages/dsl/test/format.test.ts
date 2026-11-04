@@ -116,6 +116,12 @@ describe('format', () => {
     )
   })
 
+  it('keeps a comment after a ";" on its statement\'s line', () => {
+    expect(fmt('title: "x"; # note\nnode a {\n  pass; # passes\n}')).toBe(
+      'title: "x" # note\nnode a {\n  pass # passes\n}\n',
+    )
+  })
+
   it('keeps one-line blocks on one line, and a statement a line elsewhere', () => {
     expect(fmt('load { max: 10;  default: 2; }\nscenario "A" {  }\nscenario "B" {\n}\ntitle: "x"; speed: 5')).toBe(
       'load { max: 10; default: 2 }\nscenario "A" {}\nscenario "B" {}\ntitle: "x"\nspeed: 5\n',
