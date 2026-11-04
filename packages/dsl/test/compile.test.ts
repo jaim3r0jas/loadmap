@@ -79,6 +79,20 @@ describe('compile', () => {
     expect(r.definition!.model.title).toBe('T')
   })
 
+  it('reads the panels full screen shows, and names a wrong one', () => {
+    const r = compile(def({ top: 'fullScreen: [verdict, "controls", headroom]' }))
+    expect(r.definition!.options.fullScreen).toEqual(['verdict', 'controls', 'headroom'])
+    expect(compile(def({ top: 'fullScreen: []' })).definition!.options.fullScreen).toEqual([])
+    expect(errors(def({ top: 'fullScreen: [verdict, contrls]' }))).toEqual([
+      {
+        message: '"contrls" is not one of verdict, live, limits, controls, headroom, compare, assumptions',
+        hint: 'did you mean "controls"?',
+        text: 'contrls',
+      },
+    ])
+    expect(errors(def({ top: 'fullScreen: verdict' }))[0]).toMatchObject({ message: 'a list: [verdict, live]' })
+  })
+
   it('compiles every example and the starter without a warning', () => {
     const dir = new URL('../../../examples/', import.meta.url)
     for (const ex of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()))

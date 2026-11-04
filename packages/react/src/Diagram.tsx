@@ -12,6 +12,9 @@ const STATE_STROKE: Record<ComponentState, string> = {
   over: 'var(--lm-drop)',
 }
 
+/** Room kept under the board in full screen for the first lines of the verdict, so the page shows it goes on. */
+const VERDICT_PEEK = 72
+
 const tokenColor = (c: string) => (['accent', 'alt', 'ok', 'warn', 'drop', 'muted'].includes(c) ? `var(--lm-${c})` : c)
 
 /** The architecture: SVG for the structure, a canvas on top for the dots. Expands to full screen. */
@@ -121,25 +124,45 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     if (was.current && !full) buttonRef.current?.focus()
     was.current = full
   }, [full])
-  // the board as large as fits under the bar; the bar keeps its width, or a narrow board would wrap the legend and
-  // shrink itself again
+  // the board as large as fits under the bar, or with panels below it, on the first screen with the start of the
+  // verdict. The bar keeps its width, or a narrow board would wrap the legend and shrink itself again. Only the
+  // screen and the rows above change it, never the load
   useEffect(() => {
     const wrap = wrapRef.current
     const bar = barRef.current
+    const root = lm.root
     if (!full || !scene || !wrap || !bar) return
     const fit = () => {
-      const h = wrap.clientHeight - bar.offsetHeight - Number.parseFloat(getComputedStyle(wrap).rowGap || '0')
+      const gap = Number.parseFloat(getComputedStyle(wrap).rowGap || '0')
+      let h = wrap.clientHeight - bar.offsetHeight - gap
+      if (root?.querySelector(':scope > .lm-side:not([data-out])')) {
+        const top = wrap.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
+        h = Math.max(root.clientHeight / 2, root.clientHeight - top - bar.offsetHeight - gap - VERDICT_PEEK)
+      }
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
       wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
     }
     const ro = new ResizeObserver(fit)
     ro.observe(wrap)
     ro.observe(bar)
+    if (root) ro.observe(root)
     return () => {
       ro.disconnect()
       wrap.style.removeProperty('--lm-fit')
     }
-  }, [full, scene])
+  }, [full, scene, lm.root])
+  // scrolled down to the panels, Close waits in the corner: no Esc on a phone
+  const [away, setAway] = useState(false)
+  useEffect(() => {
+    const bar = barRef.current
+    if (!full || !bar || !lm.root) return
+    const io = new IntersectionObserver(([e]) => setAway(!!e && !e.isIntersecting), { root: lm.root })
+    io.observe(bar)
+    return () => {
+      io.disconnect()
+      setAway(false)
+    }
+  }, [full, lm.root])
   const toggle = () => {
     const el = lm.root ?? wrapRef.current
     if (overlay) setOverlay(false)
@@ -156,6 +179,11 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
           {full ? '✕ Close' : '⤢ Full screen'}
         </button>
       </div>
+      {full && away && (
+        <button type="button" className="lm-btn lm-corner" onClick={toggle}>
+          ✕ Close
+        </button>
+      )}
       <div
         className="lm-board"
         ref={boardRef}

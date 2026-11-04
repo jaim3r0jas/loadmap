@@ -232,6 +232,18 @@ The page shows a bar above the diagram with the step's text, back and next (← 
 text below the board; the same options give the same file. A step's own properties are `scenario`, `focus` and
 `seconds`; every other line is a value.
 
+### Full screen
+
+The diagram's **Full screen** shows it as wide as the screen, and below it the panels of the page. `fullScreen` keeps
+only the ones it lists; they stay in their own order:
+
+```
+fullScreen: [verdict, live, controls]
+```
+
+The names are `verdict`, `live` (the meters), `limits` (where it runs out, in order), `controls`, `headroom`,
+`compare` (the scenarios side by side) and `assumptions`. `<Loadmap fullScreen={[...]}>` takes the same list.
+
 ### What stays code
 
 A host page can give formulas more functions:
@@ -294,6 +306,7 @@ A loadmap definition.
 | `title` | string, constant | The heading above the diagram. |
 | `layout` | `right` \| `down` | Which way the diagram runs. Narrow screens always run down. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
+| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels below the diagram in full screen, which keep their order. Default all of them. |
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 

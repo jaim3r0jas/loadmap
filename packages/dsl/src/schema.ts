@@ -29,6 +29,8 @@ export type ValueKind =
   | 'scenario'
   /** A list of options: `[2, 3, 4]`. */
   | 'options'
+  /** A list of words from `values`, bare or quoted: `fullScreen: [verdict, controls]`. */
+  | 'names'
   /** A number, a switch or an option: a parameter's default. */
   | 'value'
 
@@ -129,6 +131,9 @@ const BOX_ARGS: ArgSpec[] = [
 const SUB: PropSpec = { value: 'string', scope: 'ctx', doc: 'The second line of the box.' }
 const OVERLOAD_WHEN: PropSpec = { value: 'boolean', scope: 'ctx', doc: 'The rule applies only while this is true.' }
 
+/** The panels of `<Loadmap>` below the diagram, as its `fullScreen` prop names them. */
+export const PANELS = ['verdict', 'live', 'limits', 'controls', 'headroom', 'compare', 'assumptions'] as const
+
 export const COLORS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted'] as const
 
 export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
@@ -146,6 +151,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'Which way the diagram runs. Narrow screens always run down.',
       },
       speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
+      fullScreen: {
+        value: 'names',
+        scope: 'const',
+        values: PANELS,
+        doc: 'The panels below the diagram in full screen, which keep their order. Default all of them.',
+      },
       assume: { value: 'string', scope: 'const', repeat: true, doc: 'A line added before the generated assumptions.' },
       searchMax: {
         value: 'number',

@@ -1,6 +1,7 @@
 // The page `loadmap record x.loadmap` records: it draws the definition the command serves next to it and exposes
 // the board. The command has already compiled it in Node, so errors here are only a safety net.
 import { compile, formatDiagnostic } from '@loadmap/dsl'
+import { pageOptions } from '@loadmap/dsl/internal'
 import { expose } from '@loadmap/export'
 import { Loadmap, type LoadmapHandle } from '@loadmap/react'
 import { createElement } from 'react'
@@ -21,9 +22,7 @@ if (!r.ok || !r.definition) {
     createElement(Loadmap, {
       model,
       view,
-      ...(options.speed != null ? { speed: options.speed } : {}),
-      ...(options.direction ? { direction: options.direction } : {}),
-      ...(options.assumptions.length ? { assumptions: options.assumptions } : {}),
+      ...pageOptions(options),
       ref: (h: LoadmapHandle | null) => {
         off?.()
         off = h ? expose(h) : null

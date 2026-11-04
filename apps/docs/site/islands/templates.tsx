@@ -1,5 +1,6 @@
 // The templates: a card each, the picked one drawn below, and a link that opens it in the editor.
 import { compile } from '@loadmap/dsl'
+import { pageOptions } from '@loadmap/dsl/internal'
 import { TEMPLATES } from '@loadmap/editor/templates'
 import { Loadmap } from '@loadmap/react'
 import { useMemo, useState } from 'react'
@@ -26,15 +27,7 @@ function Gallery({ editor }: { editor: string }) {
           Open “{t.title}” in the editor
         </a>
       </p>
-      {def && (
-        <Loadmap
-          key={t.id}
-          model={def.model}
-          view={def.view}
-          {...(def.options.speed != null ? { speed: def.options.speed } : {})}
-          {...(def.options.assumptions.length ? { assumptions: def.options.assumptions } : {})}
-        />
-      )}
+      {def && <Loadmap key={t.id} model={def.model} view={def.view} {...pageOptions(def.options)} />}
     </>
   )
 }

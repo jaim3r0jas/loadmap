@@ -10,6 +10,7 @@ export function Alerts({ theme, ref }: { theme?: Theme; ref?: Ref<LoadmapHandle>
       model={alerts}
       view={view}
       speed={10}
+      fullScreen={['verdict', 'live', 'limits', 'controls', 'headroom']}
       theme={theme}
       assumptions={[
         'Load scales linearly with users; 1× is the busiest five minutes of an ordinary week.',

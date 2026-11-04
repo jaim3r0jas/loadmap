@@ -59,6 +59,10 @@ export function LoadmapRoot({
   )
 }
 
+/** The panels below the diagram, in the order full screen shows them. */
+export const LOADMAP_PANELS = ['verdict', 'live', 'limits', 'controls', 'headroom', 'compare', 'assumptions'] as const
+export type LoadmapPanel = (typeof LOADMAP_PANELS)[number]
+
 export interface LoadmapProps<P> extends LoadmapOptions<P> {
   model: Model<P>
   view: View
@@ -71,6 +75,8 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   headroom?: boolean
   /** The scenarios side by side, when the model declares two or more. Default true. */
   compare?: boolean
+  /** The panels shown below the diagram in full screen. Default every one the page shows. */
+  fullScreen?: readonly LoadmapPanel[]
   /** A click (or Enter) on a box of the diagram, by its id: every box is a button then. */
   onNodeClick?: (id: string) => void
   /** The box drawn as selected, by its id. */
@@ -87,6 +93,7 @@ export function Loadmap<P>({
   assumptions,
   headroom = true,
   compare = true,
+  fullScreen = LOADMAP_PANELS,
   onNodeClick,
   selected,
   ref,
@@ -95,33 +102,39 @@ export function Loadmap<P>({
   const lm = useLoadmap(model, view, o)
   useImperativeHandle(ref, () => handleOf(lm), [lm])
   const side = compare && model.scenarios.length > 1
+  const charts: LoadmapPanel[] = []
+  if (headroom) charts.push('headroom')
+  if (side) charts.push('compare')
+  // marks what full screen leaves out: a panel not listed, a container none of whose panels are
+  const out = (...panels: LoadmapPanel[]) => (panels.some((p) => fullScreen.includes(p)) ? undefined : '')
+  const panel = (id: LoadmapPanel, children: ReactNode) => (
+    <div className="lm-panel" data-panel={id} data-out={out(id)}>
+      {children}
+    </div>
+  )
   return (
     <LoadmapRoot lm={lm} theme={theme}>
       {title !== false && <h2>{title ?? model.title}</h2>}
       <Scenarios lm={lm} />
       <Story lm={lm} />
       <Diagram lm={lm} onNodeClick={onNodeClick} selected={selected} />
-      {/* on the page its parts are the root's; in full screen it is the panel beside the diagram, without the "more" */}
-      <div className="lm-side">
-        <Verdict lm={lm} />
-        {(headroom || side) && (
-          <div className={headroom && side ? 'lm-more lm-strip' : 'lm-more'}>
-            {headroom && <HeadroomChart lm={lm} />}
-            {side && <Compare lm={lm} />}
+      {/* on the page its parts are the root's; in full screen it is the column below the diagram */}
+      <div className="lm-side" data-out={out('verdict', 'live', 'limits', 'controls', ...charts, 'assumptions')}>
+        {panel('verdict', <Verdict lm={lm} />)}
+        {charts.length > 0 && (
+          <div className={charts.length > 1 ? 'lm-charts lm-strip' : 'lm-charts'} data-out={out(...charts)}>
+            {headroom && panel('headroom', <HeadroomChart lm={lm} />)}
+            {side && panel('compare', <Compare lm={lm} />)}
           </div>
         )}
-        <div className="lm-strip">
-          <div className="lm-card">
-            <Meters lm={lm} />
-            <div className="lm-more lm-ranked">
-              <Limits lm={lm} />
-            </div>
+        <div className="lm-strip lm-live" data-out={out('live', 'limits', 'controls')}>
+          <div className="lm-card" data-out={out('live', 'limits')}>
+            {panel('live', <Meters lm={lm} />)}
+            {panel('limits', <Limits lm={lm} />)}
           </div>
-          <Controls lm={lm} />
+          {panel('controls', <Controls lm={lm} />)}
         </div>
-        <div className="lm-more">
-          <Assumptions lm={lm} extra={assumptions} />
-        </div>
+        {panel('assumptions', <Assumptions lm={lm} extra={assumptions} />)}
       </div>
     </LoadmapRoot>
   )

@@ -1,5 +1,6 @@
 // A ```loadmap live fence: the definition drawn, its source under it.
 import { compile, formatDiagnostic } from '@loadmap/dsl'
+import { pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap } from '@loadmap/react'
 import { createRoot } from 'react-dom/client'
 
@@ -22,13 +23,5 @@ export function mount(el: HTMLElement) {
   pre.replaceWith(details)
   details.append(pre)
   const { model, view, options } = r.definition
-  createRoot(host).render(
-    <Loadmap
-      model={model}
-      view={view}
-      {...(options.speed != null ? { speed: options.speed } : {})}
-      {...(options.direction ? { direction: options.direction } : {})}
-      {...(options.assumptions.length ? { assumptions: options.assumptions } : {})}
-    />,
-  )
+  createRoot(host).render(<Loadmap model={model} view={view} {...pageOptions(options)} />)
 }

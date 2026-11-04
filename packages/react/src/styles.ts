@@ -33,31 +33,39 @@ export const LOADMAP_CSS = `
 .lm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .78rem; color: var(--lm-muted); }
 .lm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
 
-/* full screen (the browser's, or a fixed overlay): the diagram as large as fits, beside a panel of the verdict, the
-   live meters and the controls; the board's size comes from Diagram (--lm-fit), the load never changes it */
-.lm-side, .lm-ranked { display: contents; }
+/* full screen (the browser's, or a fixed overlay): the diagram as wide as the screen, the panels below it, and the
+   whole root scrolls. Everything the load changes is below the board, so the load never moves it */
+.lm-side, .lm-card > .lm-panel { display: contents; }
+.lm-panel { display: grid; gap: 14px; min-width: 0; }
 .lm[data-full] { height: 100vh; height: 100dvh; padding: 16px; overflow: auto; overscroll-behavior: contain; align-content: start; }
 .lm[data-full="overlay"] { position: fixed; inset: 0; z-index: 2147483000; width: auto; max-width: none; max-height: none; margin: 0; border: 0; }
-.lm[data-full]:has(> .lm-side) { overflow: hidden; grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 400px); grid-template-rows: repeat(3, auto) minmax(0, 1fr); row-gap: 0; }
-.lm[data-full]:has(> .lm-side) > :is(h2, .lm-scenarios, .lm-story) { grid-column: 1; margin-bottom: 12px; }
+/* max-content: an auto row of a root with a fixed height shrinks to its items' min-height, and they overlap */
+.lm[data-full]:has(> .lm-side) { grid-auto-rows: max-content; }
 /* a page of its own keeps the rest outside full screen, as <Loadmap> does */
 .lm[data-full]:has(> .lm-side) > :not(h2, .lm-scenarios, .lm-story, .lm-wrap, .lm-side) { display: none; }
+/* the board as large as fits (--lm-fit, from Diagram): under the bar, or with panels below it, on the first screen
+   with the start of the verdict. Left under the bar, so the legend starts where the board does */
 .lm[data-full] .lm-wrap { height: calc(100dvh - 32px); grid-template-rows: auto auto; align-content: center; }
-.lm[data-full]:has(> .lm-side) > .lm-wrap { grid-column: 1; grid-row: 4; height: auto; min-height: 0; }
-/* left under the bar, so the legend starts where the board does */
+.lm[data-full]:has(> .lm-side:not([data-out])) > .lm-wrap { height: auto; align-content: start; }
 .lm[data-full] .lm-board { width: var(--lm-fit, 100%); margin: 0; align-self: start; justify-self: start; }
-.lm[data-full] > .lm-side { grid-column: 2; grid-row: 1 / -1; display: grid; gap: 14px; align-content: start; min-height: 0; overflow: auto; overscroll-behavior: contain; container-type: inline-size; }
-.lm[data-full] .lm-more { display: none; }
+.lm-corner { position: fixed; top: 12px; right: 12px; z-index: 3; box-shadow: 0 2px 10px rgb(0 0 0 / .16); }
+.lm[data-full] > .lm-side { display: grid; gap: 14px; container-type: inline-size; }
+.lm[data-full] [data-out] { display: none; }
+.lm[data-full] .lm-strip:has(> [data-out]) { grid-template-columns: minmax(0, 1fr); }
+/* what the controls change right under the diagram, the charts and the assumptions after them */
+.lm[data-full] .lm-side > .lm-live, .lm[data-full] .lm-live > * { order: 1; }
+.lm[data-full] .lm-side > .lm-charts { order: 2; }
+.lm[data-full] .lm-side > [data-panel="assumptions"] { order: 3; }
 @media (max-width: 760px) {
-  .lm[data-full]:has(> .lm-side) { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(3, auto) minmax(0, 3fr) minmax(0, 2fr); }
-  .lm[data-full] > .lm-side { grid-column: 1; grid-row: 5; margin-top: 12px; }
   .lm[data-full] > h2 { display: none; }
-  /* a phone keeps the board as wide as the screen and scrolls it: fitted to the height it is too small to read */
-  .lm[data-full]:has(> .lm-side) > .lm-wrap { overflow: auto; align-content: start; }
+  /* a phone keeps the board as wide as the screen: fitted to the height it is too small to read. With panels below
+     it scrolls in a box, the bar on top with Close */
   .lm[data-full] .lm-board { width: 100%; }
-  /* the controls first in the short panel: the diagram, the verdict and the meters answer them */
-  .lm[data-full] .lm-side > .lm-strip:not(.lm-more) { display: contents; }
-  .lm[data-full] .lm-side .lm-controls { order: -1; }
+  .lm[data-full]:has(> .lm-side:not([data-out])) > .lm-wrap { max-height: 55dvh; overflow: auto; row-gap: 0; }
+  .lm[data-full]:has(> .lm-side:not([data-out])) .lm-bar { position: sticky; top: 0; z-index: 1; padding-bottom: 8px; background: var(--lm-bg); }
+  /* the controls first: the verdict and the meters answer them */
+  .lm[data-full] .lm-side > .lm-strip:not(.lm-charts) { display: contents; }
+  .lm[data-full] .lm-side :is(.lm-controls, [data-panel="controls"]) { order: -1; }
 }
 
 .lm-verdict { margin: 0; padding: 10px 14px; border-left: 4px solid var(--lm-ok); background: var(--lm-accent-soft); border-radius: 0 6px 6px 0; }

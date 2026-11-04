@@ -62,6 +62,8 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
   focus to its container); a Playwright test then presses it with a DOM click.
 - A test builds its model inline in `defineModel({ ... })`: a definition held in a variable first loses its literal
   types and fails the typecheck.
+- `pnpm format` realigns a whole Markdown table when one row is wider than the rest: keep a new row within the
+  table's column widths.
 
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).

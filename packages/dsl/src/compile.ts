@@ -52,6 +52,7 @@ import {
   EDGE_PROPS,
   matchArgs,
   own,
+  type PANELS,
   type PropSpec,
   SCHEMA,
   type Scope,
@@ -74,6 +75,17 @@ export interface DefinitionOptions {
   speed?: number
   direction?: Direction
   assumptions: string[]
+  fullScreen?: (typeof PANELS)[number][]
+}
+
+/** The page options as `<Loadmap>` props, leaving out the unset ones so it keeps its defaults. */
+export function pageOptions(o: DefinitionOptions) {
+  return {
+    ...(o.speed != null ? { speed: o.speed } : {}),
+    ...(o.direction ? { direction: o.direction } : {}),
+    ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
+    ...(o.fullScreen ? { fullScreen: o.fullScreen } : {}),
+  }
 }
 
 export interface Definition {
@@ -458,6 +470,9 @@ class Compiler {
     if (speed != null) options.speed = speed
     const layout = this.prop(root, 'layout')
     if (layout) options.direction = this.enumValue(layout, SCHEMA['']!.props.layout!) === 'down' ? 'DOWN' : 'RIGHT'
+    const panels = this.prop(root, 'fullScreen')
+    if (panels)
+      options.fullScreen = this.words(panels, SCHEMA['']!.props.fullScreen!) as DefinitionOptions['fullScreen']
     for (const a of root.props.get('assume') ?? []) {
       const v = this.constant(a.value, 'string')
       if (typeof v === 'string') options.assumptions.push(v)
@@ -753,6 +768,21 @@ class Compiler {
     if (spec.values?.includes(raw)) return raw
     this.report.error(p.value, `"${raw}" is not one of ${spec.values!.join(', ')}`, didYouMean(raw, spec.values ?? []))
     return undefined
+  }
+
+  private words(p: Property, spec: PropSpec): string[] | undefined {
+    const values = spec.values ?? []
+    if (p.value.t !== 'array') {
+      this.report.error(p.value, `a list: [${values.slice(0, 2).join(', ')}]`)
+      return undefined
+    }
+    const out: string[] = []
+    for (const e of p.value.items) {
+      const word = e.t === 'str' ? e.value : e.t === 'id' ? e.name : this.slice(e)
+      if (values.includes(word)) out.push(word)
+      else this.report.error(e, `"${word}" is not one of ${values.join(', ')}`, didYouMean(word, values))
+    }
+    return out
   }
 
   private color(e: Expr): string {

@@ -22,7 +22,12 @@ export function reference(): string {
     if (!Object.keys(props).length) return
     out.push('| Property | Value | |', '| --- | --- | --- |')
     for (const [k, p] of Object.entries(props)) {
-      const value = p.values ? p.values.map((v) => `\`${v}\``).join(' \\| ') : `${p.value}, ${SCOPE[p.scope]}`
+      const words = p.values?.map((v) => `\`${v}\``)
+      const value = !words
+        ? `${p.value}, ${SCOPE[p.scope]}`
+        : p.value === 'names'
+          ? `a list of ${words.join(', ')}`
+          : words.join(' \\| ')
       out.push(`| \`${k}\`${p.required ? ' (required)' : ''} | ${value} | ${p.doc.replaceAll('|', '\\|')} |`)
     }
     out.push('')

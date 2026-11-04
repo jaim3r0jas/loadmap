@@ -70,9 +70,13 @@ Every capacity says where it came from (`measured`, `estimated`, or a fit from m
 each limit into a range. Add `scenarios` to compare designs, `growth` to turn multiples into dates, `expect` to fail
 a test when headroom is lost. The layout runs in a Web Worker; nothing loads it before the first diagram.
 
+The diagram's **Full screen** shows it as wide as the screen, with the panels of the page below it.
+`fullScreen={['verdict', 'live', 'controls']}` keeps only those (`LOADMAP_PANELS` lists them all: `verdict`, `live`,
+`limits`, `controls`, `headroom`, `compare`, `assumptions`); they stay in their own order.
+
 `useLoadmap` with `LoadmapRoot`, `Diagram`, `Verdict`, `Limits`, `Controls` and the others builds a page of your own
 layout from the same pieces. The diagram's Full screen takes the whole root: inside a `<div className="lm-side">`
-after the `Diagram`, your pieces become the panel beside it; a title, the `Scenarios` and the `Story` stay above
+after the `Diagram`, your pieces become the column below it; a title, the `Scenarios` and the `Story` stay above
 the diagram, and the rest waits outside.
 
 Docs, live examples and the editor: https://jaim3r0jas.github.io/loadmap/ · MIT

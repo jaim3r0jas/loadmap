@@ -51,6 +51,7 @@ describe('completions', () => {
 
   it('offers the values of an enum and the flows of a fan-out', () => {
     expect(at(inside('node db "Postgres" "primary" {', 'shape: c|')).labels).toEqual(['box', 'cylinder'])
+    expect(at(checkout.replace('speed: 10', 'fullScreen: [verdict, li|]')).labels).toContain('limits')
     expect(at(inside('flow orders "orders" {', 'color: |')).labels).toEqual([
       'accent',
       'alt',

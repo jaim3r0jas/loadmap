@@ -22,7 +22,7 @@ import {
   type HostFunctions,
   problems,
 } from '@loadmap/dsl'
-import { type EditValue, edit, inspect, lex, Reporter } from '@loadmap/dsl/internal'
+import { type EditValue, edit, inspect, lex, pageOptions, Reporter } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Inspector, type InspectorTab } from './Inspector'
@@ -426,7 +426,7 @@ export function LoadmapEditor({
               model={def.model}
               view={def.view}
               theme={theme}
-              {...pageOptions(def)}
+              {...pageOptions(def.options)}
               initial={valuesFor(def.model, shown.current)}
               onNodeClick={clickNode}
               selected={selected}
@@ -449,16 +449,6 @@ export function LoadmapEditor({
       </div>
     </div>
   )
-}
-
-/** The definition's page options, leaving out the unset ones so `<Loadmap>` keeps its defaults. */
-function pageOptions(def: Definition) {
-  const { speed, direction, assumptions } = def.options
-  return {
-    ...(speed != null ? { speed } : {}),
-    ...(direction ? { direction } : {}),
-    ...(assumptions.length ? { assumptions } : {}),
-  }
 }
 
 /** The one change from `a` to `b`: only the part that differs, so the cursor stays where it was. */

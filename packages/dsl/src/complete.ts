@@ -104,7 +104,7 @@ export function completions(source: string, offset: number, compiled?: CompileRe
           apply: /^[A-Za-z_]\w*$/.test(label) ? label : JSON.stringify(label),
         })),
       )
-    if (kind === 'enum')
+    if (kind === 'enum' || kind === 'names')
       return out((prop[1] === 'color' ? COLORS : (p?.values ?? [])).map((label) => ({ label, type: 'constant' })))
     if (kind === 'boolean' && p?.scope === 'const')
       return out([
