@@ -1,3 +1,5 @@
+import type { Expr } from './ast'
+
 /**
  * Every statement of the language: what follows its keyword, its properties and what it may hold. The checker,
  * autocomplete and the language reference (docs/dsl.md) all read this table, so it is the one place to add a feature.
@@ -38,6 +40,8 @@ export interface PropSpec {
   values?: readonly string[]
   /** May appear more than once; each adds to a list. */
   repeat?: boolean
+  /** The editor's inspector shows it first; every other property waits under "More". */
+  inspector?: 'main'
 }
 
 export interface ArgSpec {
@@ -46,6 +50,23 @@ export interface ArgSpec {
   optional?: boolean
   /** A text that may be a template computed from the model. */
   dynamic?: boolean
+}
+
+/**
+ * Which argument of a statement fills which slot: by kind, in order, optional slots skipped. `bad` are the ones that
+ * fit no slot, `missing` the first required slot left empty.
+ */
+export function matchArgs(slots: readonly ArgSpec[], args: readonly Expr[]) {
+  const open = [...slots]
+  const filled = new Map<ArgSpec, Expr>()
+  const bad: Expr[] = []
+  for (const a of args) {
+    const kind = a.t === 'id' ? 'id' : a.t === 'str' || a.t === 'tpl' ? 'text' : a.t === 'num' ? 'number' : null
+    const i = open.findIndex((s) => s.kind === kind)
+    if (kind == null || i < 0 || open.slice(0, i).some((s) => !s.optional)) bad.push(a)
+    else filled.set(open.splice(0, i + 1).at(-1)!, a)
+  }
+  return { filled, bad, missing: open.find((s) => !s.optional) }
 }
 
 export interface BlockSpec {
@@ -82,11 +103,13 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
   short: { value: 'string', scope: 'const', doc: 'The name inside a sentence, with its article: "the database".' },
   plural: { value: 'boolean', scope: 'const', doc: '"are past capacity" instead of "is".' },
   demand: {
+    inspector: 'main',
     value: 'number',
     scope: 'ctx',
     doc: "What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages.",
   },
   capacity: {
+    inspector: 'main',
     value: 'capacity',
     scope: 'ctx',
     doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set.',
@@ -113,7 +136,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: '',
     args: [],
     props: {
-      title: { value: 'string', scope: 'const', doc: 'The heading above the diagram.' },
+      title: { inspector: 'main', value: 'string', scope: 'const', doc: 'The heading above the diagram.' },
       layout: {
         value: 'enum',
         scope: 'const',
@@ -161,9 +184,20 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     args: [{ name: 'label', kind: 'text', optional: true }],
     props: {
       min: { value: 'number', scope: 'const', doc: 'The lowest multiple. Default 1.' },
-      max: { value: 'number', scope: 'const', doc: 'The highest multiple on the slider.', required: true },
+      max: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'const',
+        doc: 'The highest multiple on the slider.',
+        required: true,
+      },
       step: { value: 'number', scope: 'const', doc: 'The slider step. Default 1.' },
-      default: { value: 'number', scope: 'const', doc: 'Where the slider starts. Default the minimum.' },
+      default: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'const',
+        doc: 'Where the slider starts. Default the minimum.',
+      },
     },
     children: [],
   },
@@ -175,11 +209,16 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       { name: 'label', kind: 'text', optional: true },
     ],
     props: {
-      options: { value: 'options', scope: 'const', doc: 'The choices of a select: [2, 3, 4] or ["a", "b"].' },
-      min: { value: 'number', scope: 'const', doc: 'The lowest value of a slider.' },
-      max: { value: 'number', scope: 'const', doc: 'The highest value of a slider.' },
-      step: { value: 'number', scope: 'const', doc: 'The step of a slider. Default 1.' },
-      default: { value: 'value', scope: 'const', doc: 'The starting value.', required: true },
+      options: {
+        inspector: 'main',
+        value: 'options',
+        scope: 'const',
+        doc: 'The choices of a select: [2, 3, 4] or ["a", "b"].',
+      },
+      min: { inspector: 'main', value: 'number', scope: 'const', doc: 'The lowest value of a slider.' },
+      max: { inspector: 'main', value: 'number', scope: 'const', doc: 'The highest value of a slider.' },
+      step: { inspector: 'main', value: 'number', scope: 'const', doc: 'The step of a slider. Default 1.' },
+      default: { inspector: 'main', value: 'value', scope: 'const', doc: 'The starting value.', required: true },
       hint: { value: 'string', scope: 'const', doc: 'One line under the control.' },
       tag: { value: 'string', scope: 'const', doc: 'A short tag next to the label, e.g. "estimate".' },
       enabled: {
@@ -212,7 +251,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'growth { rate: 0.06; per: month; asOf: "2026-11-01" }',
     args: [],
     props: {
-      rate: { value: 'number', scope: 'const', required: true, doc: 'Growth per period, as a share: 0.06 is 6 %.' },
+      rate: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'const',
+        required: true,
+        doc: 'Growth per period, as a share: 0.06 is 6 %.',
+      },
       per: { value: 'enum', scope: 'const', values: ['month', 'year'], required: true, doc: 'month or year.' },
       asOf: { value: 'string', scope: 'const', required: true, doc: 'The day the load is 1×: "2026-11-01".' },
     },
@@ -291,7 +336,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     ],
     props: {
       unit: { value: 'string', scope: 'const', doc: 'One unit of the flow, singular: "order".' },
-      rate: { value: 'number', scope: 'ctx', doc: 'Units per second.', required: true },
+      rate: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Units per second.', required: true },
       priority: { value: 'number', scope: 'const', doc: '1 is served first. Flows of the same priority share.' },
       route: { value: 'route', scope: 'const', doc: 'The stages it passes, in order: a -> b -> c.', required: true },
       from: { value: 'node', scope: 'const', doc: 'The node its dots start from.', required: true },
@@ -332,12 +377,14 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     args: [],
     props: {
       times: {
+        inspector: 'main',
         value: 'number',
         scope: 'values',
         doc: 'Retries after the first attempt: a whole number. Reads only the parameters.',
         required: true,
       },
       budget: {
+        inspector: 'main',
         value: 'number',
         scope: 'values',
         doc: 'At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent.',
@@ -377,7 +424,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     args: BOX_ARGS,
     props: {
       sub: SUB,
-      members: { value: 'number', scope: 'ctx', doc: 'How many members.', required: true },
+      members: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'How many members.', required: true },
       memberLabel: { value: 'string', scope: 'i', doc: "Each member's label, from its index i: `broker ${i}`." },
       ...COMPONENT_PROPS,
     },
@@ -406,7 +453,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'cache { hit: 0.8 }',
     args: STAGE_LABEL,
     props: {
-      hit: { value: 'number', scope: 'ctx', doc: 'The share answered here, 0 to 1.', required: true },
+      hit: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'ctx',
+        doc: 'The share answered here, 0 to 1.',
+        required: true,
+      },
       component: STAGE_COMPONENT,
     },
     children: [],
@@ -452,8 +505,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'workers { pods: pods; perPod: 8 }',
     args: STAGE_LABEL,
     props: {
-      pods: { value: 'number', scope: 'ctx', doc: 'How many pods; an autoscaled pool has autoscale instead.' },
-      perPod: { value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
+      pods: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'ctx',
+        doc: 'How many pods; an autoscaled pool has autoscale instead.',
+      },
+      perPod: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
       fill: {
         value: 'enum',
         scope: 'const',
@@ -469,9 +527,10 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'autoscale { min: 2; max: 10; target: 0.7 }',
     args: [],
     props: {
-      min: { value: 'number', scope: 'ctx', doc: 'The fewest pods, at least 1.', required: true },
-      max: { value: 'number', scope: 'ctx', doc: 'The most pods.', required: true },
+      min: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'The fewest pods, at least 1.', required: true },
+      max: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'The most pods.', required: true },
       target: {
+        inspector: 'main',
         value: 'number',
         scope: 'ctx',
         doc: 'The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %.',

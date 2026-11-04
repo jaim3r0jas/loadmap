@@ -50,6 +50,7 @@ import {
   COLORS,
   COMPONENT_PROPS,
   EDGE_PROPS,
+  matchArgs,
   own,
   type PropSpec,
   SCHEMA,
@@ -572,16 +573,9 @@ class Compiler {
   }
 
   private args(b: Block, d: Decl) {
-    const slots = [...b.spec.args]
-    for (const a of d.args) {
-      const kind = a.t === 'id' ? 'id' : a.t === 'str' || a.t === 'tpl' ? 'text' : a.t === 'num' ? 'number' : null
-      const i = slots.findIndex((s) => s.kind === kind)
-      if (kind == null || i < 0 || slots.slice(0, i).some((s) => !s.optional)) {
-        this.report.error(a, `unexpected ${this.slice(a)} after "${b.keyword}"`, usage(b.keyword))
-        continue
-      }
-      const slot = slots[i]!
-      slots.splice(0, i + 1)
+    const { filled, bad, missing } = matchArgs(b.spec.args, d.args)
+    for (const a of bad) this.report.error(a, `unexpected ${this.slice(a)} after "${b.keyword}"`, usage(b.keyword))
+    for (const [slot, a] of filled) {
       if (a.t === 'tpl' && !slot.dynamic && !a.parts.length) {
         ;(b.args as Record<string, Expr>)[slot.name] = { t: 'str', value: a.quasis[0]!, from: a.from, to: a.to }
         continue
@@ -591,7 +585,6 @@ class Compiler {
       if (a.t === 'id') b.args[slot.name as 'id' | 'x' | 'y'] = { name: a.name, from: a.from, to: a.to }
       else (b.args as Record<string, Expr>)[slot.name] = a
     }
-    const missing = slots.find((s) => !s.optional)
     if (missing) this.report.error(b.at, `"${b.keyword}" needs its ${missing.name}`, usage(b.keyword))
     if (b.spec.init && !d.init) this.report.error(b.at, `"${b.keyword}" needs "= formula"`, usage(b.keyword))
     if (!b.spec.init && d.init) this.report.error(d.init, `"${b.keyword}" takes no "="`)
