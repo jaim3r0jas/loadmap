@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
+import { encodeShare } from '@loadmap/dsl'
 import { chromium } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -218,6 +219,29 @@ describe('the built site', () => {
       expect(await links.count()).toBe(PAGES.length)
       for (const link of await links.all()) expect(await link.isVisible()).toBe(true)
       expect(await phone.locator('.menu [aria-current="page"]').textContent()).toBe('Reference')
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('opens a shared link for readers: the diagram and the inspector, the text one click away', async () => {
+    const source = readFileSync(join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap'), 'utf8')
+    const hash = await encodeShare(source, { load: 30 })
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}editor/#${hash}`)
+      await page.waitForSelector('.lme-inspector')
+      expect(await page.locator('.lme-left').isHidden()).toBe(true)
+      await page.locator('.lme-preview [data-node="gateway"]').click()
+      await page.waitForFunction(() => document.querySelector('.lme-inspector h3')?.textContent === 'API gateway')
+      await page.getByRole('button', { name: 'Show code' }).click()
+      expect(await page.locator('.lme-left').isVisible()).toBe(true)
+      // without a link, the editor opens with the text
+      const plain = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await plain.goto(`${url}editor/`)
+      await plain.waitForSelector('.lme-left')
+      expect(await plain.locator('.lme-inspector').count()).toBe(0)
     } finally {
       await browser.close()
     }

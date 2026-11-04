@@ -243,6 +243,13 @@ compile(source, { functions: { headroom: (x: number) => x * 1.2 } })
 A shared link opened where those functions are missing reports which one it needs. Anything beyond formulas stays in
 the TypeScript API, which reads the same.
 
+### Layout
+
+`loadmap fmt` (and **Format** in the editor) lays a definition out the one way: two spaces a block, a statement a
+line, at most one blank line, one space around operators. Numbers, texts, templates and parentheses stay as written,
+and a block written on one line stays on one line while it fits in 120 columns. `format(source)` from `@loadmap/dsl`
+does the same in code; a text with a syntax error comes back unchanged, with its diagnostics.
+
 ## Errors
 
 Every error has a line and a column, and parsing goes on after one, so a file shows all its problems at once. Names

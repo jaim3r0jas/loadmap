@@ -12,5 +12,6 @@ if (!r.ok) console.error(r.diagnostics.map((d) => formatDiagnostic(d, source, 's
 else render(<Loadmap model={r.definition.model} view={r.definition.view} />)
 ```
 
-Also: `completions()` for an editor, `encodeShare`/`decodeShare` for links. The language guide and the reference:
+Also: `format()` lays a definition out the one way (what `loadmap fmt` runs), `completions()` for an editor,
+`encodeShare`/`decodeShare` for links. The language guide and the reference:
 https://jaim3r0jas.github.io/loadmap/ · MIT

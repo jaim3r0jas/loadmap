@@ -11,16 +11,16 @@ pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (
 mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
 stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
-| Package           | What                                                                                       | Depends on                      |
-| ----------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
-| `@loadmap/core`   | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate  | nothing                         |
-| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                          | core                            |
-| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                     |
-| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme       | core, sim, layout; react (peer) |
-| `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI         | react, mediabunny               |
-| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations); `loadmap record` of a page or a `.loadmap` | dsl (bundled), playwright       |
-| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, completions, share links    | core, layout                    |
-| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 next to a live `<Loadmap>`, inline errors, share, download | dsl, react, @codemirror/*       |
+| Package           | What                                                                                      | Depends on                      |
+| ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------- |
+| `@loadmap/core`   | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate | nothing                         |
+| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                         | core                            |
+| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                          | core, elkjs                     |
+| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme      | core, sim, layout; react (peer) |
+| `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI        | react, mediabunny               |
+| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled), playwright       |
+| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links      | core, layout                    |
+| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*       |
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws
@@ -99,7 +99,12 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
   tree; names resolve only to what the definition declares (`own()` for every lookup by a user-written name, so
   `constructor` finds nothing). A shared link is untrusted input.
 - **The schema table (`packages/dsl/src/schema.ts`) is the one place a statement or property is added.** The checker,
-  autocomplete and the reference in `docs/dsl.md` read it; `UPDATE_DOCS=1 pnpm test:node` rewrites that reference.
+  autocomplete, the inspector (`inspector: 'main'` puts a property first) and the reference in `docs/dsl.md` read it;
+  `UPDATE_DOCS=1 pnpm test:node` rewrites that reference.
+- **The text is the one source.** An inspector change is `edit()`: the smallest replacement, worked out again from the
+  current text, refused when the result would not compile. Never keep a second copy of the model to patch.
+- Every `.loadmap` in the repository (and the docs' definitions) is laid out by `format()`: `format.test.ts` fails
+  otherwise. `loadmap fmt <file>` fixes it.
 - A feature of the TypeScript API that the language should express gets a line in both examples' `.loadmap` or a
   `compile.test.ts` case; the round-trip tests catch a drift.
 
@@ -129,6 +134,6 @@ lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 ## Not yet
 
 State in the URL for TypeScript pages (editor links carry it), search in the docs. Two live diagrams side by side,
-cost per scenario, goal seek; ranges for fits, Monte Carlo. In the editor: editing in the UI (an inspector that writes
-text edits, a click on a node that jumps to its source), hover help, a formatter, Export → TypeScript, the source in
-exported PNGs, a Vite plugin for `import m from './m.loadmap'`.
+cost per scenario, goal seek; ranges for fits, Monte Carlo. In the editor: adding or removing boxes and edges in the
+UI, editing formulas in the inspector, edge labels, hover help, Export → TypeScript, the source in exported PNGs, a Vite
+plugin for `import m from './m.loadmap'`.

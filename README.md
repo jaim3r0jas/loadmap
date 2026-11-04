@@ -170,8 +170,10 @@ pool workers "Workers" `${pods} pods × 8 threads` {
 phones -> gateway -> workers
 ```
 
-Formulas are a small subset of TypeScript expressions, never `eval`, so a definition can be shared as a link. See
-[`docs/dsl.md`](docs/dsl.md).
+Formulas are a small subset of TypeScript expressions, never `eval`, so a definition can be shared as a link. A link
+opens for readers: the diagram with an inspector, where a click on a box changes its label, its capacity or a
+parameter without the text (each change a small edit of it, so the link they share back carries it). `loadmap fmt`
+lays a file out the one way. See [`docs/dsl.md`](docs/dsl.md).
 
 ## Develop
 

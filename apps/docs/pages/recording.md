@@ -1,7 +1,7 @@
 # Recording and CI
 
-`@loadmap/cli` has two commands: `loadmap record` makes media that stand alone, and `loadmap check` holds a model to
-its promises in CI.
+`@loadmap/cli` has three commands: `loadmap record` makes media that stand alone, `loadmap fmt` lays a definition out
+the one way, and `loadmap check` holds a model to its promises in CI.
 
 ```bash
 npm i -D @loadmap/cli
@@ -31,6 +31,18 @@ out and the scenarios compared. `--script` changes values during the recording:
 
 `loadmap --help` lists every option. In a page, the same functions are `exportPng`, `exportSvg`, `recordVideo` and
 `recordPoster` from `@loadmap/export`.
+
+## Format
+
+```bash
+loadmap fmt models/*.loadmap           # rewrites each file
+loadmap fmt --check models/*.loadmap   # changes nothing; exit 1 when one needs it
+```
+
+Two spaces a block, a statement a line, at most one blank line, one space around operators. Numbers, texts,
+templates and parentheses stay as written, so a formula never changes; a block written on one line stays on one line
+while it fits in 120 columns. A file with a syntax error is left alone. `loadmap fmt -` reads standard input and writes
+standard output, for an editor's format-on-save. The function is `format()` from `@loadmap/dsl`.
 
 ## Check
 

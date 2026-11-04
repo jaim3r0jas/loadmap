@@ -61,7 +61,8 @@ Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layou
 `<Loadmap>` props: `model`, `view`, `theme` (`'auto'`, `'light'`, `'dark'`), `title`, `assumptions` (lines added before
 the generated ones), `headroom` and `compare` (show the chart and the table; default true), `initial` (values to
 start from), `speed` (simulated seconds per second), `direction` (`'RIGHT'` or `'DOWN'`), `narrowBelow` (the width
-under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker), and `ref`.
+under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker), `onNodeClick`
+(a click or Enter on a box, by its id; every box is a button then), `selected` (the box drawn as selected), and `ref`.
 
 The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `storyStep()`, `ready()`, `pause()`,
 `resume()`, `step(dt)`, `reset(seed)`, `board()`. Export and recording drive the page through it.
@@ -73,13 +74,16 @@ The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `
 | `compile(source, { functions? })`                  | `{ ok, diagnostics, definition: { model, view, options }, expectations }` |
 | `formatDiagnostic(d, source, file)`                | `file:line:col error: …` with the line and a caret                        |
 | `problems(result, severity?)`                      | The diagnostics with failing expectations added                           |
+| `format(source)`                                   | `{ ok, text, diagnostics }`: the definition laid out the one way          |
 | `completions(source, offset)`                      | What may be typed at a place                                              |
 | `encodeShare(source, values)`, `decodeShare(hash)` | Share links that carry the whole definition                               |
 
 ## The editor (`@loadmap/editor`)
 
-`<LoadmapEditor initial values? functions? theme? onChange? onShare? actions? templates? fileName? ref? />`. Its `ref`
-has `source()`, `setSource(text)`, `loadmap()` (the preview's handle) and `shareHash()`. `TEMPLATES` (also from
+`<LoadmapEditor initial values? functions? theme? onChange? onShare? actions? templates? fileName? layout? ref? />`.
+`layout` is `'code'` (the default: the text beside the diagram) or `'reader'` (the diagram with an inspector, the text
+hidden). Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
+`format()`. `TEMPLATES` (also from
 `@loadmap/editor/templates`, without CodeMirror) lists the starters.
 
 ## Media (`@loadmap/export`)

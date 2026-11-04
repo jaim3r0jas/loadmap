@@ -1,7 +1,8 @@
 // The editor, with the reader's draft kept in this browser. A shared link (#v1.…) or a template (?template=…) opens
-// instead of the draft; editing it makes it the draft, and the earlier draft stays one click away.
+// instead of the draft; editing it makes it the draft, and the earlier draft stays one click away. A link opens for
+// readers: the diagram with the inspector, the text one click away.
 import { decodeShare, type Shared } from '@loadmap/dsl'
-import { LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '@loadmap/editor'
+import { type EditorLayout, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '@loadmap/editor'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { StrictMode, useEffect, useRef, useState } from 'react'
@@ -51,6 +52,7 @@ function Editor() {
   // editing what came from outside makes it the draft: the earlier draft is kept aside, and the address loses the
   // link or the template, so a reload shows the edits
   const outside = useRef(fromLink() || !!template())
+  const [layout] = useState<EditorLayout>(() => (fromLink() ? 'reader' : 'code'))
   const [earlier, setEarlier] = useState(() => read(EARLIER))
   const save = (s: string) => {
     // a whole new text (an example, a template, the first edit of a link) takes the draft's place: the reader's own
@@ -87,6 +89,7 @@ function Editor() {
         ref={editor}
         initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
         values={'values' in start ? start.values : undefined}
+        layout={layout}
         onChange={save}
         actions={
           <>
