@@ -54,6 +54,10 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
   ResizeObserver clears the canvas a frame later) and leaves out `.lm-meters` (they refresh on a 250 ms wall-clock
   timer).
 - CodeMirror draws only the lines in view: a browser test that looks for a lint mark scrolls its edit into view first.
+- A button that can become disabled or disappear while it holds the keyboard focus uses `aria-disabled` (or hands the
+  focus to its container); a Playwright test then presses it with a DOM click.
+- A test builds its model inline in `defineModel({ ... })`: a definition held in a variable first loses its literal
+  types and fails the typecheck.
 
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
