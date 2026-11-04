@@ -1,4 +1,4 @@
-import { defineModel, fanout, measured, p, pass, queue, sink, workers } from '@loadmap/core'
+import { cache, configured, defineModel, fanout, limit, measured, p, pass, queue, sink, workers } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { busyOf, createSim, fillOrder } from '../src'
 
@@ -418,5 +418,145 @@ describe('a new shape', () => {
     sim.update(sized.evaluate({ load: 5, pods: 1 }))
     expect(sim.particles.length).toBe(before.size - inSecondPod.length)
     expect(sim.particles.every((d) => [d.from, d.to].every((x) => x.stage !== 'pool' || (x.cell ?? 0) < 4))).toBe(true)
+  })
+})
+
+describe('building blocks', () => {
+  /** Simulated seconds at `load`, with dots. */
+  const at = (m: any, load: number, simSeconds: number, seed = 1) => {
+    const sim = createSim(m, m.evaluate({ load }), { seed, speed: 10 })
+    for (let i = 0; i < simSeconds * 3; i++) sim.step(1 / 30)
+    return sim
+  }
+
+  describe('cache', () => {
+    // 1,000 lookups/s at 1×, 80 % answered: the database's 500/s runs out at 2.5×
+    const m = defineModel({
+      load: p.load({ max: 10, step: 0.01 }),
+      flows: { lookups: { rate: ({ load }) => 1000 * load } },
+      components: { db: { name: 'DB', capacity: measured(500, 'queries/s'), over: '' } },
+      stages: {
+        cache: cache({ hit: 0.8 }),
+        topic: queue({ partitions: { lookups: 4 } }),
+        db: workers('db', { pods: 2, perPod: 4 }),
+      },
+      routes: { lookups: ['cache', 'topic', 'db'] },
+    })
+
+    it('backs up behind it only past the full the bars show', () => {
+      const full = m.evaluate().components.db.full!
+      expect(full).toBeCloseTo(2.5, 6)
+      expect(at(m, full * 0.99, 120).queue('topic', 'lookups').backlog).toBe(0)
+      // 520 arrive, 500 are served: 20 a second wait
+      const over = at(m, 2.6, 120).queue('topic', 'lookups')
+      expect(over.arriving).toBeCloseTo(520, 0)
+      expect(over.backlog).toBeCloseTo(2400, -2)
+    })
+
+    it('sends its hits back where they came from, answered', () => {
+      const sim = at(m, 1, 30)
+      const seen = new Set<string | undefined>()
+      for (let i = 0; i < 300; i++) {
+        sim.step(1 / 30)
+        for (const d of sim.particles) if (d.back) seen.add(`${d.from.stage}→${d.to.stage}:${d.outcome ?? ''}`)
+      }
+      // on its way back, then fading where it came from (here the source)
+      expect(seen).toEqual(new Set(['cache→null:', 'null→null:answered']))
+    })
+  })
+
+  describe('autoscaled pool', () => {
+    const m = defineModel({
+      load: p.load({ max: 10, step: 0.01 }),
+      flows: { req: { rate: ({ load }) => 300 * load } },
+      components: {
+        api: { name: 'API', demand: ({ flows }) => flows.req * 0.01, capacity: measured(10, 'cores'), over: '' },
+      },
+      stages: {
+        topic: queue({ partitions: { req: 4 } }),
+        api: workers('api', { perPod: 4, autoscale: { min: 2, max: 10, target: 0.7 } }),
+      },
+      routes: { req: ['topic', 'api'] },
+    })
+
+    it('keeps its running pods busy near the target and the others idle', () => {
+      const sim = at(m, 1, 60)
+      // 3 cores on 5 running pods of 1 core: 60 % each
+      expect(sim.running('api')).toBe(5)
+      expect(sim.busy('api')).toBeCloseTo(0.6, 2)
+      const pod = (k: number) =>
+        Array.from({ length: 4 }, (_, t) => sim.slotBusy('api', k * 4 + t)).reduce((a, b) => a + b)
+      expect(pod(4)).toBeGreaterThan(0)
+      expect(pod(5)).toBe(0)
+      expect(pod(9)).toBe(0)
+    })
+
+    it('backs up only past the full the bars show, at max pods', () => {
+      const full = m.evaluate().components.api.full!
+      expect(at(m, full * 0.99, 120).queue('topic', 'req').backlog).toBe(0)
+      expect(at(m, full * 1.01, 120).queue('topic', 'req').backlog).toBeGreaterThan(0)
+      expect(at(m, full * 1.01, 10).running('api')).toBe(10)
+    })
+  })
+
+  describe('rate limiter', () => {
+    const m = defineModel({
+      load: p.load({ max: 10, step: 0.1 }),
+      flows: { req: { rate: ({ load }) => 1000 * load } },
+      components: {
+        limiter: { name: 'Limiter', capacity: configured(1000, 'req/s'), over: '' },
+        db: { name: 'DB', capacity: measured(2000, 'queries/s'), over: '' },
+      },
+      stages: {
+        limiter: limit('limiter'),
+        topic: queue({ partitions: { req: 4 } }),
+        db: workers('db', { pods: 2, perPod: 4 }),
+      },
+      routes: { req: ['limiter', 'topic', 'db'] },
+    })
+
+    it('turns away what the bars say, and lets its limit through', () => {
+      const sim = at(m, 1.5, 120)
+      expect(sim.shed('limiter')).toBeCloseTo(1 / 3)
+      expect(sim.queue('topic', 'req').arriving).toBeCloseTo(1000, 0)
+      expect(sim.queue('topic', 'req').backlog).toBe(0)
+    })
+  })
+
+  describe('retries', () => {
+    // a gateway of 2,000 in front of a service of 1,000; three retries
+    const m = defineModel({
+      load: p.load({ max: 10, step: 0.1 }),
+      flows: { req: { rate: ({ load }) => 1000 * load, overload: { retry: { times: 3 } } } },
+      components: {
+        gateway: { name: 'Gateway', capacity: measured(2000, 'req/s'), over: '' },
+        service: { name: 'Service', capacity: measured(1000, 'req/s'), over: '' },
+      },
+      stages: { gateway: pass('gateway'), service: pass('service') },
+      routes: { req: ['gateway', 'service'] },
+    })
+
+    it('turn away the share the model settles on, counted against the bottleneck', () => {
+      const ev = m.evaluate({ load: 2 })
+      const sim = createSim(m, ev)
+      // 6,285 attempts: the gateway takes 2,000, the service 1,000 of those
+      expect(sim.shed('gateway')).toBeCloseTo(1 - 2000 / ev.retry.req!.attempts, 9)
+      expect(sim.shed('service')).toBeCloseTo(0.5, 9)
+      expect((1 - sim.shed('gateway')) * (1 - sim.shed('service'))).toBeCloseTo(1 - ev.retry.req!.rejected, 9)
+    })
+
+    it('send the units turned away again, as many attempts per unit as the model says', () => {
+      const ev = m.evaluate({ load: 2 })
+      const sim = createSim(m, ev, { seed: 3, maxParticles: 5000 })
+      const first = new Set<number>()
+      const again = new Set<number>()
+      for (let i = 0; i < 30 * 120; i++) {
+        sim.step(1 / 30)
+        for (const d of sim.particles) (d.attempt ? again : first).add(d.id)
+      }
+      expect(Math.max(...sim.particles.map((d) => d.attempt ?? 0))).toBeLessThanOrEqual(3)
+      // 1 + p + p² + p³ = 3.14 attempts per unit
+      expect((first.size + again.size) / first.size).toBeCloseTo(ev.retry.req!.attempts / 2000, 1)
+    })
   })
 })
