@@ -25,15 +25,40 @@ export const LOADMAP_CSS = `
 .lm-card { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
 
 .lm-wrap { display: grid; gap: 8px; min-width: 0; position: relative; }
-.lm-wrap:fullscreen { background: var(--lm-bg); padding: 16px; align-content: center; overflow: auto; }
 .lm-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .lm-btn { font: 500 .8rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
 .lm-board { position: relative; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; margin: 0 auto; width: 100%; }
-.lm-wrap:fullscreen .lm-board { width: auto; max-width: 100%; max-height: calc(100vh - 90px); }
 .lm-board svg { display: block; width: 100%; height: auto; font-family: var(--lm-font); }
 .lm-board canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .lm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .78rem; color: var(--lm-muted); }
 .lm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+
+/* full screen (the browser's, or a fixed overlay): the diagram as large as fits, beside a panel of the verdict, the
+   live meters and the controls; the board's size comes from Diagram (--lm-fit), the load never changes it */
+.lm-side, .lm-ranked { display: contents; }
+.lm[data-full] { height: 100vh; height: 100dvh; padding: 16px; overflow: auto; overscroll-behavior: contain; align-content: start; }
+.lm[data-full="overlay"] { position: fixed; inset: 0; z-index: 2147483000; width: auto; max-width: none; max-height: none; margin: 0; border: 0; }
+.lm[data-full]:has(> .lm-side) { overflow: hidden; grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 400px); grid-template-rows: repeat(3, auto) minmax(0, 1fr); row-gap: 0; }
+.lm[data-full]:has(> .lm-side) > :is(h2, .lm-scenarios, .lm-story) { grid-column: 1; margin-bottom: 12px; }
+/* a page of its own keeps the rest outside full screen, as <Loadmap> does */
+.lm[data-full]:has(> .lm-side) > :not(h2, .lm-scenarios, .lm-story, .lm-wrap, .lm-side) { display: none; }
+.lm[data-full] .lm-wrap { height: calc(100dvh - 32px); grid-template-rows: auto auto; align-content: center; }
+.lm[data-full]:has(> .lm-side) > .lm-wrap { grid-column: 1; grid-row: 4; height: auto; min-height: 0; }
+/* left under the bar, so the legend starts where the board does */
+.lm[data-full] .lm-board { width: var(--lm-fit, 100%); margin: 0; align-self: start; justify-self: start; }
+.lm[data-full] > .lm-side { grid-column: 2; grid-row: 1 / -1; display: grid; gap: 14px; align-content: start; min-height: 0; overflow: auto; overscroll-behavior: contain; container-type: inline-size; }
+.lm[data-full] .lm-more { display: none; }
+@media (max-width: 760px) {
+  .lm[data-full]:has(> .lm-side) { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(3, auto) minmax(0, 3fr) minmax(0, 2fr); }
+  .lm[data-full] > .lm-side { grid-column: 1; grid-row: 5; margin-top: 12px; }
+  .lm[data-full] > h2 { display: none; }
+  /* a phone keeps the board as wide as the screen and scrolls it: fitted to the height it is too small to read */
+  .lm[data-full]:has(> .lm-side) > .lm-wrap { overflow: auto; align-content: start; }
+  .lm[data-full] .lm-board { width: 100%; }
+  /* the controls first in the short panel: the diagram, the verdict and the meters answer them */
+  .lm[data-full] .lm-side > .lm-strip:not(.lm-more) { display: contents; }
+  .lm[data-full] .lm-side .lm-controls { order: -1; }
+}
 
 .lm-verdict { margin: 0; padding: 10px 14px; border-left: 4px solid var(--lm-ok); background: var(--lm-accent-soft); border-radius: 0 6px 6px 0; }
 .lm-verdict[data-tier="warn"] { border-color: var(--lm-warn); }

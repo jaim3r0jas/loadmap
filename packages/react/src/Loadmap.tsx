@@ -101,21 +101,28 @@ export function Loadmap<P>({
       <Scenarios lm={lm} />
       <Story lm={lm} />
       <Diagram lm={lm} onNodeClick={onNodeClick} selected={selected} />
-      <Verdict lm={lm} />
-      {(headroom || side) && (
-        <div className={headroom && side ? 'lm-strip' : undefined}>
-          {headroom && <HeadroomChart lm={lm} />}
-          {side && <Compare lm={lm} />}
+      {/* on the page its parts are the root's; in full screen it is the panel beside the diagram, without the "more" */}
+      <div className="lm-side">
+        <Verdict lm={lm} />
+        {(headroom || side) && (
+          <div className={headroom && side ? 'lm-more lm-strip' : 'lm-more'}>
+            {headroom && <HeadroomChart lm={lm} />}
+            {side && <Compare lm={lm} />}
+          </div>
+        )}
+        <div className="lm-strip">
+          <div className="lm-card">
+            <Meters lm={lm} />
+            <div className="lm-more lm-ranked">
+              <Limits lm={lm} />
+            </div>
+          </div>
+          <Controls lm={lm} />
         </div>
-      )}
-      <div className="lm-strip">
-        <div className="lm-card">
-          <Meters lm={lm} />
-          <Limits lm={lm} />
+        <div className="lm-more">
+          <Assumptions lm={lm} extra={assumptions} />
         </div>
-        <Controls lm={lm} />
       </div>
-      <Assumptions lm={lm} extra={assumptions} />
     </LoadmapRoot>
   )
 }

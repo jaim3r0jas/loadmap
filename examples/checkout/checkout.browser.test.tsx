@@ -308,6 +308,97 @@ describe('checkout in the browser', () => {
   })
 })
 
+describe('full screen', () => {
+  const box = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    }
+  }
+  const inView = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
+  }
+  const button = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.lm-bar .lm-btn')!
+  async function enter(el: HTMLElement) {
+    await userEvent.click(button(el))
+    await expect.poll(() => el.hasAttribute('data-full')).toBe(true)
+    // the board takes its size a frame after the layout
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  }
+
+  it('fills the screen with the diagram, the verdict, the live meters and the controls beside it', async () => {
+    const { handle, el } = await mount()
+    await page.viewport(1440, 900)
+    await enter(el)
+    expect(box(el)).toEqual({ left: 0, top: 0, width: innerWidth, height: innerHeight })
+    const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
+    const bar = el.querySelector('.lm-bar')!
+    const board = el.querySelector('.lm-board')!
+    // as large as fits: the whole width under the bar, or the whole height
+    const room = { width: wrap.clientWidth, height: wrap.clientHeight - bar.getBoundingClientRect().height - 8 }
+    const b = box(board)
+    expect(Math.max(b.width / room.width, b.height / room.height)).toBeCloseTo(1, 1)
+    expect(b.width).toBeGreaterThan(900)
+    // the legend starts where the board does
+    expect(box(el.querySelector('.lm-legend')!).left).toBe(b.left)
+    for (const s of ['.lm-verdict', '.lm-meters', 'input[type=range]', '.lm-presets'])
+      expect(inView(el.querySelector(s)!), s).toBe(true)
+    // the rest of the page waits outside
+    const hidden = ['.lm-limits', '.lm-facts', '.lm-headroom', '.lm-compare']
+    for (const s of hidden) expect(el.querySelector(s)!.getClientRects(), s).toHaveLength(0)
+    // the controls work, and the load never moves the board
+    const slider = el.querySelector<HTMLInputElement>('input[type=range]')!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '40')
+    slider.dispatchEvent(new Event('input', { bubbles: true }))
+    await expect.poll(() => verdict(el)).toContain('At 40×, the worker pool and the API gateway are past capacity')
+    await handle.ready()
+    expect(box(board)).toEqual(b)
+    await page.screenshot({ path: '__screenshots__/checkout-full.png' })
+    // Close puts the page back, and the keyboard on the button
+    await userEvent.click(button(el))
+    await expect.poll(() => el.hasAttribute('data-full')).toBe(false)
+    expect(document.fullscreenElement).toBeNull()
+    expect(document.activeElement).toBe(button(el))
+    expect(el.querySelector('.lm-limits')!.getClientRects().length).toBeGreaterThan(0)
+    expect(board.getBoundingClientRect().height).toBeLessThan(innerHeight)
+  })
+
+  it('covers the page where the browser refuses full screen, and leaves on Esc', async () => {
+    const { el } = await mount()
+    // as on an iPhone, or in a frame without the permission; inside a transform, which traps a fixed element
+    el.requestFullscreen = () => Promise.reject(new TypeError('not allowed'))
+    host!.style.cssText = 'transform: translateZ(0); margin: 120px 40px'
+    await enter(el)
+    expect(el.getAttribute('data-full')).toBe('overlay')
+    expect(box(el)).toEqual({ left: 0, top: 0, width: innerWidth, height: innerHeight })
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => el.hasAttribute('data-full')).toBe(false)
+    expect(button(el).textContent).toContain('Full screen')
+  })
+
+  it('keeps the board as wide as a phone, the controls in reach below it', async () => {
+    const { el } = await mount({ width: 390 })
+    await page.viewport(390, 844)
+    await enter(el)
+    const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
+    expect(box(el.querySelector('.lm-board')!).width).toBe(wrap.clientWidth)
+    expect(inView(el.querySelector('input[type=range]')!)).toBe(true)
+    // the verdict follows the controls in the panel, which scrolls on its own
+    const side = el.querySelector<HTMLElement>('.lm-side')!
+    expect(inView(side)).toBe(true)
+    expect(side.contains(el.querySelector('.lm-verdict'))).toBe(true)
+    expect(getComputedStyle(side).overflowY).toBe('auto')
+    for (const s of ['.lm-headroom', '.lm-compare', '.lm-limits'])
+      expect(el.querySelector(s)!.getClientRects(), s).toHaveLength(0)
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
+    await page.screenshot({ path: '__screenshots__/checkout-full-phone.png' })
+  })
+})
+
 describe('export', () => {
   it('makes a PNG of the board', async () => {
     const { handle } = await mount()

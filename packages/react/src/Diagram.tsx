@@ -33,8 +33,13 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   const svgRef = useRef<SVGSVGElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const barRef = useRef<HTMLDivElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
-  const [full, setFull] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  // the browser's full screen, or a fixed overlay where it has none (iPhone) or refuses (a frame without the permission)
+  const [screen, setScreen] = useState(false)
+  const [overlay, setOverlay] = useState(false)
+  const full = screen || overlay
   // the node whose detail shows, and whether a tap pinned it
   const [tip, setTip] = useState<{ id: string; pinned: boolean } | null>(null)
   const detailId = useId()
@@ -77,21 +82,77 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     return () => cancelAnimationFrame(raf)
   }, [engine, reducedMotion])
 
+  // the whole root goes full screen, so the verdict, the live meters and the controls stay beside the diagram
   useEffect(() => {
-    const f = () => setFull(document.fullscreenElement === wrapRef.current)
+    const el = lm.root ?? wrapRef.current
+    const f = () => setScreen(!!el && document.fullscreenElement === el)
     document.addEventListener('fullscreenchange', f)
     return () => document.removeEventListener('fullscreenchange', f)
-  }, [])
+  }, [lm.root])
+  // the stylesheet lays the root out from this. The overlay goes in the top layer: a fixed root would only cover an
+  // ancestor with a transform, a filter or containment
+  useEffect(() => {
+    const el = lm.root ?? wrapRef.current
+    if (!el || !full) return
+    el.setAttribute('data-full', overlay ? 'overlay' : 'screen')
+    const top = overlay && typeof el.showPopover === 'function'
+    if (top) {
+      el.popover = 'manual'
+      el.showPopover()
+    }
+    return () => {
+      el.removeAttribute('data-full')
+      if (top) {
+        el.hidePopover()
+        el.removeAttribute('popover')
+      }
+    }
+  }, [lm.root, full, overlay])
+  // Esc leaves the overlay as it leaves the browser's full screen
+  useEffect(() => {
+    if (!overlay) return
+    const f = (e: KeyboardEvent) => e.key === 'Escape' && setOverlay(false)
+    document.addEventListener('keydown', f)
+    return () => document.removeEventListener('keydown', f)
+  }, [overlay])
+  // back on the page, the keyboard is where it was before: the panel it was in has moved
+  const was = useRef(false)
+  useEffect(() => {
+    if (was.current && !full) buttonRef.current?.focus()
+    was.current = full
+  }, [full])
+  // the board as large as fits under the bar; the bar keeps its width, or a narrow board would wrap the legend and
+  // shrink itself again
+  useEffect(() => {
+    const wrap = wrapRef.current
+    const bar = barRef.current
+    if (!full || !scene || !wrap || !bar) return
+    const fit = () => {
+      const h = wrap.clientHeight - bar.offsetHeight - Number.parseFloat(getComputedStyle(wrap).rowGap || '0')
+      const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
+      wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
+    }
+    const ro = new ResizeObserver(fit)
+    ro.observe(wrap)
+    ro.observe(bar)
+    return () => {
+      ro.disconnect()
+      wrap.style.removeProperty('--lm-fit')
+    }
+  }, [full, scene])
   const toggle = () => {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
-    else wrapRef.current?.requestFullscreen?.().catch(() => {})
+    const el = lm.root ?? wrapRef.current
+    if (overlay) setOverlay(false)
+    else if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else if (el?.requestFullscreen) el.requestFullscreen().catch(() => setOverlay(true))
+    else setOverlay(true)
   }
 
   return (
     <div className="lm-wrap" ref={wrapRef}>
-      <div className="lm-bar">
+      <div className="lm-bar" ref={barRef}>
         {legend ? <Legend lm={lm} /> : <span />}
-        <button type="button" className="lm-btn" onClick={toggle} aria-pressed={full}>
+        <button type="button" className="lm-btn" onClick={toggle} aria-pressed={full} ref={buttonRef}>
           {full ? '✕ Close' : '⤢ Full screen'}
         </button>
       </div>

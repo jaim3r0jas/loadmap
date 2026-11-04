@@ -268,7 +268,9 @@ export function LoadmapEditor({
     setTab('box')
     const v = view.current
     const box = symbols.current.find((s) => s.kind === 'node' && s.id === id)
-    if (layout !== 'code' || !v || !box) return
+    // in full screen the text is out of sight: the keyboard must not go into it
+    const full = preview.current?.board()?.svg.closest('[data-full]')
+    if (layout !== 'code' || !v || !box || full) return
     const end = Math.min(box.decl.to, v.state.doc.length)
     v.dispatch({
       selection: { anchor: box.decl.from, head: end },

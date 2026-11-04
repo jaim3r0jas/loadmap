@@ -40,6 +40,7 @@ export const EDITOR_CSS = `
 .lme-at { font-family: var(--lm-mono); color: var(--lm-muted); }
 .lme-preview { min-width: 0; position: relative; }
 .lme-preview > .lm { padding: 0; }
+.lme-preview > .lm[data-full] { padding: 16px; }
 .lme-preview[data-stale] > .lm { opacity: .55; }
 .lme-stale { margin: 0 0 8px; font-size: .8rem; color: var(--lm-warn); }
 .lme-inspector { position: sticky; z-index: 3; top: 8px; max-height: calc(100vh - 16px); overflow: auto; display: grid; gap: 10px; align-content: start; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; padding: 10px 12px; font-size: .84rem; min-width: 0; }
