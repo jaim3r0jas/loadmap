@@ -7,16 +7,25 @@ import { compile, formatDiagnostic } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { chromium } from 'playwright'
 import { check } from './check'
+import { fmt } from './fmt'
 
 export { type CheckOptions, check, github } from './check'
+export { type FmtOptions, fmt } from './fmt'
 
 export const USAGE = `loadmap check <file.loadmap>… [--format text|github]
+loadmap fmt <file.loadmap>… [--check] | loadmap fmt -
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
 
 check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
 bound). It exits 1 when a definition has an error or an expectation fails, 0 when everything holds.
 
   --format <f>          text, or github to add annotations on the lines (the default under GitHub Actions)
+
+fmt lays each definition out the one way, in place: two spaces a block, a statement a line, one space around
+operators; numbers, texts and formulas stay as written. A file with a syntax error is left alone (exit 1).
+
+  --check               change nothing; exit 1 when a file is not laid out so (for CI)
+  -                     read standard input, write standard output
 
 record opens the page in headless Chromium, finds the loadmap it exposes (expose() from @loadmap/export) and
 records it on a fixed clock, so the same options give the same file. A .loadmap file is drawn by the viewer that
@@ -63,6 +72,7 @@ export interface RecordArgs {
 export async function main(argv: string[], log: (s: string) => void = console.log): Promise<number> {
   const [command, ...rest] = argv
   if (command === 'check') return check(rest, { log })
+  if (command === 'fmt') return fmt(rest, { log })
   if (command !== 'record') {
     log(USAGE)
     return command === '--help' || command === '-h' ? 0 : 2

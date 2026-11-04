@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
 import { build, createServer, type ViteDevServer } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { check, main, parseRecord, record } from '../src'
+import { check, fmt, main, parseRecord, record } from '../src'
 
 const checkout = join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap')
 
@@ -210,6 +210,76 @@ describe('loadmap check', () => {
     expect((await run([join(dir, 'nope.loadmap')])).out).toMatch(/nope\.loadmap: cannot read it \(ENOENT\)/)
     expect(await run([])).toMatchObject({ code: 2, out: 'loadmap check needs one or more .loadmap files' })
     expect((await run(['--format', 'xml', checkout])).code).toBe(2)
+  })
+})
+
+describe('loadmap fmt', () => {
+  let dir: string
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'loadmap-fmt-'))
+  })
+  afterAll(async () => {
+    if (dir) await rm(dir, { recursive: true })
+  })
+
+  const messy =
+    'loadmap 1\nload {max: 3}\nflow a { rate:2*load; route: b; from: c }\nnode c\nnode b {\npass\n  capacity:measured(9 ,"req/s")\n}\n'
+  const tidy =
+    'loadmap 1\nload { max: 3 }\nflow a { rate: 2 * load; route: b; from: c }\nnode c\nnode b {\n  pass\n  capacity: measured(9, "req/s")\n}\n'
+  const run = async (argv: string[], input = '') => {
+    const out: string[] = []
+    let written = ''
+    const code = await fmt(argv, { log: (s) => out.push(s), read: async () => input, write: (s) => (written += s) })
+    return { code, out: out.join('\n'), written }
+  }
+
+  it('rewrites a file in place and leaves a laid out one alone', async () => {
+    const a = join(dir, 'a.loadmap')
+    const b = join(dir, 'b.loadmap')
+    await writeFile(a, messy)
+    await writeFile(b, tidy)
+    const r = await run([a, b])
+    expect(r).toMatchObject({ code: 0, out: `${a}: formatted\n1 of 2 files formatted` })
+    expect(await readFile(a, 'utf8')).toBe(tidy)
+    expect(await readFile(b, 'utf8')).toBe(tidy)
+    expect(await main(['fmt', a, b], () => {})).toBe(0)
+  })
+
+  it('with --check, only names what needs formatting', async () => {
+    const a = join(dir, 'check.loadmap')
+    await writeFile(a, messy)
+    const r = await run(['--check', a, checkout])
+    expect(r).toMatchObject({ code: 1, out: `${a}: not laid out by loadmap fmt\n1 of 2 files need loadmap fmt` })
+    expect(await readFile(a, 'utf8')).toBe(messy)
+    expect(await run(['--check', checkout])).toMatchObject({ code: 0, out: '1 file laid out already' })
+  })
+
+  it('leaves a file with a syntax error alone, and says where', async () => {
+    const a = join(dir, 'broken.loadmap')
+    const src = 'loadmap 1\nload { max: }\n'
+    await writeFile(a, src)
+    const r = await run([a])
+    expect(r.code).toBe(1)
+    expect(r.out).toContain(`${a}:2:13 error: "max" has no value`)
+    expect(r.out).toContain(`${a}: left as it is, it has a syntax error`)
+    expect(await readFile(a, 'utf8')).toBe(src)
+    expect((await run([join(dir, 'nope.loadmap')])).out).toMatch(/nope\.loadmap: cannot read it \(ENOENT\)/)
+  })
+
+  it('reads standard input and writes standard output', async () => {
+    expect(await run(['-'], messy)).toMatchObject({ code: 0, written: tidy, out: '' })
+    const bad = await run(['-'], 'load { max: }')
+    expect(bad).toMatchObject({ code: 1, written: '' })
+    expect(bad.out).toContain('<stdin>:1:13 error')
+  })
+
+  it('explains its usage', async () => {
+    expect(await run([])).toMatchObject({
+      code: 2,
+      out: 'loadmap fmt needs one or more .loadmap files, or - for standard input',
+    })
+    expect((await run(['-', checkout])).code).toBe(2)
+    expect((await run(['--check', '-'])).code).toBe(2)
   })
 })
 
