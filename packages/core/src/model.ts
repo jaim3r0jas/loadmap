@@ -4,12 +4,17 @@ import type { Expectation } from './check'
 import { fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
-import { type ResolvedStage, resolveStage, type StageDef } from './stages'
+import { type Branch, dyn, hitOf, type ResolvedStage, rejectShare, resolveStage, type StageDef } from './stages'
 
 /** What every model function receives: the parameter values plus the model's own derived numbers. */
-export type Ctx<P, F extends string, C extends string, D extends string> = Values<P> & {
-  /** Units per second of each flow. */
+export type Ctx<P, F extends string, C extends string, D extends string, S extends string = string> = Values<P> & {
+  /** Units per second of each flow where it enters; with retries, its attempts. */
   readonly flows: Readonly<Record<F, number>>
+  /**
+   * Units per second of each flow reaching each stage: cache hits and what a rate limiter turns away are gone from
+   * the stages after them; a fan-out's copies reach its branches.
+   */
+  readonly at: Readonly<Record<S, Readonly<Record<F, number>>>>
   /** Each component's demand, in its capacity's unit. */
   readonly demand: Readonly<Record<C, number>>
   /** Each component's demand ÷ capacity; null when the component is switched off. */
@@ -29,7 +34,7 @@ export interface FlowDef<X> {
   overload?: Overload | ((ctx: X) => Overload)
 }
 
-/** Rules for a flow's backlog in a queue. */
+/** What happens to a flow under overload: its backlog in a queue, and its retries. */
 export interface Overload {
   /** Units older than `olderThan` simulated seconds are dropped before they are handled. */
   drop?: { olderThan: number; reason?: string }
@@ -38,6 +43,33 @@ export interface Overload {
    * unit of the same key: it leaves the queue without using capacity. Keep-newest-per-key, as a share.
    */
   merge?: { share: number; reason?: string }
+  retry?: RetryRule
+}
+
+/**
+ * A unit turned away on its route (by a pass, limit or cache stage past capacity) is sent again, up to `times` more
+ * times. The attempts are what every stage on the route sees; they settle where the retries they cause are the ones
+ * that were assumed.
+ */
+export interface RetryRule {
+  /** Retries after the first attempt: a whole number. */
+  times: number
+  /** At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. */
+  budget?: number
+}
+
+/** A flow's retries worked out for one set of values. */
+export interface Retry {
+  /** Units per second the flow sends, before retries. */
+  rate: number
+  /** Attempts per second, retries included: what every stage on its route sees. */
+  attempts: number
+  /** The share of attempts turned away somewhere on the route. */
+  rejected: number
+  /** The share of turned-away attempts that are sent again: 1 unless the budget holds some back. */
+  retried: number
+  /** The share of units that fail every attempt. */
+  failed: number
 }
 
 export interface ComponentDef<X> {
@@ -46,8 +78,8 @@ export interface ComponentDef<X> {
   short?: string
   /** "are past capacity" instead of "is". */
   plural?: boolean
-  /** In the capacity's unit. */
-  demand: (ctx: X) => number
+  /** In the capacity's unit. Without one: the units per second reaching the stages that use this component. */
+  demand?: (ctx: X) => number
   capacity: Capacity | ((ctx: X) => Capacity)
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
@@ -69,9 +101,9 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   scenarios?: Readonly<Record<string, Partial<NoInfer<Omit<Values<P>, 'load'>>>>>
   /** How fast the load grows: turns load multiples into dates. */
   growth?: Growth
-  flows: { [K in F]: FlowDef<Ctx<P, F, C, D>> }
-  components: { [K in C]: ComponentDef<Ctx<P, F, C, D>> }
-  derived?: { [K in D]: (ctx: Ctx<P, F, C, D>) => number }
+  flows: { [K in F]: FlowDef<Ctx<P, F, C, D, NoInfer<S>>> }
+  components: { [K in C]: ComponentDef<Ctx<P, F, C, D, NoInfer<S>>> }
+  derived?: { [K in D]: (ctx: Ctx<P, F, C, D, NoInfer<S>>) => number }
   stages: { [K in S]: StageDef<NoInfer<C>> }
   routes: { [K in NoInfer<F>]: readonly NoInfer<S>[] }
   /** Fits used by the model, listed with the assumptions. */
@@ -184,8 +216,12 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   assumptions: readonly Assumption[]
   stages: Readonly<Record<S, ResolvedStage>>
   routes: Readonly<Record<F, readonly S[]>>
+  /** Units per second of each flow reaching each stage. */
+  at: Readonly<Record<S, Readonly<Record<F, number>>>>
   /** Each flow's overload rules for these values. */
   overload: Readonly<Record<F, Overload>>
+  /** The retries of each flow that has a retry rule. */
+  retry: Readonly<Partial<Record<F, Retry>>>
   /** The context model functions saw: for labels and other view callbacks. */
   ctx: LooseValues
 }
@@ -225,7 +261,7 @@ export interface Model<P = any, F extends string = string, C extends string = st
   dateAt(multiple: number | null): Date | null
 }
 
-const RESERVED = ['load', 'flows', 'demand', 'util', 'derived']
+const RESERVED = ['load', 'flows', 'at', 'demand', 'util', 'derived']
 
 export function defineModel<
   const P extends Readonly<Record<string, ParamDef>>,
@@ -249,6 +285,14 @@ export function defineModel<
       if (st.kind === 'fanout' && i < route.length - 1)
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
+  }
+  for (const c of componentIds)
+    if (!def.components[c].demand && !stageIds.some((s) => (def.stages[s] as { component?: string }).component === c))
+      throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
+  for (const s of stageIds) {
+    const st = def.stages[s] as StageDef
+    if (st.kind === 'workers' && (st.pods == null) === (st.autoscale == null))
+      throw new Error(`loadmap: workers "${s}" needs pods or autoscale, one of them`)
   }
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
@@ -351,8 +395,19 @@ export function defineModel<
     const stated = context(def as any, values)
     const uncertain = componentIds.filter((c) => (stated.capacity(c).within ?? 0) > 0)
     const components: Crossings['components'] = {}
+    // the scans of every component visit the same loads: one context per load and bound serves them all, and with
+    // retries it holds the solve
+    const seen = new Map<string, Readonly<Record<string, number | null>>>()
+    const utilOf = (bound: Bound | undefined, load: number) => {
+      const k = `${bound}|${load}`
+      const hit = seen.get(k)
+      if (hit) return hit
+      const u = utilAt(values, bound)(load)
+      seen.set(k, u)
+      return u
+    }
     for (const c of componentIds) {
-      const at = (bound?: Bound) => (load: number) => utilAt(values, bound)(load)[c] as number | null
+      const at = (bound?: Bound) => (load: number) => utilOf(bound, load)[c] as number | null
       const both = (th: number) => {
         const x = crossing(at(), th, searchMax)
         if (x == null) return { x, range: null }
@@ -410,7 +465,7 @@ export function defineModel<
 
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
     const values = { ...defaults(), ...partial } as Values<P>
-    const { ctx, capacity, over, describe } = context(def as any, values)
+    const { ctx, capacity, over, describe, overload: overloadOf, retries } = context(def as any, values)
     const crossings = crossingsFor(values)
 
     const components = {} as Record<C, ComponentResult<C>>
@@ -459,7 +514,7 @@ export function defineModel<
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
     const stages = {} as Record<S, ResolvedStage>
-    for (const s of stageIds) stages[s] = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds)
+    for (const s of stageIds) stages[s] = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
         for (const b of Object.values(st.to).flat()) {
@@ -470,9 +525,12 @@ export function defineModel<
             )
         }
     const overload = {} as Record<F, Overload>
-    for (const f of flowIds) {
-      const o = def.flows[f].overload
-      overload[f] = (typeof o === 'function' ? o(ctx as any) : o) ?? {}
+    for (const f of flowIds) overload[f] = overloadOf(f)
+    const at = {} as Record<S, Record<F, number>>
+    for (const s of stageIds) {
+      const row = {} as Record<F, number>
+      for (const f of flowIds) row[f] = ctx.at[s][f] as number
+      at[s] = row
     }
 
     const assumptions: Assumption[] = []
@@ -499,7 +557,9 @@ export function defineModel<
       assumptions,
       stages,
       routes: def.routes as Record<F, readonly S[]>,
+      at,
       overload,
+      retry: retries() as Partial<Record<F, Retry>>,
       ctx,
     }
   }
@@ -535,7 +595,8 @@ export function defineModel<
 
 /**
  * The model's numbers for one set of values. Every number is computed on first use and kept, so a model function
- * may read any other; a value that needs itself throws, naming the loop.
+ * may read any other; a value that needs itself throws, naming the loop. Retries are the one loop that is solved:
+ * a retrying flow's attempts settle where the share its route turns away gives back the same attempts.
  */
 function context(
   def: ModelDef<any, string, string, string, string>,
@@ -543,6 +604,8 @@ function context(
   bound?: Bound,
   /** A component whose capacity stays at its stated value under a bound. */
   pinned?: string,
+  /** The attempts of every retrying flow, held while the retries are solved. */
+  fixed?: Readonly<Record<string, number>>,
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
@@ -566,16 +629,187 @@ function context(
   }
 
   const ctx: Record<string, any> = { ...values }
+  const full = def.thresholds?.full ?? 1
   const flowIds = Object.keys(def.flows)
   const componentIds = Object.keys(def.components)
+  const stages = def.stages as Record<string, StageDef>
+  const stageIds = Object.keys(stages)
+  const routes = def.routes as Record<string, readonly string[]>
   const capacity = (c: string) =>
     memo(`capacity of ${c}`, () => {
       const cap = def.components[c]!.capacity
       return typeof cap === 'function' ? cap(ctx as any) : cap
     })
   const enabled = (c: string) => memo(`${c} enabled`, () => def.components[c]!.when?.(ctx as any) ?? true)
-  ctx.flows = table(flowIds, (f) => memo(`flow ${f}`, () => def.flows[f]!.rate(ctx as any)))
-  ctx.demand = table(componentIds, (c) => memo(`demand of ${c}`, () => def.components[c]!.demand(ctx as any)))
+  const overload = (f: string): Overload =>
+    memo(`overload of ${f}`, () => {
+      const o = def.flows[f]!.overload
+      return (typeof o === 'function' ? o(ctx as any) : o) ?? {}
+    })
+  const retryOf = (f: string) => {
+    const r = overload(f).retry
+    if (!r) return undefined
+    if (!(Number.isInteger(r.times) && r.times >= 0))
+      throw new Error(`loadmap: flow "${f}" retries a whole number of times, not ${r.times}`)
+    if (r.budget != null && !(r.budget >= 0 && Number.isFinite(r.budget)))
+      throw new Error(`loadmap: flow "${f}" needs a retry budget of 0 or more, not ${r.budget}`)
+    return r.times > 0 && r.budget !== 0 ? r : undefined
+  }
+  const rate = (f: string) => memo(`rate of ${f}`, () => def.flows[f]!.rate(ctx as any))
+  ctx.flows = table(flowIds, (f) =>
+    memo(`flow ${f}`, () => {
+      if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
+      return retryOf(f) ? retries()[f]!.attempts : def.flows[f]!.rate(ctx as any)
+    }),
+  )
+
+  /** The share a stage turns away: past its component's `full`, what is above it. */
+  const rejects = (s: string) =>
+    memo(`rejects at ${s}`, () => {
+      const st = stages[s]!
+      if (!(st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache') || !st.component) return 0
+      return rejectShare(ctx.util[st.component] as number | null, full)
+    })
+  const hit = (s: string) => memo(`hit at ${s}`, () => hitOf(s, stages[s] as Extract<StageDef, { kind: 'cache' }>, ctx))
+  /** The share of a flow's units that go on past a stage: cache hits stay, and what a limiter turns away. */
+  const onward = (s: string) => {
+    const st = stages[s]!
+    return st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1
+  }
+  const arriving = (s: string, f: string) =>
+    memo(`${f} at ${s}`, () => {
+      const route = routes[f] ?? []
+      // past the last place it can reach s (the stage itself, or a fan-out that copies to it) nothing counts
+      const last = route.findLastIndex((t) => t === s || stages[t]!.kind === 'fanout')
+      let total = 0
+      let r = ctx.flows[f] as number
+      for (const [i, t] of route.entries()) {
+        if (t === s) total += r
+        const st = stages[t]!
+        if (st.kind === 'fanout') {
+          const to = dyn(st.to, ctx) as readonly Branch[] | Readonly<Record<string, readonly Branch[]>>
+          for (const b of Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? []))
+            if (b.stage === s) total += r * (b as Branch).share
+        }
+        if (i === last) break
+        r *= onward(t)
+      }
+      return total
+    })
+  const inner = new Map<string, object>()
+  ctx.at = table(stageIds, (s) => {
+    const known = inner.get(s)
+    if (known) return known
+    const t = table(flowIds, (f) => arriving(s, f))
+    inner.set(s, t)
+    return t
+  })
+
+  /**
+   * The share of a flow's attempts turned away somewhere on its route; a cache hit is an answer, not a failure. A
+   * stage's rejections are counted against what is offered to it, so behind another stage that turns work away it
+   * passes at most what it can take (offered × (1 − rejects)), not a share of a share: the bottleneck decides.
+   */
+  const failure = (f: string) =>
+    memo(`failures of ${f}`, () => {
+      let offered = 1
+      let actual = 1
+      let answered = 0
+      for (const s of routes[f] ?? []) {
+        const r = rejects(s)
+        if (r > 0) actual = Math.min(actual, offered * (1 - r))
+        if (stages[s]!.kind === 'cache') {
+          answered += actual * hit(s)
+          actual *= 1 - hit(s)
+        }
+        offered *= onward(s)
+      }
+      return Math.max(0, 1 - answered - actual)
+    })
+
+  const retries = (): Record<string, Retry> =>
+    memo('retries', () => {
+      const ids = flowIds.filter((f) => retryOf(f))
+      const lam: Record<string, number> = {}
+      for (const f of ids) lam[f] = rate(f)
+      // the retries' share of a flow at most: n, or the budget
+      const most = (f: string) => {
+        const r = retryOf(f)!
+        return Math.min(r.times, r.budget ?? Number.POSITIVE_INFINITY)
+      }
+      const attempts = (e: Record<string, number>) => {
+        const a: Record<string, number> = {}
+        for (const f of ids) a[f] = lam[f]! * (1 + e[f]!)
+        return a
+      }
+      // The unknowns are the excess of each flow, attempts = λ (1 + e): just past the knee e is tiny, and λ·S(p) − λ
+      // would lose it to rounding where p + p² + … + pⁿ keeps every digit, so flows behind one bottleneck step alike.
+      const wanted = (e: Record<string, number>) => {
+        const sub = context(def, values, bound, pinned, attempts(e))
+        const w: Record<string, number> = {}
+        const p: Record<string, number> = {}
+        for (const f of ids) {
+          p[f] = sub.failure(f)
+          w[f] = Math.min(excess(p[f], retryOf(f)!.times), most(f))
+        }
+        return { w, p }
+      }
+      // From below, never past the answer: where the excess calls for more, step along that call as far as it still
+      // holds. Flows that share a bottleneck settle on that line in one search; the call rises with the attempts when
+      // formulas rise with the load, so the steps climb to the least fixed point.
+      let e: Record<string, number> = Object.fromEntries(ids.map((f) => [f, 0]))
+      for (let step = 0; step < 100; step++) {
+        const { w, p: failed } = wanted(e)
+        const d: Record<string, number> = {}
+        for (const f of ids) d[f] = Math.max(0, w[f]! - e[f]!)
+        // after the first search, what is left below 1e-10 is rounding; before it any call counts, since just past the
+        // knee a tiny call can still be far from the answer
+        const live = ids.filter((f) => lam[f]! > 0 && d[f]! > (step ? 1e-10 * (1 + e[f]!) : 0))
+        if (!live.length) {
+          const a = attempts(e)
+          const out: Record<string, Retry> = {}
+          for (const f of ids) {
+            const l = lam[f]!
+            const p = failed[f]!
+            const times = retryOf(f)!.times
+            // with a budget only a share q of rejections is sent again: pq solves pq + … + (pq)ⁿ = the excess
+            const retried =
+              p > 0 && excess(p, times) > e[f]! * (1 + 1e-12) ? root((y) => excess(y, times), e[f]!, p) / p : 1
+            out[f] = { rate: l, attempts: a[f]!, rejected: p, retried, failed: l > 0 ? 1 - (1 - p) * (1 + e[f]!) : 0 }
+          }
+          return out
+        }
+        const along = (t: number) => {
+          const y = { ...e }
+          for (const f of live) y[f] = e[f]! + t * d[f]!
+          return y
+        }
+        const holds = (t: number) => {
+          const y = along(t)
+          const wy = wanted(y).w
+          return Math.min(...live.map((f) => (wy[f]! - y[f]!) / d[f]!))
+        }
+        const far = Math.min(...live.map((f) => (most(f) - e[f]!) / d[f]!))
+        // t = 1 is the plain step, which always holds: the call rises with the attempts
+        if (far <= 1) e = along(far)
+        else {
+          const h1 = holds(1)
+          e = along(h1 > 0 ? settle(holds, 1, far, h1) : 1)
+        }
+      }
+      throw new Error(`loadmap: the retries of ${joinAnd(ids.map((f) => `"${f}"`))} do not settle`)
+    })
+
+  const usedBy = (c: string) => stageIds.filter((s) => (stages[s] as { component?: string }).component === c)
+  ctx.demand = table(componentIds, (c) =>
+    memo(`demand of ${c}`, () => {
+      const d = def.components[c]!.demand
+      if (d) return d(ctx as any)
+      let total = 0
+      for (const s of usedBy(c)) for (const f of flowIds) total += arriving(s, f)
+      return total
+    }),
+  )
   ctx.util = table(componentIds, (c) =>
     memo(`utilization of ${c}`, () => {
       if (!enabled(c)) return null
@@ -591,9 +825,56 @@ function context(
   return {
     ctx: Object.freeze(ctx),
     capacity,
+    overload,
+    failure,
+    retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
     describe: (c: string) => text(def.components[c]!.describe),
   }
+}
+
+/** y + y² + … + yⁿ: the retries per unit when each attempt fails with share y and n retries may follow. */
+function excess(y: number, n: number): number {
+  return y >= 1 ? n : (y * (1 - y ** n)) / (1 - y)
+}
+
+/**
+ * Where h, above 0 at lo and at most 0 at hi, reaches 0: regula falsi with the Illinois step, a few evaluations where
+ * bisection takes forty, and still bracketed when h has a kink (the knee where rejections start).
+ */
+function settle(h: (x: number) => number, lo: number, hi: number, hl = h(lo)): number {
+  let hh = h(hi)
+  if (hh >= 0) return hi
+  let side = 0
+  let x = lo
+  for (let k = 0; k < 100 && hi - lo > 1e-13 * hi; k++) {
+    x = (lo * hh - hi * hl) / (hh - hl)
+    const hx = h(x)
+    if (hx === 0) break
+    if (hx > 0) {
+      lo = x
+      hl = hx
+      if (side === 1) hh /= 2
+      side = 1
+    } else {
+      hi = x
+      hh = hx
+      if (side === -1) hl /= 2
+      side = -1
+    }
+  }
+  return x
+}
+
+/** The y in [0, hi] where a rising f(y) reaches `goal`. */
+function root(f: (y: number) => number, goal: number, hi: number): number {
+  let lo = 0
+  for (let k = 0; k < 200 && hi - lo > 1e-15; k++) {
+    const mid = (lo + hi) / 2
+    if (f(mid) < goal) lo = mid
+    else hi = mid
+  }
+  return (lo + hi) / 2
 }
 
 /**
@@ -636,9 +917,9 @@ export function reach(
   return `${multiples(r, searchMax)}${months(when(r.low), when(r.high))}`
 }
 
-/** " (capacity estimated ±30 %)"; nothing for a measured capacity without a ±. */
+/** " (capacity estimated ±30 %)"; nothing for a measured capacity without a ± or a configured one. */
 export function sureness(c: Capacity | null): string {
-  if (!c || (c.provenance === 'measured' && !c.within)) return ''
+  if (!c || (c.provenance !== 'estimated' && !c.within)) return ''
   return ` (capacity ${c.provenance}${c.within ? ` ±${pct(c.within)}` : ''})`
 }
 

@@ -1,4 +1,4 @@
-export type Provenance = 'measured' | 'estimated'
+export type Provenance = 'measured' | 'estimated' | 'configured'
 
 /** A capacity always says where it came from: the verdict and the assumptions list show it. */
 export interface Capacity {
@@ -24,6 +24,11 @@ export function measured(value: number, unit: string, o?: string | CapacityOptio
 /** A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. */
 export function estimated(value: number, unit: string, o?: string | CapacityOptions): Capacity {
   return capacity(value, unit, 'estimated', o)
+}
+
+/** A limit someone set, such as a rate limiter's: exact, so it takes no ±. */
+export function configured(value: number, unit: string, source?: string): Capacity {
+  return capacity(value, unit, 'configured', source)
 }
 
 function capacity(value: number, unit: string, provenance: Provenance, o?: string | CapacityOptions): Capacity {
