@@ -1,5 +1,23 @@
 # @loadmap/dsl
 
+## 0.6.0
+
+### Patch Changes
+
+- 1640a0e: Two slips get one error with the fix instead of a puzzle. A box whose only component lines are optional ones
+  (`describe`, `name`, `short`, `plural`, `when`), with no demand, capacity or over, gets one error on that line
+  instead of three "the component needs …": for a plain-text `describe`, put it on the first line, `node users "Users"
+  "people on the shop"`. And `a -> b: { … }` says to drop the ":" before the block (a fan-out branch, that it takes its
+  copies after ":"), then checks the block's lines as usual.
+- 9fe4c1a: A flow whose rate is a constant (`rate: 20 / 86_400`, or `rate: 40` in TypeScript) compiles and runs: it stays the
+  same at any load. An error raised while computing a flow now points at that flow, not at the formula that happened
+  to read it first; a preset or a scenario that breaks it keeps pointing at the preset or the scenario. An error that
+  only loadmap's own code can cause, such as a TypeError, says it is a bug in loadmap and how to report it, with the
+  original text as the hint, instead of showing loadmap's internal names; one from a host function is that function's.
+- Updated dependencies [9fe4c1a]
+  - @loadmap/core@0.6.0
+  - @loadmap/layout@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
