@@ -1,5 +1,13 @@
 # @loadmap/export
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [bca623f]
+  - @loadmap/react@0.4.0
+  - @loadmap/core@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
