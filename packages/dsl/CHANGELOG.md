@@ -1,5 +1,41 @@
 # @loadmap/dsl
 
+## 0.5.0
+
+### Minor Changes
+
+- c1651c6: Full screen fits the screen without scrolling. The diagram stays on top, as wide as the screen; under it the verdict in
+  one line (the load, how far the target holds, the first limit, how sure its capacity is) and the panels `fullScreen`
+  lists in a compact form, side by side in a box the screen sizes: Live as small meters, where it runs out a line per
+  component, the controls a line each, headroom as a sparkline, compare its first table, the assumptions a count. Rows
+  that do not fit are left out whole and counted; each compact panel, "Why" and the assumptions open the panel whole over
+  the diagram (its button closes it, and Esc in the overlay; the browser's own full screen takes Esc for itself). A phone
+  shows one panel at a time under tabs, and pans the diagram in its own box. Nothing the load changes moves the board.
+  
+  A switch beside Close, or the F key, turns full screen into focus: the diagram, the story under it, and the verdict and
+  the load slider when `fullScreen` lists them. `<Loadmap fullScreenMode="focus">` and `fullScreenMode: focus` in a
+  `.loadmap` open full screen there (type `FullScreenMode`, default `'panels'`); the editor, the docs and the CLI viewer
+  pass it on. The story bar gets Play: each step for its `seconds`, as `loadmap record --story` plays it, until the last
+  or a value of the reader's own; its text keeps the room of the longest step.
+  
+  The controller has the state: `fullScreen`, `toggleFullScreen()`, `fullScreenMode`, `setFullScreenMode()`,
+  `storyPlaying`, `setStoryPlaying()`. `<Loadmap>`'s `.lm-side` is now also `.lm-drawer`; a page of its own keeps its
+  `.lm-side` under the board, in a box that scrolls on its own. `.lm-corner` is gone: nothing scrolls Close away.
+- 9280b78: The diagram moves to a new structure instead of swapping it: when a scenario, a story step or a control adds pods,
+  brokers or partitions, the boxes that stay move and resize to their new places with their edges, what goes fades out,
+  and what is new fades in, its edges drawing in last. `<Loadmap transition={0.8}>` sets how many seconds it takes (0
+  cuts), and `transition: 0.8` in a `.loadmap` does the same in the editor, the docs and `loadmap record`; with reduced
+  motion it always cuts, and so does a board paused with nothing stepping it. The load never moves the diagram, as
+  before. The move runs on the engine's clock, so a recording shows it and stays the same file, byte for byte;
+  `handle.ready()` waits for each of its frames to be drawn, `board().scene` is the frame drawn, and `reset()` ends a
+  move. A `Scene`'s parts carry `fade` (and a new edge `draw`) only while it moves.
+
+### Patch Changes
+
+- Updated dependencies [9280b78]
+  - @loadmap/layout@0.5.0
+  - @loadmap/core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
