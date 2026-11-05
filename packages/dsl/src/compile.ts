@@ -428,7 +428,7 @@ class Compiler {
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs))
-      if (!(c as { demand?: unknown }).demand && !used.has(id))
+      if (!(c as { demand?: unknown }).demand && !used.has(id) && !this.plainBoxes.has(id))
         this.report.error(
           componentNames.get(id)!,
           `the component "${id}" needs "demand: …": no stage uses it`,
@@ -575,6 +575,7 @@ class Compiler {
 
   private flowRate = new Map<string, Span>()
   private flowAt = new Map<string, Span>()
+  private plainBoxes = new Set<string>()
 
   // -- shape ---------------------------------------------------------------------------------------------------
 
@@ -707,6 +708,21 @@ class Compiler {
       ids.add(s.id)
     }
     return { block: b, id, stages, component }
+  }
+
+  /** A box with only a component's optional lines (`describe`, `name`, …) was meant as a plain box: one error, the fix. */
+  private plainBox(b: Block) {
+    const [k, p] = Object.keys(COMPONENT_PROPS)
+      .flatMap((k) => (b.props.has(k) ? [[k, this.prop(b, k)!] as const] : []))
+      .sort((x, y) => x[1].key.from - y[1].key.from)[0]!
+    let hint = 'give the box capacity and over lines, or drop it'
+    const sub = b.args.sub
+    const noSub = (!sub || (sub.t === 'str' && sub.value === '')) && !b.props.has('sub')
+    if (k === 'describe' && p.value.t === 'str' && noSub)
+      hint = b.args.label
+        ? `for a line under a plain box, put it on the first line: ${b.keyword} ${b.args.id!.name} ${this.slice(b.args.label)} ${this.slice(p.value)}`
+        : `for a line under a plain box, write sub: ${this.slice(p.value)}`
+    this.report.error(p.key, `"${k}" belongs to a component, and this box has no capacity`, hint)
   }
 
   // -- values --------------------------------------------------------------------------------------------------
@@ -1171,9 +1187,17 @@ class Compiler {
       o[k] = this.dyn(prop.value, want, 'ctx', check)
     }
     const at = box ? (box.args.id ?? box.at) : b.at
+    const missing = ['capacity', 'over'].filter((k) => !(k in o))
+    // none of the lines that make one: the box was not meant as a component
+    const nested = b.children.some((c) => c.keyword === 'component')
+    if (b === box && !nested && missing.length === 2 && !('demand' in o)) {
+      // its own component carries the box's id
+      this.plainBoxes.add(b.args.id!.name)
+      this.plainBox(b)
+      return o
+    }
     // without a demand line the component handles what reaches its stages: checked once the stages are known
-    for (const k of ['capacity', 'over'])
-      if (!(k in o)) this.report.error(at, `the component needs "${k}: …"`, COMPONENT_PROPS[k]!.doc)
+    for (const k of missing) this.report.error(at, `the component needs "${k}: …"`, COMPONENT_PROPS[k]!.doc)
     return o
   }
 
@@ -1271,6 +1295,10 @@ class Compiler {
           if (!flows.has(f.name)) this.report.error(f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
           const stage = resolve(s, 'stage')
           if (stage) reached.add(stage)
+          if (e.colon) {
+            this.report.error(e.colon, 'a branch takes its copies after ":", not a block', `${f.name} -> ${s.name}: 1`)
+            continue
+          }
           if (!e.value) this.report.error(e, 'how many copies per unit?', `${f.name} -> ${s.name}: 1`)
           if (e.body) this.report.error(e.bodySpan ?? e, 'a branch has no block')
           if (stage && e.value && flows.has(f.name)) branches.push([f.name, stage, this.dyn<number>(e.value, 'number')])
@@ -1329,6 +1357,12 @@ class Compiler {
   }
 
   private edges(e: Edge, boxes: Map<string, Box>): EdgeDef[] {
+    if (e.colon)
+      this.report.error(
+        e.colon,
+        'drop the ":" before a { … } block',
+        `${e.chain.map((c) => c.name).join(' -> ')} { ${e.chain.length > 2 ? '' : 'label: …; '}when: … }`,
+      )
     for (const n of e.chain)
       if (!boxes.has(n.name)) this.report.error(n, `unknown node "${n.name}"`, didYouMean(n.name, boxes.keys()))
     const props = new Map<string, Property>()
