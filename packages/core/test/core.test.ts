@@ -16,6 +16,7 @@ import {
 } from '../src'
 import { fitLinear } from '../src/calibrate'
 import { around, multiple, multiples, niceStep } from '../src/format'
+import { flowOf } from '../src/internal'
 
 const tiny = (over: Partial<Parameters<typeof defineModel>[0]> = {}) =>
   defineModel({
@@ -92,6 +93,66 @@ describe('model', () => {
       routes: { req: ['a'] },
     })
     expect(() => m.evaluate()).toThrow('utilization of a → demand of a → flow req → utilization of a is a loop')
+    // a loop is no one flow's fault
+    expect(
+      flowOf(
+        (() => {
+          try {
+            m.evaluate()
+          } catch (err) {
+            return err
+          }
+        })(),
+      ),
+    ).toBeUndefined()
+  })
+
+  it('takes a constant rate, the same at any load', () => {
+    const m = tiny({ flows: { req: { rate: 40 } } })
+    expect(m.evaluate({ load: 1 }).flows.req).toBe(40)
+    expect(m.evaluate({ load: 90 }).flows.req).toBe(40)
+  })
+
+  it('blames a flow only for an error its own computation raised, the innermost flow', () => {
+    const thrown = (m: { evaluate: () => unknown }) => {
+      try {
+        m.evaluate()
+      } catch (err) {
+        return err
+      }
+    }
+    const nested = thrown(
+      tiny({
+        flows: {
+          req: { rate: ({ flows }: any) => flows.inner },
+          inner: {
+            rate: () => {
+              throw new TypeError('x is not a function')
+            },
+          },
+        },
+        routes: { req: ['api'], inner: ['api'] },
+      }),
+    )
+    expect(nested).toBeInstanceOf(TypeError)
+    expect(flowOf(nested)).toBe('inner')
+    const read = thrown(
+      tiny({
+        flows: { req: { rate: ({ util }: any) => 10 * (1 - util.api) } },
+        components: {
+          api: {
+            name: 'API',
+            demand: () => 1,
+            capacity: () => {
+              throw new Error('loadmap: the capacity broke')
+            },
+            over: 'x',
+          },
+        },
+      }),
+    )
+    expect(read).toMatchObject({ message: 'loadmap: the capacity broke' })
+    expect(flowOf(read)).toBeUndefined()
   })
 
   it('leaves a switched-off component out of the limits and the verdict', () => {

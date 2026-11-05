@@ -15,6 +15,7 @@ import {
 } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, type Diagnostic } from '../src'
+import { failure, placed } from '../src/expr'
 import { pageOptions } from '../src/internal'
 
 /** A small valid definition; `top` goes after the header, `flow` inside the flow, `extra` at the end. */
@@ -290,6 +291,79 @@ step "x" { scenario: Later; focus: db; seconds: 0; pod: 2; pods: 9 }`
       { message: 'unknown parameter "pod"', hint: 'did you mean "pods"?', text: 'pod' },
       { message: '9 is not an option of "pods"', hint: '1, 2, 3', text: '9' },
     ])
+  })
+})
+
+describe('run-time errors', () => {
+  it('compile a constant flow rate, the same at any load', () => {
+    const r = compile(`loadmap 1
+load "Load" { max: 10 }
+flow orders "orders" { unit: "order"; rate: 40 * load; route: api; from: users }
+flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: api; from: users }
+node api "API" "" {
+  pass "the API"
+  demand: (flows.orders + flows.signups) * 0.01
+  capacity: measured(4, "cores", "load test")
+  over: "requests time out"
+}
+node users "Users" ""
+users -> api
+`)
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.model.evaluate({ load: 1 }).flows.signups).toBeCloseTo(20 / 86_400)
+    expect(r.definition!.model.evaluate({ load: 9 }).flows.signups).toBeCloseTo(20 / 86_400)
+  })
+
+  it('land on the flow they come from, not on the formula that read it', () => {
+    expect(errors(def({ flow: 'retry { times: pods / 4 }' }))).toEqual([
+      { message: 'flow "req" retries a whole number of times, not 0.5', hint: undefined, text: 'req' },
+    ])
+    // fine at the defaults: the scenario is what breaks it
+    expect(errors(def({ flow: 'retry { times: pods / 2 }', extra: 'scenario "Small" { pods: 1 }' }))).toEqual([
+      {
+        message: 'flow "req" retries a whole number of times, not 0.5',
+        hint: undefined,
+        text: 'scenario',
+      },
+    ])
+    // a stage the flow goes through is not the flow's fault
+    const cache = errors(
+      def({ flow: 'retry { times: 2 }', extra: 'node c "C" { cache { hit: 1.5 } }' }).replace(
+        'route: api',
+        'route: c -> api',
+      ),
+    )
+    expect(cache.map((e) => e.message)).toEqual(['cache "c" needs a hit share from 0 to 1, not 1.5'])
+    expect(cache[0]!.text).not.toBe('req')
+  })
+
+  it("leave a host function's error to the page that wrote it", () => {
+    const r = compile(def({ top: 'let x = lookup(2)' }), {
+      functions: {
+        lookup: () => {
+          throw new TypeError('table[x] is undefined')
+        },
+      },
+    })
+    expect(r.diagnostics.map((d) => d.message)).toEqual(['lookup(…) failed: table[x] is undefined'])
+  })
+
+  it("call an error from loadmap's own code a bug, and keep its text for the report", () => {
+    const run = placed({ from: 3, to: 9 }, () => {
+      throw new TypeError('def.flows[f].rate is not a function')
+    })
+    expect(() => run({})).toThrow(
+      expect.objectContaining({
+        span: { from: 3, to: 9 },
+        message: 'this formula could not be computed: a bug in loadmap',
+        hint: 'Please report it at https://github.com/jaim3r0jas/loadmap/issues (TypeError: def.flows[f].rate is not a function)',
+      }),
+    )
+    expect(failure(new TypeError('x is not a function'), 'the flow "signups"')).toEqual({
+      message: 'the flow "signups" could not be computed: a bug in loadmap',
+      hint: 'Please report it at https://github.com/jaim3r0jas/loadmap/issues (TypeError: x is not a function)',
+    })
+    expect(failure(new Error('loadmap: flow "req" has no route'))).toEqual({ message: 'flow "req" has no route' })
   })
 })
 

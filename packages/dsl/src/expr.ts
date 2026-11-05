@@ -1,5 +1,6 @@
 import { type Capacity, configured, estimated, type LinearFit, measured } from '@loadmap/core'
 import { compact, fmt, pct, secs } from '@loadmap/core/format'
+import { flowOf } from '@loadmap/core/internal'
 import type { Expr } from './ast'
 import { didYouMean, type Reporter, type Span } from './diagnostics'
 import { own, type Scope } from './schema'
@@ -36,9 +37,25 @@ export class FormulaError extends Error {
   constructor(
     readonly span: Span,
     message: string,
+    readonly hint?: string,
   ) {
     super(message)
   }
+}
+
+const ISSUES = 'https://github.com/jaim3r0jas/loadmap/issues'
+
+/**
+ * A run-time error in the definition's words: core's own (`loadmap: …`) as written; a TypeError or ReferenceError, which
+ * no definition can cause, as a bug in loadmap, its text kept for the report.
+ */
+export function failure(err: unknown, what = 'this formula'): { message: string; hint?: string } {
+  if (err instanceof TypeError || err instanceof ReferenceError)
+    return {
+      message: `${what} could not be computed: a bug in loadmap`,
+      hint: `Please report it at ${ISSUES} (${err.name}: ${err.message})`,
+    }
+  return { message: err instanceof Error ? err.message.replace(/^loadmap: /, '') : String(err) }
 }
 
 interface Builtin {
@@ -312,7 +329,16 @@ class Compiler {
     }
     const host = own(this.names.functions, name)
     if (host) {
-      return { type: 'any', constant: false, run: (c, l) => host(...runs.map((r) => r(c, l))) }
+      const run = (c: unknown, l: unknown) => {
+        const args = runs.map((r) => r(c, l))
+        try {
+          return host(...args)
+        } catch (err) {
+          // the page's own code: its error, never a bug in loadmap
+          throw new Error(`${name}(…) failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      return { type: 'any', constant: false, run }
     }
     const known = [...Object.keys(BUILTINS), ...this.names.fits.keys(), ...Object.keys(this.names.functions)]
     this.report.error(
@@ -411,15 +437,17 @@ class Compiler {
 
 /**
  * Wraps a formula for the model: it takes the context, and any error it throws carries the formula's place. An error
- * already placed (from a formula this one read) keeps its place: the innermost formula is the one to fix.
+ * already placed (from a formula or a flow this one read) keeps its place: the innermost one is the one to fix.
  */
 export function placed<T>(span: Span, run: (ctx: any, local?: unknown) => unknown): (ctx: any, local?: any) => T {
   return (ctx, local) => {
     try {
       return run(ctx, local) as T
     } catch (err) {
-      if (err instanceof FormulaError) throw err
-      throw new FormulaError(span, err instanceof Error ? err.message.replace(/^loadmap: /, '') : String(err))
+      // a flow it read failed: the flow is the place
+      if (err instanceof FormulaError || flowOf(err)) throw err
+      const { message, hint } = failure(err)
+      throw new FormulaError(span, message, hint)
     }
   }
 }
