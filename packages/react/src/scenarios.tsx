@@ -13,8 +13,10 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -188,6 +190,24 @@ export function useHeadroom(lm: LoadmapController): Headroom {
   return useMemo(() => headroom(model, { ...values, load: model.load.default }), [model, rest])
 }
 
+/**
+ * The width of a label in the chart's 11 px monospace (`--lm-mono`), measured once the chart is on the page, so its
+ * labels are kept inside it whatever the theme's font.
+ */
+function useAxisMeasure(el: RefObject<HTMLElement | null>): (text: string, weight?: number) => number {
+  const [measure, setMeasure] = useState(() => (text: string, _weight?: number) => text.length * 6.7)
+  useLayoutEffect(() => {
+    const ctx = el.current && document.createElement('canvas').getContext('2d')
+    if (!ctx) return
+    const font = getComputedStyle(el.current!).getPropertyValue('--lm-mono').trim() || 'monospace'
+    setMeasure(() => (text: string, weight = 400) => {
+      ctx.font = `${weight} 11px ${font}`
+      return ctx.measureText(text).width
+    })
+  }, [el])
+  return measure
+}
+
 /** 1, 2, 5, 10, 20, 50, … inside [from, to]; decades only when there is little room. */
 function ticks(from: number, to: number, roomy: boolean): number[] {
   const out: number[] = []
@@ -212,6 +232,13 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
   const [wrap, { width }] = useSize<HTMLDivElement>(640)
   const [hover, setHover] = useState<number | null>(null)
   const clip = useId().replace(/:/g, '')
+  const measure = useAxisMeasure(wrap)
+  // the reading beside the hovered load, kept inside the chart by its own width
+  const tip = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = tip.current
+    if (el && hover != null) el.style.left = `${Math.max(0, Math.min(lx(xs[hover]!) + 10, W - el.offsetWidth))}px`
+  })
 
   const dated = !!model.growth
   const m = { l: 44, r: 14, t: 14, b: dated ? 40 : 26 }
@@ -221,7 +248,8 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
   const ph = H - m.t - m.b
   const top = Math.max(1.5, model.thresholds.full * 1.5)
   const lx = (x: number) => m.l + (pw * Math.log(x / h.from)) / Math.log(h.to / h.from)
-  const ly = (u: number) => m.t + ph * (1 - Math.min(u, top * 1.05) / top)
+  // past the top a line leaves the plot through its edge (the clip), not along it
+  const ly = (u: number) => m.t + ph * (1 - Math.min(u, top * 1.2) / top)
   const path = (s: Series) => {
     let d = ''
     let pen = false
@@ -279,6 +307,31 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
     .join('; ')
   const loadX = lx(Math.min(h.to, Math.max(h.from, values.load)))
   const hx = hover == null ? null : xs[hover]!
+  // The measured width only picks where a label is anchored, never moves it by itself: the same chart draws the same
+  // numbers on any machine
+  type At = { x: number; textAnchor: 'start' | 'middle' | 'end' }
+  const fromLeft = { x: 0, textAnchor: 'start' } as const
+  const fromRight = { x: W, textAnchor: 'end' } as const
+  /** A label beside a line at x: on the side it prefers if it fits, else the other, else against the nearer edge. */
+  const beside = (x: number, w: number, prefer: 'left' | 'right', gap = 4): At => {
+    const right: At = { x: x + gap, textAnchor: 'start' }
+    const left: At = { x: x - gap, textAnchor: 'end' }
+    const fitsRight = x + gap + w <= W
+    const fitsLeft = x - gap - w >= 0
+    if (prefer === 'right' ? fitsRight : !fitsLeft && fitsRight) return right
+    if (fitsLeft) return left
+    return x < W / 2 ? fromLeft : fromRight
+  }
+  /** A label centred on x, unless that passes an edge. */
+  const centred = (x: number, w: number): At =>
+    x - w / 2 < 0 ? fromLeft : x + w / 2 > W ? fromRight : { x, textAnchor: 'middle' }
+  const shown = `shown: ${fmt(values.load)}×`
+  /** A crossing's multiple, left of its dot where it fits. */
+  const mark = (t: string, x: number, y: number) => (
+    <text {...beside(x, measure(t, 600), 'left', 6)} y={y} className="lm-mark">
+      {t}
+    </text>
+  )
 
   return (
     <div className="lm-card lm-headroom">
@@ -315,7 +368,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
           <defs>
             <clipPath id={clip}>
-              <rect x={m.l} y={m.t - 4} width={pw} height={ph + 4} />
+              <rect x={m.l} y={m.t} width={pw} height={ph + 2} />
             </clipPath>
           </defs>
           {[0, model.thresholds.target, model.thresholds.full].map((u) => (
@@ -329,23 +382,28 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
           <text x={W - m.r} y={ly(model.thresholds.target) - 5} textAnchor="end" className="lm-axis">
             target
           </text>
-          {tickList.map((x) => (
-            <g key={x} className="lm-axis">
-              <line x1={lx(x)} x2={lx(x)} y1={m.t + ph} y2={m.t + ph + 4} stroke="var(--lm-line)" />
-              {labelled(x) && (
-                <>
-                  <text x={lx(x)} y={m.t + ph + 16} textAnchor="middle">
-                    {fmt(x)}×
-                  </text>
-                  {dated && x > 1 && (
-                    <text x={lx(x)} y={m.t + ph + 30} textAnchor="middle">
-                      {when(model, x)}
+          {tickList.map((x) => {
+            // centred on its tick, unless that would pass an edge of the chart
+            const label = `${fmt(x)}×`
+            const date = dated && x > 1 ? when(model, x) : ''
+            return (
+              <g key={x} className="lm-axis">
+                <line x1={lx(x)} x2={lx(x)} y1={m.t + ph} y2={m.t + ph + 4} stroke="var(--lm-line)" />
+                {labelled(x) && (
+                  <>
+                    <text {...centred(lx(x), measure(label))} y={m.t + ph + 16}>
+                      {label}
                     </text>
-                  )}
-                </>
-              )}
-            </g>
-          ))}
+                    {date && (
+                      <text {...centred(lx(x), measure(date))} y={m.t + ph + 30}>
+                        {date}
+                      </text>
+                    )}
+                  </>
+                )}
+              </g>
+            )
+          })}
           <g clipPath={`url(#${clip})`}>
             {/* the bands under everything: the shown one stronger */}
             {[...h.lines]
@@ -388,8 +446,8 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
               ))}
           </g>
           <line x1={loadX} x2={loadX} y1={m.t} y2={m.t + ph} stroke="var(--lm-fg)" strokeOpacity=".45" />
-          <text x={loadX + 4} y={m.t + 10} className="lm-axis">
-            shown: {fmt(values.load)}×
+          <text {...beside(loadX, measure(shown), 'right')} y={m.t + 10} className="lm-axis">
+            {shown}
           </text>
           {h.lines.flatMap((l) =>
             (
@@ -440,16 +498,12 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
                     strokeWidth="2"
                   />
                   {/* a range is labelled at its pessimistic end */}
-                  {l.selected && (
-                    <text
-                      x={lx(r && l0(r) ? Math.max(h.from, r.low) : x) - 6}
-                      y={ly(u) - 8}
-                      textAnchor="end"
-                      className="lm-mark"
-                    >
-                      {r && l0(r) ? multiples(r, model.searchMax, true) : multiple(x, model.searchMax)}
-                    </text>
-                  )}
+                  {l.selected &&
+                    mark(
+                      r && l0(r) ? multiples(r, model.searchMax, true) : multiple(x, model.searchMax),
+                      lx(r && l0(r) ? Math.max(h.from, r.low) : x),
+                      ly(u) - 8,
+                    )}
                 </g>
               ) : null,
             ),
@@ -469,7 +523,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
           />
         </svg>
         {hover != null && hx != null && (
-          <div className="lm-tip" role="status" style={{ left: Math.min(lx(hx) + 10, W - 200), top: m.t }}>
+          <div className="lm-tip" role="status" ref={tip} style={{ left: lx(hx) + 10, top: m.t }}>
             <b>
               {fmt(hx)}×{when(model, hx) && ` · ${when(model, hx)}`}
             </b>

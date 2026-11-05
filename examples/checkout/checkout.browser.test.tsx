@@ -590,6 +590,81 @@ describe('full screen', () => {
       }
     })
 
+  /** What of `e` reaches past `box`, in pixels: right, left, bottom, top. */
+  const past = (e: Element, box: Element) => {
+    const r = e.getBoundingClientRect()
+    const b = box.getBoundingClientRect()
+    return [r.right - b.right, b.left - r.left, r.bottom - b.bottom, b.top - r.top].map((x) =>
+      Math.max(0, Math.round(x)),
+    )
+  }
+  const within = (e: Element, box: Element) => expect(past(e, box), e.textContent ?? '').toEqual([0, 0, 0, 0])
+  /** Each box's detail, pinned in turn: nothing of it is cut by what clips it, and it stays inside the root. */
+  const details = async (el: HTMLElement) => {
+    for (const node of el.querySelectorAll<SVGGElement>('.lm-board [data-node][role=button]')) {
+      await userEvent.click(node)
+      await expect.poll(() => el.querySelector('.lm-detail')).toBeTruthy()
+      const d = el.querySelector('.lm-detail')!
+      const name = node.getAttribute('data-node')
+      const whole = (why: string) => {
+        const r = d.getBoundingClientRect()
+        const s = seen(d)
+        expect([s.top, s.left, s.bottom, s.right].map(Math.round), `${name}: cut${why}`).toEqual(
+          [r.top, r.left, r.bottom, r.right].map(Math.round),
+        )
+        expect(past(d, el).slice(0, 2), `${name}: past the root${why}`).toEqual([0, 0])
+      }
+      whole('')
+      // a board that pans in its own box: the detail keeps to the room that shows as it scrolls
+      const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
+      if (wrap.scrollHeight > wrap.clientHeight + 40) {
+        const before = wrap.scrollTop
+        wrap.scrollTop = before > 40 ? before - 40 : before + 40
+        await frames()
+        whole(' after a scroll')
+        wrap.scrollTop = before
+      }
+      await userEvent.click(node)
+      await expect.poll(() => el.querySelector('.lm-detail')).toBeNull()
+    }
+  }
+
+  for (const [width, height] of [
+    [1440, 900],
+    [2560, 1440],
+    [390, 844],
+  ] as const)
+    it(`keeps the headroom chart and each detail inside their boxes at ${width}x${height}`, async () => {
+      const { el, handle } = await mount({ width })
+      await page.viewport(width, height)
+      // at the lowest and the highest load the load's label sits at an edge
+      const card = el.querySelector('.lm-headroom')!
+      for (const load of [1, 100]) {
+        handle.setValues({ load })
+        await handle.ready()
+        await expect.poll(() => card.querySelector('svg text')?.textContent).toBeTruthy()
+        for (const t of card.querySelectorAll('svg text')) within(t, card)
+      }
+      await details(el)
+      await enter(el)
+      await userEvent.click(mode(el, 'Panels'))
+      await frames()
+      if (width <= 760) await userEvent.click(page.getByRole('button', { name: 'Headroom', exact: true }))
+      const spark = el.querySelector('[data-mini="headroom"] .lm-card')!
+      // the chart sits under the heading, inside the card, and a line past the top leaves through its edge, which clips
+      const svg = spark.querySelector('svg')!
+      within(svg, spark)
+      expect(svg.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        spark.querySelector('h3')!.getBoundingClientRect().bottom,
+      )
+      expect(getComputedStyle(svg).overflow).toBe('hidden')
+      // the target line and the load's start with room above them: nothing runs along the top edge
+      const st = svg.getBoundingClientRect().top
+      expect(spark.querySelector('.lm-spark-th')!.getBoundingClientRect().top - st).toBeGreaterThan(6)
+      await details(el)
+      await page.screenshot({ path: `__screenshots__/checkout-overflow-${width}.png` })
+    })
+
   it('shows every panel compact, and leaves out each one fullScreen does not list', async () => {
     const { el, render } = await draw({ fullScreen: ['verdict'] })
     // on the page every panel shows, whatever full screen lists

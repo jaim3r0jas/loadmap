@@ -274,7 +274,8 @@ function Sparkline({ lm }: { lm: LoadmapController }) {
   const [box, { width: W, height: H }] = useSize<HTMLDivElement>(240)
   const top = Math.max(1.5, model.thresholds.full * 1.5)
   const lx = (x: number) => (W * Math.log(x / h.from)) / Math.log(h.to / h.from)
-  const ly = (u: number) => 2 + (H - 4) * (1 - Math.min(u, top) / top)
+  // room under the heading; past the top a line leaves through the edge (the svg clips), not along it
+  const ly = (u: number) => 8 + (H - 10) * (1 - Math.min(u, top * 1.2) / top)
   const path = (s: Series) => {
     let d = ''
     let pen = false

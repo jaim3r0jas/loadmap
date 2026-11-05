@@ -115,7 +115,7 @@ export const LOADMAP_CSS = `
 .lm-mini .lm-table thead th { white-space: nowrap; font-size: .6rem; }
 .lm-mini > .lm-card:has(> .lm-spark) { grid-template-rows: auto minmax(0, 1fr) auto; align-content: stretch; }
 .lm-spark { position: relative; min-height: 0; }
-.lm-spark svg { position: absolute; inset: 0; display: block; overflow: visible; }
+.lm-spark svg { position: absolute; inset: 0; display: block; overflow: hidden; }
 .lm-spark-th { stroke: var(--lm-muted); stroke-dasharray: 4 3; }
 .lm-spark-load { stroke: var(--lm-fg); opacity: .45; }
 .lm-spark-text { margin: 0; font-size: .76rem; color: var(--lm-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -258,7 +258,7 @@ export const LOADMAP_CSS = `
 .lm-chart:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
 .lm-axis, .lm-axis text { font: 400 11px var(--lm-mono); fill: var(--lm-muted); }
 .lm-mark { font: 600 11px var(--lm-mono); fill: var(--lm-fg); }
-.lm-tip { position: absolute; z-index: 2; display: grid; gap: 2px; width: max-content; max-width: 17rem; padding: 8px 10px; font-size: .78rem; background: var(--lm-surface); color: var(--lm-fg); border: 1px solid var(--lm-line); border-radius: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / .14); pointer-events: none; }
+.lm-tip { position: absolute; z-index: 2; display: grid; gap: 2px; width: max-content; max-width: min(17rem, calc(100% - 8px)); overflow-wrap: anywhere; padding: 8px 10px; font-size: .78rem; background: var(--lm-surface); color: var(--lm-fg); border: 1px solid var(--lm-line); border-radius: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / .14); pointer-events: none; }
 .lm-tip strong { font: 600 .82rem var(--lm-mono); font-variant-numeric: tabular-nums; }
 .lm-tip .lm-sub { color: var(--lm-muted); }
 .lm-nowrap { white-space: nowrap; }
