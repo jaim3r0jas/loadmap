@@ -18,7 +18,7 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 | `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                          | core, elkjs                     |
 | `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme      | core, sim, layout; react (peer) |
 | `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI        | react, mediabunny               |
-| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled), playwright       |
+| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled); playwright peer  |
 | `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links      | core, layout                    |
 | `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*       |
 
