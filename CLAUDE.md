@@ -68,6 +68,20 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
 
+## Landing
+
+Work lands on `main` only through a pull request: rulesets on GitHub require the `check`, `workflows` (zizmor) and
+`dependency-review` jobs to pass on a branch up to date with main, keep the history linear and refuse force pushes and
+deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --rebase`: it merges once green.
+
+- Workflows: `permissions: {}` at the top and per job only what it needs, every action pinned to a full SHA with its
+  version in a comment (Dependabot bumps them), `persist-credentials: false`, `timeout-minutes`. Never
+  `pull_request_target`, never `${{ … }}` from an event inside `run:` (pass it through `env:`). `uvx zizmor .github/`
+  runs the `workflows` check locally.
+- `pnpm-workspace.yaml` refuses a dependency younger than 3 days, one whose trust dropped (lost provenance), one that
+  wants an install script (`allowBuilds` after reading what it runs) and git or tarball dependencies deep in the tree.
+  A fresh fix you must have now goes in `minimumReleaseAgeExclude` with its exact version.
+
 ## Conventions
 
 - **No DOM or React in core, sim or layout.** They run in Node tests; React is only the binding.

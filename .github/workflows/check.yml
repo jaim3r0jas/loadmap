@@ -1,16 +1,25 @@
-# pnpm check on every push and pull request: typecheck, lint, every test (Node and Chromium), build, bundle budget
+# pnpm check on every push and pull request: typecheck, lint, every test (Node and Chromium), build, bundle budget.
+# The rulesets on main require `check`, `workflows` and `dependency-review` to pass before a pull request merges.
+# Fork pull requests run here with a read-only token and no secrets: never switch this to pull_request_target.
 name: check
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions: {}
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false # pnpm arrives after this step, through corepack
@@ -20,3 +29,30 @@ jobs:
       - run: pnpm check
       # the tarballs in a fresh app, as a stranger installs them
       - run: pnpm verify:pack
+
+  # the workflows themselves, audited by zizmor: injections, excessive permissions, unpinned actions, leaked tokens
+  workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: 1.31.1
+          advanced-security: false # fail the job on a finding instead of uploading it to the Security tab
+
+  # a pull request that adds a dependency with a known high-severity advisory fails here
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high

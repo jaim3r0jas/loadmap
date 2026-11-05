@@ -1,0 +1,24 @@
+# Bumps the actions' pinned SHAs weekly and the npm dependencies monthly, in one pull request each. A release younger
+# than 7 days is not proposed: past pnpm's own 3 days (minimumReleaseAge in pnpm-workspace.yaml), as zizmor asks.
+# Security updates (a setting, not this file) skip the cooldown, not pnpm's 3 days: a fix younger than that goes in
+# minimumReleaseAgeExclude with its exact version.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]
