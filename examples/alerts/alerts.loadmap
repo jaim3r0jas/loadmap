@@ -5,6 +5,7 @@ loadmap 1
 title: "Alerts and live positions"
 speed: 10
 fullScreen: [verdict, live, limits, controls, headroom]
+fullScreenMode: panels
 assume: "Load scales linearly with users; 1× is the busiest five minutes of an ordinary week."
 assume: "Alerts come first at every hop: their own topic, their own pods, served before positions."
 

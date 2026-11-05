@@ -134,6 +134,9 @@ const OVERLOAD_WHEN: PropSpec = { value: 'boolean', scope: 'ctx', doc: 'The rule
 /** The panels of `<Loadmap>` below the diagram, as its `fullScreen` prop names them. */
 export const PANELS = ['verdict', 'live', 'limits', 'controls', 'headroom', 'compare', 'assumptions'] as const
 
+/** What full screen opens with, as the `fullScreenMode` prop of `<Loadmap>` names it. */
+export const FULL_SCREEN_MODES = ['panels', 'focus'] as const
+
 export const COLORS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted'] as const
 
 export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
@@ -155,7 +158,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         value: 'names',
         scope: 'const',
         values: PANELS,
-        doc: 'The panels below the diagram in full screen, which keep their order. Default all of them.',
+        doc: 'The panels full screen shows, compact, below the diagram. Default all of them.',
+      },
+      fullScreenMode: {
+        value: 'enum',
+        scope: 'const',
+        values: FULL_SCREEN_MODES,
+        doc: 'What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels.',
       },
       assume: { value: 'string', scope: 'const', repeat: true, doc: 'A line added before the generated assumptions.' },
       searchMax: {
