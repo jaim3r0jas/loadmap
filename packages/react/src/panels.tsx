@@ -21,7 +21,7 @@ export function Verdict({ lm }: { lm: LoadmapController }) {
 }
 
 /** "±30 %" for a capacity with a range. */
-const plusMinus = (c: Capacity | null) => (c?.within ? `±${pct(c.within)}` : '')
+export const plusMinus = (c: Capacity | null) => (c?.within ? `±${pct(c.within)}` : '')
 
 /** Each component's utilization in the order they reach the target, with where they cross it and 100 %. */
 export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: LoadmapController; title?: ReactNode }) {
@@ -190,7 +190,7 @@ export function Meters({ lm }: { lm: LoadmapController }) {
         {items.map((m) => (
           <div className="lm-meter" data-state={m.state} key={m.key}>
             <b>{m.value}</b>
-            <span>{m.label}</span>
+            <span title={m.label}>{m.label}</span>
           </div>
         ))}
       </div>
@@ -198,27 +198,35 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   )
 }
 
+/** The load slider with its label and value. */
+export function LoadRange({ lm }: { lm: LoadmapController }) {
+  const load = lm.model.load
+  const x = lm.values.load
+  return (
+    <label className="lm-range">
+      <span>
+        {load.label} <output>{fmt(x)}×</output>
+      </span>
+      <input
+        type="range"
+        min={load.min}
+        max={load.max}
+        step={load.step}
+        value={x}
+        onChange={(e) => lm.setValues({ load: Number(e.target.value) } as any)}
+      />
+    </label>
+  )
+}
+
 /** The load slider, the presets and every parameter, greyed out where it does not apply. */
 export function Controls({ lm }: { lm: LoadmapController }) {
   const { model, values, setValues, ev } = lm
   const v = values as Record<string, any>
-  const load = model.load
   return (
     <div className="lm-card lm-controls">
       <h3>Load</h3>
-      <label className="lm-range">
-        <span>
-          {load.label} <output>{fmt(v.load)}×</output>
-        </span>
-        <input
-          type="range"
-          min={load.min}
-          max={load.max}
-          step={load.step}
-          value={v.load}
-          onChange={(e) => setValues({ load: Number(e.target.value) } as any)}
-        />
-      </label>
+      <LoadRange lm={lm} />
       <div className="lm-presets">
         {ev.presets.map((p) => {
           const on = Object.entries(p.values).every(([k, x]) => v[k] === x)

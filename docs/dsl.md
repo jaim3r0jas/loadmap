@@ -140,8 +140,8 @@ loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectat
 ```
 
 ```
-checkout.loadmap:23:1 error: "Today keeps 8×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
-  23 | expect "Today keeps 8×" { target: 8 }
+checkout.loadmap:25:1 error: "Today keeps 8×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
+  25 | expect "Today keeps 8×" { target: 8 }
      | ^^^^^^^^^^^^^^^^^^^^^^^
 checkout.loadmap: 1 of 2 expectations failed
 ```
@@ -227,15 +227,16 @@ step "At 20×, the gateway and the workers are near full." { load: 20; focus: ga
 step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workers }
 ```
 
-The page shows a bar above the diagram with the step's text, back and next (← and → while the bar has the focus).
+The page shows a bar above the diagram with the step's text, play, back and next (← and → while the bar has the
+focus); play shows each step for its `seconds`.
 `loadmap record x.loadmap --out story.gif --story --caption` plays every step for its `seconds` (default 4), its
 text below the board; the same options give the same file. A step's own properties are `scenario`, `focus` and
 `seconds`; every other line is a value.
 
 ### Full screen
 
-The diagram's **Full screen** shows it as wide as the screen, and below it the panels of the page. `fullScreen` keeps
-only the ones it lists; they stay in their own order:
+The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, and below it the panels
+of the page in a compact form, each of which opens whole. `fullScreen` keeps only the ones it lists:
 
 ```
 fullScreen: [verdict, live, controls]
@@ -243,6 +244,10 @@ fullScreen: [verdict, live, controls]
 
 The names are `verdict`, `live` (the meters), `limits` (where it runs out, in order), `controls`, `headroom`,
 `compare` (the scenarios side by side) and `assumptions`. `<Loadmap fullScreen={[...]}>` takes the same list.
+
+A switch in full screen, or the F key, turns it into **focus**: the diagram, the story, and the verdict and the load
+slider when `fullScreen` lists them. `fullScreenMode: focus` opens full screen there
+(`<Loadmap fullScreenMode="focus">`); the default is `panels`.
 
 ### What stays code
 
@@ -268,8 +273,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:90:17 error: unknown flow "order"
-  90 |   demand: flows.order + flows.events
+checkout.loadmap:92:17 error: unknown flow "order"
+  92 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -306,7 +311,8 @@ A loadmap definition.
 | `title` | string, constant | The heading above the diagram. |
 | `layout` | `right` \| `down` | Which way the diagram runs. Narrow screens always run down. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
-| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels below the diagram in full screen, which keep their order. Default all of them. |
+| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |
+| `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 

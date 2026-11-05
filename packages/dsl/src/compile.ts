@@ -50,6 +50,7 @@ import {
   COLORS,
   COMPONENT_PROPS,
   EDGE_PROPS,
+  type FULL_SCREEN_MODES,
   matchArgs,
   own,
   type PANELS,
@@ -76,6 +77,7 @@ export interface DefinitionOptions {
   direction?: Direction
   assumptions: string[]
   fullScreen?: (typeof PANELS)[number][]
+  fullScreenMode?: (typeof FULL_SCREEN_MODES)[number]
 }
 
 /** The page options as `<Loadmap>` props, leaving out the unset ones so it keeps its defaults. */
@@ -85,6 +87,7 @@ export function pageOptions(o: DefinitionOptions) {
     ...(o.direction ? { direction: o.direction } : {}),
     ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
     ...(o.fullScreen ? { fullScreen: o.fullScreen } : {}),
+    ...(o.fullScreenMode ? { fullScreenMode: o.fullScreenMode } : {}),
   }
 }
 
@@ -473,6 +476,12 @@ class Compiler {
     const panels = this.prop(root, 'fullScreen')
     if (panels)
       options.fullScreen = this.words(panels, SCHEMA['']!.props.fullScreen!) as DefinitionOptions['fullScreen']
+    const mode = this.prop(root, 'fullScreenMode')
+    if (mode)
+      options.fullScreenMode = this.enumValue(
+        mode,
+        SCHEMA['']!.props.fullScreenMode!,
+      ) as DefinitionOptions['fullScreenMode']
     for (const a of root.props.get('assume') ?? []) {
       const v = this.constant(a.value, 'string')
       if (typeof v === 'string') options.assumptions.push(v)

@@ -10,6 +10,7 @@ export function Checkout({ theme, ref }: { theme?: Theme; ref?: Ref<LoadmapHandl
       model={checkout}
       view={view}
       speed={10}
+      fullScreenMode="focus"
       theme={theme}
       assumptions={['Load scales linearly with users; 1× is the 5-minute peak of an ordinary day.']}
     />

@@ -14,6 +14,7 @@ describe('alerts.loadmap', () => {
     expect(def.options).toEqual({
       speed: 10,
       fullScreen: ['verdict', 'live', 'limits', 'controls', 'headroom'],
+      fullScreenMode: 'panels',
       assumptions: [
         'Load scales linearly with users; 1× is the busiest five minutes of an ordinary week.',
         'Alerts come first at every hop: their own topic, their own pods, served before positions.',

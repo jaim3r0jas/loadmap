@@ -2,6 +2,8 @@ loadmap 1
 # The checkout pipeline, as a definition: the same model and view as model.ts and view.ts.
 title: "Checkout pipeline"
 speed: 10
+# full screen opens on the diagram and the story
+fullScreenMode: focus
 assume: "Load scales linearly with users; 1× is the 5-minute peak of an ordinary day."
 
 load "Users, × today" { max: 100; default: 10 }

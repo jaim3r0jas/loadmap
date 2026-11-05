@@ -70,13 +70,18 @@ Every capacity says where it came from (`measured`, `estimated`, or a fit from m
 each limit into a range. Add `scenarios` to compare designs, `growth` to turn multiples into dates, `expect` to fail
 a test when headroom is lost. The layout runs in a Web Worker; nothing loads it before the first diagram.
 
-The diagram's **Full screen** shows it as wide as the screen, with the panels of the page below it.
-`fullScreen={['verdict', 'live', 'controls']}` keeps only those (`LOADMAP_PANELS` lists them all: `verdict`, `live`,
-`limits`, `controls`, `headroom`, `compare`, `assumptions`); they stay in their own order.
+The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, the verdict in one line
+under it, and the panels of the page side by side in a compact form (a phone shows one at a time, under tabs, and
+pans the diagram in its own box). Each compact panel opens whole over the diagram. `fullScreen={['verdict', 'live',
+'controls']}` keeps only those (`LOADMAP_PANELS` lists them all: `verdict`, `live`, `limits`, `controls`, `headroom`,
+`compare`, `assumptions`). A switch beside Close, or the F key, turns full screen into **focus**: the diagram, the
+story and, of the panels listed, the verdict and the load slider. `fullScreenMode="focus"` opens full screen there
+(default `'panels'`). The story bar plays the story, each step for its `seconds`.
 
 `useLoadmap` with `LoadmapRoot`, `Diagram`, `Verdict`, `Limits`, `Controls` and the others builds a page of your own
 layout from the same pieces. The diagram's Full screen takes the whole root: inside a `<div className="lm-side">`
-after the `Diagram`, your pieces become the column below it; a title, the `Scenarios` and the `Story` stay above
-the diagram, and the rest waits outside.
+after the `Diagram`, your pieces become a box below it that scrolls on its own; a title, the `Scenarios` and the
+`Story` stay above the diagram, and the rest waits outside. The controller has the state: `lm.fullScreen`,
+`lm.toggleFullScreen()`, `lm.fullScreenMode`, `lm.storyPlaying`.
 
 Docs, live examples and the editor: https://jaim3r0jas.github.io/loadmap/ · MIT
