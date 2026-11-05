@@ -205,8 +205,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
         )}
         <canvas ref={canvasRef} hidden={reducedMotion} />
       </div>
-      {/* outside the board, which clips: a detail taller than the room beside its box still shows whole */}
-      {scene && tip && <Detail lm={lm} scene={scene} id={tip.id} board={boardRef.current} detailId={detailId} />}
+      {/* outside the board, which clips: a detail taller than the room beside its box still shows whole. Placed on the
+          frame drawn, which a move to a new structure changes every frame */}
+      {frame && tip && <Detail lm={lm} scene={frame} id={tip.id} board={boardRef.current} detailId={detailId} />}
     </div>
   )
 }
@@ -662,23 +663,60 @@ function Detail({
     return () => el?.removeAttribute('aria-describedby')
   }, [board, id, detailId])
   const c = cid ? ev.components[cid] : undefined
+  const tip = useRef<HTMLDivElement>(null)
+  // placed in the wrap, beside the board: below a box in the upper half, above one in the lower half, unless that side
+  // lacks the room that is visible (a board that pans in its own box, full screen, the window); as a last resort over it
+  const box = n && `${n.x} ${n.y} ${n.w} ${n.h}`
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `box` stands for the node's geometry
+  useLayoutEffect(() => {
+    const el = tip.current
+    const wrap = el?.offsetParent
+    if (!el || !n || !board || !(wrap instanceof HTMLElement)) return
+    const place = () => {
+      const k = board.clientWidth / scene.width
+      const w = wrap.getBoundingClientRect()
+      // the wrap's coordinates of a viewport y: its children scroll with it
+      const y = (v: number) => v - w.top - wrap.clientTop + wrap.scrollTop
+      let lo = 0
+      let hi = innerHeight
+      for (let a: Element | null = wrap; a; a = a.parentElement) {
+        if (getComputedStyle(a).overflowY === 'visible') continue
+        const r = a.getBoundingClientRect()
+        lo = Math.max(lo, r.top)
+        hi = Math.min(hi, r.bottom)
+      }
+      const [top, bottom] = [y(lo) + 4, y(hi) - 4]
+      const h = el.offsetHeight
+      const boxTop = board.offsetTop + n.y * k
+      const boxBottom = board.offsetTop + (n.y + n.h) * k
+      const below = boxBottom + 6
+      const above = boxTop - 6 - h
+      const sides = n.y + n.h / 2 < scene.height / 2 ? [below, above] : [above, below]
+      const fits = sides.find((t) => t >= top && t + h <= bottom)
+      const roomier = bottom - boxBottom >= boxTop - top ? below : above
+      el.style.top = `${Math.max(top, Math.min(fits ?? roomier, bottom - h))}px`
+      el.style.left = `${Math.max(0, Math.min(board.offsetLeft + n.x * k, wrap.clientWidth - el.offsetWidth))}px`
+    }
+    place()
+    // the room changes as the page or the board's own box scrolls, the screen turns, or the text grows
+    const ro = new ResizeObserver(place)
+    ro.observe(el)
+    ro.observe(board)
+    document.addEventListener('scroll', place, { capture: true, passive: true })
+    addEventListener('resize', place)
+    return () => {
+      ro.disconnect()
+      document.removeEventListener('scroll', place, { capture: true })
+      removeEventListener('resize', place)
+    }
+  }, [box, board, scene])
   if (!n || !c || !board) return null
-  // placed in the wrap, beside the board: below a box in the upper half, above one in the lower half
-  const k = board.clientWidth / scene.width
-  const below = n.y + n.h / 2 < scene.height / 2
-  const top = board.offsetTop + (below ? (n.y + n.h) * k + 6 : n.y * k - 6)
-  const place = { top, transform: below ? undefined : 'translateY(-100%)' }
   const at = (r: CrossingRange | null, x: number | null) =>
     r ? reach(r, model.searchMax, model.dateAt) : multiple(x, model.searchMax)
   const num = (x: number) => (Math.abs(x) >= 1000 ? compact(x) : fmt(x))
   const cap = c.capacity
   return (
-    <div
-      id={detailId}
-      className="lm-tip lm-detail"
-      role="tooltip"
-      style={{ ...place, left: `clamp(0px, ${board.offsetLeft + n.x * k}px, calc(100% - 17rem))` }}
-    >
+    <div id={detailId} className="lm-tip lm-detail" role="tooltip" ref={tip}>
       <b>
         {c.name}
         {c === ev.firstLimit && (
