@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ALL_FORMATS, BufferSource, Input } from 'mediabunny'
 import { build, createServer, type ViteDevServer } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { check, fmt, main, parseRecord, record } from '../src'
+import { playwright } from '../src/playwright'
 
 const checkout = join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap')
 
@@ -56,6 +57,24 @@ describe('arguments', () => {
     // a URL is a page, whatever its path ends in
     for (const url of ['https://host/m.loadmap', 'http://localhost:5173/?file=a.loadmap'])
       expect(await parseRecord([url, '--out', 'a.gif'])).toMatchObject({ url })
+  })
+})
+
+describe('Playwright', () => {
+  it('is loaded only to record, and its absence says how to install it', async () => {
+    const missing = Object.assign(new Error("Cannot find package 'playwright'"), { code: 'ERR_MODULE_NOT_FOUND' })
+    await expect(playwright(() => Promise.reject(missing))).rejects.toThrow(
+      'loadmap record needs Playwright: npm i -D playwright, then npx playwright install chromium',
+    )
+    // a Playwright that is there but broken says so itself
+    await expect(playwright(() => Promise.reject(new Error('broken')))).rejects.toThrow('broken')
+    expect(await playwright()).toHaveProperty('chromium')
+  })
+
+  it('is never imported at the top of a module, so check and fmt run without it', async () => {
+    const src = join(import.meta.dirname, '../src')
+    for (const f of await readdir(src))
+      expect(await readFile(join(src, f), 'utf8'), f).not.toMatch(/^import [^\n]*from ['"]playwright['"]/m)
   })
 })
 

@@ -4,8 +4,8 @@
 the one way, and `loadmap check` holds a model to its promises in CI.
 
 ```bash
-npm i -D @loadmap/cli
-npx playwright install chromium     # once, for record
+npm i -D @loadmap/cli playwright     # playwright only for record; check and fmt run without it
+npx playwright install chromium      # once, for record
 ```
 
 ## Record

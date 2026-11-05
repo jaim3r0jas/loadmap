@@ -175,6 +175,43 @@ export default defineConfig({
   }
 } catch (e) {
   fail.push(String(e.stderr || e.stack || e))
+}
+
+// on its own: a failure above must not hide this one
+try {
+  step('the cli alone, without Playwright: --help, check, and record says how to add it')
+  const cli = join(root, 'cli')
+  mkdirSync(cli)
+  writeFileSync(
+    join(cli, 'package.json'),
+    JSON.stringify({
+      name: 'ci',
+      private: true,
+      devDependencies: {
+        '@loadmap/cli': `file:../packs/${readdirSync(packs).find((f) => f.startsWith('loadmap-cli-'))}`,
+      },
+    }),
+  )
+  run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], cli)
+  const bin = join(cli, 'node_modules/.bin/loadmap')
+  const checkout = join(repo, 'examples/checkout/checkout.loadmap')
+  for (const args of [['--help'], ['check', checkout]]) {
+    try {
+      run(bin, args, cli)
+      console.log(`  loadmap ${args[0]}: ok`)
+    } catch (e) {
+      fail.push(`loadmap ${args[0]} without Playwright: ${e.stderr || e.stdout}`)
+    }
+  }
+  try {
+    run(bin, ['record', checkout, '--out', join(cli, 'x.png')], cli)
+    fail.push('loadmap record ran without Playwright')
+  } catch (e) {
+    if (!String(e.stderr).includes('npm i -D playwright')) fail.push(`loadmap record without Playwright: ${e.stderr}`)
+    else console.log('  loadmap record: says how to add Playwright')
+  }
+} catch (e) {
+  fail.push(String(e.stderr || e.stack || e))
 } finally {
   if (keep) console.log(`app kept in ${app}`)
   else rmSync(root, { recursive: true, force: true })

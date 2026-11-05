@@ -5,9 +5,9 @@ import { extname, join, normalize } from 'node:path'
 import { parseArgs } from 'node:util'
 import { compile, formatDiagnostic } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
-import { chromium } from 'playwright'
 import { check } from './check'
 import { fmt } from './fmt'
+import { type Chromium, playwright } from './playwright'
 
 export { type CheckOptions, check, github } from './check'
 export { type FmtOptions, fmt } from './fmt'
@@ -29,7 +29,8 @@ operators; numbers, texts and formulas stay as written. A file with a syntax err
 
 record opens the page in headless Chromium, finds the loadmap it exposes (expose() from @loadmap/export) and
 records it on a fixed clock, so the same options give the same file. A .loadmap file is drawn by the viewer that
-comes with the command.
+comes with the command. It needs Playwright next to the command: npm i -D playwright, then npx playwright install
+chromium (check and fmt run without it).
 
   --out <file>          the extension picks the format: gif, webm, mp4, png or svg
   --script <file.json>  [{ "at": 0, "set": { "load": 5 } }, { "at": 3, "scenario": "Proposed" }, …]
@@ -171,13 +172,15 @@ export async function record(a: RecordArgs, o: { viewer?: string } = {}): Promis
   const format = extname(a.out).slice(1).toLowerCase()
   if (!['gif', 'webm', 'mp4', 'png', 'svg'].includes(format))
     throw new Error(`--out must end in .gif, .webm, .mp4, .png or .svg`)
-  if (!a.file) return recordPage(a, format)
+  // before any work: without it nothing can be recorded
+  const { chromium } = await playwright()
+  if (!a.file) return recordPage(a, format, chromium)
   const source = await readFile(a.file, 'utf8')
   const r = compile(source)
   if (!r.ok) throw new Error(r.diagnostics.map((d) => formatDiagnostic(d, source, a.file)).join('\n'))
   const server = await serve(source, o.viewer ?? join(import.meta.dirname, '../dist/viewer'))
   try {
-    return await recordPage({ ...a, url: server.url }, format)
+    return await recordPage({ ...a, url: server.url }, format, chromium)
   } finally {
     await server.close()
   }
@@ -214,7 +217,7 @@ async function serve(source: string, dir: string): Promise<{ url: string; close:
   return { url: `http://127.0.0.1:${port}/`, close: () => new Promise((done) => server.close(() => done())) }
 }
 
-async function recordPage(a: RecordArgs, format: string): Promise<Buffer> {
+async function recordPage(a: RecordArgs, format: string, chromium: Chromium): Promise<Buffer> {
   const browser = await chromium.launch()
   try {
     const page = await browser.newPage({ viewport: { width: a.width, height: 900 }, colorScheme: a.colorScheme })
