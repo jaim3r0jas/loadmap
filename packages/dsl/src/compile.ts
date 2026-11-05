@@ -20,6 +20,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
+import { flowOf } from '@loadmap/core/internal'
 import {
   type AnyNodeDef,
   type Direction,
@@ -35,6 +36,7 @@ import {
   compileFormula,
   type Formula,
   FormulaError,
+  failure,
   type HostFunctions,
   isCapacity,
   type Names,
@@ -151,7 +153,8 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
       })
   } catch (err) {
     // a formula that fails only at a capacity bound, while checking: it has its place
-    if (err instanceof FormulaError) report.error(err.span, err.message)
+    if (err instanceof FormulaError || flowOf(err) || (err instanceof Error && err.message.startsWith('loadmap: ')))
+      c.runError(err, { from: 0, to: 0 })
     // a bug must not take the editor down with it: say so where the user looks
     else if (!(err instanceof Bail))
       report.error({ from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
@@ -364,6 +367,7 @@ class Compiler {
     for (const b of flows) {
       const id = b.args.id
       if (!id) continue
+      this.flowAt.set(id.name, id)
       const label = this.text(b.args.label)
       const def: Record<string, unknown> = {}
       if (label != null) def.label = label
@@ -519,7 +523,7 @@ class Compiler {
       model = defineModel(modelDef as any)
       view = defineView(model, viewDef as any)
     } catch (err) {
-      this.report.error(top, err instanceof Error ? err.message.replace(/^loadmap: /, '') : String(err))
+      this.runError(err, top)
       return undefined
     }
     const runs: { values: Record<string, unknown>; at: Span }[] = [{ values: {}, at: top }]
@@ -533,7 +537,7 @@ class Compiler {
       const v = label != null && model.scenarios.find((s) => s.label === label)?.values
       if (v) runs.push({ values: v, at: b.at })
     }
-    for (const { values, at } of runs) {
+    for (const [i, { values, at }] of runs.entries()) {
       try {
         const ev = model.evaluate(values as any)
         labelsAt(view, ev)
@@ -551,15 +555,26 @@ class Compiler {
           if (!Number.isFinite(ev.flows[f]))
             this.report.warning(this.flowRate.get(f) ?? at, `the rate of "${f}" is ${ev.flows[f]} here`)
       } catch (err) {
-        if (err instanceof FormulaError) this.report.error(err.span, err.message)
-        else this.report.error(at, err instanceof Error ? err.message.replace(/^loadmap: /, '') : String(err))
+        this.runError(err, at, i === 0)
       }
     }
     if (this.report.failed) return undefined
     return { model, view, options }
   }
 
+  /**
+   * What running the model threw, where it came from: its formula, else its flow, else `at`. A preset or a scenario
+   * keeps `at` (`onFlow` false): the flow is fine at the defaults, the preset is what breaks it.
+   */
+  runError(err: unknown, at: Span, onFlow = true) {
+    if (err instanceof FormulaError) return this.report.error(err.span, err.message, err.hint)
+    const flow = flowOf(err)
+    const { message, hint } = failure(err, flow ? `the flow "${flow}"` : 'the model')
+    this.report.error((onFlow && flow && this.flowAt.get(flow)) || at, message, hint)
+  }
+
   private flowRate = new Map<string, Span>()
+  private flowAt = new Map<string, Span>()
 
   // -- shape ---------------------------------------------------------------------------------------------------
 
@@ -729,7 +744,8 @@ class Compiler {
     try {
       return f.run(undefined)
     } catch (err) {
-      this.report.error(e, err instanceof Error ? err.message : String(err))
+      const { message, hint } = failure(err)
+      this.report.error(e, message, hint)
       return undefined
     }
   }

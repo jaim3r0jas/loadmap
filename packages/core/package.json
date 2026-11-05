@@ -21,7 +21,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./calibrate": "./src/calibrate.ts",
-    "./format": "./src/format.ts"
+    "./format": "./src/format.ts",
+    "./internal": "./src/internal.ts"
   },
   "publishConfig": {
     "exports": {
@@ -36,6 +37,10 @@
       "./format": {
         "types": "./dist/format.d.ts",
         "import": "./dist/format.js"
+      },
+      "./internal": {
+        "types": "./dist/internal.d.ts",
+        "import": "./dist/internal.js"
       }
     }
   },

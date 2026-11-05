@@ -3,6 +3,7 @@ import { type Bound, boundOf, type Capacity, type CrossingRange } from './capaci
 import type { Expectation } from './check'
 import { fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
+import { blame } from './internal'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import { type Branch, dyn, hitOf, type ResolvedStage, rejectShare, resolveStage, type StageDef } from './stages'
 
@@ -26,8 +27,8 @@ export interface FlowDef<X> {
   label?: string
   /** One unit of the flow, singular: "order". */
   unit?: string
-  /** Units per second. */
-  rate: (ctx: X) => number
+  /** Units per second: a number, or computed from the values. */
+  rate: number | ((ctx: X) => number)
   /** 1 is served first. Flows of the same priority share capacity. */
   priority?: number
   /** What happens to this flow's backlog in a queue; may depend on the values. Without a rule it waits. */
@@ -618,15 +619,27 @@ function context(
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
-  const memo = <T>(key: string, f: () => T): T => {
+  // an error belongs to the first memo it leaves: a flow is blamed only for what its own computation raised
+  const seen = new WeakSet<object>()
+  const memo = <T>(key: string, f: () => T, flow?: string): T => {
     if (cache.has(key)) return cache.get(key) as T
-    if (stack.includes(key))
-      throw new Error(`loadmap: ${[...stack.slice(stack.indexOf(key)), key].join(' → ')} is a loop`)
+    if (stack.includes(key)) {
+      const loop = new Error(`loadmap: ${[...stack.slice(stack.indexOf(key)), key].join(' → ')} is a loop`)
+      // no one flow's fault
+      seen.add(loop)
+      throw loop
+    }
     stack.push(key)
     try {
       const v = f()
       cache.set(key, v)
       return v
+    } catch (err) {
+      if (typeof err === 'object' && err !== null && !seen.has(err)) {
+        seen.add(err)
+        if (flow) blame(err, flow)
+      }
+      throw err
     } finally {
       stack.pop()
     }
@@ -665,12 +678,20 @@ function context(
       throw new Error(`loadmap: flow "${f}" needs a retry budget of 0 or more, not ${r.budget}`)
     return r.times > 0 && r.budget !== 0 ? r : undefined
   }
-  const rate = (f: string) => memo(`rate of ${f}`, () => def.flows[f]!.rate(ctx as any))
+  const rateOf = (f: string) => {
+    const r = def.flows[f]!.rate
+    return typeof r === 'function' ? r(ctx as any) : r
+  }
+  const rate = (f: string) => memo(`rate of ${f}`, () => rateOf(f), f)
   ctx.flows = table(flowIds, (f) =>
-    memo(`flow ${f}`, () => {
-      if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
-      return retryOf(f) ? retries()[f]!.attempts : def.flows[f]!.rate(ctx as any)
-    }),
+    memo(
+      `flow ${f}`,
+      () => {
+        if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
+        return retryOf(f) ? retries()[f]!.attempts : rateOf(f)
+      },
+      f,
+    ),
   )
 
   /** The share a stage turns away: past its component's `full`, what is above it. */
