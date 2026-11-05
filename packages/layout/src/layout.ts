@@ -20,14 +20,19 @@ export interface TextSpot {
   weight: number
 }
 
-export interface Cell extends Box {
+export interface Cell extends Box, Fading {
   stage: string
   flow: string
   /** The partition's index within its flow. */
   index: number
 }
 
-export interface SceneNode extends Box {
+/** Set only while the diagram moves to a new structure (`morph`), on a part that enters or leaves: its opacity. */
+export interface Fading {
+  fade?: number
+}
+
+export interface SceneNode extends Box, Fading {
   id: string
   kind: AnyNodeDef['kind']
   shape: 'box' | 'cylinder'
@@ -37,21 +42,23 @@ export interface SceneNode extends Box {
   title: TextSpot
   sub?: TextSpot
   /** Cluster members (brokers) and pods, with their own small labels. */
-  members: (Box & { label: string; spot: TextSpot })[]
+  members: (Box & Fading & { label: string; spot: TextSpot })[]
   /** Per member, the name of each flow above its partitions. */
-  groups: { flow: string; text: string; spot: TextSpot }[]
+  groups: (Fading & { flow: string; text: string; spot: TextSpot })[]
   cells: Cell[]
   /** Workers, indexed pod × workers per pod + worker, the index the sim's fill uses. */
-  slots: (Box & { index: number })[]
+  slots: (Box & Fading & { index: number })[]
 }
 
-export interface SceneEdge {
+export interface SceneEdge extends Fading {
   id: string
   from: string
   to: string
   points: [number, number][]
   /** The box reserved for the label, wide enough for its widest text across the load range. */
   label?: Box
+  /** Set only while a new edge draws in: the share of it drawn. */
+  draw?: number
 }
 
 export interface Scene {

@@ -63,6 +63,9 @@ import {
 /** The version of the language this package reads: the number on a definition's first line. */
 export const LANGUAGE_VERSION = 1
 
+/** The longest move to a new structure a definition may ask for, in seconds. */
+const MAX_TRANSITION = 5
+
 /** Counts that size the drawing; larger ones would hang the layout, so a shared link cannot ask for them. */
 export const LIMITS = { members: 64, pods: 256, perPod: 256, partitions: 1024 } as const
 
@@ -74,6 +77,7 @@ export interface CompileOptions {
 /** What the definition sets beyond the model and the view: props of `<Loadmap>`. */
 export interface DefinitionOptions {
   speed?: number
+  transition?: number
   direction?: Direction
   assumptions: string[]
   fullScreen?: (typeof PANELS)[number][]
@@ -84,6 +88,7 @@ export interface DefinitionOptions {
 export function pageOptions(o: DefinitionOptions) {
   return {
     ...(o.speed != null ? { speed: o.speed } : {}),
+    ...(o.transition != null ? { transition: o.transition } : {}),
     ...(o.direction ? { direction: o.direction } : {}),
     ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
     ...(o.fullScreen ? { fullScreen: o.fullScreen } : {}),
@@ -471,6 +476,14 @@ class Compiler {
     const options: DefinitionOptions = { assumptions: [] }
     const speed = this.constProp<number>(root, 'speed')
     if (speed != null) options.speed = speed
+    const transition = this.constProp<number>(root, 'transition')
+    // a shared link could ask for a move that never ends
+    if (transition != null && (transition < 0 || transition > MAX_TRANSITION))
+      this.report.error(
+        this.prop(root, 'transition')!.value,
+        `transition is ${transition} seconds; 0 to ${MAX_TRANSITION}`,
+      )
+    else if (transition != null) options.transition = transition
     const layout = this.prop(root, 'layout')
     if (layout) options.direction = this.enumValue(layout, SCHEMA['']!.props.layout!) === 'down' ? 'DOWN' : 'RIGHT'
     const panels = this.prop(root, 'fullScreen')

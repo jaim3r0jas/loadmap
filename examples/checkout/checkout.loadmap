@@ -4,6 +4,7 @@ title: "Checkout pipeline"
 speed: 10
 # full screen opens on the diagram and the story
 fullScreenMode: focus
+transition: 0.8
 assume: "Load scales linearly with users; 1× is the 5-minute peak of an ordinary day."
 
 load "Users, × today" { max: 100; default: 10 }

@@ -13,6 +13,7 @@ describe('alerts.loadmap', () => {
     sameModel(alerts, def.model, grid(alerts))
     expect(def.options).toEqual({
       speed: 10,
+      transition: 1,
       fullScreen: ['verdict', 'live', 'limits', 'controls', 'headroom'],
       fullScreenMode: 'panels',
       assumptions: [

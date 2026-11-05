@@ -14,21 +14,21 @@ export type Theme = 'auto' | 'light' | 'dark'
 
 /** What a page (or `@loadmap/export`) can drive from outside. */
 export interface LoadmapHandle {
-  /** Resolves once the current values are laid out and drawn. */
+  /** Resolves once the current values are laid out and drawn, and the frame of a move to a new structure with them. */
   ready(timeoutMs?: number): Promise<void>
   pause(): void
   resume(): void
   values(): Values<any>
   setValues(v: Partial<Values<any>>): void
-  /** Empties the queues and dots and starts over with this seed. */
+  /** Empties the queues and dots and starts over with this seed; a move to a new structure ends where it goes. */
   reset(seed?: number): void
-  /** Advances the sim by `dtReal` seconds and draws the frame: the deterministic way to animate. */
+  /** Advances the sim, and a move to a new structure, by `dtReal` seconds and draws the frame: the deterministic way to animate. */
   step(dtReal: number): void
   /** Shows a story step (its values and the box it points at), or leaves the story with null. */
   setStoryStep(i: number | null): void
   /** The story step shown; null outside the story. */
   storyStep(): number | null
-  /** The drawn board, for capturing frames. */
+  /** The drawn board, for capturing frames: while the structure moves, `scene` is the frame drawn. */
   board(): { svg: SVGSVGElement; canvas: HTMLCanvasElement; scene: Scene } | null
   engine: Engine
 }
@@ -232,7 +232,8 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
         engine.scene.key === engine.wantKey &&
         engine.svg &&
         engine.drawnValues === JSON.stringify(engine.ev.values) &&
-        engine.drawnFocus === engine.wantFocus
+        engine.drawnFocus === engine.wantFocus &&
+        engine.drawnFrame === engine.frameId
       while (!drawn()) {
         if (performance.now() - t0 > timeoutMs) throw new Error('loadmap: layout not ready')
         await new Promise((r) => requestAnimationFrame(r))
@@ -254,8 +255,8 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
       engine.draw({ particles: true })
     },
     board: () =>
-      engine.svg && engine.canvas && engine.scene
-        ? { svg: engine.svg, canvas: engine.canvas, scene: engine.scene }
+      engine.svg && engine.canvas && engine.frame
+        ? { svg: engine.svg, canvas: engine.canvas, scene: engine.frame }
         : null,
   }
 }

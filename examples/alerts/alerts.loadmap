@@ -4,6 +4,7 @@ loadmap 1
 # view.ts.
 title: "Alerts and live positions"
 speed: 10
+transition: 1
 fullScreen: [verdict, live, limits, controls, headroom]
 fullScreenMode: panels
 assume: "Load scales linearly with users; 1× is the busiest five minutes of an ordinary week."

@@ -10,6 +10,7 @@ export function Alerts({ theme, ref }: { theme?: Theme; ref?: Ref<LoadmapHandle>
       model={alerts}
       view={view}
       speed={10}
+      transition={1}
       fullScreen={['verdict', 'live', 'limits', 'controls', 'headroom']}
       fullScreenMode="panels"
       theme={theme}

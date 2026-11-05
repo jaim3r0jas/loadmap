@@ -75,9 +75,16 @@ describe('compile', () => {
   })
 
   it('reads the options of the page', () => {
-    const r = compile(def({ top: 'title: "T"\nlayout: down\nspeed: 4\nassume: "a"\nassume: "b"' }))
-    expect(r.definition!.options).toEqual({ direction: 'DOWN', speed: 4, assumptions: ['a', 'b'] })
+    const r = compile(def({ top: 'title: "T"\nlayout: down\nspeed: 4\ntransition: 1.2\nassume: "a"\nassume: "b"' }))
+    expect(r.definition!.options).toEqual({ direction: 'DOWN', speed: 4, transition: 1.2, assumptions: ['a', 'b'] })
     expect(r.definition!.model.title).toBe('T')
+  })
+
+  it('takes a transition of 0 to 5 seconds: a shared link cannot ask for a move that never ends', () => {
+    expect(compile(def({ top: 'transition: 0' })).definition!.options.transition).toBe(0)
+    expect(errors(def({ top: 'transition: 600' }))).toEqual([
+      expect.objectContaining({ message: 'transition is 600 seconds; 0 to 5', text: '600' }),
+    ])
   })
 
   it('reads the panels full screen shows, and names a wrong one', () => {

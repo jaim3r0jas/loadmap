@@ -154,6 +154,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'Which way the diagram runs. Narrow screens always run down.',
       },
       speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
+      transition: {
+        value: 'number',
+        scope: 'const',
+        doc: 'Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts.',
+      },
       fullScreen: {
         value: 'names',
         scope: 'const',

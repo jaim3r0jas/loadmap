@@ -1,7 +1,7 @@
 import { type ComponentState, type CrossingRange, reach } from '@loadmap/core'
 import { compact, fmt, multiple, multiples, pct } from '@loadmap/core/format'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
-import { memo, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { memo, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
@@ -41,18 +41,27 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   const [tip, setTip] = useState<{ id: string; pinned: boolean } | null>(null)
   const detailId = useId()
 
-  // bind after every structural render: the worker fills are new elements
-  // bind when the structure is new: the worker fills are new elements
+  // the engine takes a new scene before the page paints: a new structure starts its move from what was drawn
+  useLayoutEffect(() => {
+    if (scene) engine.setScene(scene, { cut: reducedMotion })
+  }, [engine, scene, reducedMotion])
+  // what to draw: the scene, or each frame of the move to it
+  const frameId = useSyncExternalStore(engine.subscribe, () => engine.frameId)
+  const frame = engine.frame
+  // bind after every structural render, and every frame of a move: the worker fills are new elements, or elsewhere
   // biome-ignore lint/correctness/useExhaustiveDependencies: reducedMotion changes the drawn elements
   useEffect(() => {
-    if (scene) engine.setScene(scene)
     engine.bind(svgRef.current, canvasRef.current)
+  }, [engine, frame, reducedMotion])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new structure is drawn with the colours read again
+  useEffect(() => {
     if (lm.root) engine.readColors(lm.root)
-  }, [engine, scene, reducedMotion, lm.root])
-  // the labels and colours for these values are on screen: export waits for this
+  }, [engine, scene, lm.root])
+  // the labels and colours for these values, and this frame, are on screen: export waits for this
   useEffect(() => {
     engine.drawnValues = JSON.stringify(lm.values)
     engine.drawnFocus = lm.focus
+    engine.drawnFrame = frameId
   })
 
   useEffect(() => {
@@ -180,12 +189,13 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       <div
         className="lm-board"
         ref={boardRef}
-        style={scene ? { aspectRatio: `${scene.width} / ${scene.height}` } : { minHeight: 240 }}
+        // while the structure moves, the board's shape follows the frame drawn in it
+        style={frame ? { aspectRatio: `${frame.width} / ${frame.height}` } : { minHeight: 240 }}
       >
-        {scene && (
+        {frame && (
           <Structure
             lm={lm}
-            scene={scene}
+            scene={frame}
             svgRef={svgRef}
             rates={reducedMotion}
             setTip={setTip}
@@ -365,14 +375,17 @@ const Structure = memo(function Structure({
 const pathOf = (pts: readonly [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ')
 
 function Edge({ e, text, marker }: { e: SceneEdge; text?: string; marker: string }) {
+  // a new edge draws in from its start; its arrow comes once it is whole
+  const drawing = e.draw != null && e.draw < 1
   return (
-    <g>
+    <g opacity={e.fade}>
       <path
         d={pathOf(e.points)}
         fill="none"
         stroke="var(--lm-muted)"
         strokeOpacity=".7"
-        markerEnd={`url(#${marker})`}
+        markerEnd={drawing ? undefined : `url(#${marker})`}
+        {...(drawing ? { pathLength: 1, strokeDasharray: 1, strokeDashoffset: 1 - e.draw! } : {})}
       />
       {e.label && text && (
         <text
@@ -429,14 +442,16 @@ function Txt({
   children,
   anchor = 'middle',
   fill = 'currentColor',
+  opacity,
 }: {
   s: TextSpot
   children?: ReactNode
   anchor?: 'start' | 'middle'
   fill?: string
+  opacity?: number
 }) {
   return (
-    <text x={s.x} y={s.y} fontSize={s.size} fontWeight={s.weight} textAnchor={anchor} fill={fill}>
+    <text x={s.x} y={s.y} fontSize={s.size} fontWeight={s.weight} textAnchor={anchor} fill={fill} opacity={opacity}>
       {children}
     </text>
   )
@@ -466,10 +481,19 @@ function Node({
   // an autoscaled pool draws every pod it may run; the ones it does not run now are dashed and faint
   const st = n.kind === 'pool' ? lm.ev.stages[n.stages[0] ?? ''] : undefined
   const running = st?.kind === 'workers' ? st.running : n.members.length
+  // a pod past the pool's size is leaving the drawing: it fades out as it was, running
+  const idle = (i: number) => i >= running && i < (st?.kind === 'workers' ? st.pods : n.members.length)
   const e = 6
+  // a box that comes or goes grows from, or shrinks to, a little smaller than itself
+  const grow =
+    n.fade == null
+      ? undefined
+      : `translate(${n.x + n.w / 2} ${n.y + n.h / 2}) scale(${0.92 + 0.08 * n.fade}) translate(${-n.x - n.w / 2} ${-n.y - n.h / 2})`
   return (
     <g
       style={{ color: 'var(--lm-fg)' }}
+      opacity={n.fade}
+      transform={grow}
       data-node={n.id}
       data-focus={focused || undefined}
       data-selected={selected || undefined}
@@ -509,7 +533,7 @@ function Node({
         </Txt>
       )}
       {n.members.map((m, i) => (
-        <g key={m.label} data-idle={i >= running || undefined} opacity={i >= running ? 0.45 : undefined}>
+        <g key={m.label} data-idle={idle(i) || undefined} opacity={idle(i) ? 0.45 * (m.fade ?? 1) : m.fade}>
           <rect
             x={m.x}
             y={m.y}
@@ -518,19 +542,21 @@ function Node({
             rx="4"
             fill="none"
             stroke="var(--lm-line)"
-            strokeDasharray={i >= running ? '3 3' : undefined}
+            strokeDasharray={idle(i) ? '3 3' : undefined}
           />
           <Txt s={m.spot} anchor="start" fill="var(--lm-muted)">
             {m.label}
           </Txt>
         </g>
       ))}
-      {n.groups.map((g) => (
+      {n.groups.map((g, i) => (
         <Txt
-          key={`${g.flow}@${g.spot.x},${g.spot.y}`}
+          // biome-ignore lint/suspicious/noArrayIndexKey: the place in the list is the member; a move changes the position every frame
+          key={`${g.flow}#${i}`}
           s={g.spot}
           anchor="start"
           fill={tokenColor(flows[g.flow]?.color ?? 'muted')}
+          opacity={g.fade}
         >
           {g.text}
         </Txt>
@@ -543,13 +569,14 @@ function Node({
           width={c.w}
           height={c.h}
           rx="1.5"
+          opacity={c.fade}
           fill="var(--lm-lane)"
           stroke={tokenColor(flows[c.flow]?.color ?? 'muted')}
           strokeOpacity=".6"
         />
       ))}
       {n.slots.map((s) => (
-        <g key={s.index}>
+        <g key={s.index} opacity={s.fade}>
           <rect
             x={s.x}
             y={s.y}

@@ -12,6 +12,7 @@ describe('checkout.loadmap', () => {
     expect(def.options).toEqual({
       speed: 10,
       fullScreenMode: 'focus',
+      transition: 0.8,
       assumptions: ['Load scales linearly with users; 1× is the 5-minute peak of an ordinary day.'],
     })
   })

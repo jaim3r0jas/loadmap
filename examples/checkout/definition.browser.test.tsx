@@ -43,6 +43,7 @@ it('draws checkout.loadmap exactly like the TypeScript example', async () => {
       model={def.model}
       view={def.view}
       speed={def.options.speed}
+      transition={def.options.transition}
       assumptions={def.options.assumptions}
     />,
     b,
