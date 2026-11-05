@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/react",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Interactive capacity models for React: an architecture diagram with moving dots, the limits ranked, the verdict, scenarios and headroom.",
   "keywords": [
     "loadmap",
