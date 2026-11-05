@@ -378,6 +378,69 @@ describe('the checker', () => {
     ])
   })
 
+  it("names the one fix for a box with only a component's optional lines", () => {
+    expect(errors(def({ extra: 'node users "Users" "" { describe: "people on the shop" }' }))).toEqual([
+      {
+        message: '"describe" belongs to a component, and this box has no capacity',
+        hint: 'for a line under a plain box, put it on the first line: node users "Users" "people on the shop"',
+        text: 'describe',
+      },
+    ])
+    const hint = (box: string) => errors(def({ extra: box })).map((e) => `${e.message} | ${e.hint}`)
+    // a sub already there, or a describe that is not plain text: the first-line form would not fit
+    expect(hint('node users "Users" "web" { describe: "people" }')).toEqual([
+      '"describe" belongs to a component, and this box has no capacity | give the box capacity and over lines, or drop it',
+    ])
+    expect(hint('node users "Users" { describe: fast ? "a" : "b" }')[0]).toContain('or drop it')
+    expect(hint('node users { describe: "people" }')[0]).toContain('write sub: "people"')
+    // with a stage, the same slip: one error
+    expect(
+      errors(
+        def().replace('client -> api', 'client -> edge -> api').replace('route: api', 'route: edge -> api') +
+          '\nnode edge "Edge" { pass; describe: "the front door" }',
+      ).map((e) => e.message),
+    ).toEqual(['"describe" belongs to a component, and this box has no capacity'])
+    // its formulas are still checked
+    expect(hint('node users "Users" { describe: "x"; when: fats }').map((h) => h.split(' | ')[0])).toContain(
+      'unknown name "fats"',
+    )
+    // a nested component is a component: no plain-box hint there
+    const nested = hint('node db "DB" {\n  name: "the db"\n  component c { capacity: estimated(1, "x"); over: "" }\n}')
+    expect(nested.some((h) => h.includes('already has a component'))).toBe(true)
+    expect(nested.some((h) => h.includes('belongs to a component'))).toBe(false)
+    expect(errors(def({ extra: 'node users "Users" { short: "the users" }' }))).toEqual([
+      {
+        message: '"short" belongs to a component, and this box has no capacity',
+        hint: 'give the box capacity and over lines, or drop it',
+        text: 'short',
+      },
+    ])
+  })
+
+  it('says to drop the ":" before an edge\'s block', () => {
+    expect(errors(def().replace('client -> api', 'client -> api: { label: "HTTPS"; when: load > 1 }'))).toEqual([
+      {
+        message: 'drop the ":" before a { … } block',
+        hint: 'client -> api { label: …; when: … }',
+        text: ':',
+      },
+    ])
+    // the block's own lines are still checked
+    expect(errors(def().replace('client -> api', 'client -> api: { lable: "HTTPS" }')).map((e) => e.message)).toEqual([
+      'drop the ":" before a { … } block',
+      'an edge holds only label and when',
+    ])
+    // a chain takes no label
+    expect(
+      errors(def().replace('client -> api', 'client -> mid -> api: { when: load > 1 }') + '\nnode mid "Mid"')[0]?.hint,
+    ).toBe('client -> mid -> api { when: … }')
+    // a fan-out branch takes its copies, not a block
+    const fan = `node push "Push" { fanout { req -> phone: { when: load > 1 } } }\nnode phone "Phone" { sink }`
+    expect(
+      errors(def({ extra: fan }).replace('route: api', 'route: push')).map((e) => `${e.message} | ${e.hint}`),
+    ).toEqual(['a branch takes its copies after ":", not a block | req -> phone: 1'])
+  })
+
   it('suggests the name that was meant', () => {
     expect(errors(def({ top: 'let x = flows.reqs' }))).toMatchObject([
       { message: 'unknown flow "reqs"', hint: 'did you mean "req"?', text: 'reqs' },

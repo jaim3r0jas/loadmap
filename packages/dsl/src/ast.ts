@@ -52,6 +52,8 @@ export interface Edge extends Span {
   value?: Expr
   body?: Stmt[]
   bodySpan?: Span
+  /** The ":" of `a -> b: { … }`, a slip the compiler names where it knows what the edge is. */
+  colon?: Span
 }
 
 /** A line of numbers: a data point of a fit. */

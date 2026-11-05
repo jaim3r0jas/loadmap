@@ -168,7 +168,11 @@ class Parser {
     const chain = [this.ident()]
     while (this.eat('->')) chain.push(this.ident('a name after "->"'))
     const e: Edge = { kind: 'edge', chain, from: chain[0]!.from, to: chain.at(-1)!.to }
-    if (this.eat(':')) {
+    // `a -> b: { … }` mixes the two forms: the block is still read, so its lines are checked too
+    if (this.is(':') && this.is('{', 1)) {
+      const colon = this.next()
+      e.colon = { from: colon.from, to: colon.to }
+    } else if (this.eat(':')) {
       if (this.endsStatement()) this.fail(this.peek(), 'expected a value after ":"')
       e.value = this.expr()
       e.to = e.value.to
