@@ -2,5 +2,14 @@ packages:
   - packages/*
   - examples/*
   - apps/*
+
+# Supply-chain guards for every install, local and in CI. A version younger than 3 days is not installed (a hijacked
+# release is usually found and pulled within that); a version published with weaker trust than an earlier one (lost
+# provenance, say) fails the install; a dependency that wants to run an install script fails it instead of being
+# silently skipped (allow one in allowBuilds after reading what it runs); no git or tarball dependency deep in the tree.
+minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
   - mediabunny@1.65.0
+trustPolicy: no-downgrade
+strictDepBuilds: true
+blockExoticSubdeps: true

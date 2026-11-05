@@ -1,6 +1,10 @@
 # Changesets: on main, a pull request that bumps the versions and writes the changelogs; once it is merged, the
-# packages npm does not have yet are published. No npm token: each package trusts this workflow on npmjs.com (trusted
-# publishing over OIDC, hence id-token: write), and npm adds the provenance itself.
+# packages npm does not have yet are published. Three jobs, so the npm credential is near as little code as possible:
+# - version opens the "Version Packages" pull request with a GitHub App token: a pull request that GITHUB_TOKEN opens
+#   gets its workflow runs held for approval, one the App opens runs `check` by itself.
+# - build builds the packages without any credential, once no changesets are pending (the release commit is merged).
+# - publish takes those files and publishes them: the only job with id-token: write, in the `release` environment
+#   (main only), which npm's trusted publisher names. No tests here: main only takes commits that passed `check`.
 name: release
 on:
   push:
@@ -8,26 +12,97 @@ on:
 
 concurrency: release
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release # holds the App's key
+    permissions:
+      contents: read
+    outputs:
+      has-changesets: ${{ steps.changesets.outputs.has-changesets }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false # pnpm arrives after this step, through corepack
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # v2 is the line that reads Changesets v3's output; it commits through the API with the token it is given
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        id: changesets
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          version-script: pnpm changeset version
+
+  build:
+    needs: version
+    if: needs.version.outputs.has-changesets == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false # pnpm arrives after this step, through corepack
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter './packages/*' build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: packages/*/dist
+          include-hidden-files: true # the tarballs carry what the build wrote, as a local publish would
+          if-no-files-found: error
+          retention-days: 7 # long enough to re-run a failed publish
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release # npm's trusted publisher names it; only main may use it
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing over OIDC, and its provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false # pnpm arrives after this step, through corepack
           registry-url: https://registry.npmjs.org
       - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      # v2 is the line that reads Changesets v3's output: v1 published but made no tags or GitHub releases.
-      - uses: changesets/action@v2
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          version-script: pnpm changeset version
-          publish-script: pnpm release
+          name: dist
+          path: packages
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write # the tags and the GitHub releases
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          publish-script: pnpm changeset publish
