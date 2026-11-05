@@ -12,9 +12,6 @@ const STATE_STROKE: Record<ComponentState, string> = {
   over: 'var(--lm-drop)',
 }
 
-/** Room kept under the board in full screen for the first lines of the verdict, so the page shows it goes on. */
-const VERDICT_PEEK = 72
-
 const tokenColor = (c: string) => (['accent', 'alt', 'ok', 'warn', 'drop', 'muted'].includes(c) ? `var(--lm-${c})` : c)
 
 /** The architecture: SVG for the structure, a canvas on top for the dots. Expands to full screen. */
@@ -39,10 +36,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   const barRef = useRef<HTMLDivElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  // the browser's full screen, or a fixed overlay where it has none (iPhone) or refuses (a frame without the permission)
-  const [screen, setScreen] = useState(false)
-  const [overlay, setOverlay] = useState(false)
-  const full = screen || overlay
+  const full = lm.fullScreen
   // the node whose detail shows, and whether a tap pinned it
   const [tip, setTip] = useState<{ id: string; pinned: boolean } | null>(null)
   const detailId = useId()
@@ -85,105 +79,104 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     return () => cancelAnimationFrame(raf)
   }, [engine, reducedMotion])
 
-  // the whole root goes full screen, so the verdict, the live meters and the controls stay beside the diagram
-  useEffect(() => {
-    const el = lm.root ?? wrapRef.current
-    const f = () => setScreen(!!el && document.fullscreenElement === el)
-    document.addEventListener('fullscreenchange', f)
-    return () => document.removeEventListener('fullscreenchange', f)
-  }, [lm.root])
-  // the stylesheet lays the root out from this. The overlay goes in the top layer: a fixed root would only cover an
-  // ancestor with a transform, a filter or containment
-  useEffect(() => {
-    const el = lm.root ?? wrapRef.current
-    if (!el || !full) return
-    el.setAttribute('data-full', overlay ? 'overlay' : 'screen')
-    const top = overlay && typeof el.showPopover === 'function'
-    if (top) {
-      el.popover = 'manual'
-      el.showPopover()
-    }
-    return () => {
-      el.removeAttribute('data-full')
-      if (top) {
-        el.hidePopover()
-        el.removeAttribute('popover')
-      }
-    }
-  }, [lm.root, full, overlay])
-  // Esc leaves the overlay as it leaves the browser's full screen
-  useEffect(() => {
-    if (!overlay) return
-    const f = (e: KeyboardEvent) => e.key === 'Escape' && setOverlay(false)
-    document.addEventListener('keydown', f)
-    return () => document.removeEventListener('keydown', f)
-  }, [overlay])
   // back on the page, the keyboard is where it was before: the panel it was in has moved
   const was = useRef(false)
   useEffect(() => {
     if (was.current && !full) buttonRef.current?.focus()
     was.current = full
   }, [full])
-  // the board as large as fits under the bar, or with panels below it, on the first screen with the start of the
-  // verdict. The bar keeps its width, or a narrow board would wrap the legend and shrink itself again. Only the
-  // screen and the rows above change it, never the load
+  // the board as large as fits under the bar: as wide as the screen, unless that leaves the rows below it less than
+  // they need (a flexible row its min-height). The bar keeps its width, or a narrow board would wrap the legend and
+  // shrink itself again. Only the screen and the rows around it change it, never the load
   useEffect(() => {
     const wrap = wrapRef.current
     const bar = barRef.current
     const root = lm.root
-    if (!full || !scene || !wrap || !bar) return
+    if (!full || !scene || !wrap || !bar || !root) return
+    const px = (x: string) => Number.parseFloat(x) || 0
     const fit = () => {
-      const gap = Number.parseFloat(getComputedStyle(wrap).rowGap || '0')
-      let h = wrap.clientHeight - bar.offsetHeight - gap
-      if (root?.querySelector(':scope > .lm-side:not([data-out])')) {
-        const top = wrap.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
-        h = Math.max(root.clientHeight / 2, root.clientHeight - top - bar.offsetHeight - gap - VERDICT_PEEK)
+      const rs = getComputedStyle(root)
+      // the rows around the wrap, each with its gap: not where they are now, which a centred wrap would change
+      let around = px(rs.paddingTop) + px(rs.paddingBottom)
+      const add = (el: Element) => {
+        const cs = getComputedStyle(el)
+        if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return
+        around += px(rs.rowGap) + (px(cs.flexGrow) > 0 ? px(cs.minHeight) : (el as HTMLElement).offsetHeight)
       }
+      for (const el of root.children) if (el !== wrap) add(el)
+      // focus centres the rows between two spacers: the second is a row too
+      if (getComputedStyle(root, '::after').content !== 'none') around += px(rs.rowGap)
+      const h = root.clientHeight - around - bar.offsetHeight - px(getComputedStyle(wrap).rowGap)
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
       wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
     }
     const ro = new ResizeObserver(fit)
-    ro.observe(wrap)
-    ro.observe(bar)
-    if (root) ro.observe(root)
+    const watch = () => {
+      ro.disconnect()
+      ro.observe(bar)
+      ro.observe(root)
+      for (const el of root.children) ro.observe(el)
+    }
+    watch()
+    // a row that comes or goes (the dock, the line, another mode) is watched from then on
+    const mo = new MutationObserver(() => {
+      watch()
+      fit()
+    })
+    mo.observe(root, { childList: true, attributeFilter: ['data-mode'] })
     return () => {
       ro.disconnect()
+      mo.disconnect()
       wrap.style.removeProperty('--lm-fit')
     }
   }, [full, scene, lm.root])
-  // scrolled down to the panels, Close waits in the corner: no Esc on a phone
-  const [away, setAway] = useState(false)
+  // F switches between the panels and focus, unless the keyboard is in a field or a panel is open whole
+  const { setFullScreenMode, fullScreenMode } = lm
+  const modesRef = useRef<HTMLFieldSetElement>(null)
   useEffect(() => {
-    const bar = barRef.current
-    if (!full || !bar || !lm.root) return
-    const io = new IntersectionObserver(([e]) => setAway(!!e && !e.isIntersecting), { root: lm.root })
-    io.observe(bar)
-    return () => {
-      io.disconnect()
-      setAway(false)
+    const root = lm.root
+    if (!full || !root) return
+    const f = (e: KeyboardEvent) => {
+      if ((e.key !== 'f' && e.key !== 'F') || e.ctrlKey || e.metaKey || e.altKey) return
+      if (typing(e.composedPath()[0] ?? null) || root.querySelector(':scope > [data-drawer]')) return
+      e.preventDefault()
+      if (e.repeat) return
+      const next = fullScreenMode === 'focus' ? 'panels' : 'focus'
+      // the keyboard was on a panel the other mode does not show: it waits on the switch
+      if (document.activeElement?.closest('.lm-dock, .lm-line'))
+        modesRef.current?.querySelector<HTMLButtonElement>(`[data-mode="${next}"]`)?.focus()
+      setFullScreenMode(next)
     }
-  }, [full, lm.root])
-  const toggle = () => {
-    const el = lm.root ?? wrapRef.current
-    if (overlay) setOverlay(false)
-    else if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
-    else if (el?.requestFullscreen) el.requestFullscreen().catch(() => setOverlay(true))
-    else setOverlay(true)
-  }
+    document.addEventListener('keydown', f)
+    return () => document.removeEventListener('keydown', f)
+  }, [full, fullScreenMode, setFullScreenMode, lm.root])
 
   return (
     <div className="lm-wrap" ref={wrapRef}>
       <div className="lm-bar" ref={barRef}>
         {legend ? <Legend lm={lm} /> : <span />}
-        <button type="button" className="lm-btn" onClick={toggle} aria-pressed={full} ref={buttonRef}>
-          {full ? '✕ Close' : '⤢ Full screen'}
-        </button>
+        <span className="lm-tools">
+          {full && (
+            <fieldset className="lm-modes" aria-label="Full screen shows (F)" ref={modesRef}>
+              {(['panels', 'focus'] as const).map((m) => (
+                <button
+                  type="button"
+                  key={m}
+                  data-mode={m}
+                  aria-pressed={fullScreenMode === m}
+                  aria-keyshortcuts="F"
+                  onClick={() => setFullScreenMode(m)}
+                >
+                  {m === 'panels' ? 'Panels' : 'Focus'}
+                </button>
+              ))}
+            </fieldset>
+          )}
+          <button type="button" className="lm-btn" onClick={lm.toggleFullScreen} aria-pressed={full} ref={buttonRef}>
+            {full ? '✕ Close' : '⤢ Full screen'}
+          </button>
+        </span>
       </div>
-      {full && away && (
-        <button type="button" className="lm-btn lm-corner" onClick={toggle}>
-          ✕ Close
-        </button>
-      )}
       <div
         className="lm-board"
         ref={boardRef}
@@ -206,6 +199,14 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       {scene && tip && <Detail lm={lm} scene={scene} id={tip.id} board={boardRef.current} detailId={detailId} />}
     </div>
   )
+}
+
+/** The keyboard is in a field that takes letters: the first target of the key, inside a web component too. */
+function typing(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false
+  if (t.isContentEditable || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true
+  const keys = ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'color']
+  return t instanceof HTMLInputElement && !keys.includes(t.type)
 }
 
 function Legend({ lm }: { lm: LoadmapController }) {

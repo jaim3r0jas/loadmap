@@ -23,7 +23,12 @@ export interface LoadmapOptions<P> extends SimOptions {
   narrowBelow?: number
   /** Which way the diagram runs where there is room. Default RIGHT; below `narrowBelow` it is always DOWN. */
   direction?: Direction
+  /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
+  fullScreenMode?: FullScreenMode
 }
+
+/** Full screen with every panel it lists in a compact form, or mainly the diagram and the story. */
+export type FullScreenMode = 'panels' | 'focus'
 
 export interface LoadmapController<P = any> {
   model: Model<P>
@@ -42,6 +47,16 @@ export interface LoadmapController<P = any> {
   setStep: (i: number | null) => void
   /** The component the story points at now. */
   focus: string | null
+  /** The story plays: each step for its seconds, then the next, until the last. */
+  storyPlaying: boolean
+  /** Plays the story from the step shown (from the first outside the story or at its end), or pauses it. */
+  setStoryPlaying: (on: boolean) => void
+  /** The root is full screen: the browser's, or an overlay where the browser has none or refuses. */
+  fullScreen: boolean
+  toggleFullScreen: () => void
+  /** What full screen shows. The reader switches it; the page picks where it starts. */
+  fullScreenMode: FullScreenMode
+  setFullScreenMode: (m: FullScreenMode) => void
   ev: Evaluation<P>
   /** null until the first layout is done. */
   scene: Scene | null
@@ -165,6 +180,78 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   engine.wantFocus = focus
   engine.storyStep = step
 
+  // the story plays on from the step shown; leaving it, or a value of the reader's own, stops it
+  const [playing, setPlaying] = useState(false)
+  if (playing && (step == null || stepChanged)) setPlaying(false)
+  const storyPlaying = playing && step != null && !stepChanged
+  useEffect(() => {
+    if (!storyPlaying || step == null) return
+    const last = model.story.length - 1
+    const t = setTimeout(() => (step < last ? setStep(step + 1) : setPlaying(false)), model.story[step]!.seconds * 1000)
+    return () => clearTimeout(t)
+  }, [storyPlaying, step, model, setStep])
+  const setStoryPlaying = useCallback(
+    (on: boolean) => {
+      if (on && (step == null || stepChanged || step === model.story.length - 1))
+        setStep(step == null || step === model.story.length - 1 ? 0 : step)
+      setPlaying(on && model.story.length > 0)
+    },
+    [step, stepChanged, model, setStep],
+  )
+
+  // the browser's full screen, or a fixed overlay where it has none (iPhone) or refuses (a frame without the permission)
+  const [screen, setScreen] = useState(false)
+  const [overlay, setOverlay] = useState(false)
+  const fullScreen = screen || overlay
+  useEffect(() => {
+    const f = () => setScreen(!!root && document.fullscreenElement === root)
+    document.addEventListener('fullscreenchange', f)
+    return () => document.removeEventListener('fullscreenchange', f)
+  }, [root])
+  const start = o.fullScreenMode ?? 'panels'
+  const [modeState, setModeState] = useState({ start, mode: start })
+  // a page that picks another start resets the reader's choice
+  const fullScreenMode = modeState.start === start ? modeState.mode : start
+  const setFullScreenMode = useCallback((mode: FullScreenMode) => setModeState({ start, mode }), [start])
+  // the stylesheet lays the root out from these. The overlay goes in the top layer: a fixed root would only cover an
+  // ancestor with a transform, a filter or containment
+  useEffect(() => {
+    if (!root || !fullScreen) return
+    root.setAttribute('data-full', overlay ? 'overlay' : 'screen')
+    const top = overlay && typeof root.showPopover === 'function'
+    if (top) {
+      root.popover = 'manual'
+      root.showPopover()
+    }
+    return () => {
+      root.removeAttribute('data-full')
+      if (top) {
+        root.hidePopover()
+        root.removeAttribute('popover')
+      }
+    }
+  }, [root, fullScreen, overlay])
+  useEffect(() => {
+    if (!root || !fullScreen) return
+    root.setAttribute('data-mode', fullScreenMode)
+    return () => root.removeAttribute('data-mode')
+  }, [root, fullScreen, fullScreenMode])
+  // Esc leaves the overlay as it leaves the browser's full screen
+  useEffect(() => {
+    if (!overlay) return
+    const f = (e: KeyboardEvent) => e.key === 'Escape' && setOverlay(false)
+    document.addEventListener('keydown', f)
+    return () => document.removeEventListener('keydown', f)
+  }, [overlay])
+  const toggleFullScreen = useCallback(() => {
+    // nothing is drawn without a root to measure
+    if (!root) return
+    if (overlay) setOverlay(false)
+    else if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else if (root.requestFullscreen) root.requestFullscreen().catch(() => setOverlay(true))
+    else setOverlay(true)
+  }, [root, overlay])
+
   return {
     model,
     view,
@@ -176,6 +263,12 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     stepChanged,
     setStep,
     focus,
+    storyPlaying,
+    setStoryPlaying,
+    fullScreen,
+    toggleFullScreen,
+    fullScreenMode,
+    setFullScreenMode,
     ev,
     scene,
     labels,

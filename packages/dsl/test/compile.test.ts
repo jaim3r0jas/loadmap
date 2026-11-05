@@ -15,6 +15,7 @@ import {
 } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, type Diagnostic } from '../src'
+import { pageOptions } from '../src/internal'
 
 /** A small valid definition; `top` goes after the header, `flow` inside the flow, `extra` at the end. */
 const def = (o: { top?: string; flow?: string; api?: string; extra?: string } = {}) => `loadmap 1
@@ -91,6 +92,15 @@ describe('compile', () => {
       },
     ])
     expect(errors(def({ top: 'fullScreen: verdict' }))[0]).toMatchObject({ message: 'a list: [verdict, live]' })
+  })
+
+  it('reads what full screen opens with, and names a wrong one', () => {
+    expect(compile(def({ top: 'fullScreenMode: focus' })).definition!.options.fullScreenMode).toBe('focus')
+    expect(pageOptions(compile(def({ top: 'fullScreenMode: panels' })).definition!.options)).toMatchObject({
+      fullScreenMode: 'panels',
+    })
+    expect(pageOptions(compile(def({})).definition!.options)).not.toHaveProperty('fullScreenMode')
+    expect(errors(def({ top: 'fullScreenMode: focs' }))[0]).toMatchObject({ hint: 'did you mean "focus"?' })
   })
 
   it('compiles every example and the starter without a warning', () => {

@@ -1,9 +1,10 @@
 import type { Model, Values } from '@loadmap/core'
 import type { Scene, View } from '@loadmap/layout'
-import { type ReactNode, type Ref, useEffect, useImperativeHandle } from 'react'
+import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { Dock, type OpenPanel, VerdictLine } from './compact'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
-import { Assumptions, Controls, Limits, Meters, Verdict } from './panels'
+import { Assumptions, Controls, Limits, LoadRange, Meters, Verdict } from './panels'
 import { Compare, HeadroomChart, Scenarios } from './scenarios'
 import { Story } from './story'
 import { injectStyles } from './styles'
@@ -59,7 +60,7 @@ export function LoadmapRoot({
   )
 }
 
-/** The panels below the diagram, in the order full screen shows them. */
+/** The panels full screen shows with the diagram, compact: the verdict and the assumptions in a line under it. */
 export const LOADMAP_PANELS = ['verdict', 'live', 'limits', 'controls', 'headroom', 'compare', 'assumptions'] as const
 export type LoadmapPanel = (typeof LOADMAP_PANELS)[number]
 
@@ -75,7 +76,10 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   headroom?: boolean
   /** The scenarios side by side, when the model declares two or more. Default true. */
   compare?: boolean
-  /** The panels shown below the diagram in full screen. Default every one the page shows. */
+  /**
+   * The panels full screen shows, compact, below the diagram. Default every one the page shows. Focus mode shows the
+   * verdict and the load slider of these.
+   */
   fullScreen?: readonly LoadmapPanel[]
   /** A click (or Enter) on a box of the diagram, by its id: every box is a button then. */
   onNodeClick?: (id: string) => void
@@ -107,28 +111,105 @@ export function Loadmap<P>({
   if (side) charts.push('compare')
   // marks what full screen leaves out: a panel not listed, a container none of whose panels are
   const out = (...panels: LoadmapPanel[]) => (panels.some((p) => fullScreen.includes(p)) ? undefined : '')
+  const listed = (p: LoadmapPanel) => fullScreen.includes(p) && (p === 'headroom' ? headroom : p !== 'compare' || side)
+  const full = lm.fullScreen
+  const focus = full && lm.fullScreenMode === 'focus'
+
+  // a panel whole, over the diagram: the page's own panel, shown alone, so there is never a second copy
+  const [drawer, setDrawer] = useState<{ panel: LoadmapPanel; from: HTMLElement } | null>(null)
+  if (drawer && !full) setDrawer(null)
+  const close = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (drawer) close.current?.focus()
+  }, [drawer])
+  const open: OpenPanel = (p, from) => setDrawer({ panel: p, from })
+  const shut = () => {
+    drawer?.from.focus()
+    setDrawer(null)
+  }
+  // Esc closes the drawer first, before the overlay's Esc on the document sees it
+  useEffect(() => {
+    if (!drawer) return
+    const f = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      drawer.from.focus()
+      setDrawer(null)
+    }
+    document.addEventListener('keydown', f, true)
+    return () => document.removeEventListener('keydown', f, true)
+  }, [drawer])
+  const drawn = (...panels: LoadmapPanel[]) => (drawer && panels.includes(drawer.panel) ? '' : undefined)
+  // in full screen only the panel open whole is drawn: the compact ones do the work of the rest
   const panel = (id: LoadmapPanel, children: ReactNode) => (
-    <div className="lm-panel" data-panel={id} data-out={out(id)}>
-      {children}
+    <div className="lm-panel" data-panel={id} data-out={out(id)} data-drawn={drawn(id)}>
+      {(!full || drawer?.panel === id) && children}
     </div>
   )
+  const heading = title !== false && <h2>{title ?? model.title}</h2>
+  const verdict = listed('verdict')
+  const line = focus ? verdict || listed('controls') : verdict || listed('assumptions')
   return (
     <LoadmapRoot lm={lm} theme={theme}>
-      {title !== false && <h2>{title ?? model.title}</h2>}
-      <Scenarios lm={lm} />
+      {full ? (
+        <div className="lm-head">
+          {heading}
+          <Scenarios lm={lm} />
+        </div>
+      ) : (
+        <>
+          {heading}
+          <Scenarios lm={lm} />
+        </>
+      )}
+      {/* focus shows it under the diagram, by its order: here it keeps its keyboard focus and its fill */}
       <Story lm={lm} />
       <Diagram lm={lm} onNodeClick={onNodeClick} selected={selected} />
-      {/* on the page its parts are the root's; in full screen it is the column below the diagram */}
-      <div className="lm-side" data-out={out('verdict', 'live', 'limits', 'controls', ...charts, 'assumptions')}>
+      {full && line && (
+        <div className="lm-line" data-tier={lm.ev.verdict.tier}>
+          <VerdictLine
+            lm={lm}
+            verdict={verdict}
+            extra={assumptions?.length}
+            open={open}
+            assumptions={!focus && listed('assumptions')}
+          />
+          {focus && listed('controls') && <LoadRange lm={lm} />}
+        </div>
+      )}
+      {full && !focus && <Dock lm={lm} panels={LOADMAP_PANELS.filter(listed)} open={open} />}
+      {/* on the page its parts are the root's; in full screen it is the drawer, one panel at a time */}
+      <div
+        className="lm-side lm-drawer"
+        data-out={out('verdict', 'live', 'limits', 'controls', ...charts, 'assumptions')}
+        data-drawer={drawer?.panel}
+        // a dialog while it is the drawer; on the page nothing but a wrapper
+        {...(drawer && { role: 'dialog', 'aria-label': 'The whole panel' })}
+      >
+        {drawer && (
+          <div className="lm-drawer-bar" data-drawn="">
+            <button type="button" className="lm-btn" onClick={shut} ref={close}>
+              ✕ Back to full screen
+            </button>
+          </div>
+        )}
         {panel('verdict', <Verdict lm={lm} />)}
         {charts.length > 0 && (
-          <div className={charts.length > 1 ? 'lm-charts lm-strip' : 'lm-charts'} data-out={out(...charts)}>
+          <div
+            className={charts.length > 1 ? 'lm-charts lm-strip' : 'lm-charts'}
+            data-out={out(...charts)}
+            data-drawn={drawn(...charts)}
+          >
             {headroom && panel('headroom', <HeadroomChart lm={lm} />)}
             {side && panel('compare', <Compare lm={lm} />)}
           </div>
         )}
-        <div className="lm-strip lm-live" data-out={out('live', 'limits', 'controls')}>
-          <div className="lm-card" data-out={out('live', 'limits')}>
+        <div
+          className="lm-strip lm-live"
+          data-out={out('live', 'limits', 'controls')}
+          data-drawn={drawn('live', 'limits', 'controls')}
+        >
+          <div className="lm-card" data-out={out('live', 'limits')} data-drawn={drawn('live', 'limits')}>
             {panel('live', <Meters lm={lm} />)}
             {panel('limits', <Limits lm={lm} />)}
           </div>

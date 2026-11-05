@@ -40,7 +40,7 @@ function when(model: Model, x: number | null): string {
 }
 
 /** The months of both edges: "Sep 2029–Feb 2030", or one month when they agree. */
-function whenRange(model: Model, r: CrossingRange | null): string {
+export function whenRange(model: Model, r: CrossingRange | null): string {
   if (!r) return ''
   const [lo, hi] = [when(model, r.low), when(model, r.high)]
   return !hi || lo === hi ? lo : `${lo}–${hi}`
@@ -162,21 +162,30 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
   )
 }
 
-/** The width of an element in CSS pixels, kept current: the chart draws at its own size so text stays legible. */
-function useWidth<T extends HTMLElement>(fallback: number) {
+/** The size of an element in CSS pixels, kept current: a chart draws at its own size so text stays legible. */
+export function useSize<T extends HTMLElement>(fallback: number) {
   const ref = useRef<T>(null)
-  const [w, setW] = useState(fallback)
+  const [size, setSize] = useState({ width: fallback, height: 0 })
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const ro = new ResizeObserver(([e]) => {
-      const x = Math.round(e?.contentRect.width ?? el.clientWidth)
-      if (x > 0) setW(x)
+      const width = Math.round(e?.contentRect.width ?? el.clientWidth)
+      const height = Math.round(e?.contentRect.height ?? el.clientHeight)
+      if (width > 0) setSize((s) => (s.width === width && s.height === height ? s : { width, height }))
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  return [ref, w] as const
+  return [ref, size] as const
+}
+
+/** Every scenario's line over the load: it depends on every value but the load, which is only the marker. */
+export function useHeadroom(lm: LoadmapController): Headroom {
+  const { model, values } = lm
+  const rest = JSON.stringify({ ...values, load: null })
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `rest` stands for the values without the load
+  return useMemo(() => headroom(model, { ...values, load: model.load.default }), [model, rest])
 }
 
 /** 1, 2, 5, 10, 20, 50, … inside [from, to]; decades only when there is little room. */
@@ -199,11 +208,8 @@ function ticks(from: number, to: number, roomy: boolean): number[] {
  */
 export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapController; title?: ReactNode }) {
   const { model, values } = lm
-  const rest = JSON.stringify({ ...values, load: null })
-  // the lines depend on every value but the load; the load is only the marker
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `rest` stands for the values without the load
-  const h: Headroom = useMemo(() => headroom(model, { ...values, load: model.load.default }), [model, rest])
-  const [wrap, width] = useWidth<HTMLDivElement>(640)
+  const h = useHeadroom(lm)
+  const [wrap, { width }] = useSize<HTMLDivElement>(640)
   const [hover, setHover] = useState<number | null>(null)
   const clip = useId().replace(/:/g, '')
 

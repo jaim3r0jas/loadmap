@@ -1,10 +1,20 @@
 import { compare, headroom } from '@loadmap/core'
 import { composeFrame, exportPng, exportSvg, recordPoster, recordVideo } from '@loadmap/export'
-import { LOADMAP_PANELS, Loadmap, type LoadmapHandle, type LoadmapPanel, type Theme } from '@loadmap/react'
+import {
+  Diagram,
+  LOADMAP_PANELS,
+  Loadmap,
+  type LoadmapHandle,
+  type LoadmapPanel,
+  LoadmapRoot,
+  type Theme,
+  useLoadmap,
+  Verdict,
+} from '@loadmap/react'
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { Checkout } from './Checkout'
 import { checkout } from './model'
@@ -264,10 +274,13 @@ describe('checkout in the browser', () => {
     const { el, handle } = await mount()
     const bar = el.querySelector<HTMLElement>('.lm-story')!
     const button = (name: string) => [...bar.querySelectorAll('button')].find((b) => b.textContent === name)
+    // every step is in the bar, keeping its room; one shows
+    // biome-ignore lint/performance/useDomNodeTextContent: innerText leaves out the hidden note of the steps not shown
+    const text = () => bar.querySelector<HTMLElement>('p > [data-shown]')!.innerText.replace(/\s+/g, ' ').trim()
     const focused = () => [...el.querySelectorAll('[data-focus]')].map((n) => n.getAttribute('data-node'))
-    expect(bar.querySelector('p')!.textContent).toBe('A walk through this model in 3 steps.')
+    expect(text()).toBe('A walk through this model in 3 steps.')
     await userEvent.click(button('Start')!)
-    expect(bar.querySelector('p')!.textContent).toBe('1 of 3 An ordinary peak: every box is under half its capacity.')
+    expect(text()).toBe('1 of 3 An ordinary peak: every box is under half its capacity.')
     expect(handle.values().load).toBe(1)
     expect(focused()).toEqual([])
     await userEvent.click(button('Next')!)
@@ -283,7 +296,7 @@ describe('checkout in the browser', () => {
     // a value of the reader's own: the step says so and stops pointing; Next at the end leaves it alone
     handle.setValues({ pods: 4 })
     await expect.poll(focused).toEqual([])
-    expect(bar.querySelector('p')!.textContent).toContain('You changed the values since.')
+    expect(text()).toContain('You changed the values since.')
     // Playwright will not click an aria-disabled button; a reader can
     button('Next')!.click()
     expect(handle.values().pods).toBe(4)
@@ -320,121 +333,333 @@ describe('full screen', () => {
   }
   const inView = (e: Element) => {
     const r = e.getBoundingClientRect()
-    return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
+    return r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight + 0.5 && r.right <= innerWidth + 0.5
   }
   const shown = (e: Element | null) => !!e && e.getClientRects().length > 0
   const button = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.lm-bar .lm-btn')!
+  const mode = (el: HTMLElement, name: 'Panels' | 'Focus') =>
+    [...el.querySelectorAll<HTMLButtonElement>('.lm-modes button')].find((b) => b.textContent === name)!
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
   async function enter(el: HTMLElement) {
     await userEvent.click(button(el))
     await expect.poll(() => el.hasAttribute('data-full')).toBe(true)
     // the board takes its size a frame after the layout
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await frames()
   }
-  const PANEL: Record<LoadmapPanel, string> = {
-    verdict: '.lm-verdict',
-    live: '.lm-meters',
-    limits: '.lm-limits',
-    controls: '.lm-controls',
-    headroom: '.lm-headroom',
-    compare: '.lm-compare',
-    assumptions: '.lm-facts',
-  }
-
-  it('shows the diagram as wide as the screen, and every panel below it', async () => {
-    const { handle, el } = await mount()
-    await page.viewport(1440, 900)
-    await enter(el)
-    expect(box(el)).toEqual({ left: 0, top: 0, width: innerWidth, height: innerHeight })
-    const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
-    const board = el.querySelector('.lm-board')!
-    const b = box(board)
-    expect(b.width).toBe(wrap.clientWidth)
-    // the legend starts where the board does, and the verdict starts on the first screen
-    expect(box(el.querySelector('.lm-legend')!).left).toBe(b.left)
-    const q = (p: LoadmapPanel) => el.querySelector(PANEL[p])!
-    expect(box(q('verdict')).top).toBeGreaterThan(b.top + b.height)
-    expect(box(q('verdict')).top).toBeLessThan(innerHeight)
-    for (const p of LOADMAP_PANELS) expect(shown(q(p)), p).toBe(true)
-    // what the controls change comes first: the meters and the limits beside the controls, the charts after them
-    expect(box(q('controls')).top).toBe(box(q('live').closest('.lm-card')!).top)
-    const bottom = (p: LoadmapPanel) => box(q(p)).top + box(q(p)).height
-    expect(box(q('headroom')).top).toBeGreaterThan(Math.max(bottom('limits'), bottom('controls')))
-    expect(box(q('assumptions')).top).toBeGreaterThan(bottom('headroom'))
-    // the controls work, and the load never moves the board
-    const slider = el.querySelector<HTMLInputElement>('input[type=range]')!
-    expect(inView(slider)).toBe(true)
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '40')
-    slider.dispatchEvent(new Event('input', { bubbles: true }))
-    await expect.poll(() => verdict(el)).toContain('At 40×, the worker pool and the API gateway are past capacity')
-    await handle.ready()
-    expect(box(board)).toEqual(b)
-    await page.screenshot({ path: '__screenshots__/checkout-full.png' })
-    // the full screen scrolls down to the assumptions
-    expect(el.scrollHeight).toBeGreaterThan(el.clientHeight)
-    q('assumptions').scrollIntoView()
-    await expect.poll(() => inView(q('assumptions').closest('.lm-card')!.querySelector('h3')!)).toBe(true)
-    expect(el.scrollTop).toBeGreaterThan(0)
-    await page.screenshot({ path: '__screenshots__/checkout-full-below.png' })
-    // the bar is out of sight: Close waits in the corner, and puts the page back with the keyboard on the button
-    await expect.poll(() => el.querySelector('.lm-corner')).toBeTruthy()
-    expect(inView(el.querySelector('.lm-corner')!)).toBe(true)
-    await userEvent.click(el.querySelector('.lm-corner')!)
-    await expect.poll(() => el.hasAttribute('data-full')).toBe(false)
-    expect(document.fullscreenElement).toBeNull()
-    expect(document.activeElement).toBe(button(el))
-    expect(board.getBoundingClientRect().height).toBeLessThan(innerHeight)
-  })
-
-  it('leaves out the panels fullScreen does not list, and only in full screen', async () => {
-    await page.viewport(1440, 900)
+  async function draw(o: { fullScreen?: LoadmapPanel[]; width?: number } = {}) {
+    await page.viewport(o.width ?? 1440, 900)
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    const draw = (fullScreen: LoadmapPanel[]) =>
-      root!.render(<Loadmap model={checkout} view={view} speed={10} fullScreen={fullScreen} />)
-    draw(['verdict'])
-    await expect.poll(() => host!.querySelector('.lm-board svg')).toBeTruthy()
-    const el = host.querySelector<HTMLElement>('.lm')!
-    const q = (p: LoadmapPanel) => el.querySelector(PANEL[p])
-    expect(el.querySelectorAll('[data-out]').length).toBeGreaterThan(0)
-    for (const p of LOADMAP_PANELS) expect(shown(q(p)), p).toBe(true)
-    await enter(el)
-    for (const p of LOADMAP_PANELS) {
-      draw(LOADMAP_PANELS.filter((x) => x !== p))
-      await expect.poll(() => shown(q(p))).toBe(false)
-      for (const x of LOADMAP_PANELS) if (x !== p) expect(shown(q(x)), `${x} without ${p}`).toBe(true)
-    }
-    // one panel left takes the whole width of its row; none leaves the diagram alone
-    const side = el.querySelector('.lm-side')!
-    draw(['controls'])
-    await expect.poll(() => box(q('controls')!).width).toBe(box(side).width)
-    // none leaves the diagram as large as fits on the screen
-    draw([])
-    await expect.poll(() => [...side.querySelectorAll('h3, p')].some(shown)).toBe(false)
-    const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
-    const room = () => ({
-      width: wrap.clientWidth,
-      height: wrap.clientHeight - el.querySelector('.lm-bar')!.getBoundingClientRect().height - 8,
+    const ref = createRef<LoadmapHandle>()
+    const render = (fullScreen?: LoadmapPanel[]) =>
+      root!.render(<Loadmap ref={ref} model={checkout} view={view} speed={10} fullScreen={fullScreen} />)
+    render(o.fullScreen)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    return { el: host.querySelector<HTMLElement>('.lm')!, handle: ref.current!, render }
+  }
+  /** What of an element shows: its box, cut by every ancestor that clips. */
+  const seen = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    let [top, left, bottom, right] = [r.top, r.left, r.bottom, r.right]
+    for (let a = e.parentElement; a; a = a.parentElement)
+      if (getComputedStyle(a).overflow !== 'visible') {
+        const c = a.getBoundingClientRect()
+        ;[top, left, bottom, right] = [
+          Math.max(top, c.top),
+          Math.max(left, c.left),
+          Math.min(bottom, c.bottom),
+          Math.min(right, c.right),
+        ]
+      }
+    return { top, left, bottom, right }
+  }
+  /** Nothing scrolls, and nothing that shows reaches past the screen; on a phone the board pans in its own box. */
+  const fits = (el: HTMLElement) => {
+    expect(el.scrollHeight, 'the root scrolls').toBeLessThanOrEqual(el.clientHeight)
+    expect(el.scrollWidth, 'the root scrolls sideways').toBeLessThanOrEqual(el.clientWidth)
+    const out = [...el.querySelectorAll('*')].filter((e) => {
+      if (e.closest('.lm-wrap') || getComputedStyle(e).visibility !== 'visible' || !shown(e)) return false
+      const r = seen(e)
+      return r.bottom > r.top && r.right > r.left && (r.bottom > innerHeight + 0.5 || r.right > innerWidth + 0.5)
     })
+    expect(out.map((e) => e.className || e.tagName)).toEqual([])
+  }
+  /** Each panel in its compact form. */
+  const MINI: Record<LoadmapPanel, (el: HTMLElement) => Element | null> = {
+    verdict: (el) => el.querySelector('.lm-line .lm-headline'),
+    live: (el) => el.querySelector('[data-mini="live"] .lm-meters'),
+    limits: (el) => el.querySelector('[data-mini="limits"] .lm-mini-limits'),
+    controls: (el) => el.querySelector('[data-mini="controls"] input[type=range]'),
+    headroom: (el) => el.querySelector('[data-mini="headroom"] .lm-spark svg'),
+    compare: (el) => el.querySelector('[data-mini="compare"] tbody'),
+    assumptions: (el) =>
+      [...el.querySelectorAll('.lm-line .lm-link')].find((b) => b.textContent!.startsWith('What this assumes')) ?? null,
+  }
+  /** Each panel as the page shows it. */
+  const PAGE: Record<LoadmapPanel, string> = {
+    verdict: '.lm-verdict',
+    live: '.lm-side .lm-meters',
+    limits: '.lm-limits',
+    controls: '.lm-side .lm-controls',
+    headroom: '.lm-headroom',
+    compare: '.lm-side .lm-compare',
+    assumptions: '.lm-facts',
+  }
+  const slide = async (el: HTMLElement, input: HTMLInputElement, to: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, to)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await expect.poll(() => el.querySelector('.lm-headline')!.textContent).toContain(`${to}×`)
+  }
+
+  for (const [width, height] of [
+    [1440, 900],
+    [2560, 1440],
+    [390, 844],
+  ] as const)
+    it(`fits ${width}x${height} without scrolling, in focus and with every panel`, async () => {
+      const { el } = await mount({ width })
+      await page.viewport(width, height)
+      await enter(el)
+      expect(box(el)).toEqual({ left: 0, top: 0, width: innerWidth, height: innerHeight })
+      // checkout's page opens full screen in focus
+      expect(el.getAttribute('data-mode')).toBe('focus')
+      for (const m of ['focus', 'panels'] as const) {
+        if (m === 'panels') await userEvent.click(mode(el, 'Panels'))
+        await expect.poll(() => el.getAttribute('data-mode')).toBe(m)
+        await frames()
+        fits(el)
+        const board = box(el.querySelector('.lm-board')!)
+        expect(board.width).toBe(el.querySelector('.lm-wrap')!.clientWidth)
+        if (width > 760) expect(board.top + board.height).toBeLessThanOrEqual(innerHeight)
+        else expect(getComputedStyle(el.querySelector('.lm-wrap')!).overflowY).toBe('auto')
+        await page.screenshot({ path: `__screenshots__/checkout-full-${m}-${width}.png` })
+      }
+    })
+
+  it('shows every panel compact, and leaves out each one fullScreen does not list', async () => {
+    const { el, render } = await draw({ fullScreen: ['verdict'] })
+    // on the page every panel shows, whatever full screen lists
+    for (const p of LOADMAP_PANELS) expect(shown(el.querySelector(PAGE[p])), p).toBe(true)
+    await enter(el)
+    expect(el.getAttribute('data-mode')).toBe('panels')
+    render()
+    for (const p of LOADMAP_PANELS) {
+      await expect.poll(() => shown(MINI[p](el)), { message: p }).toBe(true)
+      expect(shown(el.querySelector(PAGE[p])), `${p} on the page`).toBe(false)
+    }
+    fits(el)
+    for (const p of LOADMAP_PANELS) {
+      render(LOADMAP_PANELS.filter((x) => x !== p))
+      await expect.poll(() => shown(MINI[p](el)), { message: `without ${p}` }).toBe(false)
+      // a card that gets wider draws its chart again a frame later
+      await expect.poll(() => LOADMAP_PANELS.filter((x) => x !== p && !shown(MINI[x](el)))).toEqual([])
+      fits(el)
+    }
+    // none leaves the diagram alone, as large as fits
+    render([])
+    await expect.poll(() => el.querySelector('.lm-dock, .lm-line')).toBeNull()
+    const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
+    const story = el.querySelector('.lm-story')!.getBoundingClientRect().bottom
     await expect
       .poll(() => {
         const b = box(el.querySelector('.lm-board')!)
-        return Math.max(b.width / room().width, b.height / room().height)
+        return Math.max(b.width / wrap.clientWidth, (b.top + b.height - story) / (innerHeight - 16 - story))
       })
       .toBeCloseTo(1, 1)
   })
 
-  it('covers the page where the browser refuses full screen, and leaves on Esc', async () => {
-    const { el } = await mount()
+  it('changes the verdict with the load, never the board, in both modes', async () => {
+    const { el, handle } = await mount()
+    await page.viewport(1440, 900)
+    await enter(el)
+    const board = el.querySelector('.lm-board')!
+    for (const m of ['focus', 'panels'] as const) {
+      if (m === 'panels') await userEvent.click(mode(el, 'Panels'))
+      await frames()
+      const b = box(board)
+      const dock = el.querySelector('.lm-dock')
+      const d = dock && box(dock)
+      const input = el.querySelector<HTMLInputElement>(
+        m === 'focus' ? '.lm-line input[type=range]' : '[data-mini="controls"] input[type=range]',
+      )!
+      expect(inView(input)).toBe(true)
+      await slide(el, input, m === 'focus' ? '40' : '3')
+      expect(el.querySelector('.lm-line')!.getAttribute('data-tier')).toBe(m === 'focus' ? 'over' : 'ok')
+      expect(el.querySelector('.lm-headline')!.getAttribute('title')).toContain(m === 'focus' ? 'At 40×' : 'At 3×')
+      await handle.ready()
+      await frames()
+      expect(box(board)).toEqual(b)
+      if (d) expect(box(dock!)).toEqual(d)
+      fits(el)
+    }
+  })
+
+  it('switches to focus and back, with the switch and with F', async () => {
+    const { el } = await draw()
+    await enter(el)
+    const dock = () => shown(el.querySelector('.lm-dock'))
+    expect(dock()).toBe(true)
+    // focus: the diagram, the story under it, the verdict and the load
+    await userEvent.click(mode(el, 'Focus'))
+    await expect.poll(() => el.getAttribute('data-mode')).toBe('focus')
+    expect(mode(el, 'Focus').getAttribute('aria-pressed')).toBe('true')
+    expect(dock()).toBe(false)
+    expect(shown(el.querySelector('.lm-scenarios'))).toBe(false)
+    const board = el.querySelector('.lm-board')!.getBoundingClientRect()
+    expect(el.querySelector('.lm-story')!.getBoundingClientRect().top).toBeGreaterThan(board.bottom)
+    expect(shown(el.querySelector('.lm-line .lm-headline'))).toBe(true)
+    expect(shown(el.querySelector('.lm-line input[type=range]'))).toBe(true)
+    // the story bar stays where the keyboard is when the mode changes
+    const play = el.querySelector<HTMLButtonElement>('.lm-story-nav button')!
+    play.focus()
+    await userEvent.keyboard('f')
+    await expect.poll(() => el.getAttribute('data-mode')).toBe('panels')
+    expect(dock()).toBe(true)
+    expect(document.activeElement).toBe(play)
+    await userEvent.keyboard('F')
+    await expect.poll(() => el.getAttribute('data-mode')).toBe('focus')
+    // the mode stays for the next time; the page keeps none of it
+    await userEvent.click(button(el))
+    await expect.poll(() => el.hasAttribute('data-full')).toBe(false)
+    expect(el.hasAttribute('data-mode')).toBe(false)
+    expect(shown(el.querySelector('.lm-scenarios'))).toBe(true)
+    await userEvent.keyboard('f')
+    expect(el.hasAttribute('data-full')).toBe(false)
+    await enter(el)
+    expect(el.getAttribute('data-mode')).toBe('focus')
+  })
+
+  it('opens a panel whole over the diagram, and gives the keyboard back', async () => {
+    const { el } = await draw()
+    await enter(el)
+    const b = box(el.querySelector('.lm-board')!)
+    const side = el.querySelector<HTMLElement>('.lm-side')!
+    const more = el.querySelector<HTMLButtonElement>('[data-mini="limits"] .lm-more')!
+    await userEvent.click(more)
+    await expect.poll(() => side.getAttribute('data-drawer')).toBe('limits')
+    expect(side.getAttribute('role')).toBe('dialog')
+    expect(shown(el.querySelector('.lm-limits'))).toBe(true)
+    expect(inView(el.querySelector('.lm-limits')!)).toBe(true)
+    for (const p of LOADMAP_PANELS)
+      if (p !== 'limits') expect(shown(el.querySelector(PAGE[p])), `${p} beside the limits`).toBe(false)
+    expect(document.activeElement!.textContent).toContain('Back to full screen')
+    expect(box(el.querySelector('.lm-board')!)).toEqual(b)
+    // F waits while a panel is open whole
+    await userEvent.keyboard('f')
+    expect(el.getAttribute('data-mode')).toBe('panels')
+    await page.screenshot({ path: '__screenshots__/checkout-full-drawer.png' })
+    await userEvent.click(document.activeElement!)
+    await expect.poll(() => side.hasAttribute('data-drawer')).toBe(false)
+    expect(document.activeElement).toBe(more)
+    // the verdict line's links open the sentence and the assumptions
+    const link = (t: string) =>
+      [...el.querySelectorAll<HTMLButtonElement>('.lm-line .lm-link')].find((x) => x.textContent!.startsWith(t))!
+    await userEvent.click(link('Why'))
+    await expect.poll(() => shown(el.querySelector('.lm-verdict'))).toBe(true)
+    expect(el.querySelector('.lm-verdict')!.textContent).toBe(el.querySelector('.lm-headline')!.getAttribute('title'))
+    await userEvent.click(el.querySelector('.lm-drawer-bar button')!)
+    await userEvent.click(link('What this assumes'))
+    await expect.poll(() => shown(el.querySelector('.lm-facts'))).toBe(true)
+    expect(link('What this assumes').textContent).toContain(String(el.querySelectorAll('.lm-facts li').length))
+    // leaving full screen closes it, and the page is as it was. The drawer covers Close: a script presses it
+    button(el).click()
+    await expect.poll(() => el.hasAttribute('data-full')).toBe(false)
+    expect(side.hasAttribute('data-drawer')).toBe(false)
+    for (const p of LOADMAP_PANELS) expect(shown(el.querySelector(PAGE[p])), p).toBe(true)
+  })
+
+  it('plays the story, each step for its seconds, and stops at the end or on a value of the reader', async () => {
+    const { el, handle } = await draw()
+    await enter(el)
+    const bar = el.querySelector<HTMLElement>('.lm-story')!
+    const play = () => bar.querySelector<HTMLButtonElement>('.lm-story-nav button')!
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const story = el.querySelector('.lm-story p')!
+      const height = story.getBoundingClientRect().height
+      const b = box(el.querySelector('.lm-board')!)
+      await userEvent.click(play())
+      await expect.poll(() => handle.storyStep()).toBe(0)
+      expect(play().textContent).toBe('❚❚ Pause')
+      expect(bar.hasAttribute('data-playing')).toBe(true)
+      for (const next of [1, 2]) {
+        vi.advanceTimersByTime(3999)
+        expect(handle.storyStep()).toBe(next - 1)
+        vi.advanceTimersByTime(1)
+        await expect.poll(() => handle.storyStep()).toBe(next)
+        // the text keeps the room of the longest step; a step of the load alone leaves the board where it is
+        expect(story.getBoundingClientRect().height).toBe(height)
+        await handle.ready()
+        if (next === 1) expect(box(el.querySelector('.lm-board')!)).toEqual(b)
+      }
+      vi.advanceTimersByTime(4000)
+      await expect.poll(() => play().textContent).toBe('▶ Play')
+      expect(handle.storyStep()).toBe(2)
+      // from the end it starts again; a value of the reader's own pauses it
+      await userEvent.click(play())
+      await expect.poll(() => handle.storyStep()).toBe(0)
+      handle.setValues({ load: 2 })
+      await expect.poll(() => play().textContent).toBe('▶ Play')
+      vi.advanceTimersByTime(10_000)
+      expect(handle.storyStep()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('covers the page where the browser refuses full screen; Esc closes the drawer, then the overlay', async () => {
+    const { el } = await draw()
     // as on an iPhone, or in a frame without the permission; inside a transform, which traps a fixed element
     el.requestFullscreen = () => Promise.reject(new TypeError('not allowed'))
     host!.style.cssText = 'transform: translateZ(0); margin: 120px 40px'
     await enter(el)
     expect(el.getAttribute('data-full')).toBe('overlay')
     expect(box(el)).toEqual({ left: 0, top: 0, width: innerWidth, height: innerHeight })
+    fits(el)
+    await userEvent.click(el.querySelector('[data-mini="live"] .lm-more')!)
+    await expect.poll(() => el.querySelector('.lm-side')!.getAttribute('data-drawer')).toBe('live')
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => el.querySelector('.lm-side')!.hasAttribute('data-drawer')).toBe(false)
+    expect(el.getAttribute('data-full')).toBe('overlay')
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => el.hasAttribute('data-full')).toBe(false)
     expect(button(el).textContent).toContain('Full screen')
+    expect(document.activeElement).toBe(button(el))
+  })
+
+  it('keeps the pieces of a page of its own under the board, in a box of their own', async () => {
+    await page.viewport(1440, 900)
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    function Own() {
+      const lm = useLoadmap(checkout, view, { speed: 10 })
+      return (
+        <LoadmapRoot lm={lm}>
+          <Diagram lm={lm} />
+          <div className="lm-side">
+            <Verdict lm={lm} />
+          </div>
+          <p className="outside">Not in full screen</p>
+        </LoadmapRoot>
+      )
+    }
+    root.render(<Own />)
+    await expect.poll(() => host!.querySelector('.lm-board svg')).toBeTruthy()
+    const el = host.querySelector<HTMLElement>('.lm')!
+    await enter(el)
+    expect(el.getAttribute('data-mode')).toBe('panels')
+    fits(el)
+    const b = box(el.querySelector('.lm-board')!)
+    const v = box(el.querySelector('.lm-verdict')!)
+    expect(v.top).toBeGreaterThan(b.top + b.height)
+    expect(inView(el.querySelector('.lm-verdict')!)).toBe(true)
+    expect(shown(el.querySelector('.outside'))).toBe(false)
+    // focus leaves the board alone
+    await userEvent.click(mode(el, 'Focus'))
+    await expect.poll(() => shown(el.querySelector('.lm-verdict'))).toBe(false)
   })
 
   it('turns a diagram from a narrow column to the right, as wide as the screen', async () => {
@@ -444,31 +669,29 @@ describe('full screen', () => {
     await enter(el)
     await expect.poll(() => handle.board()?.scene.direction, { timeout: 5000 }).toBe('RIGHT')
     await handle.ready()
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await frames()
     expect(box(el.querySelector('.lm-board')!).width).toBe(el.querySelector('.lm-wrap')!.clientWidth)
   })
 
-  it('keeps the board as wide as a phone, the controls in reach below it', async () => {
-    const { el } = await mount({ width: 390 })
+  it('shows a phone one panel at a time, the board panning in its own box', async () => {
+    const { el } = await draw({ width: 390 })
     await page.viewport(390, 844)
     await enter(el)
     const wrap = el.querySelector<HTMLElement>('.lm-wrap')!
     expect(box(el.querySelector('.lm-board')!).width).toBe(wrap.clientWidth)
-    expect(getComputedStyle(wrap).overflowY).toBe('auto')
-    expect(inView(el.querySelector('input[type=range]')!)).toBe(true)
-    // the controls first, then the verdict and the rest
-    const top = (s: string) => box(el.querySelector(s)!).top
-    expect(top('.lm-controls')).toBeLessThan(top('.lm-verdict'))
-    expect(top('.lm-verdict')).toBeLessThan(top('.lm-meters'))
-    for (const s of Object.values(PANEL)) expect(shown(el.querySelector(s)), s).toBe(true)
-    // scrolling the diagram keeps Close in reach, and so does scrolling down to the panels
+    expect(wrap.scrollHeight).toBeGreaterThan(wrap.clientHeight)
+    const tabs = [...el.querySelectorAll<HTMLButtonElement>('.lm-tabs button')]
+    expect(tabs.map((t) => t.textContent)).toEqual(['Load', 'Live', 'Limits', 'Headroom', 'Compare'])
+    const cards = () => [...el.querySelectorAll('.lm-mini')].filter(shown).map((c) => c.getAttribute('data-mini'))
+    expect(cards()).toEqual(['controls'])
+    await userEvent.click(tabs[2]!)
+    await expect.poll(cards).toEqual(['limits'])
+    fits(el)
+    // panning the diagram keeps Close in reach
     wrap.scrollTop = 400
     await expect.poll(() => wrap.scrollTop).toBeGreaterThan(0)
     expect(inView(button(el))).toBe(true)
     expect(box(button(el)).top).toBeGreaterThanOrEqual(box(wrap).top)
-    el.scrollTop = el.scrollHeight
-    await expect.poll(() => el.querySelector('.lm-corner')).toBeTruthy()
-    expect(inView(el.querySelector('.lm-corner')!)).toBe(true)
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
     await page.screenshot({ path: '__screenshots__/checkout-full-phone.png' })
   })
