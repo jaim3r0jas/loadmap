@@ -70,6 +70,10 @@ Every capacity says where it came from (`measured`, `estimated`, or a fit from m
 each limit into a range. Add `scenarios` to compare designs, `growth` to turn multiples into dates, `expect` to fail
 a test when headroom is lost. The layout runs in a Web Worker; nothing loads it before the first diagram.
 
+A scenario, a story step or a control that changes the structure (more pods, more brokers) moves the diagram to it:
+what stays moves to its new place, what is new fades in. `transition={1.2}` sets the seconds it takes (default 0.8);
+0 cuts, and so does reduced motion. The load never moves it.
+
 The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, the verdict in one line
 under it, and the panels of the page side by side in a compact form (a phone shows one at a time, under tabs, and
 pans the diagram in its own box). Each compact panel opens whole over the diagram. `fullScreen={['verdict', 'live',

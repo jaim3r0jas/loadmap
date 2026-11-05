@@ -25,6 +25,11 @@ export interface LoadmapOptions<P> extends SimOptions {
   direction?: Direction
   /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
   fullScreenMode?: FullScreenMode
+  /**
+   * Seconds the diagram takes to move to a new structure (a scenario, a story step or a control that adds pods): what
+   * stays moves, what is new fades in. 0 cuts. Default 0.8; with reduced motion it always cuts. The load never moves it.
+   */
+  transition?: number
 }
 
 /** Full screen with every panel it lists in a compact form, or mainly the diagram and the story. */
@@ -91,6 +96,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   if (!engineRef.current || engineRef.current.model !== model || engineRef.current.view !== view)
     engineRef.current = new Engine(model, view, ev, o)
   const engine = engineRef.current
+  engine.transition = o.transition ?? 0.8
 
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const wide = o.direction ?? 'RIGHT'

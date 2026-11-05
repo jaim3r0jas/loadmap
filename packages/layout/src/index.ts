@@ -5,6 +5,7 @@ export {
   type Direction,
   type ElkEngine,
   type ElkGraph,
+  type Fading,
   type LayoutOptions,
   labelsAt,
   layout,

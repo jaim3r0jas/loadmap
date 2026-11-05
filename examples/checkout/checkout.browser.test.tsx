@@ -1,5 +1,6 @@
 import { compare, headroom } from '@loadmap/core'
 import { composeFrame, exportPng, exportSvg, recordPoster, recordVideo } from '@loadmap/export'
+import type { Scene } from '@loadmap/layout'
 import {
   Diagram,
   LOADMAP_PANELS,
@@ -318,6 +319,107 @@ describe('checkout in the browser', () => {
     await handle.ready()
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
     await page.screenshot({ path: '__screenshots__/checkout-phone.png', element: el })
+  })
+})
+
+describe('a new structure', () => {
+  const drawn = (el: HTMLElement, id: string) => {
+    const r = el.querySelector(`[data-node="${id}"] > rect`)!
+    return ['x', 'y', 'width', 'height'].map((a) => Number(r.getAttribute(a)))
+  }
+  const laid = (s: Scene, id: string) => {
+    const n = s.nodes.find((x) => x.id === id)!
+    return [n.x, n.y, n.w, n.h]
+  }
+
+  it('moves in on the engine clock, and lands on the new scene', async () => {
+    const { handle, el } = await mount()
+    // paused and stepped, as a recording drives it
+    handle.pause()
+    handle.step(1 / 30)
+    const today = handle.engine.scene!
+    handle.setValues({ pods: 6 })
+    await handle.ready()
+    const proposed = handle.engine.scene!
+    expect(proposed.key).not.toBe(today.key)
+    // nothing moves until the clock does; the new pods are there, not showing yet
+    expect(drawn(el, 'workers')).toEqual(laid(today, 'workers'))
+    expect(el.querySelectorAll('rect[data-slot]')).toHaveLength(48)
+    expect(el.querySelector('[data-node="workers"] g[opacity="0"]')).not.toBeNull()
+    // half the move: 0.38 s of 0.8 is the middle of the boxes' part of it
+    handle.step(0.38)
+    await handle.ready()
+    const [x, , w] = drawn(el, 'workers')
+    expect(x).toBeCloseTo((laid(today, 'workers')[0]! + laid(proposed, 'workers')[0]!) / 2, 1)
+    expect(w).toBeCloseTo((laid(today, 'workers')[2]! + laid(proposed, 'workers')[2]!) / 2, 1)
+    expect(handle.board()!.scene).not.toBe(proposed)
+    handle.step(0.5)
+    await handle.ready()
+    expect(handle.board()!.scene).toBe(proposed)
+    for (const n of proposed.nodes.filter((x) => x.shape === 'box'))
+      expect(drawn(el, n.id)).toEqual(laid(proposed, n.id))
+    expect(el.querySelectorAll('[data-node] [opacity="0"]')).toHaveLength(0)
+  })
+
+  it('fades out the pods that leave as they were, running', async () => {
+    const { handle, el } = await mount()
+    handle.pause()
+    handle.step(1 / 30)
+    handle.setValues({ pods: 2 })
+    await handle.ready()
+    handle.step(0.1)
+    await handle.ready()
+    const pods = [...el.querySelectorAll('[data-node="workers"] > g')].filter((g) => g.querySelector('rect + text'))
+    expect(pods).toHaveLength(3)
+    expect(pods.map((g) => g.hasAttribute('data-idle'))).toEqual([false, false, false])
+    expect(Number(pods[2]!.getAttribute('opacity'))).toBeCloseTo(1 - 0.1 / 0.8 / 0.3, 3)
+  })
+
+  it('cuts to the new structure on a page that paused the board and does not step it', async () => {
+    const { handle } = await mount()
+    handle.pause()
+    handle.setValues({ pods: 6 })
+    await handle.ready()
+    expect(handle.board()!.scene).toBe(handle.engine.scene)
+  })
+
+  it('never moves for a load change', async () => {
+    const { handle, el } = await mount()
+    handle.pause()
+    const { frameId, scene } = handle.engine
+    handle.setValues({ load: 80 })
+    await expect.poll(() => verdict(el)).toContain('At 80×')
+    await handle.ready()
+    handle.step(0.4)
+    expect(handle.engine.frameId).toBe(frameId)
+    expect(handle.board()!.scene).toBe(scene)
+  })
+
+  it('cuts to the new structure with reduced motion, or a transition of 0', async () => {
+    const real = window.matchMedia
+    window.matchMedia = (q: string) =>
+      q.includes('reduced-motion')
+        ? ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} } as unknown as MediaQueryList)
+        : real.call(window, q)
+    try {
+      const { handle, el } = await mount()
+      handle.setValues({ pods: 6 })
+      await handle.ready()
+      expect(handle.board()!.scene).toBe(handle.engine.scene)
+      expect(drawn(el, 'workers')).toEqual(laid(handle.engine.scene!, 'workers'))
+    } finally {
+      window.matchMedia = real
+    }
+    root?.unmount()
+    host!.replaceChildren()
+    const ref = createRef<LoadmapHandle>()
+    root = createRoot(host!)
+    root.render(<Loadmap ref={ref} model={checkout} view={view} transition={0} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    ref.current!.setValues({ pods: 6 })
+    await ref.current!.ready()
+    expect(ref.current!.board()!.scene).toBe(ref.current!.engine.scene)
   })
 })
 

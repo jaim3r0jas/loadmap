@@ -140,8 +140,8 @@ loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectat
 ```
 
 ```
-checkout.loadmap:25:1 error: "Today keeps 8×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
-  25 | expect "Today keeps 8×" { target: 8 }
+checkout.loadmap:26:1 error: "Today keeps 8×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
+  26 | expect "Today keeps 8×" { target: 8 }
      | ^^^^^^^^^^^^^^^^^^^^^^^
 checkout.loadmap: 1 of 2 expectations failed
 ```
@@ -233,6 +233,10 @@ focus); play shows each step for its `seconds`.
 text below the board; the same options give the same file. A step's own properties are `scenario`, `focus` and
 `seconds`; every other line is a value.
 
+A step that changes the structure (more pods, another scenario) does not swap the diagram: the boxes that stay move to
+their new places with their edges, and what is new fades in. `transition: 1.2` makes that move take 1.2 seconds (0.8
+by default; 0 cuts, and so does a reader who asked for reduced motion). A recording shows it too.
+
 ### Full screen
 
 The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, and below it the panels
@@ -273,8 +277,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:92:17 error: unknown flow "order"
-  92 |   demand: flows.order + flows.events
+checkout.loadmap:93:17 error: unknown flow "order"
+  93 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -311,6 +315,7 @@ A loadmap definition.
 | `title` | string, constant | The heading above the diagram. |
 | `layout` | `right` \| `down` | Which way the diagram runs. Narrow screens always run down. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
+| `transition` | number, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
 | `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |
 | `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
 | `assume` | string, constant | A line added before the generated assumptions. |
