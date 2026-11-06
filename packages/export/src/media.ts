@@ -170,7 +170,7 @@ const PAINT = ['fill', 'stroke', 'color'] as const
 
 /**
  * A copy of the board's SVG that needs no page: every colour that comes from a theme token is written in as the value
- * the page computed, and the font, size and namespace are set on the root.
+ * the page computed, and the font, how its text is drawn, the size and the namespace are set on the root.
  */
 export function standalone(svg: SVGSVGElement, w: number, h: number): SVGSVGElement {
   const copy = svg.cloneNode(true) as SVGSVGElement
@@ -189,6 +189,9 @@ export function standalone(svg: SVGSVGElement, w: number, h: number): SVGSVGElem
   })
   const root = getComputedStyle(svg)
   copy.setAttribute('font-family', root.fontFamily)
+  // hinted text drawn at a fractional scale (the camera in flight) comes out one way or another depending on what the
+  // browser rasterised before: on Linux Chromium the same SVG gave two different frames. Unhinted, it is the same.
+  copy.setAttribute('text-rendering', 'geometricPrecision')
   copy.setAttribute('color', root.color)
   copy.setAttribute('width', String(w))
   copy.setAttribute('height', String(h))
