@@ -158,7 +158,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         value: 'enum',
         scope: 'const',
         values: ['right', 'down'],
-        doc: 'Which way the diagram runs. Narrow screens always run down.',
+        doc: 'Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down.',
       },
       speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
       transition: {

@@ -7,6 +7,7 @@ export {
   type ClusterDef,
   cluster,
   defineView,
+  directionOf,
   type EdgeDef,
   type ElkEngine,
   edge,

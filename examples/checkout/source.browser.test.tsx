@@ -2,7 +2,8 @@ import type { LoadmapHandle } from '@loadmap/react'
 import { LoadmapSource } from '@loadmap/react/source'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, onTestFinished } from 'vitest'
+import { page } from 'vitest/browser'
 import source from './checkout.loadmap?raw'
 
 let root: Root | null = null
@@ -82,4 +83,36 @@ it("puts the page's assumptions first, and lets a prop left undefined keep the d
   expect(text).toContain('Load scales linearly with users')
   // checkout.loadmap says speed: 10
   expect(text).toContain('10× speed')
+})
+
+it('runs a fan-out wider than it is long down on a wide screen, unless the text says which way', async () => {
+  const [w, h] = [window.innerWidth, window.innerHeight]
+  await page.viewport(1440, 1000)
+  onTestFinished(() => page.viewport(w, h))
+  const fan = `loadmap 1
+load { max: 10 }
+flow req "requests" { unit: "request"; rate: 100 * load; route: api; from: client }
+node client "Client"
+node api "API" {
+  pass
+  demand: flows.req
+  capacity: measured(1000, "req/s", "load test")
+  over: "requests fail"
+}
+node a "A"
+node b "B"
+node c "C"
+node d "D"
+client -> api
+api -> a
+api -> b
+api -> c
+api -> d
+`
+  const ref = createRef<LoadmapHandle>()
+  host()
+  root!.render(<LoadmapSource source={fan} name="fan.loadmap" ref={ref} />)
+  await expect.poll(() => ref.current?.board()?.scene.direction).toBe('DOWN')
+  root!.render(<LoadmapSource source={`${fan}layout: right\n`} name="fan.loadmap" ref={ref} />)
+  await expect.poll(() => ref.current?.board()?.scene.direction).toBe('RIGHT')
 })

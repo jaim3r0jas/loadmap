@@ -243,7 +243,11 @@ it is anywhere the model reaches (its scenarios, steps, presets and controls), s
 it stands, and what is new fades in. `transition: 1.2` makes that change take 1.2 seconds (0.8 by default; 0 cuts,
 and so does a reader who asked for reduced motion). A recording shows it too.
 
-### Tiers
+### Direction and tiers
+
+The diagram runs right, or down when it fans out wider than it is long: when its widest layer has more boxes than its
+longest chain. Every edge counts, whatever its `when`, so the direction never turns with the values. `layout: right`
+or `layout: down` says which way; narrow screens always run down.
 
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
 bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
@@ -339,7 +343,7 @@ A loadmap definition.
 | Property | Value | |
 | --- | --- | --- |
 | `title` | string, constant | The heading above the diagram. |
-| `layout` | `right` \| `down` | Which way the diagram runs. Narrow screens always run down. |
+| `layout` | `right` \| `down` | Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
 | `transition` | number, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
 | `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |

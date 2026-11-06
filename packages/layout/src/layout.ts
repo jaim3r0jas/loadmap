@@ -1,5 +1,6 @@
 import { dyn, type Evaluation, type LooseValues, type ResolvedStage } from '@loadmap/core'
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
+import { directionOf, endsFlow } from './direction'
 import { estimateText, type TextMeasure } from './text'
 import type { AnyNodeDef, EdgeDef, Label, View } from './view'
 
@@ -87,6 +88,7 @@ export interface SceneTier extends Box {
 }
 
 export interface LayoutOptions {
+  /** Default: from the view's shape (`directionOf`). */
   direction?: Direction
   measure?: TextMeasure
   /** Where ELK runs. Default: on this thread, loaded on first use. */
@@ -206,7 +208,7 @@ export function labelsAt(view: View, ev: Evaluation) {
  * cached by the structure, so a call after a load change returns the same scene.
  */
 export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promise<Scene> {
-  const direction = o.direction ?? 'RIGHT'
+  const direction = o.direction ?? directionOf(view)
   const measure = o.measure ?? estimateText
   const prep = prepare(view, ev, direction, measure)
   const byView = scenes.get(measure) ?? new WeakMap<View, Map<string, Promise<Scene>>>()
@@ -240,7 +242,7 @@ function kept<T>(cache: Map<string, Promise<T>>, key: string, limit: number, mak
 
 /** The structure key for the current values: equal keys give equal scenes. */
 export function structureKey(view: View, ev: Evaluation, o: LayoutOptions = {}): string {
-  return prepare(view, ev, o.direction ?? 'RIGHT', o.measure ?? estimateText).key
+  return prepare(view, ev, o.direction ?? directionOf(view), o.measure ?? estimateText).key
 }
 
 /**
@@ -248,7 +250,7 @@ export function structureKey(view: View, ev: Evaluation, o: LayoutOptions = {}):
  * (pods, brokers, a wider label) and which edges come or go, before anything is laid out.
  */
 export function shapesOf(view: View, ev: Evaluation, o: LayoutOptions = {}) {
-  const prep = prepare(view, ev, o.direction ?? 'RIGHT', o.measure ?? estimateText)
+  const prep = prepare(view, ev, o.direction ?? directionOf(view), o.measure ?? estimateText)
   return {
     nodes: Object.fromEntries(prep.nodes.map((n) => [n.id, JSON.stringify(n.inner)])) as Record<string, string>,
     edges: prep.edges.map((e) => ({ id: e.id, from: e.from, to: e.to })),
@@ -455,12 +457,9 @@ function ordered(view: View, frame: Frame): Frame {
     settle(outOf, (xs) => Math.min(...xs))
     for (const id of ids) order[id] = tier.get(id) ?? 0
   } else {
-    const kinds = (id: string) =>
-      stagesOf(defs[id]!).map((st) => (view.model.def.stages as Record<string, { kind: string }>)[st]?.kind)
     for (const id of ids) {
-      const ks = kinds(id)
       if (!into.get(id)!.length && outOf.get(id)!.length) order[id] = 'FIRST'
-      else if (!outOf.get(id)!.length && ks.length && ks.every((k) => k === 'sink' || k === 'store')) order[id] = 'LAST'
+      else if (!outOf.get(id)!.length && endsFlow(view, id)) order[id] = 'LAST'
     }
   }
   const out = { direction: frame.direction, nodes: frame.nodes, edges: frame.edges, order, tiers }

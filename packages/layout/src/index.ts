@@ -1,3 +1,4 @@
+export { directionOf } from './direction'
 export { anchor, type Collision, collisions, legPath, type Point, pointAt } from './geometry'
 export {
   type Box,
