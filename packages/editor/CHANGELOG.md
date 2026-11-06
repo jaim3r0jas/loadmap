@@ -1,5 +1,24 @@
 # @loadmap/editor
 
+## 0.8.0
+
+### Minor Changes
+
+- 0fb1d62: `theme="inherit"` follows the page's own light and dark switch, `data-theme="dark"` or a `dark` class on `<html>`,
+  as it changes (the dots and the meters too), and the system's while the page sets none; `usePageTheme(theme)` gives
+  the theme it resolves to. `<LoadmapEditor theme="inherit">` does the same. Two tokens fit the root into a card that
+  has its own: `--lm-pad` (its padding, 16px) and `--lm-root-bg` (its background); full screen keeps both.
+
+### Patch Changes
+
+- Updated dependencies [25a0575]
+- Updated dependencies [25a0575]
+- Updated dependencies [68bc952]
+- Updated dependencies [0fb1d62]
+  - @loadmap/dsl@0.8.0
+  - @loadmap/react@0.8.0
+  - @loadmap/core@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
