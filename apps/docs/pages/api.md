@@ -61,8 +61,10 @@ Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layou
 `<Loadmap>` props: `model`, `view`, `theme` (`'auto'`, `'light'`, `'dark'`), `title`, `assumptions` (lines added before
 the generated ones), `headroom` and `compare` (show the chart and the table; default true), `initial` (values to
 start from), `speed` (simulated seconds per second), `direction` (`'RIGHT'` or `'DOWN'`), `narrowBelow` (the width
-under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker), `onNodeClick`
-(a click or Enter on a box, by its id; every box is a button then), `selected` (the box drawn as selected), and `ref`.
+under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker;
+`workerElk(() => new Worker(…))` for one the page starts, see [Without a bundler](/without-a-bundler/)),
+`onNodeClick` (a click or Enter on a box, by its id; every box is a button then), `selected` (the box drawn as
+selected), and `ref`.
 
 The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `storyStep()`, `ready()`, `pause()`,
 `resume()`, `step(dt)`, `reset(seed)`, `board()`. Export and recording drive the page through it.

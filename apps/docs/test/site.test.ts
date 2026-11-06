@@ -57,9 +57,19 @@ describe('the pages', () => {
     expect(rendered.find((r) => r.page.route === 'getting-started')!.html).toContain('defineView(shop, {')
   })
 
+  it("name the packages' version where a page links a CDN", () => {
+    const version = JSON.parse(
+      readFileSync(join(import.meta.dirname, '../../../packages/react/package.json'), 'utf8'),
+    ).version
+    const html = rendered.find((r) => r.page.route === 'without-a-bundler')!.html
+    expect(html).toContain(`@loadmap/react@${version}`)
+    expect(rendered.filter((r) => r.html.includes('%VERSION%')).map((r) => r.page.route)).toEqual([])
+  })
+
   it('tell the dev server which repository files they include', () => {
     const files = included().map((f) => f.slice(f.lastIndexOf('/', f.lastIndexOf('/') - 1) + 1))
-    expect(files.sort()).toEqual(['docs/dsl.md', 'react/README.md'])
+    // and the package.json %VERSION% comes from
+    expect(files.sort()).toEqual(['docs/dsl.md', 'react/README.md', 'react/package.json'])
   })
 
   it('find the site root from any depth', () => {

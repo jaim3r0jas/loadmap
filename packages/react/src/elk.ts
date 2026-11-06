@@ -14,14 +14,29 @@ export function pageElk(): ElkEngine {
   return shared
 }
 
-/** ELK in the worker `make` starts, falling back to the main thread. */
+/**
+ * ELK in the worker `make` starts, falling back to the main thread: `<Loadmap elk={workerElk(…)}>` for a page whose
+ * bundler inlines the worker (`@loadmap/react/elk.worker.js`), or that serves it from another place. Make it once,
+ * outside a component: each engine starts its own worker.
+ */
 export function workerElk(make: () => Worker): ElkEngine {
   let worker: Worker | null = null
   let broken = typeof Worker === 'undefined'
+  let told = false
   let next = 0
   const pending = new Map<number, { graph: Graph; resolve: (g: Graph) => void; reject: (e: Error) => void }>()
 
-  const fallBack = () => {
+  // once, and only on a page: without Worker at all (Node) there is nothing to hand in
+  const tell = (why: string) => {
+    if (told || typeof Worker === 'undefined') return
+    told = true
+    console.info(
+      `loadmap: the layout runs on the main thread, slower to start: the ELK worker did not start (${why}). A page can hand one in, <Loadmap elk={workerElk(() => new Worker(…))}>; a Content-Security-Policy must allow it (worker-src).`,
+    )
+  }
+
+  const fallBack = (why: string) => {
+    tell(why)
     broken = true
     worker?.terminate()
     worker = null
@@ -37,8 +52,8 @@ export function workerElk(make: () => Worker): ElkEngine {
     if (worker || broken) return worker
     try {
       worker = make()
-    } catch {
-      fallBack()
+    } catch (err) {
+      fallBack(err instanceof Error ? err.message : String(err))
       return null
     }
     worker.onmessage = ({ data }: MessageEvent<{ id: number; graph?: Graph; error?: string }>) => {
@@ -51,7 +66,7 @@ export function workerElk(make: () => Worker): ElkEngine {
     // the script failed to load or to run: no answer will come
     worker.onerror = (e) => {
       e.preventDefault()
-      fallBack()
+      fallBack(e.message || 'it failed to load or to run')
     }
     return worker
   }
@@ -59,7 +74,10 @@ export function workerElk(make: () => Worker): ElkEngine {
   return {
     layout(graph) {
       const w = start()
-      if (!w) return localElk().then((elk) => elk.layout(graph))
+      if (!w) {
+        tell('no Worker here')
+        return localElk().then((elk) => elk.layout(graph))
+      }
       return new Promise((resolve, reject) => {
         const id = next++
         pending.set(id, { graph, resolve, reject })

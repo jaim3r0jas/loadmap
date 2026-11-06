@@ -68,7 +68,9 @@ export function App() {
 
 Every capacity says where it came from (`measured`, `estimated`, or a fit from measurements), and `± 30 %` turns
 each limit into a range. Add `scenarios` to compare designs, `growth` to turn multiples into dates, `expect` to fail
-a test when headroom is lost. The layout runs in a Web Worker; nothing loads it before the first diagram.
+a test when headroom is lost. The layout runs in a Web Worker; nothing loads it before the first diagram. A page
+without a bundler (from a CDN, or one self-contained HTML file) hands in its own: `elk={workerElk(…)}`, with
+`@loadmap/react/elk.worker.js` to inline; https://jaim3r0jas.github.io/loadmap/without-a-bundler/ has both recipes.
 
 A scenario, a story step or a control that changes the structure (more pods, more brokers) moves the diagram to it:
 what stays moves to its new place, what is new fades in. `transition={1.2}` sets the seconds it takes (default 0.8);

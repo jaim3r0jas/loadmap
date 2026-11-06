@@ -11,6 +11,7 @@ npm i @loadmap/react react react-dom
 
 `@loadmap/react` brings the model, the view and the components. The layout runs in a Web Worker that the first diagram
 starts; Vite and other bundlers that understand `new Worker(new URL(…, import.meta.url))` pick it up with no setup.
+No bundler, a CDN or one HTML file: [Without a bundler](/without-a-bundler/).
 
 ## 2. Write the model and the view
 
