@@ -1,5 +1,16 @@
 # @loadmap/export
 
+## 0.13.0
+
+### Patch Changes
+
+- 348cd39: A recording drew the same frame two ways on Linux Chromium once in a while: hinted text at a fractional scale (the
+  camera flying in) came out heavier or lighter depending on what the browser had drawn before. The board's copy now
+  draws its text unhinted (`text-rendering="geometricPrecision"`), so the same options give the same file again.
+- Updated dependencies [2d8c547]
+  - @loadmap/react@0.13.0
+  - @loadmap/core@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes
