@@ -5,13 +5,14 @@ import { alerts } from './model'
 export const view = defineView(alerts, {
   nodes: {
     phones: node({ label: 'Devices', sub: 'alerts and positions' }),
-    gateway: node({ label: 'Gateway', stage: 'gateway' }),
+    gateway: node({ label: 'Gateway', stage: 'gateway', tier: 'edge' }),
     brokers: cluster({
       label: 'Brokers',
       sub: 'two topics, three brokers',
       members: 3,
       stage: ['alertTopic', 'posTopic'],
       memberLabel: (i) => `broker ${i}`,
+      tier: 'processing',
     }),
     alertPods: pool({
       label: 'Alert pipeline',
@@ -20,7 +21,7 @@ export const view = defineView(alerts, {
     }),
     posPods: pool({ label: 'Position consumer', sub: ({ posPods }) => `${posPods} pods × 16`, stage: 'posPods' }),
     db: node({ label: 'State store', sub: 'primary', component: 'db', shape: 'cylinder' }),
-    push: node({ label: 'Push broker', sub: ({ pushNodes }) => `${pushNodes} nodes`, stage: 'push' }),
+    push: node({ label: 'Push broker', sub: ({ pushNodes }) => `${pushNodes} nodes`, stage: 'push', tier: 'delivery' }),
     contacts: node({ label: 'Contacts', sub: 'notified', stage: 'contacts' }),
     responders: node({ label: 'Responders', sub: 'on duty', stage: 'responders' }),
     watchers: node({ label: 'Watchers', sub: 'following live', stage: 'watchers' }),
@@ -41,4 +42,5 @@ export const view = defineView(alerts, {
     alerts: { from: 'phones', color: 'alt', label: 'alerts' },
     positions: { from: 'phones', color: 'accent', label: 'positions' },
   },
+  tiers: { edge: { label: 'Edge' }, processing: { label: 'Processing' }, delivery: { label: 'Delivery' } },
 })

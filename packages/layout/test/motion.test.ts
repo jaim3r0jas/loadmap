@@ -116,6 +116,7 @@ describe('morph', () => {
       edges: [{ id: 'e0', from: 'a', to: 'b', points }],
       stageNode: {},
       flowFrom: {},
+      tiers: [],
     })
     const [p, q, r] = edgeOf(
       morph(
@@ -196,6 +197,7 @@ describe('morph inside a box', () => {
     edges: [],
     stageNode: {},
     flowFrom: {},
+    tiers: [],
   })
 
   it('moves each flow name on its own member, when another flow joins between them', () => {

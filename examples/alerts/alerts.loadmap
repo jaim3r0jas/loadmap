@@ -98,9 +98,14 @@ flow positions "positions" {
   color: accent
 }
 
+tier edge "Edge"
+tier processing "Processing"
+tier delivery "Delivery"
+
 node phones "Devices" "alerts and positions"
 
 node gateway "Gateway" {
+  tier: edge
   pass "the gateway"
   short: "the gateway"
   demand: flows.alerts + flows.positions
@@ -109,6 +114,7 @@ node gateway "Gateway" {
 }
 
 cluster brokers "Brokers" "two topics, three brokers" {
+  tier: processing
   members: 3
   memberLabel: `broker ${i}`
   queue alertTopic "alerts topic" { partitions { alerts: alertPods * 8 } }
@@ -148,6 +154,7 @@ node db "State store" "primary" {
 }
 
 node push "Push broker" `${pushNodes} nodes` {
+  tier: delivery
   fanout "push broker" {
     alerts -> contacts: 1
     alerts -> responders: 0.4

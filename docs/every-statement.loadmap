@@ -70,9 +70,15 @@ flow events "events" {
 # a constant rate: the same at any load
 flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> api; from: users }
 
+# bands across the flow, in the order the flow meets them; a box without a tier stands in the tier of what feeds it
+tier edge "Edge"
+tier services "Services"
+tier data "Data"
+
 node users "Users" "web and app"
 
 node gateway "Gateway" {
+  tier: edge
   pass "the gateway"
   short: "the gateway"
   capacity: estimated(30_000, "req/s", "vendor figure")
@@ -87,6 +93,7 @@ node limiter "Rate limiter" "2,000 req/s" {
 }
 
 pool api "API" `${pods} pods` {
+  tier: services
   workers { pods: pods; perPod: 8 }
   short: "the API"
   demand: apiCores(at.api.orders + flows.signups)
@@ -105,6 +112,7 @@ component lookups "Cache lookups" {
 node cache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
 
 node db "Database" "primary" {
+  tier: data
   shape: cylinder
   store
   short: "the database"
@@ -113,6 +121,7 @@ node db "Database" "primary" {
 }
 
 cluster kafka "Kafka" "events" {
+  tier: services
   members: 3
   memberLabel: `broker ${i}`
   queue topic "events topic" { partitions { events: 12 } }

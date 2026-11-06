@@ -13,6 +13,7 @@ export {
   type Scene,
   type SceneEdge,
   type SceneNode,
+  type SceneTier,
   structureKey,
   type TextSpot,
 } from './layout'
@@ -31,6 +32,7 @@ export {
   node,
   type PoolDef,
   pool,
+  type TierDef,
   type View,
   type ViewDef,
 } from './view'

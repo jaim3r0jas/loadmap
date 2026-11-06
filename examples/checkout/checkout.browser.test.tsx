@@ -372,6 +372,29 @@ describe('checkout in the browser', () => {
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
     await page.screenshot({ path: '__screenshots__/checkout-phone.png', element: el })
   })
+
+  it('draws its tiers behind the boxes, the labels across the top, or up the side on a phone', async () => {
+    const bands = (el: HTMLElement) =>
+      [...el.querySelectorAll('svg .lm-tier')].map((g) => ({
+        id: g.getAttribute('data-tier-id'),
+        text: g.querySelector('text')!.textContent,
+        turned: g.querySelector('text')!.hasAttribute('transform'),
+      }))
+    const wide = await mount()
+    expect(bands(wide.el)).toEqual([
+      { id: 'edge', text: 'Edge', turned: false },
+      { id: 'services', text: 'Services', turned: false },
+      { id: 'data', text: 'Data', turned: false },
+    ])
+    // behind everything else on the board
+    expect(wide.el.querySelector('svg > .lm-tier')?.previousElementSibling?.tagName).toBe('defs')
+    root?.unmount()
+    host?.remove()
+    const phone = await mount({ width: 390 })
+    await expect.poll(() => phone.handle.board()?.scene.direction).toBe('DOWN')
+    await phone.handle.ready()
+    await expect.poll(() => bands(phone.el).every((b) => b.turned)).toBe(true)
+  })
 })
 
 describe('a new structure', () => {
