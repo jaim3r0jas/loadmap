@@ -1,5 +1,5 @@
 import { compare, headroom } from '@loadmap/core'
-import { composeFrame, exportPng, exportSvg, recordPoster, recordVideo } from '@loadmap/export'
+import { composeFrame, exportPng, exportSvg, recordPoster, recordStill, recordVideo } from '@loadmap/export'
 import type { Scene } from '@loadmap/layout'
 import {
   Diagram,
@@ -17,6 +17,8 @@ import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import { alerts } from '../alerts/model'
+import { view as alertsView } from '../alerts/view'
 import { Checkout } from './Checkout'
 import { checkout } from './model'
 import { view } from './view'
@@ -909,13 +911,40 @@ describe('full screen', () => {
     const before = el.querySelector('[data-node="gateway"]')!.getBoundingClientRect().toJSON()
     expect(await breathes()).toBe(true)
     expect(el.querySelector('[data-node="gateway"]')!.getBoundingClientRect().toJSON()).toEqual(before)
-    // two pods at a load the gateway takes: the workers run out first, and the mark moves to them
-    handle.setValues({ load: 5, pods: 2, gateways: 2 })
+    // a second gateway, which changes no box: the workers run out first, and the mark moves to them, breathing
+    const scene = handle.board()!.scene
+    handle.setValues({ gateways: 2 })
     await handle.ready()
     expect(handle.engine.ev.firstLimit?.id).toBe('workers')
-    const workers = handle.board()!.scene.nodes.find((n) => n.id === 'workers')!
-    await expect.poll(() => Number(halo()!.dataset.cx)).toBe(workers.x + workers.w / 2)
+    expect(handle.board()!.scene).toBe(scene)
+    const workers = scene.nodes.find((n) => n.id === 'workers')!
+    await expect.poll(() => Number(halo()!.dataset.cx), { timeout: 5000 }).toBe(workers.x + workers.w / 2)
     expect(el.querySelectorAll('[data-halo]')).toHaveLength(1)
+    expect(await breathes()).toBe(true)
+  })
+
+  it('stops a story the reader plays before a picture, which shows the whole diagram', async () => {
+    const { el, handle } = await draw()
+    handle.pause()
+    handle.playStory()
+    await run(handle, el, () => handle.engine.story?.shot === 'close')
+    expect(handle.engine.camera).not.toBeNull()
+    await recordStill(handle)
+    expect(handle.engine.story).toBeNull()
+    expect(handle.engine.camera).toBeNull()
+    expect(handle.board()!.svg.getAttribute('viewBox')).toBe(
+      `0 0 ${handle.engine.frame!.width} ${handle.engine.frame!.height}`,
+    )
+  })
+
+  it('ends Play when the page shows another model', async () => {
+    const { el } = await draw()
+    const play = () => el.querySelector<HTMLButtonElement>('.lm-story-nav button')!
+    await userEvent.click(play())
+    await expect.poll(() => play().textContent).toBe('❚❚ Pause')
+    root!.render(<Loadmap model={alerts} view={alertsView} speed={10} />)
+    await expect.poll(() => play().textContent).toBe('▶ Play')
+    expect(el.querySelector('.lm-title')).toBeNull()
   })
 
   it('cuts between the shots and holds the mark still with reduced motion', async () => {

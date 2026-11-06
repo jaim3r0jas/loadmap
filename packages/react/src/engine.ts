@@ -61,6 +61,8 @@ interface Playing {
   /** The camera the flight starts from, and the framing close to the boxes the step changes. */
   from: Rect
   close: Rect
+  /** The step is framed closer than the whole diagram. */
+  zoom: boolean
   targets: string[]
   components: string[]
   before: Evaluation
@@ -70,6 +72,11 @@ interface Playing {
 
 /** Seconds the breathing of the first limit takes, in and out. */
 const BREATH = 2.4
+
+/** Sets an attribute only when it changes: most frames change nothing. */
+function set(el: Element, name: string, value: string): void {
+  if (el.getAttribute(name) !== value) el.setAttribute(name, value)
+}
 
 /**
  * Everything that moves, without React: the sim, the dots on the canvas, the worker fills in the SVG, and the move from
@@ -121,7 +128,6 @@ export class Engine {
   #legs = { frame: -1, paths: new Map<string, Point[]>() }
   /** Seconds the engine has run since the last reset: the first limit breathes on it. */
   #clock = 0
-  #halos: { el: SVGGElement; glow: SVGElement | null; cx: number; cy: number }[] = []
   #story: Playing | null = null
 
   constructor(model: Model, view: View, ev: Evaluation, o: SimOptions = {}) {
@@ -191,15 +197,7 @@ export class Engine {
     this.svg = svg
     this.canvas = canvas
     this.#slots = []
-    this.#halos = []
     if (!svg) return
-    for (const el of svg.querySelectorAll<SVGGElement>('g[data-halo]'))
-      this.#halos.push({
-        el,
-        glow: el.querySelector('[data-glow]'),
-        cx: Number(el.dataset.cx),
-        cy: Number(el.dataset.cy),
-      })
     for (const el of svg.querySelectorAll<SVGRectElement>('rect[data-slot]'))
       this.#slots.push({
         el,
@@ -268,16 +266,18 @@ export class Engine {
 
   /**
    * Plays the story from step `from` on the engine's clock: the whole diagram, then for each step a flight in to what it
-   * changes, the change, a flight out and the whole diagram for its seconds. The host shows each step's values.
+   * changes, the change, a flight out and the whole diagram for its seconds. The host shows each step's values. False
+   * when it cannot: nothing is drawn yet, or there is no such step.
    */
-  playStory(from: number): void {
-    if (!this.frame || !this.model.story[from]) return
+  playStory(from: number): boolean {
+    if (!this.frame || !this.model.story[from]) return false
     this.#story = {
       i: from - 1,
       shot: 'establish',
       t: 0,
       from: whole(this.frame),
       close: whole(this.frame),
+      zoom: false,
       targets: [],
       components: [],
       before: this.ev,
@@ -285,6 +285,7 @@ export class Engine {
     }
     this.#setCamera(null)
     this.host?.playing(true)
+    return true
   }
 
   /** Stops the story: the camera flies back to the whole diagram (cuts with `cut`), and the step shown stays. */
@@ -339,7 +340,9 @@ export class Engine {
     if (s.shot === 'in') cam = cut ? s.close : between(all, s.close, p)
     else if (s.shot === 'close') cam = s.close
     // the framing follows the boxes while the structure moves
-    else if (s.shot === 'change') cam = framing(frame, s.targets)
+    // the framing follows the boxes while the structure moves, never letting go of them halfway: a step that frames the
+    // whole diagram keeps it
+    else if (s.shot === 'change') cam = s.zoom ? framing(frame, s.targets, { hold: true }) : all
     else if (s.shot === 'out' || s.shot === 'back') cam = cut ? all : between(s.from, all, p)
     else cam = all
     this.#setCamera(cam)
@@ -374,7 +377,8 @@ export class Engine {
       const nodes = frame.nodes.filter((n) => ids.includes(n.id))
       const components = [...new Set(nodes.map((n) => boxComponent(after, n)).filter((c) => c != null))]
       const close = framing(frame, ids)
-      Object.assign(s, { i, shot: 'in', from: whole(frame), close, targets: ids, components, before: this.ev })
+      const zoom = close.w < frame.width - 1e-6
+      Object.assign(s, { i, shot: 'in', from: whole(frame), close, zoom, targets: ids, components, before: this.ev })
       this.#cue({
         step: i,
         title: stepTitle(this.model, this.ev.values, st, i),
@@ -435,15 +439,14 @@ export class Engine {
     // a glow on its own layer, which moves nothing else. Decided here, not by a render, so a recording never waits on one
     const first = this.ev.firstLimit
     const breathe = !this.reducedMotion && (this.playing || first?.state === 'warn' || first?.state === 'over')
-    for (const h of this.#halos) {
-      const still = !breathe
-      const b = still ? 0.5 : 0.5 - 0.5 * Math.cos((2 * Math.PI * this.#clock) / BREATH)
+    const b = breathe ? 0.5 - 0.5 * Math.cos((2 * Math.PI * this.#clock) / BREATH) : 0.5
+    // looked up each frame: a new first limit mounts a new ring without a new structure. Only what changes is written
+    for (const el of this.svg?.querySelectorAll<SVGGElement>('g[data-halo]') ?? []) {
+      const [cx, cy] = [Number(el.dataset.cx), Number(el.dataset.cy)]
       const k = 1 + 0.035 * b
-      h.el.setAttribute(
-        'transform',
-        still ? '' : `translate(${h.cx} ${h.cy}) scale(${k.toFixed(4)}) translate(${-h.cx} ${-h.cy})`,
-      )
-      h.glow?.setAttribute('stroke-opacity', (0.1 + 0.25 * b).toFixed(3))
+      set(el, 'transform', breathe ? `translate(${cx} ${cy}) scale(${k.toFixed(4)}) translate(${-cx} ${-cy})` : '')
+      const glow = el.querySelector('[data-glow]')
+      if (glow) set(glow, 'stroke-opacity', (0.1 + 0.25 * b).toFixed(3))
     }
     for (const sl of this.#slots) {
       const b = this.sim.slotBusy(sl.stage, sl.index)
