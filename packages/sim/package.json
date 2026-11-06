@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/sim",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "The fluid queue simulation behind loadmap's moving dots: priorities, drop rules, worker fill, seeded randomness.",
   "keywords": [
     "loadmap",
