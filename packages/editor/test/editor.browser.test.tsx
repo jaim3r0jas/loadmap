@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
+import { type EmbedOptions, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -17,13 +17,28 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-async function mount(o: { source?: string; values?: Record<string, ParamValue>; theme?: 'light' | 'dark' } = {}) {
+async function mount(
+  o: {
+    source?: string
+    values?: Record<string, ParamValue>
+    theme?: 'light' | 'dark'
+    embedLink?: (hash: string, o: EmbedOptions) => string
+  } = {},
+) {
   await page.viewport(1440, 1000)
   const host = document.createElement('div')
   document.body.appendChild(host)
   const ref = createRef<LoadmapEditorHandle>()
   root = createRoot(host)
-  root.render(<LoadmapEditor ref={ref} initial={o.source ?? checkout} values={o.values} theme={o.theme} />)
+  root.render(
+    <LoadmapEditor
+      ref={ref}
+      initial={o.source ?? checkout}
+      values={o.values}
+      theme={o.theme}
+      embedLink={o.embedLink}
+    />,
+  )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
   await ref.current!.loadmap()!.ready()
   const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!
@@ -89,6 +104,43 @@ describe('the editor', () => {
     const again = await mount(shared)
     expect(again.handle.loadmap()!.values()).toMatchObject({ load: 25, merge: false })
     expect(verdict(again.host)).toContain('At 25×')
+  })
+
+  it('copies an embed link with the options picked, or the iframe that frames it', async () => {
+    const calls: [string, EmbedOptions][] = []
+    const embedLink = (hash: string, o: EmbedOptions) => {
+      calls.push([hash, o])
+      return `https://x.test/embed/?theme=${o.theme}#${hash}`
+    }
+    const { host, handle } = await mount({ source: alerts, embedLink })
+    handle.loadmap()!.setValues({ load: 25 })
+    await userEvent.click(page.getByText('Copy embed link'))
+    // it opens toward the side with room, inside the window
+    const pop = host.querySelector('.lme-pop')!.getBoundingClientRect()
+    expect(pop.left >= 0 && pop.right <= document.documentElement.clientWidth).toBe(true)
+    await userEvent.click(page.getByLabelText('Dark'))
+    await userEvent.click(page.getByLabelText(/Play the story/))
+    await userEvent.click(page.getByRole('button', { name: 'Copy link' }))
+    await expect.poll(() => calls.length).toBe(1)
+    const [hash, options] = calls[0]!
+    // the diagram first, though alerts' full screen opens on the panels
+    expect(options).toEqual({ mode: 'focus', theme: 'dark', play: true })
+    expect(hash).toBe(await handle.shareHash())
+    // in a box too, for when the clipboard refuses it
+    const made = () => host.querySelector<HTMLInputElement>('.lme-made')?.value
+    await expect.poll(made).toBe(`https://x.test/embed/?theme=dark#${hash}`)
+    await userEvent.click(page.getByRole('button', { name: 'Copy <iframe>' }))
+    // the link's "&" escaped inside the attribute
+    await expect
+      .poll(made)
+      .toBe(
+        `<iframe src="https://x.test/embed/?theme=dark#${hash.replace(/&/g, '&amp;')}" title="Alerts and live positions" width="100%" height="480" style="border: 0" loading="lazy" allow="fullscreen"></iframe>`,
+      )
+  })
+
+  it('has no embed menu without a page to frame it', async () => {
+    const { host } = await mount()
+    expect(host.querySelector('.lme-embed')).toBeNull()
   })
 
   it('shares a scenario: the link reopens with its button pressed', async () => {

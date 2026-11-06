@@ -1,4 +1,4 @@
-import type { ParamValue } from '@loadmap/core'
+import type { Model, ParamValue, Values } from '@loadmap/core'
 
 /**
  * A definition in a link: `#v1.` + base64url(deflate-raw(source)), then the values that differ from the defaults
@@ -84,4 +84,27 @@ function unbase64url(s: string): Uint8Array {
   if (!/^[A-Za-z0-9_-]*$/.test(s)) throw new Error('not base64url')
   const bin = atob(s.replaceAll('-', '+').replaceAll('_', '/'))
   return Uint8Array.from(bin, (c) => c.charCodeAt(0))
+}
+
+/**
+ * The values that still fit the model: known names, options that still exist, numbers within range. A text (from a
+ * link) is read by the parameter's kind, so "20" can be the number 20 or the option "20".
+ */
+export function sharedValues(model: Model, v: Readonly<Record<string, unknown>>): Partial<Values<any>> {
+  const out: Record<string, unknown> = {}
+  for (const { id, def } of model.params) {
+    if (!Object.hasOwn(v, id)) continue
+    const x = v[id]
+    if (def.kind === 'select') {
+      const o = (def.options as unknown[]).find((o) => o === x || String(o) === String(x))
+      if (o !== undefined) out[id] = o
+    }
+    if (def.kind === 'switch' && (x === true || x === 'true' || x === false || x === 'false'))
+      out[id] = x === true || x === 'true'
+    if (def.kind === 'range' || def.kind === 'load') {
+      const n = typeof x === 'number' ? x : typeof x === 'string' && x.trim() !== '' ? Number(x) : Number.NaN
+      if (Number.isFinite(n)) out[id] = Math.min(def.max, Math.max(def.min, n))
+    }
+  }
+  return out as Partial<Values<any>>
 }

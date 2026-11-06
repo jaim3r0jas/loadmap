@@ -53,6 +53,8 @@ try {
     dependencies: {
       '@loadmap/react': tgz('@loadmap/react'),
       '@loadmap/editor': tgz('@loadmap/editor'),
+      // the embed page reads a shared link and compiles it itself
+      '@loadmap/dsl': tgz('@loadmap/dsl'),
       react: dev.react,
       'react-dom': dev['react-dom'],
     },
@@ -98,6 +100,7 @@ export default defineConfig({
   build: viteBuild('dist', {
     loadmap: page('loadmap'),
     editor: page('editor'),
+    embed: page('embed'),
     quickstart: page('quickstart'),
     source: page('source'),
   }),
@@ -117,7 +120,7 @@ export default defineConfig({
     )
   copyFileSync(join(repo, 'examples/checkout/worker-cpu.json'), join(app, 'src/worker-cpu.json'))
   copyFileSync(join(repo, 'examples/checkout/checkout.loadmap'), join(app, 'src/checkout.loadmap'))
-  for (const page of ['loadmap', 'editor']) {
+  for (const page of ['loadmap', 'editor', 'embed']) {
     copyFileSync(join(repo, `scripts/budget/${page}.html`), join(app, `${page}.html`))
     const html = join(app, `${page}.html`)
     writeFileSync(html, readFileSync(html, 'utf8').replace(`./${page}.tsx`, `./src/${page}.tsx`))

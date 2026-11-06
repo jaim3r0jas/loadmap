@@ -7,8 +7,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
-/** kB gzip: loadmap's code in a <Loadmap> page's first load, and what the editor adds to it. */
-export const BUDGET = { loadmap: 50, editor: 150 }
+/**
+ * kB gzip: loadmap's code in a <Loadmap> page's first load, what the editor adds to it, and a page made to be framed
+ * (an embed: the compiler and the board) on its own.
+ */
+export const BUDGET = { loadmap: 50, editor: 150, embed: 75 }
 
 // a string only ELK's code has
 const ELK_MARK = 'org.eclipse.elk'
@@ -58,13 +61,16 @@ export function judge({ pages, worker }) {
   const lines = []
   const loadmap = pages.loadmap
   const editor = pages.editor
-  if (!loadmap || !editor) fail.push('the build has no loadmap or no editor page')
+  const embed = pages.embed
+  if (!loadmap || !editor || !embed) fail.push('the build has no loadmap, editor or embed page')
   else {
     const extra = editor.kb - loadmap.kb
     lines.push(`<Loadmap> page: ${loadmap.kb.toFixed(1)} kB gzip first (budget ${BUDGET.loadmap})`)
     lines.push(`editor page: +${extra.toFixed(1)} kB gzip (budget ${BUDGET.editor})`)
     if (loadmap.kb > BUDGET.loadmap) fail.push(`the <Loadmap> page loads ${loadmap.kb.toFixed(1)} kB first`)
     if (extra > BUDGET.editor) fail.push(`the editor adds ${extra.toFixed(1)} kB`)
+    lines.push(`embed page: ${embed.kb.toFixed(1)} kB gzip first (budget ${BUDGET.embed})`)
+    if (embed.kb > BUDGET.embed) fail.push(`the embed page loads ${embed.kb.toFixed(1)} kB first`)
     for (const [name, p] of Object.entries(pages)) if (p.elk) fail.push(`ELK is in the ${name} page's first load`)
   }
   if (!worker) fail.push('no ELK worker chunk')
@@ -83,7 +89,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       logLevel: 'warn',
       configFile: false,
       plugins: [react()],
-      build: viteBuild(out, { loadmap: join(root, 'loadmap.html'), editor: join(root, 'editor.html') }),
+      build: viteBuild(out, {
+        loadmap: join(root, 'loadmap.html'),
+        editor: join(root, 'editor.html'),
+        embed: join(root, 'embed.html'),
+      }),
     })
     const { fail, lines } = judge(measure(out))
     for (const l of lines) console.log(l)

@@ -1214,3 +1214,31 @@ describe('export', () => {
     expect(track?.codec).toMatch(/vp9|vp8|av1/)
   })
 })
+
+describe('fill', () => {
+  it('fills a page of its own as full screen does, for good: no full screen button, nothing scrolls', async () => {
+    // a frame's size: the page is the frame
+    await page.viewport(640, 360)
+    host = document.createElement('div')
+    host.style.cssText = 'height: 100vh'
+    document.body.style.margin = '0'
+    document.body.appendChild(host)
+    root = createRoot(host)
+    const ref = createRef<LoadmapHandle>()
+    root.render(<Loadmap ref={ref} model={checkout} view={view} fill fullScreenMode="focus" />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    const el = host.querySelector<HTMLElement>('.lm')!
+    expect(el.getAttribute('data-full')).toBe('fill')
+    expect(el.getAttribute('data-mode')).toBe('focus')
+    expect(el.getBoundingClientRect().toJSON()).toMatchObject({ width: innerWidth, height: 360 })
+    expect(el.scrollHeight).toBeLessThanOrEqual(el.clientHeight)
+    expect(el.querySelector('.lm-board')!.getBoundingClientRect().height).toBeGreaterThan(100)
+    expect([...el.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('⤢ Full screen')
+    expect(el.querySelector('.lm-modes')).toBeNull()
+    // Esc and the browser's full screen leave it as it is
+    await userEvent.keyboard('{Escape}')
+    expect(el.getAttribute('data-full')).toBe('fill')
+    document.body.style.removeProperty('margin')
+  })
+})

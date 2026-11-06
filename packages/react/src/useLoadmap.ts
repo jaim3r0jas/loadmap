@@ -27,6 +27,12 @@ export interface LoadmapOptions<P> extends SimOptions {
   /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
   fullScreenMode?: FullScreenMode
   /**
+   * The root fills its container, laid out as full screen is (in `fullScreenMode`), and stays so: no full screen
+   * button. For a page of its own made to be framed, such as an embed: the container takes the frame's height, and the
+   * layout follows the frame's size as full screen follows the screen's.
+   */
+  fill?: boolean
+  /**
    * Seconds the diagram takes to move to a new structure (a scenario, a story step or a control that adds pods): what
    * stays moves, what is new fades in. 0 cuts. Default 0.8; with reduced motion it always cuts. The load never moves it.
    */
@@ -65,8 +71,10 @@ export interface LoadmapController<P = any> {
   setStoryPlaying: (on: boolean) => void
   /** What the diagram says about the step the story plays; null when it does not play. */
   cue: Cue | null
-  /** The root is full screen: the browser's, or an overlay where the browser has none or refuses. */
+  /** The root is full screen: the browser's, an overlay where the browser has none or refuses, or `fill`. */
   fullScreen: boolean
+  /** The root fills its container as full screen does, for good. */
+  fill: boolean
   toggleFullScreen: () => void
   /** What full screen shows. The reader switches it; the page picks where it starts. */
   fullScreenMode: FullScreenMode
@@ -262,7 +270,8 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   // the browser's full screen, or a fixed overlay where it has none (iPhone) or refuses (a frame without the permission)
   const [screen, setScreen] = useState(false)
   const [overlay, setOverlay] = useState(false)
-  const fullScreen = screen || overlay
+  const fill = !!o.fill
+  const fullScreen = fill || screen || overlay
   useEffect(() => {
     const f = () => setScreen(!!root && document.fullscreenElement === root)
     document.addEventListener('fullscreenchange', f)
@@ -274,9 +283,10 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const fullScreenMode = modeState.start === start ? modeState.mode : start
   const setFullScreenMode = useCallback((mode: FullScreenMode) => setModeState({ start, mode }), [start])
   // the stylesheet lays the root out from these. The overlay goes in the top layer: a fixed root would only cover an
-  // ancestor with a transform, a filter or containment
+  // ancestor with a transform, a filter or containment. A root that fills its frame has them from its first paint:
+  // the root renders them
   useEffect(() => {
-    if (!root || !fullScreen) return
+    if (!root || !fullScreen || fill) return
     root.setAttribute('data-full', overlay ? 'overlay' : 'screen')
     const top = overlay && typeof root.showPopover === 'function'
     if (top) {
@@ -290,12 +300,12 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
         root.removeAttribute('popover')
       }
     }
-  }, [root, fullScreen, overlay])
+  }, [root, fullScreen, overlay, fill])
   useEffect(() => {
-    if (!root || !fullScreen) return
+    if (!root || !fullScreen || fill) return
     root.setAttribute('data-mode', fullScreenMode)
     return () => root.removeAttribute('data-mode')
-  }, [root, fullScreen, fullScreenMode])
+  }, [root, fullScreen, fullScreenMode, fill])
   // Esc leaves the overlay as it leaves the browser's full screen
   useEffect(() => {
     if (!overlay) return
@@ -304,13 +314,13 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => document.removeEventListener('keydown', f)
   }, [overlay])
   const toggleFullScreen = useCallback(() => {
-    // nothing is drawn without a root to measure
-    if (!root) return
+    // nothing is drawn without a root to measure; a root that fills its container stays as it is
+    if (!root || fill) return
     if (overlay) setOverlay(false)
     else if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
     else if (root.requestFullscreen) root.requestFullscreen().catch(() => setOverlay(true))
     else setOverlay(true)
-  }, [root, overlay])
+  }, [root, overlay, fill])
 
   return {
     model,
@@ -327,6 +337,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     setStoryPlaying,
     cue: storyPlaying ? cue : null,
     fullScreen,
+    fill,
     toggleFullScreen,
     fullScreenMode,
     setFullScreenMode,

@@ -134,7 +134,9 @@ and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for Git
 under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
 `<div class="island" data-island="example|editor|templates|quickstart">`. A page with `frame: 'app'` (the editor at
 `/editor/`) is its Markdown alone in the window, without the site's frame, pager or llms.txt entry; `hidden: true`
-leaves a page out of the sidebar. `apps/docs/test/site.test.ts` builds the site, checks every link, and draws the live
+leaves a page out of the sidebar. `/embed/` is not a page: `writePages` writes it bare (no docs CSS) for
+`site/embed.tsx`, which draws a share link's definition filling an iframe (`<Loadmap fill>`); the editor's "Copy embed
+link" makes its links. `apps/docs/test/site.test.ts` builds the site, checks every link, and draws the live
 pages in Chromium. The build also writes `llms.txt` (the pages) and
 `llms-full.txt` (`docs/dsl.md` and `docs/every-statement.loadmap`, which must hold every statement of the schema:
 `docs.test.ts`); the dsl build copies `docs/dsl.md` into its `dist/REFERENCE.md`.

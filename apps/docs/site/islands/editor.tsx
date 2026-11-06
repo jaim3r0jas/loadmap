@@ -3,7 +3,13 @@
 // draft stays one click away. A link opens for readers: the diagram with the inspector, the text one click away
 // (?code opens it with the text, as the docs' Edit links do). Close goes back to the docs.
 import { decodeShare, type Shared } from '@loadmap/dsl'
-import { type EditorLayout, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '@loadmap/editor'
+import {
+  type EditorLayout,
+  type EmbedOptions,
+  LoadmapEditor,
+  type LoadmapEditorHandle,
+  TEMPLATES,
+} from '@loadmap/editor'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
@@ -40,6 +46,15 @@ const WHOLE = new Set<string>([...TEMPLATES.map((t) => t.source), ...Object.valu
 
 const readDraft = () => read(DRAFT)
 const query = () => new URLSearchParams(location.search)
+
+/** The site's embed page for a share hash, with what the reader picked: the page ClickUp's /embed frames. */
+function embedLink(hash: string, o: EmbedOptions): string {
+  const url = new URL('../embed/', location.href)
+  url.searchParams.set('mode', o.mode)
+  if (o.theme !== 'auto') url.searchParams.set('theme', o.theme)
+  if (o.play) url.searchParams.set('play', '1')
+  return `${url.href}#${hash}`
+}
 const fromLink = () => location.hash.startsWith('#v1.')
 const template = () => TEMPLATES.find((t) => t.id === query().get('template'))
 const example = () => {
@@ -172,6 +187,7 @@ function Editor({ root }: { root: URL }) {
       values={'values' in start ? start.values : undefined}
       layout={layout}
       onChange={save}
+      embedLink={embedLink}
       split={split}
       onSplit={(n) => write(SPLIT, String(n))}
       start={
