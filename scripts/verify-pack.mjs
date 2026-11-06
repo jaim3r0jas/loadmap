@@ -95,7 +95,12 @@ import { viteBuild } from ${JSON.stringify(pathToFileURL(join(repo, 'scripts/bud
 const page = (n) => join(import.meta.dirname, n + '.html')
 export default defineConfig({
   plugins: [react()],
-  build: viteBuild('dist', { loadmap: page('loadmap'), editor: page('editor'), quickstart: page('quickstart') }),
+  build: viteBuild('dist', {
+    loadmap: page('loadmap'),
+    editor: page('editor'),
+    quickstart: page('quickstart'),
+    source: page('source'),
+  }),
 })
 `,
   )
@@ -136,6 +141,20 @@ export default defineConfig({
     join(app, 'quickstart.html'),
     readFileSync(join(app, 'loadmap.html'), 'utf8').replace('./src/loadmap.tsx', './src/quickstart.tsx'),
   )
+  // checkout.loadmap drawn from its text, the compiler loaded only by @loadmap/react/source
+  writeFileSync(
+    join(app, 'src/source.tsx'),
+    `import { LoadmapSource } from '@loadmap/react/source'
+import { createRoot } from 'react-dom/client'
+import text from './checkout.loadmap?raw'
+
+createRoot(document.getElementById('root')!).render(<LoadmapSource source={text} name="checkout.loadmap" />)
+`,
+  )
+  writeFileSync(
+    join(app, 'source.html'),
+    readFileSync(join(app, 'loadmap.html'), 'utf8').replace('./src/loadmap.tsx', './src/source.tsx'),
+  )
   run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], app)
 
   step('tsc, then vite build')
@@ -162,6 +181,7 @@ export default defineConfig({
         for (const [page, nodes] of [
           ['loadmap', 5],
           ['quickstart', 3],
+          ['source', 5],
         ]) {
           const r = await open(browser, `http://localhost:${port}/${page}.html`, nodes)
           console.log(`  ${mode} ${page}: ${r.drawn} nodes, ELK ${r.worker ? 'in a worker' : 'on the main thread'}`)

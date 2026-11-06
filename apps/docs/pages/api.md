@@ -58,6 +58,7 @@ Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layou
 | `LoadmapRoot`, `Diagram`, `Verdict` (the panel; the type of `ev.verdict` is `VerdictResult`), `Limits`, `Meters`, `Controls`, `Assumptions`, `Scenarios`, `Story`, `HeadroomChart`, `Compare` | The pieces, each taking `lm` from `useLoadmap`                                  |
 | `injectStyles()`, `LOADMAP_CSS`                                                                                                      | The styles (injected on first render), for a shadow root or server rendering    |
 | `usePageTheme(theme)`                                                                                                                | The theme `theme` draws: with `'inherit'`, the page's own switch, followed      |
+| `<LoadmapSource source name? functions? />` (`@loadmap/react/source`)                                                                | A `.loadmap` text drawn, or its diagnostics while it does not compile           |
 | `workerElk(make)`                                                                                                                    | An ELK engine in the worker `make` starts, for `elk`                            |
 
 `<Loadmap>` props: `model`, `view`, `theme` (`'auto'`, `'light'`, `'dark'`, `'inherit'` for the page's own switch), `title`, `assumptions` (lines added before

@@ -1,4 +1,4 @@
-import type { Reporter, Span } from './diagnostics'
+import { Reporter, type Span } from './diagnostics'
 
 export type TokenKind = 'ident' | 'number' | 'string' | 'template' | 'punct' | 'newline' | 'comment' | 'eof'
 
@@ -161,4 +161,11 @@ function skipExpression(src: string, i: number, to: number, report: Reporter, de
     i++
   }
   return i
+}
+
+/** The text as its tokens: the same for two texts that differ only in spaces, line breaks and comments. */
+export function fingerprint(source: string): string {
+  return lex(source, new Reporter(source))
+    .map((t) => t.text)
+    .join('\u0001')
 }

@@ -27,6 +27,8 @@ export const LOADMAP_CSS = `
 .lm h2 { font-size: 1.3rem; font-weight: 600; margin: 0; text-wrap: balance; }
 .lm h3 { font: 600 .74rem var(--lm-font); text-transform: uppercase; letter-spacing: .08em; color: var(--lm-muted); margin: 0; }
 .lm button:focus-visible, .lm input:focus-visible, .lm select:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
+.lm-problems { margin: 0; padding: 10px 12px; font: .8rem/1.5 var(--lm-mono); white-space: pre-wrap; overflow-x: auto; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-left: 3px solid var(--lm-drop); border-radius: 6px; }
+.lm-note { margin: 0; font-size: .8rem; color: var(--lm-muted); }
 .lm-card { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
 
 .lm-wrap { display: grid; gap: 8px; min-width: 0; position: relative; }
