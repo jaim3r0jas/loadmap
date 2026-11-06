@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { encodeShare } from '@loadmap/dsl'
+import { TEMPLATES } from '@loadmap/editor/templates'
 import { chromium } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,10 +14,13 @@ import { included, PAGES, relative, render } from '../pages'
 const config = join(import.meta.dirname, '../vite.config.ts')
 const routeOf = (href: string, from: string) => new URL(href, `http://x/${from ? `${from}/` : ''}`).pathname
 const routes = new Set(PAGES.map((p) => `/${p.route ? `${p.route}/` : ''}`))
+/** The pages in the site's frame; the others (the editor) fill the window. */
+const DOCS = PAGES.filter((p) => !p.frame)
 
 /** Every link of a page leads to a page of the site, or to a heading on the same page. */
 function expectLinks(html: string, route: string, label: string) {
-  for (const [, href] of html.matchAll(/href="([^"]+)"/g)) {
+  // data-editor: where an island's Edit link leads
+  for (const [, href] of html.matchAll(/(?:href|data-editor)="([^"]+)"/g)) {
     if (/^(https?:|mailto:|\/assets\/)/.test(href!)) continue
     if (href!.startsWith('#')) expect(html, `${label} links to ${href}`).toContain(`id="${href!.slice(1)}"`)
     else {
@@ -106,7 +110,7 @@ describe('the built site', () => {
   it('has an llms.txt that links every page, and an llms-full.txt with the reference and the complete model', () => {
     const published = 'https://jaim3r0jas.github.io/loadmap/'
     const links = [...readFileSync(join(out, 'llms.txt'), 'utf8').matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]!)
-    for (const p of PAGES) expect(links, p.route).toContain(`${published}${p.route ? `${p.route}/` : ''}`)
+    for (const p of DOCS) expect(links, p.route).toContain(`${published}${p.route ? `${p.route}/` : ''}`)
     for (const l of links) {
       expect(l.startsWith(published), l).toBe(true)
       const path = l.slice(published.length)
@@ -121,7 +125,7 @@ describe('the built site', () => {
   })
 
   it('marks the current page, and links the previous, the next and its sections only to what exists', () => {
-    PAGES.forEach((p, i) => {
+    DOCS.forEach((p, i) => {
       const html = readFileSync(join(out, p.route, 'index.html'), 'utf8')
       const side = /<nav class="side"[^>]*>([\s\S]*?)<\/nav>/.exec(html)![1]!
       expect(
@@ -130,9 +134,17 @@ describe('the built site', () => {
       ).toEqual([p.nav])
       const pager = /<nav class="pager"[^>]*>([\s\S]*?)<\/nav>/.exec(html)![1]!
       expect(pager.includes('rel="prev"'), p.route).toBe(i > 0)
-      expect(pager.includes('rel="next"'), p.route).toBe(i < PAGES.length - 1)
+      expect(pager.includes('rel="next"'), p.route).toBe(i < DOCS.length - 1)
       expectLinks(html, p.route, p.route || 'home')
     })
+    // an app page has none of the frame; the sidebar marks it as one
+    const editor = readFileSync(join(out, 'editor/index.html'), 'utf8')
+    for (const frame of ['class="top"', 'class="side"', 'class="pager"', 'class="toc'])
+      expect(editor).not.toContain(frame)
+    expect(editor).toContain('<body class="app" data-root="../">')
+    expect(readFileSync(join(out, 'index.html'), 'utf8')).toContain(
+      'href="./editor/">Editor <span class="app-mark" aria-hidden="true">⤢</span>',
+    )
     const reference = readFileSync(join(out, 'reference/index.html'), 'utf8')
     expect(reference).toContain('<aside class="toc"')
     expect(reference).toContain('<a href="#flow">flow</a>')
@@ -184,7 +196,7 @@ describe('the built site', () => {
     const browser = await chromium.launch()
     try {
       for (const width of [390, 1366, 1920]) {
-        for (const route of ['', 'concepts/', 'reference/', 'editor/']) {
+        for (const route of ['', 'concepts/', 'reference/']) {
           const page = await browser.newPage({ viewport: { width, height: 900 } })
           await page.goto(`${url}${route}`)
           if (route !== 'reference/')
@@ -205,7 +217,7 @@ describe('the built site', () => {
           })
           expect(m.scroll, at).toBeLessThanOrEqual(width)
           expect(m.text, at).toBeLessThanOrEqual(760)
-          if (width === 1920 && route !== 'editor/') expect(Math.abs(m.left - m.right), at).toBeLessThanOrEqual(1)
+          if (width === 1920) expect(Math.abs(m.left - m.right), at).toBeLessThanOrEqual(1)
           if (width >= 1366 && m.island) expect(m.island, at).toBeGreaterThan(m.text + 50)
           await page.close()
         }
@@ -230,13 +242,6 @@ describe('the built site', () => {
       await wide.waitForFunction(() => document.querySelector('.toc li:last-child a')?.hasAttribute('aria-current'))
       expect(await wide.locator('.toc a[aria-current]').count()).toBe(1)
 
-      const editor = await browser.newPage({ viewport: { width: 1366, height: 900 } })
-      await editor.goto(`${url}editor/`)
-      await editor.waitForSelector('.lme-left')
-      await editor.evaluate(() => scrollTo(0, 600))
-      const pane = await editor.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().top)
-      const bar = await editor.evaluate(() => document.querySelector('.top')!.getBoundingClientRect().bottom)
-      expect(pane).toBeGreaterThanOrEqual(bar)
       expect(await wide.locator('.menu').isVisible()).toBe(false)
 
       const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
@@ -244,7 +249,7 @@ describe('the built site', () => {
       expect(await phone.locator('.side').isVisible()).toBe(false)
       await phone.locator('.menu summary').click()
       const links = phone.locator('.menu .panel ul a')
-      expect(await links.count()).toBe(PAGES.length)
+      expect(await links.count()).toBe(PAGES.filter((p) => !p.hidden).length)
       for (const link of await links.all()) expect(await link.isVisible()).toBe(true)
       expect(await phone.locator('.menu [aria-current="page"]').textContent()).toBe('Reference')
     } finally {
@@ -261,6 +266,11 @@ describe('the built site', () => {
       await page.goto(`${url}editor/#${hash}`)
       await page.waitForSelector('.lme-inspector')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
+      // the old link opens the same model, at the values it carries
+      expect(await page.locator('.lm h2').first().textContent()).toBe('Checkout pipeline')
+      expect(
+        await page.evaluate(() => document.querySelector<HTMLInputElement>('.lm input[type="range"]')?.value),
+      ).toBe('30')
       await page.locator('.lme-preview [data-node="gateway"]').click()
       await page.waitForFunction(() => document.querySelector('.lme-inspector h3')?.textContent === 'API gateway')
       await page.getByRole('button', { name: 'Show code' }).click()
@@ -287,11 +297,158 @@ describe('the built site', () => {
       await page.evaluate((s) => localStorage.setItem('loadmap-editor-draft', s), mine)
       await page.reload()
       await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
-      await page.getByRole('button', { name: 'checkout', exact: true }).click()
+      await page.getByRole('combobox', { name: 'Open an example' }).selectOption('checkout')
       await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'Checkout pipeline')
       expect(await page.evaluate(() => localStorage.getItem('loadmap-editor-draft-earlier'))).toBe(mine)
-      await page.getByRole('button', { name: 'your earlier draft' }).click()
+      await page.getByRole('combobox', { name: 'Open an example' }).selectOption('earlier')
       await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('fills the window with the editor, without the docs frame, and keeps where the divider was left', async () => {
+    const browser = await chromium.launch()
+    try {
+      for (const [width, height] of [
+        [1440, 900],
+        [2560, 1440],
+      ] as const) {
+        const page = await browser.newPage({ viewport: { width, height } })
+        await page.goto(`${url}editor/`)
+        await page.waitForSelector('[data-node]')
+        const m = await page.evaluate(() => {
+          const lme = document.querySelector('.lme')!.getBoundingClientRect()
+          const text = document.querySelector('.lme-left')!.getBoundingClientRect()
+          const shown = document.querySelector('.lme-preview')!.getBoundingClientRect()
+          return {
+            frame: document.querySelectorAll('.top, .side, .pager').length,
+            scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+            lme: [lme.width, lme.height],
+            side: text.right <= shown.left && text.height > innerHeight * 0.8,
+          }
+        })
+        const at = `${width}x${height}`
+        expect(m.frame, at).toBe(0)
+        expect(m.scroll, at).toEqual([width, height])
+        expect(m.lme, at).toEqual([width, height])
+        expect(m.side, at).toBe(true)
+        await page.close()
+      }
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+      await page.goto(`${url}editor/`)
+      const divider = page.getByRole('separator', { name: 'Resize the text and the diagram' })
+      expect(await divider.getAttribute('aria-valuenow')).toBe('40')
+      await divider.focus()
+      for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
+      expect(await divider.getAttribute('aria-valuenow')).toBe('50')
+      await page.reload()
+      expect(await divider.getAttribute('aria-valuenow')).toBe('50')
+      const half = await page.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().width)
+      expect(Math.abs(half - 720)).toBeLessThan(12)
+      await page.getByRole('button', { name: 'Help' }).click()
+      expect(await page.locator('#help').isVisible()).toBe(true)
+      await page.keyboard.press('Escape')
+      expect(await page.locator('#help').isHidden()).toBe(true)
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('opens a template, and a link with the text when it asks for the code', async () => {
+    const source = readFileSync(join(import.meta.dirname, '../../../examples/alerts/alerts.loadmap'), 'utf8')
+    const hash = await encodeShare(source)
+    const t = TEMPLATES.find((x) => x.id === 'queue-workers')!
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}editor/?template=${t.id}`)
+      await page.waitForSelector('.lm h2')
+      expect(await page.locator('.lm h2').first().textContent()).toBe(/title: "([^"]+)"/.exec(t.source)![1])
+      expect(await page.locator('.lme-left').isVisible()).toBe(true)
+      await page.goto(`${url}editor/?code#${hash}`)
+      await page.waitForSelector('[data-node]')
+      expect(await page.locator('.lme-left').isVisible()).toBe(true)
+      expect(await page.locator('.lme-inspector').count()).toBe(0)
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('closes back to the page it was opened from, and to the docs home when opened cold', async () => {
+    const hash = await encodeShare(readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8'))
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}templates/`)
+      await page.getByRole('link', { name: /in the editor$/ }).click()
+      await page.waitForSelector('.lme-left')
+      await page.getByRole('link', { name: 'Docs' }).click()
+      await page.waitForURL(`${url}templates/`)
+      // where the reader was: going back, not a new visit
+      expect(await page.evaluate(() => history.length)).toBe(3)
+
+      const cold = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await cold.goto(`${url}editor/#${hash}`)
+      const close = cold.getByRole('link', { name: 'Docs' })
+      expect(await close.getAttribute('href')).toBe(url)
+      await close.click()
+      await cold.waitForURL(url)
+      expect(await cold.locator('h1').first().isVisible()).toBe(true)
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('opens the docs fences and examples in the editor, with the values set', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}concepts/`)
+      const title = await page.locator('.island .lm h2').first().textContent()
+      await page.locator('.island .edit a').first().click()
+      await page.waitForURL(/\/editor\/\?code#v1\./)
+      await page.waitForSelector('[data-node]')
+      expect(await page.locator('.lm h2').first().textContent()).toBe(title)
+      expect(await page.locator('.lme-left').isVisible()).toBe(true)
+
+      await page.goto(`${url}examples/checkout/`)
+      await page.waitForSelector('[data-node]')
+      await page
+        .getByRole('button', { name: /^Black Friday/ })
+        .first()
+        .click()
+      await page.getByRole('link', { name: 'Edit in the editor ⤢' }).click()
+      await page.waitForURL(/\/editor\/\?code#v1\..*load=40.*pods=6/)
+      await page.waitForSelector('[data-node]')
+      expect(await page.locator('.lm h2').first().textContent()).toBe('Checkout pipeline')
+      expect(await page.locator('.lme-left').isVisible()).toBe(true)
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('shows one pane at a time on a phone, the rest of the buttons in a menu', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      await page.goto(`${url}editor/`)
+      await page.waitForSelector('.lme-panes')
+      expect(await page.locator('.lme-left').isVisible()).toBe(true)
+      expect(await page.locator('.lme-preview').isHidden()).toBe(true)
+      await page.getByRole('tab', { name: 'Diagram' }).click()
+      await page.waitForSelector('[data-node]')
+      expect(await page.locator('.lme-left').isHidden()).toBe(true)
+      const m = await page.evaluate(() => ({
+        scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+        bar: document.querySelector('.lme-bar')!.getBoundingClientRect().height,
+      }))
+      expect(m.scroll).toEqual([390, 844])
+      // one row
+      expect(m.bar).toBeLessThan(56)
+      expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(false)
+      await page.getByLabel('More').click()
+      expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(true)
     } finally {
       await browser.close()
     }

@@ -73,6 +73,37 @@ export const EDITOR_CSS = `
 .lme-formula input[type="text"] { width: auto; font-family: var(--lm-mono); }
 .lme-field small { color: var(--lm-muted); font-size: .74rem; }
 .lme-field .lme-error { color: var(--lm-drop); }
+/* fill: the editor is the whole of its container; each side scrolls on its own */
+.lme[data-fill] { --lm-pad: 0; height: 100%; gap: 0; grid-template-rows: auto minmax(0, 1fr); }
+.lme[data-fill][data-narrow]:not(:has(> .lme-split[data-layout="reader"])) { grid-template-rows: auto auto minmax(0, 1fr); }
+.lme[data-fill][data-dragging] { user-select: none; cursor: col-resize; }
+.lme[data-fill] > .lme-bar { padding: 6px 10px; gap: 6px; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); }
+.lme[data-fill] > .lme-bar select { max-width: 12rem; }
+.lme[data-fill] .lme-split { gap: 0; align-items: stretch; min-height: 0; grid-template-columns: var(--lme-share, 40%) 9px minmax(0, 1fr); }
+.lme[data-fill] .lme-left { position: static; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; padding: 10px 0 10px 10px; }
+.lme[data-fill] .lme-code { min-height: 0; }
+.lme[data-fill] .lme-code .cm-editor { height: 100%; }
+.lme[data-fill] .lme-preview { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 16px 24px; }
+.lme[data-fill] .lme-preview[hidden] { display: none; }
+.lme-divider { position: relative; cursor: col-resize; touch-action: none; }
+.lme-divider::before { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--lm-line); }
+.lme-divider::after { content: ""; position: absolute; top: 50%; left: 3px; width: 3px; height: 32px; margin-top: -16px; border-radius: 2px; background: var(--lm-muted); opacity: .45; }
+.lme-divider:hover::before, .lme-divider:focus-visible::before, .lme[data-dragging] .lme-divider::before { left: 3px; width: 3px; background: var(--lm-accent); }
+.lme-divider:focus-visible { outline: none; }
+.lme[data-fill] .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); }
+.lme[data-fill] .lme-inspector { position: static; max-height: none; border-width: 0 0 0 1px; border-radius: 0; box-shadow: none; }
+.lme[data-fill][data-narrow] .lme-split { grid-template-columns: minmax(0, 1fr); }
+.lme[data-fill][data-narrow] .lme-left { padding: 8px; }
+.lme[data-fill][data-narrow] .lme-split[data-layout="reader"] { grid-template-rows: minmax(0, 1fr) auto; }
+.lme[data-fill][data-narrow] .lme-inspector { max-height: 45dvh; border-width: 1px 0 0; box-shadow: 0 -6px 18px rgb(0 0 0 / .12); }
+.lme-panes { display: flex; gap: 6px; padding: 6px 10px; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); }
+.lme-panes > button { flex: 1; }
+.lme-panes [aria-selected="true"] { background: var(--lm-accent); color: var(--lm-surface); border-color: var(--lm-accent); }
+.lme-more { position: relative; }
+.lme-more > summary { list-style: none; }
+.lme-more > summary::-webkit-details-marker { display: none; }
+.lme-menu { position: absolute; z-index: 10; right: 0; top: calc(100% + 4px); display: grid; gap: 6px; min-width: 210px; padding: 8px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; box-shadow: 0 10px 30px rgb(0 0 0 / .18); }
+.lme-menu > * { width: 100%; text-align: left; }
 .lme-empty { margin: 0; padding: 40px 16px; text-align: center; color: var(--lm-muted); border: 1px dashed var(--lm-line); border-radius: 8px; }
 `
 

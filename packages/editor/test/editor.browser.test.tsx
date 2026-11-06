@@ -176,3 +176,69 @@ describe('the editor', () => {
       await page.screenshot({ path: `__screenshots__/editor-${theme}.png`, element: host })
     })
 })
+
+describe('the editor filling its container', () => {
+  async function fill(width: number, o: { split?: number; onSplit?: (n: number) => void; start?: string } = {}) {
+    await page.viewport(1440, 900)
+    const host = document.createElement('div')
+    host.style.cssText = `width: ${width}px; height: 700px`
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapEditorHandle>()
+    root = createRoot(host)
+    root.render(
+      <LoadmapEditor
+        ref={ref}
+        fill
+        initial={checkout}
+        split={o.split}
+        onSplit={o.onSplit}
+        start={o.start && <a href="/">{o.start}</a>}
+      />,
+    )
+    await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
+    await ref.current!.loadmap()!.ready()
+    return host
+  }
+  const box = (host: HTMLElement, s: string) => host.querySelector(s)!.getBoundingClientRect()
+
+  it('puts the text beside the diagram, each scrolling on its own, with a divider to move', async () => {
+    const moved: number[] = []
+    const host = await fill(1200, { split: 0.5, onSplit: (n) => moved.push(n), start: 'Back' })
+    expect(host.querySelector('.lme-bar > a')!.textContent).toBe('Back')
+    expect(box(host, '.lme').height).toBe(700)
+    // the diagram's panels are taller than the window: the preview scrolls, the page does not
+    const preview = host.querySelector<HTMLElement>('.lme-preview')!
+    expect(preview.scrollHeight).toBeGreaterThan(preview.clientHeight)
+    expect(box(host, '.lme-left').right).toBeLessThanOrEqual(box(host, '.lme-preview').left)
+    expect(Math.abs(box(host, '.lme-left').width - 600)).toBeLessThan(12)
+    const divider = page.getByRole('separator')
+    await expect.element(divider).toHaveAttribute('aria-valuenow', '50')
+    await userEvent.click(divider)
+    await userEvent.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    await expect.element(divider).toHaveAttribute('aria-valuenow', '40')
+    await userEvent.keyboard('{Home}')
+    await expect.element(divider).toHaveAttribute('aria-valuenow', '20')
+    expect(moved.map((n) => Math.round(n * 100))).toEqual([40, 20])
+    // back to where the page put it
+    await userEvent.dblClick(divider)
+    await expect.element(divider).toHaveAttribute('aria-valuenow', '50')
+  })
+
+  it('shows one pane at a time when narrow, the buttons other than Share in a menu', async () => {
+    const host = await fill(400)
+    expect(host.querySelector('.lme-divider')).toBeNull()
+    expect(host.querySelector<HTMLElement>('.lme-preview')!.hidden).toBe(true)
+    await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
+    expect(host.querySelector<HTMLElement>('.lme-left')!.hidden).toBe(true)
+    expect(host.querySelector<HTMLElement>('.lme-preview')!.hidden).toBe(false)
+    const more = host.querySelector<HTMLDetailsElement>('.lme-more')!
+    expect(more.open).toBe(false)
+    await userEvent.click(page.getByLabelText('More'))
+    expect(more.open).toBe(true)
+    await userEvent.click(page.getByRole('button', { name: 'Format' }))
+    expect(more.open).toBe(false)
+    // the button picked is hidden now: the focus goes back to the menu's own
+    expect(document.activeElement).toBe(more.querySelector('summary'))
+    expect(page.getByRole('button', { name: 'Share' }).element()).toBeTruthy()
+  })
+})

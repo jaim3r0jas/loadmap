@@ -4,7 +4,7 @@ Orders and events from phones pass an API gateway, wait in Kafka, are handled by
 Postgres. The gateway's capacity is a vendor benchmark (± 30 %), the workers' cost per message a fit from a measured
 series. It compares today with a proposal and carries a story of three steps.
 
-<div class="island" data-island="example" data-name="checkout"></div>
+<div class="island" data-island="example" data-name="checkout" data-editor="../../editor/"></div>
 
 The buttons export the board as it is now: a PNG, a poster with the limits and the scenarios compared, an SVG, or a
 WebM of the story. The same model as text is

@@ -12,8 +12,13 @@ export interface Page {
   /** Its name in the sidebar. */
   nav: string
   group?: string
-  /** The page takes the whole width: the editor. */
-  wide?: boolean
+  /**
+   * `app`: the page's Markdown alone fills the window, with no top bar, pages, contents or pager (the editor); its
+   * title is for readers of the page's outline. Such a page is left out of the pager and llms.txt.
+   */
+  frame?: 'app'
+  /** Not listed in the sidebar. */
+  hidden?: boolean
 }
 
 export const PAGES: readonly Page[] = [
@@ -28,8 +33,11 @@ export const PAGES: readonly Page[] = [
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },
   { route: 'examples/alerts', file: 'alerts.md', nav: 'Alerts', group: 'Examples' },
   { route: 'templates', file: 'templates.md', nav: 'Templates', group: 'Examples' },
-  { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'Examples', wide: true },
+  { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'Examples', frame: 'app' },
 ]
+
+/** The pages in the site's frame: the pager and llms.txt go through these. */
+const DOCS = PAGES.filter((p) => !p.frame)
 
 const here = import.meta.dirname
 const repo = join(here, '../..')
@@ -111,7 +119,7 @@ export function render(page: Page): { title: string; html: string; headings: Hea
       },
       code({ text, lang }) {
         if (lang === 'loadmap live')
-          return `<div class="island" data-island="loadmap"><pre class="code">${esc(text)}</pre></div>\n`
+          return `<div class="island" data-island="loadmap" data-editor="${up}editor/"><pre class="code">${esc(text)}</pre></div>\n`
         return `<pre class="code"${lang ? ` data-lang="${esc(lang)}"` : ''}><code>${esc(text)}</code></pre>\n`
       },
       link({ href, title, tokens }) {
@@ -141,17 +149,19 @@ export const relative = (route: string) => (route ? '../'.repeat(route.split('/'
 
 const href = (up: string, p: Page) => `${up}${p.route ? `${p.route}/` : ''}`
 
-/** The pages grouped as the sidebar and the phone's menu list them, the current one marked. */
+/** The pages grouped as the sidebar and the phone's menu list them, the current one marked; an app is marked ⤢. */
 function pageList(page: Page, up: string): string {
   const nav: string[] = []
-  PAGES.forEach((p, i) => {
-    if (i === 0 || p.group !== PAGES[i - 1]!.group) {
+  const listed = PAGES.filter((p) => !p.hidden)
+  listed.forEach((p, i) => {
+    if (i === 0 || p.group !== listed[i - 1]!.group) {
       if (i > 0) nav.push('</ul>')
       if (p.group) nav.push(`<p class="nav-group">${esc(p.group)}</p>`)
       nav.push('<ul>')
     }
     const current = p === page ? ' aria-current="page"' : ''
-    nav.push(`<li><a href="${href(up, p)}"${current}>${esc(p.nav)}</a></li>`)
+    const app = p.frame === 'app' ? ' <span class="app-mark" aria-hidden="true">⤢</span>' : ''
+    nav.push(`<li><a href="${href(up, p)}"${current}>${esc(p.nav)}${app}</a></li>`)
   })
   nav.push('</ul>')
   return nav.join('')
@@ -174,10 +184,10 @@ function contents(headings: readonly Heading[]): { aside: string; folded: string
 
 /** Previous and next in the sidebar's order. */
 function pager(page: Page, up: string): string {
-  const i = PAGES.indexOf(page)
+  const i = DOCS.indexOf(page)
   if (i < 0) return ''
-  const prev = PAGES[i - 1]
-  const next = PAGES[i + 1]
+  const prev = DOCS[i - 1]
+  const next = DOCS[i + 1]
   const link = (p: Page, rel: 'prev' | 'next') =>
     `<a class="${rel}" rel="${rel}" href="${href(up, p)}"><small>${rel === 'prev' ? '← Previous' : 'Next →'}</small>${esc(p.nav)}</a>`
   return `<nav class="pager" aria-label="Previous and next">${prev ? link(prev, 'prev') : ''}${next ? link(next, 'next') : ''}</nav>`
@@ -201,7 +211,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
     <meta name="description" content="loadmap draws a system's architecture with its load flowing through it, ranks the parts by when they run out, and writes the verdict." />
     <link rel="stylesheet" href="/docs.css" />
   </head>
-  <body${page.wide ? ' class="wide"' : ''}>
+  <body>
     <header class="top">
       <div class="bar">
         <a class="brand" href="${up}">loadmap</a>
@@ -229,6 +239,30 @@ ${pager(page, up)}
 }
 
 /**
+ * An app page: its Markdown alone in the window. `data-root` leads its islands back to the site's root, wherever it is
+ * served.
+ */
+function appShell(page: Page, title: string, body: string): string {
+  const text = body.replace(EYEBROW, '').replace(CONTENTS, '')
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${esc(`${title} · loadmap`)}</title>
+    <link rel="stylesheet" href="/docs.css" />
+  </head>
+  <body class="app" data-root="${relative(page.route)}">
+    <main>
+${text}
+    </main>
+    <script type="module" src="/client.tsx"></script>
+  </body>
+</html>
+`
+}
+
+/**
  * Writes every page into site/, and a 404 whose links start at `base` (GitHub Pages serves it at any depth). Returns
  * the HTML files.
  */
@@ -238,7 +272,7 @@ export function writePages(base = '/'): string[] {
     const { title, html, headings } = render(page)
     const file = join(SITE, page.route, 'index.html')
     mkdirSync(dirname(file), { recursive: true })
-    update(file, shell(page, title, html, headings))
+    update(file, page.frame === 'app' ? appShell(page, title, html) : shell(page, title, html, headings))
     files.push(file)
   }
   const missing = join(SITE, '404.html')
@@ -258,7 +292,7 @@ const PUBLISHED = 'https://jaim3r0jas.github.io/loadmap/'
  */
 export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
   const groups = new Map<string, Page[]>()
-  for (const p of PAGES) groups.set(p.group!, [...(groups.get(p.group!) ?? []), p])
+  for (const p of DOCS) groups.set(p.group!, [...(groups.get(p.group!) ?? []), p])
   const map = [
     '# loadmap',
     '',
