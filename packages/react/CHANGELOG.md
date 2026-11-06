@@ -1,5 +1,31 @@
 # @loadmap/react
 
+## 0.8.0
+
+### Minor Changes
+
+- 25a0575: `<LoadmapSource source={text} name="shop.loadmap" />` from `@loadmap/react/source` draws a `.loadmap` text with the
+  options it declares (the page's props win; its `assumptions` come first). It compiles again when the text's tokens
+  change, so spaces and comments keep the board and its values; while the text does not compile it shows the
+  diagnostics as `loadmap check` prints them, above the last version that did. It is a separate entry, the one that
+  loads the compiler: a page built from code never does. `@loadmap/react` now depends on `@loadmap/dsl` for it.
+- 0fb1d62: `theme="inherit"` follows the page's own light and dark switch, `data-theme="dark"` or a `dark` class on `<html>`,
+  as it changes (the dots and the meters too), and the system's while the page sets none; `usePageTheme(theme)` gives
+  the theme it resolves to. `<LoadmapEditor theme="inherit">` does the same. Two tokens fit the root into a card that
+  has its own: `--lm-pad` (its padding, 16px) and `--lm-root-bg` (its background); full screen keeps both.
+
+### Patch Changes
+
+- 68bc952: The headroom chart keeps its labels inside its card: the load's label turns to the left of its line near the right
+  edge, and the last tick ends at its tick. A line past the top leaves through the plot's edge, in the compact chart
+  too, which now leaves room under its heading. A box's detail opens on the side with room that shows (a board that pans
+  in its own box, full screen, the window), and never past the edge of what clips it.
+- Updated dependencies [25a0575]
+  - @loadmap/dsl@0.8.0
+  - @loadmap/core@0.8.0
+  - @loadmap/layout@0.8.0
+  - @loadmap/sim@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes

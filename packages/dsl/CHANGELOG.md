@@ -1,5 +1,14 @@
 # @loadmap/dsl
 
+## 0.8.0
+
+### Patch Changes
+
+- 25a0575: The README starts from `<LoadmapSource>` (`@loadmap/react/source`) for drawing a definition on a page, and says what
+  `compile()` and `formatDiagnostic()` give for a page that does it itself.
+- @loadmap/core@0.8.0
+  - @loadmap/layout@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
