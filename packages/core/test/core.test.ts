@@ -63,6 +63,17 @@ describe('fitLinear', () => {
 })
 
 describe('model', () => {
+  it('resolves the stages a drawing needs, as evaluate does', () => {
+    const m = tiny()
+    for (const load of [1, 30]) {
+      const ev = m.evaluate({ load })
+      const at = m.stagesAt({ load })
+      expect(at.values).toEqual(ev.values)
+      expect(at.stages).toEqual(ev.stages)
+      expect(at.ctx.flows.req).toBe(ev.ctx.flows.req)
+    }
+  })
+
   it('evaluates lazily and lets functions read each other', () => {
     const m = defineModel({
       load: p.load({ max: 10 }),

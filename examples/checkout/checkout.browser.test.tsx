@@ -808,6 +808,7 @@ describe('full screen', () => {
       whole: string
       title: string | null
       text: string
+      centres: string
     }[] = []
     for (let i = 0; i < 600 && !done(); i++) {
       await handle.ready()
@@ -822,6 +823,10 @@ describe('full screen', () => {
         whole: `0 0 ${handle.engine.frame!.width} ${handle.engine.frame!.height}`,
         title: el.querySelector('.lm-title b')?.textContent ?? null,
         text: el.querySelector('.lm-story p > span[data-shown]')?.textContent ?? '',
+        // where each box stands, mid-move included
+        centres: handle.engine
+          .frame!.nodes.map((n) => `${n.id} ${(n.x + n.w / 2).toFixed(2)} ${(n.y + n.h / 2).toFixed(2)}`)
+          .join(', '),
       })
     }
     return seen
@@ -861,6 +866,9 @@ describe('full screen', () => {
     expect(seen.filter((x) => x.step === 2 && x.shot === 'change')[0]!.title).toBe(
       '3 · Proposed: Gateway instances 1 → 2, Worker pods 3 → 6',
     )
+    // no step moves a box, not even part of the way: what a step changes grows or shrinks where it stands
+    expect(new Set(seen.map((x) => x.centres)).size).toBe(1)
+    expect(new Set(seen.map((x) => x.whole)).size).toBe(1)
     // the camera moves the view, never the board; the text keeps the room of the longest step
     expect(story.getBoundingClientRect().height).toBe(height)
     await expect.poll(() => play().textContent).toBe('▶ Play')

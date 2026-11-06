@@ -52,3 +52,26 @@ it('fits a phone', async () => {
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390)
   await page.screenshot({ path: '__screenshots__/alerts-phone.png', element: el })
 })
+
+it('plays its story without moving a box, though each step changes the pods', async () => {
+  const { handle } = await mount()
+  handle.pause()
+  const seconds = handle.playStory()
+  const centres = new Set<string>()
+  const pods = new Set<number>()
+  for (let t = 0; t < seconds + 1; t += 0.1) {
+    await handle.ready()
+    handle.step(0.1)
+    const { nodes, width, height } = handle.engine.frame!
+    centres.add(
+      [
+        width,
+        height,
+        ...nodes.map((n) => `${n.id} ${(n.x + n.w / 2).toFixed(2)} ${(n.y + n.h / 2).toFixed(2)}`),
+      ].join(),
+    )
+    pods.add(nodes.find((n) => n.id === 'posPods')!.members.length)
+  }
+  expect(pods).toEqual(new Set([3, 8]))
+  expect(centres.size).toBe(1)
+})

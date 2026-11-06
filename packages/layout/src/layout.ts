@@ -62,7 +62,7 @@ export interface SceneEdge extends Fading {
 }
 
 export interface Scene {
-  /** Changes only when something that moves the layout changes; the load alone never does. */
+  /** Changes only when a box is reshaped or an edge comes or goes; the load alone never does. */
   key: string
   direction: Direction
   width: number
@@ -119,13 +119,49 @@ const SLOT = 10
 const SLOT_GAP = 3
 const LABEL_H = 16
 
-const scenes = new WeakMap<View, Map<string, Promise<Scene>>>()
+/** Ports on a side gather at its middle, this far apart, so a box drawn smaller than its slot keeps its edge ends. */
+const PORT_GAP = 8
+/** Every combination of the controls is reached up to this many; past it, each control's options one at a time. */
+const MAX_COMBINATIONS = 256
+/** The loads a label is sized at in a combination of controls that no scenario, step or preset names. */
+const FEW_LOADS = 5
+/** A range control is reached at every step up to this many; past it, at this many points across it. */
+const RANGE_STEPS = 32
+const RANGE_POINTS = 9
+
+// per measurer and view: the room each box gets depends on how wide its text measures
+const scenes = new WeakMap<TextMeasure, WeakMap<View, Map<string, Promise<Scene>>>>()
+const frames = new WeakMap<View, Map<string, Promise<Laid>>>()
 // per measurer and view, per combination of values other than the load: the contexts labels are sized against
 const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
+const reserveCache = new WeakMap<TextMeasure, WeakMap<View, Map<Direction, Frame>>>()
+const textWidths = new WeakMap<TextMeasure, Map<string, number>>()
 
 interface Sampled {
   contexts: LooseValues[]
   widths: Map<Label, Map<string, number>>
+}
+
+/** What a drawing reads from an evaluation. */
+type Drawn = Pick<Evaluation, 'values' | 'ctx' | 'stages'>
+
+type Widest = (l: Label | undefined, size: number, weight: number) => number
+
+/** The room each box and each edge label gets: the largest it takes anywhere the model reaches. */
+interface Frame {
+  key: string
+  direction: Direction
+  nodes: { id: string; w: number; h: number }[]
+  /** Every edge drawn somewhere, in the definition's order. */
+  edges: { id: string; from: string; to: string; labelW?: number }[]
+}
+
+/** A frame laid out: each box's slot and each edge's route, whatever the values. */
+interface Laid {
+  width: number
+  height: number
+  slots: Map<string, Box>
+  routes: Map<string, { points: [number, number][]; label?: Box }>
 }
 
 /** The current text of every label. Cheap: call it on every change of values; the layout stays put. */
@@ -143,23 +179,40 @@ export function labelsAt(view: View, ev: Evaluation) {
 
 /**
  * Lays the view out for the current values: grids inside clusters and pools are packed here; ELK places the boxes,
- * routes the edges and places the edge labels so that none overlaps another or a node. Results are cached by the
- * structure, so a call after a load change returns the same scene.
+ * routes the edges and places the edge labels so that none overlaps another or a node. ELK lays out every box at the
+ * largest size it takes anywhere the model reaches (its scenarios, story steps, presets and controls), and each box is
+ * drawn at its own size in the middle of that slot: no change of values the model reaches moves a box. Results are
+ * cached by the structure, so a call after a load change returns the same scene.
  */
 export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promise<Scene> {
   const direction = o.direction ?? 'RIGHT'
   const measure = o.measure ?? estimateText
   const prep = prepare(view, ev, direction, measure)
-  const cache = scenes.get(view) ?? new Map<string, Promise<Scene>>()
-  scenes.set(view, cache)
-  let hit = cache.get(prep.key)
+  const byView = scenes.get(measure) ?? new WeakMap<View, Map<string, Promise<Scene>>>()
+  scenes.set(measure, byView)
+  const cache = byView.get(view) ?? new Map<string, Promise<Scene>>()
+  byView.set(view, cache)
+  return kept(cache, prep.key, 32, () => {
+    // values nothing declared reaches grow the frame: a key of its own, laid out again
+    const frame = widen(reserve(view, direction, measure), prep)
+    const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
+    frames.set(view, byFrame)
+    return kept(byFrame, frame.key, 8, () => run(frame, o.elk)).then((l) => place(prep, l))
+  })
+}
+
+/** A promise kept by key, the oldest let go past `limit`; one that fails is let go, so the next call tries again. */
+function kept<T>(cache: Map<string, Promise<T>>, key: string, limit: number, make: () => Promise<T>): Promise<T> {
+  let hit = cache.get(key)
   if (!hit) {
-    hit = run(prep, o.elk).catch((err) => {
-      cache.delete(prep.key)
-      throw err
-    })
-    if (cache.size > 32) cache.delete(cache.keys().next().value!)
-    cache.set(prep.key, hit)
+    hit = Promise.resolve()
+      .then(make)
+      .catch((err) => {
+        cache.delete(key)
+        throw err
+      })
+    if (cache.size > limit) cache.delete(cache.keys().next().value!)
+    cache.set(key, hit)
   }
   return hit
 }
@@ -193,8 +246,16 @@ interface Prepared {
 }
 
 function prepare(view: View, ev: Evaluation, direction: Direction, measure: TextMeasure): Prepared {
-  const widest = labelWidths(view, ev, measure)
+  const { nodes, edges, stageNode } = shapes(view, ev, direction, measure, labelWidths(view, ev, measure))
+  const flowFrom: Record<string, string> = {}
+  for (const [f, fv] of Object.entries(view.def.flows) as [string, { from: string }][]) flowFrom[f] = fv.from
+  // everything the scene is built from, so two different structures never share a scene
+  const key = JSON.stringify({ direction, nodes: nodes.map((n) => [n.id, n.def.kind, n.inner]), edges, flowFrom })
+  return { key, direction, nodes, edges, stageNode, flowFrom }
+}
 
+/** Each box packed and each edge drawn at these values, its labels sized by `widest`. */
+function shapes(view: View, ev: Drawn, direction: Direction, measure: TextMeasure, widest: Widest) {
   const stageNode: Record<string, string> = {}
   const nodes = (Object.entries(view.def.nodes) as [string, AnyNodeDef][]).map(([id, def]) => {
     const own = stagesOf(def)
@@ -218,18 +279,147 @@ function prepare(view: View, ev: Evaluation, direction: Direction, measure: Text
     to: e.to,
     labelW: e.label == null ? undefined : widest(e.label, T_SUB.size, T_SUB.weight) + 8,
   }))
-  const flowFrom: Record<string, string> = {}
-  for (const [f, fv] of Object.entries(view.def.flows) as [string, { from: string }][]) flowFrom[f] = fv.from
-  // everything the scene is built from, so two different structures never share a scene
-  const key = JSON.stringify({ direction, nodes: nodes.map((n) => [n.id, n.def.kind, n.inner]), edges, flowFrom })
-  return { key, direction, nodes, edges, stageNode, flowFrom }
+  return { nodes, edges, stageNode }
+}
+
+/**
+ * The combinations of values the model reaches: the defaults, each scenario, story step and declared preset, and
+ * every combination of the controls (a range at each step, or at points across it); past `MAX_COMBINATIONS`, each
+ * control's options one at a time from each of the others. Labels are sized over every load where a scenario, step or
+ * preset stands, and at a few loads elsewhere: a label that comes out wider grows the frame. Each is handed to `f` and
+ * let go: hundreds of evaluations are too many to keep. A combination the model cannot evaluate is left out: only the
+ * values shown can fail the layout.
+ */
+function reach(view: View, measure: TextMeasure, f: (ev: Drawn, widest: Widest) => void): void {
+  const model = view.model
+  const base = model.defaults() as LooseValues
+  const anchors: LooseValues[] = [
+    base,
+    ...model.scenarios.map((s) => ({ ...base, ...s.values })),
+    ...model.story.map((s) => s.values as LooseValues),
+    ...Object.values((model.def.presets ?? {}) as Record<string, LooseValues>).map((v) => ({ ...base, ...v })),
+  ]
+  const controls = model.params.flatMap(({ id, def }) => {
+    if (def.kind === 'select') return [{ id, options: [...def.options] as unknown[] }]
+    if (def.kind === 'switch') return [{ id, options: [false, true] as unknown[] }]
+    if (def.kind === 'range') return [{ id, options: rangePoints(def) }]
+    return []
+  })
+  const count = controls.reduce((n, c) => n * c.options.length, 1)
+  const others =
+    count <= MAX_COMBINATIONS
+      ? controls.reduce<LooseValues[]>(
+          (all, c) => all.flatMap((v) => c.options.map((o) => ({ ...v, [c.id]: o }))),
+          [base],
+        )
+      : anchors.flatMap((a) => controls.flatMap((c) => c.options.map((o) => ({ ...a, [c.id]: o }))))
+  const seen = new Set<string>()
+  const fresh = (v: LooseValues) => {
+    const { load: _, ...rest } = v
+    const key = JSON.stringify(rest)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }
+  const { min, max, step, default: at } = model.load
+  const snap = (x: number) => Math.min(max, min + Math.round((x - min) / step) * step)
+  const few = [
+    ...new Set(Array.from({ length: FEW_LOADS - 1 }, (_, i) => snap(min + ((max - min) * i) / (FEW_LOADS - 2)))),
+  ].concat(at)
+  const tried = (g: () => void) => {
+    try {
+      g()
+    } catch {}
+  }
+  // swept over every load, outside the cache the values on screen keep theirs in
+  for (const v of anchors.filter(fresh))
+    tried(() => {
+      const contexts = everyLoad(model.load).map((load) => model.stagesAt({ ...v, load }).ctx)
+      f(model.stagesAt(v), widestOver(contexts, new Map(), measure))
+    })
+  for (const v of others.filter(fresh))
+    tried(() => {
+      const evs = few.map((load) => model.stagesAt({ ...v, load }))
+      const contexts = evs.map((e) => e.ctx)
+      f(evs.at(-1)!, widestOver(contexts, new Map(), measure))
+    })
+}
+
+function rangePoints(def: { min: number; max: number; step: number; default: number }): unknown[] {
+  const n = Math.floor((def.max - def.min) / def.step)
+  const points =
+    n <= RANGE_STEPS
+      ? Array.from({ length: n + 1 }, (_, i) => def.min + i * def.step)
+      : Array.from({ length: RANGE_POINTS }, (_, i) => def.min + Math.round((n * i) / (RANGE_POINTS - 1)) * def.step)
+  return [...new Set([...points, def.max, def.default])]
+}
+
+/** Every load the slider stops at, or 401 points across a slider with more. */
+function everyLoad({ min, max, step }: { min: number; max: number; step: number }): number[] {
+  const n = Math.floor((max - min) / step)
+  return n <= 400
+    ? [...Array.from({ length: n + 1 }, (_, i) => min + i * step), max]
+    : Array.from({ length: 401 }, (_, i) => min + ((max - min) * i) / 400)
+}
+
+/** The largest each box and edge label is anywhere the model reaches, in this direction. */
+function reserve(view: View, direction: Direction, measure: TextMeasure): Frame {
+  const byView = reserveCache.get(measure) ?? new WeakMap<View, Map<Direction, Frame>>()
+  reserveCache.set(measure, byView)
+  const byDirection = byView.get(view) ?? new Map<Direction, Frame>()
+  byView.set(view, byDirection)
+  let frame = byDirection.get(direction)
+  if (!frame) {
+    const all: Pick<Prepared, 'nodes' | 'edges'>[] = []
+    reach(view, measure, (ev, widest) => {
+      const s = shapes(view, ev, direction, measure, widest)
+      // a size that is not a number (no pods at all) reserves nothing
+      if (s.nodes.every((n) => Number.isFinite(n.inner.w) && Number.isFinite(n.inner.h))) all.push(s)
+    })
+    frame = widen({ key: '', direction, nodes: [], edges: [] }, ...all)
+    byDirection.set(direction, frame)
+  }
+  return frame
+}
+
+/** The frame grown to hold these shapes too. */
+function widen(frame: Frame, ...adds: Pick<Prepared, 'nodes' | 'edges'>[]): Frame {
+  const nodes = new Map(frame.nodes.map((n) => [n.id, { ...n }]))
+  const edges = new Map(frame.edges.map((e) => [e.id, { ...e }]))
+  for (const add of adds) grow(nodes, edges, add)
+  const index = (id: string) => Number(id.slice(1))
+  const out = {
+    direction: frame.direction,
+    nodes: [...nodes.values()],
+    edges: [...edges.values()].sort((a, b) => index(a.id) - index(b.id)),
+  }
+  return { key: JSON.stringify(out), ...out }
+}
+
+function grow(
+  nodes: Map<string, Frame['nodes'][number]>,
+  edges: Map<string, Frame['edges'][number]>,
+  add: Pick<Prepared, 'nodes' | 'edges'>,
+) {
+  for (const n of add.nodes) {
+    const r = nodes.get(n.id)
+    if (r) {
+      r.w = Math.max(r.w, n.inner.w)
+      r.h = Math.max(r.h, n.inner.h)
+    } else nodes.set(n.id, { id: n.id, w: n.inner.w, h: n.inner.h })
+  }
+  for (const e of add.edges) {
+    const r = edges.get(e.id)
+    if (!r) edges.set(e.id, { ...e })
+    else if (e.labelW != null) r.labelW = Math.max(r.labelW ?? 0, e.labelW)
+  }
 }
 
 /**
  * Labels are sized for their widest text over every load the slider can reach, so moving the load never moves the
  * layout. Text width does not grow steadily with a number ("9.9k" is wider than "10k"), hence every step, not a few.
  */
-function labelWidths(view: View, ev: Evaluation, measure: TextMeasure) {
+function labelWidths(view: View, ev: Drawn, measure: TextMeasure): Widest {
   const { load: _, ...rest } = ev.values
   const key = JSON.stringify(rest)
   const byView = sampleCache.get(measure) ?? new WeakMap<View, Map<string, Sampled>>()
@@ -238,38 +428,53 @@ function labelWidths(view: View, ev: Evaluation, measure: TextMeasure) {
   byView.set(view, byValues)
   let sampled = byValues.get(key)
   if (!sampled) {
-    const { min, max, step } = view.model.load
-    const n = Math.floor((max - min) / step)
-    const loads =
-      n <= 400
-        ? [...Array.from({ length: n + 1 }, (_, i) => min + i * step), max]
-        : Array.from({ length: 401 }, (_, i) => min + ((max - min) * i) / 400)
-    sampled = { contexts: loads.map((load) => view.model.evaluate({ ...ev.values, load }).ctx), widths: new Map() }
+    sampled = {
+      contexts: everyLoad(view.model.load).map((load) => view.model.stagesAt({ ...ev.values, load }).ctx),
+      widths: new Map(),
+    }
     if (byValues.size > 32) byValues.delete(byValues.keys().next().value!)
     byValues.set(key, sampled)
   }
-  const { contexts, widths } = sampled
-  return (l: Label | undefined, size: number, weight: number) => {
+  return widestOver(sampled.contexts, sampled.widths, measure)
+}
+
+function widestOver(contexts: LooseValues[], widths: Sampled['widths'], measure: TextMeasure): Widest {
+  const known = textWidths.get(measure) ?? new Map<string, number>()
+  textWidths.set(measure, known)
+  // most texts come back many times over (a label that does not follow the load, the same number at other values)
+  const width = (t: string, size: number, weight: number) => {
+    const key = `${size}/${weight}/${t}`
+    let w = known.get(key)
+    if (w == null) {
+      if (known.size > 10_000) known.clear()
+      w = measure(t, size, weight)
+      known.set(key, w)
+    }
+    return w
+  }
+  return (l, size, weight) => {
     if (l == null) return 0
-    if (typeof l === 'string') return measure(l, size, weight)
+    if (typeof l === 'string') return width(l, size, weight)
     const byFont = widths.get(l) ?? new Map<string, number>()
     widths.set(l, byFont)
     const font = `${size}/${weight}`
     let w = byFont.get(font)
     if (w == null) {
-      w = Math.max(...contexts.map((ctx) => measure(text(l, ctx), size, weight)))
+      w = Math.max(...[...new Set(contexts.map((ctx) => text(l, ctx)))].map((t) => width(t, size, weight)))
       byFont.set(font, w)
     }
     return w
   }
 }
 
-async function run(prep: Prepared, elk?: ElkEngine): Promise<Scene> {
+async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
+  const [out, into] = frame.direction === 'DOWN' ? ['SOUTH', 'NORTH'] : ['EAST', 'WEST']
+  const port = (id: string, side: string) => ({ id, width: 0, height: 0, layoutOptions: { 'elk.port.side': side } })
   const graph: ElkNode = {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': prep.direction,
+      'elk.direction': frame.direction,
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.padding': '[top=16,left=16,bottom=16,right=16]',
       'elk.spacing.nodeNode': '28',
@@ -282,12 +487,26 @@ async function run(prep: Prepared, elk?: ElkEngine): Promise<Scene> {
       'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
       'elk.layered.edgeLabels.sideSelection': 'ALWAYS_UP',
     },
-    children: prep.nodes.map((n) => ({ id: n.id, width: n.inner.w, height: n.inner.h })),
-    edges: prep.edges.map(
+    children: frame.nodes.map((n) => ({
+      id: n.id,
+      width: n.w,
+      height: n.h,
+      // every edge leaves on the side the flow runs to and arrives on the other, its ends gathered at the middle
+      layoutOptions: {
+        'elk.portConstraints': 'FIXED_SIDE',
+        'elk.portAlignment.default': 'CENTER',
+        'elk.spacing.portPort': String(PORT_GAP),
+      },
+      ports: frame.edges.flatMap((e) => [
+        ...(e.from === n.id ? [port(`${e.id}:out`, out)] : []),
+        ...(e.to === n.id ? [port(`${e.id}:in`, into)] : []),
+      ]),
+    })),
+    edges: frame.edges.map(
       (e): ElkExtendedEdge => ({
         id: e.id,
-        sources: [e.from],
-        targets: [e.to],
+        sources: [`${e.id}:out`],
+        targets: [`${e.id}:in`],
         labels: e.labelW
           ? [
               {
@@ -302,12 +521,50 @@ async function run(prep: Prepared, elk?: ElkEngine): Promise<Scene> {
       }),
     ),
   }
-  const out = (await (elk ?? (await localElk())).layout(graph as ElkGraph)) as ElkNode
+  const done = (await (elk ?? (await localElk())).layout(graph as ElkGraph)) as ElkNode
 
-  const placed = new Map((out.children ?? []).map((c) => [c.id, c]))
+  const slots = new Map(
+    (done.children ?? []).map((c): [string, Box] => [
+      c.id,
+      { x: c.x ?? 0, y: c.y ?? 0, w: c.width ?? 0, h: c.height ?? 0 },
+    ]),
+  )
+  const routes: Laid['routes'] = new Map()
+  for (const e of (done.edges ?? []) as ElkExtendedEdge[]) {
+    const points: [number, number][] = []
+    for (const s of e.sections ?? []) {
+      points.push([s.startPoint.x, s.startPoint.y])
+      for (const b of s.bendPoints ?? []) points.push([b.x, b.y])
+      points.push([s.endPoint.x, s.endPoint.y])
+    }
+    const l = e.labels?.[0]
+    routes.set(e.id, {
+      points,
+      label: l ? { x: l.x ?? 0, y: l.y ?? 0, w: l.width ?? 0, h: l.height ?? 0 } : undefined,
+    })
+  }
+  return { width: Math.ceil(done.width ?? 0), height: Math.ceil(done.height ?? 0), slots, routes }
+}
+
+/**
+ * The scene at these values on a laid-out frame: each box at its own size in the middle of its slot, each edge drawn
+ * at these values, its ends moved along their last straight run to the sides of the boxes as drawn.
+ */
+function place(prep: Prepared, l: Laid): Scene {
+  const down = prep.direction === 'DOWN'
+  const across = (p: [number, number]) => (down ? p[0] : p[1])
+  const ends = new Map<string, number[]>()
+  const end = (id: string, p: [number, number] | undefined) => {
+    if (p) ends.set(id, [...(ends.get(id) ?? []), across(p)])
+  }
+  for (const e of prep.edges) {
+    const points = l.routes.get(e.id)?.points
+    end(e.from, points?.[0])
+    end(e.to, points?.at(-1))
+  }
   const nodes: SceneNode[] = prep.nodes.map(({ id, def, inner }) => {
-    const c = placed.get(id)!
-    return offset(
+    const slot = l.slots.get(id)!
+    const n = offset(
       {
         id,
         kind: def.kind,
@@ -318,32 +575,45 @@ async function run(prep: Prepared, elk?: ElkEngine): Promise<Scene> {
         x: 0,
         y: 0,
       },
-      c.x ?? 0,
-      c.y ?? 0,
+      slot.x + (slot.w - inner.w) / 2,
+      slot.y + (slot.h - inner.h) / 2,
     )
+    // a box narrower across the flow than its gathered edge ends reaches out to them
+    const mid = down ? slot.x + slot.w / 2 : slot.y + slot.h / 2
+    const span = Math.min(
+      down ? slot.w : slot.h,
+      2 * Math.max(0, ...(ends.get(id) ?? []).map((c) => Math.abs(c - mid) + PORT_GAP / 2)),
+    )
+    if (down && span > n.w) return { ...n, x: mid - span / 2, w: span }
+    // the header stays at the top, the room below the contents
+    if (!down && span > n.h) return { ...offset(n, 0, mid - span / 2 - n.y), x: n.x, y: mid - span / 2, h: span }
+    return n
   })
-  const edges: SceneEdge[] = ((out.edges ?? []) as ElkExtendedEdge[]).map((e) => {
-    const p = prep.edges.find((x) => x.id === e.id)!
-    const points: [number, number][] = []
-    for (const s of e.sections ?? []) {
-      points.push([s.startPoint.x, s.startPoint.y])
-      for (const b of s.bendPoints ?? []) points.push([b.x, b.y])
-      points.push([s.endPoint.x, s.endPoint.y])
+  const at = new Map(nodes.map((n) => [n.id, n]))
+  const edges: SceneEdge[] = prep.edges.flatMap((e) => {
+    const r = l.routes.get(e.id)
+    if (!r) return []
+    const points = r.points.map(([x, y]): [number, number] => [x, y])
+    const a = at.get(e.from)!
+    const b = at.get(e.to)!
+    const first = points[0]
+    const last = points.at(-1)
+    if (first && last && points.length > 1) {
+      if (down) {
+        first[1] = a.y + a.h
+        last[1] = b.y
+      } else {
+        first[0] = a.x + a.w
+        last[0] = b.x
+      }
     }
-    const l = e.labels?.[0]
-    return {
-      id: e.id,
-      from: p.from,
-      to: p.to,
-      points,
-      label: l ? { x: l.x ?? 0, y: l.y ?? 0, w: l.width ?? 0, h: l.height ?? 0 } : undefined,
-    }
+    return [{ id: e.id, from: e.from, to: e.to, points, label: r.label && { ...r.label } }]
   })
   return {
     key: prep.key,
     direction: prep.direction,
-    width: Math.ceil(out.width ?? 0),
-    height: Math.ceil(out.height ?? 0),
+    width: l.width,
+    height: l.height,
     nodes,
     edges,
     stageNode: prep.stageNode,
