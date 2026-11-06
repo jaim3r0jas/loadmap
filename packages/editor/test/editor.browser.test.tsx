@@ -115,7 +115,8 @@ describe('the editor', () => {
     const { host, handle } = await mount({ source: alerts, embedLink })
     handle.loadmap()!.setValues({ load: 25 })
     await userEvent.click(page.getByText('Copy embed link'))
-    // it opens toward the side with room, inside the window
+    // its options load as it first opens; it opens toward the side with room, inside the window
+    await expect.poll(() => host.querySelector('.lme-pop')).toBeTruthy()
     const pop = host.querySelector('.lme-pop')!.getBoundingClientRect()
     expect(pop.left >= 0 && pop.right <= document.documentElement.clientWidth).toBe(true)
     await userEvent.click(page.getByLabelText('Dark'))

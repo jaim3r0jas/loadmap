@@ -9,15 +9,6 @@ export const EDITOR_CSS = `
 .lme-embed { position: relative; }
 .lme-embed > summary { list-style: none; }
 .lme-embed > summary::-webkit-details-marker { display: none; }
-.lme-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: min(360px, 90vw); display: grid; gap: 8px; padding: 12px 14px; font-size: .85rem; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .14); }
-.lme-pop[data-end] { left: auto; right: 0; }
-.lme-pop label { display: flex; gap: 6px; align-items: center; }
-.lme-choice { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; border: 0; }
-.lme-choice legend { float: left; margin-right: 8px; color: var(--lm-muted); }
-.lme-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.lme-row > .lm-btn { flex: 1; }
-.lme-made { font: .75rem var(--lm-mono); color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 4px; padding: 4px 6px; min-width: 0; }
-.lme-pop small { color: var(--lm-muted); line-height: 1.4; }
 .lme-split { display: grid; grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr); gap: 14px; align-items: start; min-width: 0; }
 @container (max-width: 980px) { .lme-split { grid-template-columns: minmax(0, 1fr); } }
 .lme-left { display: grid; gap: 8px; min-width: 0; position: sticky; top: 8px; }
