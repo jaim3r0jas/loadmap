@@ -24,7 +24,19 @@ import {
 } from '@loadmap/dsl'
 import { type EditValue, edit, fingerprint, inspect, pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
-import { type ReactNode, type Ref, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Inspector, type InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
 import { injectEditorStyles } from './styles'
@@ -60,6 +72,19 @@ export interface LoadmapEditorProps {
   onShare?: (hash: string) => void | Promise<void>
   /** More buttons for the bar: export, record. */
   actions?: ReactNode
+  /** Controls at the start of the bar, before the status: a way back, a name, a menu of examples. */
+  start?: ReactNode
+  /**
+   * The editor fills its container, which gives it a height: the bar, then the text and the diagram side by side with
+   * a divider to drag between them, each scrolling on its own. Below 720 px wide, tabs switch between the text and the
+   * diagram, and the buttons other than Share fold into a menu; the root then carries `data-narrow`, for a page's own
+   * controls in `start` to follow.
+   */
+  fill?: boolean
+  /** With `fill`: where the divider starts, and where a double-click puts it back: the text's share of the width, from 0.2 to 0.8. Default 0.4. */
+  split?: number
+  /** With `fill`: the divider was moved, to this share; a page can keep it. */
+  onSplit?: (share: number) => void
   /** The starters in the "New from template" menu; false hides it. Default: the six that come with the editor. */
   templates?: readonly Template[] | false
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
@@ -91,6 +116,10 @@ export function LoadmapEditor({
   onChange,
   onShare,
   actions,
+  start,
+  fill = false,
+  split = SPLIT,
+  onSplit,
   fileName,
   templates = TEMPLATES,
   layout: initialLayout = 'code',
@@ -117,6 +146,21 @@ export function LoadmapEditor({
   // the update listener is made once: it reads the layout through this
   const shownLayout = useRef(layout)
   shownLayout.current = layout
+  const root = useRef<HTMLDivElement>(null)
+  // with fill: the text's part of the width, and below 720 px one pane at a time
+  const [ratio, setRatio] = useState(() => clampShare(split))
+  const [narrow, setNarrow] = useState(false)
+  const [pane, setPane] = useState<'text' | 'diagram'>('text')
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!fill || !el) return
+    const measure = (width: number) => setNarrow(width < NARROW)
+    measure(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver(([e]) => e && measure(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [fill])
+  const textHidden = layout === 'reader' || (fill && narrow && pane === 'diagram')
   // the text as it is now (the compile follows a moment later), and whether there is a change to undo
   const [text, setText] = useState(initial)
   const [canUndo, setCanUndo] = useState(false)
@@ -268,9 +312,9 @@ export function LoadmapEditor({
     setTab('box')
     const v = view.current
     const box = symbols.current.find((s) => s.kind === 'node' && s.id === id)
-    // in full screen the text is out of sight: the keyboard must not go into it
+    // in full screen, or on the diagram's tab, the text is out of sight: the keyboard must not go into it
     const full = preview.current?.board()?.svg.closest('[data-full]')
-    if (layout !== 'code' || !v || !box || full) return
+    if (textHidden || !v || !box || full) return
     const end = Math.min(box.decl.to, v.state.doc.length)
     v.dispatch({
       selection: { anchor: box.decl.from, head: end },
@@ -280,9 +324,9 @@ export function LoadmapEditor({
   }
   // the text was hidden: CodeMirror measures it again once it shows; the inspector starts from the text as it is
   useEffect(() => {
-    if (layout === 'code') view.current?.requestMeasure()
-    else if (view.current) setText(view.current.state.doc.toString())
-  }, [layout])
+    if (!textHidden) view.current?.requestMeasure()
+    else if (layout === 'reader' && view.current) setText(view.current.state.doc.toString())
+  }, [textHidden, layout])
 
   useImperativeHandle(ref, () => ({
     source: () => view.current?.state.doc.toString() ?? state.source,
@@ -327,6 +371,52 @@ export function LoadmapEditor({
     return () => clearTimeout(t)
   }, [note])
 
+  /** The divider: dragged, or moved with the arrow keys; double-click puts it back. */
+  const moveTo = (to: number) => {
+    const next = clampShare(to)
+    setRatio(next)
+    onSplit?.(next)
+  }
+  const drag = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    const bar = e.currentTarget
+    const box = bar.parentElement!.getBoundingClientRect()
+    bar.setPointerCapture(e.pointerId)
+    root.current?.setAttribute('data-dragging', '')
+    let last = ratio
+    const move = (ev: globalThis.PointerEvent) => {
+      last = clampShare((ev.clientX - box.left) / box.width)
+      setRatio(last)
+    }
+    const up = () => {
+      bar.removeEventListener('pointermove', move)
+      bar.removeEventListener('pointerup', up)
+      bar.removeEventListener('pointercancel', up)
+      root.current?.removeAttribute('data-dragging')
+      // a click that moved nothing (the focus, a double-click) is no move
+      if (last !== ratio) onSplit?.(last)
+    }
+    bar.addEventListener('pointermove', move)
+    bar.addEventListener('pointerup', up)
+    bar.addEventListener('pointercancel', up)
+  }
+  const nudge = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 0.1 : 0.02
+    const to =
+      e.key === 'ArrowLeft'
+        ? ratio - step
+        : e.key === 'ArrowRight'
+          ? ratio + step
+          : e.key === 'Home'
+            ? MIN_SHARE
+            : e.key === 'End'
+              ? MAX_SHARE
+              : null
+    if (to == null) return
+    e.preventDefault()
+    moveTo(to)
+  }
+
   const list = problems(state.result)
   const errors = list.filter((d) => d.severity === 'error').length
   const warnings = list.length - errors
@@ -340,9 +430,68 @@ export function LoadmapEditor({
     [reader, text, tab, selected],
   )
 
+  const compact = fill && narrow
+  const shareButton = (
+    <button type="button" className="lm-btn" onClick={share}>
+      {compact ? 'Share' : 'Share link'}
+    </button>
+  )
+  // the buttons before Share, and after it; on a narrow fill they fold into the menu
+  const lead = (
+    <>
+      <button
+        type="button"
+        className="lm-btn"
+        aria-pressed={!reader}
+        onClick={() => setLayout(reader ? 'code' : 'reader')}
+      >
+        {reader ? 'Show code' : 'Hide code'}
+      </button>
+      {!reader && (
+        <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+          Format
+        </button>
+      )}
+      {!reader && templates && templates.length > 0 && (
+        <select
+          className="lm-btn"
+          aria-label="New from template"
+          value=""
+          onChange={(e) => {
+            const t = templates.find((x) => x.id === e.target.value)
+            if (t) startFrom(t)
+          }}
+        >
+          <option value="">New from template…</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id} title={t.summary}>
+              {t.title}
+            </option>
+          ))}
+        </select>
+      )}
+    </>
+  )
+  const tail = (
+    <>
+      <button type="button" className="lm-btn" onClick={save}>
+        Download .loadmap
+      </button>
+      {actions}
+    </>
+  )
+
   return (
-    <div className="lm lme" data-theme={look === 'auto' ? undefined : look}>
+    <div
+      ref={root}
+      className="lm lme"
+      data-theme={look === 'auto' ? undefined : look}
+      data-fill={fill || undefined}
+      data-narrow={compact || undefined}
+      style={fill ? ({ '--lme-share': `${ratio * 100}%` } as CSSProperties) : undefined}
+    >
       <div className="lme-bar">
+        {start}
         <output className="lme-status" data-ok={errors === 0}>
           {errors === 0 && warnings === 0
             ? 'No problems'
@@ -362,47 +511,40 @@ export function LoadmapEditor({
             Undo
           </button>
         )}
-        <button
-          type="button"
-          className="lm-btn"
-          aria-pressed={!reader}
-          onClick={() => setLayout(reader ? 'code' : 'reader')}
-        >
-          {reader ? 'Show code' : 'Hide code'}
-        </button>
-        {!reader && (
-          <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
-            Format
-          </button>
+        {compact ? (
+          <>
+            {shareButton}
+            <More>
+              {lead}
+              {tail}
+            </More>
+          </>
+        ) : (
+          <>
+            {lead}
+            {shareButton}
+            {tail}
+          </>
         )}
-        {!reader && templates && templates.length > 0 && (
-          <select
-            className="lm-btn"
-            aria-label="New from template"
-            value=""
-            onChange={(e) => {
-              const t = templates.find((x) => x.id === e.target.value)
-              if (t) startFrom(t)
-            }}
-          >
-            <option value="">New from template…</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id} title={t.summary}>
-                {t.title}
-              </option>
-            ))}
-          </select>
-        )}
-        <button type="button" className="lm-btn" onClick={share}>
-          Share link
-        </button>
-        <button type="button" className="lm-btn" onClick={save}>
-          Download .loadmap
-        </button>
-        {actions}
       </div>
+      {compact && !reader && (
+        <div className="lme-panes" role="tablist" aria-label="Show">
+          {(['text', 'diagram'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              className="lm-btn"
+              aria-selected={pane === p}
+              onClick={() => setPane(p)}
+            >
+              {p === 'text' ? 'Text' : 'Diagram'}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="lme-split" data-layout={layout}>
-        <div className="lme-left" hidden={reader}>
+        <div className="lme-left" hidden={textHidden}>
           <div className="lme-code" ref={host} />
           {list.length > 0 && (
             <ul className="lme-problems">
@@ -420,7 +562,23 @@ export function LoadmapEditor({
             </ul>
           )}
         </div>
-        <div className="lme-preview" data-stale={stale || undefined}>
+        {fill && !compact && !reader && (
+          // biome-ignore lint/a11y/useSemanticElements: an <hr> takes no focus nor pointer; this separator is moved
+          <div
+            className="lme-divider"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the text and the diagram"
+            aria-valuemin={MIN_SHARE * 100}
+            aria-valuemax={MAX_SHARE * 100}
+            aria-valuenow={Math.round(ratio * 100)}
+            tabIndex={0}
+            onPointerDown={drag}
+            onKeyDown={nudge}
+            onDoubleClick={() => moveTo(split)}
+          />
+        )}
+        <div className="lme-preview" data-stale={stale || undefined} hidden={compact && !reader && pane === 'text'}>
           {stale && <p className="lme-stale">Showing the last version without errors.</p>}
           {def ? (
             <Loadmap
@@ -486,6 +644,55 @@ function valuesFor(model: Model, v: Readonly<Record<string, unknown>>): Partial<
     }
   }
   return out as Partial<Values<any>>
+}
+
+const SPLIT = 0.4
+const MIN_SHARE = 0.2
+const MAX_SHARE = 0.8
+/** Below this width a filling editor shows one pane at a time. */
+const NARROW = 720
+const clampShare = (n: number) => (Number.isFinite(n) ? Math.min(MAX_SHARE, Math.max(MIN_SHARE, n)) : SPLIT)
+
+/**
+ * The buttons that do not fit a narrow bar: a menu that closes on a pick, a click outside it, or Escape. A pick or
+ * Escape hands the focus back to its button, as the one it was on is hidden.
+ */
+function More({ children }: { children: ReactNode }) {
+  const menu = useRef<HTMLDetailsElement>(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const outside = (e: Event) => !menu.current?.contains(e.target as Node) && shut(menu.current, false)
+    const key = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && shut(menu.current, true)
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', key)
+    }
+  }, [open])
+  return (
+    <details className="lme-more" ref={menu} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="lm-btn" aria-label="More">
+        ⋯
+      </summary>
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard; this only closes the menu after them */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: as above */}
+      <div
+        className="lme-menu"
+        onClick={(e) => (e.target as HTMLElement).closest('button') && shut(menu.current, true)}
+        onChange={() => shut(menu.current, true)}
+      >
+        {children}
+      </div>
+    </details>
+  )
+}
+
+function shut(menu: HTMLDetailsElement | null, focus: boolean) {
+  if (!menu?.open) return
+  menu.open = false
+  if (focus) menu.querySelector('summary')?.focus()
 }
 
 const count = (n: number, word: string) => (n ? `${n} ${word}${n > 1 ? 's' : ''}` : '')

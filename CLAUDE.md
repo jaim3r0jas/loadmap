@@ -132,8 +132,10 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
 `docs/dsl.md`, the quick start from `packages/react/README.md`); site links are written from the root (`/language/`)
 and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
 under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
-`<div class="island" data-island="example|editor|templates|quickstart">`. `apps/docs/test/site.test.ts` builds the
-site, checks every link, and draws the live pages in Chromium. The build also writes `llms.txt` (the pages) and
+`<div class="island" data-island="example|editor|templates|quickstart">`. A page with `frame: 'app'` (the editor at
+`/editor/`) is its Markdown alone in the window, without the site's frame, pager or llms.txt entry; `hidden: true`
+leaves a page out of the sidebar. `apps/docs/test/site.test.ts` builds the site, checks every link, and draws the live
+pages in Chromium. The build also writes `llms.txt` (the pages) and
 `llms-full.txt` (`docs/dsl.md` and `docs/every-statement.loadmap`, which must hold every statement of the schema:
 `docs.test.ts`); the dsl build copies `docs/dsl.md` into its `dist/REFERENCE.md`.
 
