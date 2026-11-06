@@ -1,6 +1,6 @@
 import { type ComponentState, type CrossingRange, reach } from '@loadmap/core'
 import { compact, fmt, multiple, multiples, pct } from '@loadmap/core/format'
-import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
+import type { Scene, SceneEdge, SceneNode, SceneTier, TextSpot } from '@loadmap/layout'
 import { memo, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { boxComponent } from './camera'
 import type { Handover } from './engine'
@@ -411,6 +411,9 @@ const Structure = memo(function Structure({
           <path d="M0 0 L10 5 L0 10 z" fill="var(--lm-muted)" />
         </marker>
       </defs>
+      {scene.tiers.map((t, i) => (
+        <Tier key={t.id} t={t} shaded={i % 2 === 0} />
+      ))}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
         <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} />
@@ -442,6 +445,27 @@ const Structure = memo(function Structure({
     </svg>
   )
 })
+
+/** A tier's band behind the boxes, every other one shaded, and its label in the margin before them. */
+function Tier({ t, shaded }: { t: SceneTier; shaded: boolean }) {
+  const { x, y, size, weight } = t.spot
+  return (
+    <g className="lm-tier" data-tier-id={t.id} pointerEvents="none">
+      <rect x={t.x} y={t.y} width={t.w} height={t.h} fill={shaded ? 'var(--lm-bg)' : 'none'} />
+      <text
+        x={x}
+        y={y}
+        fontSize={size}
+        fontWeight={weight}
+        fill="var(--lm-muted)"
+        textAnchor={t.vertical ? 'end' : undefined}
+        transform={t.vertical ? `rotate(-90 ${x} ${y})` : undefined}
+      >
+        {t.text}
+      </text>
+    </g>
+  )
+}
 
 const pathOf = (pts: readonly [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ')
 

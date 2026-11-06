@@ -72,6 +72,18 @@ export interface Scene {
   /** The node that shows each stage, and the node each flow starts from. */
   stageNode: Readonly<Record<string, string>>
   flowFrom: Readonly<Record<string, string>>
+  /** The bands across the flow, in their order; empty without tiers. */
+  tiers: SceneTier[]
+}
+
+/** A tier's band, the whole board across the flow, and its label in the margin before the boxes. */
+export interface SceneTier extends Box {
+  id: string
+  /** The label, cut short with "…" when the band is narrower. */
+  text: string
+  spot: TextSpot
+  /** Running down, the label reads up the band's left side, ending at the band's top (`spot`). */
+  vertical: boolean
 }
 
 export interface LayoutOptions {
@@ -110,6 +122,12 @@ export function localElk(): Promise<ElkEngine> {
 const T_TITLE = { size: 13, weight: 600 }
 const T_SUB = { size: 11, weight: 400 }
 const T_SMALL = { size: 9, weight: 400 }
+const T_TIER = { size: 11, weight: 600 }
+/** The room ELK leaves around the boxes. */
+const PADDING = 16
+/** The margin a tier's label takes before the boxes, and its distance from the band's edges. */
+const TIER_ROOM = 20
+const TIER_PAD = 8
 const PAD = 8
 const GAP = 6
 const CELL = 9
@@ -154,6 +172,9 @@ interface Frame {
   nodes: { id: string; w: number; h: number }[]
   /** Every edge drawn somewhere, in the definition's order. */
   edges: { id: string; from: string; to: string; labelW?: number }[]
+  /** Each box's tier, as an index into `tiers`, or the layer it is held to without tiers. */
+  order?: Record<string, number | 'FIRST' | 'LAST'>
+  tiers?: string[]
 }
 
 /** A frame laid out: each box's slot and each edge's route, whatever the values. */
@@ -194,10 +215,10 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   byView.set(view, cache)
   return kept(cache, prep.key, 32, () => {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
-    const frame = widen(reserve(view, direction, measure), prep)
+    const frame = ordered(view, widen(reserve(view, direction, measure), prep))
     const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
     frames.set(view, byFrame)
-    return kept(byFrame, frame.key, 8, () => run(frame, o.elk)).then((l) => place(prep, l))
+    return kept(byFrame, frame.key, 8, () => run(frame, o.elk)).then((l) => place(prep, l, frame, view, measure))
   })
 }
 
@@ -396,6 +417,56 @@ function widen(frame: Frame, ...adds: Pick<Prepared, 'nodes' | 'edges'>[]): Fram
   return { key: JSON.stringify(out), ...out }
 }
 
+/**
+ * Where each box stands along the flow. With tiers, each box in its own, a box without one in the latest tier of the
+ * boxes that feed it, else the earliest of those it feeds: every layer then belongs to one tier. Without tiers, the
+ * boxes nothing feeds come first, and a sink or store that feeds nothing comes last.
+ */
+function ordered(view: View, frame: Frame): Frame {
+  const defs = view.def.nodes as Record<string, AnyNodeDef>
+  const ids = frame.nodes.map((n) => n.id)
+  const into = new Map(ids.map((id) => [id, [] as string[]]))
+  const outOf = new Map(ids.map((id) => [id, [] as string[]]))
+  for (const e of frame.edges) {
+    into.get(e.to)?.push(e.from)
+    outOf.get(e.from)?.push(e.to)
+  }
+  const tiers = Object.keys(view.def.tiers ?? {})
+  const order: NonNullable<Frame['order']> = {}
+  if (tiers.length) {
+    const tier = new Map<string, number>()
+    for (const id of ids) if (defs[id]?.tier != null) tier.set(id, tiers.indexOf(defs[id].tier))
+    // whatever order the boxes come in: a box takes the latest tier of all that feed it, settled until nothing moves
+    // (a tier only rises), then a box nothing settled the earliest of those it feeds (a tier only falls)
+    const settle = (from: Map<string, string[]>, pick: (xs: number[]) => number) => {
+      const open = ids.filter((id) => !tier.has(id))
+      for (let changed = true; changed; ) {
+        changed = false
+        for (const id of open) {
+          const known = from.get(id)!.flatMap((n) => (tier.has(n) ? [tier.get(n)!] : []))
+          if (known.length && tier.get(id) !== pick(known)) {
+            tier.set(id, pick(known))
+            changed = true
+          }
+        }
+      }
+    }
+    settle(into, (xs) => Math.max(...xs))
+    settle(outOf, (xs) => Math.min(...xs))
+    for (const id of ids) order[id] = tier.get(id) ?? 0
+  } else {
+    const kinds = (id: string) =>
+      stagesOf(defs[id]!).map((st) => (view.model.def.stages as Record<string, { kind: string }>)[st]?.kind)
+    for (const id of ids) {
+      const ks = kinds(id)
+      if (!into.get(id)!.length && outOf.get(id)!.length) order[id] = 'FIRST'
+      else if (!outOf.get(id)!.length && ks.length && ks.every((k) => k === 'sink' || k === 'store')) order[id] = 'LAST'
+    }
+  }
+  const out = { direction: frame.direction, nodes: frame.nodes, edges: frame.edges, order, tiers }
+  return { key: JSON.stringify(out), ...out }
+}
+
 function grow(
   nodes: Map<string, Frame['nodes'][number]>,
   edges: Map<string, Frame['edges'][number]>,
@@ -476,7 +547,9 @@ async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
       'elk.algorithm': 'layered',
       'elk.direction': frame.direction,
       'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.padding': '[top=16,left=16,bottom=16,right=16]',
+      // tier labels stand in the margin before the boxes: above them running right, to their left running down
+      'elk.padding': padding(frame),
+      ...(frame.tiers?.length ? { 'elk.partitioning.activate': 'true' } : {}),
       'elk.spacing.nodeNode': '28',
       'elk.spacing.edgeNode': '16',
       'elk.spacing.edgeEdge': '12',
@@ -496,6 +569,7 @@ async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
         'elk.portConstraints': 'FIXED_SIDE',
         'elk.portAlignment.default': 'CENTER',
         'elk.spacing.portPort': String(PORT_GAP),
+        ...layerOf(frame.order?.[n.id]),
       },
       ports: frame.edges.flatMap((e) => [
         ...(e.from === n.id ? [port(`${e.id}:out`, out)] : []),
@@ -546,11 +620,17 @@ async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
   return { width: Math.ceil(done.width ?? 0), height: Math.ceil(done.height ?? 0), slots, routes }
 }
 
+function layerOf(o: number | 'FIRST' | 'LAST' | undefined): Record<string, string> {
+  if (o == null) return {}
+  if (typeof o === 'number') return { 'elk.partitioning.partition': String(o) }
+  return { 'elk.layered.layering.layerConstraint': o }
+}
+
 /**
  * The scene at these values on a laid-out frame: each box at its own size in the middle of its slot, each edge drawn
  * at these values, its ends moved along their last straight run to the sides of the boxes as drawn.
  */
-function place(prep: Prepared, l: Laid): Scene {
+function place(prep: Prepared, l: Laid, frame: Frame, view: View, measure: TextMeasure): Scene {
   const down = prep.direction === 'DOWN'
   const across = (p: [number, number]) => (down ? p[0] : p[1])
   const ends = new Map<string, number[]>()
@@ -618,7 +698,67 @@ function place(prep: Prepared, l: Laid): Scene {
     edges,
     stageNode: prep.stageNode,
     flowFrom: prep.flowFrom,
+    tiers: bands(l, frame, view, measure),
   }
+}
+
+/**
+ * Each tier's band: from halfway to the tier before it to halfway to the tier after, the first and last to the board's
+ * edges, the whole board across the flow. Its label sits in the margin ELK leaves before the boxes.
+ */
+function bands(l: Laid, frame: Frame, view: View, measure: TextMeasure): SceneTier[] {
+  const ids = frame.tiers ?? []
+  if (!ids.length) return []
+  const down = frame.direction === 'DOWN'
+  const along = (b: Box): [number, number] => (down ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
+  const spans = ids.map((_, i) => {
+    const mine = frame.nodes.filter((n) => frame.order?.[n.id] === i).map((n) => along(l.slots.get(n.id)!))
+    return mine.length ? ([Math.min(...mine.map((s) => s[0])), Math.max(...mine.map((s) => s[1]))] as const) : null
+  })
+  const length = down ? l.height : l.width
+  const out: SceneTier[] = []
+  ids.forEach((id, i) => {
+    const span = spans[i]
+    if (!span) return
+    const before = spans.slice(0, i).findLast((x) => x != null)
+    const after = spans.slice(i + 1).find((x) => x != null)
+    const a = before ? (before[1] + span[0]) / 2 : 0
+    const b = after ? (span[1] + after[0]) / 2 : length
+    const label = (view.def.tiers ?? {})[id]?.label ?? id
+    const box = down ? { x: 0, y: a, w: l.width, h: b - a } : { x: a, y: 0, w: b - a, h: l.height }
+    out.push({
+      id,
+      ...box,
+      text: fit(label, b - a - 2 * TIER_PAD, measure),
+      // at the board's outer edge: clear of a limit's tag above a box and of its glow beside one
+      spot: down
+        ? { x: TIER_PAD + T_TIER.size, y: a + TIER_PAD, ...T_TIER }
+        : { x: a + TIER_PAD, y: TIER_PAD + T_TIER.size, ...T_TIER },
+      vertical: down,
+    })
+  })
+  return out
+}
+
+/** The text cut short with "…" to fit `room`. */
+function fit(text: string, room: number, measure: TextMeasure): string {
+  const cut = (n: number) => `${text.slice(0, n).trimEnd()}…`
+  if (measure(text, T_TIER.size, T_TIER.weight) <= room) return text
+  // the longest start that fits, found by halves
+  let [lo, hi] = [0, text.length - 1]
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (measure(cut(mid), T_TIER.size, T_TIER.weight) <= room) lo = mid
+    else hi = mid - 1
+  }
+  return lo > 0 ? cut(lo) : ''
+}
+
+/** The room around the boxes, and the margin before them that tier labels take. */
+function padding(frame: Frame): string {
+  const room = frame.tiers?.length ? TIER_ROOM : 0
+  const [top, left] = frame.direction === 'DOWN' ? [PADDING, PADDING + room] : [PADDING + room, PADDING]
+  return `[top=${top},left=${left},bottom=${PADDING},right=${PADDING}]`
 }
 
 /** A plain box; `top` makes room for a cylinder's lid. */

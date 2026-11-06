@@ -121,6 +121,38 @@ describe('compile', () => {
   })
 })
 
+describe('tiers', () => {
+  it('compile to the view in their order, each box in the one it names', () => {
+    const src = def({ top: 'tier app "Services"\ntier data', api: 'measured(400, "req/s")' }).replace(
+      'node api "API" {',
+      'node api "API" {\n  tier: app',
+    )
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    const v = r.definition!.view.def
+    expect(v.tiers).toEqual({ app: { label: 'Services' }, data: { label: 'data' } })
+    expect(Object.keys(v.tiers!)).toEqual(['app', 'data'])
+    expect((v.nodes as Record<string, { tier?: string }>).api!.tier).toBe('app')
+    expect((v.nodes as Record<string, { tier?: string }>).client!.tier).toBeUndefined()
+  })
+
+  it('name a tier nobody declared, and one declared twice', () => {
+    const src = def({ top: 'tier app "Services"' }).replace('node api "API" {', 'node api "API" {\n  tier: ap')
+    expect(errors(src)).toMatchObject([{ message: 'unknown tier "ap"', hint: 'did you mean "app"?', text: 'ap' }])
+    expect(errors(def({ top: 'tier app\ntier app' }))).toMatchObject([{ message: '"app" is declared twice' }])
+  })
+
+  it('warn about an edge that runs back to an earlier tier', () => {
+    const src = def({ top: 'tier front\ntier back' })
+      .replace('node client "Client"', 'node client "Client" { tier: back }')
+      .replace('node api "API" {', 'node api "API" {\n  tier: front')
+    const warnings = compile(src).diagnostics.filter((d) => d.severity === 'warning')
+    expect(warnings.map((d) => [d.message, src.slice(d.from, d.to)])).toEqual([
+      ['client -> api runs back from the tier "back" to "front"', 'api'],
+    ])
+  })
+})
+
 describe('formulas', () => {
   it('follow the precedence and meaning of TypeScript', () => {
     expect(value('1 + 2 * 3 - 4 / 2')).toBe(5)

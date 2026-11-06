@@ -27,6 +27,8 @@ export type ValueKind =
   | 'component'
   /** A scenario's label, bare or quoted: `scenario: Proposed`. */
   | 'scenario'
+  /** The id of a tier: `tier: data`. */
+  | 'tier'
   /** A list of options: `[2, 3, 4]`. */
   | 'options'
   /** A list of words from `values`, bare or quoted: `fullScreen: [verdict, controls]`. */
@@ -129,6 +131,11 @@ const BOX_ARGS: ArgSpec[] = [
   { name: 'sub', kind: 'text', optional: true, dynamic: true },
 ]
 const SUB: PropSpec = { value: 'string', scope: 'ctx', doc: 'The second line of the box.' }
+const TIER: PropSpec = {
+  value: 'tier',
+  scope: 'const',
+  doc: 'The tier the box stands in; without one, that of the boxes that feed it.',
+}
 const OVERLOAD_WHEN: PropSpec = { value: 'boolean', scope: 'ctx', doc: 'The rule applies only while this is true.' }
 
 /** The panels of `<Loadmap>` below the diagram, as its `fullScreen` prop names them. */
@@ -194,6 +201,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'node',
       'cluster',
       'pool',
+      'tier',
       'thresholds',
     ],
     edges: 'edges',
@@ -449,6 +457,16 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: COMPONENT_PROPS,
     children: [],
   },
+  tier: {
+    doc: 'A band across the flow (edge, app, data) drawn behind its boxes. Tiers run in the order they are declared.',
+    example: 'tier data "Data"',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {},
+    children: [],
+  },
   node: {
     doc: 'A box. It may run a stage (pass, store, sink, fanout) and own a component (demand and capacity lines).',
     example: 'node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }',
@@ -456,6 +474,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: {
       sub: SUB,
       shape: { value: 'enum', scope: 'const', values: ['box', 'cylinder'], doc: 'box (the default) or cylinder.' },
+      tier: TIER,
       ...COMPONENT_PROPS,
     },
     children: ['pass', 'store', 'sink', 'fanout', 'cache', 'limit', 'component'],
@@ -468,6 +487,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       sub: SUB,
       members: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'How many members.', required: true },
       memberLabel: { value: 'string', scope: 'i', doc: "Each member's label, from its index i: `broker ${i}`." },
+      tier: TIER,
       ...COMPONENT_PROPS,
     },
     children: ['queue', 'component'],
@@ -479,6 +499,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: {
       sub: SUB,
       podLabel: { value: 'string', scope: 'i', doc: "Each pod's label, from its index i: `pod ${i}`." },
+      tier: TIER,
       ...COMPONENT_PROPS,
     },
     children: ['workers', 'component'],

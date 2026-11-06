@@ -17,6 +17,7 @@ export {
   node,
   type PoolDef,
   pool,
+  type TierDef,
   type View,
   type ViewDef,
 } from '@loadmap/layout'

@@ -88,9 +88,14 @@ flow events "events" {
   color: alt
 }
 
+tier edge "Edge"
+tier services "Services"
+tier data "Data"
+
 node phones "Phones" "app checkout"
 
 node gateway "API gateway" {
+  tier: edge
   pass
   short: "the API gateway"
   demand: flows.orders + flows.events
@@ -99,6 +104,7 @@ node gateway "API gateway" {
 }
 
 cluster kafka "Kafka" "orders and events" {
+  tier: services
   members: 3
   memberLabel: `broker ${i}`
   queue topic { partitions { orders: 12; events: 24 } }
@@ -115,6 +121,7 @@ pool workers "Workers" `${pods} pods × ${threads} threads` {
 }
 
 node db "Postgres" "primary" {
+  tier: data
   shape: cylinder
   store
   name: "Postgres primary"

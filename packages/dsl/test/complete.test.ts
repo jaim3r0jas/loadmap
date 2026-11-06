@@ -105,3 +105,9 @@ describe('completions for expect', () => {
     expect(at(`${checkout}\nexpect { component: | }`).labels).toEqual(['gateway', 'workers', 'db'])
   })
 })
+
+describe('completions for tier', () => {
+  it('offer the tiers declared', () => {
+    expect(at(checkout.replace('  tier: edge', '  tier: |')).labels).toEqual(['edge', 'services', 'data'])
+  })
+})

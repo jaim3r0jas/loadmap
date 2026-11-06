@@ -77,12 +77,18 @@ export function morph(from: Scene, to: Scene): (t: number) => Scene {
       return a ? between(a, n, k, f) : { ...n, fade: f.enter }
     })
     for (const n of from.nodes) if (!nodesTo.has(n.id)) nodes.push(goes(n, f))
+    // a band moves with the boxes it holds
+    const tiers = to.tiers.map((t) => {
+      const a = from.tiers.find((x) => x.id === t.id)
+      return a ? { ...box(a, t, k), spot: spot(a.spot, t.spot, k) } : t
+    })
     return {
       ...to,
       width: lerp(from.width, to.width, k),
       height: lerp(from.height, to.height, k),
       nodes,
       edges,
+      tiers,
     }
   }
 }

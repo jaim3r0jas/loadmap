@@ -96,6 +96,7 @@ export function completions(source: string, offset: number, compiled?: CompileRe
     if (kind === 'route') return out(stages())
     if (kind === 'node') return out(nodes())
     if (kind === 'component') return out(ids('component').map((label) => ({ label, type: 'variable' })))
+    if (kind === 'tier') return out(ids('tier').map((label) => ({ label, type: 'constant' })))
     if (kind === 'scenario')
       return out(
         ids('scenario').map((label) => ({

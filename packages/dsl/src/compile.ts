@@ -28,6 +28,7 @@ import {
   type EdgeDef,
   type FlowView,
   labelsAt,
+  type TierDef,
   type View,
 } from '@loadmap/layout'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
@@ -106,7 +107,7 @@ export interface Definition {
 
 /** A name the definition declares, where: for autocomplete, and for finding a node's source. */
 export interface DslSymbol {
-  kind: 'param' | 'let' | 'fit' | 'flow' | 'node' | 'stage' | 'component' | 'scenario'
+  kind: 'param' | 'let' | 'fit' | 'flow' | 'node' | 'stage' | 'component' | 'scenario' | 'tier'
   id: string
   /** The id where it is written (or the keyword, for an id taken from its box). */
   span: Span
@@ -471,10 +472,36 @@ class Compiler {
     if (searchMax != null) model.searchMax = searchMax
 
     // the view
+    const tiers: Record<string, TierDef> = {}
+    const tierNames = new Map<string, Span>()
+    for (const b of byKind('tier')) {
+      if (!b.args.id) continue
+      this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
+      tiers[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
+    }
     const nodes: Record<string, AnyNodeDef> = {}
-    for (const box of boxes) nodes[box.id] = this.node(box)
+    for (const box of boxes) {
+      nodes[box.id] = this.node(box)
+      const tier = this.named(box.block, 'tier', [...tierNames.keys()], 'tier')
+      if (tier) nodes[box.id]!.tier = tier
+    }
     const edges: EdgeDef[] = []
     for (const e of root.edges) edges.push(...this.edges(e, boxById))
+    // the flow runs through the tiers in their order: an edge back is drawn against it
+    const tierOf = (id: string) => {
+      const t = nodes[id]?.tier
+      return t == null ? undefined : Object.keys(tiers).indexOf(t)
+    }
+    for (const e of root.edges)
+      e.chain.forEach((to, i) => {
+        const from = e.chain[i - 1]
+        const [a, b] = from ? [tierOf(from.name), tierOf(to.name)] : []
+        if (from && a != null && b != null && a > b)
+          this.report.warning(
+            to,
+            `${from.name} -> ${to.name} runs back from the tier "${nodes[from.name]!.tier}" to "${nodes[to.name]!.tier}"`,
+          )
+      })
     if (!flows.length) this.report.error({ from: 0, to: 0 }, 'a definition needs at least one flow')
 
     const options: DefinitionOptions = { assumptions: [] }
@@ -505,13 +532,19 @@ class Compiler {
     }
 
     if (this.report.failed) return undefined
-    return this.build(model, { nodes, edges, flows: flowViews }, options, byKind('preset'), byKind('scenario'))
+    const view = { nodes, edges, flows: flowViews, ...(Object.keys(tiers).length ? { tiers } : {}) }
+    return this.build(model, view, options, byKind('preset'), byKind('scenario'))
   }
 
   /** Hands the parts to core and layout, then runs the model once per preset and scenario so formula errors show now. */
   private build(
     modelDef: Record<string, unknown>,
-    viewDef: { nodes: Record<string, AnyNodeDef>; edges: EdgeDef[]; flows: Record<string, FlowView> },
+    viewDef: {
+      nodes: Record<string, AnyNodeDef>
+      edges: EdgeDef[]
+      flows: Record<string, FlowView>
+      tiers?: Record<string, TierDef>
+    },
     options: DefinitionOptions,
     presets: Block[],
     scenarios: Block[],

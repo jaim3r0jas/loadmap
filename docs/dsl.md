@@ -238,9 +238,30 @@ the story plays and once it is past the target.
 board and the step's text below it; the same options give the same file. A step's own properties are `scenario`,
 `focus`, `title` and `seconds`; every other line is a value.
 
-A step that changes the structure (more pods, another scenario) does not swap the diagram: the boxes that stay move to
-their new places with their edges, and what is new fades in. `transition: 1.2` makes that move take 1.2 seconds (0.8
-by default; 0 cuts, and so does a reader who asked for reduced motion). A recording shows it too.
+A step that changes the structure (more pods, another scenario) moves no box: each box keeps the place of the largest
+it is anywhere the model reaches (its scenarios, steps, presets and controls), so a pool that gains pods grows where
+it stands, and what is new fades in. `transition: 1.2` makes that change take 1.2 seconds (0.8 by default; 0 cuts,
+and so does a reader who asked for reduced motion). A recording shows it too.
+
+### Tiers
+
+The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
+bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
+
+```
+tier edge "Edge"
+tier services "Services"
+tier data "Data"
+
+node gateway "Gateway" { tier: edge; pass }
+pool api "API" { tier: services; workers { pods: pods; perPod: 8 } }
+node db "Database" { tier: data; store }
+```
+
+Each tier is a band behind its boxes, every other one shaded, its label in the margin before them; running down (and
+on a phone) the label reads up the band's left side. A box without a tier stands in the tier of the boxes that feed
+it, or of those it feeds when nothing feeds it, so a definition names the tier where it changes. In TypeScript:
+`tiers: { edge: { label: 'Edge' }, … }` in the view, `tier: 'edge'` on a box.
 
 ### Full screen
 
@@ -282,9 +303,9 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:96:17 error: unknown flow "order"
-  96 |   demand: flows.order + flows.events
-     |                 ^^^^^ did you mean "orders"?
+checkout.loadmap:101:17 error: unknown flow "order"
+  101 |   demand: flows.order + flows.events
+      |                 ^^^^^ did you mean "orders"?
 ```
 
 `compile` also runs the model at its defaults, at every preset and in every scenario. A formula that fails there,
@@ -326,7 +347,7 @@ A loadmap definition.
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -577,6 +598,16 @@ After the keyword: [id] [label].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
+### tier
+
+A band across the flow (edge, app, data) drawn behind its boxes. Tiers run in the order they are declared.
+
+```
+tier data "Data"
+```
+
+After the keyword: id [label].
+
 ### node
 
 A box. It may run a stage (pass, store, sink, fanout) and own a component (demand and capacity lines).
@@ -591,6 +622,7 @@ After the keyword: id [label] [sub].
 | --- | --- | --- |
 | `sub` | string, formula | The second line of the box. |
 | `shape` | `box` \| `cylinder` | box (the default) or cylinder. |
+| `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
@@ -617,6 +649,7 @@ After the keyword: id [label] [sub].
 | `sub` | string, formula | The second line of the box. |
 | `members` (required) | number, formula | How many members. |
 | `memberLabel` | string, formula of `i` | Each member's label, from its index i: `broker ${i}`. |
+| `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
@@ -642,6 +675,7 @@ After the keyword: id [label] [sub].
 | --- | --- | --- |
 | `sub` | string, formula | The second line of the box. |
 | `podLabel` | string, formula of `i` | Each pod's label, from its index i: `pod ${i}`. |
+| `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
