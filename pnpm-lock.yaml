@@ -416,6 +416,9 @@ importers:
       '@loadmap/core':
         specifier: workspace:*
         version: link:../core
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:../dsl
       '@loadmap/layout':
         specifier: workspace:*
         version: link:../layout

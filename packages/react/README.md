@@ -78,6 +78,10 @@ only. Inside a card of its own, `.card > .lm { --lm-pad: 0; --lm-root-bg: transp
 background (full screen keeps both); in a grid or a flex row, give it `min-width: 0`, since it sizes the diagram to
 its width.
 
+A `.loadmap` text draws with `<LoadmapSource source={text} name="shop.loadmap" />` from `@loadmap/react/source`: it
+compiles when the text changes, passes on the options the definition declares (your props win), and while the text
+does not compile shows its diagnostics as `loadmap check` prints them. It is the one entry that loads the compiler.
+
 A scenario, a story step or a control that changes the structure (more pods, more brokers) moves the diagram to it:
 what stays moves to its new place, what is new fades in. `transition={1.2}` sets the seconds it takes (default 0.8);
 0 cuts, and so does reduced motion. The load never moves it.

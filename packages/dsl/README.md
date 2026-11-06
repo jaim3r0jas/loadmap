@@ -4,13 +4,15 @@ The `.loadmap` language: a capacity model and its diagram as text, compiled to t
 `<Loadmap>` takes. Formulas are a small subset of TypeScript expressions, parsed and run without `eval`, so a
 definition can travel in a link.
 
-```ts
-import { compile, formatDiagnostic } from '@loadmap/dsl'
+```tsx
+import { LoadmapSource } from '@loadmap/react/source'
 
-const r = compile(source)
-if (!r.ok) console.error(r.diagnostics.map((d) => formatDiagnostic(d, source, 'shop.loadmap')).join('\n'))
-else render(<Loadmap model={r.definition.model} view={r.definition.view} />)
+// compiles when the text changes; shows the diagnostics while it does not compile
+render(<LoadmapSource source={source} name="shop.loadmap" />)
 ```
+
+`compile(source)` returns `{ ok, diagnostics, definition }`, the `model`, `view` and page `options` of a definition;
+`formatDiagnostic(d, source, 'shop.loadmap')` prints one as `loadmap check` does.
 
 Also: `format()` lays a definition out the one way (what `loadmap fmt` runs), `completions()` for an editor,
 `encodeShare`/`decodeShare` for links.

@@ -22,7 +22,7 @@ import {
   type HostFunctions,
   problems,
 } from '@loadmap/dsl'
-import { type EditValue, edit, inspect, lex, pageOptions, Reporter } from '@loadmap/dsl/internal'
+import { type EditValue, edit, fingerprint, inspect, pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Inspector, type InspectorTab } from './Inspector'
@@ -465,12 +465,6 @@ export function between(a: string, b: string): { from: number; to: number; inser
 }
 
 /** The tokens of the text: two texts with the same tokens define the same diagram. */
-function fingerprint(source: string): string {
-  return lex(source, new Reporter(source))
-    .map((t) => t.text)
-    .join('\u0001')
-}
-
 /**
  * The values that still fit the model: known names, options that still exist, numbers within range. A text (from a
  * link) is read by the parameter's kind, so "20" can be the number 20 or the option "20".

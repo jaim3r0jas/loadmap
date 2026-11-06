@@ -11,16 +11,16 @@ pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (
 mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
 stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
-| Package           | What                                                                                      | Depends on                      |
-| ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------- |
-| `@loadmap/core`   | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate | nothing                         |
-| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                         | core                            |
-| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                          | core, elkjs                     |
-| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme      | core, sim, layout; react (peer) |
-| `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI        | react, mediabunny               |
-| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled); playwright peer  |
-| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links      | core, layout                    |
-| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*       |
+| Package           | What                                                                                      | Depends on                           |
+| ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
+| `@loadmap/core`   | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate | nothing                              |
+| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                         | core                                 |
+| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                          | core, elkjs                          |
+| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme      | core, sim, layout, dsl; react (peer) |
+| `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI        | react, mediabunny                    |
+| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled); playwright peer       |
+| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links      | core, layout                         |
+| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*            |
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws

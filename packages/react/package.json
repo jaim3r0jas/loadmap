@@ -22,6 +22,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./source": "./src/source.tsx",
     "./elk.worker.js": "./src/elk.worker.js"
   },
   "publishConfig": {
@@ -29,6 +30,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./source": {
+        "types": "./dist/source.d.ts",
+        "import": "./dist/source.js"
       },
       "./elk.worker.js": "./dist/elk.worker.js"
     }
@@ -41,6 +46,7 @@
   },
   "dependencies": {
     "@loadmap/core": "workspace:*",
+    "@loadmap/dsl": "workspace:*",
     "@loadmap/sim": "workspace:*",
     "@loadmap/layout": "workspace:*",
     "elkjs": "^0.12.1"
