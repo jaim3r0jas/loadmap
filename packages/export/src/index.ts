@@ -111,6 +111,14 @@ export async function composeFrame(
   ctx.fillRect(0, 0, w, h)
   const img = await rasterise(b.svg, Math.round(dw), Math.round(dh))
   ctx.translate((w - dw) / 2, band.top + (room - dh) / 2)
+  if ((globalThis as any).__LM_DIAG === 'twice') {
+    const scratch = document.createElement('canvas')
+    scratch.width = c.width
+    scratch.height = c.height
+    const sc = scratch.getContext('2d')!
+    sc.setTransform(ctx.getTransform())
+    sc.drawImage(img, 0, 0, dw, dh)
+  }
   ctx.drawImage(img, 0, 0, dw, dh)
   handle.engine.paintParticles(ctx, scale)
   // a story played says what each step changes on the board, as the page does
@@ -361,8 +369,8 @@ async function pickCodec(format: 'webm' | 'mp4', width: number, height: number) 
 
 /** An SVG drawn as an image cannot see the page's CSS: it is drawn from a copy with the theme written in. */
 async function rasterise(svg: SVGSVGElement, w: number, h: number): Promise<HTMLImageElement> {
-  if ((globalThis as any).__LM_DIAG === 'fonts') await document.fonts.ready
   const copy = standalone(svg, w, h)
+  if ((globalThis as any).__LM_DIAG === 'geo') copy.setAttribute('text-rendering', 'geometricPrecision')
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' }))
   try {
     const img = new Image()

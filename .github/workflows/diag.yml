@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [base, notext, nobands, fonts]
+        variant: [base, geo, twice]
         attempt: [1, 2, 3]
     env:
       VITE_DIAG: ${{ matrix.variant }}
