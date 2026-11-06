@@ -23,7 +23,7 @@ import {
   problems,
 } from '@loadmap/dsl'
 import { type EditValue, edit, inspect, lex, pageOptions, Reporter } from '@loadmap/dsl/internal'
-import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
+import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Inspector, type InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
@@ -332,6 +332,8 @@ export function LoadmapEditor({
   const warnings = list.length - errors
   const stale = !state.result.ok && !!def
   const reader = layout === 'reader'
+  // `inherit` follows the page's own switch, for the editor's frame and the diagram alike
+  const look = usePageTheme(theme)
   const inspection = useMemo(
     () =>
       !reader ? null : tab === 'model' ? inspect(text, 'model') : selected ? inspect(text, { node: selected }) : null,
@@ -339,7 +341,7 @@ export function LoadmapEditor({
   )
 
   return (
-    <div className="lm lme" data-theme={theme === 'auto' || !theme ? undefined : theme}>
+    <div className="lm lme" data-theme={look === 'auto' ? undefined : look}>
       <div className="lme-bar">
         <output className="lme-status" data-ok={errors === 0}>
           {errors === 0 && warnings === 0
@@ -425,7 +427,7 @@ export function LoadmapEditor({
               ref={preview}
               model={def.model}
               view={def.view}
-              theme={theme}
+              theme={look}
               {...pageOptions(def.options)}
               initial={valuesFor(def.model, shown.current)}
               onNodeClick={clickNode}

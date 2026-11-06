@@ -9,13 +9,18 @@ const DARK = `
   --lm-ok: #5fc08f; --lm-warn: #e2a24a; --lm-drop: #e26a5c; --lm-lane: #1b2631;
   --lm-s1: #3987e5; --lm-s2: #d95926; --lm-s3: #9085e9; --lm-s4: #c98500; color-scheme: dark;`
 
-/** Theme tokens and the layout of every piece. Scoped to `.lm`; override any `--lm-*` token to restyle. */
+/**
+ * Theme tokens and the layout of every piece. Scoped to `.lm`; override any `--lm-*` token to restyle. Two are for the
+ * page around it: `--lm-pad` (the root's padding, 16px) and `--lm-root-bg` (its background, `--lm-bg`), for a card
+ * that has its own, set on the root (`.card > .lm`) so they resolve there and reach no nested board; full screen
+ * keeps both.
+ */
 export const LOADMAP_CSS = `
 .lm { ${LIGHT}
   --lm-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --lm-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font: 14px/1.45 var(--lm-font); color: var(--lm-fg); background: var(--lm-bg);
-  display: grid; gap: 14px; padding: 16px; min-width: 0; box-sizing: border-box; }
+  font: 14px/1.45 var(--lm-font); color: var(--lm-fg); background: var(--lm-root-bg, var(--lm-bg));
+  display: grid; gap: 14px; padding: var(--lm-pad, 16px); min-width: 0; box-sizing: border-box; }
 @media (prefers-color-scheme: dark) { .lm:not([data-theme="light"]) { ${DARK} } }
 .lm[data-theme="dark"] { ${DARK} }
 .lm *, .lm *::before, .lm *::after { box-sizing: border-box; }
@@ -38,7 +43,7 @@ export const LOADMAP_CSS = `
    in them, never their size, so it never moves the board. Focus: the diagram, the story, the verdict and the load */
 .lm-side, .lm-card > .lm-panel { display: contents; }
 .lm-panel { display: grid; gap: 14px; min-width: 0; }
-.lm[data-full] { height: 100vh; height: 100dvh; padding: 16px; overflow: hidden; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; position: relative; }
+.lm[data-full] { height: 100vh; height: 100dvh; padding: 16px; background: var(--lm-bg); overflow: hidden; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; position: relative; }
 .lm[data-full="overlay"] { position: fixed; inset: 0; z-index: 2147483000; width: auto; max-width: none; max-height: none; margin: 0; border: 0; }
 .lm[data-full] > * { flex: none; }
 /* a page of its own keeps the rest outside full screen, as <Loadmap> does */

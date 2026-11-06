@@ -57,8 +57,10 @@ Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layou
 | `useLoadmap(model, view, options)`                                                                                                   | The state behind it, to build a layout of your own                              |
 | `LoadmapRoot`, `Diagram`, `Verdict` (the panel; the type of `ev.verdict` is `VerdictResult`), `Limits`, `Meters`, `Controls`, `Assumptions`, `Scenarios`, `Story`, `HeadroomChart`, `Compare` | The pieces, each taking `lm` from `useLoadmap`                                  |
 | `injectStyles()`, `LOADMAP_CSS`                                                                                                      | The styles (injected on first render), for a shadow root or server rendering    |
+| `usePageTheme(theme)`                                                                                                                | The theme `theme` draws: with `'inherit'`, the page's own switch, followed      |
+| `workerElk(make)`                                                                                                                    | An ELK engine in the worker `make` starts, for `elk`                            |
 
-`<Loadmap>` props: `model`, `view`, `theme` (`'auto'`, `'light'`, `'dark'`), `title`, `assumptions` (lines added before
+`<Loadmap>` props: `model`, `view`, `theme` (`'auto'`, `'light'`, `'dark'`, `'inherit'` for the page's own switch), `title`, `assumptions` (lines added before
 the generated ones), `headroom` and `compare` (show the chart and the table; default true), `initial` (values to
 start from), `speed` (simulated seconds per second), `direction` (`'RIGHT'` or `'DOWN'`), `narrowBelow` (the width
 under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker;
@@ -84,7 +86,7 @@ The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `
 
 `<LoadmapEditor initial values? functions? theme? onChange? onShare? actions? templates? fileName? layout? ref? />`.
 `layout` is `'code'` (the default: the text beside the diagram) or `'reader'` (the diagram with an inspector, the text
-hidden). Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
+hidden); `theme` takes `'inherit'` as `<Loadmap>` does. Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
 `format()`. `TEMPLATES` (also from
 `@loadmap/editor/templates`, without CodeMirror) lists the starters.
 
