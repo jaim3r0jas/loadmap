@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/cli",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "loadmap check (capacity expectations in CI) and loadmap record (GIF, video, PNG or SVG of a page or a .loadmap file).",
   "keywords": [
     "loadmap",
