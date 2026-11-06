@@ -40,12 +40,14 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      # v2 is the line that reads Changesets v3's output; it commits through the API with the token it is given
+      # v2 is the line that reads Changesets v3's output; it commits through the API with the token it is given. The
+      # version script formats what changesets writes: a changeset of two paragraphs leaves a blank line of two spaces
+      # in a changelog, which `check` refuses
       - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         id: changesets
         with:
           github-token: ${{ steps.app.outputs.token }}
-          version-script: pnpm changeset version
+          version-script: pnpm version-packages
 
   build:
     needs: version

@@ -19,6 +19,7 @@
     "record": "node scripts/node-version.mjs && pnpm --filter @loadmap/cli build > /dev/null && node packages/cli/dist/bin.js record",
     "budget": "node scripts/node-version.mjs && node scripts/budget.mjs",
     "changeset": "changeset",
+    "version-packages": "changeset version && biome format --write .",
     "verify:pack": "node scripts/node-version.mjs && node scripts/verify-pack.mjs",
     "release": "node scripts/node-version.mjs && pnpm check && changeset publish"
   },
