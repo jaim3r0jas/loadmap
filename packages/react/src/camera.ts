@@ -1,6 +1,7 @@
 import type { Evaluation, Model, StoryStep, Values } from '@loadmap/core'
 import { fmt, pct } from '@loadmap/core/format'
 import type { Scene, SceneNode } from '@loadmap/layout'
+import { handsOver } from './ranks'
 
 /** A part of the scene the board shows, in scene units. */
 export interface Rect {
@@ -18,21 +19,33 @@ export interface Shapes {
 
 /**
  * The shots of a story played, in seconds: the whole diagram first, then for each step a flight in to what it changes,
- * a moment close, the change held close, a flight out, and the whole diagram for the step's own seconds. `back` is the
- * flight out when the reader pauses.
+ * a moment close, the change held close, a flight out, and the whole diagram for the step's own seconds. A step that
+ * hands the limit to another component adds `hand`: a flight to the new limit (`HAND_FLY`), whose ring then comes in.
+ * `back` is the flight out when the reader pauses.
  */
-export const SHOTS = { establish: 1.2, in: 1, close: 0.5, out: 1, back: 0.4 } as const
+export const SHOTS = { establish: 1.2, in: 1, close: 0.5, hand: 1.8, out: 1, back: 0.4 } as const
+
+/** Seconds of the `hand` shot the camera flies to the new limit; its ring comes in after. */
+export const HAND_FLY = 1
 
 /** The change is held close until the structure has moved and settled. */
 export const changeSeconds = (transition: number) => Math.max(1.6, transition + 0.7)
 
-/** A step played, from the flight in to the end of its hold on the whole diagram. */
-export const stepSeconds = (st: { seconds: number }, transition: number) =>
-  SHOTS.in + SHOTS.close + changeSeconds(transition) + SHOTS.out + st.seconds
+/** A step played, from the flight in to the end of its hold on the whole diagram; `hands` when it moves the limit. */
+export const stepSeconds = (st: { seconds: number }, transition: number, hands = false) =>
+  SHOTS.in + SHOTS.close + changeSeconds(transition) + (hands ? SHOTS.hand : 0) + SHOTS.out + st.seconds
 
-/** The whole story played, from the first shot of the whole diagram. */
-export const storySeconds = (story: readonly { seconds: number }[], transition: number) =>
-  story.reduce((t: number, st) => t + stepSeconds(st, transition), SHOTS.establish)
+/** The whole story played from `start`, the values shown when it starts, from the first shot of the whole diagram. */
+export function storySeconds(model: Model, start: Evaluation, transition: number): number {
+  let ev = start
+  let t: number = SHOTS.establish
+  for (const st of model.story) {
+    const after = model.evaluate(st.values)
+    t += stepSeconds(st, transition, handsOver(ev, after))
+    ev = after
+  }
+  return t
+}
 
 export const whole = (s: { width: number; height: number }): Rect => ({ x: 0, y: 0, w: s.width, h: s.height })
 

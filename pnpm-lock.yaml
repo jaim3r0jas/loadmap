@@ -280,6 +280,10 @@ importers:
       '@loadmap/sim':
         specifier: workspace:*
         version: link:../../packages/sim
+    devDependencies:
+      '@loadmap/export':
+        specifier: workspace:*
+        version: link:../../packages/export
 
   examples/checkout:
     dependencies:

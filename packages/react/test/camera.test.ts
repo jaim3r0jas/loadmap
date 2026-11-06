@@ -6,7 +6,7 @@ import { alerts } from '../../../examples/alerts/model'
 import { view as alertsView } from '../../../examples/alerts/view'
 import { checkout } from '../../../examples/checkout/model'
 import { view as checkoutView } from '../../../examples/checkout/view'
-import { between, framing, type Rect, stepSeconds, stepTitle, storySeconds, targets, whole } from '../src/camera'
+import { between, framing, type Rect, SHOTS, stepSeconds, stepTitle, storySeconds, targets, whole } from '../src/camera'
 
 /** Each step as Play takes it from the defaults: the boxes it frames, the framing, and the title. */
 async function played(model: Model, view: View) {
@@ -117,6 +117,9 @@ describe('the camera of a story played', () => {
     // in 1, close 0.5, the change held until the structure has moved (at least 1.6), out 1, then the step's seconds
     expect(stepSeconds({ seconds: 4 }, 0.8)).toBeCloseTo(8.1, 9)
     expect(stepSeconds({ seconds: 4 }, 2)).toBeCloseTo(9.2, 9)
-    expect(storySeconds(checkout.story, 0.8)).toBeCloseTo(25.5, 9)
+    expect(storySeconds(checkout, checkout.evaluate(checkout.defaults()), 0.8)).toBeCloseTo(25.5, 9)
+    // alerts' last step hands the limit to the push broker: a flight to it, and its ring coming in
+    const plain = alerts.story.reduce((t: number, st) => t + stepSeconds(st, 0.8), SHOTS.establish)
+    expect(storySeconds(alerts, alerts.evaluate(alerts.defaults()), 0.8)).toBeCloseTo(plain + SHOTS.hand, 9)
   })
 })

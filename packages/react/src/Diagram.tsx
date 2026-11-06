@@ -3,6 +3,8 @@ import { compact, fmt, multiple, multiples, pct } from '@loadmap/core/format'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
 import { memo, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { boxComponent } from './camera'
+import type { Handover } from './engine'
+import { edge, rankLabels } from './ranks'
 import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
@@ -50,13 +52,19 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   // what to draw: the scene, or each frame of the move to it
   const frameId = useSyncExternalStore(engine.subscribe, () => engine.frameId)
   const frame = engine.frame
+  // the limit passing to another component: the old one's ring is drawn while it fades
+  const hand = useSyncExternalStore(engine.subscribe, () => engine.handover)
   // bind after every structural render, and every frame of a move: the worker fills are new elements, or elsewhere
   // biome-ignore lint/correctness/useExhaustiveDependencies: reducedMotion changes the drawn elements
   useEffect(() => {
     engine.bind(svgRef.current, canvasRef.current)
   }, [engine, frame, reducedMotion])
-  // a render draws the whole scene's viewBox: the camera takes it back before the page paints
-  useLayoutEffect(() => engine.applyCamera())
+  // a render draws the whole scene's viewBox and new rings as React made them: the engine takes both back before the
+  // page paints
+  useLayoutEffect(() => {
+    engine.applyCamera()
+    engine.drawHalos()
+  })
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new structure is drawn with the colours read again
   useEffect(() => {
     if (lm.root) engine.readColors(lm.root)
@@ -224,6 +232,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
           <Structure
             lm={lm}
             scene={frame}
+            hand={hand}
             svgRef={svgRef}
             rates={reducedMotion}
             setTip={setTip}
@@ -300,6 +309,7 @@ type Tip = { id: string; pinned: boolean } | null
 const Structure = memo(function Structure({
   lm,
   scene,
+  hand,
   svgRef,
   rates,
   setTip,
@@ -308,6 +318,7 @@ const Structure = memo(function Structure({
 }: {
   lm: LoadmapController
   scene: Scene
+  hand: Handover | null
   svgRef: React.RefObject<SVGSVGElement | null>
   rates: boolean
   setTip: (t: Tip | ((t: Tip) => Tip)) => void
@@ -369,8 +380,17 @@ const Structure = memo(function Structure({
     }
   }
   const summary = scene.nodes.map((n) => labels.nodes[n.id]?.title).join(', ')
-  // the component that runs out first stands out; the engine makes it breathe
+  // the component that runs out first stands out, the engine making it breathe; the next two in line wear a badge.
+  // A component drawn as several boxes is ringed on each but tagged once, and a box that is leaving wears nothing
+  const ranks = rankLabels(ev, lm.model)
+  const staying = lm.scene && new Set(lm.scene.nodes.map((n) => n.id))
+  const boxes = (c: string) => scene.nodes.filter((n) => componentOf(lm, n) === c && (!staying || staying.has(n.id)))
   const first = ev.firstLimit
+  const was = hand && hand.from !== first?.id && ev.components[hand.from] ? ev.components[hand.from] : null
+  const wasBoxes = was ? boxes(was.id) : []
+  // the old limit's badge if it is next in line, else a note of where it is now
+  const wasRank = was && ranks.get(was.id)
+  const note = was && (wasRank ? wasRank.text : `now ${multiple(edge(was), lm.model.searchMax)}`)
   return (
     // biome-ignore lint/a11y/useSemanticElements: an <svg> cannot be a <fieldset>
     <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="group" aria-label={`Diagram: ${summary}`}>
@@ -405,7 +425,16 @@ const Structure = memo(function Structure({
         />
       ))}
       {/* over the boxes, a layer of its own: its breathing moves no box, nor what a pointer aims at */}
-      {first && scene.nodes.filter((n) => componentOf(lm, n) === first.id).map((n) => <Halo key={n.id} n={n} />)}
+      {was && wasBoxes.map((n) => <Halo key={`was-${n.id}`} n={n} kind="was" component={was.id} />)}
+      {first &&
+        boxes(first.id).map((n, i) => (
+          <Halo key={n.id} n={n} kind="limit" component={first.id} tag={i ? undefined : ranks.get(first.id)?.text} />
+        ))}
+      {[...ranks].map(([c, r]) => {
+        const n = r.rank > 1 && c !== was?.id ? boxes(c)[0] : undefined
+        return n && <Badge key={c} n={n} text={r.text} />
+      })}
+      {note && wasBoxes[0] && <Badge n={wasBoxes[0]} text={note} was={!wasRank} />}
     </svg>
   )
 })
@@ -671,40 +700,61 @@ function Node({
   )
 }
 
-/** The width of the first limit's tag, in scene units. */
-const TAG_W = 72
+/** A tag's width in scene units for its text: wide enough for any digit, so the same text keeps its size. */
+const tagWidth = (text: string, perChar: number) => Math.ceil(12 + text.length * perChar)
 
 /**
- * A ring around the first limit's box with a soft glow and a "first limit" tag on its top edge. The engine scales it
- * and its glow on its own clock; it is a layer of its own, so it moves nothing else. It fades with its box.
+ * A ring around the limit's box with a soft glow and, on one box of it, a "LIMIT · 18×" tag on its top edge. The
+ * engine scales the ring and its glow on its own clock (`data-ring`) and fades the whole in and out; it is a layer of
+ * its own, so it moves nothing else, and it fades with its box. The tag stays still: text drawn scaled by a fraction
+ * is not rasterised the same twice, and a recording must be. `was`: the old limit's ring while it fades, without a tag.
  */
-function Halo({ n }: { n: SceneNode }) {
+function Halo({ n, kind, component, tag }: { n: SceneNode; kind: 'limit' | 'was'; component: string; tag?: string }) {
   const d = 7
   const box = { x: n.x - d, y: n.y - d, width: n.w + 2 * d, height: n.h + 2 * d, rx: 10 }
-  const tx = n.x + n.w + d - TAG_W - 8
+  const w = tag ? tagWidth(tag, 5.6) : 0
+  const tx = n.x + n.w + d - w - 8
   return (
-    <g
-      className="lm-halo"
-      data-halo=""
-      data-cx={n.x + n.w / 2}
-      data-cy={n.y + n.h / 2}
-      opacity={n.fade}
-      pointerEvents="none"
-    >
-      <rect {...box} data-glow="" fill="none" stroke="var(--lm-drop)" strokeWidth="10" strokeOpacity=".22" />
-      <rect {...box} fill="none" stroke="var(--lm-drop)" strokeWidth="2.5" />
-      <rect x={tx} y={box.y - 7.5} width={TAG_W} height="15" rx="3" fill="var(--lm-drop)" />
-      <text
-        x={tx + TAG_W / 2}
-        y={box.y + 3.5}
-        textAnchor="middle"
-        fontSize="9.5"
-        fontWeight="600"
-        letterSpacing=".06em"
-        fill="var(--lm-surface)"
-      >
-        FIRST LIMIT
-      </text>
+    <g className="lm-halo" data-halo={kind} data-component={component} data-fade={n.fade ?? 1} pointerEvents="none">
+      <g data-ring="" data-cx={n.x + n.w / 2} data-cy={n.y + n.h / 2}>
+        <rect {...box} data-glow="" fill="none" stroke="var(--lm-drop)" strokeWidth="10" strokeOpacity=".22" />
+        <rect {...box} fill="none" stroke="var(--lm-drop)" strokeWidth="2.5" />
+      </g>
+      {tag && (
+        <g data-tag={tag}>
+          <rect x={tx} y={box.y - 7.5} width={w} height="15" rx="3" fill="var(--lm-drop)" />
+          <text
+            x={tx + w / 2}
+            y={box.y + 3.5}
+            textAnchor="middle"
+            fontSize="9.5"
+            fontWeight="600"
+            letterSpacing=".06em"
+            fill="var(--lm-surface)"
+          >
+            {tag}
+          </text>
+        </g>
+      )}
+    </g>
+  )
+}
+
+/**
+ * A quiet badge on a box's top edge: where the next in line reach the target ("2nd · 20×"), or, while the limit
+ * passes on, where the old limit is now. No ring, no breathing. `was`: a note the engine fades in and out.
+ */
+function Badge({ n, text, was }: { n: SceneNode; text: string; was?: boolean }) {
+  const w = tagWidth(text, 4.9)
+  const tx = n.x + n.w - w - 6
+  return (
+    <g className="lm-badge" data-badge={text} data-was={was || undefined} opacity={n.fade} pointerEvents="none">
+      <g data-show="">
+        <rect x={tx} y={n.y - 7} width={w} height="14" rx="7" fill="var(--lm-surface)" stroke="var(--lm-muted)" />
+        <text x={tx + w / 2} y={n.y + 3} textAnchor="middle" fontSize="8.5" fontWeight="600" fill="var(--lm-muted)">
+          {text}
+        </text>
+      </g>
     </g>
   )
 }
@@ -790,13 +840,14 @@ function Detail({
     r ? reach(r, model.searchMax, model.dateAt) : multiple(x, model.searchMax)
   const num = (x: number) => (Math.abs(x) >= 1000 ? compact(x) : fmt(x))
   const cap = c.capacity
+  const rank = rankLabels(ev, model).get(c.id)
   return (
     <div id={detailId} className="lm-tip lm-detail" role="tooltip" ref={tip}>
       <b>
         {c.name}
-        {c === ev.firstLimit && (
-          <span className="lm-tag" data-kind="first">
-            first limit
+        {rank && (
+          <span className="lm-tag" data-kind={rank.rank === 1 ? 'first' : 'rank'}>
+            {rank.word}
           </span>
         )}
       </b>

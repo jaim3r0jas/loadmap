@@ -67,7 +67,7 @@ export function VerdictLine({
                   past the {target} from <b className="lm-num">{multiple(range.low, model.searchMax)}</b>
                 </>
               )}{' '}
-              · first limit <b>{first.name}</b>
+              · limited by <b>{first.name}</b>
               {sure && (
                 <span className="lm-tag" data-kind={c?.provenance === 'estimated' ? 'estimated' : 'range'}>
                   {sure}

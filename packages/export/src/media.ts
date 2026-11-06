@@ -385,7 +385,7 @@ export async function drawPoster(
     blocks.push([
       46,
       (ctx, y) => {
-        const first = c === ev.firstLimit ? ' · first limit' : ''
+        const first = c === ev.firstLimit ? ' · limit' : ''
         text(ctx, `${c.name}${first}`, pad, y + 16, font(600, 14), k.fg)
         const right =
           c.util == null
@@ -420,7 +420,7 @@ export async function drawPoster(
           ctx.arc(pad + 5, y + 13, 5, 0, Math.PI * 2)
           ctx.fill()
           text(ctx, r.label, pad + 18, y + 18, font(600, 14), k.fg)
-          const what = `first limit ${r.firstLimit?.name ?? '—'} · ${pct(model.thresholds.target)} at ${at(r.targetRange, r.target)} · runs out at ${at(r.fullRange, r.full)}`
+          const what = `limited by ${r.firstLimit?.name ?? '—'} · ${pct(model.thresholds.target)} at ${at(r.targetRange, r.target)} · runs out at ${at(r.fullRange, r.full)}`
           text(ctx, what, W - pad, y + 18, font(400, 12, true), k.muted, 'right')
         },
       ])

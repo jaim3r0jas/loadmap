@@ -51,7 +51,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                 {c.name}
                 {c === ev.firstLimit && (
                   <span className="lm-tag" data-kind="first">
-                    first limit
+                    limit
                   </span>
                 )}
                 {c.capacity?.provenance === 'estimated' ? (

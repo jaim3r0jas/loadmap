@@ -299,9 +299,10 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     setStoryStep: (i) => lm.setStep(i),
     storyStep: () => engine.storyStep,
     playStory: () => {
+      const start = engine.ev
       if (!engine.playStory(0))
         throw new Error('loadmap: the story cannot play: nothing is drawn yet, or there is none')
-      return storySeconds(engine.model.story, engine.transition)
+      return storySeconds(engine.model, start, engine.transition)
     },
     reset: (seed) => engine.reset(seed),
     step: (dt) => {
