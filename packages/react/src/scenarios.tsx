@@ -105,7 +105,7 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
           <thead>
             <tr>
               <th scope="col">Scenario</th>
-              <th scope="col">First limit</th>
+              <th scope="col">Limited by</th>
               <th scope="col">{target}</th>
               <th scope="col">Runs out</th>
             </tr>

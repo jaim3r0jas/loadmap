@@ -886,10 +886,11 @@ describe('full screen', () => {
     expect(handle.values().load).toBe(2)
   })
 
-  it('marks the first limit, breathing while the story plays and once it is past the target', async () => {
+  it('marks the limit, breathing while the story plays and once it is past the target', async () => {
     const { el, handle } = await draw()
     handle.pause()
-    const halo = () => el.querySelector<SVGGElement>('[data-halo]')
+    // the limit's ring; while it passes on, the old one fades beside it
+    const halo = () => el.querySelector<SVGGElement>('[data-halo="limit"] [data-ring]')
     const breathes = async () => {
       handle.step(0.3)
       await handle.ready()
@@ -901,7 +902,7 @@ describe('full screen', () => {
     // the gateway runs out first; under the target it holds still
     handle.setValues({ load: 1 })
     await handle.ready()
-    expect(el.querySelectorAll('[data-halo]')).toHaveLength(1)
+    expect(el.querySelectorAll('[data-halo="limit"]')).toHaveLength(1)
     const gateway = handle.board()!.scene.nodes.find((n) => n.id === 'gateway')!
     expect(Number(halo()!.dataset.cx)).toBe(gateway.x + gateway.w / 2)
     expect(await breathes()).toBe(false)
@@ -911,7 +912,8 @@ describe('full screen', () => {
     const before = el.querySelector('[data-node="gateway"]')!.getBoundingClientRect().toJSON()
     expect(await breathes()).toBe(true)
     expect(el.querySelector('[data-node="gateway"]')!.getBoundingClientRect().toJSON()).toEqual(before)
-    // a second gateway, which changes no box: the workers run out first, and the mark moves to them, breathing
+    // a second gateway, which changes no box: the workers run out first, and the mark moves to them, breathing; the
+    // gateway's tag turns into its badge
     const scene = handle.board()!.scene
     handle.setValues({ gateways: 2 })
     await handle.ready()
@@ -919,8 +921,10 @@ describe('full screen', () => {
     expect(handle.board()!.scene).toBe(scene)
     const workers = scene.nodes.find((n) => n.id === 'workers')!
     await expect.poll(() => Number(halo()!.dataset.cx), { timeout: 5000 }).toBe(workers.x + workers.w / 2)
-    expect(el.querySelectorAll('[data-halo]')).toHaveLength(1)
+    expect(el.querySelectorAll('[data-halo="limit"]')).toHaveLength(1)
     expect(await breathes()).toBe(true)
+    expect(el.querySelector('[data-tag]')!.getAttribute('data-tag')).toBe('LIMIT · 10×')
+    expect([...el.querySelectorAll<SVGGElement>('[data-badge]')].map((b) => b.dataset.badge)).toEqual(['2nd · 14×'])
   })
 
   it('stops a story the reader plays before a picture, which shows the whole diagram', async () => {
@@ -966,7 +970,7 @@ describe('full screen', () => {
       expect(close).toBe(seen.find((x) => x.shot === 'close')!.box)
       const s = handle.engine.frame!
       expect(seen.find((x) => x.shot === 'out')!.box).toBe(`0 0 ${s.width} ${s.height}`)
-      expect(el.querySelector('[data-halo]')!.getAttribute('transform') ?? '').toBe('')
+      expect(el.querySelector('[data-halo] [data-ring]')!.getAttribute('transform') ?? '').toBe('')
     } finally {
       window.matchMedia = real
     }

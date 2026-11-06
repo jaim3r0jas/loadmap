@@ -58,7 +58,9 @@ export function Story({ lm }: { lm: LoadmapController }) {
               key={k === i ? `${k}-${playing}` : k}
               data-state={k < i ? 'done' : k === i ? 'now' : undefined}
               style={
-                k === i ? ({ '--lm-step': `${stepSeconds(st, lm.engine.transition)}s` } as CSSProperties) : undefined
+                k === i
+                  ? ({ '--lm-step': `${lm.cue?.seconds ?? stepSeconds(st, lm.engine.transition)}s` } as CSSProperties)
+                  : undefined
               }
             />
           ))}

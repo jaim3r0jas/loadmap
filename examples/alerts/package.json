@@ -11,5 +11,8 @@
     "@loadmap/layout": "workspace:*",
     "@loadmap/react": "workspace:*",
     "@loadmap/sim": "workspace:*"
+  },
+  "devDependencies": {
+    "@loadmap/export": "workspace:*"
   }
 }
