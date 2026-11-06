@@ -1,5 +1,12 @@
 # @loadmap/sim
 
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies [497f671]
+  - @loadmap/core@0.12.0
+
 ## 0.11.0
 
 ### Patch Changes
