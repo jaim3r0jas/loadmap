@@ -1,8 +1,18 @@
 import type { Model, Values } from '@loadmap/core'
 import type { Scene, View } from '@loadmap/layout'
-import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  lazy,
+  type ReactNode,
+  type Ref,
+  Suspense,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { storySeconds } from './camera'
-import { Dock, type OpenPanel, VerdictLine } from './compact'
+import type { OpenPanel } from './compact'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
 import { Assumptions, Controls, Limits, LoadRange, Meters, Verdict } from './panels'
@@ -10,6 +20,10 @@ import { Compare, HeadroomChart, Scenarios } from './scenarios'
 import { Story } from './story'
 import { injectStyles } from './styles'
 import { type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
+
+// full screen's compact panels come with the first full screen: a page that never opens it does not load them
+const Dock = lazy(() => import('./later').then((m) => ({ default: m.Dock })))
+const VerdictLine = lazy(() => import('./later').then((m) => ({ default: m.VerdictLine })))
 
 /** `auto` follows the system's light or dark; `inherit` the page's own switch (`data-theme`, or a `dark` or `light` class, on `<html>`). */
 export type Theme = 'auto' | 'light' | 'dark' | 'inherit'
@@ -222,17 +236,23 @@ export function Loadmap<P>({
       <Diagram lm={lm} onNodeClick={onNodeClick} selected={selected} />
       {full && line && (
         <div className="lm-line" data-tier={lm.ev.verdict.tier}>
-          <VerdictLine
-            lm={lm}
-            verdict={verdict}
-            extra={assumptions?.length}
-            open={open}
-            assumptions={!focus && listed('assumptions')}
-          />
+          <Suspense fallback={null}>
+            <VerdictLine
+              lm={lm}
+              verdict={verdict}
+              extra={assumptions?.length}
+              open={open}
+              assumptions={!focus && listed('assumptions')}
+            />
+          </Suspense>
           {focus && listed('controls') && <LoadRange lm={lm} />}
         </div>
       )}
-      {full && !focus && <Dock lm={lm} panels={LOADMAP_PANELS.filter(listed)} open={open} />}
+      {full && !focus && (
+        <Suspense fallback={null}>
+          <Dock lm={lm} panels={LOADMAP_PANELS.filter(listed)} open={open} />
+        </Suspense>
+      )}
       {/* on the page its parts are the root's; in full screen it is the drawer, one panel at a time */}
       <div
         className="lm-side lm-drawer"
