@@ -128,6 +128,8 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
 /** A step of a story: what to say, and the values to show it at. */
 export interface StoryStepDef<P = any, C extends string = string> {
   text: string
+  /** The few words the diagram shows while the story plays the step. Default: what the step changes. */
+  title?: string
   /** Start from a scenario's values; `set` goes on top. Without one, from the defaults. */
   scenario?: string
   set?: Partial<Values<P>>
@@ -140,6 +142,7 @@ export interface StoryStepDef<P = any, C extends string = string> {
 /** A step as the model resolved it: every value set, so a step looks the same whichever step came before. */
 export interface StoryStep<P = any, C extends string = string> {
   text: string
+  title?: string
   values: Values<P>
   scenario?: string
   focus?: C
@@ -370,8 +373,10 @@ export function defineModel<
     if (st.seconds != null && !(st.seconds > 0 && Number.isFinite(st.seconds)))
       throw new Error(`loadmap: ${name} needs seconds above 0, not ${st.seconds}`)
     takes(name, st.set ?? {}, true)
+    if (st.title != null && !st.title.trim()) throw new Error(`loadmap: ${name} has an empty title`)
     return {
       text: st.text,
+      ...(st.title != null ? { title: st.title } : {}),
       values: { ...defaults(), ...from?.values, ...st.set } as Values<P>,
       ...(st.scenario != null ? { scenario: st.scenario } : {}),
       ...(st.focus != null ? { focus: st.focus } : {}),

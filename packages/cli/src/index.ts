@@ -38,7 +38,8 @@ chromium (check and fmt run without it).
   --scenario <label>    start from a scenario's values (--set goes on top)
   --set <key=value>     a value before recording starts; repeatable (--set load=30 --set pods=6)
   --caption             the title, scenario and load above the board, the verdict below it
-  --story               play the definition's story, a step at a time (with --caption, its text below the board)
+  --story               play the definition's story as the page's Play does: close on each change, then the whole
+                        diagram (with --caption, each step's text below the board)
   --poster              with .png: the board, the verdict, the limits and the scenarios compared
   --seconds <n>         length of a video or GIF (default 8, or the script's)
   --fps <n>             frames per second (default 30; GIF 15, at most 50)

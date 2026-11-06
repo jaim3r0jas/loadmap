@@ -1,22 +1,24 @@
 import { type CSSProperties, type KeyboardEvent, useRef } from 'react'
+import { stepSeconds } from './camera'
 import type { LoadmapController } from './useLoadmap'
 
 /**
  * The model's story, a step at a time: the step's text, where it is, play, back and next. ← and → move through it
  * while the bar has the keyboard focus (the sliders keep their own arrows). The text keeps the room of the longest
- * step, so stepping through it never moves what is below.
+ * step, so stepping through it never moves what is below. While it plays, the bar shows the step played from the
+ * moment the camera heads for it, before its values change.
  */
 export function Story({ lm }: { lm: LoadmapController }) {
   const bar = useRef<HTMLFieldSetElement>(null)
   const { story } = lm.model
   if (!story.length) return null
-  const i = lm.step
+  const i = lm.cue?.step ?? lm.step
   const last = story.length - 1
   // aria-disabled, not disabled, at either end: a disabled button would drop the keyboard focus, and the arrows with it
   const go = (to: number) => {
     const next = Math.max(0, Math.min(last, to))
     // at either end the button stays clickable but does nothing: showing the step again would undo the reader's values
-    if (next !== i) lm.setStep(next)
+    if (next !== i || lm.storyPlaying) lm.setStep(next)
   }
   const keys = (e: KeyboardEvent) => {
     if (e.key === 'ArrowRight') go(i == null ? 0 : i + 1)
@@ -55,7 +57,9 @@ export function Story({ lm }: { lm: LoadmapController }) {
               // a new key starts the fill again
               key={k === i ? `${k}-${playing}` : k}
               data-state={k < i ? 'done' : k === i ? 'now' : undefined}
-              style={k === i ? ({ '--lm-step': `${st.seconds}s` } as CSSProperties) : undefined}
+              style={
+                k === i ? ({ '--lm-step': `${stepSeconds(st, lm.engine.transition)}s` } as CSSProperties) : undefined
+              }
             />
           ))}
         </span>

@@ -1,6 +1,7 @@
 import type { Model, Values } from '@loadmap/core'
 import type { Scene, View } from '@loadmap/layout'
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
+import { storySeconds } from './camera'
 import { Dock, type OpenPanel, VerdictLine } from './compact'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
@@ -69,6 +70,12 @@ export interface LoadmapHandle {
   setStoryStep(i: number | null): void
   /** The story step shown; null outside the story. */
   storyStep(): number | null
+  /**
+   * Plays the story from its first step on the engine's clock, as Play does: the whole diagram, then for each step a
+   * close-up on what it changes, the change, and the whole diagram for its seconds. `step()` advances it; returns its
+   * length in seconds. Picking a step or a value stops it.
+   */
+  playStory(): number
   /** The drawn board, for capturing frames: while the structure moves, `scene` is the frame drawn. */
   board(): { svg: SVGSVGElement; canvas: HTMLCanvasElement; scene: Scene } | null
   engine: Engine
@@ -291,6 +298,10 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     setValues: (v) => lm.setValues(v),
     setStoryStep: (i) => lm.setStep(i),
     storyStep: () => engine.storyStep,
+    playStory: () => {
+      engine.playStory(0)
+      return storySeconds(engine.model.story, engine.transition)
+    },
     reset: (seed) => engine.reset(seed),
     step: (dt) => {
       engine.step(dt, { particles: true })

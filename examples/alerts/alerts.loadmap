@@ -26,6 +26,29 @@ param watchOnly "Push positions only to users watching" {
 
 preset "Launch week" { load: 25; posPods: 8; alertPods: 4 }
 
+# the walk Play takes: the whole diagram, a close-up on what each step changes, the change, the whole again
+step "An ordinary peak: the position consumer is already past the 50 % target, and runs out first." {
+  title: "Today at 10×"
+}
+step "At 25×, the position consumer is past 100 %: positions wait in their topic, and only the newest per user is kept." {
+  load: 25
+  focus: posPods
+}
+step "Launch week runs eight position pods and four alert pods: the consumer is back under 100 %." {
+  load: 25
+  posPods: 8
+  alertPods: 4
+  title: "Launch week: more pods"
+}
+step "Pushing every position to every receiver, not only to the users watching, more than triples what the push broker sends: it runs out first now." {
+  load: 25
+  posPods: 8
+  alertPods: 4
+  watchOnly: false
+  focus: push
+  title: "Push to every receiver"
+}
+
 # push packets per position: to watchers only, or to every receiver
 let perPosition = watchOnly ? 0.3 : 1.2
 

@@ -29,6 +29,29 @@ export const alerts = defineModel({
     }),
   },
   presets: { 'Launch week': { load: 25, posPods: 8, alertPods: 4 } },
+  // the walk Play takes: the whole diagram, a close-up on what each step changes, the change, the whole again
+  story: [
+    {
+      text: 'An ordinary peak: the position consumer is already past the 50 % target, and runs out first.',
+      title: 'Today at 10×',
+    },
+    {
+      text: 'At 25×, the position consumer is past 100 %: positions wait in their topic, and only the newest per user is kept.',
+      set: { load: 25 },
+      focus: 'posPods',
+    },
+    {
+      text: 'Launch week runs eight position pods and four alert pods: the consumer is back under 100 %.',
+      set: { load: 25, posPods: 8, alertPods: 4 },
+      title: 'Launch week: more pods',
+    },
+    {
+      text: 'Pushing every position to every receiver, not only to the users watching, more than triples what the push broker sends: it runs out first now.',
+      set: { load: 25, posPods: 8, alertPods: 4, watchOnly: false },
+      focus: 'push',
+      title: 'Push to every receiver',
+    },
+  ],
   flows: {
     alerts: { label: 'alerts', unit: 'alert', rate: ({ load }) => 12 * load, priority: 1 },
     positions: {

@@ -2,6 +2,7 @@ import { type ComponentState, type CrossingRange, reach } from '@loadmap/core'
 import { compact, fmt, multiple, multiples, pct } from '@loadmap/core/format'
 import type { Scene, SceneEdge, SceneNode, TextSpot } from '@loadmap/layout'
 import { memo, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { boxComponent } from './camera'
 import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
@@ -36,6 +37,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   const barRef = useRef<HTMLDivElement>(null)
   const boardRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const titleRef = useRef<HTMLDivElement>(null)
   const full = lm.fullScreen
   // the node whose detail shows, and whether a tap pinned it
   const [tip, setTip] = useState<{ id: string; pinned: boolean } | null>(null)
@@ -53,6 +55,8 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   useEffect(() => {
     engine.bind(svgRef.current, canvasRef.current)
   }, [engine, frame, reducedMotion])
+  // a render draws the whole scene's viewBox: the camera takes it back before the page paints
+  useLayoutEffect(() => engine.applyCamera())
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new structure is drawn with the colours read again
   useEffect(() => {
     if (lm.root) engine.readColors(lm.root)
@@ -72,6 +76,23 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     return () => ro.disconnect()
   }, [engine])
 
+  // a board that pans in its own box (a phone in full screen) keeps what the camera frames in the middle of it
+  // and its title at the top of what shows, under the bar
+  const follow = () => {
+    const wrap = wrapRef.current
+    const board = boardRef.current
+    const c = engine.camera
+    const title = titleRef.current
+    if (!wrap || !board || !engine.frame || wrap.scrollHeight <= wrap.clientHeight) {
+      title?.style.removeProperty('top')
+      return
+    }
+    const k = board.clientHeight / engine.frame.height
+    if (c) wrap.scrollTop = board.offsetTop + (c.y + c.h / 2) * k - wrap.clientHeight / 2
+    if (title)
+      title.style.top = `${Math.max(0, wrap.scrollTop - board.offsetTop + (barRef.current?.offsetHeight ?? 0))}px`
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: follow reads only refs and the engine
   useEffect(() => {
     let raf = 0
     let last = 0
@@ -81,6 +102,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       if (!engine.paused && engine.scene) {
         engine.step(dt, { particles: !reducedMotion })
         engine.draw({ particles: !reducedMotion })
+        follow()
       }
       raf = requestAnimationFrame(frame)
     }
@@ -204,10 +226,19 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
           />
         )}
         <canvas ref={canvasRef} hidden={reducedMotion} />
+        {/* the story's title over the board, the same size whatever the camera shows; the story bar speaks it */}
+        {lm.cue && (
+          <div className="lm-title" data-top={lm.cue.top || undefined} aria-hidden="true" ref={titleRef}>
+            <b>{lm.cue.title}</b>
+            {lm.cue.detail && <span>{lm.cue.detail}</span>}
+          </div>
+        )}
       </div>
       {/* outside the board, which clips: a detail taller than the room beside its box still shows whole. Placed on the
           frame drawn, which a move to a new structure changes every frame */}
-      {frame && tip && <Detail lm={lm} scene={frame} id={tip.id} board={boardRef.current} detailId={detailId} />}
+      {frame && tip && !lm.storyPlaying && (
+        <Detail lm={lm} scene={frame} id={tip.id} board={boardRef.current} detailId={detailId} />
+      )}
     </div>
   )
 }
@@ -255,10 +286,7 @@ function Legend({ lm }: { lm: LoadmapController }) {
   )
 }
 
-/** The component a box stands for: its stages' component, or its own. */
-function componentOf(lm: LoadmapController, n: SceneNode): string | undefined {
-  return n.stages.map((s) => lm.ev.stages[s]?.component).find(Boolean) ?? n.component ?? undefined
-}
+const componentOf = (lm: LoadmapController, n: SceneNode) => boxComponent(lm.ev, n)
 
 type Tip = { id: string; pinned: boolean } | null
 
@@ -335,7 +363,8 @@ const Structure = memo(function Structure({
     }
   }
   const summary = scene.nodes.map((n) => labels.nodes[n.id]?.title).join(', ')
-  // a group, not an image: an image's children are hidden from screen readers, and the boxes are buttons
+  // the component that runs out first stands out; the engine makes it breathe
+  const first = ev.firstLimit
   return (
     // biome-ignore lint/a11y/useSemanticElements: an <svg> cannot be a <fieldset>
     <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="group" aria-label={`Diagram: ${summary}`}>
@@ -369,6 +398,8 @@ const Structure = memo(function Structure({
           handlers={handlers(n)}
         />
       ))}
+      {/* over the boxes, a layer of its own: its breathing moves no box, nor what a pointer aims at */}
+      {first && scene.nodes.filter((n) => componentOf(lm, n) === first.id).map((n) => <Halo key={n.id} n={n} />)}
     </svg>
   )
 })
@@ -630,6 +661,44 @@ function Node({
           strokeDasharray="5 4"
         />
       )}
+    </g>
+  )
+}
+
+/** The width of the first limit's tag, in scene units. */
+const TAG_W = 72
+
+/**
+ * A ring around the first limit's box with a soft glow and a "first limit" tag on its top edge. The engine scales it
+ * and its glow on its own clock; it is a layer of its own, so it moves nothing else. It fades with its box.
+ */
+function Halo({ n }: { n: SceneNode }) {
+  const d = 7
+  const box = { x: n.x - d, y: n.y - d, width: n.w + 2 * d, height: n.h + 2 * d, rx: 10 }
+  const tx = n.x + n.w + d - TAG_W - 8
+  return (
+    <g
+      className="lm-halo"
+      data-halo=""
+      data-cx={n.x + n.w / 2}
+      data-cy={n.y + n.h / 2}
+      opacity={n.fade}
+      pointerEvents="none"
+    >
+      <rect {...box} data-glow="" fill="none" stroke="var(--lm-drop)" strokeWidth="10" strokeOpacity=".22" />
+      <rect {...box} fill="none" stroke="var(--lm-drop)" strokeWidth="2.5" />
+      <rect x={tx} y={box.y - 7.5} width={TAG_W} height="15" rx="3" fill="var(--lm-drop)" />
+      <text
+        x={tx + TAG_W / 2}
+        y={box.y + 3.5}
+        textAnchor="middle"
+        fontSize="9.5"
+        fontWeight="600"
+        letterSpacing=".06em"
+        fill="var(--lm-surface)"
+      >
+        FIRST LIMIT
+      </text>
     </g>
   )
 }

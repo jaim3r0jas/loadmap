@@ -246,16 +246,17 @@ describe('scenarios and growth', () => {
 })
 
 describe('story steps', () => {
-  it('compile in order, with their scenario, focus, seconds and values', () => {
+  it('compile in order, with their scenario, focus, title, seconds and values', () => {
     const top = `scenario "Today" {}
 scenario "More" { pods: 3 }
 step "Start." {}
-step "More pods at 8×." { scenario: More; load: 8; fast: true; focus: api; seconds: 6 }`
+step "More pods at 8×." { scenario: More; load: 8; fast: true; focus: api; title: "Three pods"; seconds: 6 }`
     const m = compile(def({ top })).definition!.model
     expect(m.story).toEqual([
       { text: 'Start.', values: { load: 2, pods: 2, fast: false }, seconds: 4 },
       {
         text: 'More pods at 8×.',
+        title: 'Three pods',
         values: { load: 8, pods: 3, fast: true },
         scenario: 'More',
         focus: 'api',
@@ -283,10 +284,11 @@ step "x" { load: 50; seconds: 30 }`
 
   it('point at the word that is wrong', () => {
     const top = `scenario "Today" {}
-step "x" { scenario: Later; focus: db; seconds: 0; pod: 2; pods: 9 }`
+step "x" { scenario: Later; focus: db; title: " "; seconds: 0; pod: 2; pods: 9 }`
     expect(errors(def({ top }))).toEqual([
       { message: 'unknown scenario "Later"', hint: undefined, text: 'Later' },
       { message: 'unknown component "db"', hint: undefined, text: 'db' },
+      { message: 'a title needs a few words', hint: undefined, text: '" "' },
       { message: 'seconds is a duration above 0', hint: undefined, text: '0' },
       { message: 'unknown parameter "pod"', hint: 'did you mean "pods"?', text: 'pod' },
       { message: '9 is not an option of "pods"', hint: '1, 2, 3', text: '9' },

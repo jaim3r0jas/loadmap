@@ -10,7 +10,17 @@ import {
   QUALITY_HIGH,
   WebMOutputFormat,
 } from 'mediabunny'
-import { bands, type Caption, captionOf, drawCaption, drawPoster, exportSvg, posterLayout, standalone } from './media'
+import {
+  bands,
+  type Caption,
+  captionOf,
+  drawCaption,
+  drawPoster,
+  drawTitle,
+  exportSvg,
+  posterLayout,
+  standalone,
+} from './media'
 
 export { type Caption, exportSvg } from './media'
 
@@ -56,8 +66,9 @@ export interface RecordOptions extends FrameOptions {
   /** Required without `story`. */
   seconds?: number
   /**
-   * Plays the model's story: each step for its seconds, its text below the board when there is a caption. Takes the
-   * place of `script` and `seconds`.
+   * Plays the model's story from its defaults, as Play does: the whole diagram, then for each step a close-up on what it
+   * changes, the change, and the whole diagram for its seconds; its title on the board, and its text below it when there
+   * is a caption. Takes the place of `script` and `seconds`.
    */
   story?: boolean
   /** Default 30 for video, 15 for GIF. A GIF takes at most 50: its frame delays are whole hundredths. */
@@ -102,6 +113,9 @@ export async function composeFrame(
   ctx.translate((w - dw) / 2, band.top + (room - dh) / 2)
   ctx.drawImage(img, 0, 0, dw, dh)
   handle.engine.paintParticles(ctx, scale)
+  // a story played says what each step changes on the board, as the page does
+  if (handle.engine.cue) drawTitle(ctx, handle, handle.engine.cue, dw, dh)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
   if (cap) drawCaption(ctx, handle, cap, w, h)
   return c
 }
@@ -121,16 +135,14 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
   const fps = o.fps ?? (format === 'gif' ? 15 : 30)
   const story = o.story ? handle.engine.model.story : null
   if (story && !story.length) throw new Error('loadmap: the model has no story')
-  // the steps one after another, each for its seconds
-  const starts = story?.map((_, i) => story.slice(0, i).reduce((t, s) => t + s.seconds, 0))
-  const seconds = story ? story.reduce((t, s) => t + s.seconds, 0) : o.seconds
-  if (!(fps > 0) || !(seconds != null && seconds > 0)) throw new Error('loadmap: seconds and fps must be positive')
+  if (!(fps > 0) || !(story || (o.seconds != null && o.seconds > 0)))
+    throw new Error('loadmap: seconds and fps must be positive')
   if (format === 'gif' && fps > 50) throw new Error('loadmap: a GIF plays at most 50 frames a second')
-  const script = story ? starts!.map((at, step) => ({ at, step })) : [...(o.script ?? [])].sort((a, b) => a.at - b.at)
+  const script = story ? [] : [...(o.script ?? [])].sort((a, b) => a.at - b.at)
   const cap = captionOf(o.caption)
-  /** The caption for the step shown: its text instead of the verdict. */
+  /** The caption for the step played: its text instead of the verdict, from the moment the camera heads for it. */
   const captionNow = (): boolean | Caption | undefined => {
-    const i = handle.storyStep()
+    const i = handle.engine.cue?.step ?? handle.storyStep()
     const st = story && i != null ? story[i] : undefined
     return cap && st ? { ...cap, text: st.text, step: `${i! + 1} of ${story!.length}` } : o.caption
   }
@@ -139,8 +151,14 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
   const beforeStep = handle.storyStep()
   handle.pause()
   try {
+    // a story starts from the model's defaults, whatever the page shows
+    if (story) {
+      handle.setStoryStep(null)
+      handle.setValues(handle.engine.model.defaults())
+    }
     for (const s of script.filter((s) => s.at <= 0)) apply(handle, s)
     await warmUp(handle, o.seed ?? 1, o.warmup ?? 2, fps)
+    const seconds = story ? handle.playStory() : o.seconds!
 
     const canvas = document.createElement('canvas')
     // a GIF reads every frame back: ask for a canvas kept in memory before anything draws on it
@@ -169,8 +187,8 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
     }
     return await sink.finish()
   } finally {
-    // the step first: showing it sets its values, which the reader's own values then replace
-    if (handle.storyStep() !== beforeStep) handle.setStoryStep(beforeStep)
+    // the step first (which also stops a story played): showing it sets its values, which the reader's own replace
+    if (story || handle.storyStep() !== beforeStep) handle.setStoryStep(beforeStep)
     handle.setValues(before)
     handle.resume()
   }

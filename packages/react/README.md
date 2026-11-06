@@ -92,12 +92,16 @@ pans the diagram in its own box). Each compact panel opens whole over the diagra
 'controls']}` keeps only those (`LOADMAP_PANELS` lists them all: `verdict`, `live`, `limits`, `controls`, `headroom`,
 `compare`, `assumptions`). A switch beside Close, or the F key, turns full screen into **focus**: the diagram, the
 story and, of the panels listed, the verdict and the load slider. `fullScreenMode="focus"` opens full screen there
-(default `'panels'`). The story bar plays the story, each step for its `seconds`.
+(default `'panels'`). The story bar's Play tells the story on the diagram: the whole diagram, a close-up on what each
+step changes, the change, and the whole diagram again for the step's `seconds`, a short title on the board (the step's
+`title`, or what it changes). The component that runs out first wears a ring that breathes while the story plays and
+once it is past the target. With reduced motion the camera cuts and the ring holds still. `ref.playStory()` plays it
+on the engine's clock, which `step()` advances.
 
 `useLoadmap` with `LoadmapRoot`, `Diagram`, `Verdict`, `Limits`, `Controls` and the others builds a page of your own
 layout from the same pieces. The diagram's Full screen takes the whole root: inside a `<div className="lm-side">`
 after the `Diagram`, your pieces become a box below it that scrolls on its own; a title, the `Scenarios` and the
 `Story` stay above the diagram, and the rest waits outside. The controller has the state: `lm.fullScreen`,
-`lm.toggleFullScreen()`, `lm.fullScreenMode`, `lm.storyPlaying`.
+`lm.toggleFullScreen()`, `lm.fullScreenMode`, `lm.storyPlaying`, `lm.cue` (what the board says about the step played).
 
 Docs, live examples and the editor: https://jaim3r0jas.github.io/loadmap/ · MIT
