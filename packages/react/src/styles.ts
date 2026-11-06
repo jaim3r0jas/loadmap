@@ -57,6 +57,7 @@ export const LOADMAP_CSS = `
 .lm-side, .lm-card > .lm-panel { display: contents; }
 .lm-panel { display: grid; gap: 14px; min-width: 0; }
 .lm[data-full] { height: 100vh; height: 100dvh; padding: 16px; background: var(--lm-bg); overflow: hidden; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; position: relative; }
+.lm[data-full="fill"] { height: 100%; padding: 10px; }
 .lm[data-full="overlay"] { position: fixed; inset: 0; z-index: 2147483000; width: auto; max-width: none; max-height: none; margin: 0; border: 0; }
 .lm[data-full] > * { flex: none; }
 /* a page of its own keeps the rest outside full screen, as <Loadmap> does */

@@ -594,7 +594,7 @@ export class Engine {
       const ring = el.querySelector<SVGGElement>('[data-ring]')
       if (!ring) continue
       const [cx, cy] = [Number(ring.dataset.cx), Number(ring.dataset.cy)]
-      const k = (1 + 0.08 * (1 - show)) * (was || !breathe ? 1 : 1 + 0.035 * b)
+      const k = was ? 1 : (1 + 0.08 * (1 - show)) * (breathe ? 1 + 0.035 * b : 1)
       set(ring, 'transform', k === 1 ? '' : `translate(${cx} ${cy}) scale(${k.toFixed(4)}) translate(${-cx} ${-cy})`)
       const glow = ring.querySelector('[data-glow]')
       if (glow) set(glow, 'stroke-opacity', (0.1 + 0.25 * b).toFixed(3))

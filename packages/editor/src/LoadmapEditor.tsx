@@ -10,7 +10,7 @@ import {
 import { bracketMatching, indentOnInput } from '@codemirror/language'
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
-import type { Model, ParamValue, Values } from '@loadmap/core'
+import type { ParamValue } from '@loadmap/core'
 import {
   type CompileResult,
   compile,
@@ -21,6 +21,7 @@ import {
   format,
   type HostFunctions,
   problems,
+  sharedValues,
 } from '@loadmap/dsl'
 import { type EditValue, edit, fingerprint, inspect, pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
@@ -37,6 +38,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Embed, type EmbedOptions } from './Embed'
 import { Inspector, type InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
 import { injectEditorStyles } from './styles'
@@ -70,6 +72,11 @@ export interface LoadmapEditorProps {
   onChange?: (source: string) => void
   /** Called with a share hash. Default: puts it in the address bar and copies the link. */
   onShare?: (hash: string) => void | Promise<void>
+  /**
+   * The link to a page that frames a definition (an embed), from its share hash and the options picked. With it,
+   * "Copy embed link" sits beside "Share link": the link, or an `<iframe>` with it, for ClickUp's /embed or any page.
+   */
+  embedLink?: (hash: string, o: EmbedOptions) => string
   /** More buttons for the bar: export, record. */
   actions?: ReactNode
   /** Controls at the start of the bar, before the status: a way back, a name, a menu of examples. */
@@ -115,6 +122,7 @@ export function LoadmapEditor({
   theme,
   onChange,
   onShare,
+  embedLink,
   actions,
   start,
   fill = false,
@@ -436,6 +444,17 @@ export function LoadmapEditor({
       {compact ? 'Share' : 'Share link'}
     </button>
   )
+  // beside Share, in either bar: a menu of its own, which the narrow bar's menu would close on every pick
+  const embedMenu = embedLink && def && (
+    <Embed
+      link={embedLink}
+      hash={shareHash}
+      title={def.model.title ?? 'loadmap'}
+      story={def.model.story.length > 0}
+      short={compact}
+      onNote={setNote}
+    />
+  )
   // the buttons before Share, and after it; on a narrow fill they fold into the menu
   const lead = (
     <>
@@ -514,6 +533,7 @@ export function LoadmapEditor({
         {compact ? (
           <>
             {shareButton}
+            {embedMenu}
             <More>
               {lead}
               {tail}
@@ -523,6 +543,7 @@ export function LoadmapEditor({
           <>
             {lead}
             {shareButton}
+            {embedMenu}
             {tail}
           </>
         )}
@@ -587,7 +608,7 @@ export function LoadmapEditor({
               view={def.view}
               theme={look}
               {...pageOptions(def.options)}
-              initial={valuesFor(def.model, shown.current)}
+              initial={sharedValues(def.model, shown.current)}
               onNodeClick={clickNode}
               selected={selected}
             />
@@ -620,30 +641,6 @@ export function between(a: string, b: string): { from: number; to: number; inser
   const room = Math.min(a.length, b.length) - from
   while (tail < room && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++
   return { from, to: a.length - tail, insert: b.slice(from, b.length - tail) }
-}
-
-/** The tokens of the text: two texts with the same tokens define the same diagram. */
-/**
- * The values that still fit the model: known names, options that still exist, numbers within range. A text (from a
- * link) is read by the parameter's kind, so "20" can be the number 20 or the option "20".
- */
-function valuesFor(model: Model, v: Readonly<Record<string, unknown>>): Partial<Values<any>> {
-  const out: Record<string, unknown> = {}
-  for (const { id, def } of model.params) {
-    if (!Object.hasOwn(v, id)) continue
-    const x = v[id]
-    if (def.kind === 'select') {
-      const o = (def.options as unknown[]).find((o) => o === x || String(o) === String(x))
-      if (o !== undefined) out[id] = o
-    }
-    if (def.kind === 'switch' && (x === true || x === 'true' || x === false || x === 'false'))
-      out[id] = x === true || x === 'true'
-    if (def.kind === 'range' || def.kind === 'load') {
-      const n = typeof x === 'number' ? x : typeof x === 'string' && x.trim() !== '' ? Number(x) : Number.NaN
-      if (Number.isFinite(n)) out[id] = Math.min(def.max, Math.max(def.min, n))
-    }
-  }
-  return out as Partial<Values<any>>
 }
 
 const SPLIT = 0.4

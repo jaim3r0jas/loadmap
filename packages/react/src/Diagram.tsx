@@ -180,7 +180,8 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   const modesRef = useRef<HTMLFieldSetElement>(null)
   useEffect(() => {
     const root = lm.root
-    if (!full || !root) return
+    // a root that fills its frame shows what the page picked
+    if (!full || !root || lm.fill) return
     const f = (e: KeyboardEvent) => {
       if ((e.key !== 'f' && e.key !== 'F') || e.ctrlKey || e.metaKey || e.altKey) return
       if (typing(e.composedPath()[0] ?? null) || root.querySelector(':scope > [data-drawer]')) return
@@ -194,14 +195,15 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     }
     document.addEventListener('keydown', f)
     return () => document.removeEventListener('keydown', f)
-  }, [full, fullScreenMode, setFullScreenMode, lm.root])
+  }, [full, fullScreenMode, setFullScreenMode, lm.root, lm.fill])
 
   return (
     <div className="lm-wrap" ref={wrapRef}>
       <div className="lm-bar" ref={barRef}>
         {legend ? <Legend lm={lm} /> : <span />}
         <span className="lm-tools">
-          {full && (
+          {/* a root that fills its frame for good has neither: the page picks what it shows */}
+          {full && !lm.fill && (
             <fieldset className="lm-modes" aria-label="Full screen shows (F)" ref={modesRef}>
               {(['panels', 'focus'] as const).map((m) => (
                 <button
@@ -217,9 +219,11 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
               ))}
             </fieldset>
           )}
-          <button type="button" className="lm-btn" onClick={lm.toggleFullScreen} aria-pressed={full} ref={buttonRef}>
-            {full ? '✕ Close' : '⤢ Full screen'}
-          </button>
+          {!lm.fill && (
+            <button type="button" className="lm-btn" onClick={lm.toggleFullScreen} aria-pressed={full} ref={buttonRef}>
+              {full ? '✕ Close' : '⤢ Full screen'}
+            </button>
+          )}
         </span>
       </div>
       <div

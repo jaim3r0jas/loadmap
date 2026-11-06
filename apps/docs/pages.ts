@@ -30,6 +30,7 @@ export const PAGES: readonly Page[] = [
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
   { route: 'recording', file: 'recording.md', nav: 'Recording and CI', group: 'Use it' },
+  { route: 'embedding', file: 'embedding.md', nav: 'Embedding', group: 'Use it' },
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },
   { route: 'examples/alerts', file: 'alerts.md', nav: 'Alerts', group: 'Examples' },
   { route: 'templates', file: 'templates.md', nav: 'Templates', group: 'Examples' },
@@ -275,6 +276,10 @@ export function writePages(base = '/'): string[] {
     update(file, page.frame === 'app' ? appShell(page, title, html) : shell(page, title, html, headings))
     files.push(file)
   }
+  const embed = join(SITE, EMBED, 'index.html')
+  mkdirSync(dirname(embed), { recursive: true })
+  update(embed, EMBED_HTML)
+  files.push(embed)
   const missing = join(SITE, '404.html')
   const notFound = { route: '', file: '', nav: '' }
   const body = '<h1>Not found</h1>\n<p>No page here. Every page is in the list of pages.</p>'
@@ -282,6 +287,51 @@ export function writePages(base = '/'): string[] {
   files.push(missing)
   return files
 }
+
+/** Where the page an embed frames is served: not a page of the site, so in no list. */
+export const EMBED = 'embed'
+
+/**
+ * The page an embed frames: nothing but the definition, filling the frame and never scrolling. Search engines leave
+ * it out; the docs' stylesheet stays out too, so it loads only loadmap.
+ */
+const EMBED_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>loadmap</title>
+    <style>
+      html, body, #embed { height: 100%; margin: 0; overflow: hidden; }
+      body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2330; background: #f6f7f9; }
+      .embed-open { margin-left: 10px; font-size: .75rem; font-weight: 500; color: var(--lm-muted); text-decoration: none; border: 1px solid var(--lm-line); border-radius: 5px; padding: 1px 7px; white-space: nowrap; vertical-align: 2px; }
+      .embed-open:hover, .embed-open:focus-visible { color: var(--lm-fg); border-color: var(--lm-accent); }
+      .embed-problem { height: 100%; box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; text-align: center; font-size: 14px; }
+      .embed-problem code { font: 12px ui-monospace, Menlo, monospace; color: #5d6677; overflow-wrap: anywhere; }
+      .embed-problem a { color: #0d6a8a; }
+      /* the title, and Open ↗ with it, stays in a narrow frame, which full screen's narrow layout would hide */
+      @media (min-height: 261px) { html .lm[data-full] .lm-head h2 { display: block; } }
+      /* a frame of a doc's height keeps the story to its buttons: the board titles the step while it plays */
+      @media (max-height: 520px) { .lm[data-full] > .lm-story p { display: none; } }
+      /* a short frame keeps the diagram and one line of verdict */
+      @media (max-height: 260px) {
+        .lm .lm-story, .lm .lm-line .lm-range, .lm .lm-line .lm-link, .lm .lm-legend, .lm .lm-dock { display: none; }
+        .lm .lm-headline { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      }
+      @media (prefers-color-scheme: dark) {
+        body { color: #e6e9ee; background: #14171c; }
+        .embed-problem code { color: #9aa3b2; }
+        .embed-problem a { color: #4fb3d9; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="embed"></div>
+    <script type="module" src="/embed.tsx"></script>
+  </body>
+</html>
+`
 
 const PUBLISHED = 'https://jaim3r0jas.github.io/loadmap/'
 

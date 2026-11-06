@@ -103,7 +103,13 @@ export function LoadmapRoot({
     return () => m.removeEventListener('change', f)
   }, [lm.root, lm.engine, shown])
   return (
-    <div className="lm" data-theme={shown === 'auto' ? undefined : shown} ref={lm.rootRef}>
+    <div
+      className="lm"
+      data-theme={shown === 'auto' ? undefined : shown}
+      data-full={lm.fill ? 'fill' : undefined}
+      data-mode={lm.fill ? lm.fullScreenMode : undefined}
+      ref={lm.rootRef}
+    >
       {children}
     </div>
   )

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { encodeShare } from '@loadmap/dsl'
 import { TEMPLATES } from '@loadmap/editor/templates'
-import { chromium } from 'playwright'
+import { type Browser, chromium, type Frame } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
@@ -89,7 +89,13 @@ describe('the built site', () => {
   beforeAll(async () => {
     out = await mkdtemp(join(tmpdir(), 'loadmap-docs-'))
     await build({ configFile: config, logLevel: 'error', build: { outDir: out, emptyOutDir: true } })
-    server = await preview({ configFile: config, logLevel: 'error', build: { outDir: out }, preview: { port: 0 } })
+    // GitHub Pages answers any origin (Access-Control-Allow-Origin: *): a sandboxed frame loads the scripts there too
+    server = await preview({
+      configFile: config,
+      logLevel: 'error',
+      build: { outDir: out },
+      preview: { port: 0, cors: true },
+    })
     url = server.resolvedUrls!.local[0]!
   }, 120_000)
   afterAll(async () => {
@@ -284,6 +290,141 @@ describe('the built site', () => {
       await browser.close()
     }
   }, 120_000)
+
+  describe('the embed page', () => {
+    const checkout = readFileSync(join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap'), 'utf8')
+    let browser: Browser
+    beforeAll(async () => {
+      browser = await chromium.launch()
+    })
+    afterAll(() => browser?.close())
+
+    /** A page of iframes of the embed page, as a doc frames it; each frame once it has drawn or said why not. */
+    async function framed(frames: { query?: string; hash: string; w: number; h: number; sandbox?: string }[], o = {}) {
+      const page = await browser.newPage({ viewport: { width: 1000, height: 1600 }, ...o })
+      const errors: string[] = []
+      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(url)
+      await page.setContent(
+        frames
+          .map(
+            (f, i) =>
+              `<iframe id="f${i}" src="${url}embed/${f.query ?? ''}#${f.hash}" width="${f.w}" height="${f.h}"${f.sandbox ? ` sandbox="${f.sandbox}"` : ''} style="border: 0; display: block"></iframe>`,
+          )
+          .join(''),
+      )
+      const out: Frame[] = []
+      for (const [i] of frames.entries()) {
+        const frame = (await (await page.$(`#f${i}`))!.contentFrame())!
+        await frame.waitForFunction(() => document.querySelector('[data-node], [role=alert]'), null, {
+          timeout: 30_000,
+        })
+        out.push(frame)
+      }
+      return { page, frames: out, errors }
+    }
+
+    it('draws a shared link filling its frame, never scrolling, at any size and sandboxed', async () => {
+      const hash = await encodeShare(checkout, { load: 25 })
+      const sizes = [
+        { w: 860, h: 440 },
+        { w: 520, h: 320, sandbox: 'allow-scripts' },
+        { w: 340, h: 230 },
+      ]
+      const { page, frames, errors } = await framed(sizes.map((s) => ({ ...s, hash })))
+      for (const [i, frame] of frames.entries()) {
+        await frame.waitForFunction(() => document.querySelectorAll('[data-node]').length === 5)
+        const m = await frame.evaluate(() => {
+          const root = document.querySelector<HTMLElement>('.lm')!
+          const r = root.getBoundingClientRect()
+          const b = root.querySelector('.lm-board')!.getBoundingClientRect()
+          return {
+            full: root.dataset.full,
+            fills: [r.width, r.height],
+            scrolls: [
+              document.documentElement.scrollWidth - innerWidth,
+              document.documentElement.scrollHeight - innerHeight,
+              root.scrollHeight - root.clientHeight,
+            ],
+            board: b.width > 0 && b.height > 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5,
+            load: root.querySelector('.lm-headline b')?.textContent,
+            fullScreen: [...root.querySelectorAll('button')].some((x) => x.textContent?.includes('Full screen')),
+            open: root.querySelector('.embed-open')?.getAttribute('href') ?? null,
+          }
+        })
+        const { w, h } = sizes[i]!
+        expect(m, `${w}×${h}`).toMatchObject({
+          full: 'fill',
+          fills: [w, h],
+          scrolls: [0, 0, 0],
+          board: true,
+          load: '25×',
+          fullScreen: false,
+        })
+        // Open ↗ opens the same link in the editor; a short frame keeps only the diagram and a line of verdict
+        if (h > 260) expect(m.open).toBe(`${url}editor/#${hash}`)
+        else expect(m.open === null || !(await frame.locator('.embed-open').isVisible())).toBe(true)
+      }
+      // a block resized tall and narrow in the doc: the diagram runs top to bottom, still without scrolling the page
+      await page.evaluate(() =>
+        document.querySelector('#f0')!.setAttribute('style', 'border: 0; width: 360px; height: 720px'),
+      )
+      const board = () =>
+        frames[0]!.evaluate(() => document.querySelector('.lm-board')!.getBoundingClientRect().toJSON())
+      await expect.poll(async () => (await board()).height > (await board()).width, { timeout: 15_000 }).toBe(true)
+      expect(await frames[0]!.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBe(0)
+      expect(errors).toEqual([])
+      await page.close()
+    }, 120_000)
+
+    it('takes its options from the query: the panels, the theme, the story played when in view', async () => {
+      const hash = await encodeShare(checkout)
+      const { page, frames, errors } = await framed([
+        { query: '?mode=panels&panels=verdict,limits&theme=dark', hash, w: 900, h: 700 },
+        { query: '?play=1', hash, w: 860, h: 440 },
+        { query: '?mode=sideways&theme=purple', hash, w: 860, h: 440 },
+      ])
+      const [panels, play, unknown] = frames as [Frame, Frame, Frame]
+      const root = (f: Frame) =>
+        f.evaluate(() => {
+          const el = document.querySelector<HTMLElement>('.lm')!
+          return {
+            theme: el.dataset.theme ?? null,
+            mode: el.dataset.mode,
+            minis: [...el.querySelectorAll<HTMLElement>('[data-mini]')].map((m) => m.dataset.mini),
+          }
+        })
+      expect(await root(panels)).toEqual({ theme: 'dark', mode: 'panels', minis: ['limits'] })
+      // a value it does not know is the default: the diagram first, the reader's theme
+      expect(await root(unknown)).toMatchObject({ theme: null, mode: 'focus' })
+      await play.waitForSelector('.lm-story[data-playing]', { timeout: 10_000 })
+      expect(errors).toEqual([])
+      await page.close()
+      // never by itself with reduced motion
+      const still = await framed([{ query: '?play=1', hash, w: 860, h: 440 }], { reducedMotion: 'reduce' })
+      await still.frames[0]!.waitForFunction(() => document.querySelectorAll('[data-node]').length === 5)
+      await still.page.waitForTimeout(1500)
+      expect(await still.frames[0]!.locator('.lm-story[data-playing]').count()).toBe(0)
+      await still.page.close()
+    }, 120_000)
+
+    it('refuses a bad link with a plain message and a way to the editor', async () => {
+      const broken = await encodeShare('node a "A" {\n  brokr: 1\n}\n')
+      const { page, frames, errors } = await framed([
+        { hash: '', w: 420, h: 200 },
+        { hash: 'v1.@@@@', w: 420, h: 200 },
+        { hash: broken, w: 420, h: 200 },
+      ])
+      const said = await Promise.all(frames.map((f) => f.locator('[role=alert]').innerText()))
+      expect(said[0]).toBe('This link holds no loadmap model.\nMake one in the editor')
+      expect(said[1]).toBe('This link holds no loadmap model.\nThis link is cut or garbled.\nMake one in the editor')
+      expect(said[2]).toMatch(/^This model doesn't compile\.\nembed\.loadmap:1:1 .+\nOpen it in the editor to fix it$/)
+      expect(await frames[2]!.locator('[role=alert] a').getAttribute('href')).toBe(`${url}editor/#${broken}`)
+      expect(errors).toEqual([])
+      await page.close()
+    }, 120_000)
+  })
 
   it('keeps the draft aside when an example takes its place in the editor', async () => {
     const browser = await chromium.launch()
