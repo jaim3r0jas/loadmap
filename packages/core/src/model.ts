@@ -258,6 +258,11 @@ export interface Model<P = any, F extends string = string, C extends string = st
   isEnabled(id: string, values: LooseValues): boolean
   evaluate(values?: Partial<Values<P>>): Evaluation<P, F, C, S>
   /**
+   * The stages at these values and the context they resolve in: what `evaluate` gives a drawing (pods, partitions,
+   * labels), without the components, crossings and verdict, so it is cheap to call for many values.
+   */
+  stagesAt(values?: Partial<Values<P>>): Pick<Evaluation<P, F, C, S>, 'values' | 'ctx' | 'stages'>
+  /**
    * Each component's utilization at these values: what `evaluate` computes first, without the crossings. With a
    * bound, every capacity is read at its low or high bound.
    */
@@ -475,6 +480,24 @@ export function defineModel<
     return { component: best.component, target: best.target, firstLimit: first }
   }
 
+  const resolveStages = (ctx: LooseValues, shed: (s: string) => number) => {
+    const stages = {} as Record<S, ResolvedStage>
+    for (const s of stageIds) {
+      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
+      stages[s] = st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' ? { ...st, shed: shed(s) } : st
+    }
+    for (const st of Object.values(stages) as ResolvedStage[])
+      if (st.kind === 'fanout')
+        for (const b of Object.values(st.to).flat()) {
+          const to = (stages as Record<string, ResolvedStage>)[b.stage]
+          if (!to || to.kind === 'queue' || to.kind === 'workers' || to.kind === 'fanout')
+            throw new Error(
+              `loadmap: fan-out "${st.id}" branches to "${b.stage}", which is not a sink, store or pass stage`,
+            )
+        }
+    return stages
+  }
+
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
     const values = { ...defaults(), ...partial } as Values<P>
     const { ctx, capacity, over, describe, overload: overloadOf, retries, shed } = context(def as any, values)
@@ -525,20 +548,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = {} as Record<S, ResolvedStage>
-    for (const s of stageIds) {
-      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
-      stages[s] = st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' ? { ...st, shed: shed(s) } : st
-    }
-    for (const st of Object.values(stages) as ResolvedStage[])
-      if (st.kind === 'fanout')
-        for (const b of Object.values(st.to).flat()) {
-          const to = (stages as Record<string, ResolvedStage>)[b.stage]
-          if (!to || to.kind === 'queue' || to.kind === 'workers' || to.kind === 'fanout')
-            throw new Error(
-              `loadmap: fan-out "${st.id}" branches to "${b.stage}", which is not a sink, store or pass stage`,
-            )
-        }
+    const stages = resolveStages(ctx, shed)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -599,6 +609,11 @@ export function defineModel<
       return d ? isEnabled(d, values) : false
     },
     evaluate,
+    stagesAt: (partial) => {
+      const values = { ...defaults(), ...partial } as Values<P>
+      const { ctx, shed } = context(def as any, values)
+      return { values, ctx, stages: resolveStages(ctx, shed) }
+    },
     utilization: (partial, bound) => {
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
       return Object.fromEntries(componentIds.map((c) => [c, util[c]])) as Record<C, number | null>

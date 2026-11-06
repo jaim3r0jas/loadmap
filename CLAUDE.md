@@ -95,8 +95,10 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
   breaks the identical-frames export test.
 - **The sim never contradicts the bars.** A stage drains what its flows carry at the load where its component reaches
   `thresholds.full`; do not give the sim its own capacity numbers.
-- **The load never moves the layout.** Labels reserve their widest text across the load range; anything that changes
-  the structure key re-runs ELK. `examples/checkout/layout.test.ts` holds both promises and the no-collision one.
+- **Neither the load nor a phase moves the layout.** Labels reserve their widest text across the load range; ELK lays
+  out each box at its largest size anywhere the model reaches (scenarios, steps, presets, controls) and a box is drawn
+  at its own size in the middle of its slot. Only values nothing declared reaches lay out again. `examples/phases.ts`
+  and both examples' `layout.test.ts` hold these promises and the no-collision one.
 - Model functions take one context object (`({ load, flows, at, util, demand, derived, ...params })`); `load`,
   `flows`, `at`, `demand`, `util` and `derived` are reserved parameter names.
 - **`at.<stage>.<flow>` is what reaches a stage**: cache hits and a limiter's rejections are gone after them, an
