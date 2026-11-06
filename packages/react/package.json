@@ -21,14 +21,16 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./elk.worker.js": "./src/elk.worker.js"
   },
   "publishConfig": {
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
-      }
+      },
+      "./elk.worker.js": "./dist/elk.worker.js"
     }
   },
   "files": [

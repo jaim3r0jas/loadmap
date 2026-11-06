@@ -1,5 +1,7 @@
 import { layout, localElk } from '@loadmap/layout'
-import { describe, expect, it } from 'vitest'
+import { workerElk as exported } from '@loadmap/react'
+import InlineElk from '@loadmap/react/elk.worker.js?worker&inline'
+import { describe, expect, it, vi } from 'vitest'
 import { pageElk, workerElk } from '../packages/react/src/elk'
 import { alerts } from './alerts/model'
 import { view as alertsView } from './alerts/view'
@@ -28,6 +30,35 @@ describe('ELK in a worker', () => {
         expect(answers).toBe(1)
         expect(there).toEqual(here)
       })
+
+  it('runs in a worker the page inlines, as a single-file page does', async () => {
+    expect(exported).toBe(workerElk)
+    let answers = 0
+    const elk = exported(() => {
+      const w = new InlineElk()
+      w.addEventListener('message', () => answers++)
+      return w
+    })
+    const ev = checkout.evaluate()
+    const there = await layout(fresh(checkoutView), ev, { elk })
+    expect(answers).toBe(1)
+    expect(there).toEqual(await layout(fresh(checkoutView), ev, { elk: await localElk() }))
+  })
+
+  it('says once why the layout runs on the main thread', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const elk = workerElk(() => {
+        throw new Error('blocked by the page')
+      })
+      await layout(fresh(checkoutView), checkout.evaluate(), { elk })
+      await layout(fresh(checkoutView), checkout.evaluate({ load: 3 }), { elk })
+      expect(info).toHaveBeenCalledTimes(1)
+      expect(String(info.mock.calls[0]![0])).toContain('main thread')
+    } finally {
+      info.mockRestore()
+    }
+  })
 
   it('shares one worker across the page', () => {
     expect(pageElk()).toBe(pageElk())

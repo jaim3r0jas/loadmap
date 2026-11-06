@@ -8,6 +8,7 @@ export {
   cluster,
   defineView,
   type EdgeDef,
+  type ElkEngine,
   edge,
   type FlowColor,
   type FlowView,
@@ -20,6 +21,7 @@ export {
   type ViewDef,
 } from '@loadmap/layout'
 export { Diagram, type DiagramProps } from './Diagram'
+export { workerElk } from './elk'
 export type { Dot, Engine } from './engine'
 export {
   handleOf,

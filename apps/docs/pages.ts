@@ -20,6 +20,7 @@ export const PAGES: readonly Page[] = [
   { route: '', file: 'index.md', nav: 'Home', group: 'Start' },
   { route: 'getting-started', file: 'getting-started.md', nav: 'Getting started', group: 'Start' },
   { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
+  { route: 'without-a-bundler', file: 'without-a-bundler.md', nav: 'Without a bundler', group: 'Start' },
   { route: 'language', file: 'language.md', nav: 'The language', group: 'The language' },
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
@@ -44,17 +45,22 @@ const slug = (s: string) =>
 
 /**
  * `@include(path, "from", "to")` on a line of its own: the lines of a repository file from the first that starts with
- * `from` up to (not including) the first after it that starts with `to`. Without `to`, to the end.
+ * `from` up to (not including) the first after it that starts with `to`. Without `to`, to the end. `%VERSION%`: the
+ * packages' version.
  */
 export function expand(md: string): string {
-  return md.replace(/^@include\(([^,)]+)(?:,\s*"([^"]*)")?(?:,\s*"([^"]*)")?\)$/gm, (_, path, from, to) => {
-    const lines = readFileSync(join(repo, path.trim()), 'utf8').split('\n')
-    const start = from ? lines.findIndex((l) => l.startsWith(from)) : 0
-    if (start < 0) throw new Error(`docs: no line starting with "${from}" in ${path}`)
-    const after = to ? lines.slice(start + 1).findIndex((l) => l.startsWith(to)) : -1
-    if (to && after < 0) throw new Error(`docs: no line starting with "${to}" after "${from}" in ${path}`)
-    return lines.slice(start, after < 0 ? undefined : start + 1 + after).join('\n')
-  })
+  // %VERSION% is the version of the packages, for a page that names one (a CDN link), included text too
+  const version = JSON.parse(readFileSync(join(repo, 'packages/react/package.json'), 'utf8')).version
+  return md
+    .replace(/^@include\(([^,)]+)(?:,\s*"([^"]*)")?(?:,\s*"([^"]*)")?\)$/gm, (_, path, from, to) => {
+      const lines = readFileSync(join(repo, path.trim()), 'utf8').split('\n')
+      const start = from ? lines.findIndex((l) => l.startsWith(from)) : 0
+      if (start < 0) throw new Error(`docs: no line starting with "${from}" in ${path}`)
+      const after = to ? lines.slice(start + 1).findIndex((l) => l.startsWith(to)) : -1
+      if (to && after < 0) throw new Error(`docs: no line starting with "${to}" after "${from}" in ${path}`)
+      return lines.slice(start, after < 0 ? undefined : start + 1 + after).join('\n')
+    })
+    .replaceAll('%VERSION%', version)
 }
 
 /** The repository files the pages include, for the dev server to watch. */
@@ -63,6 +69,8 @@ export function included(): string[] {
   for (const p of PAGES)
     for (const [, path] of readFileSync(join(here, 'pages', p.file), 'utf8').matchAll(/^@include\(([^,)]+)/gm))
       files.add(join(repo, path!.trim()))
+  // where %VERSION% comes from
+  files.add(join(repo, 'packages/react/package.json'))
   return [...files]
 }
 
