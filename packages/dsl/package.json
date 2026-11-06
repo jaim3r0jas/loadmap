@@ -39,7 +39,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown && node ../../scripts/reference.ts dist/REFERENCE.md"
   },
   "dependencies": {
     "@loadmap/core": "workspace:*",

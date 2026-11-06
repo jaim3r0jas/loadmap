@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Marked, type Token } from 'marked'
+import { shippedReference } from '../../scripts/reference'
 
 export interface Page {
   /** Where it is served, without slashes: "" for the home page, "examples/checkout". */
@@ -238,6 +239,52 @@ export function writePages(base = '/'): string[] {
   update(missing, shell(notFound, 'Not found', body).replace(/href="\.\//g, `href="${base}`))
   files.push(missing)
   return files
+}
+
+const PUBLISHED = 'https://jaim3r0jas.github.io/loadmap/'
+
+/**
+ * For a language model: llms.txt, the site's pages by group, and llms-full.txt, the language guide and the whole
+ * reference in one file with a model that uses every statement. Links are absolute, to the published site: the file
+ * is often read away from where it was served.
+ */
+export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
+  const groups = new Map<string, Page[]>()
+  for (const p of PAGES) groups.set(p.group!, [...(groups.get(p.group!) ?? []), p])
+  const map = [
+    '# loadmap',
+    '',
+    '> Interactive capacity models for React: an architecture diagram whose parts are live, a ranked list of which ' +
+      "component runs out first and at what multiple of today's load, and the verdict in words. Written in " +
+      'TypeScript or in the `.loadmap` language; `loadmap check` tests a model in CI.',
+    '',
+    'The `.loadmap` reference also ships in `@loadmap/dsl`, as `dist/REFERENCE.md`.',
+    '',
+    ...[...groups].flatMap(([group, pages]) => [
+      `## ${group}`,
+      '',
+      ...pages.map((p) => `- [${p.nav}](${PUBLISHED}${p.route ? `${p.route}/` : ''})`),
+      '',
+    ]),
+    '## Optional',
+    '',
+    `- [llms-full.txt](${PUBLISHED}llms-full.txt): the language guide and the whole reference in one file, and one model that uses every statement`,
+    '',
+  ].join('\n')
+  const model = readFileSync(join(repo, 'docs/every-statement.loadmap'), 'utf8').trimEnd()
+  const full = [
+    shippedReference().trimEnd(),
+    '',
+    '## A complete model',
+    '',
+    'Every statement and top-level property of the language at least once, and an edge with a block and one without:',
+    '',
+    '```',
+    model,
+    '```',
+    '',
+  ].join('\n')
+  return { 'llms.txt': map, 'llms-full.txt': full }
 }
 
 /** Writes a file only when its text changes: the dev server reloads the page on every write it sees. */

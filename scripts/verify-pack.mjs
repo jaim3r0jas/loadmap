@@ -32,6 +32,9 @@ try {
     const files = run('tar', ['-tzf', join(packs, file)], packs).split('\n')
     for (const need of ['package/LICENSE', 'package/README.md', 'package/package.json'])
       if (!files.includes(need)) fail.push(`${name}: no ${need.slice(8)} in the tarball`)
+    // the language reference, for anyone (or any agent) working from node_modules
+    if (name === '@loadmap/dsl' && !files.includes('package/dist/REFERENCE.md'))
+      fail.push(`${name}: no dist/REFERENCE.md in the tarball`)
     const manifest = JSON.parse(run('tar', ['-xzOf', join(packs, file), 'package/package.json'], packs))
     if (JSON.stringify(manifest).includes('workspace:')) fail.push(`${name}: a workspace: version in package.json`)
     for (const e of Object.values(manifest.exports))

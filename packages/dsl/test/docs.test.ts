@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import { compile, formatDiagnostic } from '../src'
-import { reference } from '../src/internal'
+import { parse, reference, SCHEMA, type Stmt } from '../src/internal'
 
 const file = new URL('../../../docs/dsl.md', import.meta.url)
 const START = '<!-- reference: written by reference() in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->'
@@ -33,4 +33,25 @@ it('shows the error the checker gives', () => {
   )
   const d = compile(src).diagnostics[0]!
   expect(readFileSync(file, 'utf8')).toContain(formatDiagnostic(d, src, 'checkout.loadmap'))
+})
+
+it('docs/every-statement.loadmap holds every statement and top-level property, edges with and without a block, and compiles clean', () => {
+  const src = readFileSync(new URL('../../../docs/every-statement.loadmap', import.meta.url), 'utf8')
+  const r = compile(src)
+  expect(r.diagnostics).toEqual([])
+  // its promises hold, as `loadmap check` would say
+  expect(r.expectations.map((e) => e.result.ok)).toEqual([true, true])
+  const seen = new Set<string>()
+  const walk = (body: Stmt[]) => {
+    for (const s of body) {
+      if (s.kind === 'decl') seen.add(s.keyword.name)
+      if (s.kind === 'edge') seen.add(s.body ? 'a -> b { … }' : 'a -> b')
+      if (s.kind === 'prop') seen.add(`${s.key.name}:`)
+      if ('body' in s && s.body) walk(s.body)
+    }
+  }
+  walk(parse(src).doc.body)
+  const top = Object.keys(SCHEMA['']!.props).map((k) => `${k}:`)
+  const want = [...Object.keys(SCHEMA).filter((k) => k), ...top, 'a -> b', 'a -> b { … }']
+  expect(want.filter((k) => !seen.has(k))).toEqual([])
 })
