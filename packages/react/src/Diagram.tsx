@@ -411,9 +411,8 @@ const Structure = memo(function Structure({
           <path d="M0 0 L10 5 L0 10 z" fill="var(--lm-muted)" />
         </marker>
       </defs>
-      {scene.tiers.map((t, i) => (
-        <Tier key={t.id} t={t} shaded={i % 2 === 0} />
-      ))}
+      {(globalThis as any).__LM_DIAG !== 'nobands' &&
+        scene.tiers.map((t, i) => <Tier key={t.id} t={t} shaded={i % 2 === 0} />)}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
         <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} />
@@ -452,17 +451,19 @@ function Tier({ t, shaded }: { t: SceneTier; shaded: boolean }) {
   return (
     <g className="lm-tier" data-tier-id={t.id} pointerEvents="none">
       <rect x={t.x} y={t.y} width={t.w} height={t.h} fill={shaded ? 'var(--lm-bg)' : 'none'} />
-      <text
-        x={x}
-        y={y}
-        fontSize={size}
-        fontWeight={weight}
-        fill="var(--lm-muted)"
-        textAnchor={t.vertical ? 'end' : undefined}
-        transform={t.vertical ? `rotate(-90 ${x} ${y})` : undefined}
-      >
-        {t.text}
-      </text>
+      {(globalThis as any).__LM_DIAG !== 'notext' && (
+        <text
+          x={x}
+          y={y}
+          fontSize={size}
+          fontWeight={weight}
+          fill="var(--lm-muted)"
+          textAnchor={t.vertical ? 'end' : undefined}
+          transform={t.vertical ? `rotate(-90 ${x} ${y})` : undefined}
+        >
+          {t.text}
+        </text>
+      )}
     </g>
   )
 }

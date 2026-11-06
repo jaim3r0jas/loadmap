@@ -361,6 +361,7 @@ async function pickCodec(format: 'webm' | 'mp4', width: number, height: number) 
 
 /** An SVG drawn as an image cannot see the page's CSS: it is drawn from a copy with the theme written in. */
 async function rasterise(svg: SVGSVGElement, w: number, h: number): Promise<HTMLImageElement> {
+  if ((globalThis as any).__LM_DIAG === 'fonts') await document.fonts.ready
   const copy = standalone(svg, w, h)
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' }))
   try {

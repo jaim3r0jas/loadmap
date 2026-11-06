@@ -1,0 +1,41 @@
+# Temporary: finds why the alerts story recording differs once in a while on Linux. Never merged.
+name: diag
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [base, notext, nobands, fonts]
+        attempt: [1, 2, 3]
+    env:
+      VITE_DIAG: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: the browser tests, three times
+        run: |
+          mkdir -p diag
+          for i in 1 2 3; do pnpm exec vitest run --project browser --silent=false > "diag/run$i.log" 2>&1 || true; grep -aE "DIFF|      Tests " "diag/run$i.log"; done
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: diag-${{ matrix.variant }}-${{ matrix.attempt }}
+          path: diag/
+          if-no-files-found: ignore

@@ -3,7 +3,7 @@ import type { LoadmapHandle } from '@loadmap/react'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it } from 'vitest'
-import { page } from 'vitest/browser'
+import { commands, page } from 'vitest/browser'
 import { Alerts } from './Alerts'
 import { alerts } from './model'
 
@@ -185,7 +185,10 @@ it('moves no box and changes no tag when only the load changes', async () => {
 })
 
 it('records the story with its handover the same twice', async () => {
+  const variant = (import.meta as any).env?.VITE_DIAG ?? 'base'
+  ;(globalThis as any).__LM_DIAG = variant
   const { handle } = await mount()
+  const pngs: string[] = []
   const run = async () => {
     const out: string[] = []
     await recordVideo(handle, {
@@ -194,7 +197,8 @@ it('records the story with its handover the same twice', async () => {
       fps: 2,
       scale: 0.4,
       caption: true,
-      onFrame: async (_, c) => {
+      onFrame: async (i, c) => {
+        if (i === 2) pngs.push(c.toDataURL('image/png').split(',')[1]!)
         const d = await crypto.subtle.digest('SHA-256', c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data)
         out.push([...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''))
       },
@@ -202,5 +206,12 @@ it('records the story with its handover the same twice', async () => {
     return out
   }
   const a = await run()
-  expect(await run()).toEqual(a)
+  const b = await run()
+  const diff = a.map((x, i) => (x === b[i] ? -1 : i)).filter((i) => i >= 0)
+  console.log('DIFF', variant, JSON.stringify(diff))
+  const stamp = `${variant}-${Date.now()}`
+  if (diff.length)
+    for (const [k, data] of pngs.entries())
+      await commands.writeFile(`diag/${stamp}-run${k + 1}.png`, data, { encoding: 'base64' })
+  expect(b).toEqual(a)
 }, 120_000)
