@@ -32,6 +32,7 @@ export {
   type LoadmapProps,
   LoadmapRoot,
   type Theme,
+  usePageTheme,
 } from './Loadmap'
 export { Assumptions, Controls, Limits, Meters, Verdict } from './panels'
 export { Compare, HeadroomChart, Scenarios, scenarioColor, useComparison } from './scenarios'

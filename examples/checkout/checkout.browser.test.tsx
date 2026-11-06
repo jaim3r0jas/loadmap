@@ -271,6 +271,56 @@ describe('checkout in the browser', () => {
       await page.screenshot({ path: `__screenshots__/checkout-${theme}.png`, element: el })
     })
 
+  it('follows the page\'s own switch with theme="inherit", and the media query when the page has none', async () => {
+    const html = document.documentElement
+    const LIGHT = 'rgb(238, 242, 245)'
+    const DARK = 'rgb(13, 20, 27)'
+    try {
+      html.dataset.theme = 'dark'
+      const { el, handle } = await mount({ theme: 'inherit' })
+      const bg = () => getComputedStyle(el).backgroundColor
+      expect(bg()).toBe(DARK)
+      // the dots read the tokens again
+      expect(handle.engine.flowColor('orders')).toBe('#5fb7d6')
+      // tall enough for the whole board in one picture
+      await page.viewport(1280, 2200)
+      await page.screenshot({ path: '__screenshots__/checkout-inherit-dark.png', element: el })
+      html.dataset.theme = 'light'
+      await expect.poll(bg).toBe(LIGHT)
+      await expect.poll(() => handle.engine.flowColor('orders')).toBe('#0b6b8f')
+      delete html.dataset.theme
+      html.classList.add('dark')
+      await expect.poll(bg).toBe(DARK)
+      html.classList.remove('dark')
+      // nothing on the page: no theme of its own, so the system's (the media query) decides
+      await expect.poll(() => el.hasAttribute('data-theme')).toBe(false)
+    } finally {
+      delete html.dataset.theme
+      html.classList.remove('dark')
+    }
+  })
+
+  it('drops its background and padding inside a card by two tokens, and keeps them full screen', async () => {
+    const { el } = await mount()
+    // a card of the page's own
+    Object.assign(host!.style, {
+      padding: '24px',
+      background: '#fff',
+      border: '1px solid #d0d7de',
+      borderRadius: '12px',
+    })
+    host!.style.setProperty('--lm-pad', '0px')
+    host!.style.setProperty('--lm-root-bg', 'transparent')
+    expect(getComputedStyle(el).paddingTop).toBe('0px')
+    expect(getComputedStyle(el).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    // tall enough for the whole board in one picture
+    await page.viewport(1280, 2200)
+    await page.screenshot({ path: '__screenshots__/checkout-card.png', element: host! })
+    el.setAttribute('data-full', '')
+    expect(getComputedStyle(el).paddingTop).toBe('16px')
+    expect(getComputedStyle(el).backgroundColor).toBe('rgb(238, 242, 245)')
+  })
+
   it('walks through its story: a step at a time, pointing at a box', async () => {
     const { el, handle } = await mount()
     const bar = el.querySelector<HTMLElement>('.lm-story')!

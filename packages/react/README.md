@@ -72,6 +72,12 @@ a test when headroom is lost. The layout runs in a Web Worker; nothing loads it 
 without a bundler (from a CDN, or one self-contained HTML file) hands in its own: `elk={workerElk(…)}`, with
 `@loadmap/react/elk.worker.js` to inline; https://jaim3r0jas.github.io/loadmap/without-a-bundler/ has both recipes.
 
+`theme="inherit"` follows the page's own light and dark switch (`data-theme="dark"` or `"light"`, or a `dark` or
+`light` class, on `<html>`), and the system's while the page sets none; `auto` (the default) follows the system's
+only. Inside a card of its own, `.card > .lm { --lm-pad: 0; --lm-root-bg: transparent }` drops the root's padding and
+background (full screen keeps both); in a grid or a flex row, give it `min-width: 0`, since it sizes the diagram to
+its width.
+
 A scenario, a story step or a control that changes the structure (more pods, more brokers) moves the diagram to it:
 what stays moves to its new place, what is new fades in. `transition={1.2}` sets the seconds it takes (default 0.8);
 0 cuts, and so does reduced motion. The load never moves it.

@@ -1,6 +1,6 @@
 import type { Model, Values } from '@loadmap/core'
 import type { Scene, View } from '@loadmap/layout'
-import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
 import { Dock, type OpenPanel, VerdictLine } from './compact'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
@@ -10,7 +10,48 @@ import { Story } from './story'
 import { injectStyles } from './styles'
 import { type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
 
-export type Theme = 'auto' | 'light' | 'dark'
+/** `auto` follows the system's light or dark; `inherit` the page's own switch (`data-theme`, or a `dark` or `light` class, on `<html>`). */
+export type Theme = 'auto' | 'light' | 'dark' | 'inherit'
+
+/** What the page's own switch says, on `<html>`: `data-theme`, or a `dark` or `light` class; null when it says nothing. */
+function pageTheme(): 'light' | 'dark' | null {
+  if (typeof document === 'undefined') return null
+  const html = document.documentElement
+  const t = html.dataset.theme
+  if (t === 'dark' || t === 'light') return t
+  if (html.classList.contains('dark')) return 'dark'
+  if (html.classList.contains('light')) return 'light'
+  return null
+}
+
+// one observer of <html> for every root that follows the page
+const following = new Set<() => void>()
+let observer: MutationObserver | null = null
+function follow(changed: () => void) {
+  following.add(changed)
+  if (!observer && typeof MutationObserver !== 'undefined') {
+    observer = new MutationObserver(() => {
+      for (const f of following) f()
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
+  }
+  return () => {
+    following.delete(changed)
+    if (following.size) return
+    observer?.disconnect()
+    observer = null
+  }
+}
+const stay = () => () => {}
+
+/**
+ * The theme to draw: `theme` itself; with `inherit`, what the page's own switch says, followed as it changes, and the
+ * system's (`auto`) while it says nothing, as on the server.
+ */
+export function usePageTheme(theme: Theme = 'auto'): 'auto' | 'light' | 'dark' {
+  const page = useSyncExternalStore(theme === 'inherit' ? follow : stay, pageTheme, () => null)
+  return theme === 'inherit' ? (page ?? 'auto') : theme
+}
 
 /** What a page (or `@loadmap/export`) can drive from outside. */
 export interface LoadmapHandle {
@@ -44,6 +85,7 @@ export function LoadmapRoot({
   children: ReactNode
 }) {
   useEffect(() => injectStyles(), [])
+  const shown = usePageTheme(theme)
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new theme changes the tokens, so read them again
   useEffect(() => {
     if (!lm.root) return
@@ -52,9 +94,9 @@ export function LoadmapRoot({
     const f = () => lm.root && lm.engine.readColors(lm.root)
     m.addEventListener('change', f)
     return () => m.removeEventListener('change', f)
-  }, [lm.root, lm.engine, theme])
+  }, [lm.root, lm.engine, shown])
   return (
-    <div className="lm" data-theme={theme === 'auto' ? undefined : theme} ref={lm.rootRef}>
+    <div className="lm" data-theme={shown === 'auto' ? undefined : shown} ref={lm.rootRef}>
       {children}
     </div>
   )
