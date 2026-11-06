@@ -81,9 +81,10 @@ const WIDE = 0.8
 
 /**
  * The part of the scene that shows these boxes with room around them, at the scene's own shape (the board's), at most
- * 2.5× closer, inside the scene. The whole scene when there is nothing to frame or it would hardly be closer.
+ * 2.5× closer, inside the scene. The whole scene when there is nothing to frame or it would hardly be closer; with
+ * `hold`, as wide as it takes instead (a framing that follows boxes as they grow never jumps out).
  */
-export function framing(scene: Scene, ids: readonly string[]): Rect {
+export function framing(scene: Scene, ids: readonly string[], o: { hold?: boolean } = {}): Rect {
   const all = whole(scene)
   const ns = scene.nodes.filter((n) => ids.includes(n.id))
   if (!ns.length || !(scene.width > 0 && scene.height > 0)) return all
@@ -93,7 +94,7 @@ export function framing(scene: Scene, ids: readonly string[]): Rect {
   const y1 = Math.max(...ns.map((n) => n.y + n.h))
   const aspect = scene.width / scene.height
   let w = Math.max(x1 - x0 + 2 * PAD, (y1 - y0 + 2 * PAD) * aspect, scene.width / MAX_ZOOM)
-  if (w > WIDE * scene.width) return all
+  if (w > WIDE * scene.width && !o.hold) return all
   w = Math.min(w, scene.width)
   const h = w / aspect
   const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v))

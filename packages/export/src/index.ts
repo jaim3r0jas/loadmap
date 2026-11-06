@@ -150,6 +150,8 @@ export async function recordVideo(handle: LoadmapHandle, o: RecordOptions): Prom
   const before = handle.values()
   const beforeStep = handle.storyStep()
   handle.pause()
+  // a story the reader is playing would go on in the recording: it stops, cut to the whole diagram
+  handle.engine.stopStory({ cut: true })
   try {
     // a story starts from the model's defaults, whatever the page shows
     if (story) {
@@ -230,6 +232,8 @@ async function settled<T>(handle: LoadmapHandle, o: StillOptions, make: () => Pr
   await handle.ready()
   const before = handle.values()
   handle.pause()
+  // a story the reader is playing would zoom and title the picture: it stops, cut to the whole diagram
+  handle.engine.stopStory({ cut: true })
   try {
     if (o.set || o.scenario != null) handle.setValues(valuesOf(handle, o))
     await warmUp(handle, o.seed ?? 1, o.warmup ?? 4, 30)

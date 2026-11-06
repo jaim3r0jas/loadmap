@@ -1,5 +1,5 @@
 import type { Model } from '@loadmap/core'
-import { layout, type View } from '@loadmap/layout'
+import { layout, type Scene, type View } from '@loadmap/layout'
 import { shapesOf } from '@loadmap/layout/internal'
 import { describe, expect, it } from 'vitest'
 import { alerts } from '../../../examples/alerts/model'
@@ -77,6 +77,21 @@ describe('the camera of a story played', () => {
     const scene = await layout(checkoutView, checkout.evaluate())
     expect(framing(scene, [])).toEqual(whole(scene))
     expect(framing(scene, ['phones', 'db'])).toEqual(whole(scene))
+    // boxes that grow past the share kept as the change runs: the framing widens with them, it does not jump out
+    // two boxes 870 apart on a board 1000 wide: past the 80 % kept, inside the board
+    const flat = {
+      width: 1000,
+      height: 250,
+      nodes: [
+        { id: 'a', x: 50, y: 100, w: 60, h: 40 },
+        { id: 'b', x: 860, y: 100, w: 60, h: 40 },
+      ],
+    } as unknown as Scene
+    const wide = framing(flat, ['a', 'b'])
+    const held = framing(flat, ['a', 'b'], { hold: true })
+    expect(wide).toEqual(whole(flat))
+    expect(held.w).toBeLessThan(flat.width)
+    expect(held.w).toBeGreaterThan(0.8 * flat.width)
   })
 
   it('flies evenly between two framings, and lands on them', () => {

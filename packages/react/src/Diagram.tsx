@@ -83,14 +83,20 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     const board = boardRef.current
     const c = engine.camera
     const title = titleRef.current
+    // nothing to follow unless the story plays: no reading of the layout on every frame
+    if (!c && !engine.cue) return
     if (!wrap || !board || !engine.frame || wrap.scrollHeight <= wrap.clientHeight) {
       title?.style.removeProperty('top')
+      title?.style.removeProperty('bottom')
       return
     }
     const k = board.clientHeight / engine.frame.height
     if (c) wrap.scrollTop = board.offsetTop + (c.y + c.h / 2) * k - wrap.clientHeight / 2
-    if (title)
+    if (title) {
       title.style.top = `${Math.max(0, wrap.scrollTop - board.offsetTop + (barRef.current?.offsetHeight ?? 0))}px`
+      // at the top of what shows, not stretched to the bottom a lower third keeps
+      title.style.bottom = 'auto'
+    }
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: follow reads only refs and the engine
   useEffect(() => {

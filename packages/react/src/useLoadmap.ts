@@ -175,8 +175,14 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     [engine, model],
   )
 
-  const [playing, setPlaying] = useState(false)
-  const [cue, setCue] = useState<Cue | null>(null)
+  // the player's state is its engine's: a new model (a new engine) has no story playing
+  const [played, setPlayed] = useState<{ engine: Engine; on: boolean; cue: Cue | null }>({
+    engine,
+    on: false,
+    cue: null,
+  })
+  const playing = played.engine === engine && played.on
+  const cue = played.engine === engine ? played.cue : null
   const stop = useCallback(() => engine.stopStory(), [engine])
   const setValues = useCallback(
     (v: Partial<Values<P>>) => {
@@ -226,9 +232,9 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const measureRef = useRef(measure)
   measureRef.current = measure
   engine.host = {
-    playing: setPlaying,
+    playing: (on) => setPlayed((p) => ({ engine, on, cue: on && p.engine === engine ? p.cue : null })),
     show,
-    cue: setCue,
+    cue: (c) => setPlayed((p) => ({ engine, on: p.engine === engine && p.on, cue: c })),
     shapes: (e) => shapesOf(view, e, { direction, measure: measureRef.current ?? undefined }),
   }
   // a value changed from outside the controller (a handle, a new model) stops it too
