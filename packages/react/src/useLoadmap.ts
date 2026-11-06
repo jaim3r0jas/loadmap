@@ -1,6 +1,7 @@
 import type { Evaluation, Model, Scenario, Values } from '@loadmap/core'
 import {
   type Direction,
+  directionOf,
   type ElkEngine,
   labelsAt,
   layout,
@@ -22,7 +23,10 @@ export interface LoadmapOptions<P> extends SimOptions {
   elk?: ElkEngine
   /** Below this container width the diagram is laid out top to bottom. Default 640. */
   narrowBelow?: number
-  /** Which way the diagram runs where there is room. Default RIGHT; below `narrowBelow` it is always DOWN. */
+  /**
+   * Which way the diagram runs where there is room. Default: from its shape (`directionOf`), right unless its widest
+   * layer has more boxes than its longest chain; below `narrowBelow` it is always DOWN.
+   */
   direction?: Direction
   /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
   fullScreenMode?: FullScreenMode
@@ -120,8 +124,10 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   engine.transition = o.transition ?? 0.8
 
   const [root, setRoot] = useState<HTMLElement | null>(null)
-  const wide = o.direction ?? 'RIGHT'
-  const [direction, setDirection] = useState<Direction>(wide)
+  const wide = o.direction ?? directionOf(view)
+  // only the width is state: a view of another shape lays out its own way on the render it arrives in
+  const [narrow, setNarrow] = useState(false)
+  const direction: Direction = narrow ? 'DOWN' : wide
   const [measure, setMeasure] = useState<TextMeasure | null>(null)
   const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
   const scene = laid?.view === view ? laid.scene : null
@@ -139,11 +145,11 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     setMeasure(() => canvasMeasure(getComputedStyle(root).fontFamily))
     const ro = new ResizeObserver(([e]) => {
       const w = e?.contentRect.width ?? root.clientWidth
-      setDirection(w > 0 && w < narrowBelow ? 'DOWN' : wide)
+      setNarrow(w > 0 && w < narrowBelow)
     })
     ro.observe(root)
     return () => ro.disconnect()
-  }, [root, narrowBelow, wide])
+  }, [root, narrowBelow])
 
   const key = useMemo(
     () => (measure ? structureKey(view, ev, { direction, measure }) : ''),

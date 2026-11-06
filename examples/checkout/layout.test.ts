@@ -1,4 +1,4 @@
-import { collisions, labelsAt, layout, legPath, structureKey } from '@loadmap/layout'
+import { collisions, directionOf, labelsAt, layout, legPath, structureKey } from '@loadmap/layout'
 import { describe, expect, it } from 'vitest'
 import { expectSteady } from '../phases'
 import { checkout } from './model'
@@ -18,6 +18,10 @@ describe('checkout layout', () => {
   for (const direction of ['RIGHT', 'DOWN'] as const)
     it(`moves no box in any scenario, story step, preset or control (${direction})`, () =>
       expectSteady(view, checkout, direction))
+
+  it('runs right by its shape: a chain', () => {
+    expect(directionOf(view)).toBe('RIGHT')
+  })
 
   it('does not move when the load changes', async () => {
     const a = await layout(view, checkout.evaluate({ load: 1 }))
