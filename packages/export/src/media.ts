@@ -168,12 +168,21 @@ export function drawTitle(ctx: CanvasRenderingContext2D, handle: LoadmapHandle, 
 
 const PAINT = ['fill', 'stroke', 'color'] as const
 
+/** The viewBox a file of the board takes: what the camera frames, never the view the reader panned or zoomed to. */
+export function sceneBox(handle: LoadmapHandle): string {
+  const { camera, frame } = handle.engine
+  const c = camera ?? { x: 0, y: 0, w: frame?.width ?? 0, h: frame?.height ?? 0 }
+  return `${c.x} ${c.y} ${c.w} ${c.h}`
+}
+
 /**
  * A copy of the board's SVG that needs no page: every colour that comes from a theme token is written in as the value
- * the page computed, and the font, how its text is drawn, the size and the namespace are set on the root.
+ * the page computed, and the font, how its text is drawn, the size and the namespace are set on the root. `box` is the
+ * viewBox the file takes (what the camera frames), whatever view the reader has panned or zoomed the board to.
  */
-export function standalone(svg: SVGSVGElement, w: number, h: number): SVGSVGElement {
+export function standalone(svg: SVGSVGElement, w: number, h: number, box?: string): SVGSVGElement {
   const copy = svg.cloneNode(true) as SVGSVGElement
+  if (box) copy.setAttribute('viewBox', box)
   const src = [svg, ...svg.querySelectorAll('*')]
   const dst = [copy, ...copy.querySelectorAll('*')]
   src.forEach((el, i) => {
@@ -215,7 +224,7 @@ export async function exportSvg(handle: LoadmapHandle, o: { caption?: boolean | 
   await handle.ready()
   const b = handle.board()!
   const { width: sw, height: sh } = b.scene
-  const board = standalone(b.svg, sw, sh)
+  const board = standalone(b.svg, sw, sh, sceneBox(handle))
   const dots = el('g', {})
   for (const d of handle.engine.dots())
     dots.appendChild(

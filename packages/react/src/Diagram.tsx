@@ -7,6 +7,7 @@ import type { Handover } from './engine'
 import { edge, rankLabels } from './ranks'
 import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
+import type { Insets } from './viewpoint'
 
 const STATE_STROKE: Record<ComponentState, string> = {
   off: 'var(--lm-line)',
@@ -25,10 +26,19 @@ export interface DiagramProps {
   onNodeClick?: (id: string) => void
   /** The box drawn as selected, by its id. */
   selected?: string | null
+  /**
+   * The board fills its container, which gives it a height, as a canvas the reader pans and zooms (the wheel alone
+   * zooms it), with no Full screen button. Insets are the pixels on each side that something of the page floats over:
+   * Fit frames the diagram in what they leave, and the legend and the zoom buttons stay clear of them.
+   */
+  canvas?: boolean | Partial<Insets>
 }
 
-export function Diagram({ lm, legend = true, onNodeClick, selected = null }: DiagramProps) {
+export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
   const { scene, engine, reducedMotion } = lm
+  const zoom = lm.zoom || !!canvas
+  const inset = { top: 0, right: 0, bottom: 0, left: 0, ...(typeof canvas === 'object' ? canvas : {}) }
+  const insetKey = `${inset.top} ${inset.right} ${inset.bottom} ${inset.left}`
   // read when a box is pressed, so a new function each render does not redraw every box
   const click = useRef(onNodeClick)
   click.current = onNodeClick
@@ -84,6 +94,31 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     return () => ro.disconnect()
   }, [engine])
 
+  // the reader's hands on the board, and its size in pixels with what floats over it. The code comes with the first
+  // board that zooms; a chunk that cannot load leaves the board as it is, drawn whole, without the hands
+  const shape = useRef({ canvas: !!canvas, inset })
+  shape.current = { canvas: !!canvas, inset }
+  const zoomed = useRef<{ measure(): void; off(): void } | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a canvas or not; its insets come through the ref
+  useEffect(() => {
+    const board = boardRef.current
+    if (!zoom || !board) return
+    let gone = false
+    import('./zoom')
+      .then(({ mountZoom }) => {
+        if (!gone) zoomed.current = mountZoom(board, engine, () => shape.current)
+      })
+      .catch(() => {})
+    return () => {
+      gone = true
+      zoomed.current?.off()
+      zoomed.current = null
+    }
+  }, [engine, zoom, !!canvas])
+  // new insets (a panel pinned, an editor resized) keep the reader's view: only what Fit frames changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: insetKey stands for the insets
+  useEffect(() => zoomed.current?.measure(), [insetKey])
+
   // a board that pans in its own box (a phone in full screen) keeps what the camera frames in the middle of it
   // and its title at the top of what shows, under the bar
   const follow = () => {
@@ -99,7 +134,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       return
     }
     const k = board.clientHeight / engine.frame.height
-    if (c) wrap.scrollTop = board.offsetTop + (c.y + c.h / 2) * k - wrap.clientHeight / 2
+    // a board that zooms draws what the camera frames in its own middle
+    const y = engine.viewer ? board.clientHeight / 2 : c && (c.y + c.h / 2) * k
+    if (c && y != null) wrap.scrollTop = board.offsetTop + y - wrap.clientHeight / 2
     if (title) {
       title.style.top = `${Math.max(0, wrap.scrollTop - board.offsetTop + (barRef.current?.offsetHeight ?? 0))}px`
       // at the top of what shows, not stretched to the bottom a lower third keeps
@@ -198,7 +235,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   }, [full, fullScreenMode, setFullScreenMode, lm.root, lm.fill])
 
   return (
-    <div className="lm-wrap" ref={wrapRef}>
+    <div className="lm-wrap" ref={wrapRef} data-canvas={canvas ? '' : undefined}>
       <div className="lm-bar" ref={barRef}>
         {legend ? <Legend lm={lm} /> : <span />}
         <span className="lm-tools">
@@ -219,7 +256,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
               ))}
             </fieldset>
           )}
-          {!lm.fill && (
+          {!lm.fill && !canvas && (
             <button type="button" className="lm-btn" onClick={lm.toggleFullScreen} aria-pressed={full} ref={buttonRef}>
               {full ? '✕ Close' : '⤢ Full screen'}
             </button>
@@ -229,8 +266,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       <div
         className="lm-board"
         ref={boardRef}
-        // while the structure moves, the board's shape follows the frame drawn in it
-        style={frame ? { aspectRatio: `${frame.width} / ${frame.height}` } : { minHeight: 240 }}
+        data-zoom={zoom ? '' : undefined}
+        // while the structure moves, the board's shape follows the frame drawn in it; a canvas takes its container's
+        style={canvas ? undefined : frame ? { aspectRatio: `${frame.width} / ${frame.height}` } : { minHeight: 240 }}
       >
         {frame && (
           <Structure
@@ -826,7 +864,10 @@ function Detail({
     const wrap = el?.offsetParent
     if (!el || !n || !board || !(wrap instanceof HTMLElement)) return
     const place = () => {
-      const k = board.clientWidth / scene.width
+      // where the board draws the scene: its own width, or what the reader's view shows of it
+      const p = lm.engine.viewer?.placement()
+      const k = p ? p.k : board.clientWidth / scene.width
+      const [dx, dy] = p ? [p.dx, p.dy] : [0, 0]
       const w = wrap.getBoundingClientRect()
       // the wrap's coordinates of a viewport y: its children scroll with it
       const y = (v: number) => v - w.top - wrap.clientTop + wrap.scrollTop
@@ -840,17 +881,19 @@ function Detail({
       }
       const [top, bottom] = [y(lo) + 4, y(hi) - 4]
       const h = el.offsetHeight
-      const boxTop = board.offsetTop + n.y * k
-      const boxBottom = board.offsetTop + (n.y + n.h) * k
+      const boxTop = board.offsetTop + dy + n.y * k
+      const boxBottom = board.offsetTop + dy + (n.y + n.h) * k
       const below = boxBottom + 6
       const above = boxTop - 6 - h
       const sides = n.y + n.h / 2 < scene.height / 2 ? [below, above] : [above, below]
       const fits = sides.find((t) => t >= top && t + h <= bottom)
       const roomier = bottom - boxBottom >= boxTop - top ? below : above
       el.style.top = `${Math.max(top, Math.min(fits ?? roomier, bottom - h))}px`
-      el.style.left = `${Math.max(0, Math.min(board.offsetLeft + n.x * k, wrap.clientWidth - el.offsetWidth))}px`
+      el.style.left = `${Math.max(0, Math.min(board.offsetLeft + dx + n.x * k, wrap.clientWidth - el.offsetWidth))}px`
     }
     place()
+    // a box the reader pans or zooms takes its detail along
+    const off = lm.engine.viewer ? lm.engine.subscribe(place) : null
     // the room changes as the page or the board's own box scrolls, the screen turns, or the text grows
     const ro = new ResizeObserver(place)
     ro.observe(el)
@@ -858,6 +901,7 @@ function Detail({
     document.addEventListener('scroll', place, { capture: true, passive: true })
     addEventListener('resize', place)
     return () => {
+      off?.()
       ro.disconnect()
       document.removeEventListener('scroll', place, { capture: true })
       removeEventListener('resize', place)

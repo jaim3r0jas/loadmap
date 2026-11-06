@@ -98,6 +98,12 @@ step changes, the change, and the whole diagram again for the step's `seconds`, 
 once it is past the target. With reduced motion the camera cuts and the ring holds still. `ref.playStory()` plays it
 on the engine's clock, which `step()` advances.
 
+`zoom` lets the reader pan and zoom the diagram: a drag pans (a press that hardly moves still clicks a box), a pinch
+or the wheel with Ctrl or ⌘ zooms about the pointer, the keys + − 0 and the arrows work on the focused board, and the
+buttons on it go − · zoom · + · Fit. A page that scrolls keeps its plain wheel. `<Diagram lm={lm} canvas={{ left: 420
+}} />` fills its container as a canvas the wheel alone zooms; the insets are what the page floats over it, and Fit
+frames the diagram in the rest. Pictures and recordings always show the whole diagram, whatever the reader's view.
+
 `useLoadmap` with `LoadmapRoot`, `Diagram`, `Verdict`, `Limits`, `Controls` and the others builds a page of your own
 layout from the same pieces. The diagram's Full screen takes the whole root: inside a `<div className="lm-side">`
 after the `Diagram`, your pieces become a box below it that scrolls on its own; a title, the `Scenarios` and the

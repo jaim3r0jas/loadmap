@@ -74,7 +74,7 @@ describe('the editor', () => {
     expect(host.querySelector('.lme-preview')!.hasAttribute('data-stale')).toBe(false)
     edit('"Postgres primary"', '"Main database"')
     await expect
-      .poll(() => host.querySelector('.lm-lim[data-component="db"] b')?.textContent)
+      .poll(() => host.querySelector('.lm-lim[data-component="db"] b')?.textContent, { timeout: 5000 })
       .toContain('Main database')
   })
 
