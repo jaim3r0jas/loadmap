@@ -253,33 +253,38 @@ describe('edit', () => {
     expect(refused(checkout, 'load/max', 0)).toBe('the load goes from 1 to 0')
   })
 
-  it.each(files)('%s: every field set to its own value leaves the text as it is', (f) => {
-    const src = read(f)
-    expect(compile(src).ok).toBe(true)
-    const boxes = compile(src).definition!.view.def.nodes as Record<string, unknown>
-    const targets = [...Object.keys(boxes).map((node) => ({ node })), 'model' as const]
-    let n = 0
-    for (const t of targets)
-      for (const s of inspect(src, t)?.sections ?? [])
-        for (const fl of s.fields) {
-          const same: [string, EditValue][] = []
-          if (fl.kind === 'formula' || fl.kind === 'capacity')
-            for (const p of fl.kind === 'formula' ? fl.parts : fl.value)
-              if (typeof p !== 'string') same.push([`${fl.key}#${p.slot}`, p.value])
-          if (fl.kind === 'capacity') {
-            same.push(
-              [`${fl.key}.provenance`, fl.provenance],
-              [`${fl.key}.unit`, fl.unit],
-              [`${fl.key}.source`, fl.source],
-            )
-            if (typeof fl.within === 'number') same.push([`${fl.key}.within`, fl.within])
-          } else if (fl.kind !== 'formula') same.push([fl.key, fl.value])
-          for (const [k, v] of same) {
-            const r = edit(src, k, v)
-            expect(r, k).toMatchObject({ source: src })
-            n++
+  it.each(files)(
+    '%s: every field set to its own value leaves the text as it is',
+    (f) => {
+      const src = read(f)
+      expect(compile(src).ok).toBe(true)
+      const boxes = compile(src).definition!.view.def.nodes as Record<string, unknown>
+      const targets = [...Object.keys(boxes).map((node) => ({ node })), 'model' as const]
+      let n = 0
+      for (const t of targets)
+        for (const s of inspect(src, t)?.sections ?? [])
+          for (const fl of s.fields) {
+            const same: [string, EditValue][] = []
+            if (fl.kind === 'formula' || fl.kind === 'capacity')
+              for (const p of fl.kind === 'formula' ? fl.parts : fl.value)
+                if (typeof p !== 'string') same.push([`${fl.key}#${p.slot}`, p.value])
+            if (fl.kind === 'capacity') {
+              same.push(
+                [`${fl.key}.provenance`, fl.provenance],
+                [`${fl.key}.unit`, fl.unit],
+                [`${fl.key}.source`, fl.source],
+              )
+              if (typeof fl.within === 'number') same.push([`${fl.key}.within`, fl.within])
+            } else if (fl.kind !== 'formula') same.push([fl.key, fl.value])
+            for (const [k, v] of same) {
+              const r = edit(src, k, v)
+              expect(r, k).toMatchObject({ source: src })
+              n++
+            }
           }
-        }
-    expect(n).toBeGreaterThan(10)
-  })
+      expect(n).toBeGreaterThan(10)
+      // a compile a field: docs/every-statement.loadmap, with every statement, has the most fields by far
+    },
+    90_000,
+  )
 })

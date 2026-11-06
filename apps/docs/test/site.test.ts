@@ -7,6 +7,7 @@ import { encodeShare } from '@loadmap/dsl'
 import { chromium } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { shippedReference } from '../../../scripts/reference'
 import { included, PAGES, relative, render } from '../pages'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
@@ -90,6 +91,23 @@ describe('the built site', () => {
     }
     expect(readFileSync(join(out, 'reference/index.html'), 'utf8')).toContain('Each unit is copied to several stages')
     expect(existsSync(join(out, '404.html'))).toBe(true)
+  })
+
+  it('has an llms.txt that links every page, and an llms-full.txt with the reference and the complete model', () => {
+    const published = 'https://jaim3r0jas.github.io/loadmap/'
+    const links = [...readFileSync(join(out, 'llms.txt'), 'utf8').matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]!)
+    for (const p of PAGES) expect(links, p.route).toContain(`${published}${p.route ? `${p.route}/` : ''}`)
+    for (const l of links) {
+      expect(l.startsWith(published), l).toBe(true)
+      const path = l.slice(published.length)
+      expect(existsSync(join(out, path === '' || path.endsWith('/') ? `${path}index.html` : path)), l).toBe(true)
+    }
+    const full = readFileSync(join(out, 'llms-full.txt'), 'utf8')
+    expect(full).toContain(shippedReference().trimEnd())
+    expect(full).not.toContain('<!--')
+    expect(full).toContain(
+      readFileSync(join(import.meta.dirname, '../../../docs/every-statement.loadmap'), 'utf8').trimEnd(),
+    )
   })
 
   it('marks the current page, and links the previous, the next and its sections only to what exists', () => {
