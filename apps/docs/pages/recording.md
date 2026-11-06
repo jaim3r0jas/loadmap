@@ -12,7 +12,7 @@ npx playwright install chromium      # once, for record
 
 ```bash
 loadmap record shop.loadmap --out shop.gif --caption                 # a .loadmap needs no page of its own
-loadmap record shop.loadmap --out story.webm --story --caption       # play the story, a step at a time
+loadmap record shop.loadmap --out story.webm --story --caption       # play the story, as Play does
 loadmap record shop.loadmap --out poster.png --poster --scenario Proposed
 loadmap record http://localhost:5173/ --out shop.mp4 --script ramp.json
 ```
@@ -22,7 +22,9 @@ is fixed and the simulation seeded, so the same options give the same file, byte
 repository and change only when the model does.
 
 `--out` picks the format: GIF, WebM, MP4, PNG or SVG. `--caption` puts the title, scenario and load above the board and
-the verdict (or the story step's text) below it. `--poster` draws one PNG with the verdict, where each component runs
+the verdict (or the story step's text) below it. `--story` plays the story from the defaults as the page's Play does:
+the whole diagram, a close-up on what each step changes, the change, and the whole diagram again, the step's title on
+the board. `--poster` draws one PNG with the verdict, where each component runs
 out and the scenarios compared. `--script` changes values during the recording:
 
 ```json

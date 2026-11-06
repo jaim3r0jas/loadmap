@@ -25,9 +25,9 @@ export const checkout = defineModel({
     { label: 'Today keeps 7×', target: 7 },
     { label: 'Proposed keeps 14×', scenario: 'Proposed', target: 14 },
   ],
-  // the walk a design review takes: the page steps through it, `loadmap record --story` plays it
+  // the walk a design review takes: the page steps through it or plays it, as `loadmap record --story` does
   story: [
-    { text: 'An ordinary peak: every box is under half its capacity.', set: { load: 1 } },
+    { text: 'An ordinary peak: every box is under half its capacity.', set: { load: 1 }, title: 'An ordinary peak' },
     {
       text: 'At 20×, the gateway and the workers are near full, and the gateway is only an estimate.',
       set: { load: 20 },

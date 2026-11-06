@@ -9,10 +9,11 @@ import {
   type TextMeasure,
   type View,
 } from '@loadmap/layout'
+import { shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { pageElk } from './elk'
-import { Engine } from './engine'
+import { type Cue, Engine } from './engine'
 
 export interface LoadmapOptions<P> extends SimOptions {
   /** Values to start from instead of the model's defaults. */
@@ -52,10 +53,18 @@ export interface LoadmapController<P = any> {
   setStep: (i: number | null) => void
   /** The component the story points at now. */
   focus: string | null
-  /** The story plays: each step for its seconds, then the next, until the last. */
+  /**
+   * The story plays: the whole diagram, then for each step a close-up on what it changes, the change, and the whole
+   * diagram again for its seconds, until the last.
+   */
   storyPlaying: boolean
-  /** Plays the story from the step shown (from the first outside the story or at its end), or pauses it. */
+  /**
+   * Plays the story from the step after the one shown (from the first outside the story or at its end), or pauses it.
+   * A value the reader changes, a scenario or a step they pick stops it.
+   */
   setStoryPlaying: (on: boolean) => void
+  /** What the diagram says about the step the story plays; null when it does not play. */
+  cue: Cue | null
   /** The root is full screen: the browser's, or an overlay where the browser has none or refuses. */
   fullScreen: boolean
   toggleFullScreen: () => void
@@ -78,15 +87,19 @@ export interface LoadmapController<P = any> {
 export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
+  // setValues evaluates once for the engine; the render reuses that evaluation. It also holds the values set last
+  const evaluated = useRef<{ values: Values<P>; ev: Evaluation<P> } | null>(null)
   // a new model starts from its own defaults
   let values = state.values
   if (state.model !== model) {
     values = init()
+    evaluated.current = null
     setState({ model, values })
   }
+  // React can render an older state once more after new values are set (a render already under way): such a render
+  // must not hand the engine its older numbers, nor be the base of the next change
+  const fresh = !evaluated.current || evaluated.current.values === values
 
-  // setValues evaluates once for the engine; the render reuses that evaluation
-  const evaluated = useRef<{ values: Values<P>; ev: Evaluation<P> } | null>(null)
   const ev = useMemo(
     () => (evaluated.current?.values === values ? evaluated.current.ev : model.evaluate(values)),
     [model, values],
@@ -105,9 +118,13 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
   const scene = laid?.view === view ? laid.scene : null
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+  engine.reducedMotion = reducedMotion
   const narrowBelow = o.narrowBelow ?? 640
 
-  useEffect(() => engine.setEvaluation(ev), [engine, ev])
+  // checked when it runs, not when it rendered: React may run a render's effects after newer values were set
+  useEffect(() => {
+    if (!evaluated.current || evaluated.current.values === values) engine.setEvaluation(ev)
+  }, [engine, ev, values])
 
   useEffect(() => {
     if (!root) return
@@ -124,7 +141,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     () => (measure ? structureKey(view, ev, { direction, measure }) : ''),
     [view, ev, direction, measure],
   )
-  engine.wantKey = key
+  if (fresh) engine.wantKey = key
   const elk = o.elk
   useEffect(() => {
     if (!measure || !key) return
@@ -143,8 +160,9 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
 
   const labels = useMemo(() => labelsAt(view, ev), [view, ev])
   const valuesRef = useRef(values)
-  valuesRef.current = values
-  const setValues = useCallback(
+  if (fresh) valuesRef.current = values
+  // the story player's own changes: the reader's stop it
+  const apply = useCallback(
     (v: Partial<Values<P>>) => {
       const next = { ...valuesRef.current, ...v }
       valuesRef.current = next
@@ -155,6 +173,17 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
       setState({ model, values: next })
     },
     [engine, model],
+  )
+
+  const [playing, setPlaying] = useState(false)
+  const [cue, setCue] = useState<Cue | null>(null)
+  const stop = useCallback(() => engine.stopStory(), [engine])
+  const setValues = useCallback(
+    (v: Partial<Values<P>>) => {
+      stop()
+      apply(v)
+    },
+    [stop, apply],
   )
 
   const scenario = useMemo(() => model.scenarioOf(values), [model, values])
@@ -168,15 +197,22 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
 
   const [stepState, setStepState] = useState<{ model: Model<P>; i: number | null }>({ model, i: null })
   const step = stepState.model === model && stepState.i != null && stepState.i < model.story.length ? stepState.i : null
-  const setStep = useCallback(
+  const show = useCallback(
     (i: number | null) => {
       const st = i == null ? undefined : model.story[i]
-      if (st) setValues(st.values)
+      if (st) apply(st.values)
       engine.wantFocus = st?.focus ?? null
       engine.storyStep = st ? i : null
       setStepState({ model, i: st ? i : null })
     },
-    [model, setValues, engine],
+    [model, apply, engine],
+  )
+  const setStep = useCallback(
+    (i: number | null) => {
+      stop()
+      show(i)
+    },
+    [stop, show],
   )
   // a value the reader changed since the step was shown: the step's text and outline no longer describe the board
   const shown = step == null ? undefined : model.story[step]
@@ -186,23 +222,35 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   engine.wantFocus = focus
   engine.storyStep = step
 
-  // the story plays on from the step shown; leaving it, or a value of the reader's own, stops it
-  const [playing, setPlaying] = useState(false)
-  if (playing && (step == null || stepChanged)) setPlaying(false)
-  const storyPlaying = playing && step != null && !stepChanged
+  // the story plays on the engine's clock, which shows each step through `show`; the shapes tell it what a step reshapes
+  const measureRef = useRef(measure)
+  measureRef.current = measure
+  engine.host = {
+    playing: setPlaying,
+    show,
+    cue: setCue,
+    shapes: (e) => shapesOf(view, e, { direction, measure: measureRef.current ?? undefined }),
+  }
+  // a value changed from outside the controller (a handle, a new model) stops it too
   useEffect(() => {
-    if (!storyPlaying || step == null) return
-    const last = model.story.length - 1
-    const t = setTimeout(() => (step < last ? setStep(step + 1) : setPlaying(false)), model.story[step]!.seconds * 1000)
-    return () => clearTimeout(t)
-  }, [storyPlaying, step, model, setStep])
+    if (playing && stepChanged) stop()
+  }, [playing, stepChanged, stop])
+  const storyPlaying = playing && model.story.length > 0
   const setStoryPlaying = useCallback(
     (on: boolean) => {
-      if (on && (step == null || stepChanged || step === model.story.length - 1))
-        setStep(step == null || step === model.story.length - 1 ? 0 : step)
-      setPlaying(on && model.story.length > 0)
+      if (!on) return stop()
+      const last = model.story.length - 1
+      if (last < 0) return
+      // from the step after the one shown; else the first. A step whose values the reader changed is played again,
+      // from their values: the story is left first, so they are no longer a change to it
+      const from = step == null || step === last ? 0 : stepChanged ? step : step + 1
+      if (stepChanged) show(null)
+      engine.playStory(from)
+      // inline, the board may be off the screen: the story is told on it
+      if (!document.fullscreenElement && !root?.hasAttribute('data-full'))
+        root?.querySelector('.lm-board')?.scrollIntoView({ block: 'nearest' })
     },
-    [step, stepChanged, model, setStep],
+    [step, stepChanged, model, engine, stop, show, root],
   )
 
   // the browser's full screen, or a fixed overlay where it has none (iPhone) or refuses (a frame without the permission)
@@ -271,6 +319,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     focus,
     storyPlaying,
     setStoryPlaying,
+    cue: storyPlaying ? cue : null,
     fullScreen,
     toggleFullScreen,
     fullScreenMode,

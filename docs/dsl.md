@@ -222,16 +222,21 @@ from the defaults (or from its `scenario`), then takes its own values, so it loo
 `focus` outlines a component's box:
 
 ```
-step "An ordinary peak: every box is under half its capacity." { load: 1 }
+step "An ordinary peak: every box is under half its capacity." { load: 1; title: "An ordinary peak" }
 step "At 20×, the gateway and the workers are near full." { load: 20; focus: gateway }
 step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workers }
 ```
 
 The page shows a bar above the diagram with the step's text, play, back and next (← and → while the bar has the
-focus); play shows each step for its `seconds`.
-`loadmap record x.loadmap --out story.gif --story --caption` plays every step for its `seconds` (default 4), its
-text below the board; the same options give the same file. A step's own properties are `scenario`, `focus` and
-`seconds`; every other line is a value.
+focus). Back and next show a step at once. Play tells it on the diagram: the whole diagram first, then for each step a
+close-up on what it changes (the box it points at and any box it reshapes; else what it reshapes; else the boxes whose
+state changes; else the first limit), the change, and the whole diagram again for the step's `seconds`. A short
+`title` names the step on the diagram meanwhile; without one it says what changes ("Users 1× → 20×"). With reduced
+motion the camera cuts between the shots. The component that runs out first wears a ring and a tag; it breathes while
+the story plays and once it is past the target.
+`loadmap record x.loadmap --out story.gif --story --caption` plays it the same way, from the defaults, the title on the
+board and the step's text below it; the same options give the same file. A step's own properties are `scenario`,
+`focus`, `title` and `seconds`; every other line is a value.
 
 A step that changes the structure (more pods, another scenario) does not swap the diagram: the boxes that stay move to
 their new places with their edges, and what is new fades in. `transition: 1.2` makes that move take 1.2 seconds (0.8
@@ -277,8 +282,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:93:17 error: unknown flow "order"
-  93 |   demand: flows.order + flows.events
+checkout.loadmap:96:17 error: unknown flow "order"
+  96 |   demand: flows.order + flows.events
      |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -431,10 +436,10 @@ After the keyword: [label].
 
 ### step
 
-A step of the story the page walks through, in order: its text, and the values to show it at. `loadmap record --story` plays it.
+A step of the story the page walks through, in order: its text, and the values to show it at. Play (and `loadmap record --story`) shows the whole diagram, closes in on what the step changes, changes it, and steps back.
 
 ```
-step "At 30×, the workers run out first." { load: 30; focus: workers }
+step "At 30×, the workers run out first." { load: 30; focus: workers; title: "Users to 30×" }
 ```
 
 After the keyword: label.
@@ -442,8 +447,9 @@ After the keyword: label.
 | Property | Value | |
 | --- | --- | --- |
 | `scenario` | scenario, constant | Start from this scenario's values; without one, from the defaults. |
+| `title` | string, constant | The few words the diagram shows while Play shows the step. Default: what the step changes. |
 | `focus` | component, constant | The component to point at: its box is outlined. |
-| `seconds` | number, constant | How long a recording holds the step. Default 4. |
+| `seconds` | number, constant | How long Play holds the whole diagram after the step changes it: the time to read it. Default 4. |
 
 Its properties are named by parameters (and `load`).
 

@@ -350,8 +350,9 @@ describe('recording a .loadmap', () => {
     const b = await record(await story('s2.gif'), { viewer })
     expect(a.subarray(0, 6).toString('latin1')).toBe('GIF89a')
     expect(a.equals(b)).toBe(true)
-    // three steps of 4 s at 2 frames a second: 24 frames, each with its graphic control block
-    expect(frames(a)).toBe(24)
+    // played as the page plays it: the whole diagram 1.2 s, then each of the three steps a flight in (1 s), a moment
+    // close (0.5 s), the change held close (1.6 s), a flight out (1 s) and its 4 s: 25.5 s at 2 frames a second
+    expect(frames(a)).toBe(51)
   }, 120_000)
 
   it('refuses --story with values of its own or a still', async () => {

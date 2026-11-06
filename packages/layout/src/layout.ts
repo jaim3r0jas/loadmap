@@ -169,6 +169,18 @@ export function structureKey(view: View, ev: Evaluation, o: LayoutOptions = {}):
   return prepare(view, ev, o.direction ?? 'RIGHT', o.measure ?? estimateText).key
 }
 
+/**
+ * Each box's shape at these values, by id, and the edges drawn: two calls tell which boxes a change of values reshapes
+ * (pods, brokers, a wider label) and which edges come or go, before anything is laid out.
+ */
+export function shapesOf(view: View, ev: Evaluation, o: LayoutOptions = {}) {
+  const prep = prepare(view, ev, o.direction ?? 'RIGHT', o.measure ?? estimateText)
+  return {
+    nodes: Object.fromEntries(prep.nodes.map((n) => [n.id, JSON.stringify(n.inner)])) as Record<string, string>,
+    edges: prep.edges.map((e) => ({ id: e.id, from: e.from, to: e.to })),
+  }
+}
+
 type Inner = Omit<SceneNode, 'x' | 'y' | 'id' | 'kind' | 'shape' | 'stages' | 'component'>
 
 interface Prepared {

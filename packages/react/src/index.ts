@@ -22,7 +22,7 @@ export {
 } from '@loadmap/layout'
 export { Diagram, type DiagramProps } from './Diagram'
 export { workerElk } from './elk'
-export type { Dot, Engine } from './engine'
+export type { Cue, Dot, Engine, StoryHost } from './engine'
 export {
   handleOf,
   LOADMAP_PANELS,

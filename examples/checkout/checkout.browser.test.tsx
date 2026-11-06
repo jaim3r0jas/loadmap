@@ -15,7 +15,7 @@ import {
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { Checkout } from './Checkout'
 import { checkout } from './model'
@@ -797,42 +797,149 @@ describe('full screen', () => {
     for (const p of LOADMAP_PANELS) expect(shown(el.querySelector(PAGE[p])), p).toBe(true)
   })
 
-  it('plays the story, each step for its seconds, and stops at the end or on a value of the reader', async () => {
+  /** Steps a paused board by `dt` until `done`, with every frame drawn; what each step showed. */
+  async function run(handle: LoadmapHandle, el: HTMLElement, done: () => boolean, dt = 0.1) {
+    const seen: {
+      shot: string
+      step: number | null
+      box: string
+      whole: string
+      title: string | null
+      text: string
+    }[] = []
+    for (let i = 0; i < 600 && !done(); i++) {
+      await handle.ready()
+      handle.step(dt)
+      await handle.ready()
+      // the bar and the title follow in a render of their own
+      await frames()
+      seen.push({
+        shot: handle.engine.story?.shot ?? 'end',
+        step: handle.storyStep(),
+        box: handle.board()!.svg.getAttribute('viewBox')!,
+        whole: `0 0 ${handle.engine.frame!.width} ${handle.engine.frame!.height}`,
+        title: el.querySelector('.lm-title b')?.textContent ?? null,
+        text: el.querySelector('.lm-story p > span[data-shown]')?.textContent ?? '',
+      })
+    }
+    return seen
+  }
+
+  it('plays the story as shots: the whole diagram, close on each change, back out, and the whole diagram at the end', async () => {
     const { el, handle } = await draw()
     await enter(el)
+    handle.pause()
     const bar = el.querySelector<HTMLElement>('.lm-story')!
     const play = () => bar.querySelector<HTMLButtonElement>('.lm-story-nav button')!
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const story = el.querySelector('.lm-story p')!
+    const height = story.getBoundingClientRect().height
+    const board = box(el.querySelector('.lm-board')!)
+    const whole = () => {
+      const s = handle.engine.frame!
+      return `0 0 ${s.width} ${s.height}`
+    }
+    await userEvent.click(play())
+    await expect.poll(() => play().textContent).toBe('❚❚ Pause')
+    expect(bar.hasAttribute('data-playing')).toBe(true)
+    const seen = await run(handle, el, () => !handle.engine.playing)
+    const order = seen.map((x) => x.shot).filter((x, i, a) => x !== a[i - 1] && x !== 'end')
+    const step = ['in', 'close', 'change', 'out', 'wide']
+    expect(order).toEqual(['establish', ...step, ...step, ...step])
+    // the whole diagram before and after each change; close in between, on a part of it
+    for (const x of seen) {
+      if (x.shot === 'establish' || x.shot === 'wide') expect(x.box, x.shot).toBe(x.whole)
+      if (x.shot === 'close' || x.shot === 'change') expect(x.box, x.shot).not.toBe(x.whole)
+    }
+    // the bar reads the step from the flight in, before its values change, which they do with the change
+    const first = seen.find((x) => x.shot === 'in')!
+    expect(first.step).toBe(null)
+    expect(first.text).toContain('1 of 3')
+    expect(first.title).toBe('1 · An ordinary peak')
+    expect(seen.find((x) => x.shot === 'change')!.step).toBe(0)
+    expect(seen.filter((x) => x.step === 2 && x.shot === 'change')[0]!.title).toBe(
+      '3 · Proposed: Gateway instances 1 → 2, Worker pods 3 → 6',
+    )
+    // the camera moves the view, never the board; the text keeps the room of the longest step
+    expect(story.getBoundingClientRect().height).toBe(height)
+    await expect.poll(() => play().textContent).toBe('▶ Play')
+    expect(handle.storyStep()).toBe(2)
+    expect(handle.board()!.svg.getAttribute('viewBox')).toBe(whole())
+    expect(el.querySelector('.lm-title')).toBeNull()
+    // from the end it starts again; a value of the reader's own stops it, and the camera flies back out
+    handle.setStoryStep(0)
+    await handle.ready()
+    // back from the proposal's six pods: the structure moves back, on the paused board's clock
+    handle.step(1)
+    await handle.ready()
+    await frames()
+    expect(box(el.querySelector('.lm-board')!)).toEqual(board)
+    await userEvent.click(play())
+    await run(handle, el, () => handle.engine.story?.shot === 'close')
+    expect(handle.board()!.svg.getAttribute('viewBox')).not.toBe(whole())
+    handle.setValues({ load: 2 })
+    await expect.poll(() => play().textContent).toBe('▶ Play')
+    await run(handle, el, () => !handle.engine.story)
+    expect(handle.board()!.svg.getAttribute('viewBox')).toBe(whole())
+    expect(handle.storyStep()).toBe(0)
+    expect(handle.values().load).toBe(2)
+  })
+
+  it('marks the first limit, breathing while the story plays and once it is past the target', async () => {
+    const { el, handle } = await draw()
+    handle.pause()
+    const halo = () => el.querySelector<SVGGElement>('[data-halo]')
+    const breathes = async () => {
+      handle.step(0.3)
+      await handle.ready()
+      const a = halo()!.getAttribute('transform')
+      handle.step(0.3)
+      await handle.ready()
+      return !!a && a !== halo()!.getAttribute('transform')
+    }
+    // the gateway runs out first; under the target it holds still
+    handle.setValues({ load: 1 })
+    await handle.ready()
+    expect(el.querySelectorAll('[data-halo]')).toHaveLength(1)
+    const gateway = handle.board()!.scene.nodes.find((n) => n.id === 'gateway')!
+    expect(Number(halo()!.dataset.cx)).toBe(gateway.x + gateway.w / 2)
+    expect(await breathes()).toBe(false)
+    // past the target it breathes, as a transform of its own layer: the box does not move
+    handle.setValues({ load: 20 })
+    await handle.ready()
+    const before = el.querySelector('[data-node="gateway"]')!.getBoundingClientRect().toJSON()
+    expect(await breathes()).toBe(true)
+    expect(el.querySelector('[data-node="gateway"]')!.getBoundingClientRect().toJSON()).toEqual(before)
+    // two pods at a load the gateway takes: the workers run out first, and the mark moves to them
+    handle.setValues({ load: 5, pods: 2, gateways: 2 })
+    await handle.ready()
+    expect(handle.engine.ev.firstLimit?.id).toBe('workers')
+    const workers = handle.board()!.scene.nodes.find((n) => n.id === 'workers')!
+    await expect.poll(() => Number(halo()!.dataset.cx)).toBe(workers.x + workers.w / 2)
+    expect(el.querySelectorAll('[data-halo]')).toHaveLength(1)
+  })
+
+  it('cuts between the shots and holds the mark still with reduced motion', async () => {
+    const real = window.matchMedia
+    window.matchMedia = (q: string) =>
+      q.includes('reduced-motion')
+        ? ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} } as unknown as MediaQueryList)
+        : real.call(window, q)
     try {
-      const story = el.querySelector('.lm-story p')!
-      const height = story.getBoundingClientRect().height
-      const b = box(el.querySelector('.lm-board')!)
-      await userEvent.click(play())
-      await expect.poll(() => handle.storyStep()).toBe(0)
-      expect(play().textContent).toBe('❚❚ Pause')
-      expect(bar.hasAttribute('data-playing')).toBe(true)
-      for (const next of [1, 2]) {
-        vi.advanceTimersByTime(3999)
-        expect(handle.storyStep()).toBe(next - 1)
-        vi.advanceTimersByTime(1)
-        await expect.poll(() => handle.storyStep()).toBe(next)
-        // the text keeps the room of the longest step; a step of the load alone leaves the board where it is
-        expect(story.getBoundingClientRect().height).toBe(height)
-        await handle.ready()
-        if (next === 1) expect(box(el.querySelector('.lm-board')!)).toEqual(b)
-      }
-      vi.advanceTimersByTime(4000)
-      await expect.poll(() => play().textContent).toBe('▶ Play')
-      expect(handle.storyStep()).toBe(2)
-      // from the end it starts again; a value of the reader's own pauses it
-      await userEvent.click(play())
-      await expect.poll(() => handle.storyStep()).toBe(0)
-      handle.setValues({ load: 2 })
-      await expect.poll(() => play().textContent).toBe('▶ Play')
-      vi.advanceTimersByTime(10_000)
-      expect(handle.storyStep()).toBe(0)
+      const { el, handle } = await draw()
+      handle.pause()
+      handle.setValues({ load: 20 })
+      await handle.ready()
+      await userEvent.click(el.querySelector<HTMLButtonElement>('.lm-story-nav button')!)
+      await expect.poll(() => handle.engine.playing).toBe(true)
+      const seen = await run(handle, el, () => handle.engine.story?.shot === 'wide')
+      // no flight: the first frame of the way in is already close, the first of the way out already whole
+      const close = handle.engine.frame && seen.find((x) => x.shot === 'in')!.box
+      expect(close).toBe(seen.find((x) => x.shot === 'close')!.box)
+      const s = handle.engine.frame!
+      expect(seen.find((x) => x.shot === 'out')!.box).toBe(`0 0 ${s.width} ${s.height}`)
+      expect(el.querySelector('[data-halo]')!.getAttribute('transform') ?? '').toBe('')
     } finally {
-      vi.useRealTimers()
+      window.matchMedia = real
     }
   })
 
@@ -996,25 +1103,43 @@ describe('export', () => {
     )
   })
 
-  it('records the story, a step at a time, and puts the page back', async () => {
+  it('records the story as Play plays it, the same twice, and puts the page back', async () => {
     const { handle } = await mount()
     handle.setValues({ load: 7 })
+    const shots: string[] = []
     const steps: (number | null)[] = []
+    const close: boolean[] = []
     const opts = { format: 'gif' as const, story: true, fps: 2, scale: 0.5, caption: true }
     const run = async () => {
       const hashes: string[] = []
+      shots.length = steps.length = close.length = 0
       await recordVideo(handle, {
         ...opts,
         onFrame: async (_, c) => {
+          shots.push(handle.engine.story?.shot ?? 'end')
           steps.push(handle.storyStep())
+          close.push(!!handle.engine.camera)
           hashes.push(await hash(c))
         },
       })
       return hashes
     }
     const a = await run()
-    expect(a).toHaveLength(24)
-    expect(steps.slice(0, 24)).toEqual([...Array(8).fill(0), ...Array(8).fill(1), ...Array(8).fill(2)])
+    // the whole diagram 1.2 s, then each step: in 1 s, close 0.5 s, the change 1.6 s, out 1 s, its 4 s: 25.5 s at 2 fps
+    expect(a).toHaveLength(51)
+    // the last frame is the end of the last step's hold, whether or not the story has just ended
+    const order = shots.filter((x, i) => x !== shots[i - 1] && x !== 'end')
+    const step = ['in', 'close', 'change', 'out', 'wide']
+    expect(order).toEqual(['establish', ...step, ...step, ...step])
+    // a step's values come with its change; the camera is close from the flight in to the flight out, and the last
+    // frame shows the whole diagram
+    expect(steps[shots.indexOf('change')]).toBe(0)
+    expect(steps[shots.indexOf('in')]).toBe(null)
+    expect(steps.at(-1)).toBe(2)
+    expect(
+      shots.map((x, i) => (x === 'close' || x === 'change') === close[i] || x === 'in' || x === 'out'),
+    ).not.toContain(false)
+    expect(close.at(-1)).toBe(false)
     expect(await run()).toEqual(a)
     expect(handle.storyStep()).toBe(null)
     expect(handle.values().load).toBe(7)

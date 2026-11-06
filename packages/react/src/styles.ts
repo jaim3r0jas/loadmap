@@ -37,6 +37,17 @@ export const LOADMAP_CSS = `
 .lm-board { position: relative; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; margin: 0 auto; width: 100%; }
 .lm-board svg { display: block; width: 100%; height: auto; font-family: var(--lm-font); }
 .lm-board canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* the story's title over the board while it plays: a lower third, at the top when what is framed is low; a strip
+   across the top of a narrow board */
+.lm-title { position: absolute; left: 12px; bottom: 12px; z-index: 1; display: grid; gap: 1px; max-width: min(34rem, calc(100% - 24px)); padding: 7px 12px 8px; border-left: 4px solid var(--lm-accent); border-radius: 0 6px 6px 0; background: color-mix(in srgb, var(--lm-surface) 92%, transparent); box-shadow: 0 4px 16px rgb(0 0 0 / .12); pointer-events: none; overflow-wrap: anywhere; }
+.lm-title[data-top] { top: 12px; bottom: auto; }
+.lm-title b { font-size: .95rem; font-weight: 600; }
+.lm-title span { font: 500 .8rem var(--lm-mono); color: var(--lm-muted); }
+@container (max-width: 520px) {
+  .lm-title, .lm-title[data-top] { top: 0; right: 0; bottom: auto; left: 0; max-width: none; padding: 4px 8px; border-radius: 0; box-shadow: none; }
+  .lm-title b { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lm-title span { display: none; }
+}
 .lm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .78rem; color: var(--lm-muted); }
 .lm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
 

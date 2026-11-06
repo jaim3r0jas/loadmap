@@ -1043,6 +1043,8 @@ class Compiler {
     }
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const focus = this.named(b, 'focus', [...components.keys()], 'component')
+    const title = this.constProp<string>(b, 'title')
+    if (title != null && !title.trim()) this.report.error(this.prop(b, 'title')!.value, 'a title needs a few words')
     const seconds = this.constProp<number>(b, 'seconds')
     if (seconds != null && !(seconds > 0 && Number.isFinite(seconds)))
       this.report.error(this.prop(b, 'seconds')!.value, 'seconds is a duration above 0')
@@ -1053,6 +1055,7 @@ class Compiler {
     if (text == null || scenario === null || focus === null) return undefined
     return {
       text,
+      ...(title?.trim() ? { title } : {}),
       ...(scenario != null ? { scenario } : {}),
       ...(focus != null ? { focus } : {}),
       ...(seconds != null && seconds > 0 ? { seconds } : {}),

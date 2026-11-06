@@ -310,8 +310,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   step: {
-    doc: 'A step of the story the page walks through, in order: its text, and the values to show it at. `loadmap record --story` plays it.',
-    example: 'step "At 30×, the workers run out first." { load: 30; focus: workers }',
+    doc: 'A step of the story the page walks through, in order: its text, and the values to show it at. Play (and `loadmap record --story`) shows the whole diagram, closes in on what the step changes, changes it, and steps back.',
+    example: 'step "At 30×, the workers run out first." { load: 30; focus: workers; title: "Users to 30×" }',
     args: [{ name: 'label', kind: 'text' }],
     props: {
       scenario: {
@@ -319,8 +319,17 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         doc: "Start from this scenario's values; without one, from the defaults.",
       },
+      title: {
+        value: 'string',
+        scope: 'const',
+        doc: 'The few words the diagram shows while Play shows the step. Default: what the step changes.',
+      },
       focus: { value: 'component', scope: 'const', doc: 'The component to point at: its box is outlined.' },
-      seconds: { value: 'number', scope: 'const', doc: 'How long a recording holds the step. Default 4.' },
+      seconds: {
+        value: 'number',
+        scope: 'const',
+        doc: 'How long Play holds the whole diagram after the step changes it: the time to read it. Default 4.',
+      },
     },
     children: [],
     open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },

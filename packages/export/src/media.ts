@@ -1,7 +1,7 @@
 // Media that stands alone: a caption around the board, the board as SVG, and a poster with the limits.
 import { type CrossingRange, compare, parseAsOf } from '@loadmap/core'
 import { fmt, monthOf, multiple, multiples, pct } from '@loadmap/core/format'
-import type { LoadmapHandle } from '@loadmap/react'
+import type { Cue, LoadmapHandle } from '@loadmap/react'
 
 /** A title line above the board and the verdict below it, so a frame says what it shows without the page. */
 export interface Caption {
@@ -31,6 +31,7 @@ export function tokens(el: Element) {
     bg: t('bg', '#eef2f5'),
     surface: t('surface', '#ffffff'),
     fg: t('fg', '#17212b'),
+    accent: t('accent', '#0b6b8f'),
     muted: t('muted', '#5d6d7c'),
     line: t('line', '#c6d0da'),
     ok: t('ok', '#2a7f5a'),
@@ -106,6 +107,62 @@ export function drawCaption(ctx: CanvasRenderingContext2D, handle: LoadmapHandle
   lines.forEach((l, i) => {
     ctx.fillText(l, pad + 14 * u, h - bottom + (14 + i * 20) * u)
   })
+  ctx.restore()
+}
+
+/**
+ * The story's title over the board, as the page shows it: a lower third (at the top when what is framed is low), or a
+ * strip across the top of a narrow board. `w` × `h` is the board in the frame, at the origin of `ctx`.
+ */
+export function drawTitle(ctx: CanvasRenderingContext2D, handle: LoadmapHandle, cue: Cue, w: number, h: number) {
+  const b = handle.board()!
+  const k = tokens(b.svg)
+  // the page's sizes, in CSS pixels at the board's own size
+  const u = Math.max(0.75, w / b.scene.width)
+  const narrow = w / u <= 520
+  const pad = 12 * u
+  ctx.save()
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  const titleFont = `600 ${(narrow ? 11.5 : 13.5) * u}px ${k.font}`
+  const detailFont = `500 ${11.5 * u}px ${k.mono}`
+  ctx.font = titleFont
+  const room = narrow ? w - 16 * u : Math.min(34 * 14 * u, w - 2 * pad) - 28 * u
+  const title = wrap((s) => ctx.measureText(s).width, cue.title, room, narrow ? 1 : 2)
+  ctx.font = detailFont
+  const detail = narrow || !cue.detail ? [] : wrap((s) => ctx.measureText(s).width, cue.detail, room, 1)
+  const lineH = 18 * u
+  const boxH = (narrow ? 6 : 15) * u + title.length * lineH + detail.length * 16 * u
+  ctx.font = titleFont
+  const textW = Math.max(
+    ...title.map((l) => ctx.measureText(l).width),
+    ...detail.map((l) => {
+      ctx.font = detailFont
+      return ctx.measureText(l).width
+    }),
+  )
+  const boxW = narrow ? w : textW + 28 * u
+  const x = narrow ? 0 : pad
+  const y = narrow ? 0 : cue.top ? pad : h - pad - boxH
+  ctx.globalAlpha = 0.94
+  ctx.fillStyle = k.surface
+  ctx.fillRect(x, y, boxW, boxH)
+  ctx.globalAlpha = 1
+  if (!narrow) {
+    ctx.fillStyle = k.accent
+    ctx.fillRect(x, y, 4 * u, boxH)
+  }
+  const tx = x + (narrow ? 8 : 16) * u
+  let ty = y + (narrow ? 3 : 7) * u
+  ctx.font = titleFont
+  ctx.fillStyle = k.fg
+  for (const l of title) {
+    ctx.fillText(l, tx, ty)
+    ty += lineH
+  }
+  ctx.font = detailFont
+  ctx.fillStyle = k.muted
+  for (const l of detail) ctx.fillText(l, tx, ty)
   ctx.restore()
 }
 
