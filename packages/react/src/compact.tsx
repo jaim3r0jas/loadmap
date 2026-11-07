@@ -14,7 +14,7 @@ const NAMES: Record<LoadmapPanel, string> = {
   verdict: 'Verdict',
   live: 'Live',
   limits: 'Limits',
-  controls: 'Load',
+  controls: 'Design',
   headroom: 'Headroom',
   compare: 'Compare',
   assumptions: 'Assumptions',
@@ -151,7 +151,7 @@ function Card({
   return (
     <div className="lm-mini" data-mini={panel} data-active={active || undefined} ref={box}>
       {panel === 'controls' ? (
-        <Controls lm={lm} />
+        <Controls lm={lm} load={false} />
       ) : panel === 'compare' ? (
         <Compare lm={lm} />
       ) : (

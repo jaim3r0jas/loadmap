@@ -61,9 +61,10 @@ export const LOADMAP_CSS = `
 .lm[data-full="overlay"] { position: fixed; inset: 0; z-index: 2147483000; width: auto; max-width: none; max-height: none; margin: 0; border: 0; }
 .lm[data-full] > * { flex: none; }
 /* a page of its own keeps the rest outside full screen, as <Loadmap> does */
-.lm[data-full] > :not(.lm-head, h2, .lm-scenarios, .lm-story, .lm-wrap, .lm-line, .lm-dock, .lm-side) { display: none; }
+.lm[data-full] > :not(.lm-head, h2, .lm-scenarios, .lm-loadbar, .lm-story, .lm-wrap, .lm-line, .lm-dock, .lm-side) { display: none; }
 .lm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; min-width: 0; }
 .lm-head h2 { font-size: 1.1rem; }
+.lm-head .lm-loadbar { flex: 1 1 520px; }
 .lm[data-full] .lm-wrap { gap: 6px; }
 /* the board as large as fits (--lm-fit, from Diagram), left under the bar, so the legend starts where the board does */
 .lm[data-full] .lm-board { width: var(--lm-fit, 100%); margin: 0; align-self: start; justify-self: start; }
@@ -80,9 +81,6 @@ export const LOADMAP_CSS = `
 .lm-headline { flex: 1 1 auto; min-width: 0; margin: 0; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lm-num { font: 600 .95em var(--lm-mono); font-variant-numeric: tabular-nums; }
 .lm-link { font: 500 .8rem var(--lm-font); color: var(--lm-accent); background: none; border: 0; padding: 2px 4px; cursor: pointer; white-space: nowrap; }
-.lm-line .lm-range { flex: 0 1 380px; display: grid; grid-template-columns: auto minmax(100px, 1fr); align-items: center; gap: 10px; font-size: .84rem; }
-.lm-line output { font-family: var(--lm-mono); font-variant-numeric: tabular-nums; }
-.lm-line input[type=range] { width: 100%; accent-color: var(--lm-accent); }
 
 .lm-dock { display: flex; gap: 10px; min-width: 0; }
 .lm[data-full] > .lm-dock { flex: 1 1 0; min-height: clamp(200px, 26dvh, 340px); }
@@ -120,7 +118,7 @@ export const LOADMAP_CSS = `
 .lm-mini .lm-presets button { padding: 2px 8px; font-size: .72rem; }
 @container (min-width: 420px) {
   .lm-mini .lm-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lm-mini .lm-controls > :is(h3, .lm-presets), .lm-mini .lm-controls > h3 + .lm-range { grid-column: 1 / -1; }
+  .lm-mini .lm-controls > :is(h3, .lm-presets) { grid-column: 1 / -1; }
 }
 .lm-mini .lm-compare > :not(h3:first-child, .lm-table-wrap:nth-child(3)) { display: none; }
 .lm-mini .lm-table { font-size: .76rem; }
@@ -146,7 +144,7 @@ export const LOADMAP_CSS = `
 .lm[data-full] > .lm-side:not(.lm-drawer) { display: grid; gap: 14px; align-content: start; flex: 1 1 0; min-height: 33dvh; overflow: auto; overscroll-behavior: contain; container-type: inline-size; }
 
 /* focus: the board and what runs on it in the middle of the screen */
-.lm[data-mode="focus"] .lm-scenarios, .lm[data-mode="focus"] > .lm-side:not(.lm-drawer) { display: none; }
+.lm[data-mode="focus"] > .lm-side:not(.lm-drawer) { display: none; }
 .lm[data-mode="focus"] > .lm-wrap { margin-top: auto; }
 .lm[data-mode="focus"] > :is(.lm-story, .lm-line) { order: 1; }
 .lm[data-mode="focus"]::after { content: ""; order: 2; margin-top: auto; }
@@ -169,11 +167,24 @@ export const LOADMAP_CSS = `
   .lm[data-full] .lm-story button { padding: 4px 10px; }
   .lm[data-full] .lm-headline { flex-basis: 100%; }
   .lm-dock { flex-direction: column; min-height: 0; gap: 6px; }
+  /* the load bar takes some of the dock's room: the load is no longer in a card */
+  .lm[data-full] > .lm-dock { min-height: clamp(170px, 22dvh, 340px); }
   .lm-tabs { display: flex; flex: none; gap: 2px; border-bottom: 1px solid var(--lm-line); overflow: hidden; }
   .lm-tabs button { font: 500 .78rem var(--lm-font); color: var(--lm-muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 6px 8px; cursor: pointer; white-space: nowrap; }
   .lm-tabs button[aria-pressed="true"] { color: var(--lm-fg); border-color: var(--lm-fg); }
   .lm-mini:not([data-active]) { display: none; }
   .lm[data-full] > .lm-side[data-drawer] { inset: 8px; width: auto; }
+  /* the load in thumb reach: the bar under the board and the story, over the verdict */
+  .lm[data-full] .lm-head { display: contents; }
+  .lm[data-full] .lm-loadbar { order: 2; flex: none; }
+  /* two lines, so the board keeps its room: the scenarios and the load's value, then the track; the label names the
+     slider unseen */
+  .lm[data-full] .lm-load small { display: none; }
+  .lm[data-full] .lm-load { display: contents; }
+  .lm[data-full] :is(.lm-loadbar legend, .lm-load > label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .lm[data-full] .lm-load > output { margin-left: auto; }
+  .lm[data-full] .lm-load-track { flex: 1 1 100%; }
+  .lm[data-full] > :is(.lm-line, .lm-dock) { order: 3; }
 }
 
 .lm-verdict { margin: 0; padding: 10px 14px; border-left: 4px solid var(--lm-ok); background: var(--lm-accent-soft); border-radius: 0 6px 6px 0; }
@@ -254,6 +265,35 @@ export const LOADMAP_CSS = `
 .lm-story button { font: 500 .84rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .lm-story button[aria-disabled="true"] { opacity: .45; cursor: default; }
 .lm-own { font-size: .78rem; color: var(--lm-muted); }
+
+/* the scenarios and the load over the board, in view while the page scrolls; on a phone under the board */
+.lm-loadbar { position: sticky; top: var(--lm-sticky-top, 0px); z-index: 3; container-type: inline-size; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; padding: 6px 12px 2px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; box-shadow: 0 4px 14px -10px rgb(0 0 0 / .4); }
+.lm-loadbar .lm-scenarios { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; padding: 2px; }
+.lm-loadbar .lm-scenarios button { flex: none; white-space: nowrap; }
+.lm-loadbar .lm-load { flex: 1 1 300px; }
+@container (min-width: 720px) {
+  .lm-loadbar .lm-load { grid-template: "label track value" / minmax(0, max-content) minmax(160px, 1fr) auto; align-items: start; }
+  .lm-loadbar .lm-load > label { max-width: 14em; padding-top: 6px; }
+}
+@container (max-width: 520px) {
+  .lm:not([data-full]) > .lm-loadbar { order: 1; top: auto; bottom: 0; }
+  .lm:not([data-full]) > .lm-side { order: 2; }
+}
+/* the load: its label and value, the track under them, the marks under it */
+.lm-load { display: grid; grid-template: "label value" "track track" / minmax(0, 1fr) auto; align-items: center; gap: 0 12px; font-size: .84rem; min-width: 0; }
+.lm-load > label { grid-area: label; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-load > output { grid-area: value; text-align: right; font: 600 .95rem/1.2 var(--lm-mono); font-variant-numeric: tabular-nums; }
+.lm-load small { display: block; font: 400 .7rem var(--lm-mono); color: var(--lm-muted); }
+.lm-load-track { grid-area: track; position: relative; min-width: 0; padding-bottom: 22px; }
+.lm-load input { display: block; width: 100%; height: 32px; margin: 0; accent-color: var(--lm-accent); cursor: pointer; }
+.lm-zones, .lm-marks { position: absolute; left: 8px; right: 8px; top: 30px; }
+.lm-zones { height: 4px; border-radius: 2px; }
+.lm-marks button { position: absolute; top: 0; transform: translateX(-50%); min-width: 20px; height: 24px; padding: 7px 2px 0; border: 0; background: none; font: 500 .68rem var(--lm-mono); color: var(--lm-accent); white-space: nowrap; cursor: pointer; }
+.lm-marks button::before { content: ""; position: absolute; left: 50%; top: 0; width: 2px; height: 6px; margin-left: -1px; background: currentColor; }
+.lm-marks button:not([data-label]) span { display: none; }
+.lm-marks [data-kind="target"] { color: var(--lm-warn); }
+.lm-marks [data-kind="full"] { color: var(--lm-drop); }
+.lm-marks [aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
 .lm-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; vertical-align: 3px; margin-right: 6px; }
 
 .lm-compare-text { margin: 0; }

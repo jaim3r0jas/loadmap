@@ -323,7 +323,7 @@ const EMBED_HTML = `<!doctype html>
       @media (max-height: 520px) { .lm[data-full] > .lm-story p { display: none; } }
       /* a short frame keeps the diagram and one line of verdict */
       @media (max-height: 260px) {
-        .lm .lm-story, .lm .lm-line .lm-range, .lm .lm-line .lm-link, .lm .lm-legend, .lm .lm-dock { display: none; }
+        .lm .lm-story, .lm .lm-loadbar, .lm .lm-line .lm-link, .lm .lm-legend, .lm .lm-dock { display: none; }
         .lm .lm-headline { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       }
       @media (prefers-color-scheme: dark) {
