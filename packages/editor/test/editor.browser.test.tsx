@@ -206,6 +206,21 @@ describe('the editor', () => {
     }
   })
 
+  it('draws the caret in the theme’s text colour, light on a dark theme', async () => {
+    for (const theme of ['dark', 'light'] as const) {
+      const { host } = await mount({ theme })
+      const caret = getComputedStyle(host.querySelector('.cm-content')!).caretColor
+      // the text's colour, as the editor's root computes it
+      expect(caret).toBe(getComputedStyle(host.querySelector('.lme')!).color)
+      const [r, g, b] = caret.match(/\d+/g)!.map(Number)
+      const light = (r! + g! + b!) / 3 > 128
+      expect(light, theme).toBe(theme === 'dark')
+      root?.unmount()
+      root = null
+      document.body.replaceChildren()
+    }
+  })
+
   it('hides the menu with templates={false}', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -373,7 +388,7 @@ describe('the editor filling its container', () => {
     const { host, handle } = await fill(1200)
     handle.loadmap()!.setValues({ load: 30 })
     host.style.width = '600px'
-    await expect.poll(() => host.querySelector('.lme-panes')).toBeTruthy()
+    await expect.poll(() => host.querySelector('.lme-switch')).toBeTruthy()
     await expect.poll(() => handle.loadmap()?.values().load).toBe(30)
     host.style.width = '1200px'
     await expect.poll(() => host.querySelector('.lme-card-head')).toBeTruthy()
@@ -396,21 +411,82 @@ describe('the editor filling its container', () => {
     await expect.element(edge).toHaveAttribute('aria-valuenow', '488')
   })
 
-  it('shows one pane at a time when narrow, the buttons other than Share in a menu', async () => {
+  it('shows a phone the text or the diagram, switched at the bottom, the other buttons in a sheet', async () => {
     const { host } = await fill(400)
     expect(host.querySelector('.lme-resize')).toBeNull()
     expect(host.querySelector<HTMLElement>('.lme-preview')!.hidden).toBe(true)
+    // the switch sits below the text, at the bottom of the editor
+    expect(box(host, '.lme-switch').bottom).toBe(box(host, '.lme').bottom)
     await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
     expect(host.querySelector<HTMLElement>('.lme-left')!.hidden).toBe(true)
     expect(host.querySelector<HTMLElement>('.lme-preview')!.hidden).toBe(false)
-    const more = host.querySelector<HTMLDetailsElement>('.lme-more')!
-    expect(more.open).toBe(false)
-    await userEvent.click(page.getByLabelText('More'))
-    expect(more.open).toBe(true)
+    // the panels in a sheet over the diagram's bottom, the diagram above it
+    await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
+    await expect.poll(() => drawn(host).bottom, { timeout: 5000 }).toBeLessThan(box(host, '.lme-sheet').top)
+    const sheet = host.querySelector<HTMLDialogElement>('dialog.lme-actions')!
+    expect(sheet.open).toBe(false)
+    await userEvent.click(page.getByRole('button', { name: 'More' }))
+    expect(sheet.open).toBe(true)
     await userEvent.click(page.getByRole('button', { name: 'Format' }))
-    expect(more.open).toBe(false)
-    // the button picked is hidden now: the focus goes back to the menu's own
-    expect(document.activeElement).toBe(more.querySelector('summary'))
+    expect(sheet.open).toBe(false)
+    // the focus back on what opened it
+    await expect.poll(() => document.activeElement?.getAttribute('aria-label')).toBe('More')
     expect(page.getByRole('button', { name: 'Share' }).element()).toBeTruthy()
+  })
+
+  it('brings a phone’s sheet up for each box tapped while the code is hidden, and the handle answers Enter', async () => {
+    const { host } = await fill(400, { layout: 'reader' })
+    await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
+    const sheet = host.querySelector<HTMLElement>('.lme-sheet')!
+    const grab = host.querySelector<HTMLButtonElement>('.lme-grab')!
+    // opened with nothing picked, it rests at peek
+    expect(sheet.dataset.detent).toBe('peek')
+    const tapBox = (id: string) => userEvent.click(host.querySelector<SVGGElement>(`.lme-preview [data-node="${id}"]`)!)
+    await tapBox('gateway')
+    await expect.poll(() => sheet.dataset.detent).toBe('half')
+    expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Box')
+    // lowered, or on another tab: the next box brings it up again
+    await userEvent.click(sheet.querySelector<HTMLButtonElement>('[role="tab"]:nth-child(3)')!)
+    grab.focus()
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => sheet.dataset.detent).toBe('peek')
+    await tapBox('workers')
+    await expect.poll(() => sheet.dataset.detent).toBe('half')
+    expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Box')
+    // a cancelled touch is no tap
+    const o = { bubbles: true, pointerId: 9, pointerType: 'touch', isPrimary: true }
+    grab.dispatchEvent(new PointerEvent('pointerdown', o))
+    grab.dispatchEvent(new PointerEvent('pointercancel', o))
+    await new Promise((r) => setTimeout(r, 100))
+    expect(sheet.dataset.detent).toBe('half')
+  })
+
+  it('rests the phone’s sheet at peek, half or full: tapped, stepped with the keys, or dragged', async () => {
+    const { host } = await fill(400)
+    await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
+    await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
+    const sheet = host.querySelector<HTMLElement>('.lme-sheet')!
+    const grab = host.querySelector<HTMLButtonElement>('.lme-grab')!
+    const at = () => sheet.dataset.detent
+    // at peek: the verdict and the load slider
+    expect(at()).toBe('peek')
+    expect(sheet.querySelector('.lme-peek .lm-range input[type="range"]')).toBeTruthy()
+    await userEvent.click(grab)
+    expect(at()).toBe('half')
+    expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Verdict')
+    grab.focus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(at()).toBe('full')
+    // dragged down most of the way, it lands at peek
+    const g = grab.getBoundingClientRect()
+    const o = { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true }
+    grab.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: g.x + 50, clientY: g.y + 10 }))
+    for (let i = 1; i <= 8; i++)
+      grab.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: g.x + 50, clientY: g.y + 10 + i * 60 }))
+    grab.dispatchEvent(new PointerEvent('pointerup', { ...o, clientX: g.x + 50, clientY: g.y + 490 }))
+    await expect.poll(at).toBe('peek')
+    // the diagram fits above the sheet wherever it rests
+    await userEvent.click(grab)
+    await expect.poll(() => drawn(host).bottom, { timeout: 5000 }).toBeLessThan(sheet.getBoundingClientRect().top)
   })
 })

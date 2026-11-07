@@ -14,7 +14,9 @@ import { LoadmapEditor } from '@loadmap/editor'
 
 `fill` makes it the whole of its container, as a page of its own: the diagram as a canvas to pan and zoom, the text
 floating over its left in a card that resizes (`split`, `onSplit`) and hides (`onLayout`), and the verdict and the
-other panels on its right, pinned or on a rail (`panel`, `onPanel`); one at a time on a phone. `start` adds controls
+other panels on its right, pinned or on a rail (`panel`, `onPanel`). On a phone (below 720 px wide or 500 px high)
+the text or the diagram, switched at the bottom, the panels in a sheet over the diagram, and a row of keys over the
+keyboard. `start` adds controls
 at the start of its bar:
 
 ```tsx

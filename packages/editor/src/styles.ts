@@ -25,7 +25,10 @@ export const EDITOR_CSS = `
 .lme-code .cm-gutters { background: var(--lm-bg); color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
 .lme-code .cm-activeLine { background: color-mix(in srgb, var(--lm-accent-soft) 45%, transparent); }
 .lme-code .cm-activeLineGutter { background: var(--lm-accent-soft); }
-.lme-code .cm-cursor { border-left-color: var(--lm-fg); }
+/* the caret in the theme's own text colour, light on a dark theme: CodeMirror's base theme makes it black, as specific
+   as one class and injected later, so this takes the editor's own class too */
+.lme .lme-code .cm-editor .cm-content { caret-color: var(--lm-fg); }
+.lme .lme-code .cm-editor .cm-cursor, .lme .lme-code .cm-editor .cm-dropCursor { border-left-color: var(--lm-fg); }
 .lme-code .cm-selectionBackground, .lme-code .cm-focused .cm-selectionBackground { background: var(--lm-accent-soft) !important; }
 .lme-code .cm-tooltip { background: var(--lm-surface); color: var(--lm-fg); border: 1px solid var(--lm-line); border-radius: 6px; font-family: var(--lm-font); }
 .lme-code .cm-tooltip-autocomplete ul li[aria-selected] { background: var(--lm-accent); color: var(--lm-surface); }
@@ -78,7 +81,6 @@ export const EDITOR_CSS = `
 .lme-field .lme-error { color: var(--lm-drop); }
 /* fill: the editor is the whole of its container; each side scrolls on its own */
 .lme[data-fill] { --lm-pad: 0; height: 100%; gap: 0; grid-template-rows: auto minmax(0, 1fr); }
-.lme[data-fill][data-narrow]:not(:has(> .lme-split[data-layout="reader"])) { grid-template-rows: auto auto minmax(0, 1fr); }
 .lme[data-fill][data-dragging] { user-select: none; cursor: col-resize; }
 .lme[data-fill] > .lme-bar { padding: 6px 10px; gap: 6px; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); }
 .lme[data-fill] > .lme-bar select { max-width: 12rem; }
@@ -141,18 +143,67 @@ export const EDITOR_CSS = `
 .lme-rail:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
 .lme[data-fill] .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); }
 .lme[data-fill] .lme-inspector { position: static; max-height: none; border-width: 0 0 0 1px; border-radius: 0; box-shadow: none; }
-.lme[data-fill][data-narrow] .lme-split { grid-template-columns: minmax(0, 1fr); }
-.lme[data-fill][data-narrow] .lme-left { padding: 8px; }
-.lme[data-fill][data-narrow] .lme-split[data-layout="reader"] { grid-template-rows: minmax(0, 1fr) auto; }
-.lme[data-fill][data-narrow] .lme-inspector { max-height: 45dvh; border-width: 1px 0 0; box-shadow: 0 -6px 18px rgb(0 0 0 / .12); }
-.lme-panes { display: flex; gap: 6px; padding: 6px 10px; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); }
-.lme-panes > button { flex: 1; }
-.lme-panes [aria-selected="true"] { background: var(--lm-accent); color: var(--lm-surface); border-color: var(--lm-accent); }
-.lme-more { position: relative; }
-.lme-more > summary { list-style: none; }
-.lme-more > summary::-webkit-details-marker { display: none; }
-.lme-menu { position: absolute; z-index: 10; right: 0; top: calc(100% + 4px); display: grid; gap: 6px; min-width: 210px; padding: 8px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; box-shadow: 0 10px 30px rgb(0 0 0 / .18); }
-.lme-menu > * { width: 100%; text-align: left; }
+/* a phone: the text or the diagram, the bar on top and the switch at the bottom clear of the notch and the home bar,
+   targets a finger can hit, the panels in a sheet over the diagram's bottom. Typing, the editor takes the height the
+   keyboard leaves, the switch goes, and a row of keys sits on top of the keyboard */
+.lme[data-narrow] { grid-template-rows: auto minmax(0, 1fr) auto; overscroll-behavior: none; }
+.lme[data-narrow][data-typing] { height: var(--lme-vv, 100%); transform: translateY(var(--lme-vt, 0px)); grid-template-rows: auto minmax(0, 1fr); }
+.lme[data-narrow] > .lme-bar { flex-wrap: nowrap; padding: calc(4px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 4px calc(8px + env(safe-area-inset-left)); }
+.lme[data-narrow] > .lme-bar .lm-btn { min-width: 44px; min-height: 44px; }
+.lme[data-narrow] > .lme-split { position: relative; display: block; overflow: hidden; }
+.lme[data-narrow] .lme-left { position: absolute; inset: 0; padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr) auto auto; }
+.lme[data-narrow] .lme-code { border: 0; border-radius: 0; }
+/* 16 px: Safari zooms the page into a field whose text is smaller */
+.lme[data-narrow] .lme-code .cm-editor { height: 100%; font-size: 16px; }
+.lme[data-narrow] .lme-problems { max-height: 20dvh; padding: 6px; border-top: 1px solid var(--lm-line); }
+.lme[data-narrow] .lme-preview { position: absolute; inset: 0; padding: 0; overflow: hidden; }
+.lme[data-narrow] .lme-preview[hidden] { display: none; }
+.lme[data-narrow] .lme-preview > .lm { --lm-pad: 0; --lm-root-bg: transparent; position: absolute; inset: 0; }
+.lme[data-narrow] .lme-over-top { top: 8px; justify-content: flex-start; padding-right: 136px; }
+.lme[data-narrow] .lme-over .lm-scenarios legend { display: none; }
+.lme[data-narrow] .lme-over .lm-scenarios button { min-height: 44px; }
+.lme[data-narrow] .lme-over-note { top: 60px; }
+.lme[data-narrow] .lme-over-bottom { bottom: calc(var(--lme-sheet) + 8px); }
+/* the story in one line: its words cut short, its buttons beside them */
+.lme[data-narrow] .lme-over .lm-story { flex-wrap: nowrap; gap: 6px; padding: 4px 6px 4px 10px; }
+.lme[data-narrow] .lme-over .lm-story legend, .lme[data-narrow] .lme-over .lm-story-progress { display: none; }
+.lme[data-narrow] .lme-over .lm-story p { flex: 1 1 auto; min-width: 0; font-size: .84rem; white-space: nowrap; }
+.lme[data-narrow] .lme-over .lm-story p > span { overflow: hidden; text-overflow: ellipsis; }
+.lme[data-narrow] .lme-over .lm-story-nav { flex: none; }
+.lme[data-narrow] .lme-over .lm-story button { min-height: 44px; }
+.lme[data-narrow] .lme-canvas .lm-wrap[data-canvas] > .lm-bar { display: none; }
+.lme[data-narrow] .lme-canvas .lm-wrap[data-canvas] .lm-zoom { top: 8px; right: 8px; bottom: auto; }
+/* fingers pinch: the zoom shown and Fit are enough */
+.lme[data-narrow] .lme-canvas .lm-zoom .lm-btn:is(:first-child, :nth-child(3)) { display: none; }
+.lme-sheet { position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; background: var(--lm-surface); border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .16); transition: height .2s ease-out; }
+.lme-sheet[data-detent="drag"] { transition: none; }
+@media (prefers-reduced-motion: reduce) { .lme-sheet { transition: none; } }
+.lme-grab { flex: none; display: grid; place-items: center; width: 100%; height: 36px; padding: 0; background: none; border: 0; cursor: grab; touch-action: none; }
+.lme-grab i { width: 40px; height: 5px; border-radius: 3px; background: var(--lm-line); }
+.lme-grab:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -4px; border-radius: 16px 16px 0 0; }
+.lme-peek { display: grid; gap: 8px; padding: 0 calc(16px + env(safe-area-inset-right)) 12px calc(16px + env(safe-area-inset-left)); }
+.lme-peek-verdict { margin: 0; padding-left: 10px; border-left: 4px solid var(--lm-ok); font-size: .88rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lme-peek-verdict[data-tier="warn"] { border-color: var(--lm-warn); }
+.lme-peek-verdict[data-tier="over"] { border-color: var(--lm-drop); }
+.lme-peek .lm-range { display: grid; gap: 2px; }
+.lme-peek .lm-range input { width: 100%; min-height: 32px; }
+.lme-sheet-tabs { flex: none; display: flex; gap: 4px; overflow-x: auto; padding: 0 12px 6px; scrollbar-width: none; }
+.lme-sheet-tabs button { flex: none; min-height: 44px; padding: 0 12px; font: 500 .9rem var(--lm-font); color: var(--lm-muted); background: none; border: 0; border-radius: 8px; cursor: pointer; }
+.lme-sheet-tabs [aria-selected="true"] { color: var(--lm-fg); font-weight: 600; background: var(--lm-accent-soft); }
+.lme-sheet-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 16px 16px; container-type: inline-size; }
+.lme-sheet-body > .lme-inspector { position: static; max-height: none; padding: 0; border: 0; box-shadow: none; }
+.lme-switch { display: flex; gap: 4px; padding: 6px calc(12px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background: var(--lm-surface); border-top: 1px solid var(--lm-line); }
+.lme[data-typing] .lme-switch { display: none; }
+.lme-switch button { flex: 1; min-height: 44px; font: 500 .95rem var(--lm-font); color: var(--lm-fg); background: var(--lm-bg); border: 0; border-radius: 10px; cursor: pointer; }
+.lme-switch [aria-selected="true"] { font-weight: 600; background: var(--lm-surface); box-shadow: inset 0 0 0 2px var(--lm-accent); }
+.lme-keys { display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto; background: var(--lm-surface); border-top: 1px solid var(--lm-line); }
+.lme-keys .lm-btn { min-width: 44px; min-height: 40px; font-family: var(--lm-mono); }
+.lme-actions { width: 100%; max-width: none; max-height: 85dvh; margin: auto 0 0; padding: 0; color: var(--lm-fg); background: var(--lm-surface); border: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .2); }
+.lme-actions::backdrop { background: rgb(0 0 0 / .35); }
+/* its padding on the body: a tap on the dialog itself is a tap on the dimmed page */
+.lme-actions-body { display: grid; gap: 6px; padding: 12px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
+.lme-actions-body > * { width: 100%; min-height: 44px; text-align: left; }
+.lme[data-fill] .lme-actions-body > select { max-width: none; }
 .lme-empty { margin: 0; padding: 40px 16px; text-align: center; color: var(--lm-muted); border: 1px dashed var(--lm-line); border-radius: 8px; }
 `
 
