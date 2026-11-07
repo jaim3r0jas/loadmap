@@ -11,7 +11,7 @@ const raw = {
 }
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/templates.ts'],
+  entry: ['src/index.ts', 'src/internal.ts', 'src/templates.ts'],
   dts: true,
   platform: 'neutral',
   plugins: [raw],

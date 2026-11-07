@@ -33,6 +33,7 @@ import {
   type ReactNode,
   type Ref,
   type RefObject,
+  Suspense,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -41,10 +42,11 @@ import {
   useState,
 } from 'react'
 import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
-import { CATALOG, type TemplateEntry } from './catalog'
-import { Embed, type EmbedOptions } from './Embed'
-import { Inspector, type InspectorTab } from './Inspector'
+import type { TemplateEntry } from './catalog'
+import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
+import type { InspectorProps, InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
+import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
 
@@ -78,19 +80,24 @@ export interface LoadmapEditorProps {
   onShare?: (hash: string) => void | Promise<void>
   /**
    * The link to a page that frames a definition (an embed), from its share hash and the options picked. With it,
-   * "Copy embed link" sits beside "Share link": the link, or an `<iframe>` with it, for ClickUp's /embed or any page.
+   * Share's menu has "Embed in a page…": the link, or an `<iframe>` with it, for ClickUp's /embed or any page.
    */
   embedLink?: (hash: string, o: EmbedOptions) => string
-  /** More buttons for the bar: export, record. */
+  /** More in the New menu, after the templates: each section a heading and its items (examples, a draft). */
+  newItems?: readonly BarSection[]
+  /** More in the Export menu, after the download: each section a heading and its items (images, a recording). */
+  exportItems?: readonly BarSection[]
+  /** More controls for the bar, before Share: a theme, help. On a phone they go in the sheet of actions. */
   actions?: ReactNode
-  /** Controls at the start of the bar, before the status: a way back, a name, a menu of examples. */
+  /** Controls at the start of the bar, before the name: a way back, a brand. */
   start?: ReactNode
   /**
    * The editor fills its container, which gives it a height, as a canvas: the bar, then the diagram filling the rest,
    * the reader panning and zooming it, the code floating over its left in a card that resizes and hides, and the
-   * verdict and the other panels in a side panel on its right. On a phone (below 720 px wide, or a phone on its side)
-   * the text or the diagram, switched at the bottom, the panels in a sheet over the diagram, and the buttons other than
-   * Share in a sheet of their own; the root then carries `data-narrow`, for a page's own controls in `start` to follow.
+   * verdict and the other panels in a side panel on its right. The bar shows the model's title. On a phone (below 720
+   * px wide, or a phone on its side) the text or the diagram, switched at the bottom, the panels in a sheet over the
+   * diagram, and the actions other than Share in a sheet of their own. The root carries `data-narrow` on a phone and
+   * `data-short` below 1000 px, for a page's own controls to follow.
    */
   fill?: boolean
   /** With `fill`: the code card's share of the width (360 px to 60 % of it), and where a double-click on its edge puts it back. Default: 440 px. */
@@ -104,8 +111,8 @@ export interface LoadmapEditorProps {
   /** The reader showed or hid the code; a page can keep it. */
   onLayout?: (layout: EditorLayout) => void
   /**
-   * The starters in the "New from template" menu; false hides it. Default: the ten that come with the editor
-   * (`TEMPLATES`), each one's text loaded when the reader picks it.
+   * The starters in the New menu; false leaves them out. Default: the ten that come with the editor (`TEMPLATES`),
+   * the list loaded when the menu first opens, each one's text when the reader picks it.
    */
   templates?: readonly Template[] | false
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
@@ -137,6 +144,8 @@ export function LoadmapEditor({
   onChange,
   onShare,
   embedLink,
+  newItems,
+  exportItems,
   actions,
   start,
   fill = false,
@@ -216,6 +225,11 @@ export function LoadmapEditor({
   const symbols = useRef<DslSymbol[]>(state.result.symbols)
   symbols.current = state.result.symbols
   const formatRef = useRef<() => boolean>(() => false)
+  const tools = useRef<HTMLDivElement>(null)
+  // the phone's sheet of actions, drawn while it is open
+  const [sheet, setSheet] = useState(false)
+  const shareGroup = useRef<HTMLSpanElement>(null)
+  const embed = useRef<EmbedHandle>(null)
 
   const accept = (source: string, result: CompileResult) => {
     const h = preview.current
@@ -306,7 +320,6 @@ export function LoadmapEditor({
       annotations: isolateHistory.of('full'),
     })
   }
-  const starters: readonly (Template | TemplateEntry)[] = templates === false ? [] : (templates ?? CATALOG)
   const startFrom = async (t: Template | TemplateEntry) => {
     const text = view.current?.state.doc.toString()
     if (text != null && text !== loaded.current && !window.confirm(`Replace your text with “${t.title}”?`)) return
@@ -428,7 +441,7 @@ export function LoadmapEditor({
     format: formatText,
   }))
 
-  const share = async () => {
+  const shareLink = async () => {
     const hash = await shareHash()
     if (onShare) await onShare(hash)
     else {
@@ -538,7 +551,8 @@ export function LoadmapEditor({
   // a filling editor wide enough: the diagram is a canvas, the code floats over it, the panels beside it
   const canvas = fill && width > 0 && !narrow
   const typing = usePhoneTyping(phone, root)
-  const short = phone || (canvas && width < SHORT)
+  // below this the page's own controls in the bar take their short form
+  const short = canvas && width < SHORT
   const status = (
     <output className="lme-status" data-ok={errors === 0}>
       {errors === 0 && warnings === 0
@@ -546,82 +560,83 @@ export function LoadmapEditor({
         : [count(errors, 'error'), count(warnings, 'warning')].filter(Boolean).join(' · ')}
     </output>
   )
+  // it loads as the code hides, before the reader picks a box
   const inspector = reader && (
-    <Inspector
-      inspection={inspection}
-      tab={tab}
-      onTab={setTab}
-      onEdit={change}
-      blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
-      gone={tab === 'box' && !!selected && !inspection}
-      onClose={() => setSelected(null)}
-    />
+    <Suspense fallback={null}>
+      <Inspector
+        inspection={inspection}
+        tab={tab}
+        onTab={setTab}
+        onEdit={change}
+        blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
+        gone={tab === 'box' && !!selected && !inspection}
+        onClose={() => setSelected(null)}
+      />
+    </Suspense>
   )
   const staleNote = stale && <p className="lme-stale">Showing the last version without errors.</p>
-  const shareButton = (
-    <button type="button" className="lm-btn" onClick={share}>
-      {short ? 'Share' : 'Share link'}
+  const title = def?.model.title ?? 'Untitled'
+  const hasTemplates = templates == null || (templates !== false && templates.length > 0)
+  const embedOn = !!embedLink && !!def
+  useToolbar(tools, `${phone} ${canvas} ${reader} ${embedOn} ${hasTemplates || !!newItems?.length}`)
+  /** The embed's options, under what asked for them, once the menu or the sheet that asked has closed. */
+  const showEmbed = (anchor: Element | null | undefined) =>
+    requestAnimationFrame(() => anchor && embed.current?.show(anchor))
+  const toggleCode = () => {
+    setLayout(reader ? 'code' : 'reader')
+    // on a phone the text shows in its own pane
+    if (reader) setPane('text')
+  }
+  const undoButton = reader && (
+    <button
+      type="button"
+      className="lm-btn lme-quiet lme-icon"
+      aria-label="Undo"
+      title={`Undo (${MAC ? '⌘Z' : 'Ctrl+Z'})`}
+      aria-disabled={!canUndo}
+      onClick={() => canUndo && view.current && undo(view.current)}
+    >
+      <Icon d={ICON.undo} />
     </button>
   )
-  // beside Share, in either bar: a menu of its own, which the narrow bar's menu would close on every pick
-  const embedMenu = embedLink && def && (
-    <Embed
-      link={embedLink}
-      hash={shareHash}
-      title={def.model.title ?? 'loadmap'}
-      story={def.model.story.length > 0}
-      short={short}
-      onNote={setNote}
-    />
+  const templateItems = (sheet?: boolean) => (
+    <Suspense fallback={<span data-wait />}>
+      <Starters templates={templates || undefined} sheet={sheet} onPick={startFrom} />
+    </Suspense>
   )
-  // the buttons before Share, and after it; on a narrow fill they fold into the menu
-  const lead = (
+  const share = (
     <>
-      {!canvas && (
+      <span className="lme-share" ref={shareGroup}>
         <button
           type="button"
-          className="lm-btn"
-          aria-pressed={!reader}
-          onClick={() => {
-            setLayout(reader ? 'code' : 'reader')
-            // on a phone the text shows in its own pane
-            if (reader) setPane('text')
-          }}
+          className="lm-btn lme-primary"
+          onClick={shareLink}
+          title="Copy a link with the values set"
         >
-          {reader ? 'Show code' : 'Hide code'}
+          <Icon d={ICON.link} />
+          Share
         </button>
+        {embedOn && !phone && (
+          <Menu label="More ways to share" icon={<Icon d={ICON.down} className="lme-chev" />} className="lme-primary">
+            {() => (
+              <>
+                <MenuItem onSelect={shareLink}>Copy link</MenuItem>
+                <MenuItem onSelect={() => showEmbed(shareGroup.current)}>Embed in a page…</MenuItem>
+              </>
+            )}
+          </Menu>
+        )}
+      </span>
+      {embedOn && (
+        <Embed
+          ref={embed}
+          link={embedLink}
+          hash={shareHash}
+          title={def.model.title ?? 'loadmap'}
+          story={def.model.story.length > 0}
+          onNote={setNote}
+        />
       )}
-      {!reader && !canvas && (
-        <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
-          Format
-        </button>
-      )}
-      {(!reader || canvas) && starters.length > 0 && (
-        <select
-          className="lm-btn"
-          aria-label="New from template"
-          value=""
-          onChange={(e) => {
-            const t = starters.find((x) => x.id === e.target.value)
-            if (t) startFrom(t)
-          }}
-        >
-          <option value="">New from template…</option>
-          {starters.map((t) => (
-            <option key={t.id} value={t.id} title={t.summary}>
-              {t.title}
-            </option>
-          ))}
-        </select>
-      )}
-    </>
-  )
-  const tail = (
-    <>
-      <button type="button" className="lm-btn" onClick={save}>
-        {short && !phone ? 'Download' : 'Download .loadmap'}
-      </button>
-      {actions}
     </>
   )
 
@@ -632,6 +647,7 @@ export function LoadmapEditor({
       data-theme={look === 'auto' ? undefined : look}
       data-fill={fill || undefined}
       data-narrow={phone || undefined}
+      data-short={short || undefined}
       data-canvas={canvas || undefined}
       data-typing={(phone && typing) || undefined}
       style={
@@ -648,38 +664,110 @@ export function LoadmapEditor({
     >
       <div className="lme-bar">
         {start}
-        {!canvas && status}
+        {fill && (
+          <span className="lme-title" title={title}>
+            {title}
+          </span>
+        )}
+        {!fill && status}
         <span className="lme-note" aria-live="polite">
           {note}
         </span>
         <span className="lme-grow" />
-        {reader && (
-          <button
-            type="button"
-            className="lm-btn"
-            aria-disabled={!canUndo}
-            onClick={() => canUndo && view.current && undo(view.current)}
-          >
-            Undo
-          </button>
-        )}
-        {phone ? (
-          <>
-            {shareButton}
-            {embedMenu}
-            <Actions>
-              {lead}
-              {tail}
-            </Actions>
-          </>
-        ) : (
-          <>
-            {lead}
-            {shareButton}
-            {embedMenu}
-            {tail}
-          </>
-        )}
+        <div className="lme-tools" role="toolbar" aria-label="Editor" ref={tools}>
+          {undoButton}
+          {phone ? (
+            <>
+              {share}
+              <button
+                type="button"
+                className="lm-btn lme-quiet lme-icon"
+                aria-label="More"
+                aria-haspopup="dialog"
+                onClick={() => setSheet(true)}
+              >
+                <Icon d={ICON.more} />
+              </button>
+              {sheet && (
+                <Suspense fallback={null}>
+                  <Actions
+                    onClose={() => setSheet(false)}
+                    pages={[
+                      ...(hasTemplates ? [{ label: 'From a template', items: () => templateItems(true) }] : []),
+                      ...(newItems ?? []).map((s) => ({ label: s.label, items: () => barItems(s.items, true) })),
+                    ]}
+                  >
+                    <MenuGroup label="View">
+                      <MenuItem sheet onSelect={toggleCode}>
+                        {reader ? 'Show code' : 'Hide code'}
+                      </MenuItem>
+                      {!reader && (
+                        <MenuItem sheet onSelect={formatText}>
+                          Format
+                        </MenuItem>
+                      )}
+                    </MenuGroup>
+                    <MenuGroup label="Export">
+                      <MenuItem sheet onSelect={save}>
+                        Download .loadmap
+                      </MenuItem>
+                      {barItems(
+                        exportItems?.flatMap((s) => s.items),
+                        true,
+                      )}
+                    </MenuGroup>
+                    {embedOn && (
+                      <MenuGroup label="Share">
+                        <MenuItem sheet onSelect={() => showEmbed(tools.current?.parentElement)}>
+                          Embed in a page…
+                        </MenuItem>
+                      </MenuGroup>
+                    )}
+                    {actions}
+                  </Actions>
+                </Suspense>
+              )}
+            </>
+          ) : (
+            <>
+              {!canvas && (
+                <button type="button" className="lm-btn" aria-pressed={!reader} onClick={toggleCode}>
+                  {reader ? 'Show code' : 'Hide code'}
+                </button>
+              )}
+              {!reader && !canvas && (
+                <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+                  Format
+                </button>
+              )}
+              {(hasTemplates || !!newItems?.length) && (
+                <Menu label="New">
+                  {() => (
+                    <>
+                      {hasTemplates && <MenuGroup label="Templates">{templateItems()}</MenuGroup>}
+                      {sections(newItems)}
+                    </>
+                  )}
+                </Menu>
+              )}
+              <Menu label="Export">
+                {() => (
+                  <>
+                    <MenuItem onSelect={save}>Download .loadmap</MenuItem>
+                    {sections(exportItems)}
+                  </>
+                )}
+              </Menu>
+              {actions && (
+                <>
+                  <span className="lme-sep" />
+                  {actions}
+                </>
+              )}
+              {share}
+            </>
+          )}
+        </div>
       </div>
       <div className="lme-split" data-layout={layout}>
         <div className="lme-left" hidden={textHidden}>
@@ -838,6 +926,8 @@ export function LoadmapEditor({
               type="button"
               role="tab"
               aria-selected={(reader ? 'diagram' : pane) === p}
+              data-problems={(p === 'text' && list.length) || undefined}
+              data-warn={(p === 'text' && !errors) || undefined}
               onClick={() => {
                 if (p === 'text' && reader) setLayout('code')
                 setPane(p)
@@ -868,8 +958,8 @@ export function between(a: string, b: string): { from: number; to: number; inser
  * leaves the diagram; the gap around it; and the tab it leaves when hidden.
  */
 const CARD = { start: 440, min: 360, max: 0.6, room: 240, gap: 16, tab: 40 } as const
-/** Below this width the canvas's bar takes the short names. */
-const SHORT = 1200
+/** Below this width the canvas's bar is short: a page's controls in it take their short form. */
+const SHORT = 1000
 /** From this width the side panel starts pinned. */
 const PIN_FROM = 1280
 /** Below this width, or this height, a filling editor shows one pane at a time. */
@@ -877,44 +967,6 @@ const NARROW = 720
 const SHORT_HEIGHT = 500
 /** The widest a phone on its side is. */
 const SIDEWAYS = 1000
-
-/**
- * The buttons that do not fit a phone's bar, in a sheet from the bottom: modal (the keyboard stays in it), closed by a
- * pick, Escape, Close or a tap on the dimmed page, the focus back on ⋯.
- */
-function Actions({ children }: { children: ReactNode }) {
-  const sheet = useRef<HTMLDialogElement>(null)
-  const close = () => sheet.current?.close()
-  return (
-    <>
-      <button
-        type="button"
-        className="lm-btn"
-        aria-label="More"
-        aria-haspopup="dialog"
-        onClick={() => sheet.current?.showModal()}
-      >
-        ⋯
-      </button>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard, and Escape closes it */}
-      <dialog
-        ref={sheet}
-        className="lme-actions"
-        aria-label="More"
-        // a pick closes it; a tap on the backdrop is a click on the dialog itself
-        onClick={(e) => (e.target === sheet.current || (e.target as HTMLElement).closest('button')) && close()}
-        onChange={close}
-      >
-        <div className="lme-actions-body">
-          {children}
-          <button type="button" className="lm-btn">
-            Close
-          </button>
-        </div>
-      </dialog>
-    </>
-  )
-}
 
 /**
  * The reader types on a phone: the text has the focus and the pointer is a finger, so the screen's keyboard is up. The
@@ -970,6 +1022,13 @@ function usePhoneTyping(phone: boolean, root: RefObject<HTMLDivElement | null>):
   return typing
 }
 
+const MAC = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform)
+const Starters = later(() => import('./Starters'), 'The templates did not load: reload the page.')
+const Actions = later(() => import('./Actions'))
+const Inspector = later<InspectorProps>(
+  () => import('./Inspector').then((m) => ({ default: m.Inspector })),
+  'The inspector did not load: reload the page.',
+)
 const count = (n: number, word: string) => (n ? `${n} ${word}${n > 1 ? 's' : ''}` : '')
 const slug = (s: string) =>
   s

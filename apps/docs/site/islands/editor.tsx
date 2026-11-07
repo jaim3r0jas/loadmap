@@ -4,6 +4,7 @@
 // (?code opens it with the text, as the docs' Edit links do). Close goes back to the docs.
 import { decodeShare, type Shared } from '@loadmap/dsl'
 import {
+  type BarSection,
   type EditorLayout,
   type EmbedOptions,
   LoadmapEditor,
@@ -11,11 +12,12 @@ import {
   type PanelMode,
   TEMPLATES,
 } from '@loadmap/editor'
+import { Icon, Menu, MenuItem } from '@loadmap/editor/internal'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { themeSwitch } from '../theme-switch'
+import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { useRecorder } from './recorder'
 
@@ -82,14 +84,63 @@ function closeTo(root: URL): { href: string; back: boolean } {
   return { href: root.href, back: false }
 }
 
-/** The site's light and dark switch: in the bar when it is wide, in its menu when it is narrow. */
+type Choice = keyof typeof ICONS
+const choice = (): Choice => {
+  const t = document.documentElement.dataset.theme
+  return t === 'light' || t === 'dark' ? t : 'system'
+}
+
+/** The site's light and dark switch, as the phone's sheet of actions shows it: three radios. */
 function ThemeSwitch() {
   // client.tsx makes it work, and marks it as the choice changes; the page's choice is on <html> already (theme.ts
   // stays out of the editor's chunk, or every page would load a chunk more)
-  const t = document.documentElement.dataset.theme
-  const html = themeSwitch('theme-editor', t === 'light' || t === 'dark' ? t : 'system')
-  // biome-ignore lint/security/noDangerouslySetInnerHtml: the site's own markup, with nothing from the reader
-  return <span className="app-theme" dangerouslySetInnerHTML={{ __html: html }} />
+  return (
+    <span
+      className="app-theme app-narrow"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: the site's own markup, with nothing from the reader
+      dangerouslySetInnerHTML={{ __html: themeSwitch('theme-editor', choice()) }}
+    />
+  )
+}
+
+/** The same choice in the wide bar: one icon showing it, a menu of the three. theme.ts hears the pick. */
+function ThemeMenu() {
+  const [now, setNow] = useState(choice)
+  useEffect(() => {
+    const mo = new MutationObserver(() => setNow(choice()))
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => mo.disconnect()
+  }, [])
+  return (
+    <Menu
+      label="Theme"
+      title="Theme"
+      className="lme-quiet lme-icon app-wide"
+      icon={
+        <svg
+          className="lme-svg"
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          aria-hidden="true"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: the site's own icon
+          dangerouslySetInnerHTML={{ __html: ICONS[now] }}
+        />
+      }
+    >
+      {() =>
+        (Object.keys(ICONS) as Choice[]).map((c) => (
+          <MenuItem
+            key={c}
+            checked={now === c}
+            onSelect={() => document.dispatchEvent(new CustomEvent('loadmap:theme', { detail: c }))}
+          >
+            {CHOICES[c]}
+          </MenuItem>
+        ))
+      }
+    </Menu>
+  )
 }
 
 /** The help is static HTML on the page (from editor.md): the ? opens it, ✕ and Escape close it. */
@@ -163,45 +214,30 @@ function Editor({ root }: { root: URL }) {
   }
   if (!start) return <p className="app-note">Opening the link…</p>
 
-  // in the bar when it is wide, in its menu when it is narrow: the editor's data-narrow decides (docs.css)
-  const examples = (where: 'wide' | 'narrow') => (
-    <select
-      className={`lm-btn app-${where}`}
-      aria-label="Open an example"
-      value=""
-      onChange={(e) => {
-        const v = e.target.value
-        const text = v === 'earlier' ? earlier : SOURCES[v as keyof typeof SOURCES]
-        if (text != null) editor.current?.setSource(text)
-      }}
-    >
-      <option value="">Examples…</option>
-      {(Object.keys(SOURCES) as (keyof typeof SOURCES)[]).map((n) => (
-        <option key={n} value={n}>
-          {NAMES[n]}
-        </option>
-      ))}
-      {earlier != null && <option value="earlier">Your earlier draft</option>}
-    </select>
-  )
-  const image = (
-    <select
-      className="lm-btn"
-      aria-label="Save an image"
-      value=""
-      onChange={(e) => {
-        const v = e.target.value
-        if (v === 'png') png()
-        if (v === 'poster') poster()
-        if (v === 'gif') record('gif')
-      }}
-    >
-      <option value="">Image…</option>
-      <option value="png">PNG</option>
-      <option value="poster">Poster</option>
-      <option value="gif">GIF</option>
-    </select>
-  )
+  const examples: BarSection[] = [
+    {
+      label: 'Examples',
+      items: [
+        ...(Object.keys(SOURCES) as (keyof typeof SOURCES)[]).map((n) => ({
+          label: NAMES[n],
+          onSelect: () => editor.current?.setSource(SOURCES[n]),
+        })),
+        ...(earlier != null
+          ? [{ label: 'Your earlier draft', onSelect: () => editor.current?.setSource(earlier) }]
+          : []),
+      ],
+    },
+  ]
+  const images: BarSection[] = [
+    {
+      label: 'Image',
+      items: [
+        { label: 'PNG', onSelect: png },
+        { label: 'Poster', hint: 'The board, its limits and the scenarios', onSelect: poster },
+        { label: 'GIF', hint: 'The diagram moving, a few seconds', onSelect: () => record('gif') },
+      ],
+    },
+  ]
   return (
     <LoadmapEditor
       ref={editor}
@@ -220,32 +256,48 @@ function Editor({ root }: { root: URL }) {
       onLayout={(l) => !linked && write(LAYOUT, l)}
       start={
         <>
-          <a className="lm-btn app-close" href={close.href} onClick={leave} title="Back to the docs">
-            <span aria-hidden="true">←</span> Docs
+          <a
+            className="lm-btn lme-quiet app-close"
+            href={close.href}
+            onClick={leave}
+            aria-label="Docs"
+            title="Back to the docs"
+          >
+            <Icon d="M13 8H3M7 4 3 8l4 4" />
+            <span className="app-label">Docs</span>
           </a>
           <a className="app-brand" href={root.href}>
             loadmap
           </a>
-          {examples('wide')}
           {'error' in start && <span className="app-error">{start.error}; showing your draft instead.</span>}
         </>
       }
+      newItems={examples}
+      exportItems={images}
       actions={
         <>
-          {examples('narrow')}
-          {image}
+          <ThemeMenu />
           <button
             type="button"
-            className="lm-btn"
+            className="lm-btn lme-quiet lme-icon app-wide"
             aria-label="Help"
+            title="Help"
             aria-expanded={help}
             aria-controls="help"
             onClick={() => setHelp(!help)}
           >
-            <span className="app-wide">?</span>
-            <span className="app-narrow">Help</span>
+            <Icon d="M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8zM6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4M8 11.6v.1" />
           </button>
           <ThemeSwitch />
+          <button
+            type="button"
+            className="lme-item app-narrow"
+            aria-expanded={help}
+            aria-controls="help"
+            onClick={() => setHelp(!help)}
+          >
+            Help
+          </button>
         </>
       }
     />

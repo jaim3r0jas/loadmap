@@ -21,6 +21,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./internal": "./src/internal.ts",
     "./templates": "./src/templates.ts"
   },
   "publishConfig": {
@@ -28,6 +29,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./internal": {
+        "types": "./dist/internal.d.ts",
+        "import": "./dist/internal.js"
       },
       "./templates": {
         "types": "./dist/templates.d.ts",

@@ -5,7 +5,7 @@ page draws it filling its frame, with nothing around it, and never scrolls.
 
 ## Get the link
 
-In the editor, **Copy embed link** (beside **Share link**) opens a small menu:
+In the editor, **Embed in a page…** (in **Share**'s ▾ menu, or under **⋯** on a phone) opens a small panel:
 
 - **Show**: the diagram with the verdict and the load (Diagram), or the panels around it too (With panels);
 - **Theme**: Auto follows the reader's system, Light and Dark stay so;

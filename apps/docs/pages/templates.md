@@ -6,5 +6,5 @@ label over another, in both directions. Pick one to see it; open it in the edito
 
 <div class="island" data-island="templates" data-editor="../editor/"></div>
 
-In your own page, `TEMPLATES` from `@loadmap/editor/templates` has their text, and `<LoadmapEditor>` offers them under
-**New from template**.
+In your own page, `TEMPLATES` from `@loadmap/editor/templates` has their text, and `<LoadmapEditor>` offers them in its
+**New** menu.

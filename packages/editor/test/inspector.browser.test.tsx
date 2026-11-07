@@ -37,6 +37,8 @@ async function mount(
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
   await ref.current!.loadmap()!.ready()
+  // the inspector loads as the code hides
+  if (o.layout === 'reader') await expect.poll(() => host.querySelector('.lme-inspector')).toBeTruthy()
   const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!
   return { host, handle: ref.current!, view, shared }
 }
@@ -94,7 +96,7 @@ describe('the editor for readers', () => {
       .poll(() => host.querySelector('.lm-lim[data-component="gateway"] small')?.textContent)
       .not.toBe('50 % at 7.4×–13× · full at 14×–27×')
     handle.loadmap()!.setValues({ load: 30 })
-    await userEvent.click(page.getByRole('button', { name: 'Share link' }))
+    await userEvent.click(page.getByRole('button', { name: 'Share', exact: true }))
     await expect.poll(() => first.shared.length).toBe(1)
     const link = await decodeShare(first.shared[0]!)
     if (!('source' in link)) throw new Error(link.error)

@@ -16,8 +16,9 @@ import { LoadmapEditor } from '@loadmap/editor'
 floating over its left in a card that resizes (`split`, `onSplit`) and hides (`onLayout`), and the verdict and the
 other panels on its right, pinned or on a rail (`panel`, `onPanel`). On a phone (below 720 px wide or 500 px high)
 the text or the diagram, switched at the bottom, the panels in a sheet over the diagram, and a row of keys over the
-keyboard. `start` adds controls
-at the start of its bar:
+keyboard. The bar shows the model's title, **New** (the templates), **Export** (the `.loadmap` file) and **Share**
+(the link; with `embedLink`, an embed too). `start` adds controls before the title, `newItems` and `exportItems`
+sections to the two menus, and `actions` controls before Share:
 
 ```tsx
 ;<div style={{ height: '100dvh' }}>

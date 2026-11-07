@@ -1,14 +1,49 @@
 /** The editor's layout. It sits inside `.lm`, so it takes loadmap's theme tokens; the preview nests its own `.lm`. */
 export const EDITOR_CSS = `
 .lme { grid-template-rows: auto minmax(0, 1fr); }
-.lme-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lme-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .lme-grow { flex: 1; }
 .lme-status { font: 500 .8rem var(--lm-font); color: var(--lm-drop); }
 .lme-status[data-ok="true"] { color: var(--lm-ok); }
-.lme-note { font-size: .8rem; color: var(--lm-muted); }
-.lme-embed { position: relative; }
-.lme-embed > summary { list-style: none; }
-.lme-embed > summary::-webkit-details-marker { display: none; }
+.lme-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; color: var(--lm-muted); }
+.lme-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .88rem var(--lm-font); }
+/* the bar's controls: one height, one line; quiet ones without a border, Share filled */
+.lme-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+:is(.lme-bar, .lme-tools, .lme-share) > .lm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; height: 32px; padding: 0 10px; flex: none; text-decoration: none; }
+.lme-svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.lme-chev { width: 12px; height: 12px; margin-right: -3px; color: var(--lm-muted); }
+.lm-btn.lme-icon { width: 32px; padding: 0; }
+.lm-btn.lme-quiet { color: var(--lm-muted); background: transparent; border-color: transparent; }
+.lm-btn.lme-quiet:hover, .lm-btn.lme-quiet[aria-expanded="true"] { color: var(--lm-fg); background: color-mix(in srgb, var(--lm-fg) 8%, transparent); }
+.lme .lm-btn[aria-expanded="true"] { background: color-mix(in srgb, var(--lm-fg) 8%, var(--lm-surface)); }
+.lme .lm-btn[aria-disabled="true"] { opacity: .45; cursor: default; }
+.lme .lm-btn:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 1px; }
+.lm-btn.lme-primary { color: var(--lm-surface); background: var(--lm-accent); border-color: var(--lm-accent); font-weight: 600; }
+.lm-btn.lme-primary[aria-expanded="true"] { background: color-mix(in srgb, var(--lm-fg) 25%, var(--lm-accent)); }
+.lme-share { display: inline-flex; flex: none; }
+.lme-share > .lm-btn:not(:only-of-type):first-child { border-radius: 6px 0 0 6px; }
+.lme-share > .lm-btn + .lm-btn { width: 28px; padding: 0; border-radius: 0 6px 6px 0; border-left-color: color-mix(in srgb, var(--lm-surface) 40%, var(--lm-accent)); }
+.lme-share .lme-chev { width: 14px; height: 14px; margin: 0; color: inherit; }
+.lme-sep { flex: none; width: 1px; height: 20px; margin: 0 2px; background: var(--lm-line); }
+/* menus and the embed's options: in the top layer, placed under their button */
+.lme-menu, .lme-pop { position: fixed; inset: auto; margin: 0; box-sizing: border-box; overflow: auto; overscroll-behavior: contain; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / .18); font: 400 .84rem var(--lm-font); }
+.lme-menu { min-width: 200px; max-width: min(340px, calc(100vw - 16px)); padding: 5px; }
+.lme-pop { width: min(360px, calc(100vw - 16px)); padding: 12px 14px; }
+.lme-menu:popover-open, .lme-pop:popover-open { animation: lme-in .12s ease-out; }
+@keyframes lme-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .lme-menu:popover-open, .lme-pop:popover-open { animation: none; } }
+.lme-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; width: 100%; min-height: 32px; padding: 6px 10px; text-align: left; font: inherit; color: var(--lm-fg); background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.lme-item small { grid-column: 1; color: var(--lm-muted); font-size: .76rem; line-height: 1.35; }
+.lme-item:hover, .lme-item:focus { background: var(--lm-accent-soft); outline: none; }
+.lme-item:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
+.lme-item[role="menuitemradio"] { padding-left: 30px; position: relative; }
+.lme-item[aria-checked="true"]::before { content: "✓" / ""; position: absolute; left: 11px; top: 6px; color: var(--lm-accent); font-weight: 700; }
+.lme-mh { padding: 8px 10px 4px; font: 700 .68rem var(--lm-font); letter-spacing: .07em; text-transform: uppercase; color: var(--lm-muted); }
+.lme-menu > [role="group"] + *, .lme-menu > * + [role="group"] { margin-top: 4px; padding-top: 2px; border-top: 1px solid var(--lm-line); }
+@media (pointer: coarse) { .lme-item { min-height: 44px; } }
+@media (pointer: coarse) {
+  :is(.lme-bar, .lme-tools, .lme-share) > .lm-btn { height: 44px; min-width: 44px; }
+}
 .lme-split { display: grid; grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr); gap: 14px; align-items: start; min-width: 0; }
 @container (max-width: 980px) { .lme-split { grid-template-columns: minmax(0, 1fr); } }
 .lme-left { display: grid; gap: 8px; min-width: 0; position: sticky; top: 8px; }
@@ -82,8 +117,8 @@ export const EDITOR_CSS = `
 /* fill: the editor is the whole of its container; each side scrolls on its own */
 .lme[data-fill] { --lm-pad: 0; height: 100%; gap: 0; grid-template-rows: auto minmax(0, 1fr); }
 .lme[data-fill][data-dragging] { user-select: none; cursor: col-resize; }
-.lme[data-fill] > .lme-bar { padding: 6px 10px; gap: 6px; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); }
-.lme[data-fill] > .lme-bar select { max-width: 12rem; }
+.lme[data-fill] > .lme-bar { flex-wrap: nowrap; min-height: 48px; box-sizing: border-box; padding: 0 10px; gap: 8px; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); }
+.lme[data-fill] .lme-tools { flex: none; flex-wrap: nowrap; }
 .lme[data-fill] .lme-split { gap: 0; align-items: stretch; min-height: 0; }
 .lme[data-fill] .lme-left { position: static; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; padding: 10px 0 10px 10px; }
 .lme[data-fill] .lme-code { min-height: 0; }
@@ -150,7 +185,9 @@ export const EDITOR_CSS = `
 .lme[data-narrow] { grid-template-rows: auto minmax(0, 1fr) auto; overscroll-behavior: none; }
 .lme[data-narrow][data-typing] { height: var(--lme-vv, 100%); transform: translateY(var(--lme-vt, 0px)); grid-template-rows: auto minmax(0, 1fr); }
 .lme[data-narrow] > .lme-bar { flex-wrap: nowrap; padding: calc(4px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 4px calc(8px + env(safe-area-inset-left)); }
-.lme[data-narrow] > .lme-bar .lm-btn { min-width: 44px; min-height: 44px; }
+.lme[data-narrow] :is(.lme-bar, .lme-tools, .lme-share) > .lm-btn { height: 44px; min-width: 44px; }
+.lme-switch [data-problems]::after { content: attr(data-problems); margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-size: .75rem; color: var(--lm-surface); background: var(--lm-drop); }
+.lme-switch [data-warn]::after { background: var(--lm-warn); }
 .lme[data-narrow] > .lme-split { position: relative; display: block; overflow: hidden; }
 .lme[data-narrow] .lme-left { position: absolute; inset: 0; padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr) auto auto; }
 .lme[data-narrow] .lme-code { border: 0; border-radius: 0; }
@@ -198,12 +235,6 @@ export const EDITOR_CSS = `
 .lme-switch [aria-selected="true"] { font-weight: 600; background: var(--lm-surface); box-shadow: inset 0 0 0 2px var(--lm-accent); }
 .lme-keys { display: flex; gap: 6px; padding: 6px 8px; overflow-x: auto; background: var(--lm-surface); border-top: 1px solid var(--lm-line); }
 .lme-keys .lm-btn { min-width: 44px; min-height: 40px; font-family: var(--lm-mono); }
-.lme-actions { width: 100%; max-width: none; max-height: 85dvh; margin: auto 0 0; padding: 0; color: var(--lm-fg); background: var(--lm-surface); border: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .2); }
-.lme-actions::backdrop { background: rgb(0 0 0 / .35); }
-/* its padding on the body: a tap on the dialog itself is a tap on the dimmed page */
-.lme-actions-body { display: grid; gap: 6px; padding: 12px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
-.lme-actions-body > * { width: 100%; min-height: 44px; text-align: left; }
-.lme[data-fill] .lme-actions-body > select { max-width: none; }
 .lme-empty { margin: 0; padding: 40px 16px; text-align: center; color: var(--lm-muted); border: 1px dashed var(--lm-line); border-radius: 8px; }
 `
 
