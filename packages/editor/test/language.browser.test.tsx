@@ -157,6 +157,88 @@ describe('hover and signature help in the editor', () => {
   })
 })
 
+describe('quick fixes, definitions and rename in the editor', () => {
+  beforeEach(() => page.viewport(1280, 800))
+
+  it("applies a diagnostic's fix from its tooltip", async () => {
+    const broken = cache.replace('demand: flows.reads', 'demand: flows.read')
+    const v = mount(broken, 'demand: flows.re')
+    await expect.poll(() => document.querySelector('.cm-lintRange-error'), { timeout: 5000 }).toBeTruthy()
+    pointAt(v, broken.indexOf('flows.read') + 7)
+    await expect.poll(() => tip('.cm-diagnosticAction'), { timeout: 5000 }).toBe('Change to "reads"')
+    ;(document.querySelector('.cm-diagnosticAction') as HTMLElement).click()
+    expect(v.state.doc.toString()).toBe(cache)
+  })
+
+  it('still applies a fix after an edit elsewhere, made again for the text as it is', async () => {
+    const broken = cache.replace('demand: flows.reads', 'demand: flows.read')
+    const v = mount(broken, 'demand: flows.re')
+    await expect.poll(() => document.querySelector('.cm-lintRange-error'), { timeout: 5000 }).toBeTruthy()
+    pointAt(v, broken.indexOf('flows.read') + 7)
+    await expect.poll(() => tip('.cm-diagnosticAction'), { timeout: 5000 }).toBe('Change to "reads"')
+    // a comment typed at the top, before the linter runs again
+    v.dispatch({ changes: { from: 0, insert: '# x\n' } })
+    ;(document.querySelector('.cm-diagnosticAction') as HTMLElement).click()
+    expect(v.state.doc.toString()).toBe(`# x\n${cache}`)
+  })
+
+  it('goes to where a name is declared with F12 and with a click and Cmd or Ctrl', async () => {
+    const v = mount(cache, 'compact(at.d')
+    await userEvent.keyboard('{F12}')
+    const decl = cache.indexOf('node db') + 5
+    expect(v.state.selection.main).toMatchObject({ from: decl, to: decl + 2 })
+    const c = v.coordsAtPos(cache.indexOf('flows.reads') + 8)!
+    v.contentDOM.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        ctrlKey: true,
+        clientX: c.left,
+        clientY: (c.top + c.bottom) / 2,
+      }),
+    )
+    expect(v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to)).toBe('reads')
+    expect(v.state.selection.main.from).toBe(cache.indexOf('flow reads') + 5)
+  })
+
+  it('marks the other places the name under the cursor is written', async () => {
+    mount(cache, 'capacity: measured(po')
+    await expect
+      .poll(() => [...document.querySelectorAll('.lm-occurrence')].map((e) => e.textContent))
+      .toEqual(['pods', 'pods', 'pods', 'pods'])
+  })
+
+  it('renames with F2: a refusal keeps what was typed, Enter renames everywhere', async () => {
+    const v = mount(cache, 'capacity: measured(po')
+    await userEvent.keyboard('{F2}')
+    await expect.poll(() => document.querySelector<HTMLInputElement>('.lm-rename input')?.value).toBe('pods')
+    // Enter on the same name closes the field; so does the cursor going elsewhere
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => document.querySelector('.lm-rename')).toBeNull()
+    await userEvent.keyboard('{F2}')
+    await expect.poll(() => document.querySelector('.lm-rename')).toBeTruthy()
+    v.dispatch({ selection: { anchor: 0 } })
+    await expect.poll(() => document.querySelector('.lm-rename')).toBeNull()
+    v.dispatch({ selection: { anchor: cache.indexOf('measured(pods') + 11 } })
+    v.focus()
+    await userEvent.keyboard('{F2}')
+    await expect.poll(() => document.querySelector<HTMLInputElement>('.lm-rename input')?.value).toBe('pods')
+    await userEvent.keyboard('hit{Enter}')
+    await expect.poll(() => tip('.lm-rename p')).toBe('"hit" is taken')
+    expect(document.querySelector<HTMLInputElement>('.lm-rename input')!.value).toBe('hit')
+    const input = document.querySelector<HTMLInputElement>('.lm-rename input')!
+    input.select()
+    await userEvent.keyboard('apiPods{Enter}')
+    await expect.poll(() => document.querySelector('.lm-rename')).toBeNull()
+    const text = v.state.doc.toString()
+    expect(text).toContain('capacity: measured(apiPods * 1')
+    expect(text).toContain('`${apiPods} pods`')
+    expect(text).toContain('param apiPods "API pods"')
+    expect(text).toContain('workers { pods: apiPods; perPod: 8 }')
+  })
+})
+
 describe('completion on a phone', () => {
   it("moves through a snippet's fields with the ⇥ key, a phone keyboard having no Tab", async () => {
     // a touch screen, as a phone has: the row of keys shows over the keyboard
@@ -201,5 +283,10 @@ describe('completion on a phone', () => {
     tab.click()
     await userEvent.keyboard(' # ok')
     expect(line(v)).toBe('capacity: measured(3000, "req/s", "load test") # ok')
+    // a phone has no F2: the row's Rename opens the field at the name under the cursor
+    const at = v.state.doc.toString().indexOf('pods * 1')
+    v.dispatch({ selection: { anchor: at + 1 } })
+    ;(host.querySelector('.lme-keys button:nth-of-type(6)') as HTMLElement).click()
+    await expect.poll(() => document.querySelector<HTMLInputElement>('.lm-rename input')?.value).toBe('pods')
   })
 })

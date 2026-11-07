@@ -84,6 +84,9 @@ The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `
 | `completions(source, offset)`                      | What may be typed at a place                                              |
 | `hover(source, offset, definition?)`               | What a word is, and its values at the defaults                            |
 | `signatureHelp(source, offset)`                    | The arguments of the call the cursor is in                                |
+| `quickFixes(source, diagnostics)`                  | The fixes of each diagnostic, as text changes                             |
+| `definition`, `references(source, offset)`         | Where a name is declared; every place it is written                       |
+| `rename(source, offset, name)`                     | The name renamed everywhere, or why not                                   |
 | `encodeShare(source, values)`, `decodeShare(hash)` | Share links that carry the whole definition                               |
 
 ## The editor (`@loadmap/editor`)

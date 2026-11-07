@@ -77,6 +77,9 @@ export const EDITOR_CSS = `
 .lme-code .lm-hover-head { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .lme-code .lm-hover-note, .lme-code .lm-signature p { color: var(--lm-muted); }
 .lme-code .lm-signature-active { color: var(--lm-accent); text-decoration: underline; }
+.lme-code .lm-occurrence { background: var(--lm-accent-soft); border-radius: 2px; }
+.lme-code .lm-rename input { font: 13px var(--lm-mono); color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-accent); border-radius: 4px; padding: 2px 6px; width: 16ch; }
+.lme-code .lm-rename p { margin: 4px 0 0; color: var(--lm-drop); }
 .lme-code .cm-diagnostic { font-family: var(--lm-font); font-size: .8rem; }
 .lme-code .cm-diagnostic-error { border-left-color: var(--lm-drop); }
 .lme-code .cm-diagnostic-warning { border-left-color: var(--lm-warn); }

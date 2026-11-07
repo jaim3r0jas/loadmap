@@ -44,7 +44,7 @@ import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
 import type { InspectorProps, InspectorTab } from './Inspector'
-import { loadmapLanguage } from './language'
+import { loadmapLanguage, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import { injectEditorStyles } from './styles'
@@ -828,6 +828,9 @@ export function LoadmapEditor({
               </button>
               <button type="button" className="lm-btn" aria-label="Quotes" onClick={() => wrap('"', '"')}>
                 "
+              </button>
+              <button type="button" className="lm-btn" onClick={() => view.current && startRename(view.current)}>
+                Rename
               </button>
               <span className="lme-grow" />
               <button type="button" className="lm-btn" onClick={() => view.current?.contentDOM.blur()}>

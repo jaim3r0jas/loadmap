@@ -16,9 +16,16 @@ export {
   type Completion,
   type Completions,
   completions,
+  definition,
+  type EditResult,
   type Hover,
   hover,
+  type QuickFix,
+  quickFixes,
+  references,
+  rename,
   type SignatureHelp,
   signatureHelp,
+  type TextChange,
 } from './help'
 export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, sharedValues } from './share'
