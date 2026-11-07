@@ -245,11 +245,13 @@ ${pager(page, up)}
  */
 function appShell(page: Page, title: string, body: string): string {
   const text = body.replace(EYEBROW, '').replace(CONTENTS, '')
+  // the whole window, under the notch too (the app pads its own edges), and a keyboard that shrinks it rather than
+  // sliding it away
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>${esc(`${title} · loadmap`)}</title>
     <link rel="stylesheet" href="/docs.css" />
   </head>

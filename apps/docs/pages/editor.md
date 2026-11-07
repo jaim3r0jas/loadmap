@@ -15,6 +15,10 @@ the whole of it back. The text floats on its left: drag its edge to resize it, a
 controls and the other panels stand on the right: **Unpin** folds them onto a rail that opens when you point at it.
 This browser remembers how you leave them.
 
+On a phone, **Diagram** and **Code** at the bottom switch between the two. The panels rest in a sheet over the
+diagram's bottom: the verdict and the load at first, more as you drag or tap it up. Typing, a row over the keyboard
+has Format, Undo, an indent, braces, quotes and Done; **⋯** has the rest.
+
 A click on a box selects its lines in the text, and the cursor in a box's lines rings the box. **Format**
 (Shift+Alt+F) lays the text out the one way, as `loadmap fmt` does.
 

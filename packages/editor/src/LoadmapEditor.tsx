@@ -2,6 +2,7 @@ import {
   defaultKeymap,
   history,
   historyKeymap,
+  indentMore,
   indentWithTab,
   isolateHistory,
   undo,
@@ -31,6 +32,7 @@ import {
   type PointerEvent,
   type ReactNode,
   type Ref,
+  type RefObject,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -86,9 +88,9 @@ export interface LoadmapEditorProps {
   /**
    * The editor fills its container, which gives it a height, as a canvas: the bar, then the diagram filling the rest,
    * the reader panning and zooming it, the code floating over its left in a card that resizes and hides, and the
-   * verdict and the other panels in a side panel on its right. Below 720 px wide, tabs switch between the text and the
-   * diagram, and the buttons other than Share fold into a menu; the root then carries `data-narrow`, for a page's own
-   * controls in `start` to follow.
+   * verdict and the other panels in a side panel on its right. On a phone (below 720 px wide, or a phone on its side)
+   * the text or the diagram, switched at the bottom, the panels in a sheet over the diagram, and the buttons other than
+   * Share in a sheet of their own; the root then carries `data-narrow`, for a page's own controls in `start` to follow.
    */
   fill?: boolean
   /** With `fill`: the code card's share of the width (360 px to 60 % of it), and where a double-click on its edge puts it back. Default: 440 px. */
@@ -174,11 +176,13 @@ export function LoadmapEditor({
   const shownLayout = useRef(layout)
   shownLayout.current = layout
   const root = useRef<HTMLDivElement>(null)
-  // with fill: the text's part of the width, and below 720 px one pane at a time
   // the code card's share of the width; NaN until the reader resizes it, for the card's own width
   const [ratio, setRatio] = useState(() => split ?? Number.NaN)
+  // with fill: its size; below 720 px wide, or 500 px high (a phone on its side), one pane at a time
   const [width, setWidth] = useState(0)
-  const narrow = width > 0 && width < NARROW
+  const [height, setHeight] = useState(0)
+  // a short window is a phone on its side, not a tablet whose keyboard took half its height
+  const narrow = width > 0 && (width < NARROW || (height < SHORT_HEIGHT && width < SIDEWAYS))
   const [panelState, setPanelState] = useState<PanelMode | undefined>(initialPanel)
   // a wide window pins the panel unless the reader said otherwise
   // pinned only where it leaves the diagram room; a choice made on a wide screen waits for one
@@ -192,9 +196,13 @@ export function LoadmapEditor({
   useLayoutEffect(() => {
     const el = root.current
     if (!fill || !el) return
-    const measure = (w: number) => setWidth(w)
-    measure(el.getBoundingClientRect().width)
-    const ro = new ResizeObserver(([e]) => e && measure(e.contentRect.width))
+    const measure = (w: number, h: number) => {
+      setWidth(w)
+      setHeight(h)
+    }
+    const r = el.getBoundingClientRect()
+    measure(r.width, r.height)
+    const ro = new ResizeObserver(([e]) => e && measure(e.contentRect.width, e.contentRect.height))
     ro.observe(el)
     return () => ro.disconnect()
   }, [fill])
@@ -356,6 +364,40 @@ export function LoadmapEditor({
     return true
   }
   formatRef.current = formatText
+  /**
+   * The keys a phone lacks: `open` and `close` around the selection (the cursor between them when there is none), and
+   * the text keeps its focus, and so the keyboard.
+   */
+  const wrap = (open: string, close = '') => {
+    const v = view.current
+    if (!v) return
+    const r = v.state.selection.main
+    const inner = v.state.sliceDoc(r.from, r.to)
+    v.dispatch({
+      changes: { from: r.from, to: r.to, insert: open + inner + close },
+      selection: r.empty
+        ? { anchor: r.from + open.length }
+        : { anchor: r.from, head: r.from + open.length + inner.length + close.length },
+      scrollIntoView: true,
+      annotations: Transaction.userEvent.of('input.type'),
+    })
+    v.focus()
+  }
+  /** Indents the selected lines, or types an indent at the cursor. */
+  const indent = () => {
+    const v = view.current
+    if (!v) return
+    if (v.state.selection.main.empty) wrap('  ')
+    else {
+      indentMore(v)
+      v.focus()
+    }
+  }
+  /** A key on the row over the keyboard: what it does, then the text's focus back. */
+  const key = (f: () => unknown) => () => {
+    f()
+    view.current?.focus()
+  }
   /** A click on a box: its lines in the text, or its fields in the inspector. */
   const clickNode = (id: string) => {
     setSelected(id)
@@ -491,17 +533,12 @@ export function LoadmapEditor({
     [reader, text, tab, selected],
   )
 
-  const compact = fill && narrow
+  // a phone: the text or the diagram, one at a time, the panels in a sheet; typing, the keyboard takes the bottom
+  const phone = fill && narrow
   // a filling editor wide enough: the diagram is a canvas, the code floats over it, the panels beside it
   const canvas = fill && width > 0 && !narrow
-  // the other layout draws the diagram anew: it starts from the values the reader had set
-  const wasCanvas = useRef(canvas)
-  if (wasCanvas.current !== canvas) {
-    const h = preview.current
-    if (h) shown.current = h.values()
-    wasCanvas.current = canvas
-  }
-  const short = compact || (canvas && width < SHORT)
+  const typing = usePhoneTyping(phone, root)
+  const short = phone || (canvas && width < SHORT)
   const status = (
     <output className="lme-status" data-ok={errors === 0}>
       {errors === 0 && warnings === 0
@@ -545,7 +582,11 @@ export function LoadmapEditor({
           type="button"
           className="lm-btn"
           aria-pressed={!reader}
-          onClick={() => setLayout(reader ? 'code' : 'reader')}
+          onClick={() => {
+            setLayout(reader ? 'code' : 'reader')
+            // on a phone the text shows in its own pane
+            if (reader) setPane('text')
+          }}
         >
           {reader ? 'Show code' : 'Hide code'}
         </button>
@@ -578,7 +619,7 @@ export function LoadmapEditor({
   const tail = (
     <>
       <button type="button" className="lm-btn" onClick={save}>
-        {short && !compact ? 'Download' : 'Download .loadmap'}
+        {short && !phone ? 'Download' : 'Download .loadmap'}
       </button>
       {actions}
     </>
@@ -590,8 +631,9 @@ export function LoadmapEditor({
       className="lm lme"
       data-theme={look === 'auto' ? undefined : look}
       data-fill={fill || undefined}
-      data-narrow={compact || undefined}
+      data-narrow={phone || undefined}
       data-canvas={canvas || undefined}
+      data-typing={(phone && typing) || undefined}
       style={
         canvas
           ? ({
@@ -621,14 +663,14 @@ export function LoadmapEditor({
             Undo
           </button>
         )}
-        {compact ? (
+        {phone ? (
           <>
             {shareButton}
             {embedMenu}
-            <More>
+            <Actions>
               {lead}
               {tail}
-            </More>
+            </Actions>
           </>
         ) : (
           <>
@@ -639,22 +681,6 @@ export function LoadmapEditor({
           </>
         )}
       </div>
-      {compact && !reader && (
-        <div className="lme-panes" role="tablist" aria-label="Show">
-          {(['text', 'diagram'] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              role="tab"
-              className="lm-btn"
-              aria-selected={pane === p}
-              onClick={() => setPane(p)}
-            >
-              {p === 'text' ? 'Text' : 'Diagram'}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="lme-split" data-layout={layout}>
         <div className="lme-left" hidden={textHidden}>
           {canvas && (
@@ -696,12 +722,41 @@ export function LoadmapEditor({
               ))}
             </ul>
           )}
+          {phone && typing && (
+            // over the keyboard: what a phone's keyboard lacks, pressed without taking the text's focus (and so the keyboard)
+            <div className="lme-keys" role="toolbar" aria-label="Keys" onPointerDown={(e) => e.preventDefault()}>
+              <button type="button" className="lm-btn" onClick={key(formatText)}>
+                Format
+              </button>
+              <button
+                type="button"
+                className="lm-btn"
+                aria-disabled={!canUndo}
+                onClick={key(() => canUndo && view.current && undo(view.current))}
+              >
+                Undo
+              </button>
+              <button type="button" className="lm-btn" aria-label="Indent" onClick={indent}>
+                ⇥
+              </button>
+              <button type="button" className="lm-btn" aria-label="Braces" onClick={() => wrap('{ ', ' }')}>
+                {'{ }'}
+              </button>
+              <button type="button" className="lm-btn" aria-label="Quotes" onClick={() => wrap('"', '"')}>
+                "
+              </button>
+              <span className="lme-grow" />
+              <button type="button" className="lm-btn" onClick={() => view.current?.contentDOM.blur()}>
+                Done
+              </button>
+            </div>
+          )}
         </div>
         {fill && !width ? (
           // nothing drawn before the editor knows its width, and so which layout it takes
           <div className="lme-preview" />
-        ) : canvas ? (
-          <div className="lme-preview" data-stale={stale || undefined}>
+        ) : canvas || phone ? (
+          <div className="lme-preview" data-stale={stale || undefined} hidden={phone && !reader && pane === 'text'}>
             {def ? (
               <EditorCanvas
                 ref={preview}
@@ -710,7 +765,8 @@ export function LoadmapEditor({
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
                 selected={selected}
-                left={CARD.gap * 2 + (reader ? CARD.tab : cardPx(ratio))}
+                left={phone ? 0 : CARD.gap * 2 + (reader ? CARD.tab : cardPx(ratio))}
+                phone={phone}
                 panel={panel}
                 onPanel={setPanel}
                 canPin={canPin}
@@ -722,7 +778,7 @@ export function LoadmapEditor({
             )}
           </div>
         ) : (
-          <div className="lme-preview" data-stale={stale || undefined} hidden={compact && !reader && pane === 'text'}>
+          <div className="lme-preview" data-stale={stale || undefined}>
             {staleNote}
             {def ? (
               <Loadmap
@@ -771,8 +827,27 @@ export function LoadmapEditor({
             <span aria-hidden="true">›</span> Show code
           </button>
         )}
-        {!canvas && inspector}
+        {!fill && inspector}
       </div>
+      {phone && (
+        // in thumb reach: the text or the diagram
+        <div className="lme-switch" role="tablist" aria-label="Show">
+          {(['diagram', 'text'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={(reader ? 'diagram' : pane) === p}
+              onClick={() => {
+                if (p === 'text' && reader) setLayout('code')
+                setPane(p)
+              }}
+            >
+              {p === 'text' ? 'Code' : 'Diagram'}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -797,49 +872,102 @@ const CARD = { start: 440, min: 360, max: 0.6, room: 240, gap: 16, tab: 40 } as 
 const SHORT = 1200
 /** From this width the side panel starts pinned. */
 const PIN_FROM = 1280
-/** Below this width a filling editor shows one pane at a time. */
+/** Below this width, or this height, a filling editor shows one pane at a time. */
 const NARROW = 720
+const SHORT_HEIGHT = 500
+/** The widest a phone on its side is. */
+const SIDEWAYS = 1000
 
 /**
- * The buttons that do not fit a narrow bar: a menu that closes on a pick, a click outside it, or Escape. A pick or
- * Escape hands the focus back to its button, as the one it was on is hidden.
+ * The buttons that do not fit a phone's bar, in a sheet from the bottom: modal (the keyboard stays in it), closed by a
+ * pick, Escape, Close or a tap on the dimmed page, the focus back on ⋯.
  */
-function More({ children }: { children: ReactNode }) {
-  const menu = useRef<HTMLDetailsElement>(null)
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    if (!open) return
-    const outside = (e: Event) => !menu.current?.contains(e.target as Node) && shut(menu.current, false)
-    const key = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && shut(menu.current, true)
-    document.addEventListener('pointerdown', outside)
-    document.addEventListener('keydown', key)
-    return () => {
-      document.removeEventListener('pointerdown', outside)
-      document.removeEventListener('keydown', key)
-    }
-  }, [open])
+function Actions({ children }: { children: ReactNode }) {
+  const sheet = useRef<HTMLDialogElement>(null)
+  const close = () => sheet.current?.close()
   return (
-    <details className="lme-more" ref={menu} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary className="lm-btn" aria-label="More">
-        ⋯
-      </summary>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard; this only closes the menu after them */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: as above */}
-      <div
-        className="lme-menu"
-        onClick={(e) => (e.target as HTMLElement).closest('button') && shut(menu.current, true)}
-        onChange={() => shut(menu.current, true)}
+    <>
+      <button
+        type="button"
+        className="lm-btn"
+        aria-label="More"
+        aria-haspopup="dialog"
+        onClick={() => sheet.current?.showModal()}
       >
-        {children}
-      </div>
-    </details>
+        ⋯
+      </button>
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard, and Escape closes it */}
+      <dialog
+        ref={sheet}
+        className="lme-actions"
+        aria-label="More"
+        // a pick closes it; a tap on the backdrop is a click on the dialog itself
+        onClick={(e) => (e.target === sheet.current || (e.target as HTMLElement).closest('button')) && close()}
+        onChange={close}
+      >
+        <div className="lme-actions-body">
+          {children}
+          <button type="button" className="lm-btn">
+            Close
+          </button>
+        </div>
+      </dialog>
+    </>
   )
 }
 
-function shut(menu: HTMLDetailsElement | null, focus: boolean) {
-  if (!menu?.open) return
-  menu.open = false
-  if (focus) menu.querySelector('summary')?.focus()
+/**
+ * The reader types on a phone: the text has the focus and the pointer is a finger, so the screen's keyboard is up. The
+ * editor then takes the height the keyboard leaves (Safari keeps the page's height and slides it under the keyboard).
+ */
+function usePhoneTyping(phone: boolean, root: RefObject<HTMLDivElement | null>): boolean {
+  const [typing, setTyping] = useState(false)
+  useEffect(() => {
+    const el = root.current
+    if (!phone || !el) return
+    const coarse = matchMedia('(pointer: coarse)')
+    const inText = () => coarse.matches && !!document.activeElement?.closest('.lme-code')
+    const vv = window.visualViewport
+    // Safari also pans what shows down the page to keep the caret in view: the editor follows it
+    const fit = () => {
+      if (vv && inText()) {
+        el.style.setProperty('--lme-vv', `${vv.height}px`)
+        el.style.setProperty('--lme-vt', `${vv.offsetTop}px`)
+      } else {
+        el.style.removeProperty('--lme-vv')
+        el.style.removeProperty('--lme-vt')
+      }
+    }
+    // a tap on the row of keys can take the focus from the text for a moment: the row stays until the key has acted
+    // and given it back
+    let later = 0
+    const focus = () => {
+      clearTimeout(later)
+      if (inText()) {
+        setTyping(true)
+        fit()
+      } else
+        later = window.setTimeout(() => {
+          setTyping(inText())
+          fit()
+        }, 300)
+    }
+    el.addEventListener('focusin', focus)
+    el.addEventListener('focusout', focus)
+    vv?.addEventListener('resize', fit)
+    vv?.addEventListener('scroll', fit)
+    return () => {
+      clearTimeout(later)
+      el.removeEventListener('focusin', focus)
+      el.removeEventListener('focusout', focus)
+      vv?.removeEventListener('resize', fit)
+      vv?.removeEventListener('scroll', fit)
+      el.style.removeProperty('--lme-vv')
+      el.style.removeProperty('--lme-vt')
+      setTyping(false)
+    }
+  }, [phone, root])
+  return typing
 }
 
 const count = (n: number, word: string) => (n ? `${n} ${word}${n > 1 ? 's' : ''}` : '')

@@ -36,7 +36,7 @@ export {
   type Theme,
   usePageTheme,
 } from './Loadmap'
-export { Assumptions, Controls, Limits, Meters, Verdict } from './panels'
+export { Assumptions, Controls, Limits, LoadRange, Meters, Verdict } from './panels'
 export { Compare, HeadroomChart, Scenarios, scenarioColor, useComparison } from './scenarios'
 export { Story } from './story'
 export { injectStyles, LOADMAP_CSS } from './styles'

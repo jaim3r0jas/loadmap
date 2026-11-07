@@ -18,7 +18,20 @@ import {
   useLoadmap,
   Verdict,
 } from '@loadmap/react'
-import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import {
+  lazy,
+  type ReactNode,
+  type Ref,
+  Suspense,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
+
+// the phone's sheet comes with the first phone: a wide editor never loads it
+const Sheet = lazy(() => import('./Sheet').then((m) => ({ default: m.Sheet })))
 
 /** The side panel: pinned beside the canvas, or a rail it opens from over the canvas. */
 export type PanelMode = 'pinned' | 'auto'
@@ -36,6 +49,8 @@ export interface EditorCanvasProps {
   selected: string | null
   /** Pixels on the left the code floats over. */
   left: number
+  /** A phone: the panels in a sheet over the canvas's bottom, rather than beside it. */
+  phone?: boolean
   panel: PanelMode
   onPanel: (mode: PanelMode) => void
   /** The editor is wide enough to pin the panel. */
@@ -58,6 +73,7 @@ export function EditorCanvas({
   onNodeClick,
   selected,
   left,
+  phone = false,
   panel,
   onPanel,
   canPin,
@@ -77,11 +93,20 @@ export function EditorCanvas({
   useEffect(() => {
     if (inspecting && selected) setOpen(true)
   }, [inspecting, selected])
-  const right = pinned ? PANEL.width : PANEL.rail
-  const top = model.scenarios.length ? 64 : 12
-  // the legend and the zoom along the bottom, and the story above them
-  const bottom = model.story.length ? 140 : 56
-  const free = { '--lme-l': `${left}px`, '--lme-r': `${right}px` } as React.CSSProperties
+  // on a phone: the sheet's height (it reports it once it settles), and the box it rests in
+  const [sheet, setSheet] = useState(PEEK)
+  const onSheet = useCallback((h: number) => setSheet(h), [])
+  const stage = useHeight(lm.root, phone)
+  const right = phone ? 0 : pinned ? PANEL.width : PANEL.rail
+  // the scenarios over the top (on a phone, beside the zoom)
+  const top = phone ? 68 : model.scenarios.length ? 64 : 12
+  // the legend and the zoom along the bottom, and the story above them; on a phone the sheet, and the story above it
+  const bottom = phone ? sheet + (model.story.length ? 64 : 8) : model.story.length ? 140 : 56
+  const free = {
+    '--lme-l': `${left}px`,
+    '--lme-r': `${right}px`,
+    ...(phone ? { '--lme-sheet': `${sheet}px` } : {}),
+  } as React.CSSProperties
   return (
     <LoadmapRoot lm={lm} theme={look}>
       <div className="lme-canvas" style={free}>
@@ -98,42 +123,72 @@ export function EditorCanvas({
           </div>
         )}
       </div>
-      <SidePanel
-        lm={lm}
-        pinned={pinned}
-        canPin={canPin}
-        open={open}
-        setOpen={setOpen}
-        onPanel={onPanel}
-        title={model.title}
-      >
-        {inspector}
-        <Section title="Verdict">
-          <Verdict lm={lm} />
-        </Section>
-        <Section title="Load and design">
-          <Controls lm={lm} />
-        </Section>
-        <Section title="Where it runs out">
-          <Limits lm={lm} />
-        </Section>
-        <Section title="Headroom">
-          <HeadroomChart lm={lm} />
-        </Section>
-        {model.scenarios.length > 1 && (
-          <Section title="Scenarios compared" closed>
-            <Compare lm={lm} />
+      {phone ? (
+        <Suspense fallback={null}>
+          <Sheet
+            lm={lm}
+            stage={stage}
+            peek={PEEK}
+            inspector={inspector}
+            selected={selected}
+            onHeight={onSheet}
+            assumptions={page.assumptions}
+          />
+        </Suspense>
+      ) : (
+        <SidePanel
+          lm={lm}
+          pinned={pinned}
+          canPin={canPin}
+          open={open}
+          setOpen={setOpen}
+          onPanel={onPanel}
+          title={model.title}
+        >
+          {inspector}
+          <Section title="Verdict">
+            <Verdict lm={lm} />
           </Section>
-        )}
-        <Section title="Live" closed>
-          <Meters lm={lm} />
-        </Section>
-        <Section title="Assumptions" closed>
-          <Assumptions lm={lm} extra={page.assumptions} />
-        </Section>
-      </SidePanel>
+          <Section title="Load and design">
+            <Controls lm={lm} />
+          </Section>
+          <Section title="Where it runs out">
+            <Limits lm={lm} />
+          </Section>
+          <Section title="Headroom">
+            <HeadroomChart lm={lm} />
+          </Section>
+          {model.scenarios.length > 1 && (
+            <Section title="Scenarios compared" closed>
+              <Compare lm={lm} />
+            </Section>
+          )}
+          <Section title="Live" closed>
+            <Meters lm={lm} />
+          </Section>
+          <Section title="Assumptions" closed>
+            <Assumptions lm={lm} extra={page.assumptions} />
+          </Section>
+        </SidePanel>
+      )}
     </LoadmapRoot>
   )
+}
+
+/** The phone's sheet at peek, in pixels: the verdict in two lines and the load slider. */
+const PEEK = 150
+
+/** An element's height as it changes, while `on`. */
+function useHeight(el: HTMLElement | null, on: boolean): number {
+  const [h, setH] = useState(0)
+  useEffect(() => {
+    if (!on || !el) return
+    setH(el.clientHeight)
+    const ro = new ResizeObserver(() => setH(el.clientHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [el, on])
+  return h
 }
 
 /** A part of the panel that folds; its own heading gives way to the section's. */

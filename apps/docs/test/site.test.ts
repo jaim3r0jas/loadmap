@@ -586,27 +586,68 @@ describe('the built site', () => {
     }
   }, 120_000)
 
-  it('shows one pane at a time on a phone, the rest of the buttons in a menu', async () => {
+  it('fits a phone: the text or the diagram, a sheet of panels, a finger to pan and two to zoom', async () => {
     const browser = await chromium.launch()
     try {
-      const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+      const page = await phone.newPage()
       await page.goto(`${url}editor/`)
-      await page.waitForSelector('.lme-panes')
+      await page.waitForSelector('.lme-switch')
       expect(await page.locator('.lme-left').isVisible()).toBe(true)
       expect(await page.locator('.lme-preview').isHidden()).toBe(true)
-      await page.getByRole('tab', { name: 'Diagram' }).click()
-      await page.waitForSelector('[data-node]')
+      await page.getByRole('tab', { name: 'Diagram' }).tap()
+      await page.waitForSelector('.lme-preview [data-node]')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
+      // the whole diagram, between the bar and the sheet
+      await page.waitForFunction(() => {
+        const bar = document.querySelector('.lme-bar')!.getBoundingClientRect()
+        const sheet = document.querySelector('.lme-sheet')?.getBoundingClientRect()
+        const boxes = [...document.querySelectorAll('.lme-preview [data-node]')].map((n) => n.getBoundingClientRect())
+        return (
+          !!sheet && boxes.every((b) => b.left >= 0 && b.right <= 390 && b.top > bar.bottom && b.bottom < sheet.top)
+        )
+      })
       const m = await page.evaluate(() => ({
         scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
         bar: document.querySelector('.lme-bar')!.getBoundingClientRect().height,
       }))
       expect(m.scroll).toEqual([390, 844])
-      // one row
-      expect(m.bar).toBeLessThan(56)
+      // one row of 44 px targets
+      expect(m.bar).toBeLessThan(72)
+      // a finger pans, two pinch: the touches a phone sends, on the board
+      const viewBox = () => page.evaluate(() => document.querySelector('.lme-preview svg')!.getAttribute('viewBox'))
+      const fitted = (await viewBox())!.split(' ').map(Number)
+      await page.evaluate(() => {
+        const board = document.querySelector('.lme-preview .lm-board')!
+        const r = board.getBoundingClientRect()
+        const [x, y] = [r.left + r.width / 2, r.top + r.height / 3]
+        const touch = (type: string, id: number, cx: number, cy: number) =>
+          board.dispatchEvent(
+            new PointerEvent(type, { bubbles: true, pointerId: id, pointerType: 'touch', clientX: cx, clientY: cy }),
+          )
+        touch('pointerdown', 1, x, y)
+        for (let i = 1; i <= 5; i++) touch('pointermove', 1, x + i * 10, y)
+        touch('pointerup', 1, x + 50, y)
+        touch('pointerdown', 2, x - 20, y)
+        touch('pointerdown', 3, x + 20, y)
+        for (let i = 1; i <= 5; i++) touch('pointermove', 3, x + 20 + i * 20, y)
+        touch('pointerup', 3, x + 120, y)
+        touch('pointerup', 2, x - 20, y)
+      })
+      const moved = (await viewBox())!.split(' ').map(Number)
+      // closer: the board shows less of the scene
+      expect(moved[2]!).toBeLessThan(fitted[2]!)
+      // the sheet: tapped up, its tabs
+      await page.locator('.lme-grab').tap()
+      await page.waitForSelector('.lme-sheet[data-detent="half"] [role="tab"]')
+      // the rest of the buttons, in a sheet of their own
       expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(false)
-      await page.getByLabel('More').click()
+      await page.getByRole('button', { name: 'More' }).tap()
       expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(true)
+      // on its side, a phone is a phone too
+      await page.setViewportSize({ width: 844, height: 390 })
+      await page.waitForFunction(() => document.querySelector('.lme')!.hasAttribute('data-narrow'))
+      await phone.close()
     } finally {
       await browser.close()
     }
