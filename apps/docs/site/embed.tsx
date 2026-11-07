@@ -56,6 +56,8 @@ function Embed({ def, values }: { def: Definition; values: Record<string, string
       view={def.view}
       {...page}
       fill
+      // the doc around the frame keeps its wheel: Ctrl or ⌘ with it, a pinch or the buttons zoom
+      zoom
       // an embed shows the diagram first, whatever the model's own full screen does: a frame is small for panels
       fullScreenMode={pick('mode', ['focus', 'panels'] as const) ?? 'focus'}
       fullScreen={listed?.length ? listed : page.fullScreen}

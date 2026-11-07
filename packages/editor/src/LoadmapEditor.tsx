@@ -608,6 +608,7 @@ export function LoadmapEditor({
               view={def.view}
               theme={look}
               {...pageOptions(def.options)}
+              zoom
               initial={sharedValues(def.model, shown.current)}
               onNodeClick={clickNode}
               selected={selected}

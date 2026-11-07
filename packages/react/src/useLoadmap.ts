@@ -37,6 +37,12 @@ export interface LoadmapOptions<P> extends SimOptions {
    */
   fill?: boolean
   /**
+   * The reader can pan and zoom the diagram: drag it, pinch it, the keys + − 0 and the arrows, and the zoom buttons on
+   * the board. The wheel zooms with Ctrl or ⌘ held, so the page keeps its scroll; a `<Diagram canvas>` that fills a
+   * page of its own zooms with the wheel alone. Pictures and recordings show the whole diagram whatever the view.
+   */
+  zoom?: boolean
+  /**
    * Seconds the diagram takes to move to a new structure (a scenario, a story step or a control that adds pods): what
    * stays moves, what is new fades in. 0 cuts. Default 0.8; with reduced motion it always cuts. The load never moves it.
    */
@@ -79,6 +85,8 @@ export interface LoadmapController<P = any> {
   fullScreen: boolean
   /** The root fills its container as full screen does, for good. */
   fill: boolean
+  /** The reader can pan and zoom the diagram. */
+  zoom: boolean
   toggleFullScreen: () => void
   /** What full screen shows. The reader switches it; the page picks where it starts. */
   fullScreenMode: FullScreenMode
@@ -344,6 +352,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     cue: storyPlaying ? cue : null,
     fullScreen,
     fill,
+    zoom: !!o.zoom,
     toggleFullScreen,
     fullScreenMode,
     setFullScreenMode,

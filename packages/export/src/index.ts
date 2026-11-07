@@ -19,6 +19,7 @@ import {
   drawTitle,
   exportSvg,
   posterLayout,
+  sceneBox,
   standalone,
 } from './media'
 
@@ -109,7 +110,7 @@ export async function composeFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = getComputedStyle(b.svg).getPropertyValue('--lm-surface').trim() || '#fff'
   ctx.fillRect(0, 0, w, h)
-  const img = await rasterise(b.svg, Math.round(dw), Math.round(dh))
+  const img = await rasterise(b.svg, Math.round(dw), Math.round(dh), sceneBox(handle))
   ctx.translate((w - dw) / 2, band.top + (room - dh) / 2)
   ctx.drawImage(img, 0, 0, dw, dh)
   handle.engine.paintParticles(ctx, scale)
@@ -360,8 +361,8 @@ async function pickCodec(format: 'webm' | 'mp4', width: number, height: number) 
 }
 
 /** An SVG drawn as an image cannot see the page's CSS: it is drawn from a copy with the theme written in. */
-async function rasterise(svg: SVGSVGElement, w: number, h: number): Promise<HTMLImageElement> {
-  const copy = standalone(svg, w, h)
+async function rasterise(svg: SVGSVGElement, w: number, h: number, box: string): Promise<HTMLImageElement> {
+  const copy = standalone(svg, w, h, box)
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml' }))
   try {
     const img = new Image()

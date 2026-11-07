@@ -19,6 +19,7 @@ import {
   whole,
 } from './camera'
 import { handoverText } from './ranks'
+import type { Viewer } from './viewer'
 
 const TOKENS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted', 'fg', 'surface', 'line'] as const
 /** The stroke of a hollow dot, in scene units. */
@@ -99,6 +100,8 @@ interface Playing {
   waiting: boolean
   /** The step hands the limit to another component: what the title says then, and the new limit. */
   hand: { text: string; to: string } | null
+  /** Where the first shot flies from: the view the reader had moved to. */
+  lead?: Rect
 }
 
 /** Seconds the breathing of the first limit takes, in and out. */
@@ -147,6 +150,10 @@ export class Engine {
   reducedMotion = false
   /** The part of the scene the board shows while the story plays; null for all of it. */
   camera: Rect | null = null
+  /** The reader's view of a board they pan and zoom; null where the board only shows what the camera frames. */
+  viewer: Viewer | null = null
+  /** Changes with what the board shows: the zoom controls and a box's detail follow it. */
+  viewId = 0
   /** What the diagram says about the step the story plays; null when it does not play. */
   cue: Cue | null = null
   host: StoryHost | null = null
@@ -356,6 +363,7 @@ export class Engine {
    */
   playStory(from: number): boolean {
     if (!this.frame || !this.model.story[from]) return false
+    const lead = this.viewer?.lead()
     this.#story = {
       i: from - 1,
       shot: 'establish',
@@ -368,8 +376,9 @@ export class Engine {
       before: this.ev,
       waiting: false,
       hand: null,
+      lead,
     }
-    this.#setCamera(null)
+    this.#setCamera(lead ?? null)
     this.host?.playing(true)
     return true
   }
@@ -435,6 +444,8 @@ export class Engine {
       const to = framing(frame, this.#boxesOf(s.hand?.to))
       cam = cut ? to : between(s.from, to, s.t / HAND_FLY)
     } else if (s.shot === 'out' || s.shot === 'back') cam = cut ? all : between(s.from, all, p)
+    // the first shot starts where the reader had moved the view, and flies out to the whole diagram
+    else if (s.shot === 'establish' && s.lead && !cut && s.t < SHOTS.back) cam = between(s.lead, all, s.t / SHOTS.back)
     else cam = all
     this.#setCamera(cam)
     // once the old ring has gone, the title says where the limit went
@@ -540,13 +551,24 @@ export class Engine {
     this.applyCamera()
   }
 
-  /** Points the SVG at the camera: React draws the whole scene's viewBox, the camera replaces it after each render. */
+  /**
+   * Points the SVG at what the board shows: the camera, under the reader's view where they pan and zoom. React draws the
+   * whole scene's viewBox; this replaces it after each render.
+   */
   applyCamera(): void {
     const f = this.frame
     if (!this.svg || !f) return
-    const c = this.camera ?? whole(f)
+    const c = this.viewer?.box() ?? this.camera ?? whole(f)
     const box = `${c.x} ${c.y} ${c.w} ${c.h}`
-    if (this.svg.getAttribute('viewBox') !== box) this.svg.setAttribute('viewBox', box)
+    if (this.svg.getAttribute('viewBox') === box) return
+    this.svg.setAttribute('viewBox', box)
+    if (this.viewer) this.changed()
+  }
+
+  /** What the board shows changed: the zoom controls and a box's detail follow. */
+  changed(): void {
+    this.viewId++
+    for (const l of this.#listeners) l()
   }
 
   /** Draws the dots on the overlay canvas and the worker fills in the SVG. */
@@ -558,6 +580,11 @@ export class Engine {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, c.width, c.height)
     if (o.particles === false) return
+    // the board shows the reader's view: the dots go where the SVG draws their places
+    if (this.viewer) {
+      this.viewer.paint(ctx, c)
+      return
+    }
     // the SVG is as wide as the board, its height following the frame
     this.paintParticles(ctx, c.width / this.frame.width)
   }
@@ -646,6 +673,12 @@ export class Engine {
     const k = Math.min(bw / c.w, bh / c.h)
     ctx.save()
     ctx.transform(k, 0, 0, k, (bw - c.w * k) / 2 - c.x * k, (bh - c.h * k) / 2 - c.y * k)
+    this.paintDots(ctx)
+    ctx.restore()
+  }
+
+  /** The dots in scene units, on a context already transformed to the scene. */
+  paintDots(ctx: CanvasRenderingContext2D): void {
     for (const d of this.dots()) {
       ctx.globalAlpha = d.alpha
       ctx.beginPath()
@@ -661,7 +694,7 @@ export class Engine {
         ctx.fill()
       }
     }
-    ctx.restore()
+    ctx.globalAlpha = 1
   }
 
   #position(scene: Scene, d: Particle): Point {

@@ -1,12 +1,26 @@
-import { type ComponentState, type CrossingRange, reach } from '@loadmap/core'
-import { compact, fmt, multiple, multiples, pct } from '@loadmap/core/format'
+import type { ComponentState } from '@loadmap/core'
+import { multiple, pct } from '@loadmap/core/format'
 import type { Scene, SceneEdge, SceneNode, SceneTier, TextSpot } from '@loadmap/layout'
-import { memo, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  lazy,
+  memo,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { boxComponent } from './camera'
 import type { Handover } from './engine'
 import { edge, rankLabels } from './ranks'
-import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
+import type { Insets } from './viewpoint'
+
+// a box's detail comes with the first one the reader asks for, in the chunk full screen's panels come in
+const Detail = lazy(() => import('./later').then((m) => ({ default: m.Detail })))
 
 const STATE_STROKE: Record<ComponentState, string> = {
   off: 'var(--lm-line)',
@@ -25,10 +39,19 @@ export interface DiagramProps {
   onNodeClick?: (id: string) => void
   /** The box drawn as selected, by its id. */
   selected?: string | null
+  /**
+   * The board fills its container, which gives it a height, as a canvas the reader pans and zooms (the wheel alone
+   * zooms it), with no Full screen button. Insets are the pixels on each side that something of the page floats over:
+   * Fit frames the diagram in what they leave, and the legend and the zoom buttons stay clear of them.
+   */
+  canvas?: boolean | Partial<Insets>
 }
 
-export function Diagram({ lm, legend = true, onNodeClick, selected = null }: DiagramProps) {
+export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
   const { scene, engine, reducedMotion } = lm
+  const zoom = lm.zoom || !!canvas
+  const inset = { top: 0, right: 0, bottom: 0, left: 0, ...(typeof canvas === 'object' ? canvas : {}) }
+  const insetKey = `${inset.top} ${inset.right} ${inset.bottom} ${inset.left}`
   // read when a box is pressed, so a new function each render does not redraw every box
   const click = useRef(onNodeClick)
   click.current = onNodeClick
@@ -84,6 +107,31 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
     return () => ro.disconnect()
   }, [engine])
 
+  // the reader's hands on the board, and its size in pixels with what floats over it. The code comes with the first
+  // board that zooms; a chunk that cannot load leaves the board as it is, drawn whole, without the hands
+  const shape = useRef({ canvas: !!canvas, inset })
+  shape.current = { canvas: !!canvas, inset }
+  const zoomed = useRef<{ measure(): void; off(): void } | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a canvas or not; its insets come through the ref
+  useEffect(() => {
+    const board = boardRef.current
+    if (!zoom || !board) return
+    let gone = false
+    import('./zoom')
+      .then(({ mountZoom }) => {
+        if (!gone) zoomed.current = mountZoom(board, engine, () => shape.current)
+      })
+      .catch(() => {})
+    return () => {
+      gone = true
+      zoomed.current?.off()
+      zoomed.current = null
+    }
+  }, [engine, zoom, !!canvas])
+  // new insets (a panel pinned, an editor resized) keep the reader's view: only what Fit frames changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: insetKey stands for the insets
+  useEffect(() => zoomed.current?.measure(), [insetKey])
+
   // a board that pans in its own box (a phone in full screen) keeps what the camera frames in the middle of it
   // and its title at the top of what shows, under the bar
   const follow = () => {
@@ -99,7 +147,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       return
     }
     const k = board.clientHeight / engine.frame.height
-    if (c) wrap.scrollTop = board.offsetTop + (c.y + c.h / 2) * k - wrap.clientHeight / 2
+    // a board that zooms draws what the camera frames in its own middle
+    const y = engine.viewer ? board.clientHeight / 2 : c && (c.y + c.h / 2) * k
+    if (c && y != null) wrap.scrollTop = board.offsetTop + y - wrap.clientHeight / 2
     if (title) {
       title.style.top = `${Math.max(0, wrap.scrollTop - board.offsetTop + (barRef.current?.offsetHeight ?? 0))}px`
       // at the top of what shows, not stretched to the bottom a lower third keeps
@@ -198,7 +248,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
   }, [full, fullScreenMode, setFullScreenMode, lm.root, lm.fill])
 
   return (
-    <div className="lm-wrap" ref={wrapRef}>
+    <div className="lm-wrap" ref={wrapRef} data-canvas={canvas ? '' : undefined}>
       <div className="lm-bar" ref={barRef}>
         {legend ? <Legend lm={lm} /> : <span />}
         <span className="lm-tools">
@@ -219,7 +269,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
               ))}
             </fieldset>
           )}
-          {!lm.fill && (
+          {!lm.fill && !canvas && (
             <button type="button" className="lm-btn" onClick={lm.toggleFullScreen} aria-pressed={full} ref={buttonRef}>
               {full ? '✕ Close' : '⤢ Full screen'}
             </button>
@@ -229,8 +279,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       <div
         className="lm-board"
         ref={boardRef}
-        // while the structure moves, the board's shape follows the frame drawn in it
-        style={frame ? { aspectRatio: `${frame.width} / ${frame.height}` } : { minHeight: 240 }}
+        data-zoom={zoom ? '' : undefined}
+        // while the structure moves, the board's shape follows the frame drawn in it; a canvas takes its container's
+        style={canvas ? undefined : frame ? { aspectRatio: `${frame.width} / ${frame.height}` } : { minHeight: 240 }}
       >
         {frame && (
           <Structure
@@ -256,7 +307,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null }: Dia
       {/* outside the board, which clips: a detail taller than the room beside its box still shows whole. Placed on the
           frame drawn, which a move to a new structure changes every frame */}
       {frame && tip && !lm.storyPlaying && (
-        <Detail lm={lm} scene={frame} id={tip.id} board={boardRef.current} detailId={detailId} />
+        <Suspense fallback={null}>
+          <Detail lm={lm} scene={frame} id={tip.id} board={boardRef.current} detailId={detailId} />
+        </Suspense>
       )}
     </div>
   )
@@ -785,160 +838,4 @@ function Badge({ n, text, was }: { n: SceneNode; text: string; was?: boolean }) 
       </g>
     </g>
   )
-}
-
-/**
- * A box's component in words, over the board: utilization, demand against capacity and where it came from, where it
- * reaches the target and 100 % (with dates, given growth), and its target in each scenario. HTML, so exports leave it out.
- */
-function Detail({
-  lm,
-  scene,
-  id,
-  board,
-  detailId,
-}: {
-  lm: LoadmapController
-  scene: Scene
-  id: string
-  board: HTMLDivElement | null
-  detailId: string
-}) {
-  const { model, ev } = lm
-  const n = scene.nodes.find((x) => x.id === id)
-  const cid = n && componentOf(lm, n)
-  const comparison = useComparison(lm)
-  const rows = model.scenarios.length > 1 ? comparison.rows : []
-  // the box this describes: set on its element, so the SVG need not render again for it
-  useEffect(() => {
-    const el = board?.querySelector(`[data-node="${CSS.escape(id)}"]`)
-    el?.setAttribute('aria-describedby', detailId)
-    return () => el?.removeAttribute('aria-describedby')
-  }, [board, id, detailId])
-  const c = cid ? ev.components[cid] : undefined
-  const tip = useRef<HTMLDivElement>(null)
-  // placed in the wrap, beside the board: below a box in the upper half, above one in the lower half, unless that side
-  // lacks the room that is visible (a board that pans in its own box, full screen, the window); as a last resort over it
-  const box = n && `${n.x} ${n.y} ${n.w} ${n.h}`
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `box` stands for the node's geometry
-  useLayoutEffect(() => {
-    const el = tip.current
-    const wrap = el?.offsetParent
-    if (!el || !n || !board || !(wrap instanceof HTMLElement)) return
-    const place = () => {
-      const k = board.clientWidth / scene.width
-      const w = wrap.getBoundingClientRect()
-      // the wrap's coordinates of a viewport y: its children scroll with it
-      const y = (v: number) => v - w.top - wrap.clientTop + wrap.scrollTop
-      let lo = 0
-      let hi = innerHeight
-      for (let a: Element | null = wrap; a; a = a.parentElement) {
-        if (getComputedStyle(a).overflowY === 'visible') continue
-        const r = a.getBoundingClientRect()
-        lo = Math.max(lo, r.top)
-        hi = Math.min(hi, r.bottom)
-      }
-      const [top, bottom] = [y(lo) + 4, y(hi) - 4]
-      const h = el.offsetHeight
-      const boxTop = board.offsetTop + n.y * k
-      const boxBottom = board.offsetTop + (n.y + n.h) * k
-      const below = boxBottom + 6
-      const above = boxTop - 6 - h
-      const sides = n.y + n.h / 2 < scene.height / 2 ? [below, above] : [above, below]
-      const fits = sides.find((t) => t >= top && t + h <= bottom)
-      const roomier = bottom - boxBottom >= boxTop - top ? below : above
-      el.style.top = `${Math.max(top, Math.min(fits ?? roomier, bottom - h))}px`
-      el.style.left = `${Math.max(0, Math.min(board.offsetLeft + n.x * k, wrap.clientWidth - el.offsetWidth))}px`
-    }
-    place()
-    // the room changes as the page or the board's own box scrolls, the screen turns, or the text grows
-    const ro = new ResizeObserver(place)
-    ro.observe(el)
-    ro.observe(board)
-    document.addEventListener('scroll', place, { capture: true, passive: true })
-    addEventListener('resize', place)
-    return () => {
-      ro.disconnect()
-      document.removeEventListener('scroll', place, { capture: true })
-      removeEventListener('resize', place)
-    }
-  }, [box, board, scene])
-  if (!n || !c || !board) return null
-  const at = (r: CrossingRange | null, x: number | null) =>
-    r ? reach(r, model.searchMax, model.dateAt) : multiple(x, model.searchMax)
-  const num = (x: number) => (Math.abs(x) >= 1000 ? compact(x) : fmt(x))
-  const cap = c.capacity
-  const rank = rankLabels(ev, model).get(c.id)
-  return (
-    <div id={detailId} className="lm-tip lm-detail" role="tooltip" ref={tip}>
-      <b>
-        {c.name}
-        {rank && (
-          <span className="lm-tag" data-kind={rank.rank === 1 ? 'first' : 'rank'}>
-            {rank.word}
-          </span>
-        )}
-      </b>
-      {c.util == null || !cap ? (
-        <span>switched off</span>
-      ) : (
-        <>
-          <span>
-            <strong>{pct(c.util)}</strong> · {num(c.demand ?? 0)} of {fmt(cap.value)} {cap.unit}
-            {cap.within ? ` ±${pct(cap.within)}` : ''}
-          </span>
-          <span className="lm-sub">
-            capacity{' '}
-            <span className="lm-prov" data-kind={cap.provenance}>
-              {cap.provenance}
-            </span>
-            {cap.source ? `, ${cap.source}` : ''}
-          </span>
-          <span>
-            {pct(model.thresholds.target)} at {at(c.targetRange, c.target)}
-          </span>
-          <span>
-            {pct(model.thresholds.full)} at {at(c.fullRange, c.full)}
-          </span>
-          {blocks(lm, n).map((line) => (
-            <span key={line}>{line}</span>
-          ))}
-          {c.over && (
-            <span className="lm-sub">
-              Past {pct(model.thresholds.full)}: {c.over}.
-            </span>
-          )}
-        </>
-      )}
-      {rows.length > 0 && (
-        <span className="lm-sub">
-          {pct(model.thresholds.target)} by scenario:{' '}
-          {rows.map((r, i) => {
-            const x = r.components.find((y) => y.id === cid)
-            return (
-              <span key={r.label} className="lm-nowrap">
-                {i > 0 && ' · '}
-                <b className="lm-key" style={{ background: scenarioColor(model, r.label) }} />
-                {r.label} {x?.targetRange == null ? 'off' : multiples(x.targetRange, model.searchMax, true)}
-              </span>
-            )
-          })}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** What a box's building blocks do at these values: pods running, cache answers, what a stage turns away. */
-function blocks(lm: LoadmapController, n: SceneNode): string[] {
-  const out: string[] = []
-  for (const id of n.stages) {
-    const s = lm.ev.stages[id]
-    if (s?.kind === 'workers' && s.autoscale)
-      out.push(`${s.running} of ${s.pods} pods running, each held near ${pct(s.autoscale.target)}`)
-    if (s?.kind === 'cache') out.push(`${pct(s.hit)} answered here`)
-    if ((s?.kind === 'pass' || s?.kind === 'limit' || s?.kind === 'cache') && s.shed > 0)
-      out.push(`${pct(s.shed)} of what reaches it turned away`)
-  }
-  return out
 }
