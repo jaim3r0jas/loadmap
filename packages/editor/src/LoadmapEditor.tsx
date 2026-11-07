@@ -28,8 +28,6 @@ import { type EditValue, edit, fingerprint, inspect, pageOptions } from '@loadma
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
 import {
   type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
   type ReactNode,
   type Ref,
   type RefObject,
@@ -47,6 +45,7 @@ import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
 import type { InspectorProps, InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
+import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
 
@@ -92,22 +91,26 @@ export interface LoadmapEditorProps {
   /** Controls at the start of the bar, before the name: a way back, a brand. */
   start?: ReactNode
   /**
-   * The editor fills its container, which gives it a height, as a canvas: the bar, then the diagram filling the rest,
-   * the reader panning and zooming it, the code floating over its left in a card that resizes and hides, and the
-   * verdict and the other panels in a side panel on its right. The bar shows the model's title. On a phone (below 720
-   * px wide, or a phone on its side) the text or the diagram, switched at the bottom, the panels in a sheet over the
-   * diagram, and the actions other than Share in a sheet of their own. The root carries `data-narrow` on a phone and
-   * `data-short` below 1000 px, for a page's own controls to follow.
+   * The editor fills its container, which gives it a height, as a canvas: the bar, then the code in a panel on the
+   * left, the diagram the reader pans and zooms in the room between, and the verdict and the rest in a panel on the
+   * right. Each panel resizes by its inner edge and folds onto a rail. The bar shows the model's title. On a phone
+   * (below 720 px wide, or a phone on its side) the text or the diagram, switched at the bottom, the panels in a sheet
+   * over the diagram, and the actions other than Share in a sheet of their own. The root carries `data-narrow` on a
+   * phone and `data-short` below 1000 px, for a page's own controls to follow.
    */
   fill?: boolean
-  /** With `fill`: the code card's share of the width (360 px to 60 % of it), and where a double-click on its edge puts it back. Default: 440 px. */
+  /** With `fill`: the code panel's share of the width (360 px to 60 % of it), and where a double-click on its edge puts it back. Default: 440 px. */
   split?: number
-  /** With `fill`: the code card was resized, to this share; a page can keep it. */
+  /** With `fill`: the code panel was resized, to this share; a page can keep it. */
   onSplit?: (share: number) => void
-  /** With `fill`: the side panel pinned beside the canvas, or on `auto`, opening from its rail. Default: pinned from 1280 px wide. */
+  /** With `fill`: the side panel pinned beside the canvas, or on `auto`, folded onto its rail. Default: pinned from 1280 px wide. */
   panel?: PanelMode
-  /** With `fill`: the reader pinned or unpinned the panel; a page can keep it. */
+  /** With `fill`: the reader pinned or folded the side panel; a page can keep it. */
   onPanel?: (mode: PanelMode) => void
+  /** With `fill`: the side panel's width in pixels (300 to 480). Default: 340. */
+  panelWidth?: number
+  /** With `fill`: the side panel was resized, to this width; a page can keep it. */
+  onPanelWidth?: (px: number) => void
   /** The reader showed or hid the code; a page can keep it. */
   onLayout?: (layout: EditorLayout) => void
   /**
@@ -153,6 +156,8 @@ export function LoadmapEditor({
   onSplit,
   panel: initialPanel,
   onPanel,
+  panelWidth,
+  onPanelWidth,
   onLayout,
   fileName,
   templates,
@@ -185,7 +190,7 @@ export function LoadmapEditor({
   const shownLayout = useRef(layout)
   shownLayout.current = layout
   const root = useRef<HTMLDivElement>(null)
-  // the code card's share of the width; NaN until the reader resizes it, for the card's own width
+  // the code panel's share of the width; NaN until the reader resizes it, for its own width
   const [ratio, setRatio] = useState(() => split ?? Number.NaN)
   // with fill: its size; below 720 px wide, or 500 px high (a phone on its side), one pane at a time
   const [width, setWidth] = useState(0)
@@ -201,6 +206,9 @@ export function LoadmapEditor({
     setPanelState(m)
     onPanel?.(m)
   }
+  // the side panel's width as the page gave it, and as the reader set it
+  const panelStart = Number.isFinite(panelWidth) ? panelWidth! : PANEL.width
+  const [panelPx, setPanelPx] = useState(panelStart)
   const [pane, setPane] = useState<'text' | 'diagram'>('text')
   useLayoutEffect(() => {
     const el = root.current
@@ -477,67 +485,34 @@ export function LoadmapEditor({
   }, [note])
 
   /**
-   * The code card's width in pixels at a share of the editor's: from 360 px to 60 % of it, and never so wide that the
-   * diagram has less than 240 px beside it and the panel.
+   * The panels' widths in pixels. A pinned side panel takes no more than leaves the canvas `CODE.room` beside the code
+   * at its least; the code then takes from 360 px to 60 % of the editor, as far as the canvas keeps `CODE.room` (below
+   * about 720 px, its least wins). Over the canvas, the side panel takes its own width.
    */
-  const right = panel === 'pinned' ? PANEL.width : PANEL.rail
-  const cardMax = Math.min(CARD.max * width, width - right - 2 * CARD.gap - CARD.room)
-  const cardPx = (share: number) =>
-    Math.round(Math.max(CARD.min, Math.min(cardMax, Number.isFinite(share) ? share * width : CARD.start)))
-  /** The card's edge: dragged, or moved with the arrow keys; double-click puts it back. */
-  const moveTo = (px: number) => {
-    const next = cardPx(px / width) / width
-    setRatio(next)
-    onSplit?.(next)
+  const reader = layout === 'reader'
+  const panelMost = Math.round(
+    panel === 'pinned'
+      ? Math.max(PANEL.min, Math.min(PANEL.max, width - (reader ? RAIL : CODE.min) - CODE.room))
+      : PANEL.max,
+  )
+  const panelAt = Math.round(Math.max(PANEL.min, Math.min(panelMost, panelPx)))
+  const right = panel === 'pinned' ? panelAt : RAIL
+  const codeMost = Math.max(CODE.min, Math.min(CODE.max * width, width - right - CODE.room))
+  const codePx = (share: number) =>
+    Math.round(Math.max(CODE.min, Math.min(codeMost, Number.isFinite(share) ? share * width : CODE.start)))
+  const resizeCode = (px: number, done: boolean) => {
+    setRatio(px / width)
+    if (done) onSplit?.(px / width)
   }
-  const drag = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || !width) return
-    const edge = e.currentTarget
-    const box = root.current!.getBoundingClientRect()
-    edge.setPointerCapture(e.pointerId)
-    root.current?.setAttribute('data-dragging', '')
-    let last = ratio
-    let moved = false
-    const move = (ev: globalThis.PointerEvent) => {
-      last = cardPx((ev.clientX - box.left - CARD.gap) / width) / width
-      moved = true
-      setRatio(last)
-    }
-    const up = () => {
-      edge.removeEventListener('pointermove', move)
-      edge.removeEventListener('pointerup', up)
-      edge.removeEventListener('pointercancel', up)
-      root.current?.removeAttribute('data-dragging')
-      // a click that moved nothing (the focus, a double-click) is no move
-      if (moved && last !== ratio) onSplit?.(last)
-    }
-    edge.addEventListener('pointermove', move)
-    edge.addEventListener('pointerup', up)
-    edge.addEventListener('pointercancel', up)
-  }
-  const nudge = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = e.shiftKey ? 64 : 16
-    const now = cardPx(ratio)
-    const to =
-      e.key === 'ArrowLeft'
-        ? now - step
-        : e.key === 'ArrowRight'
-          ? now + step
-          : e.key === 'Home'
-            ? CARD.min
-            : e.key === 'End'
-              ? cardMax
-              : null
-    if (to == null) return
-    e.preventDefault()
-    moveTo(to)
+  const resizePanel = (px: number, done: boolean) => {
+    setPanelPx(px)
+    if (done) onPanelWidth?.(px)
   }
 
   const list = problems(state.result)
   const errors = list.filter((d) => d.severity === 'error').length
   const warnings = list.length - errors
   const stale = !state.result.ok && !!def
-  const reader = layout === 'reader'
   // `inherit` follows the page's own switch, for the editor's frame and the diagram alike
   const look = usePageTheme(theme)
   const inspection = useMemo(
@@ -548,7 +523,7 @@ export function LoadmapEditor({
 
   // a phone: the text or the diagram, one at a time, the panels in a sheet; typing, the keyboard takes the bottom
   const phone = fill && narrow
-  // a filling editor wide enough: the diagram is a canvas, the code floats over it, the panels beside it
+  // a filling editor wide enough: the diagram is a canvas, the code's panel and the side panel on either side
   const canvas = fill && width > 0 && !narrow
   const typing = usePhoneTyping(phone, root)
   // below this the page's own controls in the bar take their short form
@@ -676,11 +651,9 @@ export function LoadmapEditor({
       style={
         canvas
           ? ({
-              '--lme-card': `${cardPx(ratio)}px`,
-              '--lme-gap': `${CARD.gap}px`,
-              '--lme-tab': `${CARD.tab}px`,
-              '--lme-panel': `${PANEL.width}px`,
-              '--lme-rail': `${PANEL.rail}px`,
+              '--lme-start': `${reader ? RAIL : codePx(ratio)}px`,
+              '--lme-panel': `${panelAt}px`,
+              '--lme-rail': `${RAIL}px`,
             } as CSSProperties)
           : undefined
       }
@@ -789,29 +762,29 @@ export function LoadmapEditor({
         </div>
       </div>
       <div className="lme-split" data-layout={layout}>
-        <div className="lme-left" hidden={textHidden}>
+        <div
+          className={canvas ? 'lme-left lme-pane' : 'lme-left'}
+          data-side={canvas ? 'start' : undefined}
+          hidden={textHidden}
+        >
           {canvas && (
-            <div className="lme-card-head">
-              <b>Code</b>
-              {status}
-              <span className="lme-grow" />
+            <PanelHead
+              side="start"
+              title="Code"
+              note={status}
+              fold="Hide code"
+              onFold={() => {
+                setLayout('reader')
+                // the panel goes with the button: the keyboard goes to the rail that brings it back
+                requestAnimationFrame(() =>
+                  root.current?.querySelector<HTMLElement>('.lme-rail[data-side="start"]')?.focus(),
+                )
+              }}
+            >
               <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
                 Format
               </button>
-              <button
-                type="button"
-                className="lm-btn"
-                aria-label="Hide code"
-                title="Hide the code: the diagram whole, a box's fields in the panel"
-                onClick={() => {
-                  setLayout('reader')
-                  // the card goes with the button: the keyboard goes to the tab that brings it back
-                  requestAnimationFrame(() => root.current?.querySelector<HTMLElement>('.lme-tab')?.focus())
-                }}
-              >
-                ‹
-              </button>
-            </div>
+            </PanelHead>
           )}
           <div className="lme-code" ref={host} />
           {list.length > 0 && (
@@ -858,6 +831,17 @@ export function LoadmapEditor({
               </button>
             </div>
           )}
+          {canvas && (
+            <Resize
+              side="start"
+              label="Resize the code"
+              value={codePx(ratio)}
+              min={CODE.min}
+              max={Math.round(codeMost)}
+              onChange={resizeCode}
+              onReset={() => resizeCode(codePx(split ?? Number.NaN), true)}
+            />
+          )}
         </div>
         {fill && !width ? (
           // nothing drawn before the editor knows its width, and so which layout it takes
@@ -872,11 +856,22 @@ export function LoadmapEditor({
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
                 selected={selected}
-                left={phone ? 0 : CARD.gap * 2 + (reader ? CARD.tab : cardPx(ratio))}
                 phone={phone}
                 panel={panel}
                 onPanel={setPanel}
                 canPin={canPin}
+                width={panelAt}
+                resize={
+                  <Resize
+                    side="end"
+                    label="Resize the panel"
+                    value={panelAt}
+                    min={PANEL.min}
+                    max={panelMost}
+                    onChange={resizePanel}
+                    onReset={() => resizePanel(panelStart, true)}
+                  />
+                }
                 inspector={inspector}
                 note={staleNote}
               />
@@ -904,35 +899,21 @@ export function LoadmapEditor({
             )}
           </div>
         )}
-        {canvas && !reader && (
-          // biome-ignore lint/a11y/useSemanticElements: an <hr> takes no focus nor pointer; this separator is moved
-          <div
-            className="lme-resize"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize the code"
-            aria-valuemin={CARD.min}
-            aria-valuemax={Math.round(CARD.max * width)}
-            aria-valuenow={cardPx(ratio)}
-            tabIndex={0}
-            onPointerDown={drag}
-            onKeyDown={nudge}
-            onDoubleClick={() => moveTo(cardPx(split ?? Number.NaN))}
-          />
-        )}
         {canvas && reader && (
-          <button
-            type="button"
-            className="lme-tab"
-            data-errors={errors || undefined}
+          <Rail
+            side="start"
+            tier={errors ? 'over' : warnings ? 'warn' : 'ok'}
+            label={errors || warnings ? `${count(errors, 'error') || count(warnings, 'warning')} · Code` : 'Code'}
+            aria-label={
+              errors || warnings ? `Show code (${count(errors, 'error') || count(warnings, 'warning')})` : 'Show code'
+            }
+            title="Show the code"
             onClick={() => {
               setLayout('code')
-              // the tab goes: the keyboard goes into the text it brought back
+              // the rail goes: the keyboard goes into the text it brought back
               requestAnimationFrame(() => view.current?.focus())
             }}
-          >
-            <span aria-hidden="true">›</span> Show code
-          </button>
+          />
         )}
         {!fill && inspector}
       </div>
@@ -973,10 +954,10 @@ export function between(a: string, b: string): { from: number; to: number; inser
 }
 
 /**
- * The code card: its width to start and its least, in pixels; its most as a share of the editor's; the room it always
- * leaves the diagram; the gap around it; and the tab it leaves when hidden.
+ * The code panel: its width to start and its least, in pixels; its most as a share of the editor's; and the room the
+ * canvas always keeps between the panels.
  */
-const CARD = { start: 440, min: 360, max: 0.6, room: 240, gap: 16, tab: 40 } as const
+const CODE = { start: 440, min: 360, max: 0.6, room: 320 } as const
 /** Below this width the canvas's bar is short: a page's controls in it take their short form. */
 const SHORT = 1000
 /** From this width the side panel starts pinned. */

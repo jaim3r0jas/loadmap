@@ -88,8 +88,9 @@ The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `
 
 `<LoadmapEditor initial values? functions? theme? onChange? onShare? actions? templates? fileName? layout? fill? ref? />`.
 `layout` is `'code'` (the default: the text beside the diagram) or `'reader'` (the diagram with an inspector, the text
-hidden); `fill` makes it a page of its own, the diagram a canvas with the text floating over it (`split`, `onSplit`,
-`onLayout`) and the panels beside it (`panel`: `'pinned'` or `'auto'`, `onPanel`); `theme` takes `'inherit'` as `<Loadmap>` does. Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
+hidden); `fill` makes it a page of its own, the diagram a canvas between two panels that resize and fold: the text on its left
+(`split`, `onSplit`, `onLayout`) and the verdict and the rest on its right (`panel`: `'pinned'` or `'auto'`,
+`onPanel`, `panelWidth`, `onPanelWidth`); `theme` takes `'inherit'` as `<Loadmap>` does. Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
 `format()`. `TEMPLATES` (also from
 `@loadmap/editor/templates`, without CodeMirror) lists the starters.
 
