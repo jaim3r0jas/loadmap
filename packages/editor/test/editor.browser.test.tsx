@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
+import { watchDots } from '../../../examples/dots'
 import { type EmbedOptions, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
 
 let root: Root | null = null
@@ -318,6 +319,30 @@ describe('the editor filling its container', () => {
     // back to where the page put it
     await userEvent.dblClick(edge)
     await expect.element(edge).toHaveAttribute('aria-valuenow', '600')
+  })
+
+  it('paints sharp, round dots through every change of size', async () => {
+    const { host } = await fill(1400)
+    const dots = watchDots(host.querySelector('.lme-preview canvas')!)
+    const sharp = { pixels: true, round: true }
+    await expect.poll(dots, { timeout: 5000 }).toEqual(sharp)
+    // the code card
+    ;(page.getByRole('separator', { name: 'Resize the code' }).element() as HTMLElement).focus()
+    await userEvent.keyboard('{Home}')
+    await expect.poll(dots).toEqual(sharp)
+    // the side panel
+    await userEvent.click(page.getByRole('button', { name: 'Unpin' }))
+    await expect.poll(dots).toEqual(sharp)
+    // the window
+    host.style.width = '1000px'
+    await expect.poll(dots).toEqual(sharp)
+  })
+
+  it('paints sharp, round dots on a phone’s diagram, shown after the code', async () => {
+    const { host } = await fill(400)
+    const dots = watchDots(host.querySelector('.lme-preview canvas')!)
+    await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
+    await expect.poll(dots, { timeout: 5000 }).toEqual({ pixels: true, round: true })
   })
 
   it('pins the panel on a wide editor, and unpinned keeps it on a rail it opens from', async () => {

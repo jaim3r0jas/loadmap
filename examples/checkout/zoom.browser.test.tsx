@@ -4,6 +4,7 @@ import { createRef, type Ref, useImperativeHandle } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import { watchDots } from '../dots'
 import { checkout } from './model'
 import { view } from './view'
 
@@ -300,5 +301,61 @@ describe('a canvas', () => {
     expect(corner.x).toBeCloseTo(800 - 64, 0)
     expect(corner.y).toBeCloseTo(600 - 64, 0)
     expect(handle.engine.viewer!.readerView).not.toBeNull()
+  })
+})
+
+describe('the dots’ canvas', () => {
+  /** A board in a host styled `css`, its root filling the host from the first render; zooming or not. */
+  async function sized(css: string, zoom: boolean) {
+    host = document.createElement('div')
+    host.style.cssText = css
+    host.innerHTML =
+      '<style>.lm { height: 100%; padding: 0; box-sizing: border-box }</style><div style="height: 100%"></div>'
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapHandle>()
+    root = createRoot(host.lastElementChild!)
+    root.render(zoom ? <Canvas ref={ref} /> : <Loadmap ref={ref} model={checkout} view={view} speed={10} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    return watchDots(host.querySelector('canvas')!)
+  }
+  const sharp = { pixels: true, round: true }
+
+  // a canvas has its size before its first layout, and never changes it after: the editor's
+  it('has a pixel for each of the screen’s on a canvas sized before its first layout', async () => {
+    await page.viewport(1280, 900)
+    const dots = await sized('position: fixed; inset: 0 auto auto 0; width: 1000px; height: 600px', true)
+    await expect.poll(dots, { timeout: 5000 }).toEqual(sharp)
+  })
+
+  it('follows the window, and a container that gets its size late', async () => {
+    await page.viewport(1280, 900)
+    const dots = await sized('position: fixed; inset: 0 auto auto 0; width: 80vw; height: 0', true)
+    host!.style.height = '600px'
+    await expect.poll(dots, { timeout: 5000 }).toEqual(sharp)
+    await page.viewport(900, 700)
+    await expect.poll(() => host!.querySelector('canvas')!.width).toBe(Math.round(720 * devicePixelRatio))
+    await expect.poll(dots).toEqual(sharp)
+  })
+
+  it('follows a board that does not zoom, as its page narrows', async () => {
+    await page.viewport(1280, 900)
+    const dots = await sized('width: 900px', false)
+    await expect.poll(dots, { timeout: 5000 }).toEqual(sharp)
+    host!.style.width = '500px'
+    await expect.poll(dots).toEqual(sharp)
+  })
+
+  // a ratio of this frame alone: Chromium's emulated one would reach every test file in the tab
+  it('has a pixel for each of the screen’s on a dense one, past twice', async () => {
+    await page.viewport(1280, 900)
+    Object.defineProperty(window, 'devicePixelRatio', { value: 3, configurable: true })
+    try {
+      const dots = await sized('position: fixed; inset: 0 auto auto 0; width: 1000px; height: 600px', true)
+      await expect.poll(() => host!.querySelector('canvas')!.width, { timeout: 5000 }).toBe(3000)
+      await expect.poll(dots).toEqual(sharp)
+    } finally {
+      delete (window as { devicePixelRatio?: number }).devicePixelRatio
+    }
   })
 })

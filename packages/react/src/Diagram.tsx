@@ -99,12 +99,36 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     engine.drawnFrame = frameId
   })
 
+  // the canvas's own size, not the board's: a canvas shown again, or a board that never changes size after its first
+  // layout, is measured too. In device pixels where the browser counts them, so a fractional size or place stays sharp
   useEffect(() => {
-    const board = boardRef.current
-    if (!board) return
-    const ro = new ResizeObserver(() => engine.resize())
-    ro.observe(board)
-    return () => ro.disconnect()
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const box: ResizeObserverBoxOptions =
+      typeof ResizeObserverEntry !== 'undefined' && 'devicePixelContentBoxSize' in ResizeObserverEntry.prototype
+        ? 'device-pixel-content-box'
+        : 'content-box'
+    const ro = new ResizeObserver(([e]) => {
+      // only the canvas the engine draws on: another board on the same engine measures its own
+      const px = e?.target === engine.canvas && pixels(e)
+      if (px) engine.resize(px)
+    })
+    // a screen of another density (the window moved, the page zoomed) need not change the size: observed again, the
+    // canvas is measured now
+    let mq: MediaQueryList | undefined
+    const watch = () => {
+      mq?.removeEventListener('change', watch)
+      ro.disconnect()
+      ro.observe(canvas, { box })
+      if (typeof matchMedia !== 'function') return
+      mq = matchMedia(`(resolution: ${globalThis.devicePixelRatio || 1}dppx)`)
+      mq.addEventListener('change', watch)
+    }
+    watch()
+    return () => {
+      ro.disconnect()
+      mq?.removeEventListener('change', watch)
+    }
   }, [engine])
 
   // the reader's hands on the board, and its size in pixels with what floats over it. The code comes with the first
@@ -313,6 +337,22 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       )}
     </div>
   )
+}
+
+/**
+ * The device pixels an element covers: as the browser counts them, snapped as it draws, unless they disagree with its
+ * size × the pixel ratio (an emulated ratio, which Chromium leaves out of them). Nothing for an element not shown.
+ */
+function pixels(e: ResizeObserverEntry): { width: number; height: number } | null {
+  const s = e.contentBoxSize[0]
+  if (!s?.inlineSize || !s.blockSize) return null
+  const dpr = globalThis.devicePixelRatio || 1
+  const width = Math.round(s.inlineSize * dpr)
+  const height = Math.round(s.blockSize * dpr)
+  const d = e.devicePixelContentBoxSize?.[0]
+  return d && Math.abs(d.inlineSize - width) <= 1 && Math.abs(d.blockSize - height) <= 1
+    ? { width: d.inlineSize, height: d.blockSize }
+    : { width, height }
 }
 
 /** The keyboard is in a field that takes letters: the first target of the key, inside a web component too. */
