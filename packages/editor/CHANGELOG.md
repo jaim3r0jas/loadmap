@@ -1,5 +1,17 @@
 # @loadmap/editor
 
+## 0.16.0
+
+### Minor Changes
+
+- f72ffed: The filling editor is a canvas. `<LoadmapEditor fill>` draws the diagram filling what the bar leaves, the reader panning and zooming it (Fit frames the whole diagram in the room left free), the text floating over its left in a card with its status, Format and ‹ to hide it, and the verdict, the controls, the limits, the headroom, the scenarios compared, the live meters and the assumptions in a side panel on its right, each folding; the scenarios float over the canvas's top and the story over its bottom. The card starts at 440 px and its edge resizes it from 360 px to 60 % of the width (dragged, the arrow keys, a double-click puts it back); `split` and `onSplit` are its share of the width now. Hidden, the text leaves a tab, and the inspector shows in the panel. The panel is pinned from 1280 px wide and on `auto` below: a rail with the verdict's tier and the first limit's multiple that opens it over the canvas on a hover, a click or a tap, and closes it once the pointer leaves, on Escape or on a press on the canvas. `panel` and `onPanel` keep the reader's choice, `onLayout` whether the text shows. Below 720 px it stays one pane at a time. The ten templates' texts load when one is picked, so the editor loads 4 kB less.
+
+### Patch Changes
+
+- @loadmap/core@0.16.0
+  - @loadmap/dsl@0.16.0
+  - @loadmap/react@0.16.0
+
 ## 0.15.0
 
 ### Patch Changes
