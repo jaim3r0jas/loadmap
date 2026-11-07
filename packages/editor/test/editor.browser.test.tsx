@@ -307,6 +307,10 @@ describe('the editor filling its container', () => {
     expect(drawn(host).right).toBeLessThan(box(host, '.lme-rail').left)
     expect(drawn(host).top).toBeGreaterThan(box(host, '.lme-bar').bottom)
     expect(drawn(host).bottom).toBeLessThan(box(host, '.lme').bottom)
+    // the load floats over the canvas's top, and the diagram fits under it; the panel keeps the design
+    expect(drawn(host).top).toBeGreaterThan(box(host, '.lme-over-top .lm-loadbar').bottom)
+    expect(host.querySelector('.lme-over-top .lm-load input[type=range]')).toBeTruthy()
+    expect(host.querySelector('.lme-panel .lm-load')).toBeNull()
     const edge = page.getByRole('separator', { name: 'Resize the code' })
     await expect.element(edge).toHaveAttribute('aria-valuenow', '600')
     ;(edge.element() as HTMLElement).focus()
@@ -471,6 +475,9 @@ describe('the editor filling its container', () => {
     // at peek: the verdict and the load slider
     expect(at()).toBe('peek')
     expect(sheet.querySelector('.lme-peek .lm-range input[type="range"]')).toBeTruthy()
+    // the slider's marks too, inside the sheet
+    const marks = sheet.querySelector('.lme-peek .lm-marks')!.getBoundingClientRect()
+    expect(marks.bottom + 20).toBeLessThanOrEqual(sheet.getBoundingClientRect().bottom)
     await userEvent.click(grab)
     expect(at()).toBe('half')
     expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Verdict')

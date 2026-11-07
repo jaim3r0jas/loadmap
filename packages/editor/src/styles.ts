@@ -100,14 +100,15 @@ export const EDITOR_CSS = `
 .lme-canvas .lm-board { height: 100%; border: 0; border-radius: 0; background-color: var(--lm-bg); background-image: radial-gradient(color-mix(in srgb, var(--lm-muted) 30%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
 .lme-over { position: absolute; z-index: 2; left: var(--lme-l); right: var(--lme-r); display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
 .lme-over > * { pointer-events: auto; max-width: min(760px, 100%); }
+.lme-over > .lm-loadbar { flex: 1 1 auto; position: static; }
 .lme-over-top { top: 12px; }
 .lme-over-bottom { bottom: 60px; }
 /* the legend and the zoom along the bottom edge, the story just above them: Fit leaves room for all three. The legend
    keeps to one line, clipped where the canvas is narrow */
 .lme-canvas .lm-wrap[data-canvas] > .lm-bar, .lme-canvas .lm-wrap[data-canvas] .lm-zoom { bottom: 12px; }
 .lme-canvas .lm-wrap[data-canvas] > .lm-bar .lm-legend { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
-.lme-over-note { top: 64px; justify-content: flex-start; }
-.lme-over .lm-scenarios, .lme-over .lm-story { margin: 0; padding: 6px 10px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / .12); }
+.lme-over-note { top: var(--lme-t); justify-content: flex-start; }
+.lme-over > :is(.lm-scenarios, .lm-story, .lm-loadbar) { margin: 0; padding: 6px 10px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / .12); }
 .lme-over .lme-stale { margin: 0; padding: 4px 10px; background: var(--lm-surface); border: 1px solid var(--lm-warn); border-radius: 6px; }
 .lme[data-canvas] .lme-left { position: absolute; z-index: 3; top: var(--lme-gap); bottom: var(--lme-gap); left: var(--lme-gap); width: var(--lme-card); padding: 0; gap: 0; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 8px 28px rgb(15 30 45 / .16); overflow: hidden; }
 .lme-card-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--lm-line); }
@@ -185,8 +186,7 @@ export const EDITOR_CSS = `
 .lme-peek-verdict { margin: 0; padding-left: 10px; border-left: 4px solid var(--lm-ok); font-size: .88rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lme-peek-verdict[data-tier="warn"] { border-color: var(--lm-warn); }
 .lme-peek-verdict[data-tier="over"] { border-color: var(--lm-drop); }
-.lme-peek .lm-range { display: grid; gap: 2px; }
-.lme-peek .lm-range input { width: 100%; min-height: 32px; }
+.lme-peek .lm-load { row-gap: 2px; }
 .lme-sheet-tabs { flex: none; display: flex; gap: 4px; overflow-x: auto; padding: 0 12px 6px; scrollbar-width: none; }
 .lme-sheet-tabs button { flex: none; min-height: 44px; padding: 0 12px; font: 500 .9rem var(--lm-font); color: var(--lm-muted); background: none; border: 0; border-radius: 8px; cursor: pointer; }
 .lme-sheet-tabs [aria-selected="true"] { color: var(--lm-fg); font-weight: 600; background: var(--lm-accent-soft); }
