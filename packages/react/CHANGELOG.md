@@ -1,5 +1,19 @@
 # @loadmap/react
 
+## 0.18.0
+
+### Minor Changes
+
+- 9fab44b: The scenarios and the load in one bar over the diagram, so the reader moves the load and watches what it does. `<Loadmap>` draws `LoadBar` where the scenarios were: it stays in view while the page scrolls (`--lm-sticky-top` on an ancestor keeps it under a page's own fixed header), and on a phone it sits under the diagram, in thumb reach. Full screen and focus put it in their head (focus shows the scenarios now, and its line keeps the verdict); on a phone, over the verdict. `LoadRange`, the slider itself, has a track coloured by what the load does (under the target, past it, past capacity, a ± range as a blend), a log scale when the load spans ten times or more, the date the growth reaches, and under it a mark for today, each preset that sets the load, the 50 % target and where it runs out, which a click takes; ← → move a step, Page Up and Page Down to the next mark. Its input now holds the place on the track, not the load: set the load with `setValues`. `Controls` takes `load={false}` to leave the load to the bar, and shows only the presets that set no load; full screen's Load card is Design, and goes when the model has nothing but the load. A `<Loadmap>` page loads 1.6 kB more; its budget is 51 kB.
+
+### Patch Changes
+
+- 49ca1e8: The dots are as sharp as the boxes on every board. A board that had its size before its first layout (a `<Diagram canvas>`, the editor's diagram) kept the canvas at the browser's 300 × 150 pixels and stretched it, so its dots were blurred to five or ten times their size; the canvas now follows its own size on the screen, in device pixels where the browser counts them, a canvas shown again and a screen of another density included. Screens above twice the pixel ratio get every pixel too, where the dots were drawn at two and stretched.
+- @loadmap/core@0.18.0
+  - @loadmap/dsl@0.18.0
+  - @loadmap/layout@0.18.0
+  - @loadmap/sim@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

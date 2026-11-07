@@ -1,5 +1,19 @@
 # @loadmap/editor
 
+## 0.18.0
+
+### Minor Changes
+
+- 6ea0ac4: The filling editor floats the load bar (the scenarios and the load) over the canvas's top, the diagram fitted under it, and its panel's "Load and design" is "Design". On a phone the sheet's peek keeps the slider, now with its coloured track and marks.
+
+### Patch Changes
+
+- Updated dependencies [49ca1e8]
+- Updated dependencies [9fab44b]
+  - @loadmap/react@0.18.0
+  - @loadmap/core@0.18.0
+  - @loadmap/dsl@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes
