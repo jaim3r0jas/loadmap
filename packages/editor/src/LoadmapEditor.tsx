@@ -38,11 +38,13 @@ import {
   useRef,
   useState,
 } from 'react'
+import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
+import { CATALOG, type TemplateEntry } from './catalog'
 import { Embed, type EmbedOptions } from './Embed'
 import { Inspector, type InspectorTab } from './Inspector'
 import { loadmapLanguage } from './language'
 import { injectEditorStyles } from './styles'
-import { TEMPLATES, type Template } from './templates'
+import type { Template } from './templates'
 
 /** What a page can drive from outside. */
 export interface LoadmapEditorHandle {
@@ -82,17 +84,27 @@ export interface LoadmapEditorProps {
   /** Controls at the start of the bar, before the status: a way back, a name, a menu of examples. */
   start?: ReactNode
   /**
-   * The editor fills its container, which gives it a height: the bar, then the text and the diagram side by side with
-   * a divider to drag between them, each scrolling on its own. Below 720 px wide, tabs switch between the text and the
+   * The editor fills its container, which gives it a height, as a canvas: the bar, then the diagram filling the rest,
+   * the reader panning and zooming it, the code floating over its left in a card that resizes and hides, and the
+   * verdict and the other panels in a side panel on its right. Below 720 px wide, tabs switch between the text and the
    * diagram, and the buttons other than Share fold into a menu; the root then carries `data-narrow`, for a page's own
    * controls in `start` to follow.
    */
   fill?: boolean
-  /** With `fill`: where the divider starts, and where a double-click puts it back: the text's share of the width, from 0.2 to 0.8. Default 0.4. */
+  /** With `fill`: the code card's share of the width (360 px to 60 % of it), and where a double-click on its edge puts it back. Default: 440 px. */
   split?: number
-  /** With `fill`: the divider was moved, to this share; a page can keep it. */
+  /** With `fill`: the code card was resized, to this share; a page can keep it. */
   onSplit?: (share: number) => void
-  /** The starters in the "New from template" menu; false hides it. Default: the six that come with the editor. */
+  /** With `fill`: the side panel pinned beside the canvas, or on `auto`, opening from its rail. Default: pinned from 1280 px wide. */
+  panel?: PanelMode
+  /** With `fill`: the reader pinned or unpinned the panel; a page can keep it. */
+  onPanel?: (mode: PanelMode) => void
+  /** The reader showed or hid the code; a page can keep it. */
+  onLayout?: (layout: EditorLayout) => void
+  /**
+   * The starters in the "New from template" menu; false hides it. Default: the ten that come with the editor
+   * (`TEMPLATES`), each one's text loaded when the reader picks it.
+   */
   templates?: readonly Template[] | false
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
   fileName?: string
@@ -126,10 +138,13 @@ export function LoadmapEditor({
   actions,
   start,
   fill = false,
-  split = SPLIT,
+  split,
   onSplit,
+  panel: initialPanel,
+  onPanel,
+  onLayout,
   fileName,
-  templates = TEMPLATES,
+  templates,
   layout: initialLayout = 'code',
   ref,
 }: LoadmapEditorProps) {
@@ -150,19 +165,34 @@ export function LoadmapEditor({
   const loaded = useRef(initial)
   const latest = useRef({ onChange, functions })
   latest.current = { onChange, functions }
-  const [layout, setLayout] = useState<EditorLayout>(initialLayout)
+  const [layout, setLayoutState] = useState<EditorLayout>(initialLayout)
+  const setLayout = (l: EditorLayout) => {
+    setLayoutState(l)
+    onLayout?.(l)
+  }
   // the update listener is made once: it reads the layout through this
   const shownLayout = useRef(layout)
   shownLayout.current = layout
   const root = useRef<HTMLDivElement>(null)
   // with fill: the text's part of the width, and below 720 px one pane at a time
-  const [ratio, setRatio] = useState(() => clampShare(split))
-  const [narrow, setNarrow] = useState(false)
+  // the code card's share of the width; NaN until the reader resizes it, for the card's own width
+  const [ratio, setRatio] = useState(() => split ?? Number.NaN)
+  const [width, setWidth] = useState(0)
+  const narrow = width > 0 && width < NARROW
+  const [panelState, setPanelState] = useState<PanelMode | undefined>(initialPanel)
+  // a wide window pins the panel unless the reader said otherwise
+  // pinned only where it leaves the diagram room; a choice made on a wide screen waits for one
+  const canPin = width >= PANEL.pinFrom
+  const panel = !canPin ? 'auto' : (panelState ?? (width >= PIN_FROM ? 'pinned' : 'auto'))
+  const setPanel = (m: PanelMode) => {
+    setPanelState(m)
+    onPanel?.(m)
+  }
   const [pane, setPane] = useState<'text' | 'diagram'>('text')
   useLayoutEffect(() => {
     const el = root.current
     if (!fill || !el) return
-    const measure = (width: number) => setNarrow(width < NARROW)
+    const measure = (w: number) => setWidth(w)
     measure(el.getBoundingClientRect().width)
     const ro = new ResizeObserver(([e]) => e && measure(e.contentRect.width))
     ro.observe(el)
@@ -268,10 +298,22 @@ export function LoadmapEditor({
       annotations: isolateHistory.of('full'),
     })
   }
-  const startFrom = (t: Template) => {
+  const starters: readonly (Template | TemplateEntry)[] = templates === false ? [] : (templates ?? CATALOG)
+  const startFrom = async (t: Template | TemplateEntry) => {
     const text = view.current?.state.doc.toString()
     if (text != null && text !== loaded.current && !window.confirm(`Replace your text with “${t.title}”?`)) return
-    replace(t.source)
+    // the editor's own starters bring their text when picked: a page that never starts from one does not load them
+    let source: string | undefined
+    try {
+      source = 'source' in t ? t.source : (await import('./templates')).TEMPLATES.find((x) => x.id === t.id)?.source
+    } catch {
+      // offline, or a new version of the site took the old chunk away
+    }
+    if (source == null) {
+      setNote(`“${t.title}” did not load`)
+      return
+    }
+    replace(source)
     setNote(`New from “${t.title}”`)
   }
   const shareHash = async () => {
@@ -379,46 +421,57 @@ export function LoadmapEditor({
     return () => clearTimeout(t)
   }, [note])
 
-  /** The divider: dragged, or moved with the arrow keys; double-click puts it back. */
-  const moveTo = (to: number) => {
-    const next = clampShare(to)
+  /**
+   * The code card's width in pixels at a share of the editor's: from 360 px to 60 % of it, and never so wide that the
+   * diagram has less than 240 px beside it and the panel.
+   */
+  const right = panel === 'pinned' ? PANEL.width : PANEL.rail
+  const cardMax = Math.min(CARD.max * width, width - right - 2 * CARD.gap - CARD.room)
+  const cardPx = (share: number) =>
+    Math.round(Math.max(CARD.min, Math.min(cardMax, Number.isFinite(share) ? share * width : CARD.start)))
+  /** The card's edge: dragged, or moved with the arrow keys; double-click puts it back. */
+  const moveTo = (px: number) => {
+    const next = cardPx(px / width) / width
     setRatio(next)
     onSplit?.(next)
   }
   const drag = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    const bar = e.currentTarget
-    const box = bar.parentElement!.getBoundingClientRect()
-    bar.setPointerCapture(e.pointerId)
+    if (e.button !== 0 || !width) return
+    const edge = e.currentTarget
+    const box = root.current!.getBoundingClientRect()
+    edge.setPointerCapture(e.pointerId)
     root.current?.setAttribute('data-dragging', '')
     let last = ratio
+    let moved = false
     const move = (ev: globalThis.PointerEvent) => {
-      last = clampShare((ev.clientX - box.left) / box.width)
+      last = cardPx((ev.clientX - box.left - CARD.gap) / width) / width
+      moved = true
       setRatio(last)
     }
     const up = () => {
-      bar.removeEventListener('pointermove', move)
-      bar.removeEventListener('pointerup', up)
-      bar.removeEventListener('pointercancel', up)
+      edge.removeEventListener('pointermove', move)
+      edge.removeEventListener('pointerup', up)
+      edge.removeEventListener('pointercancel', up)
       root.current?.removeAttribute('data-dragging')
       // a click that moved nothing (the focus, a double-click) is no move
-      if (last !== ratio) onSplit?.(last)
+      if (moved && last !== ratio) onSplit?.(last)
     }
-    bar.addEventListener('pointermove', move)
-    bar.addEventListener('pointerup', up)
-    bar.addEventListener('pointercancel', up)
+    edge.addEventListener('pointermove', move)
+    edge.addEventListener('pointerup', up)
+    edge.addEventListener('pointercancel', up)
   }
   const nudge = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = e.shiftKey ? 0.1 : 0.02
+    const step = e.shiftKey ? 64 : 16
+    const now = cardPx(ratio)
     const to =
       e.key === 'ArrowLeft'
-        ? ratio - step
+        ? now - step
         : e.key === 'ArrowRight'
-          ? ratio + step
+          ? now + step
           : e.key === 'Home'
-            ? MIN_SHARE
+            ? CARD.min
             : e.key === 'End'
-              ? MAX_SHARE
+              ? cardMax
               : null
     if (to == null) return
     e.preventDefault()
@@ -439,9 +492,38 @@ export function LoadmapEditor({
   )
 
   const compact = fill && narrow
+  // a filling editor wide enough: the diagram is a canvas, the code floats over it, the panels beside it
+  const canvas = fill && width > 0 && !narrow
+  // the other layout draws the diagram anew: it starts from the values the reader had set
+  const wasCanvas = useRef(canvas)
+  if (wasCanvas.current !== canvas) {
+    const h = preview.current
+    if (h) shown.current = h.values()
+    wasCanvas.current = canvas
+  }
+  const short = compact || (canvas && width < SHORT)
+  const status = (
+    <output className="lme-status" data-ok={errors === 0}>
+      {errors === 0 && warnings === 0
+        ? 'No problems'
+        : [count(errors, 'error'), count(warnings, 'warning')].filter(Boolean).join(' · ')}
+    </output>
+  )
+  const inspector = reader && (
+    <Inspector
+      inspection={inspection}
+      tab={tab}
+      onTab={setTab}
+      onEdit={change}
+      blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
+      gone={tab === 'box' && !!selected && !inspection}
+      onClose={() => setSelected(null)}
+    />
+  )
+  const staleNote = stale && <p className="lme-stale">Showing the last version without errors.</p>
   const shareButton = (
     <button type="button" className="lm-btn" onClick={share}>
-      {compact ? 'Share' : 'Share link'}
+      {short ? 'Share' : 'Share link'}
     </button>
   )
   // beside Share, in either bar: a menu of its own, which the narrow bar's menu would close on every pick
@@ -451,38 +533,40 @@ export function LoadmapEditor({
       hash={shareHash}
       title={def.model.title ?? 'loadmap'}
       story={def.model.story.length > 0}
-      short={compact}
+      short={short}
       onNote={setNote}
     />
   )
   // the buttons before Share, and after it; on a narrow fill they fold into the menu
   const lead = (
     <>
-      <button
-        type="button"
-        className="lm-btn"
-        aria-pressed={!reader}
-        onClick={() => setLayout(reader ? 'code' : 'reader')}
-      >
-        {reader ? 'Show code' : 'Hide code'}
-      </button>
-      {!reader && (
+      {!canvas && (
+        <button
+          type="button"
+          className="lm-btn"
+          aria-pressed={!reader}
+          onClick={() => setLayout(reader ? 'code' : 'reader')}
+        >
+          {reader ? 'Show code' : 'Hide code'}
+        </button>
+      )}
+      {!reader && !canvas && (
         <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
           Format
         </button>
       )}
-      {!reader && templates && templates.length > 0 && (
+      {(!reader || canvas) && starters.length > 0 && (
         <select
           className="lm-btn"
           aria-label="New from template"
           value=""
           onChange={(e) => {
-            const t = templates.find((x) => x.id === e.target.value)
+            const t = starters.find((x) => x.id === e.target.value)
             if (t) startFrom(t)
           }}
         >
           <option value="">New from template…</option>
-          {templates.map((t) => (
+          {starters.map((t) => (
             <option key={t.id} value={t.id} title={t.summary}>
               {t.title}
             </option>
@@ -494,7 +578,7 @@ export function LoadmapEditor({
   const tail = (
     <>
       <button type="button" className="lm-btn" onClick={save}>
-        Download .loadmap
+        {short && !compact ? 'Download' : 'Download .loadmap'}
       </button>
       {actions}
     </>
@@ -507,15 +591,22 @@ export function LoadmapEditor({
       data-theme={look === 'auto' ? undefined : look}
       data-fill={fill || undefined}
       data-narrow={compact || undefined}
-      style={fill ? ({ '--lme-share': `${ratio * 100}%` } as CSSProperties) : undefined}
+      data-canvas={canvas || undefined}
+      style={
+        canvas
+          ? ({
+              '--lme-card': `${cardPx(ratio)}px`,
+              '--lme-gap': `${CARD.gap}px`,
+              '--lme-tab': `${CARD.tab}px`,
+              '--lme-panel': `${PANEL.width}px`,
+              '--lme-rail': `${PANEL.rail}px`,
+            } as CSSProperties)
+          : undefined
+      }
     >
       <div className="lme-bar">
         {start}
-        <output className="lme-status" data-ok={errors === 0}>
-          {errors === 0 && warnings === 0
-            ? 'No problems'
-            : [count(errors, 'error'), count(warnings, 'warning')].filter(Boolean).join(' · ')}
-        </output>
+        {!canvas && status}
         <span className="lme-note" aria-live="polite">
           {note}
         </span>
@@ -566,6 +657,29 @@ export function LoadmapEditor({
       )}
       <div className="lme-split" data-layout={layout}>
         <div className="lme-left" hidden={textHidden}>
+          {canvas && (
+            <div className="lme-card-head">
+              <b>Code</b>
+              {status}
+              <span className="lme-grow" />
+              <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+                Format
+              </button>
+              <button
+                type="button"
+                className="lm-btn"
+                aria-label="Hide code"
+                title="Hide the code: the diagram whole, a box's fields in the panel"
+                onClick={() => {
+                  setLayout('reader')
+                  // the card goes with the button: the keyboard goes to the tab that brings it back
+                  requestAnimationFrame(() => root.current?.querySelector<HTMLElement>('.lme-tab')?.focus())
+                }}
+              >
+                ‹
+              </button>
+            </div>
+          )}
           <div className="lme-code" ref={host} />
           {list.length > 0 && (
             <ul className="lme-problems">
@@ -583,51 +697,81 @@ export function LoadmapEditor({
             </ul>
           )}
         </div>
-        {fill && !compact && !reader && (
+        {fill && !width ? (
+          // nothing drawn before the editor knows its width, and so which layout it takes
+          <div className="lme-preview" />
+        ) : canvas ? (
+          <div className="lme-preview" data-stale={stale || undefined}>
+            {def ? (
+              <EditorCanvas
+                ref={preview}
+                def={def}
+                look={look}
+                initial={sharedValues(def.model, shown.current)}
+                onNodeClick={clickNode}
+                selected={selected}
+                left={CARD.gap * 2 + (reader ? CARD.tab : cardPx(ratio))}
+                panel={panel}
+                onPanel={setPanel}
+                canPin={canPin}
+                inspector={inspector}
+                note={staleNote}
+              />
+            ) : (
+              <p className="lme-empty">Fix the errors in the text to see the diagram.</p>
+            )}
+          </div>
+        ) : (
+          <div className="lme-preview" data-stale={stale || undefined} hidden={compact && !reader && pane === 'text'}>
+            {staleNote}
+            {def ? (
+              <Loadmap
+                ref={preview}
+                model={def.model}
+                view={def.view}
+                theme={look}
+                {...pageOptions(def.options)}
+                zoom
+                initial={sharedValues(def.model, shown.current)}
+                onNodeClick={clickNode}
+                selected={selected}
+              />
+            ) : (
+              <p className="lme-empty">Fix the errors in the text to see the diagram.</p>
+            )}
+          </div>
+        )}
+        {canvas && !reader && (
           // biome-ignore lint/a11y/useSemanticElements: an <hr> takes no focus nor pointer; this separator is moved
           <div
-            className="lme-divider"
+            className="lme-resize"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize the text and the diagram"
-            aria-valuemin={MIN_SHARE * 100}
-            aria-valuemax={MAX_SHARE * 100}
-            aria-valuenow={Math.round(ratio * 100)}
+            aria-label="Resize the code"
+            aria-valuemin={CARD.min}
+            aria-valuemax={Math.round(CARD.max * width)}
+            aria-valuenow={cardPx(ratio)}
             tabIndex={0}
             onPointerDown={drag}
             onKeyDown={nudge}
-            onDoubleClick={() => moveTo(split)}
+            onDoubleClick={() => moveTo(cardPx(split ?? Number.NaN))}
           />
         )}
-        <div className="lme-preview" data-stale={stale || undefined} hidden={compact && !reader && pane === 'text'}>
-          {stale && <p className="lme-stale">Showing the last version without errors.</p>}
-          {def ? (
-            <Loadmap
-              ref={preview}
-              model={def.model}
-              view={def.view}
-              theme={look}
-              {...pageOptions(def.options)}
-              zoom
-              initial={sharedValues(def.model, shown.current)}
-              onNodeClick={clickNode}
-              selected={selected}
-            />
-          ) : (
-            <p className="lme-empty">Fix the errors in the text to see the diagram.</p>
-          )}
-        </div>
-        {reader && (
-          <Inspector
-            inspection={inspection}
-            tab={tab}
-            onTab={setTab}
-            onEdit={change}
-            blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
-            gone={tab === 'box' && !!selected && !inspection}
-            onClose={() => setSelected(null)}
-          />
+        {canvas && reader && (
+          <button
+            type="button"
+            className="lme-tab"
+            data-errors={errors || undefined}
+            onClick={() => {
+              setLayout('code')
+              // the tab goes: the keyboard goes into the text it brought back
+              requestAnimationFrame(() => view.current?.focus())
+            }}
+          >
+            <span aria-hidden="true">›</span> Show code
+          </button>
         )}
+        {!canvas && inspector}
       </div>
     </div>
   )
@@ -644,12 +788,17 @@ export function between(a: string, b: string): { from: number; to: number; inser
   return { from, to: a.length - tail, insert: b.slice(from, b.length - tail) }
 }
 
-const SPLIT = 0.4
-const MIN_SHARE = 0.2
-const MAX_SHARE = 0.8
+/**
+ * The code card: its width to start and its least, in pixels; its most as a share of the editor's; the room it always
+ * leaves the diagram; the gap around it; and the tab it leaves when hidden.
+ */
+const CARD = { start: 440, min: 360, max: 0.6, room: 240, gap: 16, tab: 40 } as const
+/** Below this width the canvas's bar takes the short names. */
+const SHORT = 1200
+/** From this width the side panel starts pinned. */
+const PIN_FROM = 1280
 /** Below this width a filling editor shows one pane at a time. */
 const NARROW = 720
-const clampShare = (n: number) => (Number.isFinite(n) ? Math.min(MAX_SHARE, Math.max(MIN_SHARE, n)) : SPLIT)
 
 /**
  * The buttons that do not fit a narrow bar: a menu that closes on a pick, a click outside it, or Escape. A pick or

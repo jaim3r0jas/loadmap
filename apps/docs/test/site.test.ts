@@ -448,7 +448,7 @@ describe('the built site', () => {
     }
   }, 120_000)
 
-  it('fills the window with the editor, without the docs frame, and keeps where the divider was left', async () => {
+  it('fills the window with the editor as a canvas, the whole diagram in view, and keeps how the reader left it', async () => {
     const browser = await chromium.launch()
     try {
       for (const [width, height] of [
@@ -458,6 +458,13 @@ describe('the built site', () => {
         const page = await browser.newPage({ viewport: { width, height } })
         await page.goto(`${url}editor/`)
         await page.waitForSelector('[data-node]')
+        // fitted once the layout and the view are in: every box inside the room the code and the panel leave
+        await page.waitForFunction(() => {
+          const card = document.querySelector('.lme-left')!.getBoundingClientRect()
+          const panel = document.querySelector('.lme-panel')!.getBoundingClientRect()
+          const boxes = [...document.querySelectorAll('.lme-preview [data-node]')].map((n) => n.getBoundingClientRect())
+          return boxes.every((b) => b.left > card.right && b.right < panel.left && b.top > 0 && b.bottom < innerHeight)
+        })
         const m = await page.evaluate(() => {
           const lme = document.querySelector('.lme')!.getBoundingClientRect()
           const text = document.querySelector('.lme-left')!.getBoundingClientRect()
@@ -466,27 +473,37 @@ describe('the built site', () => {
             frame: document.querySelectorAll('.top, .side, .pager').length,
             scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
             lme: [lme.width, lme.height],
-            side: text.right <= shown.left && text.height > innerHeight * 0.8,
+            // the code floats over the canvas, nearly as tall as the window
+            floats: text.left > shown.left && text.right < shown.right && text.height > innerHeight * 0.8,
+            panel: document.querySelector<HTMLElement>('.lme-panel')!.dataset.mode,
           }
         })
         const at = `${width}x${height}`
         expect(m.frame, at).toBe(0)
         expect(m.scroll, at).toEqual([width, height])
         expect(m.lme, at).toEqual([width, height])
-        expect(m.side, at).toBe(true)
+        expect(m.floats, at).toBe(true)
+        expect(m.panel, at).toBe('pinned')
         await page.close()
       }
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
       await page.goto(`${url}editor/`)
-      const divider = page.getByRole('separator', { name: 'Resize the text and the diagram' })
-      expect(await divider.getAttribute('aria-valuenow')).toBe('40')
-      await divider.focus()
+      const edge = page.getByRole('separator', { name: 'Resize the code' })
+      expect(await edge.getAttribute('aria-valuenow')).toBe('440')
+      await edge.focus()
       for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
-      expect(await divider.getAttribute('aria-valuenow')).toBe('50')
+      expect(await edge.getAttribute('aria-valuenow')).toBe('520')
       await page.reload()
-      expect(await divider.getAttribute('aria-valuenow')).toBe('50')
-      const half = await page.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().width)
-      expect(Math.abs(half - 720)).toBeLessThan(12)
+      expect(await edge.getAttribute('aria-valuenow')).toBe('520')
+      const wide = await page.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().width)
+      expect(Math.abs(wide - 520)).toBeLessThan(2)
+      // the code hidden and the panel unpinned stay so
+      await page.getByRole('button', { name: 'Hide code' }).click()
+      await page.getByRole('button', { name: 'Unpin' }).click()
+      await page.reload()
+      await page.waitForSelector('.lme-tab')
+      expect(await page.locator('.lme-left').isHidden()).toBe(true)
+      expect(await page.locator('.lme-rail').isVisible()).toBe(true)
       await page.getByRole('button', { name: 'Help' }).click()
       expect(await page.locator('#help').isVisible()).toBe(true)
       await page.keyboard.press('Escape')
