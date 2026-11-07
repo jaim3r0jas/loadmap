@@ -1,5 +1,15 @@
 # @loadmap/react
 
+## 0.17.1
+
+### Patch Changes
+
+- 82906fb: The README's quick start passes `theme="inherit"`, so its diagram follows the light and dark switch of the page it is on, and the system's while the page has none.
+- @loadmap/core@0.17.1
+  - @loadmap/dsl@0.17.1
+  - @loadmap/layout@0.17.1
+  - @loadmap/sim@0.17.1
+
 ## 0.17.0
 
 ### Minor Changes
