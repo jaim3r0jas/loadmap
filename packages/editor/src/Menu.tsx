@@ -100,9 +100,11 @@ export function Menu({
     const p = pop.current
     const b = button.current
     if (!open || !p || !b) return
-    // placed again as its items come and grow it; a scroll of the page moves its button, so it closes
-    const ro = new ResizeObserver(() => place(p, b))
+    // placed again as its items come and grow it; a scroll of the page moves its button, and a narrow column can hide
+    // it, so it closes
+    const ro = new ResizeObserver(() => (b.checkVisibility() ? place(p, b) : p.hidePopover()))
     ro.observe(p)
+    ro.observe(b)
     const scroll = (e: Event) => !p.contains(e.target as Node) && p.hidePopover()
     addEventListener('scroll', scroll, true)
     const stop = () => {
@@ -252,11 +254,11 @@ export const barItems = (list: readonly BarItem[] | undefined, sheet?: boolean) 
     </MenuItem>
   ))
 
-/** A page's sections as groups of items in a menu. */
-export const sections = (list: readonly BarSection[] | undefined) =>
+/** A page's sections as groups of items, in a menu or the sheet. */
+export const sections = (list: readonly BarSection[] | undefined, sheet?: boolean) =>
   list?.map((s) => (
     <MenuGroup key={s.label} label={s.label}>
-      {barItems(s.items)}
+      {barItems(s.items, sheet)}
     </MenuGroup>
   ))
 
@@ -267,21 +269,33 @@ const toolsOf = (bar: Element) =>
 
 /**
  * A toolbar's one stop for Tab: the arrows, Home and End move between its controls, and Tab comes back to the last
- * one used. `shape` names the controls it holds: when it changes, a control that appeared takes no stop of its own.
+ * one used, or the first one shown. `shape` names the controls it holds: when it changes, or the bar's width hides
+ * some (a narrow column folds them into a menu), the stop is set again.
  */
 export function useToolbar(bar: RefObject<HTMLElement | null>, shape: string) {
   const current = useRef<HTMLElement | null>(null)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the controls change with the shape, not with every render
-  useLayoutEffect(() => {
+  const stop = () => {
     const el = bar.current
     if (!el) return
     const all = toolsOf(el)
     const keep = all.find((t) => t === current.current) ?? all[0]
-    for (const t of all) t.tabIndex = t === keep ? 0 : -1
-  }, [bar, shape])
+    for (const t of el.querySelectorAll<HTMLElement>('button, a[href]'))
+      if (!t.closest('[popover], dialog')) t.tabIndex = t === keep ? 0 : -1
+    // the control used last went (a narrow column folded it) with the keyboard on it: the keyboard goes to the stop
+    const lost = current.current && !all.includes(current.current)
+    if (lost && keep && (document.activeElement === current.current || document.activeElement === document.body)) {
+      current.current = keep
+      keep.focus()
+    }
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the controls change with the shape, not with every render
+  useLayoutEffect(stop, [bar, shape])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: made once; it reads the bar as it is
   useEffect(() => {
     const el = bar.current
     if (!el) return
+    const ro = new ResizeObserver(stop)
+    ro.observe(el)
     const focus = (e: FocusEvent) => {
       const t = e.target as HTMLElement
       const all = toolsOf(el)
@@ -311,6 +325,7 @@ export function useToolbar(bar: RefObject<HTMLElement | null>, shape: string) {
     el.addEventListener('focusin', focus)
     el.addEventListener('keydown', key)
     return () => {
+      ro.disconnect()
       el.removeEventListener('focusin', focus)
       el.removeEventListener('keydown', key)
     }

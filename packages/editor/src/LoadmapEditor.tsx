@@ -604,6 +604,29 @@ export function LoadmapEditor({
       <Starters templates={templates || undefined} sheet={sheet} onPick={startFrom} />
     </Suspense>
   )
+  // the same groups in the phone's sheet and in a narrow column's menu
+  const viewGroup = (sheet?: boolean) => (
+    <MenuGroup label="View">
+      <MenuItem sheet={sheet} onSelect={toggleCode}>
+        {reader ? 'Show code' : 'Hide code'}
+      </MenuItem>
+      {!reader && (
+        <MenuItem sheet={sheet} onSelect={formatText}>
+          Format
+        </MenuItem>
+      )}
+    </MenuGroup>
+  )
+  const exportGroups = (sheet?: boolean) => (
+    <>
+      <MenuGroup label="Export">
+        <MenuItem sheet={sheet} onSelect={save}>
+          Download .loadmap
+        </MenuItem>
+      </MenuGroup>
+      {sections(exportItems, sheet)}
+    </>
+  )
   const share = (
     <>
       <span className="lme-share" ref={shareGroup}>
@@ -697,25 +720,8 @@ export function LoadmapEditor({
                       ...(newItems ?? []).map((s) => ({ label: s.label, items: () => barItems(s.items, true) })),
                     ]}
                   >
-                    <MenuGroup label="View">
-                      <MenuItem sheet onSelect={toggleCode}>
-                        {reader ? 'Show code' : 'Hide code'}
-                      </MenuItem>
-                      {!reader && (
-                        <MenuItem sheet onSelect={formatText}>
-                          Format
-                        </MenuItem>
-                      )}
-                    </MenuGroup>
-                    <MenuGroup label="Export">
-                      <MenuItem sheet onSelect={save}>
-                        Download .loadmap
-                      </MenuItem>
-                      {barItems(
-                        exportItems?.flatMap((s) => s.items),
-                        true,
-                      )}
-                    </MenuGroup>
+                    {viewGroup(true)}
+                    {exportGroups(true)}
                     {embedOn && (
                       <MenuGroup label="Share">
                         <MenuItem sheet onSelect={() => showEmbed(tools.current?.parentElement)}>
@@ -731,17 +737,17 @@ export function LoadmapEditor({
           ) : (
             <>
               {!canvas && (
-                <button type="button" className="lm-btn" aria-pressed={!reader} onClick={toggleCode}>
+                <button type="button" className="lm-btn lme-wide" aria-pressed={!reader} onClick={toggleCode}>
                   {reader ? 'Show code' : 'Hide code'}
                 </button>
               )}
               {!reader && !canvas && (
-                <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+                <button type="button" className="lm-btn lme-wide" onClick={formatText} title="Shift+Alt+F">
                   Format
                 </button>
               )}
               {(hasTemplates || !!newItems?.length) && (
-                <Menu label="New">
+                <Menu label="New" className="lme-wide">
                   {() => (
                     <>
                       {hasTemplates && <MenuGroup label="Templates">{templateItems()}</MenuGroup>}
@@ -750,7 +756,7 @@ export function LoadmapEditor({
                   )}
                 </Menu>
               )}
-              <Menu label="Export">
+              <Menu label="Export" className="lme-wide">
                 {() => (
                   <>
                     <MenuItem onSelect={save}>Download .loadmap</MenuItem>
@@ -758,6 +764,19 @@ export function LoadmapEditor({
                   </>
                 )}
               </Menu>
+              {!fill && (
+                // a narrow column (below 560 px): the buttons above fold into one menu, so the bar keeps one row
+                <Menu label="More" icon={<Icon d={ICON.more} />} className="lme-quiet lme-icon lme-fold">
+                  {() => (
+                    <>
+                      {viewGroup()}
+                      {hasTemplates && <MenuGroup label="Templates">{templateItems()}</MenuGroup>}
+                      {sections(newItems)}
+                      {exportGroups()}
+                    </>
+                  )}
+                </Menu>
+              )}
               {actions && (
                 <>
                   <span className="lme-sep" />

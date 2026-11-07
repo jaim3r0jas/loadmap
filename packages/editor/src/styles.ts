@@ -24,6 +24,9 @@ export const EDITOR_CSS = `
 .lme-share > .lm-btn:not(:only-of-type):first-child { border-radius: 6px 0 0 6px; }
 .lme-share > .lm-btn + .lm-btn { width: 28px; padding: 0; border-radius: 0 6px 6px 0; border-left-color: color-mix(in srgb, var(--lm-surface) 40%, var(--lm-accent)); }
 .lme-share .lme-chev { width: 14px; height: 14px; margin: 0; color: inherit; }
+.lm-btn.lme-fold { display: none; }
+/* an editor in a narrow column: View, New and Export in one menu, the bar one row */
+@container (width < 560px) { .lme:not([data-fill]) .lm-btn.lme-wide { display: none; } .lme:not([data-fill]) .lm-btn.lme-fold { display: inline-flex; } }
 .lme-sep { flex: none; width: 1px; height: 20px; margin: 0 2px; background: var(--lm-line); }
 /* menus and the embed's options: in the top layer, placed under their button */
 .lme-menu, .lme-pop { position: fixed; inset: auto; margin: 0; box-sizing: border-box; overflow: auto; overscroll-behavior: contain; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / .18); font: 400 .84rem var(--lm-font); }
