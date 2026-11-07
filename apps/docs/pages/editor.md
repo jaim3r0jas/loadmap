@@ -22,10 +22,13 @@ has Format, Undo, an indent, braces, quotes and Done; **⋯** has the rest.
 A click on a box selects its lines in the text, and the cursor in a box's lines rings the box. **Format**
 (Shift+Alt+F) lays the text out the one way, as `loadmap fmt` does.
 
-**Share link** puts the whole definition and the values you set into a link. It opens with the text hidden: the
-diagram, and an inspector in the panel. Click a box to change its label, its capacity and the parameters it reads, or open
-**Model** for the title, the load, growth and the flows. Each change is a small edit of the text, so **Undo** takes it
-back, the link carries it, and **Show code** shows what changed.
+**New** starts from a template or an example, and **Export** downloads the text or an image.
+
+**Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a
+page…**, for a frame in another page. The link opens with the text hidden: the diagram, and an inspector in the panel.
+Click a box to change its label, its capacity and the parameters it reads, or open **Model** for the title, the load,
+growth and the flows. Each change is a small edit of the text, so **Undo** takes it back, the link carries it, and
+**Show code** shows what changed.
 
 [The language](/language/) · [Reference](/reference/) · [Templates](/templates/)
 

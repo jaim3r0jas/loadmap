@@ -1,5 +1,6 @@
 import type { FullScreenMode } from '@loadmap/react'
-import { lazy, Suspense, useRef, useState } from 'react'
+import { type Ref, Suspense, useImperativeHandle, useRef, useState } from 'react'
+import { later, place } from './Menu'
 
 /** What an embed shows: the diagram (focus) or the panels too, its theme, and whether it plays the story. */
 export interface EmbedOptions {
@@ -15,44 +16,42 @@ export interface EmbedProps {
   title: string
   /** The definition has a story to play. */
   story: boolean
-  /** A narrow bar: the button says "Embed". */
-  short?: boolean
   onNote: (note: string) => void
 }
 
-const Panel = lazy(() => import('./EmbedPanel'))
+export interface EmbedHandle {
+  /** Opens the options under what asked for them. */
+  show(anchor: Element): void
+}
+
+const Panel = later(() => import('./EmbedPanel'), 'The embed’s options did not load: reload the page.')
 
 /**
- * "Copy embed link": a menu beside "Share link" that copies a link to a page framing this definition, or the
- * `<iframe>` that frames it, with the options the page reads. The link carries the whole definition, as a share link
- * does: anyone who can open the page it is pasted in can read it. Its options load when it first opens.
+ * "Embed in a page…": the options for a link to a page framing this definition, or the `<iframe>` that frames it, in
+ * a popover under Share. The link carries the whole definition, as a share link does: anyone who can open the page it
+ * is pasted in can read it. Its options load when it first opens.
  */
-export function Embed({ short, ...props }: EmbedProps) {
-  const menu = useRef<HTMLDetailsElement>(null)
-  const [opened, setOpened] = useState(false)
+export function Embed({ ref, ...props }: EmbedProps & { ref: Ref<EmbedHandle> }) {
+  const pop = useRef<HTMLDivElement>(null)
+  const [drawn, setDrawn] = useState(false)
+  useImperativeHandle(ref, () => ({
+    show(anchor) {
+      const p = pop.current
+      if (!p) return
+      setDrawn(true)
+      p.showPopover()
+      place(p, anchor)
+      // opened again: its options are there already, the keyboard goes to the first (the first time, they take it)
+      p.querySelector('input')?.focus()
+    },
+  }))
   return (
-    <details
-      className="lme-embed"
-      ref={menu}
-      onToggle={(e) => {
-        const d = e.currentTarget
-        if (!d.open) return
-        setOpened(true)
-        const pop = d.querySelector<HTMLElement>('.lme-pop')
-        if (pop) import('./EmbedPanel').then((m) => m.place(pop))
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== 'Escape' || !menu.current?.open) return
-        menu.current.open = false
-        menu.current.querySelector('summary')?.focus()
-      }}
-    >
-      <summary className="lm-btn">{short ? 'Embed' : 'Copy embed link'}</summary>
-      {opened && (
+    <div ref={pop} popover="auto" role="dialog" aria-label="Embed in a page" className="lme-pop">
+      {drawn && (
         <Suspense fallback={null}>
           <Panel {...props} />
         </Suspense>
       )}
-    </details>
+    </div>
   )
 }

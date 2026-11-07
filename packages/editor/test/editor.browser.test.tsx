@@ -2,14 +2,14 @@ import { undo } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { decodeShare } from '@loadmap/dsl'
-import { createRef } from 'react'
+import { createRef, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
 import { watchDots } from '../../../examples/dots'
-import { type EmbedOptions, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
+import { type BarSection, type EmbedOptions, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -115,11 +115,14 @@ describe('the editor', () => {
     }
     const { host, handle } = await mount({ source: alerts, embedLink })
     handle.loadmap()!.setValues({ load: 25 })
-    await userEvent.click(page.getByText('Copy embed link'))
-    // its options load as it first opens; it opens toward the side with room, inside the window
-    await expect.poll(() => host.querySelector('.lme-pop')).toBeTruthy()
+    await userEvent.click(page.getByRole('button', { name: 'More ways to share' }))
+    await userEvent.click(page.getByRole('menuitem', { name: 'Embed in a page…' }))
+    // its options load as it first opens, under Share, inside the window, the keyboard on the first
+    await expect.poll(() => host.querySelector('.lme-embed')).toBeTruthy()
     const pop = host.querySelector('.lme-pop')!.getBoundingClientRect()
     expect(pop.left >= 0 && pop.right <= document.documentElement.clientWidth).toBe(true)
+    expect(pop.top).toBeGreaterThan(host.querySelector('.lme-share')!.getBoundingClientRect().bottom)
+    await expect.poll(() => (document.activeElement as HTMLInputElement | null)?.type).toBe('radio')
     await userEvent.click(page.getByLabelText('Dark'))
     await userEvent.click(page.getByLabelText(/Play the story/))
     await userEvent.click(page.getByRole('button', { name: 'Copy link' }))
@@ -138,11 +141,18 @@ describe('the editor', () => {
       .toBe(
         `<iframe src="https://x.test/embed/?theme=dark#${hash.replace(/&/g, '&amp;')}" title="Alerts and live positions" width="100%" height="480" style="border: 0" loading="lazy" allow="fullscreen"></iframe>`,
       )
+    // Escape closes it; opened again, the keyboard goes back into it
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => host.querySelector('.lme-pop:popover-open')).toBeNull()
+    await userEvent.click(page.getByRole('button', { name: 'More ways to share' }))
+    await userEvent.click(page.getByRole('menuitem', { name: 'Embed in a page…' }))
+    await expect.poll(() => (document.activeElement as HTMLInputElement | null)?.type).toBe('radio')
   })
 
   it('has no embed menu without a page to frame it', async () => {
     const { host } = await mount()
-    expect(host.querySelector('.lme-embed')).toBeNull()
+    expect(host.querySelector('.lme-pop')).toBeNull()
+    expect(page.getByRole('button', { name: 'More ways to share' }).query()).toBeNull()
   })
 
   it('shares a scenario: the link reopens with its button pressed', async () => {
@@ -170,22 +180,31 @@ describe('the editor', () => {
 
   it('starts from a template', async () => {
     const { host, handle } = await mount()
-    const menu = host.querySelector('select[aria-label="New from template"]') as HTMLSelectElement
-    expect([...menu.options].slice(1).map((o) => o.value)).toEqual(TEMPLATES.map((t) => t.id))
+    await userEvent.click(page.getByRole('button', { name: 'New' }))
+    // the list loads as the menu first opens
+    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length)
+    const names = [...host.querySelectorAll('[role="menuitem"]')].map((i) => i.firstChild?.textContent)
+    expect(names).toEqual(TEMPLATES.map((t) => t.title))
+    // each with its line, said after its name
+    const queue = page.getByRole('menuitem', { name: 'Queue and workers' })
+    await expect.element(queue).toHaveAccessibleDescription('An API that queues jobs for a pool of workers.')
     // the text is as it was loaded: no question
-    await userEvent.selectOptions(menu, 'queue-workers')
+    await userEvent.click(queue)
     await expect.poll(() => host.querySelector('.lm h2')?.textContent).toBe('Queue and workers')
     expect(handle.source()).toBe(TEMPLATES.find((t) => t.id === 'queue-workers')!.source)
     await handle.loadmap()!.ready()
     expect(host.querySelectorAll('.lme-preview [data-node]')).toHaveLength(5)
-    expect(menu.value).toBe('')
+    expect(host.querySelector('.lme-menu:popover-open')).toBeNull()
   })
 
   it('asks before replacing edited text, and undo brings it back', async () => {
-    const { host, handle, edit, view } = await mount()
+    const { handle, edit, view } = await mount()
     edit('"Postgres primary"', '"Main database"')
     const edited = handle.source()
-    const menu = host.querySelector('select[aria-label="New from template"]') as HTMLSelectElement
+    const pick = async () => {
+      await userEvent.click(page.getByRole('button', { name: 'New' }))
+      await userEvent.click(page.getByRole('menuitem', { name: 'Web app and database' }))
+    }
     const asked: string[] = []
     const confirm = window.confirm
     try {
@@ -193,11 +212,11 @@ describe('the editor', () => {
         asked.push(String(q))
         return false
       }
-      await userEvent.selectOptions(menu, 'web-app')
-      expect(asked).toEqual(['Replace your text with “Web app and database”?'])
+      await pick()
+      await expect.poll(() => asked).toEqual(['Replace your text with “Web app and database”?'])
       expect(handle.source()).toBe(edited)
       window.confirm = () => true
-      await userEvent.selectOptions(menu, 'web-app')
+      await pick()
       // the starter's text loads when it is picked
       await expect.poll(() => handle.source()).toBe(TEMPLATES[0]!.source)
       undo(view)
@@ -222,13 +241,14 @@ describe('the editor', () => {
     }
   })
 
-  it('hides the menu with templates={false}', async () => {
+  it('hides New with templates={false} and nothing else in it', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
     root.render(<LoadmapEditor initial={checkout} templates={false} />)
     await expect.poll(() => host.querySelector('.lme-bar')).toBeTruthy()
-    expect(host.querySelector('select[aria-label="New from template"]')).toBeNull()
+    expect(page.getByRole('button', { name: 'New' }).query()).toBeNull()
+    expect(page.getByRole('button', { name: 'Export' }).query()).toBeTruthy()
   })
 
   it('reads values from a link by the kind of each parameter', async () => {
@@ -257,6 +277,10 @@ describe('the editor filling its container', () => {
       panel?: 'pinned' | 'auto'
       layout?: 'code' | 'reader'
       start?: string
+      embedLink?: (hash: string, o: EmbedOptions) => string
+      newItems?: BarSection[]
+      exportItems?: BarSection[]
+      actions?: ReactNode
     } = {},
   ) {
     await page.viewport(Math.max(1440, width), 900)
@@ -276,6 +300,10 @@ describe('the editor filling its container', () => {
         panel={o.panel}
         layout={o.layout}
         start={o.start && <a href="/">{o.start}</a>}
+        embedLink={o.embedLink}
+        newItems={o.newItems}
+        exportItems={o.exportItems}
+        actions={o.actions}
       />,
     )
     await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
@@ -347,6 +375,113 @@ describe('the editor filling its container', () => {
     const dots = watchDots(host.querySelector('.lme-preview canvas')!)
     await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
     await expect.poll(dots, { timeout: 5000 }).toEqual({ pixels: true, round: true })
+  })
+
+  /** A page's own things in the bar, as the docs' editor gives them. */
+  const picked: string[] = []
+  const site = {
+    embedLink: (hash: string) => `https://x.test/embed/#${hash}`,
+    newItems: [{ label: 'Examples', items: [{ label: 'Alerts', onSelect: () => picked.push('Alerts') }] }],
+    exportItems: [{ label: 'Image', items: [{ label: 'PNG', onSelect: () => picked.push('PNG') }] }],
+    actions: (
+      <button type="button" className="lm-btn lme-quiet lme-icon" aria-label="Help">
+        ?
+      </button>
+    ),
+  }
+  /** Opens a menu of the bar, finds each item named, and closes it again with Escape. */
+  async function reach(menu: string, items: string[]) {
+    const button = page.getByRole('button', { name: menu, exact: true })
+    await userEvent.click(button)
+    for (const name of items) await expect.element(page.getByRole('menuitem', { name, exact: true })).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+    await expect.element(button).toHaveAttribute('aria-expanded', 'false')
+  }
+
+  it('keeps the bar one row of one height from 720 to 2560 px, every action in reach', async () => {
+    const heights = new Set<number>()
+    for (const width of [2560, 1440, 1280, 1000, 950, 800, 720]) {
+      const { host } = await fill(width, { ...site, start: 'Back' })
+      const bar = box(host, '.lme-bar')
+      heights.add(bar.height)
+      // every control on one line, as tall as the others, inside the bar
+      const controls = [...host.querySelectorAll<HTMLElement>('.lme-bar button, .lme-bar a')]
+        .filter((c) => !c.closest('[popover]') && c.getClientRects().length > 0)
+        .map((c) => c.getBoundingClientRect())
+      const rows = new Set(controls.filter((c) => c.height > 24).map((c) => `${c.top - bar.top}:${c.height}`))
+      expect(rows, `${width}`).toEqual(new Set(['7.5:32']))
+      expect(Math.max(...controls.map((c) => c.right)), `${width}`).toBeLessThanOrEqual(bar.right)
+      expect(host.querySelector('.lme-title')!.textContent).toBe('Checkout pipeline')
+      expect(page.getByRole('button', { name: 'Share', exact: true }).element()).toBeVisible()
+      await reach('New', ['Web app and database', 'Alerts'])
+      await reach('Export', ['Download .loadmap', 'PNG'])
+      await reach('More ways to share', ['Copy link', 'Embed in a page…'])
+      expect(page.getByRole('button', { name: 'Help' }).element()).toBeVisible()
+      root?.unmount()
+      root = null
+      document.body.replaceChildren()
+    }
+    expect([...heights]).toEqual([48])
+  })
+
+  it('runs a page’s item from its menu, and closes the menu', async () => {
+    picked.length = 0
+    const { host } = await fill(1200, site)
+    await userEvent.click(page.getByRole('button', { name: 'Export' }))
+    await userEvent.click(page.getByRole('menuitem', { name: 'PNG' }))
+    expect(picked).toEqual(['PNG'])
+    expect(host.querySelector('.lme-menu:popover-open')).toBeNull()
+  })
+
+  it('opens a menu from the keyboard, moves in it with the arrows and letters, and Escape gives the focus back', async () => {
+    await fill(1200, site)
+    const named = () => document.activeElement?.firstChild?.textContent
+    const button = page.getByRole('button', { name: 'New' }).element() as HTMLElement
+    button.focus()
+    await userEvent.keyboard('{Enter}')
+    // the templates load first: the keyboard waits for them
+    await expect.poll(named).toBe('Web app and database')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(named()).toBe('Reads on replicas')
+    await userEvent.keyboard('{End}')
+    expect(named()).toBe('Alerts')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(named()).toBe('Web app and database')
+    await userEvent.keyboard('{ArrowUp}')
+    expect(named()).toBe('Alerts')
+    await userEvent.keyboard('{Home}')
+    await userEvent.keyboard('q')
+    expect(named()).toBe('Queue and workers')
+    await userEvent.keyboard('{Escape}')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(button)
+    // ↑ opens it on its last item; Tab closes it and goes on
+    await userEvent.keyboard('{ArrowUp}')
+    await expect.poll(named).toBe('Alerts')
+    await userEvent.keyboard('{Tab}')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement?.closest('[popover]')).toBeNull()
+  })
+
+  it('makes the bar’s tools one stop for Tab, the arrows moving between them', async () => {
+    const { host } = await fill(1200, site)
+    const tools = host.querySelector<HTMLElement>('[role="toolbar"]')!
+    const stops = () => [...tools.querySelectorAll<HTMLElement>('button')].filter((b) => b.tabIndex === 0)
+    expect(stops().map((b) => b.textContent)).toEqual(['New'])
+    const name = () => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent
+    stops()[0]!.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(name()).toBe('Export')
+    await userEvent.keyboard('{ArrowRight}')
+    expect(name()).toBe('Help')
+    await userEvent.keyboard('{End}')
+    expect(name()).toBe('More ways to share')
+    await userEvent.keyboard('{ArrowRight}')
+    expect(name()).toBe('New')
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(name()).toBe('More ways to share')
+    // Tab comes back to the last one used
+    expect(stops().map((b) => b.getAttribute('aria-label'))).toEqual(['More ways to share'])
   })
 
   it('pins the panel on a wide editor, and unpinned keeps it on a rail it opens from', async () => {
@@ -452,15 +587,41 @@ describe('the editor filling its container', () => {
     // the panels in a sheet over the diagram's bottom, the diagram above it
     await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
     await expect.poll(() => drawn(host).bottom, { timeout: 5000 }).toBeLessThan(box(host, '.lme-sheet').top)
-    const sheet = host.querySelector<HTMLDialogElement>('dialog.lme-actions')!
-    expect(sheet.open).toBe(false)
+    // drawn, and its code loaded, only when ⋯ opens it
+    const sheet = () => host.querySelector<HTMLDialogElement>('dialog.lme-actions')
+    expect(sheet()).toBeNull()
     await userEvent.click(page.getByRole('button', { name: 'More' }))
-    expect(sheet.open).toBe(true)
+    await expect.poll(() => sheet()?.open).toBe(true)
     await userEvent.click(page.getByRole('button', { name: 'Format' }))
-    expect(sheet.open).toBe(false)
+    await expect.poll(sheet).toBeNull()
     // the focus back on what opened it
     await expect.poll(() => document.activeElement?.getAttribute('aria-label')).toBe('More')
     expect(page.getByRole('button', { name: 'Share' }).element()).toBeTruthy()
+  })
+
+  it('holds every action of the bar in the phone’s sheet, the templates a page of their own', async () => {
+    picked.length = 0
+    const { host } = await fill(400, site)
+    const sheet = () => host.querySelector<HTMLDialogElement>('dialog.lme-actions')
+    const more = page.getByRole('button', { name: 'More' })
+    await userEvent.click(more)
+    for (const name of ['Hide code', 'Format', 'Download .loadmap', 'PNG', 'Embed in a page…', 'Help', 'Close'])
+      await expect.element(page.getByRole('button', { name, exact: true })).toBeVisible()
+    await userEvent.click(page.getByRole('button', { name: 'From a template' }))
+    expect(sheet()?.open).toBe(true)
+    await expect.element(page.getByRole('button', { name: 'Web app and database' })).toBeVisible()
+    await userEvent.click(page.getByRole('button', { name: 'From a template' }))
+    await userEvent.click(page.getByRole('button', { name: 'Examples' }))
+    await userEvent.click(page.getByRole('button', { name: 'Alerts' }))
+    expect(picked).toEqual(['Alerts'])
+    await expect.poll(sheet).toBeNull()
+    // the embed's options open from it too, under the bar
+    await userEvent.click(more)
+    await userEvent.click(page.getByRole('button', { name: 'Embed in a page…' }))
+    await expect.poll(() => host.querySelector('.lme-pop:popover-open .lme-embed')).toBeTruthy()
+    const pop = host.querySelector('.lme-pop')!.getBoundingClientRect()
+    expect(pop.top).toBeGreaterThan(box(host, '.lme-bar').bottom)
+    expect(pop.left >= 0 && pop.right <= document.documentElement.clientWidth).toBe(true)
   })
 
   it('brings a phone’s sheet up for each box tapped while the code is hidden, and the handle answers Enter', async () => {

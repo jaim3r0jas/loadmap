@@ -1,6 +1,6 @@
 // The reader's light or dark, kept in this browser; nothing kept follows the system. It is `data-theme` on <html>,
 // which docs.css and every board with theme="inherit" follow. HEAD sets it before the first paint; the switch, on
-// every page and in the editor's bar (theme-switch.ts), changes it. Every page loads this, the markup apart; the
+// every page and in the editor's sheet (theme-switch.ts), or the editor's menu (a `loadmap:theme` event), changes it. Every page loads this, the markup apart; the
 // embed loads none of it, since its link decides.
 export type Choice = 'system' | 'light' | 'dark'
 
@@ -51,6 +51,8 @@ export function wire() {
     const input = e.target
     if (input instanceof HTMLInputElement && input.checked && input.closest('.theme')) choose(input.value as Choice)
   })
+  // the editor's theme menu, which the island draws without this module
+  document.addEventListener('loadmap:theme', (e) => choose((e as CustomEvent<Choice>).detail))
   const again = () => {
     const c = kept()
     if (c) show(c)

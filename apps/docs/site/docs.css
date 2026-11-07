@@ -126,8 +126,7 @@ a {
 }
 
 .theme legend,
-.bar > .theme .theme-name,
-.lme:not([data-narrow]) .theme-name {
+.bar > .theme .theme-name {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -187,8 +186,7 @@ a {
   color: var(--muted);
 }
 
-.bar > .theme .theme-caption,
-.lme:not([data-narrow]) .theme-caption {
+.bar > .theme .theme-caption {
   display: none;
 }
 
@@ -668,12 +666,20 @@ body.app main > .island {
 }
 
 .app-brand {
-  margin: 0 4px;
+  flex: none;
   color: var(--fg);
   font-weight: 700;
   font-size: 1rem;
   letter-spacing: -0.01em;
   text-decoration: none;
+}
+
+/* the brand, then the model's name */
+.app-brand::after {
+  content: "/";
+  margin-left: 8px;
+  color: var(--line);
+  font-weight: 400;
 }
 
 .app-error {
@@ -736,15 +742,16 @@ body.app main > .island {
   font-size: 0.9rem;
 }
 
-/* the editor's bar, wide or narrow as the editor itself measures it */
-.lme .theme label {
-  height: 24px;
-}
-
+/* the editor's bar, wide, short or narrow as the editor itself measures it */
 .lme[data-narrow] .theme {
   display: grid;
   gap: 4px;
   margin-top: 4px;
+}
+
+/* in the phone's sheet of actions, under a caption in line with its headings, as tall as its rows */
+.lme[data-narrow] .theme-caption {
+  padding: 8px 10px 0;
 }
 
 /* in the phone's sheet of actions, as tall as its buttons */
@@ -753,7 +760,16 @@ body.app main > .island {
 }
 
 .lme[data-narrow] .app-brand,
+.lme[data-short] .app-brand,
+.lme[data-narrow] .app-label,
+.lme[data-short] .app-label,
 .lme[data-narrow] .app-wide,
 .lme:not([data-narrow]) .app-narrow {
   display: none;
+}
+
+/* the way back as its arrow alone */
+.lme[data-short] .app-close {
+  width: 32px;
+  padding: 0;
 }

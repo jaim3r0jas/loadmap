@@ -1,30 +1,23 @@
 import type { FullScreenMode } from '@loadmap/react'
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { EmbedOptions, EmbedProps } from './Embed'
 
 /** The menu's own rules: they come with it, not in the editor's first load. */
 const CSS = `
-.lme-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: min(360px, 90vw); display: grid; gap: 8px; padding: 12px 14px; font-size: .85rem; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / .14); }
-.lme-pop[data-end] { left: auto; right: 0; }
-.lme-pop label { display: flex; gap: 6px; align-items: center; }
+.lme-embed { display: grid; gap: 8px; font-size: .85rem; }
+.lme-embed label { display: flex; gap: 6px; align-items: center; }
 .lme-choice { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; border: 0; }
 .lme-choice legend { float: left; margin-right: 8px; color: var(--lm-muted); }
 .lme-pop-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .lme-pop-row > .lm-btn { flex: 1; }
 .lme-made { font: .75rem var(--lm-mono); color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 4px; padding: 4px 6px; min-width: 0; }
-.lme-pop small { color: var(--lm-muted); line-height: 1.4; }
+.lme-embed small { color: var(--lm-muted); line-height: 1.4; }
 `
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 
-/** Opens under its button, toward the side with the room: the button often ends the bar. */
-export function place(pop: HTMLElement) {
-  pop.removeAttribute('data-end')
-  if (pop.getBoundingClientRect().right > document.documentElement.clientWidth) pop.setAttribute('data-end', '')
-}
-
-/** The embed menu's options and buttons: loaded the first time the menu opens, so the editor's first load lacks them. */
-export default function EmbedPanel({ link, hash, title, story, onNote }: Omit<EmbedProps, 'short'>) {
+/** The embed's options and buttons: loaded the first time they open, so the editor's first load lacks them. */
+export default function EmbedPanel({ link, hash, title, story, onNote }: EmbedProps) {
   // the diagram first, whatever the definition's full screen does: a frame in a doc is small for the panels
   const [mode, setMode] = useState<FullScreenMode>('focus')
   const [theme, setTheme] = useState<EmbedOptions['theme']>('auto')
@@ -33,9 +26,8 @@ export default function EmbedPanel({ link, hash, title, story, onNote }: Omit<Em
   const [made, setMade] = useState('')
   const pop = useRef<HTMLDivElement>(null)
   const id = useId()
-  useLayoutEffect(() => {
-    if (pop.current) place(pop.current)
-  }, [])
+  // it opens from a menu that has closed: the keyboard goes to its first choice
+  useEffect(() => pop.current?.querySelector('input')?.focus(), [])
   const copy = async (what: 'link' | 'iframe') => {
     const url = link(await hash(), { mode, theme, play: story && play })
     const text =
@@ -62,7 +54,7 @@ export default function EmbedPanel({ link, hash, title, story, onNote }: Omit<Em
     </fieldset>
   )
   return (
-    <div className="lme-pop" ref={pop}>
+    <div className="lme-embed" ref={pop}>
       <style>{CSS}</style>
       <b>Embed in ClickUp or any page</b>
       {choice('Show', mode, setMode, [

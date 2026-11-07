@@ -426,7 +426,7 @@ describe('the built site', () => {
     }, 120_000)
   })
 
-  it('keeps the draft aside when an example takes its place in the editor', async () => {
+  it('keeps the draft aside when an example takes its place in the editor, its images in Export', async () => {
     const browser = await chromium.launch()
     try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
@@ -438,11 +438,22 @@ describe('the built site', () => {
       await page.evaluate((s) => localStorage.setItem('loadmap-editor-draft', s), mine)
       await page.reload()
       await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
-      await page.getByRole('combobox', { name: 'Open an example' }).selectOption('checkout')
+      const example = async (name: string) => {
+        await page.getByRole('button', { name: 'New', exact: true }).click()
+        await page.getByRole('menuitem', { name, exact: true }).click()
+      }
+      await example('Checkout')
       await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'Checkout pipeline')
       expect(await page.evaluate(() => localStorage.getItem('loadmap-editor-draft-earlier'))).toBe(mine)
-      await page.getByRole('combobox', { name: 'Open an example' }).selectOption('earlier')
+      await example('Your earlier draft')
       await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
+      // the name in the bar follows the text
+      expect(await page.locator('.lme-title').textContent()).toBe('My uploads')
+      await page.getByRole('button', { name: 'Export', exact: true }).click()
+      // each item's name, its line apart, once the menu has drawn them
+      await page.getByRole('menuitem', { name: 'GIF' }).waitFor()
+      const items = await page.getByRole('menu', { name: 'Export' }).locator('.lme-item > span').allTextContents()
+      expect(items).toEqual(['Download .loadmap', 'PNG', 'Poster', 'GIF'])
     } finally {
       await browser.close()
     }
@@ -643,7 +654,8 @@ describe('the built site', () => {
       // the rest of the buttons, in a sheet of their own
       expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(false)
       await page.getByRole('button', { name: 'More' }).tap()
-      expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(true)
+      // the sheet loads as it first opens
+      await page.getByRole('button', { name: 'Format' }).waitFor()
       // on its side, a phone is a phone too
       await page.setViewportSize({ width: 844, height: 390 })
       await page.waitForFunction(() => document.querySelector('.lme')!.hasAttribute('data-narrow'))
@@ -722,13 +734,20 @@ describe('the built site', () => {
       await page.goto(`${url}editor/`)
       await drawn(page)
       expect(await looks(page)).toMatchObject({ kept: 'dark', editor: ['dark'], code: ['dark'], picked: ['dark'] })
-      await page.locator('.lme-bar .theme label', { hasText: 'Light' }).click()
+      const theme = async (name: string) => {
+        await page.getByRole('button', { name: 'Theme' }).click()
+        await page.getByRole('menuitemradio', { name }).click()
+      }
+      await page.getByRole('button', { name: 'Theme' }).click()
+      expect(await page.getByRole('menuitemradio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true')
+      await page.keyboard.press('Escape')
+      await theme('Light')
       await expect
         .poll(() => looks(page), { timeout: 5000 })
         .toMatchObject({ kept: 'light', page: 'light', editor: ['light'] })
       expect((await looks(page)).code).toEqual(['light'])
       // System again: nothing kept, and the system's change is followed
-      await page.locator('.lme-bar .theme label', { hasText: 'System' }).click()
+      await theme('System')
       expect(await page.evaluate(() => localStorage.getItem('loadmap-theme'))).toBe(null)
       await page.emulateMedia({ colorScheme: 'dark' })
       await expect
