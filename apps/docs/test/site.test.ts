@@ -274,7 +274,7 @@ describe('the built site', () => {
       await page.waitForSelector('.lme-inspector')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
       // the old link opens the same model, at the values it carries
-      expect(await page.locator('.lm h2').first().textContent()).toBe('Checkout pipeline')
+      expect(await page.locator('.lme-title').first().textContent()).toBe('Checkout pipeline')
       // the slider's input holds its place on the track; the load is what it says
       expect(await page.locator('.lm .lm-load input').first().getAttribute('aria-valuetext')).toMatch(/^30×/)
       await page.locator('.lme-preview [data-node="gateway"]').click()
@@ -437,16 +437,16 @@ describe('the built site', () => {
       )
       await page.evaluate((s) => localStorage.setItem('loadmap-editor-draft', s), mine)
       await page.reload()
-      await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'My uploads')
       const example = async (name: string) => {
         await page.getByRole('button', { name: 'New', exact: true }).click()
         await page.getByRole('menuitem', { name, exact: true }).click()
       }
       await example('Checkout')
-      await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'Checkout pipeline')
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Checkout pipeline')
       expect(await page.evaluate(() => localStorage.getItem('loadmap-editor-draft-earlier'))).toBe(mine)
       await example('Your earlier draft')
-      await page.waitForFunction(() => document.querySelector('.lm h2')?.textContent === 'My uploads')
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'My uploads')
       // the name in the bar follows the text
       expect(await page.locator('.lme-title').textContent()).toBe('My uploads')
       await page.getByRole('button', { name: 'Export', exact: true }).click()
@@ -469,23 +469,30 @@ describe('the built site', () => {
         const page = await browser.newPage({ viewport: { width, height } })
         await page.goto(`${url}editor/`)
         await page.waitForSelector('[data-node]')
-        // fitted once the layout and the view are in: every box inside the room the code and the panel leave
+        // fitted once the layout and the view are in: every box between the code's panel and the side panel
         await page.waitForFunction(() => {
-          const card = document.querySelector('.lme-left')!.getBoundingClientRect()
+          const code = document.querySelector('.lme-left')!.getBoundingClientRect()
           const panel = document.querySelector('.lme-panel')!.getBoundingClientRect()
           const boxes = [...document.querySelectorAll('.lme-preview [data-node]')].map((n) => n.getBoundingClientRect())
-          return boxes.every((b) => b.left > card.right && b.right < panel.left && b.top > 0 && b.bottom < innerHeight)
+          return boxes.every((b) => b.left > code.right && b.right < panel.left && b.top > 0 && b.bottom < innerHeight)
         })
         const m = await page.evaluate(() => {
           const lme = document.querySelector('.lme')!.getBoundingClientRect()
           const text = document.querySelector('.lme-left')!.getBoundingClientRect()
-          const shown = document.querySelector('.lme-preview')!.getBoundingClientRect()
+          const canvas = document.querySelector('.lme-canvas')!.getBoundingClientRect()
+          const panel = document.querySelector('.lme-panel')!.getBoundingClientRect()
           return {
             frame: document.querySelectorAll('.top, .side, .pager').length,
             scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
             lme: [lme.width, lme.height],
-            // the code floats over the canvas, nearly as tall as the window
-            floats: text.left > shown.left && text.right < shown.right && text.height > innerHeight * 0.8,
+            // the code, the canvas and the panel side by side, the code from the window's left edge, as tall as all
+            // the bar leaves
+            beside:
+              text.left === 0 &&
+              Math.abs(canvas.left - text.right) < 1 &&
+              Math.abs(panel.left - canvas.right) < 1 &&
+              panel.right === innerWidth &&
+              text.bottom === innerHeight,
             panel: document.querySelector<HTMLElement>('.lme-panel')!.dataset.mode,
           }
         })
@@ -493,7 +500,7 @@ describe('the built site', () => {
         expect(m.frame, at).toBe(0)
         expect(m.scroll, at).toEqual([width, height])
         expect(m.lme, at).toEqual([width, height])
-        expect(m.floats, at).toBe(true)
+        expect(m.beside, at).toBe(true)
         expect(m.panel, at).toBe('pinned')
         await page.close()
       }
@@ -508,13 +515,20 @@ describe('the built site', () => {
       expect(await edge.getAttribute('aria-valuenow')).toBe('520')
       const wide = await page.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().width)
       expect(Math.abs(wide - 520)).toBeLessThan(2)
-      // the code hidden and the panel unpinned stay so
-      await page.getByRole('button', { name: 'Hide code' }).click()
-      await page.getByRole('button', { name: 'Unpin' }).click()
+      // the panel's width stays so
+      const side = page.getByRole('separator', { name: 'Resize the panel' })
+      await side.focus()
+      await page.keyboard.press('ArrowLeft')
+      expect(await side.getAttribute('aria-valuenow')).toBe('356')
       await page.reload()
-      await page.waitForSelector('.lme-tab')
+      expect(await side.getAttribute('aria-valuenow')).toBe('356')
+      // the code and the panel folded stay so
+      await page.getByRole('button', { name: 'Hide code' }).click()
+      await page.getByRole('button', { name: 'Hide the panel' }).click()
+      await page.reload()
+      await page.waitForSelector('.lme-rail[data-side="start"]')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
-      expect(await page.locator('.lme-rail').isVisible()).toBe(true)
+      expect(await page.locator('.lme-rail[data-side="end"]').isVisible()).toBe(true)
       await page.getByRole('button', { name: 'Help' }).click()
       expect(await page.locator('#help').isVisible()).toBe(true)
       await page.keyboard.press('Escape')
@@ -532,8 +546,8 @@ describe('the built site', () => {
     try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
       await page.goto(`${url}editor/?template=${t.id}`)
-      await page.waitForSelector('.lm h2')
-      expect(await page.locator('.lm h2').first().textContent()).toBe(/title: "([^"]+)"/.exec(t.source)![1])
+      await page.waitForSelector('.lme-title')
+      expect(await page.locator('.lme-title').textContent()).toBe(/title: "([^"]+)"/.exec(t.source)![1])
       expect(await page.locator('.lme-left').isVisible()).toBe(true)
       await page.goto(`${url}editor/?code#${hash}`)
       await page.waitForSelector('[data-node]')
@@ -578,7 +592,7 @@ describe('the built site', () => {
       await page.locator('.island .edit a').first().click()
       await page.waitForURL(/\/editor\/\?code#v1\./)
       await page.waitForSelector('[data-node]')
-      expect(await page.locator('.lm h2').first().textContent()).toBe(title)
+      expect(await page.locator('.lme-title').first().textContent()).toBe(title)
       expect(await page.locator('.lme-left').isVisible()).toBe(true)
 
       await page.goto(`${url}examples/checkout/`)
@@ -590,7 +604,7 @@ describe('the built site', () => {
       await page.getByRole('link', { name: 'Edit in the editor ⤢' }).click()
       await page.waitForURL(/\/editor\/\?code#v1\..*load=40.*pods=6/)
       await page.waitForSelector('[data-node]')
-      expect(await page.locator('.lm h2').first().textContent()).toBe('Checkout pipeline')
+      expect(await page.locator('.lme-title').first().textContent()).toBe('Checkout pipeline')
       expect(await page.locator('.lme-left').isVisible()).toBe(true)
     } finally {
       await browser.close()

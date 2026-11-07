@@ -60,7 +60,7 @@ export const EDITOR_CSS = `
 @container (max-width: 980px) { .lme-code .cm-editor { height: 55vh; } }
 .lme-code .cm-editor.cm-focused { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
 .lme-code .cm-scroller { font-family: var(--lm-mono); }
-.lme-code .cm-gutters { background: var(--lm-bg); color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
+.lme-code .cm-gutters { background: var(--lm-surface); color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
 .lme-code .cm-activeLine { background: color-mix(in srgb, var(--lm-accent-soft) 45%, transparent); }
 .lme-code .cm-activeLineGutter { background: var(--lm-accent-soft); }
 /* the caret in the theme's own text colour, light on a dark theme: CodeMirror's base theme makes it black, as specific
@@ -128,15 +128,15 @@ export const EDITOR_CSS = `
 .lme[data-fill] .lme-code .cm-editor { height: 100%; }
 .lme[data-fill] .lme-preview { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 16px 24px; }
 .lme[data-fill] .lme-preview[hidden] { display: none; }
-/* a canvas: the diagram fills what the bar leaves, the code floats over its left, the panel stands on its right */
+/* a canvas: the code's panel on the left, the side panel on the right, the diagram filling the room between */
 .lme[data-canvas] > .lme-split { position: relative; display: block; overflow: hidden; }
-.lme[data-canvas] .lme-preview { position: absolute; inset: 0; padding: 0; overflow: hidden; }
+.lme[data-canvas] .lme-preview { position: absolute; inset: 0 0 0 var(--lme-start); padding: 0; overflow: hidden; }
 .lme[data-canvas] .lme-preview > .lm { --lm-pad: 0; --lm-root-bg: transparent; position: absolute; inset: 0; }
-.lme[data-canvas] .lme-preview > .lme-empty { margin: 72px 24px 0 calc(var(--lme-card) + 3 * var(--lme-gap)); }
-.lme-canvas { position: absolute; inset: 0; }
+.lme[data-canvas] .lme-preview > .lme-empty { margin: 72px 24px 0; }
+.lme-canvas { position: absolute; inset: 0 var(--lme-r) 0 0; container: lme-canvas / inline-size; }
 .lme-canvas > .lm-wrap { position: absolute; inset: 0; }
 .lme-canvas .lm-board { height: 100%; border: 0; border-radius: 0; background-color: var(--lm-bg); background-image: radial-gradient(color-mix(in srgb, var(--lm-muted) 30%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
-.lme-over { position: absolute; z-index: 2; left: var(--lme-l); right: var(--lme-r); display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
+.lme-over { position: absolute; z-index: 2; left: 0; right: 0; display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
 .lme-over > * { pointer-events: auto; max-width: min(760px, 100%); }
 .lme-over > .lm-loadbar { flex: 1 1 auto; position: static; }
 .lme-over-top { top: 12px; }
@@ -144,37 +144,58 @@ export const EDITOR_CSS = `
 /* the legend and the zoom along the bottom edge, the story just above them: Fit leaves room for all three. The legend
    keeps to one line, clipped where the canvas is narrow */
 .lme-canvas .lm-wrap[data-canvas] > .lm-bar, .lme-canvas .lm-wrap[data-canvas] .lm-zoom { bottom: 12px; }
+.lme-canvas .lm-wrap[data-canvas] > .lm-bar { box-sizing: border-box; height: 34px; padding: 0 12px; }
 .lme-canvas .lm-wrap[data-canvas] > .lm-bar .lm-legend { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
 .lme-over-note { top: var(--lme-t); justify-content: flex-start; }
-.lme-over > :is(.lm-scenarios, .lm-story, .lm-loadbar) { margin: 0; padding: 6px 10px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / .12); }
+/* everything over the canvas on one surface */
+.lme-over > :is(.lm-scenarios, .lm-story, .lm-loadbar), .lme-canvas .lm-wrap[data-canvas] > .lm-bar, .lme-canvas .lm-zoom { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / .12); }
+.lme-over > :is(.lm-scenarios, .lm-story, .lm-loadbar) { margin: 0; padding: 6px 10px; }
 .lme-over .lme-stale { margin: 0; padding: 4px 10px; background: var(--lm-surface); border: 1px solid var(--lm-warn); border-radius: 6px; }
-.lme[data-canvas] .lme-left { position: absolute; z-index: 3; top: var(--lme-gap); bottom: var(--lme-gap); left: var(--lme-gap); width: var(--lme-card); padding: 0; gap: 0; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 8px 28px rgb(15 30 45 / .16); overflow: hidden; }
-.lme-card-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--lm-line); }
-.lme-card-head b { font-size: .84rem; }
+/* the load on one row beside its label, under the scenarios where the canvas is narrow; the story's text, as tall as
+   its longest step, centred beside its buttons */
+.lme-over .lm-loadbar .lm-load { grid-template: "label track value" / minmax(0, max-content) minmax(120px, 1fr) auto; align-items: start; }
+.lme-over .lm-loadbar .lm-load > label { max-width: 12em; padding-top: 6px; }
+.lme-over .lm-story p > span { align-self: center; }
+@container lme-canvas (width < 760px) {
+  .lme-over :is(.lm-loadbar, .lm-story) legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .lme-over .lm-story { flex-wrap: nowrap; }
+  .lme-over .lm-story p { flex: 1 1 0; min-width: 0; }
+  .lme-over .lm-story-nav { flex: none; }
+}
+/* the two panels: one frame and one header, flush to their edge with a border on the canvas's side, the edge that
+   resizes them, and a rail when folded */
+.lme[data-canvas] .lme-pane { position: absolute; z-index: 5; top: 0; bottom: 0; padding: 0; gap: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--lm-surface); }
+.lme[data-canvas] .lme-pane[hidden] { display: none; }
+.lme[data-canvas] .lme-pane[data-side="start"] { left: 0; width: var(--lme-start); border-right: 1px solid var(--lm-line); }
+.lme[data-canvas] .lme-pane[data-side="end"] { right: 0; width: var(--lme-panel); border-left: 1px solid var(--lm-line); }
+.lme[data-canvas] .lme-pane[data-mode="auto"] { top: 8px; right: calc(var(--lme-rail) + 8px); bottom: 8px; max-width: calc(100% - var(--lme-rail) - 24px); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: -8px 0 30px rgb(0 0 0 / .18); }
+.lme-pane:focus { outline: none; }
+.lme-pane:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
+.lme-pane-head { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 46px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--lm-line); }
+.lme .lme-pane-head h2 { flex: none; margin: 0; font: 600 .92rem var(--lm-font); }
+.lme-pane-head > .lm-btn { display: inline-flex; align-items: center; justify-content: center; height: 30px; }
+.lme-pane-head > .lme-icon { width: 30px; font-size: 1.1rem; }
 .lme[data-canvas] .lme-code { border: 0; border-radius: 0; }
 .lme[data-canvas] .lme-problems { padding: 6px; border-top: 1px solid var(--lm-line); }
-.lme-resize { position: absolute; z-index: 4; top: var(--lme-gap); bottom: var(--lme-gap); left: calc(var(--lme-gap) + var(--lme-card) - 5px); width: 10px; cursor: col-resize; touch-action: none; }
+.lme-resize { position: absolute; z-index: 6; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
+.lme-resize[data-side="start"] { right: -5px; }
+.lme-resize[data-side="end"] { left: -5px; }
 .lme-resize::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 40px; margin-top: -20px; border-radius: 2px; background: var(--lm-muted); opacity: .35; }
 .lme-resize:hover::after, .lme-resize:focus-visible::after, .lme[data-dragging] .lme-resize::after { background: var(--lm-accent); opacity: 1; }
 .lme-resize:focus-visible { outline: none; }
-.lme-tab { position: absolute; z-index: 3; top: var(--lme-gap); left: var(--lme-gap); width: var(--lme-tab); padding: 12px 0; display: flex; align-items: center; gap: 8px; writing-mode: vertical-rl; font: 600 .8rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 8px 28px rgb(15 30 45 / .16); cursor: pointer; }
-.lme-tab[data-errors]::after { content: attr(data-errors); padding: 3px 2px; border-radius: 8px; font-size: .7rem; color: var(--lm-surface); background: var(--lm-drop); }
-.lme-tab:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
-.lme-panel { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: var(--lme-panel); display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--lm-surface); border-left: 1px solid var(--lm-line); }
-.lme-panel[hidden] { display: none; }
-.lme-panel[data-mode="auto"] { top: 8px; right: calc(var(--lme-rail) + 8px); bottom: 8px; max-width: calc(100% - var(--lme-rail) - 24px); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: -8px 0 30px rgb(0 0 0 / .18); }
-.lme-panel:focus { outline: none; }
-.lme-panel:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
-.lme-panel-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--lm-line); }
-.lme-panel-head h2 { flex: 1; margin: 0; font: 600 .92rem var(--lm-font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lme-panel-body { padding: 4px 14px 16px; overflow: auto; overscroll-behavior: contain; container-type: inline-size; }
 .lme-sec { padding: 8px 0; border-top: 1px solid var(--lm-line); }
 .lme-panel-body > .lme-sec:first-child, .lme-panel-body > .lme-inspector + .lme-sec { border-top: 0; }
 .lme-sec > summary { padding: 4px 0; cursor: pointer; font: 700 .72rem var(--lm-font); letter-spacing: .08em; text-transform: uppercase; color: var(--lm-muted); }
 .lme-sec[open] > summary { margin-bottom: 8px; }
-.lme-sec > :not(summary) > h3:first-child { display: none; }
+/* a part's own heading and box give way to the section's */
+.lme-sec > :not(summary) > h3:first-child, .lme-sec > summary + h3 { display: none; }
+.lme-sec .lm-card { padding: 0; background: none; border: 0; border-radius: 0; }
 .lme[data-fill] .lme-panel .lme-inspector { position: static; max-height: none; padding: 8px 0 12px; border: 0; border-bottom: 1px solid var(--lm-line); border-radius: 0; box-shadow: none; }
-.lme-rail { position: absolute; z-index: 4; top: 0; right: 0; bottom: 0; width: var(--lme-rail); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0; font: 600 .76rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 0; border-left: 1px solid var(--lm-line); cursor: pointer; }
+.lme-rail { position: absolute; z-index: 4; top: 0; bottom: 0; width: var(--lme-rail); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0; font: 600 .76rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 0; cursor: pointer; }
+.lme-rail[data-side="start"] { left: 0; border-right: 1px solid var(--lm-line); }
+.lme-rail[data-side="end"] { right: 0; border-left: 1px solid var(--lm-line); }
+.lme-rail:hover { background: color-mix(in srgb, var(--lm-fg) 5%, var(--lm-surface)); }
 .lme-rail span { writing-mode: vertical-rl; }
 .lme-rail i { width: 12px; height: 12px; border-radius: 50%; background: var(--lm-ok); }
 .lme-rail[data-tier="warn"] i { background: var(--lm-warn); }

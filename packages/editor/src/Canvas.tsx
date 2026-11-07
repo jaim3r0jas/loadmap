@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { PanelHead, RAIL, Rail } from './Panel'
 
 // the phone's sheet comes with the first phone: a wide editor never loads it
 const Sheet = lazy(() => import('./Sheet').then((m) => ({ default: m.Sheet })))
@@ -37,8 +38,8 @@ const Sheet = lazy(() => import('./Sheet').then((m) => ({ default: m.Sheet })))
 /** The side panel: pinned beside the canvas, or a rail it opens from over the canvas. */
 export type PanelMode = 'pinned' | 'auto'
 
-/** Pixels the side panel takes, pinned; its rail; and the least room the canvas keeps beside it to pin it. */
-export const PANEL = { width: 340, rail: 44, pinFrom: 1024 } as const
+/** The side panel's width to start, its least and its most, in pixels; and the editor's width from which it can pin. */
+export const PANEL = { width: 340, min: 300, max: 480, pinFrom: 1024 } as const
 /** The panel opens this long after the pointer comes onto its rail, and closes this long after it leaves. */
 const HOVER = { open: 150, close: 400 } as const
 
@@ -48,14 +49,15 @@ export interface EditorCanvasProps {
   initial: Partial<Values<any>>
   onNodeClick: (id: string) => void
   selected: string | null
-  /** Pixels on the left the code floats over. */
-  left: number
   /** A phone: the panels in a sheet over the canvas's bottom, rather than beside it. */
   phone?: boolean
   panel: PanelMode
   onPanel: (mode: PanelMode) => void
   /** The editor is wide enough to pin the panel. */
   canPin: boolean
+  /** The panel's width, and the edge that resizes it while it is pinned. */
+  width: number
+  resize: ReactNode
   /** Shown first in the panel: the inspector, while the code is hidden. */
   inspector?: ReactNode
   /** What floats over the canvas's top left: that the diagram is the last version without errors. */
@@ -65,7 +67,8 @@ export interface EditorCanvasProps {
 
 /**
  * The editor's diagram as a canvas filling its box: the board the reader pans and zooms, the scenarios over its top and
- * the story over its bottom, and the side panel with the verdict and the rest. The code floats over its left.
+ * the story over its bottom, and the side panel with the verdict and the rest beside it. The code's panel is the
+ * editor's, on the left of all this.
  */
 export function EditorCanvas({
   def,
@@ -73,11 +76,12 @@ export function EditorCanvas({
   initial,
   onNodeClick,
   selected,
-  left,
   phone = false,
   panel,
   onPanel,
   canPin,
+  width,
+  resize,
   inspector,
   note,
   ref,
@@ -98,7 +102,7 @@ export function EditorCanvas({
   const [sheet, setSheet] = useState(PEEK)
   const onSheet = useCallback((h: number) => setSheet(h), [])
   const stage = useHeight(lm.root, phone)
-  const right = phone ? 0 : pinned ? PANEL.width : PANEL.rail
+  const right = phone ? 0 : pinned ? width : RAIL
   // the scenarios and the load over the top, as tall as the room they get; on a phone the scenarios beside the zoom,
   // the load in the sheet's peek
   const [over, setOver] = useState<HTMLDivElement | null>(null)
@@ -107,7 +111,6 @@ export function EditorCanvas({
   // the legend and the zoom along the bottom, and the story above them; on a phone the sheet, and the story above it
   const bottom = phone ? sheet + (model.story.length ? 64 : 8) : model.story.length ? 140 : 56
   const free = {
-    '--lme-l': `${left}px`,
     '--lme-r': `${right}px`,
     '--lme-t': `${top}px`,
     ...(phone ? { '--lme-sheet': `${sheet}px` } : {}),
@@ -115,7 +118,7 @@ export function EditorCanvas({
   return (
     <LoadmapRoot lm={lm} theme={look}>
       <div className="lme-canvas" style={free}>
-        <Diagram lm={lm} canvas={{ left, right, top, bottom }} onNodeClick={onNodeClick} selected={selected} />
+        <Diagram lm={lm} canvas={{ top, bottom }} onNodeClick={onNodeClick} selected={selected} />
         {note && <div className="lme-over lme-over-note">{note}</div>}
         {phone ? (
           model.scenarios.length > 0 && (
@@ -154,7 +157,7 @@ export function EditorCanvas({
           open={open}
           setOpen={setOpen}
           onPanel={onPanel}
-          title={model.title}
+          resize={resize}
         >
           {inspector}
           <Section title="Verdict">
@@ -213,10 +216,11 @@ function Section({ title, closed = false, children }: { title: string; closed?: 
 }
 
 /**
- * Pinned, the panel takes its room beside the canvas. On auto it waits on a rail: a hover that stays, a click or a tap
- * opens it over the canvas, and it closes once the pointer has left it for a moment (unless the keyboard is in it), on
- * Escape, or on a press on the canvas. From the keyboard the focus goes into it and comes back to the rail; a hover
- * never moves the focus.
+ * Pinned, the panel takes its room beside the canvas, its edge resizes it, and › folds it onto its rail. Folded, a
+ * click on the rail pins it again. Where it cannot pin, the rail opens it over the canvas: a hover that stays, a click
+ * or a tap, and it closes once the pointer has left it for a moment (unless the keyboard is in it), on Escape, or on a
+ * press on the canvas. From the keyboard the focus goes into it and comes back to the rail; a hover never moves the
+ * focus.
  */
 function SidePanel({
   lm,
@@ -225,7 +229,7 @@ function SidePanel({
   open,
   setOpen,
   onPanel,
-  title,
+  resize,
   children,
 }: {
   lm: ReturnType<typeof useLoadmap>
@@ -234,7 +238,7 @@ function SidePanel({
   open: boolean
   setOpen: (open: boolean) => void
   onPanel: (mode: PanelMode) => void
-  title?: string
+  resize: ReactNode
   children: ReactNode
 }) {
   const self = useRef<HTMLElement>(null)
@@ -242,8 +246,6 @@ function SidePanel({
   const timer = useRef(0)
   // opened by a hover: a click that comes after it keeps it open rather than closing it again
   const hovered = useRef(false)
-  // unpinned, the rail comes in under the pointer that pressed Unpin: it opens on a hover once the pointer has left it
-  const quiet = useRef(false)
   const shown = pinned || open
   const later = (f: () => void, ms: number) => {
     clearTimeout(timer.current)
@@ -273,29 +275,37 @@ function SidePanel({
       document.removeEventListener('pointerdown', press, true)
     }
   }, [pinned, open, setOpen])
+  // a hover opens it only where it cannot pin: a wide editor unfolds it on a click
+  const hovers = (e: React.PointerEvent) => !pinned && !canPin && e.pointerType === 'mouse'
   const leave = (e: React.PointerEvent) => {
-    if (pinned || e.pointerType !== 'mouse') return
+    if (!hovers(e)) return
     hovered.current = false
     later(() => {
       if (!self.current?.contains(document.activeElement)) setOpen(false)
     }, HOVER.close)
   }
-  const stay = (e: React.PointerEvent) => e.pointerType === 'mouse' && clearTimeout(timer.current)
-  const tier = lm.ev.verdict.tier
+  const stay = (e: React.PointerEvent) => hovers(e) && clearTimeout(timer.current)
+  // the panel goes with the button: the keyboard goes to its rail. Pinned, it folds; over the canvas, it closes
+  const fold = () => {
+    if (pinned) onPanel('auto')
+    setOpen(false)
+    requestAnimationFrame(() => rail.current?.focus())
+  }
   const first = lm.ev.firstLimit
   return (
     <>
       {!pinned && (
-        <button
-          type="button"
+        <Rail
+          side="end"
           ref={rail}
-          className="lme-rail"
-          data-tier={tier}
+          tier={lm.ev.verdict.tier}
+          label={first?.target != null ? `${multiple(first.target, lm.model.searchMax)} · Panel` : 'Panel'}
           aria-expanded={open}
           aria-controls="lme-panel"
-          aria-label={open ? 'Close the panel' : 'Open the panel'}
+          // a wide editor pins it from the rail, even while it is open over the canvas (a box clicked)
+          aria-label={canPin ? 'Pin the panel' : open ? 'Close the panel' : 'Open the panel'}
           onPointerEnter={(e) => {
-            if (e.pointerType !== 'mouse' || quiet.current) return
+            if (!hovers(e)) return
             // back on the rail: a close on its way waits
             if (open) clearTimeout(timer.current)
             else
@@ -304,26 +314,25 @@ function SidePanel({
                 setOpen(true)
               }, HOVER.open)
           }}
-          onPointerLeave={(e) => {
-            quiet.current = false
-            leave(e)
-          }}
+          onPointerLeave={leave}
           onClick={(e) => {
             clearTimeout(timer.current)
             const opening = !open || hovered.current
             hovered.current = false
-            setOpen(opening)
-            // from the keyboard the focus goes in; a click leaves it on the rail
-            if (opening && e.detail === 0) requestAnimationFrame(() => self.current?.focus())
+            if (canPin) {
+              onPanel('pinned')
+              setOpen(false)
+            } else setOpen(opening)
+            // pinned, the rail goes with the click: the focus goes into the panel. Opened over the canvas, from the
+            // keyboard the focus goes in, and a click leaves it on the rail
+            if (canPin || (opening && e.detail === 0)) requestAnimationFrame(() => self.current?.focus())
           }}
-        >
-          <i aria-hidden="true" />
-          <span>{first?.target != null ? `${multiple(first.target, lm.model.searchMax)} · Panel` : 'Panel'}</span>
-        </button>
+        />
       )}
       <aside
         id="lme-panel"
-        className="lme-panel"
+        className="lme-pane lme-panel"
+        data-side="end"
         ref={self}
         tabIndex={-1}
         aria-label="Panel"
@@ -332,27 +341,9 @@ function SidePanel({
         onPointerEnter={stay}
         onPointerLeave={leave}
       >
-        <div className="lme-panel-head">
-          <h2>{title}</h2>
-          {canPin && (
-            <button
-              type="button"
-              className="lm-btn"
-              aria-pressed={pinned}
-              title={pinned ? 'Pinned: let it fold onto its rail' : 'Pin it beside the canvas'}
-              onClick={() => {
-                onPanel(pinned ? 'auto' : 'pinned')
-                setOpen(false)
-                quiet.current = pinned
-                // unpinned, the panel folds away with the button: the keyboard goes to its rail
-                if (pinned) requestAnimationFrame(() => rail.current?.focus())
-              }}
-            >
-              {pinned ? 'Unpin' : 'Pin'}
-            </button>
-          )}
-        </div>
+        <PanelHead side="end" title="Panel" fold="Hide the panel" onFold={fold} />
         <div className="lme-panel-body">{children}</div>
+        {pinned && resize}
       </aside>
     </>
   )

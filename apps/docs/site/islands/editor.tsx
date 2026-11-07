@@ -26,11 +26,12 @@ const NAMES: Record<keyof typeof SOURCES, string> = { uploads: 'Photo uploads', 
 const DRAFT = 'loadmap-editor-draft'
 /** The reader's draft as it was before another text took its place. */
 const EARLIER = 'loadmap-editor-draft-earlier'
-/** The code card's share of the width, as the reader left it (the divider's old share is not one). */
+/** The code panel's share of the width, as the reader left it (the divider's old share is not one). */
 const SPLIT = 'loadmap-editor-card'
-/** Whether the reader hid the code, and pinned the side panel. */
+/** Whether the reader hid the code, and pinned the side panel, and how wide they left it. */
 const LAYOUT = 'loadmap-editor-layout'
 const PANEL = 'loadmap-editor-panel'
+const PANEL_WIDTH = 'loadmap-editor-panel-width'
 
 function read(key: string): string | null {
   try {
@@ -191,6 +192,7 @@ function Editor({ root }: { root: URL }) {
   })
   const [earlier, setEarlier] = useState(() => read(EARLIER))
   const [split] = useState(() => Number(read(SPLIT) ?? Number.NaN))
+  const [panelWidth] = useState(() => Number(read(PANEL_WIDTH)) || undefined)
   const save = (s: string) => {
     // a whole new text (an example, a template, the first edit of a link) takes the draft's place: the reader's own
     // draft is kept aside, one click away
@@ -252,6 +254,8 @@ function Editor({ root }: { root: URL }) {
       onSplit={(n) => write(SPLIT, String(n))}
       panel={panel}
       onPanel={(p) => write(PANEL, p)}
+      panelWidth={panelWidth}
+      onPanelWidth={(n) => write(PANEL_WIDTH, String(n))}
       // a link opens as its sender meant it: what the reader does with it is not how they leave their own editor
       onLayout={(l) => !linked && write(LAYOUT, l)}
       start={
