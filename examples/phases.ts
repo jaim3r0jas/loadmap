@@ -1,4 +1,5 @@
-// The phases a reader moves a model through, and the promise that none of them moves a box.
+// The phases a reader moves a model through: in a stable layout none of them moves a box, in a compact one the load
+// never does and each phase is laid out the same whatever came before.
 import type { Model, Values } from '@loadmap/core'
 import { collisions, type Direction, layout, type Scene, type View } from '@loadmap/layout'
 import { expect } from 'vitest'
@@ -51,8 +52,14 @@ export function expectEdgesOnBoxes(scene: Scene) {
   }
 }
 
-/** No phase moves a box, resizes the board or lets a label overlap anything. */
-export async function expectSteady(view: View, model: Model, direction: Direction) {
+/** The view laid out stable, or compact: a copy of its own, with caches of its own. */
+export function laidOut<V extends View>(view: V, layout: 'compact' | 'stable'): V {
+  return { ...view, def: { ...view.def, layout } }
+}
+
+/** In a stable layout, no phase moves a box, resizes the board or lets a label overlap anything. */
+export async function expectSteady(compact: View, model: Model, direction: Direction) {
+  const view = laidOut(compact, 'stable')
   const first = await layout(view, model.evaluate(), { direction })
   for (const [label, values] of phases(model)) {
     const scene = await layout(view, model.evaluate(values), { direction })
@@ -62,4 +69,40 @@ export async function expectSteady(view: View, model: Model, direction: Directio
     expect(collisions(scene), label).toEqual([])
     expectEdgesOnBoxes(scene)
   }
+}
+
+/** The loads a test moves a phase through: both ends of the slider, its default and a few between. */
+function someLoads(model: Model): number[] {
+  const { min, max, step, default: at } = model.load
+  const snap = (x: number) => Math.min(max, min + Math.round((x - min) / step) * step)
+  return [...new Set([min, snap(min + (max - min) / 3), at, snap(min + ((max - min) * 2) / 3), max])]
+}
+
+const placed = (s: Scene) => ({
+  size: [s.width, s.height],
+  nodes: Object.fromEntries(s.nodes.map((n) => [n.id, centre(n)])),
+})
+
+/**
+ * In a compact layout, no load moves a box or resizes the board in any phase, no label overlaps anything, and each
+ * phase is laid out the same whatever came before it: laid out again in the other order, on a fresh copy of the view,
+ * every scene is the same.
+ */
+export async function expectCompact(view: View, model: Model, direction: Direction) {
+  const all = phases(model)
+  const scenes = new Map<string, Scene>()
+  for (const [label, values] of all) {
+    const scene = await layout(view, model.evaluate(values), { direction })
+    scenes.set(label, scene)
+    expect(collisions(scene), label).toEqual([])
+    expectEdgesOnBoxes(scene)
+    for (const load of someLoads(model)) {
+      const at = await layout(view, model.evaluate({ ...values, load }), { direction })
+      expect(placed(at), `${label} at ${load}×`).toEqual(placed(scene))
+      expect(collisions(at), `${label} at ${load}×`).toEqual([])
+    }
+  }
+  const fresh = laidOut(view, 'compact')
+  for (const [label, values] of [...all].reverse())
+    expect(await layout(fresh, model.evaluate(values), { direction }), label).toEqual(scenes.get(label))
 }

@@ -3,7 +3,9 @@ import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
+import { laidOut } from '../phases'
 import { Alerts } from './Alerts'
+import { view } from './view'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -12,13 +14,13 @@ afterEach(() => {
   host?.remove()
 })
 
-async function mount(o: { theme?: Theme; width?: number } = {}) {
+async function mount(o: { theme?: Theme; width?: number; layout?: 'compact' | 'stable' } = {}) {
   await page.viewport(o.width ?? 1440, o.width && o.width < 640 ? 2900 : 1000)
   host = document.createElement('div')
   document.body.appendChild(host)
   const ref = createRef<LoadmapHandle>()
   root = createRoot(host)
-  root.render(<Alerts ref={ref} theme={o.theme} />)
+  root.render(<Alerts ref={ref} theme={o.theme} view={o.layout ? laidOut(view, o.layout) : undefined} />)
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
   return { handle: ref.current!, el: host.querySelector<HTMLElement>('.lm')! }
@@ -53,25 +55,39 @@ it('fits a phone', async () => {
   await page.screenshot({ path: '__screenshots__/alerts-phone.png', element: el })
 })
 
-it('plays its story without moving a box, though each step changes the pods', async () => {
-  const { handle } = await mount()
+/** Plays the story on a paused board: where the boxes stood at each tenth of a second, and the shot it was. */
+async function playStory(handle: LoadmapHandle) {
   handle.pause()
   const seconds = handle.playStory()
-  const centres = new Set<string>()
+  const seen: { centres: string; shot: string }[] = []
   const pods = new Set<number>()
   for (let t = 0; t < seconds + 1; t += 0.1) {
     await handle.ready()
     handle.step(0.1)
     const { nodes, width, height } = handle.engine.frame!
-    centres.add(
-      [
+    seen.push({
+      centres: [
         width,
         height,
         ...nodes.map((n) => `${n.id} ${(n.x + n.w / 2).toFixed(2)} ${(n.y + n.h / 2).toFixed(2)}`),
       ].join(),
-    )
+      shot: handle.engine.story?.shot ?? 'end',
+    })
     pods.add(nodes.find((n) => n.id === 'posPods')!.members.length)
   }
   expect(pods).toEqual(new Set([3, 8]))
-  expect(centres.size).toBe(1)
+  return seen
+}
+
+it('plays its story laid out stable without moving a box, though each step changes the pods', async () => {
+  const { handle } = await mount({ layout: 'stable' })
+  expect(new Set((await playStory(handle)).map((x) => x.centres)).size).toBe(1)
+})
+
+it('plays its story laid out compact, moving the boxes only while a step changes the pods', async () => {
+  const { handle } = await mount()
+  const seen = await playStory(handle)
+  const moved = seen.filter((x, i) => i > 0 && x.centres !== seen[i - 1]!.centres)
+  expect(moved.length).toBeGreaterThan(0)
+  expect(new Set(moved.map((x) => x.shot))).toEqual(new Set(['change']))
 })

@@ -1,6 +1,6 @@
 import { collisions, directionOf, labelsAt, layout, legPath, structureKey } from '@loadmap/layout'
 import { describe, expect, it } from 'vitest'
-import { expectSteady } from '../phases'
+import { expectCompact, expectSteady } from '../phases'
 import { checkout } from './model'
 import { view } from './view'
 
@@ -15,9 +15,12 @@ describe('checkout layout', () => {
     })
   }
 
-  for (const direction of ['RIGHT', 'DOWN'] as const)
-    it(`moves no box in any scenario, story step, preset or control (${direction})`, () =>
+  for (const direction of ['RIGHT', 'DOWN'] as const) {
+    it(`moves no box in any scenario, story step, preset or control, laid out stable (${direction})`, () =>
       expectSteady(view, checkout, direction))
+    it(`never moves with the load, and lays out each phase the same whatever came before (${direction})`, () =>
+      expectCompact(view, checkout, direction))
+  }
 
   it('runs right by its shape: a chain', () => {
     expect(directionOf(view)).toBe('RIGHT')

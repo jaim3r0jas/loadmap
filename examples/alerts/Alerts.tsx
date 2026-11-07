@@ -1,9 +1,17 @@
 import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
 import type { Ref } from 'react'
 import { alerts } from './model'
-import { view } from './view'
+import { view as alertsView } from './view'
 
-export function Alerts({ theme, ref }: { theme?: Theme; ref?: Ref<LoadmapHandle> }) {
+export function Alerts({
+  theme,
+  ref,
+  view = alertsView,
+}: {
+  theme?: Theme
+  ref?: Ref<LoadmapHandle>
+  view?: typeof alertsView
+}) {
   return (
     <Loadmap
       ref={ref}

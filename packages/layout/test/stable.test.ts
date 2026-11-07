@@ -38,6 +38,7 @@ const view = defineView(m, {
   },
   edges: [edge('users', 'app'), edge('app', 'db'), edge('app', 'audit', { when: ({ audit }) => audit })],
   flows: { requests: { from: 'users', color: 'accent' } },
+  layout: 'stable',
 })
 type V = Parameters<typeof m.evaluate>[0]
 const centres = (s: Scene) => Object.fromEntries(s.nodes.map((n) => [n.id, [n.x + n.w / 2, n.y + n.h / 2]]))
@@ -91,6 +92,7 @@ describe('a stable layout', () => {
       nodes: { users: node({ label: 'Users' }), app: pool({ label: 'App', stage: 'app' }) },
       edges: [edge('users', 'app')],
       flows: { requests: { from: 'users', color: 'accent' } },
+      layout: 'stable',
     })
     const [two, three] = [await layout(v, r.evaluate({ pods: 2 })), await layout(v, r.evaluate({ pods: 3 }))]
     expect(centres(three)).toEqual(centres(two))
@@ -117,6 +119,7 @@ describe('a stable layout', () => {
       nodes: { users: node({ label: 'Users' }), app: pool({ label: 'App', stage: 'app' }) },
       edges: [edge('users', 'app')],
       flows: { requests: { from: 'users', color: 'accent' } },
+      layout: 'stable',
     })
     const [eu, us] = [await layout(v, r.evaluate()), await layout(v, r.evaluate({ region: 'us' }))]
     expect(centres(us)).toEqual(centres(eu))
@@ -126,4 +129,16 @@ describe('a stable layout', () => {
     const a = await layout(view, m.evaluate({ load: 1, pods: 4 }))
     expect(await layout(view, m.evaluate({ load: 10, pods: 4 }))).toBe(a)
   })
+})
+
+it('never moves with the load where an edge comes in partway up, laid out stable', async () => {
+  const v = defineView(m, {
+    ...view.def,
+    edges: [...view.def.edges, edge('app', 'audit', { when: ({ load }) => (load as number) > 5 })],
+    layout: 'stable',
+  })
+  const [low, high] = [await layout(v, m.evaluate({ load: 1 })), await layout(v, m.evaluate({ load: 10 }))]
+  expect(high.edges.length).toBe(low.edges.length + 1)
+  expect(centres(high)).toEqual(centres(low))
+  expect([high.width, high.height]).toEqual([low.width, low.height])
 })

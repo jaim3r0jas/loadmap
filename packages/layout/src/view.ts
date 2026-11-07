@@ -78,6 +78,13 @@ export interface ViewDef<F extends string, S extends string, N extends string, T
    * stores that feed nothing come last.
    */
   tiers?: { readonly [K in T]: TierDef }
+  /**
+   * `compact` (the default) lays out each phase (a scenario, story step, preset or choice of a select or switch) on its
+   * own, over every load and every point of the range controls, and moves the boxes from one phase to the next;
+   * `stable` lays out every box at its largest anywhere the model reaches, so no phase moves a box. Neither the load nor
+   * a range control moves one either way.
+   */
+  layout?: 'compact' | 'stable'
 }
 
 export interface View<F extends string = string, S extends string = string, N extends string = string> {
@@ -102,6 +109,8 @@ export function defineView<
   for (const [id, n] of Object.entries(nodes))
     if (n.tier != null && !Object.hasOwn(tiers, n.tier))
       throw new Error(`loadmap: node "${id}" stands in unknown tier "${n.tier}"`)
+  if (def.layout != null && def.layout !== 'compact' && def.layout !== 'stable')
+    throw new Error(`loadmap: layout "${def.layout}" is not compact or stable`)
   const shows = (n: AnyNodeDef, s: string) => (Array.isArray(n.stage) ? n.stage.includes(s) : n.stage === s)
   for (const s of model.stageIds)
     if (!Object.values(nodes).some((n) => shows(n, s))) throw new Error(`loadmap: no node shows stage "${s}"`)

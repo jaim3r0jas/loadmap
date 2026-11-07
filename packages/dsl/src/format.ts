@@ -2,6 +2,7 @@ import { childrenOf, type Expr, type Stmt } from './ast'
 import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
+import { DIRECTIONS } from './schema'
 
 /** A line longer than this has its one-line blocks split, a statement a line. */
 export const FORMAT_WIDTH = 120
@@ -17,12 +18,17 @@ export interface FormatResult {
  * Lays a definition out the one way: two spaces a block, a statement a line, at most one blank line, one space
  * around operators. It works on the tokens, so numbers, texts, templates and parentheses stay exactly as written and
  * a formula never changes. A block written on one line stays on one line while it fits. A text with a syntax error is
- * left alone.
+ * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`.
  */
 export function format(source: string): FormatResult {
   const { doc, report } = parse(source)
   if (report.failed) return { ok: false, text: source, diagnostics: report.list }
-  const toks = lex(source, new Reporter(source), 0, source.length, true).filter((t) => t.kind !== 'eof')
+  // a definition that also says direction keeps the old line as written: renamed, it would set the direction twice
+  const named = doc.body.some((st) => st.kind === 'prop' && st.key.name === 'direction')
+  const renamed = new Set(doc.body.flatMap((st) => (!named && oldDirection(st) ? [st.key.from] : [])))
+  const toks = lex(source, new Reporter(source), 0, source.length, true)
+    .filter((t) => t.kind !== 'eof')
+    .map((t) => (renamed.has(t.from) ? { ...t, text: 'direction' } : t))
   const marks = marksOf(doc.body, toks)
   const lines = new Reporter(source)
   const match = new Map<number, number>()
@@ -205,3 +211,11 @@ function gap(a: Token, b: Token, m: Marks): string {
 }
 
 const isPunct = (t: Token, text: string) => t.kind === 'punct' && t.text === text
+
+/** `layout: right` or `layout: down` at the top: the direction, under the name it had before `layout: compact`. */
+function oldDirection(st: Stmt): st is Extract<Stmt, { kind: 'prop' }> {
+  if (st.kind !== 'prop' || st.key.name !== 'layout') return false
+  const v = st.value
+  const word = v.t === 'id' ? v.name : v.t === 'str' ? v.value : undefined
+  return word != null && (DIRECTIONS as readonly string[]).includes(word)
+}

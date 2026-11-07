@@ -892,9 +892,10 @@ describe('full screen', () => {
     expect(seen.filter((x) => x.step === 2 && x.shot === 'change')[0]!.title).toBe(
       '3 · Proposed: Gateway instances 1 → 2, Worker pods 3 → 6',
     )
-    // no step moves a box, not even part of the way: what a step changes grows or shrinks where it stands
-    expect(new Set(seen.map((x) => x.centres)).size).toBe(1)
-    expect(new Set(seen.map((x) => x.whole)).size).toBe(1)
+    // laid out compact, the boxes and the board move only while a step changes the structure
+    const moved = seen.filter((x, i) => i > 0 && (x.centres !== seen[i - 1]!.centres || x.whole !== seen[i - 1]!.whole))
+    expect(moved.length).toBeGreaterThan(0)
+    expect(new Set(moved.map((x) => x.shot))).toEqual(new Set(['change']))
     // the camera moves the view, never the board; the text keeps the room of the longest step
     expect(story.getBoundingClientRect().height).toBe(height)
     await expect.poll(() => play().textContent).toBe('▶ Play')

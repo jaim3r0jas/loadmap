@@ -76,9 +76,34 @@ describe('compile', () => {
   })
 
   it('reads the options of the page', () => {
-    const r = compile(def({ top: 'title: "T"\nlayout: down\nspeed: 4\ntransition: 1.2\nassume: "a"\nassume: "b"' }))
+    const r = compile(def({ top: 'title: "T"\ndirection: down\nspeed: 4\ntransition: 1.2\nassume: "a"\nassume: "b"' }))
     expect(r.definition!.options).toEqual({ direction: 'DOWN', speed: 4, transition: 1.2, assumptions: ['a', 'b'] })
     expect(r.definition!.model.title).toBe('T')
+  })
+
+  it('lays out compact unless it says stable, and names a wrong word', () => {
+    expect(compile(def({})).definition!.view.def.layout).toBeUndefined()
+    expect(compile(def({ top: 'layout: stable' })).definition!.view.def.layout).toBe('stable')
+    expect(compile(def({ top: 'layout: "compact"' })).definition!.view.def.layout).toBe('compact')
+    expect(errors(def({ top: 'layout: stabel' }))).toEqual([
+      expect.objectContaining({ message: '"stabel" is not one of compact, stable', text: 'stabel' }),
+    ])
+  })
+
+  it('still reads the direction under its old name, layout, and says what to write instead', () => {
+    const r = compile(def({ top: 'layout: down' }))
+    expect(r.definition!.options.direction).toBe('DOWN')
+    expect(r.definition!.view.def.layout).toBeUndefined()
+    expect(r.diagnostics).toEqual([
+      expect.objectContaining({
+        severity: 'warning',
+        message: 'layout: down is now direction: down',
+        hint: 'loadmap fmt rewrites it',
+      }),
+    ])
+    const both = compile(def({ top: 'direction: right\nlayout: down' }))
+    expect(both.definition!.options.direction).toBe('RIGHT')
+    expect(both.diagnostics.map((d) => d.message)).toEqual(['layout: down is ignored: direction sets the direction'])
   })
 
   it('takes a transition of 0 to 5 seconds: a shared link cannot ask for a move that never ends', () => {

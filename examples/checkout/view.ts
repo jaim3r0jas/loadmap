@@ -33,4 +33,5 @@ export const view = defineView(checkout, {
   },
   // the phones stand in the tier of the gateway they feed, the workers in that of the topic that feeds them
   tiers: { edge: { label: 'Edge' }, services: { label: 'Services' }, data: { label: 'Data' } },
+  layout: 'compact',
 })

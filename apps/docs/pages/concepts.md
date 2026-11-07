@@ -64,8 +64,11 @@ it looks the same whichever step came before.
 ## The view and the layout
 
 The view names the boxes (`node`, `cluster` for brokers holding partitions, `pool` for pods), the edges and their
-labels, and where each flow's dots start. ELK lays it out once per structure: a label reserves room for its widest
-text across the whole load range, so moving the load never moves a box, and no label covers another.
+labels, and where each flow's dots start. ELK lays out each scenario, step and choice of a select or switch on its
+own, and the boxes move from one to the next: a label reserves room for its widest text and a box for its largest size
+across the whole load range and every range control, so dragging a slider never moves a box, and no label covers
+another. `layout: 'stable'`
+gives every box one place instead, so nothing but a box's own size changes between steps.
 
 ## As text
 

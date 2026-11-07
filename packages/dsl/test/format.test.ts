@@ -94,6 +94,14 @@ describe('format', () => {
     )
   })
 
+  it('renames the direction from its old name, layout, and leaves a layout of the boxes alone', () => {
+    expect(fmt('layout: down\nlayout: "right"\nlayout: stable\nnode layout "Layout" { sub: "layout: down" }\n')).toBe(
+      'direction: down\ndirection: "right"\nlayout: stable\nnode layout "Layout" { sub: "layout: down" }\n',
+    )
+    // beside a direction, the old line sets nothing: renamed, it would set the direction twice
+    expect(fmt('direction: right\nlayout: down\n')).toBe('direction: right\nlayout: down\n')
+  })
+
   it('tells signs, "%" and "?:" by what the parser read', () => {
     expect(fmt('x: - 2 * load\ny: a?b:c\nz: a %b\nw: !(a)\nv: estimated(1 +/- 5 %, "x")\nq: Math . min(1,2)')).toBe(
       'x: -2 * load\ny: a ? b : c\nz: a % b\nw: !(a)\nv: estimated(1 +/- 5%, "x")\nq: Math.min(1, 2)\n',
