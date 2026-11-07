@@ -12,13 +12,14 @@ import { LoadmapEditor } from '@loadmap/editor'
 ;<LoadmapEditor initial={shared.source} values={shared.values} layout="reader" />
 ```
 
-`fill` makes it the whole of its container, as a page of its own: the text and the diagram side by side with a
-divider to drag, each scrolling on its own, and one at a time on a phone. `start` adds controls at the start of its
-bar:
+`fill` makes it the whole of its container, as a page of its own: the diagram as a canvas to pan and zoom, the text
+floating over its left in a card that resizes (`split`, `onSplit`) and hides (`onLayout`), and the verdict and the
+other panels on its right, pinned or on a rail (`panel`, `onPanel`); one at a time on a phone. `start` adds controls
+at the start of its bar:
 
 ```tsx
 ;<div style={{ height: '100dvh' }}>
-  <LoadmapEditor fill initial={source} start={<a href="/">← Back</a>} split={0.4} onSplit={keepSplit} />
+  <LoadmapEditor fill initial={source} start={<a href="/">← Back</a>} split={0.3} onSplit={keepSplit} />
 </div>
 ```
 

@@ -8,6 +8,7 @@ import {
   type EmbedOptions,
   LoadmapEditor,
   type LoadmapEditorHandle,
+  type PanelMode,
   TEMPLATES,
 } from '@loadmap/editor'
 import { alertsSource } from '@loadmap/example-alerts'
@@ -22,8 +23,11 @@ const NAMES: Record<keyof typeof SOURCES, string> = { uploads: 'Photo uploads', 
 const DRAFT = 'loadmap-editor-draft'
 /** The reader's draft as it was before another text took its place. */
 const EARLIER = 'loadmap-editor-draft-earlier'
-/** Where the reader left the divider. */
-const SPLIT = 'loadmap-editor-split'
+/** The code card's share of the width, as the reader left it (the divider's old share is not one). */
+const SPLIT = 'loadmap-editor-card'
+/** Whether the reader hid the code, and pinned the side panel. */
+const LAYOUT = 'loadmap-editor-layout'
+const PANEL = 'loadmap-editor-panel'
 
 function read(key: string): string | null {
   try {
@@ -114,7 +118,15 @@ function Editor({ root }: { root: URL }) {
   // editing what came from outside makes it the draft: the earlier draft is kept aside, and the address loses the
   // link, the template or the example, so a reload shows the edits
   const outside = useRef(fromLink() || !!template() || !!example())
-  const [layout] = useState<EditorLayout>(() => (fromLink() && !query().has('code') ? 'reader' : 'code'))
+  // a link opens for readers (the code with ?code); else the code shows or hides as the reader left it
+  const [layout] = useState<EditorLayout>(() =>
+    fromLink() ? (query().has('code') ? 'code' : 'reader') : read(LAYOUT) === 'reader' ? 'reader' : 'code',
+  )
+  const [linked] = useState(fromLink)
+  const [panel] = useState<PanelMode | undefined>(() => {
+    const p = read(PANEL)
+    return p === 'pinned' || p === 'auto' ? p : undefined
+  })
   const [earlier, setEarlier] = useState(() => read(EARLIER))
   const [split] = useState(() => Number(read(SPLIT) ?? Number.NaN))
   const save = (s: string) => {
@@ -190,6 +202,10 @@ function Editor({ root }: { root: URL }) {
       embedLink={embedLink}
       split={split}
       onSplit={(n) => write(SPLIT, String(n))}
+      panel={panel}
+      onPanel={(p) => write(PANEL, p)}
+      // a link opens as its sender meant it: what the reader does with it is not how they leave their own editor
+      onLayout={(l) => !linked && write(LAYOUT, l)}
       start={
         <>
           <a className="lm-btn app-close" href={close.href} onClick={leave} title="Back to the docs">

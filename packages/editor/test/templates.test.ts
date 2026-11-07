@@ -1,6 +1,7 @@
 import { compile, formatDiagnostic } from '@loadmap/dsl'
 import { collisions, layout } from '@loadmap/layout'
 import { describe, expect, it } from 'vitest'
+import { CATALOG } from '../src/catalog'
 import { TEMPLATES } from '../src/templates'
 
 describe('templates', () => {
@@ -8,6 +9,10 @@ describe('templates', () => {
     expect(TEMPLATES).toHaveLength(10)
     expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(10)
     for (const t of TEMPLATES) expect(t.source).toContain(`title: "${t.title}"`)
+  })
+
+  it('are the menu’s catalog, entry for entry, with their texts', () => {
+    expect(TEMPLATES.map(({ source: _, ...t }) => t)).toEqual(CATALOG)
   })
 
   for (const t of TEMPLATES)

@@ -1,3 +1,4 @@
+import type { TemplateEntry } from './catalog'
 import autoscale from './templates/autoscale.loadmap?raw'
 import batchImport from './templates/batch-import.loadmap?raw'
 import cache from './templates/cache.loadmap?raw'
@@ -9,15 +10,15 @@ import retryStorm from './templates/retry-storm.loadmap?raw'
 import thirdPartyApi from './templates/third-party-api.loadmap?raw'
 import webApp from './templates/web-app.loadmap?raw'
 
-export interface Template {
-  id: string
-  title: string
-  /** One line for a menu or a gallery card. */
-  summary: string
+export interface Template extends TemplateEntry {
   source: string
 }
 
-/** Starters for "New from template": each compiles, keeps its expectations and lays out without collisions. */
+/**
+ * Starters for "New from template": each compiles, keeps its expectations and lays out without collisions. Written out
+ * whole, not built from the catalog: the editor's first load holds the catalog, and this module stays a chunk of its
+ * own, loaded when a starter is picked (templates.test.ts keeps the two the same).
+ */
 export const TEMPLATES: readonly Template[] = [
   { id: 'web-app', title: 'Web app and database', summary: 'App pods in front of one database.', source: webApp },
   {
