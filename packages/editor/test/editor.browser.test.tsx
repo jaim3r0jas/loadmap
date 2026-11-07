@@ -24,6 +24,7 @@ async function mount(
     values?: Record<string, ParamValue>
     theme?: 'light' | 'dark'
     embedLink?: (hash: string, o: EmbedOptions) => string
+    exportItems?: BarSection[]
   } = {},
 ) {
   await page.viewport(1440, 1000)
@@ -38,6 +39,7 @@ async function mount(
       values={o.values}
       theme={o.theme}
       embedLink={o.embedLink}
+      exportItems={o.exportItems}
     />,
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
@@ -249,6 +251,58 @@ describe('the editor', () => {
     await expect.poll(() => host.querySelector('.lme-bar')).toBeTruthy()
     expect(page.getByRole('button', { name: 'New' }).query()).toBeNull()
     expect(page.getByRole('button', { name: 'Export' }).query()).toBeTruthy()
+  })
+
+  it('folds View, New and Export into one menu in a narrow column, the bar one row', async () => {
+    const { host } = await mount({
+      embedLink: (hash) => `https://x.test/embed/#${hash}`,
+      exportItems: [{ label: 'Image', items: [{ label: 'PNG', onSelect: () => {} }] }],
+    })
+    const shown = (name: string) => page.getByRole('button', { name, exact: true }).query()?.checkVisibility() ?? false
+    const stops = () => [...host.querySelectorAll<HTMLElement>('.lme-tools button')].filter((b) => b.tabIndex === 0)
+    const middle = (e: Element) => {
+      const r = e.getBoundingClientRect()
+      return Math.round(r.top + r.height / 2)
+    }
+    // the column's width, not the window's: below 560 px of the editor's own content
+    for (const width of [900, 640, 520, 420, 320]) {
+      host.style.width = `${width}px`
+      const narrow = width < 560
+      await expect.poll(() => shown('More')).toBe(narrow)
+      // one row: the status and every control on one line
+      const row = [host.querySelector('.lme-status')!, ...host.querySelectorAll<HTMLElement>('.lme-bar button')]
+        .filter((e) => !e.closest('[popover]') && e.checkVisibility())
+        .map(middle)
+      expect(Math.max(...row) - Math.min(...row), `${width}`).toBeLessThanOrEqual(1)
+      // one stop for Tab, on a control that shows
+      expect(stops().length, `${width}`).toBe(1)
+      await expect.poll(() => stops()[0]!.checkVisibility()).toBe(true)
+      for (const name of ['Hide code', 'Format', 'New', 'Export']) expect(shown(name), `${width} ${name}`).toBe(!narrow)
+      if (narrow) {
+        await userEvent.click(page.getByRole('button', { name: 'More', exact: true }))
+        for (const name of ['Hide code', 'Format', 'Web app and database', 'Download .loadmap', 'PNG'])
+          await expect.element(page.getByRole('menuitem', { name, exact: true })).toBeVisible()
+        await userEvent.keyboard('{Escape}')
+      }
+      expect(shown('Share'), `${width}`).toBe(true)
+    }
+    // the keyboard on Export as the column narrows: it moves to the bar's stop, not to the page
+    // a column resizes over frames: the bar's observer sees each width
+    const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    host.style.width = '900px'
+    await expect.poll(() => shown('Export')).toBe(true)
+    await frames()
+    ;(page.getByRole('button', { name: 'Export' }).element() as HTMLElement).focus()
+    host.style.width = '400px'
+    await expect.poll(() => document.activeElement?.getAttribute('aria-label')).toBe('More')
+    // a menu open as its button goes closes
+    host.style.width = '900px'
+    await frames()
+    await userEvent.click(page.getByRole('button', { name: 'New' }))
+    await expect.poll(() => host.querySelector('.lme-menu:popover-open')).toBeTruthy()
+    await frames()
+    host.style.width = '400px'
+    await expect.poll(() => host.querySelector('.lme-menu:popover-open')).toBeNull()
   })
 
   it('reads values from a link by the kind of each parameter', async () => {
