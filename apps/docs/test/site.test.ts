@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { encodeShare } from '@loadmap/dsl'
 import { TEMPLATES } from '@loadmap/editor/templates'
-import { type Browser, chromium, type Frame } from 'playwright'
+import { type Browser, chromium, type Frame, type Page } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
@@ -167,7 +167,8 @@ describe('the built site', () => {
     const first = [...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]!)
     expect(first.length).toBeGreaterThan(0)
     const kb = first.reduce((s, f) => s + gzipSync(readFileSync(join(out, f))).length, 0) / 1024
-    expect(kb).toBeLessThan(5)
+    // with the light and dark switch, on every page (0.6 kB); an island is tens
+    expect(kb).toBeLessThan(5.5)
   })
 
   it('draws the live parts in Chromium: examples, the quick start, a definition, the editor', async () => {
@@ -611,4 +612,159 @@ describe('the built site', () => {
       await browser.close()
     }
   }, 120_000)
+
+  describe('the light and dark switch', () => {
+    let browser: Browser
+    beforeAll(async () => {
+      browser = await chromium.launch()
+    })
+    afterAll(() => browser?.close())
+
+    /** What the page draws in: its own background, and each board's and the editor's tokens. */
+    const looks = (page: Page) =>
+      page.evaluate(() => {
+        const dark = (el: Element) => {
+          const [r, g, b] = getComputedStyle(el).backgroundColor.match(/\d+/g)!.map(Number)
+          return r! + g! + b! < 300 ? 'dark' : 'light'
+        }
+        const scheme = (s: string) => [...document.querySelectorAll(s)].map((el) => getComputedStyle(el).colorScheme)
+        return {
+          kept: document.documentElement.dataset.theme ?? 'system',
+          page: dark(document.body),
+          boards: scheme('.lm:not(.lme)'),
+          editor: scheme('.lme'),
+          code: [...document.querySelectorAll('.cm-editor')].map(dark),
+          picked: [...document.querySelectorAll<HTMLInputElement>('.theme input:checked')].map((i) => i.value),
+        }
+      })
+    const drawn = (page: Page) =>
+      page.waitForFunction(() => document.querySelector('[data-node]'), null, { timeout: 30_000 })
+
+    it('follows the system until the reader picks, on the pages and in the editor', async () => {
+      for (const scheme of ['light', 'dark'] as const) {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: scheme })
+        await page.goto(`${url}examples/checkout/`)
+        await drawn(page)
+        expect(await looks(page)).toEqual({
+          kept: 'system',
+          page: scheme,
+          boards: [scheme],
+          editor: [],
+          code: [],
+          picked: ['system', 'system'],
+        })
+        await page.goto(`${url}editor/`)
+        await drawn(page)
+        expect(await looks(page)).toMatchObject({ kept: 'system', page: scheme, editor: [scheme], code: [scheme] })
+        await page.close()
+      }
+    }, 120_000)
+
+    it('flips the page, its boards and the editor, keeps the choice, and goes back to the system', async () => {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'light' })
+      const page = await context.newPage()
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(`${url}examples/checkout/`)
+      await drawn(page)
+      await page.locator('.bar > .theme label', { hasText: 'Dark' }).click()
+      await expect
+        .poll(() => looks(page), { timeout: 5000 })
+        .toMatchObject({ kept: 'dark', page: 'dark', boards: ['dark'], picked: ['dark', 'dark'] })
+      // another page, the quick start's board with it, and a reload
+      await page.goto(`${url}getting-started/`)
+      await drawn(page)
+      expect(await looks(page)).toMatchObject({ kept: 'dark', page: 'dark', boards: ['dark'] })
+      await page.reload()
+      await drawn(page)
+      expect(await looks(page)).toMatchObject({ kept: 'dark', page: 'dark', boards: ['dark'] })
+      // the editor keeps it and changes it: its code and its diagram follow
+      await page.goto(`${url}editor/`)
+      await drawn(page)
+      expect(await looks(page)).toMatchObject({ kept: 'dark', editor: ['dark'], code: ['dark'], picked: ['dark'] })
+      await page.locator('.lme-bar .theme label', { hasText: 'Light' }).click()
+      await expect
+        .poll(() => looks(page), { timeout: 5000 })
+        .toMatchObject({ kept: 'light', page: 'light', editor: ['light'] })
+      expect((await looks(page)).code).toEqual(['light'])
+      // System again: nothing kept, and the system's change is followed
+      await page.locator('.lme-bar .theme label', { hasText: 'System' }).click()
+      expect(await page.evaluate(() => localStorage.getItem('loadmap-theme'))).toBe(null)
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await expect
+        .poll(() => looks(page), { timeout: 5000 })
+        .toMatchObject({ kept: 'system', page: 'dark', editor: ['dark'] })
+      expect(errors).toEqual([])
+      await context.close()
+    }, 120_000)
+
+    it('paints the kept choice first, before any script of the site runs', async () => {
+      const html = readFileSync(join(out, 'concepts/index.html'), 'utf8')
+      expect(html.indexOf("localStorage.getItem('loadmap-theme')")).toBeGreaterThan(0)
+      expect(html.indexOf("localStorage.getItem('loadmap-theme')")).toBeLessThan(html.indexOf('rel="stylesheet"'))
+      const editor = readFileSync(join(out, 'editor/index.html'), 'utf8')
+      expect(editor.indexOf("localStorage.getItem('loadmap-theme')")).toBeGreaterThan(0)
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'light' })
+      await page.addInitScript(() => localStorage.setItem('loadmap-theme', 'dark'))
+      await page.route(/\.js$/, (r) => r.abort())
+      await page.goto(`${url}concepts/`)
+      expect(await looks(page)).toMatchObject({ kept: 'dark', page: 'dark' })
+      // and the switch already shows it
+      const shown = await page.evaluate(() =>
+        [...document.querySelectorAll('.bar > .theme label')].map((l) => getComputedStyle(l).backgroundColor),
+      )
+      expect(shown[2]).not.toBe(shown[0])
+      expect(shown[0]).toBe(shown[1])
+      await page.close()
+    }, 120_000)
+
+    it('follows the system when storage is refused, and still switches the page', async () => {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.addInitScript(() =>
+        Object.defineProperty(window, 'localStorage', {
+          get: () => {
+            throw new DOMException('refused', 'SecurityError')
+          },
+        }),
+      )
+      await page.goto(`${url}concepts/`)
+      await drawn(page)
+      expect(await looks(page)).toMatchObject({ kept: 'system', page: 'dark', boards: ['dark'] })
+      await page.locator('.bar > .theme label', { hasText: 'Light' }).click()
+      await expect.poll(() => looks(page), { timeout: 5000 }).toMatchObject({ kept: 'light', page: 'light' })
+      expect(errors).toEqual([])
+      await page.close()
+    }, 120_000)
+
+    it('sits in the menu on a phone, the pages and the editor alike', async () => {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'light' })
+      const page = await context.newPage()
+      await page.goto(`${url}concepts/`)
+      expect(await page.locator('.bar > .theme').isVisible()).toBe(false)
+      await page.locator('.menu summary').click()
+      await page.locator('.panel .theme label', { hasText: 'Dark' }).click()
+      await expect.poll(() => looks(page), { timeout: 5000 }).toMatchObject({ kept: 'dark', page: 'dark' })
+      await page.goto(`${url}editor/`)
+      await page.waitForSelector('.lme-panes')
+      expect(await looks(page)).toMatchObject({ kept: 'dark', editor: ['dark'] })
+      expect(await page.locator('.lme-menu .theme').isVisible()).toBe(false)
+      await page.getByLabel('More').click()
+      await page.locator('.lme-menu .theme label', { hasText: 'Light' }).click()
+      await expect.poll(() => looks(page), { timeout: 5000 }).toMatchObject({ kept: 'light', editor: ['light'] })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+      await context.close()
+    }, 120_000)
+
+    it('leaves an embed to its link', async () => {
+      const source = readFileSync(join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap'), 'utf8')
+      const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, colorScheme: 'light' })
+      await page.addInitScript(() => localStorage.setItem('loadmap-theme', 'dark'))
+      await page.goto(`${url}embed/#${await encodeShare(source)}`)
+      await drawn(page)
+      expect(await looks(page)).toMatchObject({ kept: 'system', page: 'light', boards: ['light'] })
+      await page.close()
+    }, 120_000)
+  })
 })

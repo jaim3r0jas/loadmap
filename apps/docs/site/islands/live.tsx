@@ -34,5 +34,5 @@ export function mount(el: HTMLElement) {
       details.before(p)
     })
   const { model, view, options } = r.definition
-  createRoot(host).render(<Loadmap model={model} view={view} {...pageOptions(options)} />)
+  createRoot(host).render(<Loadmap model={model} view={view} theme="inherit" {...pageOptions(options)} />)
 }
