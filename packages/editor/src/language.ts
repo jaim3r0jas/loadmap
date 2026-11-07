@@ -8,10 +8,22 @@ import {
 } from '@codemirror/autocomplete'
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror/lint'
-import type { Extension } from '@codemirror/state'
-import { type EditorView, keymap } from '@codemirror/view'
+import { type EditorState, type Extension, StateField } from '@codemirror/state'
+import { EditorView, hoverTooltip, keymap, showTooltip, type Tooltip } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
-import { type CompileOptions, type CompileResult, type Completion, compile, completions, problems } from '@loadmap/dsl'
+import {
+  type CompileOptions,
+  type CompileResult,
+  type Completion,
+  compile,
+  completions,
+  type Definition,
+  type Hover,
+  hover,
+  problems,
+  type SignatureHelp,
+  signatureHelp,
+} from '@loadmap/dsl'
 import { BUILTINS, SCHEMA } from '@loadmap/dsl/internal'
 
 const KEYWORDS = new Set(Object.keys(SCHEMA).filter(Boolean))
@@ -147,18 +159,104 @@ const complete: CompletionSource = (ctx) => {
   return { from: c.from, to: c.to, options: c.options.map(cmCompletion), validFor: inText ? /^[\w/]*$/ : /^\w*$/ }
 }
 
+/** A line of help: its `code` as code elements, the rest as text. Never HTML: a shared definition is untrusted. */
+function helpLine(text: string, tag: 'p' | 'div' = 'p'): HTMLElement {
+  const el = document.createElement(tag)
+  text.split('`').forEach((piece, i) => {
+    if (!piece) return
+    if (i % 2) {
+      const code = document.createElement('code')
+      code.textContent = piece
+      el.append(code)
+    } else el.append(piece)
+  })
+  return el
+}
+
+function hoverDom(h: Hover, note?: string): HTMLElement {
+  const dom = document.createElement('div')
+  dom.className = 'lm-hover'
+  const head = document.createElement('code')
+  head.className = 'lm-hover-head'
+  head.textContent = h.head
+  dom.append(head, ...h.body.map((line) => helpLine(line)))
+  if (note) dom.append(Object.assign(helpLine(note), { className: 'lm-hover-note' }))
+  return dom
+}
+
+function signatureDom(s: SignatureHelp): HTMLElement {
+  const dom = document.createElement('div')
+  dom.className = 'lm-hover lm-signature'
+  const head = document.createElement('code')
+  head.className = 'lm-hover-head'
+  head.append(`${s.name}(`)
+  s.params.forEach((p, i) => {
+    if (i) head.append(', ')
+    const param = document.createElement('span')
+    param.textContent = p
+    if (i === s.active) param.className = 'lm-signature-active'
+    head.append(param)
+  })
+  head.append(s.variadic ? ', …)' : ')')
+  dom.append(head, helpLine(s.doc))
+  return dom
+}
+
+type SignatureTip = Tooltip & { key: string }
+
 /**
- * The language for CodeMirror: highlighting, inline errors from the checker and autocomplete. `onResult` hears every
- * compile the linter runs (after a pause in typing), so a preview can follow without compiling twice.
+ * Over the cursor while it is inside a builtin's or a fit's parentheses: the arguments, the one being written marked.
+ * While the call and the argument stay the same, the tooltip keeps its element (CodeMirror reuses one whose `create`
+ * is the same) and only follows the cursor.
+ */
+function signatureTooltip(state: EditorState, prev: SignatureTip | null): SignatureTip | null {
+  const sel = state.selection.main
+  if (!sel.empty) return null
+  const s = signatureHelp(state.doc.toString(), sel.head)
+  if (!s) return null
+  const key = `${s.label}#${s.active}`
+  const create = prev?.key === key ? prev.create : () => ({ dom: signatureDom(s) })
+  return { pos: sel.head, above: true, arrow: false, create, key }
+}
+
+const signature = StateField.define<SignatureTip | null>({
+  create: (state) => signatureTooltip(state, null),
+  update: (tip, tr) => (tr.docChanged || tr.selection ? signatureTooltip(tr.state, tip) : tip),
+  provide: (f) => showTooltip.from(f),
+})
+
+/**
+ * The language for CodeMirror: highlighting, inline errors from the checker, autocomplete, hover and signature help.
+ * `onResult` hears every compile the linter runs (after a pause in typing), so a preview can follow without compiling
+ * twice.
  */
 export function loadmapLanguage(
   o: CompileOptions & { onResult?: (source: string, result: CompileResult) => void; delay?: number } = {},
 ): Extension {
   let last: { source: string; result: CompileResult } | null = null
+  // the last definition without errors: a hover's values while the text has one; not another text's, once replaced
+  let good: Definition | undefined
+  const replaced = EditorView.updateListener.of((u) => {
+    for (const tr of u.transactions)
+      tr.changes.iterChanges((fromA, toA) => {
+        if (fromA === 0 && toA === tr.startState.doc.length && toA > 0) good = undefined
+      })
+  })
   const result = (source: string) => {
     if (last?.source !== source) last = { source, result: compile(source, o) }
+    good = last.result.definition ?? good
     return last.result
   }
+  const info = hoverTooltip((view, pos) => {
+    const source = view.state.doc.toString()
+    const r = result(source)
+    const h = hover(source, pos, r.definition ?? good)
+    if (!h) return null
+    // values from an older text: say so, where there are any
+    const stale = !r.definition && good && h.body.length > (hover(source, pos)?.body.length ?? 0)
+    const note = stale ? 'Values from the last version without errors.' : undefined
+    return { pos: h.from, end: h.to, above: true, create: () => ({ dom: hoverDom(h, note) }) }
+  })
   const lint = (view: EditorView): CmDiagnostic[] => {
     const source = view.state.doc.toString()
     const r = result(source)
@@ -179,5 +277,8 @@ export function loadmapLanguage(
     autocompletion({ override: [complete], activateOnTyping: true, positionInfo }),
     closeBrackets(),
     keymap.of(closeBracketsKeymap),
+    info,
+    signature,
+    replaced,
   ]
 }

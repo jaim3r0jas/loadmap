@@ -101,6 +101,62 @@ describe('completion in the editor', () => {
   })
 })
 
+/** Moves the pointer onto `pos`, as a mouse does: CodeMirror's hover follows mousemove over the text. */
+function pointAt(v: EditorView, pos: number) {
+  const c = v.coordsAtPos(pos + 1)!
+  v.contentDOM.dispatchEvent(
+    new MouseEvent('mousemove', { bubbles: true, clientX: c.left, clientY: (c.top + c.bottom) / 2 }),
+  )
+}
+const tip = (selector: string) => document.querySelector(selector)?.textContent ?? ''
+
+describe('hover and signature help in the editor', () => {
+  beforeEach(() => page.viewport(1280, 800))
+
+  it('shows what a name is and its value at the defaults, from the last good compile while the text is broken', async () => {
+    const v = mount(cache, 'demand: flows.re')
+    pointAt(v, cache.indexOf('flows.reads') + 7)
+    await expect.poll(() => tip('.lm-hover'), { timeout: 5000 }).toContain('2,000 a second at the defaults (load 1×).')
+    expect(tip('.lm-hover-head')).toBe('flow reads "reads"')
+    // break the text: the values stay, from the version without errors, and say so
+    v.dispatch({ changes: { from: 0, to: 'loadmap 1'.length, insert: 'loadmap 1\nrate oops' } })
+    v.dispatch({ effects: EditorView.scrollIntoView(v.state.doc.toString().indexOf('flows.reads'), { y: 'center' }) })
+    v.contentDOM.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+    await expect.poll(() => document.querySelector('.lm-hover')).toBeNull()
+    pointAt(v, v.state.doc.toString().indexOf('flows.reads') + 7)
+    await expect
+      .poll(() => tip('.lm-hover'), { timeout: 5000 })
+      .toContain('Values from the last version without errors.')
+    expect(tip('.lm-hover')).toContain('2,000 a second')
+    // another text in its place (a template): the old values are not its own
+    const other = cache.replace('2_000 * load', '9_000 * load').replace('loadmap 1', 'loadmap 1\nrate oops')
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: other } })
+    v.contentDOM.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+    await expect.poll(() => document.querySelector('.lm-hover')).toBeNull()
+    v.dispatch({ effects: EditorView.scrollIntoView(other.indexOf('flows.reads'), { y: 'center' }) })
+    pointAt(v, other.indexOf('flows.reads') + 7)
+    await expect.poll(() => tip('.lm-hover-head'), { timeout: 5000 }).toBe('flow reads "reads"')
+    expect(tip('.lm-hover')).not.toContain('a second')
+  })
+
+  it("names a builtin's arguments over the cursor and marks the one being written", async () => {
+    const v = mount(`${cache}\n`, `${cache}\n`)
+    await userEvent.keyboard('let x = pow(')
+    await expect.poll(() => tip('.lm-signature .lm-hover-head'), { timeout: 5000 }).toBe('pow(x, y)')
+    expect(tip('.lm-signature-active')).toBe('x')
+    // typing within one argument keeps the same tooltip, moving to the next one draws it again
+    await userEvent.keyboard('2')
+    const kept = document.querySelector('.lm-signature')
+    await userEvent.keyboard('5')
+    expect(document.querySelector('.lm-signature')).toBe(kept)
+    await userEvent.keyboard(', ')
+    await expect.poll(() => tip('.lm-signature-active')).toBe('y')
+    // out of the parentheses (the editor closed them): nothing to show
+    v.dispatch({ selection: { anchor: v.state.doc.length } })
+    await expect.poll(() => document.querySelector('.lm-signature')).toBeNull()
+  })
+})
+
 describe('completion on a phone', () => {
   it("moves through a snippet's fields with the ⇥ key, a phone keyboard having no Tab", async () => {
     // a touch screen, as a phone has: the row of keys shows over the keyboard

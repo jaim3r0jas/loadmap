@@ -9,8 +9,16 @@ export {
   LANGUAGE_VERSION,
   problems,
 } from './compile'
-export { type Completion, type Completions, completions } from './complete'
 export { type Diagnostic, formatDiagnostic, type Span } from './diagnostics'
 export { FormulaError, type HostFunctions } from './expr'
 export { FORMAT_WIDTH, type FormatResult, format } from './format'
+export {
+  type Completion,
+  type Completions,
+  completions,
+  type Hover,
+  hover,
+  type SignatureHelp,
+  signatureHelp,
+} from './help'
 export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, sharedValues } from './share'

@@ -329,7 +329,10 @@ const { model, view, options } = r.definition!
 `r.expectations` holds each `expect` line with its place and its `check()` result; `problems(r)` returns the
 diagnostics with every failing expectation added (as a warning, or as `problems(r, 'error')`).
 `completions(source, offset)` lists what may be typed at a place, ranked by what fits there, with snippets in the
-language server protocol's `${1:field}` form. `encodeShare` and `decodeShare` write and read share
+language server protocol's `${1:field}` form. `hover(source, offset, definition?)` says what the word there is (a
+statement, a property, a name the definition declares, a builtin) and, given the compiled definition, its values at the
+defaults: a flow's rate, what reaches a stage, a component's utilization and where it runs out. `signatureHelp(source,
+offset)` names the arguments of the builtin or fit the cursor is in. `encodeShare` and `decodeShare` write and read share
 links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.
 

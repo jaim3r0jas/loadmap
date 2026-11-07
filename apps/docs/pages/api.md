@@ -82,6 +82,8 @@ The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `
 | `problems(result, severity?)`                      | The diagnostics with failing expectations added                           |
 | `format(source)`                                   | `{ ok, text, diagnostics }`: the definition laid out the one way          |
 | `completions(source, offset)`                      | What may be typed at a place                                              |
+| `hover(source, offset, definition?)`               | What a word is, and its values at the defaults                            |
+| `signatureHelp(source, offset)`                    | The arguments of the call the cursor is in                                |
 | `encodeShare(source, values)`, `decodeShare(hash)` | Share links that carry the whole definition                               |
 
 ## The editor (`@loadmap/editor`)

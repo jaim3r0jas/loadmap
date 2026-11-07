@@ -434,7 +434,7 @@ class Help {
 
 const punct = (t: Token | undefined, text: string) => t?.kind === 'punct' && t.text === text
 
-function propOf(d: Decl, key: string): Expr | undefined {
+export function propOf(d: Decl, key: string): Expr | undefined {
   const p = d.body?.find((s) => s.kind === 'prop' && s.key.name === key)
   return p?.kind === 'prop' ? p.value : undefined
 }
@@ -508,7 +508,10 @@ function walk(list: readonly Stmt[], visit: (e: Expr) => void) {
 }
 
 /** The innermost block whose braces hold `offset`, and the statements whose blocks lead to it. */
-function blockAt(body: readonly Stmt[], offset: number): { spec: BlockSpec; edgeBody: boolean; path: (Decl | Edge)[] } {
+export function blockAt(
+  body: readonly Stmt[],
+  offset: number,
+): { spec: BlockSpec; edgeBody: boolean; path: (Decl | Edge)[] } {
   let spec = SCHEMA['']!
   let list = body
   const path: (Decl | Edge)[] = []
