@@ -52,6 +52,8 @@ async function hash(c: HTMLCanvasElement): Promise<string> {
 }
 
 const verdict = (el: HTMLElement) => el.querySelector('.lm-verdict')!.textContent
+/** Where a load sits on checkout's slider, which runs from 1× to 100× on a log scale. */
+const along = (load: number) => String(Math.log(load) / Math.log(100))
 
 describe('checkout in the browser', () => {
   it('draws the diagram and answers with a verdict', async () => {
@@ -84,8 +86,8 @@ describe('checkout in the browser', () => {
 
   it('changes the verdict when the load slider moves', async () => {
     const { el } = await mount()
-    const slider = el.querySelector<HTMLInputElement>('input[type=range]')!
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '40')
+    const slider = el.querySelector<HTMLInputElement>('.lm-loadbar input[type=range]')!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, along(40))
     slider.dispatchEvent(new Event('input', { bubbles: true }))
     await expect.poll(() => verdict(el)).toContain('At 40×, the worker pool and the API gateway are past capacity')
     expect(el.querySelector('.lm-verdict')!.getAttribute('data-tier')).toBe('over')
@@ -568,7 +570,7 @@ describe('full screen', () => {
     verdict: (el) => el.querySelector('.lm-line .lm-headline'),
     live: (el) => el.querySelector('[data-mini="live"] .lm-meters'),
     limits: (el) => el.querySelector('[data-mini="limits"] .lm-mini-limits'),
-    controls: (el) => el.querySelector('[data-mini="controls"] input[type=range]'),
+    controls: (el) => el.querySelector('[data-mini="controls"] select'),
     headroom: (el) => el.querySelector('[data-mini="headroom"] .lm-spark svg'),
     compare: (el) => el.querySelector('[data-mini="compare"] tbody'),
     assumptions: (el) =>
@@ -584,8 +586,8 @@ describe('full screen', () => {
     compare: '.lm-side .lm-compare',
     assumptions: '.lm-facts',
   }
-  const slide = async (el: HTMLElement, input: HTMLInputElement, to: string) => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, to)
+  const slide = async (el: HTMLElement, input: HTMLInputElement, to: number) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, along(to))
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await expect.poll(() => el.querySelector('.lm-headline')!.textContent).toContain(`${to}×`)
   }
@@ -733,11 +735,10 @@ describe('full screen', () => {
       const b = box(board)
       const dock = el.querySelector('.lm-dock')
       const d = dock && box(dock)
-      const input = el.querySelector<HTMLInputElement>(
-        m === 'focus' ? '.lm-line input[type=range]' : '[data-mini="controls"] input[type=range]',
-      )!
+      // the load is in the bar over the board in both modes
+      const input = el.querySelector<HTMLInputElement>('.lm-loadbar input[type=range]')!
       expect(inView(input)).toBe(true)
-      await slide(el, input, m === 'focus' ? '40' : '3')
+      await slide(el, input, m === 'focus' ? 40 : 3)
       expect(el.querySelector('.lm-line')!.getAttribute('data-tier')).toBe(m === 'focus' ? 'over' : 'ok')
       expect(el.querySelector('.lm-headline')!.getAttribute('title')).toContain(m === 'focus' ? 'At 40×' : 'At 3×')
       await handle.ready()
@@ -753,16 +754,18 @@ describe('full screen', () => {
     await enter(el)
     const dock = () => shown(el.querySelector('.lm-dock'))
     expect(dock()).toBe(true)
-    // focus: the diagram, the story under it, the verdict and the load
+    // focus: the scenarios and the load over the diagram, the story under it, the verdict
     await userEvent.click(mode(el, 'Focus'))
     await expect.poll(() => el.getAttribute('data-mode')).toBe('focus')
     expect(mode(el, 'Focus').getAttribute('aria-pressed')).toBe('true')
     expect(dock()).toBe(false)
-    expect(shown(el.querySelector('.lm-scenarios'))).toBe(false)
     const board = el.querySelector('.lm-board')!.getBoundingClientRect()
+    expect(el.querySelector('.lm-loadbar')!.getBoundingClientRect().bottom).toBeLessThan(board.top)
+    expect(shown(el.querySelector('.lm-loadbar .lm-scenarios'))).toBe(true)
+    expect(shown(el.querySelector('.lm-loadbar input[type=range]'))).toBe(true)
     expect(el.querySelector('.lm-story')!.getBoundingClientRect().top).toBeGreaterThan(board.bottom)
     expect(shown(el.querySelector('.lm-line .lm-headline'))).toBe(true)
-    expect(shown(el.querySelector('.lm-line input[type=range]'))).toBe(true)
+    expect(el.querySelector('.lm-line input')).toBeNull()
     // the story bar stays where the keyboard is when the mode changes
     const play = el.querySelector<HTMLButtonElement>('.lm-story-nav button')!
     play.focus()
@@ -1079,7 +1082,7 @@ describe('full screen', () => {
     expect(box(el.querySelector('.lm-board')!).width).toBe(wrap.clientWidth)
     expect(wrap.scrollHeight).toBeGreaterThan(wrap.clientHeight)
     const tabs = [...el.querySelectorAll<HTMLButtonElement>('.lm-tabs button')]
-    expect(tabs.map((t) => t.textContent)).toEqual(['Load', 'Live', 'Limits', 'Headroom', 'Compare'])
+    expect(tabs.map((t) => t.textContent)).toEqual(['Design', 'Live', 'Limits', 'Headroom', 'Compare'])
     const cards = () => [...el.querySelectorAll('.lm-mini')].filter(shown).map((c) => c.getAttribute('data-mini'))
     expect(cards()).toEqual(['controls'])
     await userEvent.click(tabs[2]!)
@@ -1271,5 +1274,147 @@ describe('fill', () => {
     await userEvent.keyboard('{Escape}')
     expect(el.getAttribute('data-full')).toBe('fill')
     document.body.style.removeProperty('margin')
+  })
+})
+
+describe('the load bar', () => {
+  const slider = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.lm-loadbar input[type=range]')!
+  const box = (e: Element) => {
+    const r = e.getBoundingClientRect()
+    return { left: r.left, top: r.top, width: r.width, height: r.height }
+  }
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const mark = (el: HTMLElement, name: string) =>
+    el.querySelector<HTMLButtonElement>(`.lm-loadbar .lm-marks button[aria-label="${name}"]`)!
+
+  it('moves the load along a log scale, and the diagram follows', async () => {
+    const { el, handle } = await mount()
+    const input = slider(el)
+    expect(input.getAttribute('aria-valuetext')).toBe('10×, Feb 2030')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, along(40))
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await expect.poll(() => handle.values().load).toBe(40)
+    await handle.ready()
+    expect(el.querySelector('.lm-board svg')!.textContent).toContain('1.6k orders/s')
+    // the date where the growth takes 1× to 40×
+    expect(input.getAttribute('aria-valuetext')).toMatch(/^40×, [A-Z][a-z]{2} 20\d\d$/)
+    // a press on the track takes the load under it: three quarters of the way is 10^1.5, about 32×
+    await userEvent.click(input, { position: { x: 8 + (input.clientWidth - 16) * 0.75, y: input.clientHeight / 2 } })
+    await expect.poll(() => handle.values().load).toBeGreaterThan(28)
+    expect(handle.values().load).toBeLessThan(36)
+  })
+
+  it('keeps the load when a scenario is picked, and moves where it runs out', async () => {
+    const { el, handle } = await mount()
+    handle.setValues({ load: 20 })
+    const full = () => el.querySelector('.lm-marks [data-kind="full"]')!.textContent
+    await expect.poll(full).toBe('14×')
+    const proposed = [...el.querySelectorAll<HTMLButtonElement>('.lm-loadbar .lm-scenarios button')].find(
+      (b) => b.textContent === 'Proposed',
+    )!
+    await userEvent.click(proposed)
+    await expect.poll(full).toBe('29×')
+    expect(handle.values().load).toBe(20)
+    expect(handle.values().gateways).toBe(2)
+  })
+
+  it('takes a mark: its load, and the rest of its values', async () => {
+    const { el, handle } = await mount()
+    await userEvent.click(mark(el, 'Runs out · 14×'))
+    await expect.poll(() => handle.values().load).toBe(14)
+    expect(mark(el, 'Runs out · 14×').getAttribute('aria-pressed')).toBe('true')
+    await userEvent.click(mark(el, 'Black Friday'))
+    await expect.poll(() => handle.values().load).toBe(40)
+    expect(handle.values().pods).toBe(6)
+    await expect.poll(() => el.querySelector('.lm-loadbar .lm-own')?.textContent).toBe('your own values')
+    // the controls keep only the presets that set no load: checkout has none
+    expect(el.querySelector('.lm-controls .lm-presets')).toBeNull()
+    expect(el.querySelector('.lm-controls input[type=range]')).toBeNull()
+  })
+
+  it('moves a step with the arrows, and to the next mark with Page Up and Page Down', async () => {
+    const { el, handle } = await mount()
+    slider(el).focus()
+    const after = async (key: string, load: number) => {
+      await userEvent.keyboard(key)
+      await expect.poll(() => handle.values().load, { message: key }).toBe(load)
+    }
+    await after('{ArrowRight}', 11)
+    await after('{ArrowDown}', 10)
+    await after('{PageUp}', 14)
+    await after('{PageUp}', 40)
+    await after('{PageUp}', 100)
+    await after('{PageDown}', 40)
+    await after('{Home}', 1)
+    await after('{PageUp}', 7)
+    await after('{End}', 100)
+  })
+
+  for (const [width, height] of [
+    [1440, 900],
+    [2560, 1440],
+    [390, 844],
+  ] as const)
+    it(`stays in view beside the diagram while the page scrolls, at ${width}x${height}`, async () => {
+      const { el, handle } = await mount({ width })
+      await page.viewport(width, height)
+      document.body.style.paddingBottom = `${height}px`
+      try {
+        const bar = el.querySelector('.lm-loadbar')!
+        const board = el.querySelector('.lm-board')!
+        await handle.ready()
+        // the board's top, its middle, its bottom in the middle of the screen
+        for (const at of [0, 0.5, 1]) {
+          const b = board.getBoundingClientRect()
+          scrollTo(0, scrollY + b.top + b.height * at - innerHeight / 2)
+          await frames()
+          const r = bar.getBoundingClientRect()
+          expect([r.top >= -0.5, r.bottom <= innerHeight + 0.5], `bar at ${at}`).toEqual([true, true])
+          // over what shows of the board on a wide page; under it on a phone, in thumb reach
+          const shown = board.getBoundingClientRect()
+          if (width > 520) expect(r.top).toBeLessThanOrEqual(Math.max(0, shown.top) + 0.5)
+          else expect(r.bottom).toBeGreaterThanOrEqual(Math.min(shown.bottom, innerHeight) - 0.5)
+        }
+      } finally {
+        document.body.style.removeProperty('padding-bottom')
+        scrollTo(0, 0)
+      }
+    })
+
+  it('never moves the board or itself while the load sweeps or a scenario changes', async () => {
+    const { el, handle } = await mount()
+    const bar = el.querySelector('.lm-loadbar')!
+    const board = el.querySelector('.lm-board')!
+    await frames()
+    const before = [box(bar), box(board)]
+    for (const load of [1, 9, 10, 99, 100, 37]) {
+      handle.setValues({ load })
+      await handle.ready()
+      await frames()
+      expect([box(bar), box(board)], `at ${load}×`).toEqual(before)
+    }
+    for (const label of ['Proposed', 'Today']) {
+      const b = [...el.querySelectorAll<HTMLButtonElement>('.lm-loadbar .lm-scenarios button')].find(
+        (x) => x.textContent === label,
+      )!
+      await userEvent.click(b)
+      await handle.ready()
+      await frames()
+      expect(box(bar).height, label).toBe(before[0]!.height)
+      expect(box(board).top, label).toBe(before[1]!.top)
+    }
+  })
+
+  it('follows the story as it plays, and a drag stops it', async () => {
+    const { el, handle } = await mount()
+    await userEvent.click(el.querySelector<HTMLButtonElement>('.lm-story-nav button')!)
+    await expect.poll(() => el.querySelector('.lm-story')!.hasAttribute('data-playing')).toBe(true)
+    // the first step sets 1×; the bar shows it
+    await expect.poll(() => slider(el).getAttribute('aria-valuetext'), { timeout: 10_000 }).toBe('1×, now')
+    const input = slider(el)
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, along(30))
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await expect.poll(() => el.querySelector('.lm-story')!.hasAttribute('data-playing')).toBe(false)
+    expect(handle.values().load).toBe(30)
   })
 })

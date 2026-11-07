@@ -15,8 +15,8 @@ import { storySeconds } from './camera'
 import type { OpenPanel } from './compact'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
-import { Assumptions, Controls, Limits, LoadRange, Meters, Verdict } from './panels'
-import { Compare, HeadroomChart, Scenarios } from './scenarios'
+import { Assumptions, Controls, Limits, LoadBar, Meters, Verdict } from './panels'
+import { Compare, HeadroomChart } from './scenarios'
 import { Story } from './story'
 import { injectStyles } from './styles'
 import { type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
@@ -147,7 +147,7 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   compare?: boolean
   /**
    * The panels full screen shows, compact, below the diagram. Default every one the page shows. Focus mode shows the
-   * verdict and the load slider of these.
+   * verdict of these. The scenarios and the load are in the bar over the diagram, in every layout.
    */
   fullScreen?: readonly LoadmapPanel[]
   /** A click (or Enter) on a box of the diagram, by its id: every box is a button then. */
@@ -157,7 +157,10 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   ref?: Ref<LoadmapHandle>
 }
 
-/** The whole page piece: scenarios, diagram, verdict, headroom, live meters, limits, controls and assumptions. */
+/**
+ * The whole page piece: the scenarios and the load in a bar over the diagram, the diagram, verdict, headroom, live
+ * meters, limits, the design controls and assumptions.
+ */
 export function Loadmap<P>({
   model,
   view,
@@ -175,12 +178,15 @@ export function Loadmap<P>({
   const lm = useLoadmap(model, view, o)
   useImperativeHandle(ref, () => handleOf(lm), [lm])
   const side = compare && model.scenarios.length > 1
+  // the load is in the bar: the controls panel is the design, when there is one
+  const design = model.params.length > 1 || lm.ev.presets.some((p) => !('load' in p.values))
   const charts: LoadmapPanel[] = []
   if (headroom) charts.push('headroom')
   if (side) charts.push('compare')
   // marks what full screen leaves out: a panel not listed, a container none of whose panels are
   const out = (...panels: LoadmapPanel[]) => (panels.some((p) => fullScreen.includes(p)) ? undefined : '')
-  const listed = (p: LoadmapPanel) => fullScreen.includes(p) && (p === 'headroom' ? headroom : p !== 'compare' || side)
+  const listed = (p: LoadmapPanel) =>
+    fullScreen.includes(p) && (p === 'headroom' ? headroom : p === 'compare' ? side : p !== 'controls' || design)
   const full = lm.fullScreen
   const focus = full && lm.fullScreenMode === 'focus'
 
@@ -217,18 +223,18 @@ export function Loadmap<P>({
   )
   const heading = title !== false && <h2>{title ?? model.title}</h2>
   const verdict = listed('verdict')
-  const line = focus ? verdict || listed('controls') : verdict || listed('assumptions')
+  const line = focus ? verdict : verdict || listed('assumptions')
   return (
     <LoadmapRoot lm={lm} theme={theme}>
       {full ? (
         <div className="lm-head">
           {heading}
-          <Scenarios lm={lm} />
+          <LoadBar lm={lm} />
         </div>
       ) : (
         <>
           {heading}
-          <Scenarios lm={lm} />
+          <LoadBar lm={lm} />
         </>
       )}
       {/* focus shows it under the diagram, by its order: here it keeps its keyboard focus and its fill */}
@@ -245,7 +251,6 @@ export function Loadmap<P>({
               assumptions={!focus && listed('assumptions')}
             />
           </Suspense>
-          {focus && listed('controls') && <LoadRange lm={lm} />}
         </div>
       )}
       {full && !focus && (
@@ -288,7 +293,7 @@ export function Loadmap<P>({
             {panel('live', <Meters lm={lm} />)}
             {panel('limits', <Limits lm={lm} />)}
           </div>
-          {panel('controls', <Controls lm={lm} />)}
+          {design && panel('controls', <Controls lm={lm} load={false} />)}
         </div>
         {panel('assumptions', <Assumptions lm={lm} extra={assumptions} />)}
       </div>

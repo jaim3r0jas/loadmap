@@ -275,9 +275,8 @@ describe('the built site', () => {
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
       // the old link opens the same model, at the values it carries
       expect(await page.locator('.lm h2').first().textContent()).toBe('Checkout pipeline')
-      expect(
-        await page.evaluate(() => document.querySelector<HTMLInputElement>('.lm input[type="range"]')?.value),
-      ).toBe('30')
+      // the slider's input holds its place on the track; the load is what it says
+      expect(await page.locator('.lm .lm-load input').first().getAttribute('aria-valuetext')).toMatch(/^30×/)
       await page.locator('.lme-preview [data-node="gateway"]').click()
       await page.waitForFunction(() => document.querySelector('.lme-inspector h3')?.textContent === 'API gateway')
       await page.getByRole('button', { name: 'Show code' }).click()

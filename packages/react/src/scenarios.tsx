@@ -36,7 +36,7 @@ export function scenarioColor(model: Model, label: string | null): string {
 const lineName = (l: HeadroomLine) => l.label ?? 'These values'
 
 /** A month for a table cell or an axis: "Mar 2031"; "now" for a crossing already reached. */
-function when(model: Model, x: number | null): string {
+export function when(model: Model, x: number | null): string {
   const d = model.dateAt(x)
   return d ? monthOf(d, true) : x != null && x <= 1 && model.growth ? 'now' : ''
 }
