@@ -15,6 +15,7 @@ import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { useRecorder } from './recorder'
 
@@ -79,6 +80,16 @@ function closeTo(root: URL): { href: string; back: boolean } {
     // no referrer: opened cold
   }
   return { href: root.href, back: false }
+}
+
+/** The site's light and dark switch: in the bar when it is wide, in its menu when it is narrow. */
+function ThemeSwitch() {
+  // client.tsx makes it work, and marks it as the choice changes; the page's choice is on <html> already (theme.ts
+  // stays out of the editor's chunk, or every page would load a chunk more)
+  const t = document.documentElement.dataset.theme
+  const html = themeSwitch('theme-editor', t === 'light' || t === 'dark' ? t : 'system')
+  // biome-ignore lint/security/noDangerouslySetInnerHtml: the site's own markup, with nothing from the reader
+  return <span className="app-theme" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 /** The help is static HTML on the page (from editor.md): the ? opens it, ✕ and Escape close it. */
@@ -195,6 +206,7 @@ function Editor({ root }: { root: URL }) {
     <LoadmapEditor
       ref={editor}
       fill
+      theme="inherit"
       initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
       values={'values' in start ? start.values : undefined}
       layout={layout}
@@ -233,6 +245,7 @@ function Editor({ root }: { root: URL }) {
             <span className="app-wide">?</span>
             <span className="app-narrow">Help</span>
           </button>
+          <ThemeSwitch />
         </>
       }
     />

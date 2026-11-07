@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Marked, type Token } from 'marked'
 import { shippedReference } from '../../scripts/reference'
+import { HEAD } from './site/theme'
+import { themeSwitch } from './site/theme-switch'
 
 export interface Page {
   /** Where it is served, without slashes: "" for the home page, "examples/checkout". */
@@ -210,6 +212,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${esc(head)}</title>
     <meta name="description" content="loadmap draws a system's architecture with its load flowing through it, ranks the parts by when they run out, and writes the verdict." />
+    ${HEAD}
     <link rel="stylesheet" href="/docs.css" />
   </head>
   <body>
@@ -219,9 +222,10 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
         <span class="version">0.1</span>
         <span class="grow"></span>
         <span class="out">${out}</span>
+        ${themeSwitch('theme-bar')}
         <details class="menu">
           <summary><span aria-hidden="true">☰</span> ${esc(page.nav || 'Pages')}</summary>
-          <nav class="panel" aria-label="Pages">${list}<p class="out">${out}</p></nav>
+          <nav class="panel" aria-label="Pages">${themeSwitch('theme-menu')}${list}<p class="out">${out}</p></nav>
         </details>
       </div>
     </header>
@@ -253,6 +257,7 @@ function appShell(page: Page, title: string, body: string): string {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>${esc(`${title} · loadmap`)}</title>
+    ${HEAD}
     <link rel="stylesheet" href="/docs.css" />
   </head>
   <body class="app" data-root="${relative(page.route)}">

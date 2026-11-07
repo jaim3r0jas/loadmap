@@ -1,3 +1,8 @@
+import { wire } from './theme'
+
+// The light and dark switch: in the top bar, the menu and the editor's bar.
+wire()
+
 // Mounts the live parts of a page. Each island loads its own code, so a page without one loads almost nothing.
 const ISLANDS: Record<string, () => Promise<{ mount: (el: HTMLElement) => void }>> = {
   loadmap: () => import('./islands/live'),

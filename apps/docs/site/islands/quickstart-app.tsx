@@ -52,5 +52,5 @@ const view = defineView(shop, {
 })
 
 export function App() {
-  return <Loadmap model={shop} view={view} />
+  return <Loadmap model={shop} view={view} theme="inherit" />
 }
