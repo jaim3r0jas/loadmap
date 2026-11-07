@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/export",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "PNG, GIF, WebM and MP4 of a loadmap, recorded on a fixed clock so the same options give the same file.",
   "keywords": [
     "loadmap",
