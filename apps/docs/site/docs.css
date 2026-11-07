@@ -17,8 +17,9 @@
   color-scheme: light dark;
 }
 
+/* the system's dark until the reader picks one (data-theme, from site/theme.ts); the two dark blocks stay the same */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d141b;
     --surface: #131c25;
     --fg: #e4ebf1;
@@ -28,6 +29,22 @@
     --code: #18232e;
     --error: #ff7b72;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d141b;
+  --surface: #131c25;
+  --fg: #e4ebf1;
+  --muted: #93a1ae;
+  --line: #26323e;
+  --accent: #58a6ff;
+  --code: #18232e;
+  --error: #ff7b72;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 * {
@@ -95,6 +112,94 @@ a {
 
 .menu {
   display: none;
+}
+
+/* the light and dark switch: icons in a bar, named in a menu */
+.theme fieldset {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  min-inline-size: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.theme legend,
+.bar > .theme .theme-name,
+.lme:not([data-narrow]) .theme-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.theme label {
+  position: relative;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  min-width: 28px;
+  padding: 0 5px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.theme svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.theme input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* the picked one, from <html> itself: right before the switch's script runs */
+:root:not([data-theme]) .theme label:has([value="system"]),
+:root[data-theme="light"] .theme label:has([value="light"]),
+:root[data-theme="dark"] .theme label:has([value="dark"]) {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.theme label:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.theme-caption {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.bar > .theme .theme-caption,
+.lme:not([data-narrow]) .theme-caption {
+  display: none;
+}
+
+.panel .theme {
+  display: grid;
+  gap: 6px;
+  margin: 0 8px 16px;
+}
+
+.panel .theme label {
+  height: 36px;
 }
 
 .frame {
@@ -451,6 +556,7 @@ a.button {
   }
 
   .bar > .out,
+  .bar > .theme,
   .side {
     display: none;
   }
@@ -629,6 +735,26 @@ body.app main > .island {
 }
 
 /* the editor's bar, wide or narrow as the editor itself measures it */
+.lme .theme label {
+  height: 24px;
+}
+
+.lme[data-narrow] .theme {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* the names alone fit the menu's width */
+.lme[data-narrow] .theme svg {
+  display: none;
+}
+
+.lme[data-narrow] .theme label {
+  height: 32px;
+  padding: 0 4px;
+}
+
 .lme[data-narrow] .app-brand,
 .lme[data-narrow] .app-wide,
 .lme:not([data-narrow]) .app-narrow {

@@ -57,7 +57,7 @@ function Example({ name, exports, editor }: { name: Name; exports: boolean; edit
           </button>
         </div>
       )}
-      <Shown ref={handle} />
+      <Shown ref={handle} theme="inherit" />
     </>
   )
 }

@@ -27,7 +27,7 @@ function Gallery({ editor }: { editor: string }) {
           Open “{t.title}” in the editor
         </a>
       </p>
-      {def && <Loadmap key={t.id} model={def.model} view={def.view} {...pageOptions(def.options)} />}
+      {def && <Loadmap key={t.id} model={def.model} view={def.view} theme="inherit" {...pageOptions(def.options)} />}
     </>
   )
 }
