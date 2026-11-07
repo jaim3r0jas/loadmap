@@ -372,6 +372,8 @@ td {
 .island {
   margin-top: 20px;
   margin-bottom: 20px;
+  /* a diagram's load bar stays under the top bar while the page scrolls */
+  --lm-sticky-top: var(--top);
 }
 
 /* text keeps a readable line, centered; a live diagram takes the room it needs */

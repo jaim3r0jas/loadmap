@@ -10,6 +10,7 @@ import {
   HeadroomChart,
   handleOf,
   Limits,
+  LoadBar,
   type LoadmapHandle,
   LoadmapRoot,
   Meters,
@@ -98,13 +99,17 @@ export function EditorCanvas({
   const onSheet = useCallback((h: number) => setSheet(h), [])
   const stage = useHeight(lm.root, phone)
   const right = phone ? 0 : pinned ? PANEL.width : PANEL.rail
-  // the scenarios over the top (on a phone, beside the zoom)
-  const top = phone ? 68 : model.scenarios.length ? 64 : 12
+  // the scenarios and the load over the top, as tall as the room they get; on a phone the scenarios beside the zoom,
+  // the load in the sheet's peek
+  const [over, setOver] = useState<HTMLDivElement | null>(null)
+  const bar = useHeight(over, !phone)
+  const top = phone ? 68 : bar ? bar + 20 : 12
   // the legend and the zoom along the bottom, and the story above them; on a phone the sheet, and the story above it
   const bottom = phone ? sheet + (model.story.length ? 64 : 8) : model.story.length ? 140 : 56
   const free = {
     '--lme-l': `${left}px`,
     '--lme-r': `${right}px`,
+    '--lme-t': `${top}px`,
     ...(phone ? { '--lme-sheet': `${sheet}px` } : {}),
   } as React.CSSProperties
   return (
@@ -112,9 +117,15 @@ export function EditorCanvas({
       <div className="lme-canvas" style={free}>
         <Diagram lm={lm} canvas={{ left, right, top, bottom }} onNodeClick={onNodeClick} selected={selected} />
         {note && <div className="lme-over lme-over-note">{note}</div>}
-        {model.scenarios.length > 0 && (
-          <div className="lme-over lme-over-top">
-            <Scenarios lm={lm} />
+        {phone ? (
+          model.scenarios.length > 0 && (
+            <div className="lme-over lme-over-top">
+              <Scenarios lm={lm} />
+            </div>
+          )
+        ) : (
+          <div className="lme-over lme-over-top" ref={setOver}>
+            <LoadBar lm={lm} />
           </div>
         )}
         {model.story.length > 0 && (
@@ -149,8 +160,8 @@ export function EditorCanvas({
           <Section title="Verdict">
             <Verdict lm={lm} />
           </Section>
-          <Section title="Load and design">
-            <Controls lm={lm} />
+          <Section title="Design">
+            <Controls lm={lm} load={false} />
           </Section>
           <Section title="Where it runs out">
             <Limits lm={lm} />
@@ -175,8 +186,8 @@ export function EditorCanvas({
   )
 }
 
-/** The phone's sheet at peek, in pixels: the verdict in two lines and the load slider. */
-const PEEK = 150
+/** The phone's sheet at peek, in pixels: the verdict in two lines and the load slider with its marks. */
+const PEEK = 176
 
 /** An element's height as it changes, while `on`. */
 function useHeight(el: HTMLElement | null, on: boolean): number {

@@ -86,12 +86,20 @@ A scenario, a story step or a control that changes the structure (more pods, mor
 what stays moves to its new place, what is new fades in. `transition={1.2}` sets the seconds it takes (default 0.8);
 0 cuts, and so does reduced motion. The load never moves it.
 
+The scenarios and the load share one bar over the diagram, so the reader moves the load and watches what it does. It
+stays in view while the page scrolls; a page with a fixed header of its own sets `--lm-sticky-top` (its height) on an
+ancestor of the root. On a phone the bar sits under the diagram, in thumb reach. Its track is coloured by what the load
+does (under the target, past it, past capacity, a ± range as a blend) and runs on a log scale when the load spans ten
+times or more. Under it, a mark for today, each preset that sets the load, the target and where it runs out: a click
+takes it. ← → move a step, Page Up and Page Down to the next mark. Picking a scenario keeps the load.
+
 The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, the verdict in one line
 under it, and the panels of the page side by side in a compact form (a phone shows one at a time, under tabs, and
 pans the diagram in its own box). Each compact panel opens whole over the diagram. `fullScreen={['verdict', 'live',
 'controls']}` keeps only those (`LOADMAP_PANELS` lists them all: `verdict`, `live`, `limits`, `controls`, `headroom`,
-`compare`, `assumptions`). A switch beside Close, or the F key, turns full screen into **focus**: the diagram, the
-story and, of the panels listed, the verdict and the load slider. `fullScreenMode="focus"` opens full screen there
+`compare`, `assumptions`; `controls` is the design, the load being in the bar). A switch beside Close, or the F key,
+turns full screen into **focus**: the bar, the diagram, the story and the verdict, if it is listed.
+`fullScreenMode="focus"` opens full screen there
 (default `'panels'`). The story bar's Play tells the story on the diagram: the whole diagram, a close-up on what each
 step changes, the change, and the whole diagram again for the step's `seconds`, a short title on the board (the step's
 `title`, or what it changes). The component that runs out first wears a ring that breathes while the story plays and
@@ -105,9 +113,10 @@ buttons on it go − · zoom · + · Fit. A page that scrolls keeps its plain wh
 frames the diagram in the rest. Pictures and recordings always show the whole diagram, whatever the reader's view.
 
 `useLoadmap` with `LoadmapRoot`, `Diagram`, `Verdict`, `Limits`, `Controls` and the others builds a page of your own
-layout from the same pieces. The diagram's Full screen takes the whole root: inside a `<div className="lm-side">`
-after the `Diagram`, your pieces become a box below it that scrolls on its own; a title, the `Scenarios` and the
-`Story` stay above the diagram, and the rest waits outside. The controller has the state: `lm.fullScreen`,
+layout from the same pieces: `LoadBar` is the bar, `Scenarios` and `LoadRange` its two halves, and
+`<Controls load={false}>` leaves the load to it. The diagram's Full screen takes the whole root: inside a
+`<div className="lm-side">` after the `Diagram`, your pieces become a box below it that scrolls on its own; a title,
+the `LoadBar` (or `Scenarios`) and the `Story` stay above the diagram, and the rest waits outside. The controller has the state: `lm.fullScreen`,
 `lm.toggleFullScreen()`, `lm.fullScreenMode`, `lm.storyPlaying`, `lm.cue` (what the board says about the step played).
 
 Docs, live examples and the editor: https://jaim3r0jas.github.io/loadmap/ · MIT
