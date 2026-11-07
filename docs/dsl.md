@@ -336,7 +336,10 @@ diagnostics with every failing expectation added (as a warning, or as `problems(
 language server protocol's `${1:field}` form. `hover(source, offset, definition?)` says what the word there is (a
 statement, a property, a name the definition declares, a builtin) and, given the compiled definition, its values at the
 defaults: a flow's rate, what reaches a stage, a component's utilization and where it runs out. `signatureHelp(source,
-offset)` names the arguments of the builtin or fit the cursor is in. `encodeShare` and `decodeShare` write and read share
+offset)` names the arguments of the builtin or fit the cursor is in. `quickFixes(source, diagnostics)` gives each
+diagnostic's fixes as text changes (the did-you-mean, a missing property, a bare number made a capacity).
+`definition` and `references(source, offset)` find where a name is declared and every place it is written, and
+`rename(source, offset, name)` renames it everywhere: a box's id with the stage and the component that take it. `encodeShare` and `decodeShare` write and read share
 links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.
 

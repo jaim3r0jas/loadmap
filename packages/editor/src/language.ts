@@ -8,8 +8,18 @@ import {
 } from '@codemirror/autocomplete'
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror/lint'
-import { type EditorState, type Extension, StateField } from '@codemirror/state'
-import { EditorView, hoverTooltip, keymap, showTooltip, type Tooltip } from '@codemirror/view'
+import { type EditorState, type Extension, StateEffect, StateField } from '@codemirror/state'
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  hoverTooltip,
+  keymap,
+  showTooltip,
+  type Tooltip,
+  ViewPlugin,
+  type ViewUpdate,
+} from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 import {
   type CompileOptions,
@@ -18,9 +28,13 @@ import {
   compile,
   completions,
   type Definition,
+  definition,
   type Hover,
   hover,
   problems,
+  quickFixes,
+  references,
+  rename,
   type SignatureHelp,
   signatureHelp,
 } from '@loadmap/dsl'
@@ -225,8 +239,124 @@ const signature = StateField.define<SignatureTip | null>({
   provide: (f) => showTooltip.from(f),
 })
 
+/** The fix titled `title` of the diagnostic `message` at `from`, made again for `source`; null when it has gone. */
+function fixAgain(source: string, r: CompileResult, message: string, from: number, title: string) {
+  const list = problems(r)
+  const i = list.findIndex((d) => d.from === from && d.message === message)
+  return i < 0 ? null : (quickFixes(source, [list[i]!])[0]!.find((f) => f.title === title)?.changes ?? null)
+}
+
+/** Selects where the name at `pos` (the cursor by default) is declared. */
+function goToDefinition(view: EditorView, pos = view.state.selection.main.head): boolean {
+  const d = definition(view.state.doc.toString(), pos)
+  if (!d) return false
+  view.dispatch({ selection: { anchor: d.from, head: d.to }, scrollIntoView: true })
+  view.focus()
+  return true
+}
+
+const occurrence = Decoration.mark({ class: 'lm-occurrence' })
+
+function marks(state: EditorState): DecorationSet {
+  const sel = state.selection.main
+  const spans = sel.empty ? references(state.doc.toString(), sel.head) : null
+  return spans ? Decoration.set(spans.map((s) => occurrence.range(s.from, s.to))) : Decoration.none
+}
+
+/** The other places the name under the cursor is written, marked. */
+const occurrences = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+    constructor(view: EditorView) {
+      this.decorations = marks(view.state)
+    }
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.selectionSet) this.decorations = marks(u.state)
+    }
+  },
+  { decorations: (p) => p.decorations },
+)
+
+interface Renaming {
+  from: number
+  to: number
+  /** What was typed, kept when a refusal draws the field again. */
+  value?: string
+  error?: string
+}
+const openRename = StateEffect.define<Renaming | null>()
+
+/** F2's field at a name: Enter renames it everywhere it is written, Escape closes it. */
+function renaming(o: CompileOptions): Extension {
+  return StateField.define<Renaming | null>({
+    create: () => null,
+    update(r, tr) {
+      for (const e of tr.effects) if (e.is(openRename)) return e.value
+      if (!r || tr.docChanged) return null
+      // the cursor went elsewhere: the field would rename a name no longer looked at
+      const head = tr.state.selection.main.head
+      return tr.selection && (head < r.from || head > r.to) ? null : r
+    },
+    provide: (f) =>
+      showTooltip.from(f, (r) =>
+        r
+          ? {
+              pos: r.from,
+              above: true,
+              create: (view) => ({
+                dom: renameDom(view, r, o),
+                mount: () => view.dom.querySelector<HTMLInputElement>('.lm-rename input')?.select(),
+              }),
+            }
+          : null,
+      ),
+  })
+}
+
+function renameDom(view: EditorView, r: Renaming, o: CompileOptions): HTMLElement {
+  const form = document.createElement('form')
+  form.className = 'lm-hover lm-rename'
+  const input = document.createElement('input')
+  input.value = r.value ?? view.state.sliceDoc(r.from, r.to)
+  input.setAttribute('aria-label', 'New name')
+  input.spellcheck = false
+  form.append(input)
+  if (r.error) form.append(Object.assign(document.createElement('p'), { textContent: r.error }))
+  const close = () => {
+    view.dispatch({ effects: openRename.of(null) })
+    view.focus()
+  }
+  form.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const out = rename(view.state.doc.toString(), r.from, input.value.trim(), o)
+    if ('error' in out) view.dispatch({ effects: openRename.of({ ...r, value: input.value, error: out.error }) })
+    else if (!out.changes.length) close()
+    else {
+      view.dispatch({ changes: out.changes, userEvent: 'input.rename' })
+      view.focus()
+    }
+  })
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      close()
+    }
+  })
+  return form
+}
+
+/** Opens the rename field at the name under the cursor; false where there is no name to rename. */
+export function startRename(view: EditorView): boolean {
+  const spans = references(view.state.doc.toString(), view.state.selection.main.head)
+  const at = spans?.find((s) => s.from <= view.state.selection.main.head && view.state.selection.main.head <= s.to)
+  if (!at) return false
+  view.dispatch({ effects: openRename.of({ from: at.from, to: at.to }) })
+  return true
+}
+
 /**
- * The language for CodeMirror: highlighting, inline errors from the checker, autocomplete, hover and signature help.
+ * The language for CodeMirror: highlighting, inline errors from the checker with their quick fixes, autocomplete, hover,
+ * signature help, go to definition (F12, a click with Cmd or Ctrl), the other uses of a name marked, and rename (F2).
  * `onResult` hears every compile the linter runs (after a pause in typing), so a preview can follow without compiling
  * twice.
  */
@@ -262,13 +392,25 @@ export function loadmapLanguage(
     const r = result(source)
     o.onResult?.(source, r)
     const end = source.length
-    return problems(r).map((d) => ({
+    const list = problems(r)
+    const fixes = quickFixes(source, list)
+    return list.map((d, i) => ({
       from: Math.min(d.from, end),
       to: Math.min(Math.max(d.to, d.from), end),
       severity: d.severity,
       message: d.hint ? `${d.message}: ${d.hint}` : d.message,
+      // a fix is made for this text: once it has changed, made again for the text as it is now
+      actions: fixes[i]!.map((f) => ({
+        name: f.title,
+        apply: (v: EditorView, from: number) => {
+          const now = v.state.doc.toString()
+          const changes = now === source ? f.changes : fixAgain(now, result(now), d.message, from, f.title)
+          if (changes) v.dispatch({ changes, userEvent: 'input.fix' })
+        },
+      })),
     }))
   }
+  const renameField = renaming(o)
   return [
     loadmapStream,
     syntaxHighlighting(loadmapHighlight),
@@ -280,5 +422,20 @@ export function loadmapLanguage(
     info,
     signature,
     replaced,
+    occurrences,
+    renameField,
+    keymap.of([
+      { key: 'F12', run: goToDefinition },
+      { key: 'F2', run: (v) => startRename(v) },
+    ]),
+    EditorView.domEventHandlers({
+      mousedown(e, view) {
+        if (e.button !== 0 || !(e.metaKey || e.ctrlKey)) return false
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
+        if (pos == null || !goToDefinition(view, pos)) return false
+        e.preventDefault()
+        return true
+      },
+    }),
   ]
 }

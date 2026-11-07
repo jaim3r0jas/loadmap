@@ -114,7 +114,10 @@ class Help {
     )
     if (this.edgeBody) return props(EDGE_PROPS, written)
     const { spec } = this
-    const list: Completion[] = [...props(spec.props, written), ...statements(spec)]
+    // a whole statement only on a line of its own: not before what the line already holds
+    const end = this.source.indexOf('\n', this.offset)
+    const alone = !this.source.slice(this.offset, end < 0 ? undefined : end).trim()
+    const list: Completion[] = [...props(spec.props, written), ...statements(spec, alone)]
     const open = (names: string[]) =>
       names
         .filter((n) => !written.has(n))
@@ -475,10 +478,65 @@ function props(p: Readonly<Record<string, PropSpec>>, written: ReadonlySet<strin
   )
 }
 
-function statements(spec: BlockSpec): Completion[] {
+function statements(spec: BlockSpec, snippets = true): Completion[] {
   return spec.children
     .filter((k) => k !== 'loadmap')
-    .map((k) => ({ label: k, type: 'keyword', info: `${SCHEMA[k]!.doc}\n\n${SCHEMA[k]!.example}` }))
+    .map((k) => ({
+      label: k,
+      type: 'keyword',
+      info: `${SCHEMA[k]!.doc}\n\n${SCHEMA[k]!.example}`,
+      snippet: snippets ? statementSnippet(k) : undefined,
+    }))
+}
+
+/** What a statement's lines hold first, beyond its required properties: what makes it useful. */
+const STARTS: Readonly<Record<string, readonly string[]>> = {
+  node: ['#{pass}', 'capacity: #{capacity}'],
+  cluster: ['queue #{topic} { partitions { #{flow}: #{12} } }', 'capacity: #{capacity}'],
+  pool: ['workers { pods: #{2}; perPod: #{8} }', 'capacity: #{capacity}'],
+  component: ['demand: #{demand}', 'capacity: #{capacity}'],
+  expect: ['target: #{2}'],
+  step: ['load: #{10}'],
+  scenario: ['#{param}: #{value}'],
+  preset: ['load: #{10}'],
+  // a fit needs two distinct x
+  fit: ['points #{x} #{y} {', '  #{1} #{1}', '  #{2} #{2}', '}'],
+}
+
+/**
+ * A whole statement as a snippet, from the schema: its id and label, its required properties with a value of their
+ * kind, and for a box a stage and a capacity. Statements with nothing to fill in (`pass`, `store`) have none.
+ */
+function statementSnippet(k: string): string | undefined {
+  const s = SCHEMA[k]!
+  let n = 0
+  const field = (name: string) => `\${${++n}:${name}}`
+  const words = [k]
+  for (const a of s.args) {
+    if (a.kind === 'id' && !a.optional) words.push(field(a.name))
+    else if (a.kind === 'text' && (!a.optional || a.name === 'label')) words.push(`"${field(a.name)}"`)
+    else if (a.kind === 'number' && !a.optional) words.push(field('1'))
+  }
+  if (s.init) words.push('=', field('formula'))
+  const values: Partial<Record<PropSpec['value'], string>> = {
+    string: '"#{KEY}"',
+    route: '#{a} -> #{b}',
+    node: '#{node}',
+    capacity: 'estimated(#{value}, "#{unit}", "#{source}")',
+  }
+  const lines = [
+    ...Object.entries(s.props)
+      .filter(([, p]) => p.required)
+      .map(
+        ([key, p]) =>
+          `${key}: ${(values[p.value] ?? `#{${p.values?.[0] ?? (key === 'default' ? 1 : key)}}`).replace('KEY', key)}`,
+      ),
+    ...(STARTS[k] ?? []).map((l) => l.replace('#{capacity}', 'estimated(#{value}, "#{unit}", "#{source}")')),
+  ]
+  // #{…} in the lines are fields too, numbered after the words
+  const body = lines.map((l) => l.replace(/#\{([^}]*)\}/g, (_, name: string) => field(name)))
+  if (!body.length && words.length === 1) return undefined
+  return body.length ? `${words.join(' ')} {\n${body.map((l) => `  ${l}`).join('\n')}\n}` : words.join(' ')
 }
 
 function singleStageBoxes(symbols: readonly DslSymbol[]): string[] {
@@ -489,7 +547,7 @@ function singleStageBoxes(symbols: readonly DslSymbol[]): string[] {
 }
 
 /** Every formula in the statements, and every formula inside it. */
-function walk(list: readonly Stmt[], visit: (e: Expr) => void) {
+export function walk(list: readonly Stmt[], visit: (e: Expr) => void) {
   const expr = (e: Expr) => {
     visit(e)
     for (const c of childrenOf(e, true)) expr(c)
