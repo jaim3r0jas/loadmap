@@ -15,8 +15,9 @@ afterEach(() => {
 
 async function mount(el: React.ReactElement<{ ref?: unknown }>, ref: React.RefObject<LoadmapHandle | null>) {
   const host = document.createElement('div')
-  // a fixed width: the second board must not change the first one's size (a scrollbar appearing would)
-  host.style.width = '1200px'
+  // a fixed width: the second board must not change the first one's size (a scrollbar appearing would). Both in the
+  // same place, one over the other: a canvas has the device pixels it covers, which its place can change by one
+  host.style.cssText = 'position: absolute; top: 0; left: 0; width: 1200px'
   document.body.appendChild(host)
   const root = createRoot(host)
   roots.push(root)

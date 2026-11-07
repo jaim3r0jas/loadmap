@@ -279,7 +279,6 @@ export class Engine {
   }
 
   bind(svg: SVGSVGElement | null, canvas: HTMLCanvasElement | null): void {
-    const fresh = canvas !== this.canvas
     this.svg = svg
     this.canvas = canvas
     this.#slots = []
@@ -292,8 +291,6 @@ export class Engine {
         y: Number(el.dataset.y),
         s: Number(el.dataset.s),
       })
-    // the board's ResizeObserver keeps the size after that
-    if (fresh) this.resize()
     // a render puts the fills' geometry back from its props: draw them again for the sim as it is
     this.drawFills()
     this.applyCamera()
@@ -316,15 +313,21 @@ export class Engine {
     return this.colors.ok || '#2a7f5a'
   }
 
-  resize(): void {
+  /**
+   * Gives the canvas one pixel for each of the screen's: `px`, the device pixels the browser says it covers, else its
+   * size × the pixel ratio. With any other size the browser stretches the dots and blurs them. Wants no scene: a board
+   * that has its size before its first layout keeps it.
+   */
+  resize(px?: { width: number; height: number }): void {
     const c = this.canvas
-    if (!c || !this.scene) return
-    const r = c.getBoundingClientRect()
-    if (!r.width) return
-    const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
-    const w = Math.round(r.width * dpr)
-    const h = Math.round(r.height * dpr)
-    if (c.width === w && c.height === h) return
+    if (!c) return
+    let { width: w, height: h } = px ?? c.getBoundingClientRect()
+    if (!px) {
+      const dpr = globalThis.devicePixelRatio || 1
+      w = Math.round(w * dpr)
+      h = Math.round(h * dpr)
+    }
+    if (!w || !h || (c.width === w && c.height === h)) return
     c.width = w
     c.height = h
     // a new size clears the canvas: the dots come back now, not on the next step (every frame of a move resizes it)
