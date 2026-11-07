@@ -745,14 +745,9 @@ body.app main > .island {
   margin-top: 4px;
 }
 
-/* the names alone fit the menu's width */
-.lme[data-narrow] .theme svg {
-  display: none;
-}
-
+/* in the phone's sheet of actions, as tall as its buttons */
 .lme[data-narrow] .theme label {
-  height: 32px;
-  padding: 0 4px;
+  height: 40px;
 }
 
 .lme[data-narrow] .app-brand,
