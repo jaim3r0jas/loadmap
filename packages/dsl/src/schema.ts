@@ -146,6 +146,9 @@ export const FULL_SCREEN_MODES = ['panels', 'focus'] as const
 
 export const COLORS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted'] as const
 
+/** The directions, `direction: right | down`, also read under their old name, `layout:`, from before `layout: compact`. */
+export const DIRECTIONS = ['right', 'down'] as const
+
 export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   // the document itself
   '': {
@@ -154,11 +157,17 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     args: [],
     props: {
       title: { inspector: 'main', value: 'string', scope: 'const', doc: 'The heading above the diagram.' },
+      direction: {
+        value: 'enum',
+        scope: 'const',
+        values: DIRECTIONS,
+        doc: 'Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down.',
+      },
       layout: {
         value: 'enum',
         scope: 'const',
-        values: ['right', 'down'],
-        doc: 'Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down.',
+        values: ['compact', 'stable'],
+        doc: 'compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one.',
       },
       speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
       transition: {

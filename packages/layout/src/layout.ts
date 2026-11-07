@@ -63,7 +63,10 @@ export interface SceneEdge extends Fading {
 }
 
 export interface Scene {
-  /** Changes only when a box is reshaped or an edge comes or goes; the load alone never does. */
+  /**
+   * Changes only when a box is reshaped, an edge comes or goes, or (in a compact layout) the phase's frame changes; the
+   * load alone never does.
+   */
   key: string
   direction: Direction
   width: number
@@ -152,7 +155,8 @@ const RANGE_POINTS = 9
 // per measurer and view: the room each box gets depends on how wide its text measures
 const scenes = new WeakMap<TextMeasure, WeakMap<View, Map<string, Promise<Scene>>>>()
 const frames = new WeakMap<View, Map<string, Promise<Laid>>>()
-// per measurer and view, per combination of values other than the load: the contexts labels are sized against
+// per measurer and view, per combination of values other than the load (a phase): the contexts labels are sized
+// against, and the phase's compact frame in each direction
 const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
 const reserveCache = new WeakMap<TextMeasure, WeakMap<View, Map<Direction, Frame>>>()
 const textWidths = new WeakMap<TextMeasure, Map<string, number>>()
@@ -160,6 +164,7 @@ const textWidths = new WeakMap<TextMeasure, Map<string, number>>()
 interface Sampled {
   contexts: LooseValues[]
   widths: Map<Label, Map<string, number>>
+  frames: Map<Direction, Frame>
 }
 
 /** What a drawing reads from an evaluation. */
@@ -203,25 +208,39 @@ export function labelsAt(view: View, ev: Evaluation) {
 /**
  * Lays the view out for the current values: grids inside clusters and pools are packed here; ELK places the boxes,
  * routes the edges and places the edge labels so that none overlaps another or a node. ELK lays out every box at the
- * largest size it takes anywhere the model reaches (its scenarios, story steps, presets and controls), and each box is
- * drawn at its own size in the middle of that slot: no change of values the model reaches moves a box. Results are
- * cached by the structure, so a call after a load change returns the same scene.
+ * largest size it takes over every load the slider reaches, and each box is drawn at its own size in the middle of that
+ * slot: the load never moves a box. A compact layout (the default) lays out each phase, the values other than the load,
+ * on its own; a stable one lays out every box at its largest anywhere the model reaches (its scenarios, story steps,
+ * presets and controls), so no change of values the model reaches moves a box. Results are cached by the structure, so
+ * a call after a load change returns the same scene.
  */
 export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promise<Scene> {
   const direction = o.direction ?? directionOf(view)
   const measure = o.measure ?? estimateText
   const prep = prepare(view, ev, direction, measure)
+  const base = baseFrame(view, ev, direction, measure)
+  const key = sceneKey(prep, base)
   const byView = scenes.get(measure) ?? new WeakMap<View, Map<string, Promise<Scene>>>()
   scenes.set(measure, byView)
   const cache = byView.get(view) ?? new Map<string, Promise<Scene>>()
   byView.set(view, cache)
-  return kept(cache, prep.key, 32, () => {
+  return kept(cache, key, 32, () => {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
-    const frame = ordered(view, widen(reserve(view, direction, measure), prep))
+    const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep))
     const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
     frames.set(view, byFrame)
-    return kept(byFrame, frame.key, 8, () => run(frame, o.elk)).then((l) => place(prep, l, frame, view, measure))
+    return kept(byFrame, frame.key, 32, () => run(frame, o.elk)).then((l) => place(prep, l, key, frame, view, measure))
   })
+}
+
+/** A compact layout's frame for this phase; null for a stable layout, whose frame waits until it is laid out. */
+function baseFrame(view: View, ev: Drawn, direction: Direction, measure: TextMeasure): Frame | null {
+  return view.def.layout === 'stable' ? null : phase(view, ev, direction, measure)
+}
+
+/** Two phases with the same shapes can stand in different compact frames: each frame is a structure of its own. */
+function sceneKey(prep: Prepared, base: Frame | null): string {
+  return base ? JSON.stringify([prep.key, base.key]) : prep.key
 }
 
 /** A promise kept by key, the oldest let go past `limit`; one that fails is let go, so the next call tries again. */
@@ -242,7 +261,9 @@ function kept<T>(cache: Map<string, Promise<T>>, key: string, limit: number, mak
 
 /** The structure key for the current values: equal keys give equal scenes. */
 export function structureKey(view: View, ev: Evaluation, o: LayoutOptions = {}): string {
-  return prepare(view, ev, o.direction ?? directionOf(view), o.measure ?? estimateText).key
+  const direction = o.direction ?? directionOf(view)
+  const measure = o.measure ?? estimateText
+  return sceneKey(prepare(view, ev, direction, measure), baseFrame(view, ev, direction, measure))
 }
 
 /**
@@ -269,7 +290,7 @@ interface Prepared {
 }
 
 function prepare(view: View, ev: Evaluation, direction: Direction, measure: TextMeasure): Prepared {
-  const { nodes, edges, stageNode } = shapes(view, ev, direction, measure, labelWidths(view, ev, measure))
+  const { nodes, edges, stageNode } = shapes(view, ev, direction, measure, labelWidths(view, ev.values, measure))
   const flowFrom: Record<string, string> = {}
   for (const [f, fv] of Object.entries(view.def.flows) as [string, { from: string }][]) flowFrom[f] = fv.from
   // everything the scene is built from, so two different structures never share a scene
@@ -308,12 +329,12 @@ function shapes(view: View, ev: Drawn, direction: Direction, measure: TextMeasur
 /**
  * The combinations of values the model reaches: the defaults, each scenario, story step and declared preset, and
  * every combination of the controls (a range at each step, or at points across it); past `MAX_COMBINATIONS`, each
- * control's options one at a time from each of the others. Labels are sized over every load where a scenario, step or
- * preset stands, and at a few loads elsewhere: a label that comes out wider grows the frame. Each is handed to `f` and
- * let go: hundreds of evaluations are too many to keep. A combination the model cannot evaluate is left out: only the
- * values shown can fail the layout.
+ * control's options one at a time from each of the others. Each is evaluated over every load where a scenario, step or
+ * preset stands, and at a few loads elsewhere, and handed to `f` with its labels sized over those loads: a box, a label
+ * or an edge that comes out at any of them grows the frame. Each is let go: hundreds of evaluations are too many to
+ * keep. A combination or a load the model cannot evaluate is left out: only the values shown can fail the layout.
  */
-function reach(view: View, measure: TextMeasure, f: (ev: Drawn, widest: Widest) => void): void {
+function reach(view: View, measure: TextMeasure, f: (evs: Drawn[], widest: Widest) => void): void {
   const model = view.model
   const base = model.defaults() as LooseValues
   const anchors: LooseValues[] = [
@@ -344,28 +365,30 @@ function reach(view: View, measure: TextMeasure, f: (ev: Drawn, widest: Widest) 
     seen.add(key)
     return true
   }
-  const { min, max, step, default: at } = model.load
-  const snap = (x: number) => Math.min(max, min + Math.round((x - min) / step) * step)
-  const few = [
-    ...new Set(Array.from({ length: FEW_LOADS - 1 }, (_, i) => snap(min + ((max - min) * i) / (FEW_LOADS - 2)))),
-  ].concat(at)
+  const few = fewLoads(model.load)
   const tried = (g: () => void) => {
     try {
       g()
     } catch {}
   }
-  // swept over every load, outside the cache the values on screen keep theirs in
-  for (const v of anchors.filter(fresh))
+  const over = (v: LooseValues, loads: number[]) =>
     tried(() => {
-      const contexts = everyLoad(model.load).map((load) => model.stagesAt({ ...v, load }).ctx)
-      f(model.stagesAt(v), widestOver(contexts, new Map(), measure))
-    })
-  for (const v of others.filter(fresh))
-    tried(() => {
-      const evs = few.map((load) => model.stagesAt({ ...v, load }))
+      // the values themselves must evaluate; a load past what the model can take is left out
+      const evs = [...atLoads(view, v, loads), model.stagesAt(v)]
       const contexts = evs.map((e) => e.ctx)
-      f(evs.at(-1)!, widestOver(contexts, new Map(), measure))
+      f(evs, widestOver(contexts, new Map(), measure))
     })
+  // swept over every load, outside the cache the values on screen keep theirs in
+  for (const v of anchors.filter(fresh)) over(v, sweep(model))
+  for (const v of others.filter(fresh)) over(v, few)
+}
+
+/** A few loads across the slider, and its default. */
+function fewLoads({ min, max, step, default: at }: { min: number; max: number; step: number; default: number }) {
+  const snap = (x: number) => Math.min(max, min + Math.round((x - min) / step) * step)
+  return [
+    ...new Set(Array.from({ length: FEW_LOADS - 1 }, (_, i) => snap(min + ((max - min) * i) / (FEW_LOADS - 2)))),
+  ].concat(at)
 }
 
 function rangePoints(def: { min: number; max: number; step: number; default: number }): unknown[] {
@@ -375,6 +398,19 @@ function rangePoints(def: { min: number; max: number; step: number; default: num
       ? Array.from({ length: n + 1 }, (_, i) => def.min + i * def.step)
       : Array.from({ length: RANGE_POINTS }, (_, i) => def.min + Math.round((n * i) / (RANGE_POINTS - 1)) * def.step)
   return [...new Set([...points, def.max, def.default])]
+}
+
+/**
+ * The loads a phase is sized over: every load the slider stops at, and every load the model names (its default, a story
+ * step's or a preset's), which can stand between two stops. The same for every phase, so a phase's frame depends on
+ * nothing but its own values.
+ */
+function sweep(model: View['model']): number[] {
+  const named = [
+    model.load.default,
+    ...[...model.story.map((s) => s.values), ...Object.values(model.def.presets ?? {})].map((v) => v.load),
+  ]
+  return [...new Set([...everyLoad(model.load), ...named.filter((l): l is number => typeof l === 'number')])]
 }
 
 /** Every load the slider stops at, or 401 points across a slider with more. */
@@ -393,16 +429,78 @@ function reserve(view: View, direction: Direction, measure: TextMeasure): Frame 
   byView.set(view, byDirection)
   let frame = byDirection.get(direction)
   if (!frame) {
-    const all: Pick<Prepared, 'nodes' | 'edges'>[] = []
-    reach(view, measure, (ev, widest) => {
-      const s = shapes(view, ev, direction, measure, widest)
-      // a size that is not a number (no pods at all) reserves nothing
-      if (s.nodes.every((n) => Number.isFinite(n.inner.w) && Number.isFinite(n.inner.h))) all.push(s)
+    let grown = widen({ key: '', direction, nodes: [], edges: [] })
+    reach(view, measure, (evs, widest) => {
+      grown = widen(grown, ...sized(view, evs, direction, measure, widest))
     })
-    frame = widen({ key: '', direction, nodes: [], edges: [] }, ...all)
+    frame = grown
     byDirection.set(direction, frame)
   }
   return frame
+}
+
+/**
+ * The largest each box and edge label is over every load the slider reaches at these values, and every edge drawn
+ * anywhere along it, with each range control across its points (at a few loads, as `reach` takes a control): a phase's
+ * frame, which depends on nothing but its own values other than the load and the ranges. A load the model cannot
+ * evaluate is left out, as `reach` leaves out a combination.
+ */
+function phase(view: View, ev: Drawn, direction: Direction, measure: TextMeasure): Frame {
+  const model = view.model
+  // a range control is dragged like the load: the phase is the values without either
+  const ranges = model.params.flatMap(({ id, def }) => (def.kind === 'range' ? [{ id, def }] : []))
+  const values: LooseValues = { ...ev.values, ...Object.fromEntries(ranges.map(({ id, def }) => [id, def.default])) }
+  const { frames } = sample(view, values, measure)
+  let frame = frames.get(direction)
+  if (!frame) {
+    const adds = sized(
+      view,
+      atLoads(view, values, sweep(model)),
+      direction,
+      measure,
+      labelWidths(view, values, measure),
+    )
+    // each range at each of its points, the others at their defaults
+    for (const { id, def } of ranges)
+      for (const o of rangePoints(def)) {
+        const evs = atLoads(view, { ...values, [id]: o }, fewLoads(model.load))
+        adds.push(
+          ...sized(
+            view,
+            evs,
+            direction,
+            measure,
+            widestOver(
+              evs.map((e) => e.ctx),
+              new Map(),
+              measure,
+            ),
+          ),
+        )
+      }
+    frame = widen({ key: '', direction, nodes: [], edges: [] }, ...adds)
+    frames.set(direction, frame)
+  }
+  return frame
+}
+
+/** The model at these values at each of these loads; a load it cannot evaluate is left out. */
+function atLoads(view: View, values: LooseValues, loads: number[]): Drawn[] {
+  return loads.flatMap((load) => {
+    try {
+      return [view.model.stagesAt({ ...values, load })]
+    } catch {
+      return []
+    }
+  })
+}
+
+/** The shapes at each of these evaluations; a box whose size is not a number (no pods at all) reserves nothing. */
+function sized(view: View, evs: Drawn[], direction: Direction, measure: TextMeasure, widest: Widest) {
+  return evs.map((ev) => {
+    const s = shapes(view, ev, direction, measure, widest)
+    return { nodes: s.nodes.filter((n) => Number.isFinite(n.inner.w) && Number.isFinite(n.inner.h)), edges: s.edges }
+  })
 }
 
 /** The frame grown to hold these shapes too. */
@@ -489,8 +587,14 @@ function grow(
  * Labels are sized for their widest text over every load the slider can reach, so moving the load never moves the
  * layout. Text width does not grow steadily with a number ("9.9k" is wider than "10k"), hence every step, not a few.
  */
-function labelWidths(view: View, ev: Drawn, measure: TextMeasure): Widest {
-  const { load: _, ...rest } = ev.values
+function labelWidths(view: View, values: LooseValues, measure: TextMeasure): Widest {
+  const sampled = sample(view, values, measure)
+  return widestOver(sampled.contexts, sampled.widths, measure)
+}
+
+/** What a phase keeps: its contexts over the load range, its labels' widths and its compact frames. */
+function sample(view: View, values: LooseValues, measure: TextMeasure): Sampled {
+  const { load: _, ...rest } = values
   const key = JSON.stringify(rest)
   const byView = sampleCache.get(measure) ?? new WeakMap<View, Map<string, Sampled>>()
   sampleCache.set(measure, byView)
@@ -499,13 +603,14 @@ function labelWidths(view: View, ev: Drawn, measure: TextMeasure): Widest {
   let sampled = byValues.get(key)
   if (!sampled) {
     sampled = {
-      contexts: everyLoad(view.model.load).map((load) => view.model.stagesAt({ ...ev.values, load }).ctx),
+      contexts: atLoads(view, values, sweep(view.model)).map((e) => e.ctx),
       widths: new Map(),
+      frames: new Map(),
     }
     if (byValues.size > 32) byValues.delete(byValues.keys().next().value!)
     byValues.set(key, sampled)
   }
-  return widestOver(sampled.contexts, sampled.widths, measure)
+  return sampled
 }
 
 function widestOver(contexts: LooseValues[], widths: Sampled['widths'], measure: TextMeasure): Widest {
@@ -530,7 +635,7 @@ function widestOver(contexts: LooseValues[], widths: Sampled['widths'], measure:
     const font = `${size}/${weight}`
     let w = byFont.get(font)
     if (w == null) {
-      w = Math.max(...[...new Set(contexts.map((ctx) => text(l, ctx)))].map((t) => width(t, size, weight)))
+      w = Math.max(0, ...[...new Set(contexts.map((ctx) => text(l, ctx)))].map((t) => width(t, size, weight)))
       byFont.set(font, w)
     }
     return w
@@ -629,7 +734,7 @@ function layerOf(o: number | 'FIRST' | 'LAST' | undefined): Record<string, strin
  * The scene at these values on a laid-out frame: each box at its own size in the middle of its slot, each edge drawn
  * at these values, its ends moved along their last straight run to the sides of the boxes as drawn.
  */
-function place(prep: Prepared, l: Laid, frame: Frame, view: View, measure: TextMeasure): Scene {
+function place(prep: Prepared, l: Laid, key: string, frame: Frame, view: View, measure: TextMeasure): Scene {
   const down = prep.direction === 'DOWN'
   const across = (p: [number, number]) => (down ? p[0] : p[1])
   const ends = new Map<string, number[]>()
@@ -689,7 +794,7 @@ function place(prep: Prepared, l: Laid, frame: Frame, view: View, measure: TextM
     return [{ id: e.id, from: e.from, to: e.to, points, label: r.label && { ...r.label } }]
   })
   return {
-    key: prep.key,
+    key,
     direction: prep.direction,
     width: l.width,
     height: l.height,

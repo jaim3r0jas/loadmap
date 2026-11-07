@@ -238,16 +238,20 @@ the story plays and once it is past the target.
 board and the step's text below it; the same options give the same file. A step's own properties are `scenario`,
 `focus`, `title` and `seconds`; every other line is a value.
 
-A step that changes the structure (more pods, another scenario) moves no box: each box keeps the place of the largest
-it is anywhere the model reaches (its scenarios, steps, presets and controls), so a pool that gains pods grows where
-it stands, and what is new fades in. `transition: 1.2` makes that change take 1.2 seconds (0.8 by default; 0 cuts,
-and so does a reader who asked for reduced motion). A recording shows it too.
+A step that changes the structure (more pods, another scenario) is laid out on its own and the boxes move to their new
+places: what stays slides and resizes, what is new fades in. Each step, scenario, preset and choice of a select or
+switch takes only the room it needs, over every load and every value of the range controls, so dragging a slider never
+moves a box, and a step looks the same whichever came before. `layout: stable` gives every box one place instead, the largest it needs anywhere the model
+reaches (its scenarios, steps, presets and controls): no step moves a box, a pool that gains pods grows where it
+stands, and every step pays for the room of the largest. `transition: 1.2` makes a change take 1.2 seconds (0.8 by
+default; 0 cuts, and so does a reader who asked for reduced motion). A recording shows it too.
 
 ### Direction and tiers
 
 The diagram runs right, or down when it fans out wider than it is long: when its widest layer has more boxes than its
-longest chain. Every edge counts, whatever its `when`, so the direction never turns with the values. `layout: right`
-or `layout: down` says which way; narrow screens always run down.
+longest chain. Every edge counts, whatever its `when`, so the direction never turns with the values. `direction:
+right` or `direction: down` says which way (`layout: right` and `layout: down`, its old name, still work, and `loadmap
+fmt` rewrites them); narrow screens always run down.
 
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
 bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
@@ -307,8 +311,8 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:101:17 error: unknown flow "order"
-  101 |   demand: flows.order + flows.events
+checkout.loadmap:102:17 error: unknown flow "order"
+  102 |   demand: flows.order + flows.events
       |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -347,7 +351,8 @@ A loadmap definition.
 | Property | Value | |
 | --- | --- | --- |
 | `title` | string, constant | The heading above the diagram. |
-| `layout` | `right` \| `down` | Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down. |
+| `direction` | `right` \| `down` | Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down. |
+| `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
 | `transition` | number, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
 | `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |

@@ -1,7 +1,7 @@
 loadmap 1
 # A small definition to start from. Change a number, a label or a route; the diagram follows.
 title: "Photo uploads"
-layout: right
+direction: right
 
 load "Uploads, × today" { max: 50; default: 5 }
 param pods "Resizer pods" { options: [2, 4, 8]; default: 4 }

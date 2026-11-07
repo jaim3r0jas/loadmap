@@ -52,6 +52,7 @@ import {
   BOXES,
   COLORS,
   COMPONENT_PROPS,
+  DIRECTIONS,
   EDGE_PROPS,
   type FULL_SCREEN_MODES,
   matchArgs,
@@ -533,8 +534,20 @@ class Compiler {
         `transition is ${transition} seconds; 0 to ${MAX_TRANSITION}`,
       )
     else if (transition != null) options.transition = transition
+    const direction = this.prop(root, 'direction')
+    if (direction)
+      options.direction = this.enumValue(direction, SCHEMA['']!.props.direction!) === 'down' ? 'DOWN' : 'RIGHT'
     const layout = this.prop(root, 'layout')
-    if (layout) options.direction = this.enumValue(layout, SCHEMA['']!.props.layout!) === 'down' ? 'DOWN' : 'RIGHT'
+    const way = layout && this.word(layout)
+    let arrange: 'compact' | 'stable' | undefined
+    // the direction's old name: a definition written before keeps its direction, and `loadmap fmt` renames it
+    if (layout && (DIRECTIONS as readonly string[]).includes(way!)) {
+      if (direction) this.report.warning(layout.key, `layout: ${way} is ignored: direction sets the direction`)
+      else {
+        this.report.warning(layout.key, `layout: ${way} is now direction: ${way}`, 'loadmap fmt rewrites it')
+        options.direction = way === 'down' ? 'DOWN' : 'RIGHT'
+      }
+    } else if (layout) arrange = this.enumValue(layout, SCHEMA['']!.props.layout!) as typeof arrange
     const panels = this.prop(root, 'fullScreen')
     if (panels)
       options.fullScreen = this.words(panels, SCHEMA['']!.props.fullScreen!) as DefinitionOptions['fullScreen']
@@ -550,7 +563,13 @@ class Compiler {
     }
 
     if (this.report.failed) return undefined
-    const view = { nodes, edges, flows: flowViews, ...(Object.keys(tiers).length ? { tiers } : {}) }
+    const view = {
+      nodes,
+      edges,
+      flows: flowViews,
+      ...(Object.keys(tiers).length ? { tiers } : {}),
+      ...(arrange ? { layout: arrange } : {}),
+    }
     return this.build(model, view, options, byKind('preset'), byKind('scenario'))
   }
 
@@ -562,6 +581,7 @@ class Compiler {
       edges: EdgeDef[]
       flows: Record<string, FlowView>
       tiers?: Record<string, TierDef>
+      layout?: 'compact' | 'stable'
     },
     options: DefinitionOptions,
     presets: Block[],
@@ -868,8 +888,13 @@ class Compiler {
     return this.dyn<string>(e, 'string')
   }
 
+  /** An enum's word as written, bare or quoted. */
+  private word(p: Property): string {
+    return p.value.t === 'str' ? p.value.value : this.slice(p.value).replace(/\s+/g, '')
+  }
+
   private enumValue(p: Property, spec: PropSpec): string | undefined {
-    const raw = p.value.t === 'str' ? p.value.value : this.slice(p.value).replace(/\s+/g, '')
+    const raw = this.word(p)
     if (spec.values?.includes(raw)) return raw
     this.report.error(p.value, `"${raw}" is not one of ${spec.values!.join(', ')}`, didYouMean(raw, spec.values ?? []))
     return undefined

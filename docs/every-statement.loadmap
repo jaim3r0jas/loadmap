@@ -3,7 +3,8 @@ loadmap 1
 # made-up shop: orders go through a gateway, a rate limiter, an API and a cache to the database; events go through a
 # topic to an autoscaled pool and a push broker. docs.test.ts fails when a statement of the schema is missing here.
 title: "A shop, every statement once"
-layout: right
+direction: right
+layout: compact
 speed: 10
 transition: 0.8
 fullScreen: [verdict, live, limits, controls]
