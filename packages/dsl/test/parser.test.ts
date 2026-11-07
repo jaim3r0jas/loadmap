@@ -178,3 +178,26 @@ describe('formatDiagnostic', () => {
 })
 
 export { at }
+
+describe('a block left open', () => {
+  it('ends at the next top-level line instead of taking the rest of the file', () => {
+    const src = 'loadmap 1\nflow q {\n  rate: 1\n  route: a\n\nnode a {\n  store\n}\n'
+    const { doc, report } = parse(src)
+    expect(doc.body.map((s) => (s.kind === 'decl' ? s.keyword.name : s.kind))).toEqual(['loadmap', 'flow', 'node'])
+    expect(report.list).toMatchObject([{ line: 2, column: 8, message: 'this "{" of "flow" is never closed' }])
+    const flow = doc.body[1]!
+    expect(flow.kind === 'decl' && src.slice(flow.from, flow.to)).toBe('flow q {\n  rate: 1\n  route: a')
+  })
+
+  it('still wants the end of the line after a block that closes, around one left open', () => {
+    const { report } = parse('node a {\n  component c {\n  x: 1\nflow f\n} junk\n')
+    expect(report.list.map((d) => d.message)).toContain('expected the end of the line, found "junk"')
+  })
+
+  it('leaves a file whose braces balance as written, however it is indented', () => {
+    const { doc, report } = parse('node a {\ncomponent c "C" { capacity: estimated(1, "x") }\nstore\n}\n')
+    expect(report.list).toEqual([])
+    expect(doc.body).toHaveLength(1)
+    expect(doc.body[0]!.kind === 'decl' && doc.body[0]!.body?.length).toBe(2)
+  })
+})

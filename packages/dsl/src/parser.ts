@@ -1,6 +1,7 @@
 import type { BinOp, Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 import { Reporter, type Span } from './diagnostics'
 import { lex, type Token } from './lexer'
+import { SCHEMA } from './schema'
 
 /** Deeper formulas are refused: a shared link must not be able to exhaust the stack. */
 export const MAX_DEPTH = 64
@@ -24,6 +25,8 @@ const PREC: Record<string, number> = {
   '/': 6,
   '%': 6,
 }
+
+const TOP_LEVEL = new Set(SCHEMA['']!.children)
 
 /** Thrown after a syntax error has been reported, to skip to the next statement. */
 class Bail {}
@@ -57,12 +60,37 @@ class Parser {
   depth = 0
   /** Blocks open around the statement being read. */
   blocks = 0
+  /** The statement just read ended in a block left open: the next line starts the next statement. */
+  private leftOpen = false
+
+  /** For each token, how many more "}" than "{" follow it: fewer than the blocks open means one is never closed. */
+  private closes: Int32Array
 
   constructor(
     readonly toks: Token[],
     readonly source: string,
     readonly report: Reporter,
-  ) {}
+  ) {
+    this.closes = new Int32Array(toks.length + 1)
+    for (let i = toks.length - 1; i >= 0; i--) {
+      const t = toks[i]!
+      const d = t.kind !== 'punct' ? 0 : t.text === '}' ? 1 : t.text === '{' ? -1 : 0
+      this.closes[i] = this.closes[i + 1]! + d
+    }
+  }
+
+  /**
+   * A block left open while typing ends where a top-level statement starts a line at its first column, instead of
+   * taking the rest of the file. Only when the braces that follow cannot close every open block: a file whose braces
+   * balance reads as written, however it is indented.
+   */
+  private endsOpenBlock(): boolean {
+    const t = this.peek()
+    if (t.kind !== 'ident' || (t.from > 0 && this.source[t.from - 1] !== '\n')) return false
+    if (this.closes[this.i]! >= this.blocks) return false
+    if (this.is('->', 1)) return true
+    return !this.is(':', 1) && TOP_LEVEL.has(t.text)
+  }
 
   peek(k = 0): Token {
     return this.toks[Math.min(this.i + k, this.toks.length - 1)]!
@@ -102,6 +130,7 @@ class Parser {
       while (this.peek().kind === 'newline' || this.is(';')) this.next()
       const t = this.peek()
       if (t.kind === 'eof') break
+      if (inBraces && this.endsOpenBlock()) break
       if (this.is('}')) {
         if (inBraces) break
         this.report.error(t, 'this "}" closes no block')
@@ -109,9 +138,10 @@ class Parser {
         continue
       }
       try {
+        this.leftOpen = false
         out.push(this.statement())
         const end = this.peek()
-        if (!(end.kind === 'newline' || end.kind === 'eof' || this.is(';') || this.is('}')))
+        if (!(this.leftOpen || end.kind === 'newline' || end.kind === 'eof' || this.is(';') || this.is('}')))
           this.fail(end, `expected the end of the line, found ${describe(end)}`)
       } catch (e) {
         if (!(e instanceof Bail)) throw e
@@ -236,12 +266,16 @@ class Parser {
     const close = this.peek()
     if (!this.is('}')) {
       this.report.error(open, `this "{" of "${'keyword' in d ? d.keyword.name : 'edge'}" is never closed`)
-      // open to the end: a cursor typing at the end of the file is still inside
-      d.bodySpan = { from: open.from, to: close.from + 1 }
-      d.to = close.from
+      // at the end of the file, open to the end: a cursor typing there is still inside
+      d.bodySpan = { from: open.from, to: close.kind === 'eof' ? close.from + 1 : close.from }
+      this.leftOpen = true
+      let last = this.i - 1
+      while (last > 0 && this.toks[last]!.kind === 'newline') last--
+      d.to = Math.max(this.toks[last]!.to, open.to)
       return
     }
     this.next()
+    this.leftOpen = false
     d.bodySpan = { from: open.from, to: close.to }
     d.to = close.to
   }

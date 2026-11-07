@@ -165,6 +165,20 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
 }
 
 /**
+ * The names a definition declares, without checking or building anything else: cheap enough for every keystroke, where
+ * a full compile is not. Never throws.
+ */
+export function declarations(source: string, doc: Document): DslSymbol[] {
+  const c = new Compiler(source, new Reporter(source), {})
+  try {
+    c.run(doc, true)
+  } catch {
+    // a bail leaves the names found so far
+  }
+  return c.symbols
+}
+
+/**
  * The diagnostics and every failing expectation, in source order: an editor marks a failure as a warning (the
  * diagram still shows), `loadmap check` as an error.
  */
@@ -226,7 +240,8 @@ class Compiler {
     readonly functions: HostFunctions,
   ) {}
 
-  run(doc: Document): Definition | undefined {
+  /** With `namesOnly`, stops once every name is declared: `symbols` is then complete, and nothing is built. */
+  run(doc: Document, namesOnly = false): Definition | undefined {
     const root = this.shape('', SCHEMA['']!, doc.body, { from: 0, to: 0 })
     this.header(doc.body)
 
@@ -292,6 +307,14 @@ class Compiler {
       fits: this.fits,
       functions: this.functions,
     }
+    const scenarioLabels = byKind('scenario').map((b) => {
+      const label = this.text(b.args.label)
+      if (label != null) this.symbols.push({ kind: 'scenario', id: label, span: b.args.label!, decl: b.decl ?? b.at })
+      return label
+    })
+    const tierNames = new Map<string, Span>()
+    for (const b of byKind('tier')) if (b.args.id) this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
+    if (namesOnly) return undefined
     // a let's type comes from its formula, which may use other lets: settle them on a scratch reporter first
     for (const b of lets) if (b.args.id) this.lets.set(b.args.id.name, 'any')
     // until nothing changes: each pass settles at least one more let of a chain, so it ends within lets.length
@@ -319,12 +342,11 @@ class Compiler {
       if (label != null) presets[label] = this.preset(b, params)
     }
     const scenarios: Record<string, Record<string, unknown>> = {}
-    for (const b of byKind('scenario')) {
-      const label = this.text(b.args.label)
+    for (const [i, b] of byKind('scenario').entries()) {
+      const label = scenarioLabels[i]
       if (label == null) continue
       if (Object.hasOwn(scenarios, label)) this.report.error(b.args.label!, `scenario "${label}" is declared twice`)
       else scenarios[label] = this.preset(b, params, 'scenario')
-      this.symbols.push({ kind: 'scenario', id: label, span: b.args.label!, decl: b.decl ?? b.at })
     }
     const expects: Record<string, unknown>[] = []
     for (const b of byKind('expect')) {
@@ -473,12 +495,8 @@ class Compiler {
 
     // the view
     const tiers: Record<string, TierDef> = {}
-    const tierNames = new Map<string, Span>()
-    for (const b of byKind('tier')) {
-      if (!b.args.id) continue
-      this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
-      tiers[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
-    }
+    for (const b of byKind('tier'))
+      if (b.args.id) tiers[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
     const nodes: Record<string, AnyNodeDef> = {}
     for (const box of boxes) {
       nodes[box.id] = this.node(box)
