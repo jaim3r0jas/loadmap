@@ -71,6 +71,12 @@ export const EDITOR_CSS = `
 .lme-code .cm-tooltip { background: var(--lm-surface); color: var(--lm-fg); border: 1px solid var(--lm-line); border-radius: 6px; font-family: var(--lm-font); }
 .lme-code .cm-tooltip-autocomplete ul li[aria-selected] { background: var(--lm-accent); color: var(--lm-surface); }
 .lme-code .cm-completionInfo { max-width: 340px; white-space: pre-wrap; font-size: .78rem; }
+.lme-code .lm-hover { max-width: min(380px, 90vw); padding: 6px 9px; font-size: .78rem; line-height: 1.45; }
+.lme-code .lm-hover p { margin: 4px 0 0; }
+.lme-code .lm-hover code { font-family: var(--lm-mono); }
+.lme-code .lm-hover-head { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.lme-code .lm-hover-note, .lme-code .lm-signature p { color: var(--lm-muted); }
+.lme-code .lm-signature-active { color: var(--lm-accent); text-decoration: underline; }
 .lme-code .cm-diagnostic { font-family: var(--lm-font); font-size: .8rem; }
 .lme-code .cm-diagnostic-error { border-left-color: var(--lm-drop); }
 .lme-code .cm-diagnostic-warning { border-left-color: var(--lm-warn); }
