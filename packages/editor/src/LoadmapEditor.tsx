@@ -1,3 +1,4 @@
+import { hasNextSnippetField, nextSnippetField } from '@codemirror/autocomplete'
 import {
   defaultKeymap,
   history,
@@ -404,11 +405,14 @@ export function LoadmapEditor({
     })
     v.focus()
   }
-  /** Indents the selected lines, or types an indent at the cursor. */
+  /** In a snippet, its next field (a phone has no Tab key); else indents the selected lines, or types an indent. */
   const indent = () => {
     const v = view.current
     if (!v) return
-    if (v.state.selection.main.empty) wrap('  ')
+    if (hasNextSnippetField(v.state)) {
+      nextSnippetField(v)
+      v.focus()
+    } else if (v.state.selection.main.empty) wrap('  ')
     else {
       indentMore(v)
       v.focus()

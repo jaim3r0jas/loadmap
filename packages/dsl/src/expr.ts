@@ -65,30 +65,59 @@ interface Builtin {
   min?: number
   result: Type
   fn: (...a: any[]) => unknown
+  /** The arguments' names, as autocomplete and signature help show them. */
+  params: string[]
+  doc: string
 }
 
 const num = (f: (...a: number[]) => number): Builtin['fn'] => f as Builtin['fn']
 /** Functions renamed before 0.1: a definition from before says what to write instead. */
 const RENAMED: Readonly<Record<string, string>> = { kfmt: 'compact' }
 
+const math = (fn: (...a: number[]) => number, doc: string, params = ['x']): Builtin => ({
+  args: params.map(() => 'number'),
+  result: 'number',
+  fn: num(fn),
+  params,
+  doc,
+})
+const text = (fn: Builtin['fn'], doc: string): Builtin => ({
+  args: ['number'],
+  result: 'string',
+  fn,
+  params: ['x'],
+  doc,
+})
+const capacity = (fn: Builtin['fn'], doc: string): Builtin => ({
+  args: ['number', 'string', 'string'],
+  min: 2,
+  result: 'capacity',
+  fn,
+  params: ['value', 'unit', 'source'],
+  doc,
+})
+
 export const BUILTINS: Readonly<Record<string, Builtin>> = {
-  min: { args: ['number'], variadic: true, min: 1, result: 'number', fn: num(Math.min) },
-  max: { args: ['number'], variadic: true, min: 1, result: 'number', fn: num(Math.max) },
-  round: { args: ['number'], result: 'number', fn: num(Math.round) },
-  floor: { args: ['number'], result: 'number', fn: num(Math.floor) },
-  ceil: { args: ['number'], result: 'number', fn: num(Math.ceil) },
-  abs: { args: ['number'], result: 'number', fn: num(Math.abs) },
-  sqrt: { args: ['number'], result: 'number', fn: num(Math.sqrt) },
-  log: { args: ['number'], result: 'number', fn: num(Math.log) },
-  exp: { args: ['number'], result: 'number', fn: num(Math.exp) },
-  pow: { args: ['number', 'number'], result: 'number', fn: num(Math.pow) },
-  fmt: { args: ['number'], result: 'string', fn: fmt },
-  compact: { args: ['number'], result: 'string', fn: compact },
-  pct: { args: ['number'], result: 'string', fn: pct },
-  secs: { args: ['number'], result: 'string', fn: secs },
-  measured: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: measured },
-  estimated: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: estimated },
-  configured: { args: ['number', 'string', 'string'], min: 2, result: 'capacity', fn: configured },
+  min: { ...math(Math.min, 'The smallest of the values.', ['a', 'b']), variadic: true, min: 1 },
+  max: { ...math(Math.max, 'The largest of the values.', ['a', 'b']), variadic: true, min: 1 },
+  round: math(Math.round, 'To the nearest whole number.'),
+  floor: math(Math.floor, 'Down to a whole number.'),
+  ceil: math(Math.ceil, 'Up to a whole number: ceil(rate / 500) pods.'),
+  abs: math(Math.abs, 'Without its sign.'),
+  sqrt: math(Math.sqrt, 'The square root.'),
+  log: math(Math.log, 'The natural logarithm.'),
+  exp: math(Math.exp, 'e to the power of x.'),
+  pow: math(Math.pow, 'x to the power of y.', ['x', 'y']),
+  fmt: text(fmt, 'A number for a reader: 1,234 / 12.3 / 0.4.'),
+  compact: text(compact, 'A compact number: 980 / 1.2k / 34k / 1.5M.'),
+  pct: text(pct, 'A share from 0 to 1 as a percentage: 50 %.'),
+  secs: text(secs, 'A duration in seconds: 42 s / 3 min / > 1 h.'),
+  measured: capacity(measured, 'A capacity read off a dashboard or a load test. `value ± 30%` says how sure it is.'),
+  estimated: capacity(
+    estimated,
+    "A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value ± 30%` says how sure it is.",
+  ),
+  configured: capacity(configured, "A limit someone set, such as a rate limiter's: exact, so it takes no ±."),
 }
 
 /** The tables a formula may read with a ".": flows.orders, at.db.orders, demand.db, util.db, derived.x. */

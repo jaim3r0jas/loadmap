@@ -328,7 +328,8 @@ const { model, view, options } = r.definition!
 
 `r.expectations` holds each `expect` line with its place and its `check()` result; `problems(r)` returns the
 diagnostics with every failing expectation added (as a warning, or as `problems(r, 'error')`).
-`completions(source, offset)` lists what may be typed at a place. `encodeShare` and `decodeShare` write and read share
+`completions(source, offset)` lists what may be typed at a place, ranked by what fits there, with snippets in the
+language server protocol's `${1:field}` form. `encodeShare` and `decodeShare` write and read share
 links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.
 
