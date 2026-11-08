@@ -25,7 +25,7 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws
-(`definition.test.ts`, `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): both examples, the templates and the editor
+(`definition.test.ts`, `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): the examples (walkthroughs and the templates as starters) and the editor
 live. `docs/dsl.md` is the language guide; the site includes it.
 
 ## Verification
@@ -142,9 +142,10 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
 `docs/dsl.md`, the quick start from `packages/react/README.md`); site links are written from the root (`/language/`)
 and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
 under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
-`<div class="island" data-island="example|editor|templates|quickstart">`. A page with `frame: 'app'` (the editor at
+`<div class="island" data-island="example|editor|gallery|quickstart">`. A page with `frame: 'app'` (the editor at
 `/editor/`) is its Markdown alone in the window, without the site's frame, pager or llms.txt entry; `hidden: true`
-leaves a page out of the sidebar. `/embed/` is not a page: `writePages` writes it bare (no docs CSS) for
+leaves a page out of the sidebar. A page that moves keeps its old route in `MOVED` (a page that sends the reader on,
+in no list). `/embed/` is not a page: `writePages` writes it bare (no docs CSS) for
 `site/embed.tsx`, which draws a share link's definition filling an iframe (`<Loadmap fill>`); the editor's "Copy embed
 link" makes its links. `apps/docs/test/site.test.ts` builds the site, checks every link, and draws the live
 pages in Chromium. The build also writes `llms.txt` (the pages) and

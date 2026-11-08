@@ -9,7 +9,7 @@ import { type Browser, chromium, type Frame, type Page } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
-import { included, PAGES, relative, render } from '../pages'
+import { included, MOVED, PAGES, relative, render } from '../pages'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
 const routeOf = (href: string, from: string) => new URL(href, `http://x/${from ? `${from}/` : ''}`).pathname
@@ -123,6 +123,17 @@ describe('the built site', () => {
     expect(existsSync(join(out, '404.html'))).toBe(true)
   })
 
+  it('sends a moved page on to where it went, from no list', () => {
+    for (const [route, to] of Object.entries(MOVED)) {
+      const html = readFileSync(join(out, route, 'index.html'), 'utf8')
+      expect(html).toContain(`<meta http-equiv="refresh" content="0; url=${relative(route)}${to}" />`)
+      const [page, hash] = to.split('#')
+      expect(routes.has(`/${page}`), to).toBe(true)
+      expect(readFileSync(join(out, page!, 'index.html'), 'utf8')).toContain(`id="${hash}"`)
+      expect(readFileSync(join(out, 'llms.txt'), 'utf8')).not.toContain(`/${route}/`)
+    }
+  })
+
   it('has an llms.txt that links every page, and an llms-full.txt with the reference and the complete model', () => {
     const published = 'https://jaim3r0jas.github.io/loadmap/'
     const links = [...readFileSync(join(out, 'llms.txt'), 'utf8').matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]!)
@@ -188,7 +199,7 @@ describe('the built site', () => {
         ['', 5],
         ['examples/checkout/', 5],
         ['examples/alerts/', 10],
-        ['templates/', 4],
+        ['examples/', 4],
         ['getting-started/', 3],
         ['concepts/', 3],
         ['editor/', 5],
@@ -202,7 +213,7 @@ describe('the built site', () => {
           timeout: 30_000,
         })
         expect(await page.evaluate(() => document.querySelectorAll('[data-node]').length), route).toBe(nodes)
-        if (route.startsWith('examples'))
+        if (/^examples\/./.test(route))
           expect(await page.evaluate(() => Boolean((globalThis as { __loadmap?: object }).__loadmap))).toBe(true)
         // every board of the docs pans and zooms, but the quick start's, which is the react README's code; the
         // landing board leaves its headroom chart to the example's page
@@ -559,6 +570,35 @@ describe('the built site', () => {
     }
   }, 120_000)
 
+  it('shows the walkthroughs and the starters on one page, each card with what its model shows', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(`${url}examples/`)
+      const checkout = page.locator('.island').getByRole('link', { name: /^Checkout/ })
+      expect(await checkout.getAttribute('href')).toBe('../examples/checkout/')
+      expect(await checkout.locator('.chips i').allTextContents()).toContain('tiers')
+      expect(await checkout.textContent()).toContain('Grown from Queue and workers')
+      // a starter picked: drawn below, its text to download, and the walkthrough grown from it
+      await page.getByRole('button', { name: /^Queue and workers/ }).click()
+      await page.waitForSelector('[data-node]')
+      expect(await page.getByRole('link', { name: 'Grown up: Checkout →' }).getAttribute('href')).toBe(
+        '../examples/checkout/',
+      )
+      const t = TEMPLATES.find((x) => x.id === 'queue-workers')!
+      const download = page.getByRole('link', { name: 'queue-workers.loadmap ↓' })
+      expect(decodeURIComponent((await download.getAttribute('href'))!.replace(/^data:[^,]*,/, ''))).toBe(t.source)
+      expect(await page.getByRole('link', { name: /^Open in the editor/ }).getAttribute('href')).toBe(
+        `../editor/?template=${t.id}`,
+      )
+      expect(errors).toEqual([])
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
   it('opens a template, and a link with the text when it asks for the code', async () => {
     const source = readFileSync(join(import.meta.dirname, '../../../examples/alerts/alerts.loadmap'), 'utf8')
     const hash = await encodeShare(source)
@@ -584,11 +624,11 @@ describe('the built site', () => {
     const browser = await chromium.launch()
     try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-      await page.goto(`${url}templates/`)
-      await page.getByRole('link', { name: /in the editor$/ }).click()
+      await page.goto(`${url}examples/`)
+      await page.getByRole('link', { name: /^Open in the editor/ }).click()
       await page.waitForSelector('.lme-left')
       await page.getByRole('link', { name: 'Docs' }).click()
-      await page.waitForURL(`${url}templates/`)
+      await page.waitForURL(`${url}examples/`)
       // where the reader was: going back, not a new visit
       expect(await page.evaluate(() => history.length)).toBe(3)
 

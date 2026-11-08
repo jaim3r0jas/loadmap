@@ -30,15 +30,21 @@ export const PAGES: readonly Page[] = [
   { route: 'without-a-bundler', file: 'without-a-bundler.md', nav: 'Without a bundler', group: 'Start' },
   { route: 'language', file: 'language.md', nav: 'The language', group: 'The language' },
   { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The language' },
+  { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'The language', frame: 'app' },
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
   { route: 'recording', file: 'recording.md', nav: 'Recording and CI', group: 'Use it' },
   { route: 'embedding', file: 'embedding.md', nav: 'Embedding', group: 'Use it' },
+  { route: 'examples', file: 'examples.md', nav: 'All examples', group: 'Examples' },
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },
   { route: 'examples/alerts', file: 'alerts.md', nav: 'Alerts', group: 'Examples' },
-  { route: 'templates', file: 'templates.md', nav: 'Templates', group: 'Examples' },
-  { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'Examples', frame: 'app' },
 ]
+
+/**
+ * Pages that moved, by their old route: each a page that sends the reader on to where it went, in no list. The site
+ * is public, so links to the old place may be out there.
+ */
+export const MOVED: Readonly<Record<string, string>> = { templates: 'examples/#starters' }
 
 /** The pages in the site's frame: the pager and llms.txt go through these. */
 const DOCS = PAGES.filter((p) => !p.frame)
@@ -284,6 +290,12 @@ export function writePages(base = '/'): string[] {
     update(file, page.frame === 'app' ? appShell(page, title, html) : shell(page, title, html, headings))
     files.push(file)
   }
+  for (const [route, to] of Object.entries(MOVED)) {
+    const file = join(SITE, route, 'index.html')
+    mkdirSync(dirname(file), { recursive: true })
+    update(file, movedHtml(relative(route) + to))
+    files.push(file)
+  }
   const embed = join(SITE, EMBED, 'index.html')
   mkdirSync(dirname(embed), { recursive: true })
   update(embed, EMBED_HTML)
@@ -295,6 +307,21 @@ export function writePages(base = '/'): string[] {
   files.push(missing)
   return files
 }
+
+/** A moved page: on at once, a link for a browser that does not follow, and search engines told where it went. */
+const movedHtml = (to: string) => `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content="0; url=${esc(to)}" />
+    <title>Moved · loadmap</title>
+  </head>
+  <body>
+    <p>This page moved: <a href="${esc(to)}">go on</a>.</p>
+  </body>
+</html>
+`
 
 /** Where the page an embed frames is served: not a page of the site, so in no list. */
 export const EMBED = 'embed'

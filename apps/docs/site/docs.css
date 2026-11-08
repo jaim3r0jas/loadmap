@@ -443,7 +443,10 @@ a.button {
   gap: 10px;
 }
 
-.cards button {
+.cards button,
+.cards a {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   text-align: left;
@@ -454,6 +457,13 @@ a.button {
   border-radius: 8px;
   padding: 12px 14px;
   cursor: pointer;
+  text-decoration: none;
+}
+
+.cards a:hover,
+.cards a:focus-visible,
+.cards button:hover {
+  border-color: var(--accent);
 }
 
 .cards button[aria-pressed="true"] {
@@ -468,6 +478,32 @@ a.button {
 .cards span {
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+/* what the card's model shows, read from it */
+.cards .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.cards .chips i {
+  font: 500 0.74rem var(--font);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.cards small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.actions .grown {
+  margin-left: auto;
 }
 
 .lead {
