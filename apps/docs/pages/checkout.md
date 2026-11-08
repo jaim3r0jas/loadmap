@@ -11,9 +11,11 @@ diagram, pinch or Ctrl-scroll to zoom, and **Fit** to see it whole.
 <div class="island" data-island="example" data-name="checkout" data-editor="../../editor/"></div>
 
 The buttons export the board as it is now: a PNG, a poster with the limits and the scenarios compared, an SVG, or a
-WebM of the story. The same model as text is
-[`checkout.loadmap`](https://github.com/jaim3r0jas/loadmap/blob/main/examples/checkout/checkout.loadmap); the
-TypeScript is in [`examples/checkout`](https://github.com/jaim3r0jas/loadmap/tree/main/examples/checkout).
+WebM of the story. **checkout.loadmap ↓** is the same model as text
+([on GitHub](https://github.com/jaim3r0jas/loadmap/blob/main/examples/checkout/checkout.loadmap), and the TypeScript
+in [`examples/checkout`](https://github.com/jaim3r0jas/loadmap/tree/main/examples/checkout)). Open it in VS Code with
+the loadmap extension for a live preview beside the text, or in Neovim or Helix: [In your editor](/in-your-editor/).
+In [the editor](/editor/), hover a word to see what it is, or turn on **Track live changes** and change a capacity.
 
 From the command line, with the docs running (`pnpm dev`):
 

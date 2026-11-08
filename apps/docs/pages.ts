@@ -29,6 +29,7 @@ export const PAGES: readonly Page[] = [
   { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
   { route: 'without-a-bundler', file: 'without-a-bundler.md', nav: 'Without a bundler', group: 'Start' },
   { route: 'language', file: 'language.md', nav: 'The language', group: 'The language' },
+  { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The language' },
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
   { route: 'recording', file: 'recording.md', nav: 'Recording and CI', group: 'Use it' },
