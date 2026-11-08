@@ -30,6 +30,6 @@ Click a box to change its label, its capacity and the parameters it reads, or op
 growth and the flows. Each change is a small edit of the text, so **Undo** takes it back, the link carries it, and
 **Show code** shows what changed.
 
-[The language](/language/) · [Reference](/reference/) · [Templates](/templates/)
+[The language](/language/) · [Reference](/reference/) · [Examples](/examples/)
 
 </aside>

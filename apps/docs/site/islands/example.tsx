@@ -1,12 +1,13 @@
 // An example from the repository, as TypeScript draws it, with the buttons that export it and a link that opens its
-// .loadmap in the editor at the values the reader set, or downloads it. The reader pans and zooms it; data-headroom="false" leaves out
-// the headroom chart.
+// .loadmap in the editor at the values the reader set, or downloads it. The reader pans and zooms it;
+// data-headroom="false" leaves out the headroom chart.
 import type { ParamValue } from '@loadmap/core'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
 import { Checkout, checkoutSource } from '@loadmap/example-checkout'
 import type { LoadmapHandle } from '@loadmap/react'
 import { type MouseEvent, StrictMode, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Actions } from './actions'
 import { useRecorder } from './recorder'
 
 const EXAMPLES = { checkout: Checkout, alerts: Alerts } as const
@@ -48,20 +49,7 @@ function Example({
   return (
     <>
       {exports && (
-        <div className="actions">
-          {editor && (
-            <a className="button" href={`${editor}?example=${name}`} onClick={edit}>
-              Edit in the editor ⤢
-            </a>
-          )}
-          {/* the text to open in the reader's own editor */}
-          <a
-            className="button"
-            download={`${name}.loadmap`}
-            href={`data:text/plain;charset=utf-8,${encodeURIComponent(SOURCES[name])}`}
-          >
-            {name}.loadmap ↓
-          </a>
+        <Actions name={name} source={SOURCES[name]} edit={editor && `${editor}?example=${name}`} onEdit={edit}>
           <button type="button" onClick={png}>
             PNG
           </button>
@@ -74,7 +62,7 @@ function Example({
           <button type="button" onClick={() => record('webm')}>
             WebM
           </button>
-        </div>
+        </Actions>
       )}
       <Shown ref={handle} theme="inherit" zoom headroom={headroom} />
     </>
