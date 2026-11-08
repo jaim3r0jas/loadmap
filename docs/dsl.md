@@ -343,6 +343,49 @@ diagnostic's fixes as text changes (the did-you-mean, a missing property, a bare
 links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.
 
+## In your editor
+
+`loadmap lsp` (in `@loadmap/cli`) speaks the language server protocol over standard input and output, so an editor
+that speaks it gets the help the docs' editor has: errors and failing `expect` lines as you type, completion with
+snippets, hover with the values at the defaults, the arguments of a call, formatting, quick fixes, go to definition,
+references, rename and an outline. It needs no browser. Install the CLI in the project (`npm i -D @loadmap/cli`), then
+tell the editor about it. Neovim (0.11 or later):
+
+```lua
+vim.filetype.add({ extension = { loadmap = 'loadmap' } })
+vim.lsp.config('loadmap', { cmd = { 'npx', 'loadmap', 'lsp' }, filetypes = { 'loadmap' }, root_markers = { 'package.json' } })
+vim.lsp.enable('loadmap')
+```
+
+On Neovim 0.10, start it when a `.loadmap` file opens instead:
+
+```lua
+vim.filetype.add({ extension = { loadmap = 'loadmap' } })
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'loadmap',
+  callback = function() vim.lsp.start({ name = 'loadmap', cmd = { 'npx', 'loadmap', 'lsp' } }) end,
+})
+```
+
+Helix, in `languages.toml`:
+
+```toml
+[[language]]
+name = "loadmap"
+scope = "source.loadmap"
+file-types = ["loadmap"]
+comment-token = "#"
+indent = { tab-width = 2, unit = "  " }
+language-servers = ["loadmap"]
+
+[language-server.loadmap]
+command = "npx"
+args = ["loadmap", "lsp"]
+```
+
+The server reads one file at a time, the whole text on each change, and colours nothing: highlighting stays the
+editor's.
+
 ## Reference
 
 <!-- reference: written by reference() in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->
