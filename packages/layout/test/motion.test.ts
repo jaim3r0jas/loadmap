@@ -221,3 +221,48 @@ describe('morph inside a box', () => {
     ])
   })
 })
+
+describe('morph of a tier', () => {
+  const lane = (lines: string[]): Scene => ({
+    key: '',
+    direction: 'RIGHT',
+    width: 200,
+    height: 100,
+    nodes: [],
+    edges: [],
+    stageNode: {},
+    flowFrom: {},
+    tiers: [
+      {
+        id: 't',
+        x: 0,
+        y: 0,
+        w: 200,
+        h: 100,
+        head: { x: 0, y: 0, w: 200, h: 16 + 14 * lines.length },
+        lines: lines.map((text, i) => ({ text, x: 10, y: 20 + 14 * i, size: 11.5, weight: 600 })),
+        spacing: 0.92,
+        vertical: false,
+      },
+    ],
+  })
+
+  it('fades a name broken in two in, and the one it was out, while the header grows', () => {
+    const at = (t: number) => morph(lane(['DATA', 'APPLICATION SERV…']), lane(['DATA', 'APPLICATION', 'SERVICES']))(t)
+    const mid = at(MID).tiers[0]!
+    expect(mid.head.h).toBeGreaterThan(44)
+    expect(mid.head.h).toBeLessThan(58)
+    expect(mid.lines.map((l) => [l.text, l.fade])).toEqual([
+      ['DATA', undefined],
+      ['APPLICATION', 0],
+      ['SERVICES', 0],
+      ['APPLICATION SERV…', expect.any(Number)],
+    ])
+    expect(
+      at(0.99)
+        .tiers[0]!.lines.slice(1, 3)
+        .every((l) => l.fade! > 0.9),
+    ).toBe(true)
+    expect(at(1).tiers[0]!.lines.map((l) => l.text)).toEqual(['DATA', 'APPLICATION', 'SERVICES'])
+  })
+})

@@ -505,7 +505,7 @@ const Structure = memo(function Structure({
         </marker>
       </defs>
       {scene.tiers.map((t, i) => (
-        <Tier key={t.id} t={t} shaded={i % 2 === 0} />
+        <Tier key={t.id} t={t} i={i} />
       ))}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
@@ -539,23 +539,39 @@ const Structure = memo(function Structure({
   )
 })
 
-/** A tier's band behind the boxes, every other one shaded, and its label in the margin before them. */
-function Tier({ t, shaded }: { t: SceneTier; shaded: boolean }) {
-  const { x, y, size, weight } = t.spot
+/**
+ * A tier's lane behind the boxes: every other band shaded, a divider before all but the first, and its header with the
+ * name. Paint goes in attributes, never classes: export resolves the tokens in them and drops the classes.
+ */
+function Tier({ t, i }: { t: SceneTier; i: number }) {
+  const h = t.head
+  const [x2, y2] = t.vertical ? [t.x + t.w, t.y] : [t.x, t.y + t.h]
+  const under = t.vertical
+    ? { x1: h.x + h.w, y1: h.y, x2: h.x + h.w, y2: h.y + h.h }
+    : { x1: h.x, y1: h.y + h.h, x2: h.x + h.w, y2: h.y + h.h }
   return (
     <g className="lm-tier" data-tier-id={t.id} pointerEvents="none">
-      <rect x={t.x} y={t.y} width={t.w} height={t.h} fill={shaded ? 'var(--lm-bg)' : 'none'} />
-      <text
-        x={x}
-        y={y}
-        fontSize={size}
-        fontWeight={weight}
-        fill="var(--lm-muted)"
-        textAnchor={t.vertical ? 'end' : undefined}
-        transform={t.vertical ? `rotate(-90 ${x} ${y})` : undefined}
-      >
-        {t.text}
-      </text>
+      {i % 2 === 1 && <rect x={t.x} y={t.y} width={t.w} height={t.h} fill="var(--lm-tier)" />}
+      <rect x={h.x} y={h.y} width={h.w} height={h.h} fill="var(--lm-tier-head)" />
+      <line {...under} stroke="var(--lm-tier-line)" />
+      {i > 0 && <line x1={t.x} y1={t.y} x2={x2} y2={y2} stroke="var(--lm-tier-line)" />}
+      {t.lines.map(({ text, x, y, size, weight, fade }, k) => (
+        <text
+          // biome-ignore lint/suspicious/noArrayIndexKey: a line is its place in the header
+          key={k}
+          opacity={fade}
+          x={x}
+          y={y}
+          fontSize={size}
+          fontWeight={weight}
+          letterSpacing={t.spacing}
+          fill="var(--lm-tier-fg)"
+          textAnchor={t.vertical ? 'end' : undefined}
+          transform={t.vertical ? `rotate(-90 ${x} ${y})` : undefined}
+        >
+          {text}
+        </text>
+      ))}
     </g>
   )
 }

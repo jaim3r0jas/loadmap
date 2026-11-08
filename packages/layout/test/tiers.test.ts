@@ -69,11 +69,70 @@ describe('the order along the flow', () => {
       expect(span(band('data'))[1]).toBe(length)
       for (const t of s.tiers) expect(direction === 'DOWN' ? t.w : t.h).toBe(direction === 'DOWN' ? s.width : s.height)
       expect(band('app').vertical).toBe(direction === 'DOWN')
-      // a label too long for its band is cut short
-      expect(band('app').text.endsWith('…')).toBe(true)
-      expect(band('data').text).toBe('Data')
+      // a name too long for its band takes two lines, the second cut short; every header then takes two
+      expect(band('app').lines.map((l) => l.text)).toEqual([
+        expect.stringMatching(/^SERVICES/),
+        expect.stringMatching(/…$/),
+      ])
+      expect(band('data').lines.map((l) => l.text)).toEqual(['DATA'])
+      for (const t of s.tiers) expect(direction === 'DOWN' ? t.head.w : t.head.h).toBe(44)
       expect(collisions(s)).toEqual([])
       expectEdgesOnBoxes(s)
+    })
+
+  for (const direction of ['RIGHT', 'DOWN'] as const)
+    it(`draws each tier as a lane with a header the boxes and labels stay clear of (${direction})`, async () => {
+      const down = direction === 'DOWN'
+      const across = (b: { x: number; y: number }) => (down ? b.x : b.y)
+      const lanes = (app: string, edgeName = 'Edge') =>
+        layout(
+          defineView(m, {
+            nodes: {
+              ...nodes,
+              a: { ...nodes.a, tier: 'edge' },
+              b: { ...nodes.b, tier: 'app' },
+              d: { ...nodes.d, tier: 'data' },
+            },
+            edges: [...edges.slice(0, 4), edge('b', 's', { label: 'to the sink' })],
+            flows,
+            tiers: { edge: { label: edgeName }, app: { label: app }, data: { label: 'Data' } },
+          }),
+          m.evaluate(),
+          { direction },
+        )
+      const one = await lanes('App')
+      // one line: a header of 30 px at the band's start, the name in capitals from its start
+      for (const t of one.tiers) {
+        expect(t.head).toEqual(down ? { x: 0, y: t.y, w: 30, h: t.h } : { x: t.x, y: 0, w: t.w, h: 30 })
+        expect(t.lines).toHaveLength(1)
+        expect(down ? t.lines[0]!.y : t.lines[0]!.x).toBe((down ? t.y : t.x) + 10)
+      }
+      expect(one.tiers.map((t) => t.lines[0]!.text)).toEqual(['EDGE', 'APP', 'DATA'])
+      // no box and no edge label under a header, the boxes 16 px past it
+      expect(collisions(one)).toEqual([])
+      expect(Math.min(...one.nodes.map(across))).toBe(30 + 16)
+
+      // a name wider than its band (two layers long: wide running right, short running down) but not than two lines
+      // of it: two lines, whole, and every header 14 px deeper; the frame moves with them
+      const long = down
+        ? 'Application services and background workers'
+        : 'Application services, background workers and the schedulers'
+      const two = await lanes(long)
+      const app = two.tiers.find((t) => t.id === 'app')!
+      expect(app.lines.map((l) => l.text).join(' ')).toBe(long.toUpperCase())
+      expect(app.lines).toHaveLength(2)
+      for (const t of two.tiers) expect(down ? t.head.w : t.head.h).toBe(44)
+      expect(two.tiers.find((t) => t.id === 'edge')!.lines.map((l) => l.text)).toEqual(['EDGE'])
+      expect(collisions(two)).toEqual([])
+      expect(down ? two.width : two.height).toBe((down ? one.width : one.height) + 14)
+      expect(two.nodes.map((n) => across(n) - 14)).toEqual(one.nodes.map(across))
+      expectEdgesOnBoxes(two)
+
+      // a first word wider than its band is cut short, and what follows still takes the second line; spaces in a
+      // row count as one
+      const word = await lanes('App', 'Supercalifragilisticexpialidocious   gateway')
+      const gate = word.tiers.find((t) => t.id === 'edge')!.lines.map((l) => l.text)
+      expect(gate).toEqual([expect.stringMatching(/^SUPER.*…$/), expect.stringMatching(/^GATE/)])
     })
 
   it('puts a box in the latest tier of all that feed it, whatever order the boxes come in', async () => {

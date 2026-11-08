@@ -375,28 +375,61 @@ describe('checkout in the browser', () => {
     await page.screenshot({ path: '__screenshots__/checkout-phone.png', element: el })
   })
 
-  it('draws its tiers behind the boxes, the labels across the top, or up the side on a phone', async () => {
-    const bands = (el: HTMLElement) =>
+  it('draws its tiers as lanes behind the boxes, a header across the top, or up the side on a phone', async () => {
+    const lanes = (el: HTMLElement) =>
       [...el.querySelectorAll('svg .lm-tier')].map((g) => ({
         id: g.getAttribute('data-tier-id'),
         text: g.querySelector('text')!.textContent,
         turned: g.querySelector('text')!.hasAttribute('transform'),
       }))
+    // each name drawn whole inside its header, and the board's boxes clear of every header
+    const whole = (el: HTMLElement) =>
+      [...el.querySelectorAll('svg .lm-tier')].every((g) => {
+        const head = g.querySelector('rect[fill="var(--lm-tier-head)"]')!.getBoundingClientRect()
+        const name = g.querySelector('text')!.getBoundingClientRect()
+        const boxes = [...el.querySelectorAll('svg [data-node]')].map((n) => n.getBoundingClientRect())
+        const inside = name.left >= head.left && name.right <= head.right && name.top >= head.top
+        return inside && name.bottom <= head.bottom && boxes.every((b) => b.top >= head.bottom || b.left >= head.right)
+      })
     const wide = await mount()
-    expect(bands(wide.el)).toEqual([
-      { id: 'edge', text: 'Edge', turned: false },
-      { id: 'services', text: 'Services', turned: false },
-      { id: 'data', text: 'Data', turned: false },
+    expect(lanes(wide.el)).toEqual([
+      { id: 'edge', text: 'EDGE', turned: false },
+      { id: 'services', text: 'SERVICES', turned: false },
+      { id: 'data', text: 'DATA', turned: false },
     ])
-    // behind everything else on the board
+    expect(whole(wide.el)).toBe(true)
+    // behind everything else on the board, every other lane shaded, a divider before all but the first
     expect(wide.el.querySelector('svg > .lm-tier')?.previousElementSibling?.tagName).toBe('defs')
+    const g = [...wide.el.querySelectorAll('svg .lm-tier')]
+    expect(g.map((t) => !!t.querySelector('rect[fill="var(--lm-tier)"]'))).toEqual([false, true, false])
+    expect(g.map((t) => t.querySelectorAll('line').length)).toEqual([1, 2, 2])
     root?.unmount()
     host?.remove()
     const phone = await mount({ width: 390 })
     await expect.poll(() => phone.handle.board()?.scene.direction).toBe('DOWN')
     await phone.handle.ready()
-    await expect.poll(() => bands(phone.el).every((b) => b.turned)).toBe(true)
+    await expect.poll(() => lanes(phone.el).every((b) => b.turned)).toBe(true)
+    expect(whole(phone.el)).toBe(true)
+    await page.screenshot({ path: '__screenshots__/checkout-lanes-phone.png', element: phone.el })
   })
+
+  for (const theme of ['light', 'dark'] as const)
+    it(`reads a lane's header in the ${theme} theme`, async () => {
+      const { el } = await mount({ theme })
+      const rgb = (c: string) => c.match(/\d+/g)!.slice(0, 3).map(Number)
+      const lum = (c: string) => {
+        const [r, g, b] = rgb(c).map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4))
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+      }
+      const t = el.querySelector('svg .lm-tier')!
+      const fg = lum(getComputedStyle(t.querySelector('text')!).fill)
+      const head = lum(getComputedStyle(t.querySelector('rect[fill="var(--lm-tier-head)"]')!).fill)
+      expect((Math.max(fg, head) + 0.05) / (Math.min(fg, head) + 0.05)).toBeGreaterThan(7)
+      // the shaded lane stands apart from the board
+      const shaded = getComputedStyle(el.querySelector('svg rect[fill="var(--lm-tier)"]')!).fill
+      expect(shaded).not.toBe(getComputedStyle(el.querySelector('.lm-board')!).backgroundColor)
+      await page.screenshot({ path: `__screenshots__/checkout-lanes-${theme}.png`, element: el })
+    })
 })
 
 describe('a new structure', () => {

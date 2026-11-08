@@ -266,9 +266,11 @@ pool api "API" { tier: services; workers { pods: pods; perPod: 8 } }
 node db "Database" { tier: data; store }
 ```
 
-Each tier is a band behind its boxes, every other one shaded, its label in the margin before them; running down (and
-on a phone) the label reads up the band's left side. A box without a tier stands in the tier of the boxes that feed
-it, or of those it feeds when nothing feeds it, so a definition names the tier where it changes. In TypeScript:
+Each tier is a lane behind its boxes: every other one shaded, a line between them, and a header with its name in
+capitals at the lane's start, a strip across the top (a column on the left running down, and on a phone, the name
+reading up). A name wider than its lane takes two lines, and every header on the board then takes two. A box without
+a tier stands in the tier of the boxes that feed it, or of those it feeds when nothing feeds it, so a definition names
+the tier where it changes. In TypeScript:
 `tiers: { edge: { label: 'Edge' }, … }` in the view, `tier: 'edge'` on a box.
 
 ### Full screen
@@ -665,7 +667,7 @@ After the keyword: [id] [label].
 
 ### tier
 
-A band across the flow (edge, app, data) drawn behind its boxes. Tiers run in the order they are declared.
+A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.
 
 ```
 tier data "Data"
