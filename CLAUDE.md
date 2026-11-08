@@ -23,9 +23,10 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 | `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*            |
 | `@loadmap/vscode` | VS Code extension (private, a .vsix): grammar, `loadmap lsp` client, the live preview     | cli, dsl, react (bundled)            |
 
-`examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
-end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws
-(`definition.test.ts`, `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): the examples (walkthroughs and the templates as starters) and the editor
+`examples/checkout` (the small reference), `examples/alerts` (two topics on shared brokers, merge, fan-out) and
+`examples/search` (a rate limiter, an autoscaled pool, a cache and retries, laid out stable) hold the end-to-end tests,
+each also written as a `.loadmap` that must draw exactly what its TypeScript draws (`definition.test.ts`,
+`examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): the examples (walkthroughs and the templates as starters) and the editor
 live. `docs/dsl.md` is the language guide; the site includes it.
 
 ## Verification

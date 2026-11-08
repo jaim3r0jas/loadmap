@@ -38,6 +38,7 @@ export const PAGES: readonly Page[] = [
   { route: 'examples', file: 'examples.md', nav: 'All examples', group: 'Examples' },
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },
   { route: 'examples/alerts', file: 'alerts.md', nav: 'Alerts', group: 'Examples' },
+  { route: 'examples/search', file: 'search.md', nav: 'Search', group: 'Examples' },
 ]
 
 /**

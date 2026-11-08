@@ -4,14 +4,15 @@
 import type { ParamValue } from '@loadmap/core'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
 import { Checkout, checkoutSource } from '@loadmap/example-checkout'
+import { Search, searchSource } from '@loadmap/example-search'
 import type { LoadmapHandle } from '@loadmap/react'
 import { type MouseEvent, StrictMode, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Actions } from './actions'
 import { useRecorder } from './recorder'
 
-const EXAMPLES = { checkout: Checkout, alerts: Alerts } as const
-const SOURCES = { checkout: checkoutSource, alerts: alertsSource } as const
+const EXAMPLES = { checkout: Checkout, alerts: Alerts, search: Search } as const
+const SOURCES = { checkout: checkoutSource, alerts: alertsSource, search: searchSource } as const
 type Name = keyof typeof EXAMPLES
 
 function Example({

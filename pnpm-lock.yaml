@@ -250,6 +250,9 @@ importers:
       '@loadmap/example-checkout':
         specifier: workspace:*
         version: link:../../examples/checkout
+      '@loadmap/example-search':
+        specifier: workspace:*
+        version: link:../../examples/search
       '@loadmap/export':
         specifier: workspace:*
         version: link:../../packages/export
@@ -312,6 +315,28 @@ importers:
       mediabunny:
         specifier: 1.65.0
         version: 1.65.0
+
+  examples/search:
+    dependencies:
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:../../packages/dsl
+      '@loadmap/layout':
+        specifier: workspace:*
+        version: link:../../packages/layout
+      '@loadmap/react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      '@loadmap/sim':
+        specifier: workspace:*
+        version: link:../../packages/sim
+    devDependencies:
+      '@loadmap/export':
+        specifier: workspace:*
+        version: link:../../packages/export
 
   packages/cli:
     dependencies:

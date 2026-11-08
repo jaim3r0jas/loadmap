@@ -13,6 +13,7 @@
     "@loadmap/editor": "workspace:*",
     "@loadmap/example-alerts": "workspace:*",
     "@loadmap/example-checkout": "workspace:*",
+    "@loadmap/example-search": "workspace:*",
     "@loadmap/export": "workspace:*",
     "@loadmap/react": "workspace:*",
     "marked": "18.1.2",
