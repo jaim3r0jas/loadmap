@@ -1,5 +1,19 @@
 # @loadmap/editor
 
+## 0.25.0
+
+### Patch Changes
+
+- 46b101d: A new model or view keeps the board: the diagram moves from what it drew to the new structure, as it does between
+  scenarios, instead of starting again empty and fitted. The view the reader zoomed to stays, the box nearest its middle
+  held still on the board while the rest moves around it (between phases too), and a view the reader never moved stays
+  fitted. In the editor an edit keeps the zoom; a whole new text (a template, a shared link) still starts fitted.
+- Updated dependencies [46b101d]
+- Updated dependencies [1d0cc1f]
+  - @loadmap/react@0.25.0
+  - @loadmap/dsl@0.25.0
+  - @loadmap/core@0.25.0
+
 ## 0.24.0
 
 ### Patch Changes

@@ -1,5 +1,31 @@
 # @loadmap/react
 
+## 0.25.0
+
+### Minor Changes
+
+- 1d0cc1f: Tiers are drawn as lanes. Each tier has a header at its start, a strip across the top (running down, and on a phone, a
+  column on the left, the name reading up), with its name in capitals; a line between the lanes, and every other lane
+  shaded. A name wider than its lane takes two lines, and every header on that board takes two; only past two lines is it
+  cut short with "…". The layout reserves the header's room, so no box or edge label sits under one: `collisions()`
+  checks the whole header. Export, posters and the editor draw the same lanes.
+
+  `SceneTier` has `head` (the header's box), `lines` (each line of the name with its spot; a line that comes or goes in
+  a morph fades) and `spacing`, in place of `text` and `spot`. Four theme tokens colour the lanes: `--lm-tier` (a shaded
+  lane), `--lm-tier-head`, `--lm-tier-fg` (the name) and `--lm-tier-line` (the dividers).
+
+### Patch Changes
+
+- 46b101d: A new model or view keeps the board: the diagram moves from what it drew to the new structure, as it does between
+  scenarios, instead of starting again empty and fitted. The view the reader zoomed to stays, the box nearest its middle
+  held still on the board while the rest moves around it (between phases too), and a view the reader never moved stays
+  fitted. In the editor an edit keeps the zoom; a whole new text (a template, a shared link) still starts fitted.
+- Updated dependencies [1d0cc1f]
+  - @loadmap/layout@0.25.0
+  - @loadmap/dsl@0.25.0
+  - @loadmap/core@0.25.0
+  - @loadmap/sim@0.25.0
+
 ## 0.24.0
 
 ### Minor Changes
