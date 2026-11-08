@@ -56,10 +56,12 @@ describe('the grammar', () => {
     expect([...seen].sort()).toEqual(Object.keys(SCHEMA).filter(Boolean).sort())
   })
 
-  it('reads both examples without a stray mark', () => {
+  it('reads the examples without a stray mark', () => {
     for (const path of [
       'examples/checkout/checkout.loadmap',
       'examples/alerts/alerts.loadmap',
+      // a limiter, a cache, an autoscaled pool and retries
+      'examples/search/search.loadmap',
       'docs/every-statement.loadmap',
     ]) {
       const t = tokens(read(path))

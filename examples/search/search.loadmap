@@ -1,0 +1,102 @@
+loadmap 1
+# Product search, made up: the same model and view as model.ts and view.ts. A rate limiter, an autoscaled API, a
+# cache and clients that retry: the four building blocks in one system.
+title: "Product search"
+speed: 10
+transition: 0.8
+# no box moves between phases: the pool already draws every pod it may run
+layout: stable
+assume: "1× is the busiest hour of an ordinary week."
+assume: "A client retries a search the limiter turns away, at once."
+
+load "Searches, × today" { max: 50; default: 4 }
+
+param limit "Rate limit" { options: [6_000, 12_000]; default: 6_000; format: `${value / 1000}k req/s` }
+param maxPods "Most API pods" { options: [8, 16]; default: 8 }
+param hit "Cache hits" { options: [0.9, 0.6, 0.3]; default: 0.9; format: `${value * 100} %` }
+param retries "Client retries" { options: [0, 3]; default: 3 }
+param budget "A retry budget of 10 %" {
+  hint: "retries add at most a tenth of the searches"
+  default: false
+}
+
+preset "Cold cache" { hit: 0.3 }
+
+scenario "Today" {}
+scenario "Proposed" { limit: 12_000; maxPods: 16; budget: true }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 10×" { target: 10 }
+expect "Proposed keeps 20×" { scenario: Proposed; target: 20 }
+
+step "An ordinary peak: the API runs a few pods, and the cache answers nine searches in ten." {
+  title: "An ordinary peak"
+}
+step "A cold cache answers three in ten: the misses reach the search index, the first limit now." {
+  hit: 0.3
+  focus: db
+  title: "A cold cache"
+}
+step "At 30×, the limiter turns searches away, and every client tries three more times: the attempts multiply." {
+  load: 30
+  focus: limiter
+}
+step "The proposal doubles the limit and the pods, and caps the retries at a tenth: at 30× nothing is turned away." {
+  scenario: Proposed
+  load: 30
+  focus: api
+}
+
+flow searches "searches" {
+  unit: "search"
+  rate: 300 * load
+  # without the budget, at most three retries a search: never more than 300 %
+  retry { times: retries; budget: budget ? 0.1 : 3 }
+  route: limiter -> api -> cache -> db
+  from: clients
+  color: accent
+}
+
+tier edge "Edge"
+tier services "Services"
+tier data "Data"
+
+node clients "Clients" "web and apps"
+
+node limiter "Rate limiter" `${compact(limit)} req/s` {
+  tier: edge
+  limit
+  short: "the rate limiter"
+  capacity: configured(limit, "req/s", "gateway config")
+  over: "searches above the limit get 429s, and come back as retries"
+}
+
+pool api "Search API" `2 to ${maxPods} pods` {
+  tier: services
+  workers { perPod: 4; autoscale { min: 2; max: maxPods; target: 0.7 } }
+  short: "the search API"
+  demand: at.api.searches * 0.001
+  capacity: measured(maxPods * 1, "cores", "1 core a pod")
+  over: "the pool is at its most pods, and searches queue"
+}
+
+node cache "Cache" `${hit * 100} % hits` {
+  cache { hit: hit }
+  short: "the cache"
+  capacity: estimated(40_000, "ops/s", "vendor sizing")
+  over: "lookups time out and fall through"
+}
+
+node db "Search index" "primary" {
+  tier: data
+  shape: cylinder
+  store
+  short: "the search index"
+  capacity: estimated(2_000 ± 30%, "queries/s", "a load test of one replica")
+  over: "queries queue, and the API waits on them"
+}
+
+clients -> limiter: `${compact(flows.searches)} searches/s`
+limiter -> api
+api -> cache
+cache -> db: `${compact(at.db.searches)} misses/s`

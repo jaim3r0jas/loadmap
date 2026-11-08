@@ -15,14 +15,25 @@ import {
 import { Icon, Menu, MenuItem } from '@loadmap/editor/internal'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
+import { searchSource } from '@loadmap/example-search'
 import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { useRecorder } from './recorder'
 
-const SOURCES = { uploads: uploadsSource, checkout: checkoutSource, alerts: alertsSource } as const
-const NAMES: Record<keyof typeof SOURCES, string> = { uploads: 'Photo uploads', checkout: 'Checkout', alerts: 'Alerts' }
+const SOURCES = {
+  uploads: uploadsSource,
+  checkout: checkoutSource,
+  alerts: alertsSource,
+  search: searchSource,
+} as const
+const NAMES: Record<keyof typeof SOURCES, string> = {
+  uploads: 'Photo uploads',
+  checkout: 'Checkout',
+  alerts: 'Alerts',
+  search: 'Search',
+}
 const DRAFT = 'loadmap-editor-draft'
 /** The reader's draft as it was before another text took its place. */
 const EARLIER = 'loadmap-editor-draft-earlier'

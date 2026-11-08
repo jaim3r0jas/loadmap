@@ -6,6 +6,7 @@ import { pageOptions } from '@loadmap/dsl/internal'
 import { TEMPLATES } from '@loadmap/editor/templates'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
+import { searchSource } from '@loadmap/example-search'
 import { Loadmap } from '@loadmap/react'
 import { useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -35,6 +36,13 @@ const WALKTHROUGHS: readonly Walkthrough[] = [
     summary: 'Two topics on shared brokers, then a fan-out to the receivers.',
     source: alertsSource,
     from: ['notifications'],
+  },
+  {
+    id: 'search',
+    title: 'Search',
+    summary: 'Clients that retry, a rate limiter, an autoscaled API and a cache.',
+    source: searchSource,
+    from: ['cache', 'rate-limit', 'autoscale', 'retry-storm'],
   },
 ]
 

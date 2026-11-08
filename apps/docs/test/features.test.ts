@@ -2,6 +2,7 @@ import { compile } from '@loadmap/dsl'
 import { TEMPLATES } from '@loadmap/editor/templates'
 import { alerts, view as alertsView } from '@loadmap/example-alerts'
 import { checkout, view as checkoutView } from '@loadmap/example-checkout'
+import { search, view as searchView } from '@loadmap/example-search'
 import { describe, expect, it } from 'vitest'
 import { features } from '../site/features'
 
@@ -25,6 +26,10 @@ describe('the features a model shows', () => {
       'story',
     ])
     expect(features(alerts, alertsView)).toEqual(expect.arrayContaining(['fan-out', 'merge', 'priority', 'story']))
+    // the four building blocks, and the one board laid out stable
+    expect(features(search, searchView)).toEqual(
+      expect.arrayContaining(['cache', 'rate limiter', 'autoscale', 'retries', 'stable layout']),
+    )
   })
 
   it('reads each building block from its template', () => {

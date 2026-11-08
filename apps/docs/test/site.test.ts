@@ -84,6 +84,7 @@ describe('the pages', () => {
       'docs/dsl.md',
       'react/README.md',
       'react/package.json',
+      'search/search.loadmap',
     ])
   })
 
@@ -205,6 +206,7 @@ describe('the built site', () => {
         ['', 5],
         ['examples/checkout/', 5],
         ['examples/alerts/', 10],
+        ['examples/search/', 5],
         ['examples/', 4],
         ['getting-started/', 3],
         ['concepts/', 3],
