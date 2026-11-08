@@ -21,6 +21,7 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`).
 | `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled); playwright peer       |
 | `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links      | core, layout                         |
 | `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*            |
+| `@loadmap/vscode` | VS Code extension (private, a .vsix): grammar, `loadmap lsp` client, the live preview     | cli, dsl, react (bundled)            |
 
 `examples/checkout` (the small reference) and `examples/alerts` (two topics on shared brokers, merge, fan-out) hold the
 end-to-end tests, each also written as a `.loadmap` that must draw exactly what its TypeScript draws
@@ -36,6 +37,9 @@ pnpm check        # typecheck, biome check, every test (Node + browser), build
 ```
 
 Pieces: `pnpm typecheck`, `pnpm lint` (`pnpm format` fixes), `pnpm test:node`, `pnpm test:browser`, `pnpm build`.
+After a change to `packages/vscode` (or what it bundles: the cli's `lsp`, `<LoadmapSource>`): `pnpm --filter
+@loadmap/vscode test:e2e` runs the extension as it ships in a pinned VS Code (downloaded once into `.vscode-test`; CI
+runs it under xvfb in `check`), and `pnpm --filter @loadmap/vscode package` makes the .vsix.
 `pnpm budget` (in `check`) builds `scripts/budget/*.html` and fails when a `<Loadmap>` page loads more than 51.5 kB gzip of
 loadmap first, the editor adds more than 170 kB, or ELK is in a first load. Before a release, and after a change to
 exports, dependencies or the build: `pnpm verify:pack` (packs every package, installs the tarballs with npm in a fresh

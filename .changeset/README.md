@@ -29,3 +29,10 @@ A package npm has never seen has no settings yet: publish its first version by h
 (with the environment) and set its publishing access as above. By hand means a real terminal (`pnpm changeset
 publish`): with a security key, npm prints a link to approve in the browser, and changesets only follows it on a TTY
 (tick "skip 2FA for 5 minutes" there for the other packages).
+
+The VS Code extension (`packages/vscode`, private) is not on npm: `.github/workflows/vscode.yml` publishes it, started
+by hand on main once a release is on npm (`gh workflow run vscode.yml`). Its `.vsix` takes the CLI's version and goes
+to the VS Code Marketplace (Trusted Publishing: the publisher `jaim3r0jas` has a policy naming this repository, the
+workflow `vscode.yml` and the environment `marketplace`), to Open VSX (the namespace `jaim3r0jas`, the token
+`OVSX_PAT` in the `marketplace` environment) and onto the CLI's GitHub release. A store that already has the version
+skips it, so a failed run can run again.
