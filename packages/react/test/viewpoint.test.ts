@@ -1,6 +1,8 @@
+import type { Scene } from '@loadmap/layout'
 import { describe, expect, it } from 'vitest'
 import { whole } from '../src/camera'
 import {
+  anchorOf,
   bring,
   cameraOf,
   clamp,
@@ -140,6 +142,25 @@ describe('the reader’s viewpoint', () => {
     const c = onBoard(to, { x: 940, y: 220 })
     expect(c.x).toBeCloseTo(f.x + f.w / 2, 9)
     expect(c.y).toBeCloseTo(f.y + f.h / 2, 9)
+  })
+
+  it('holds on to the box under the middle of the free part, of those the next scene keeps', () => {
+    const box = (id: string, x: number, y: number, extra = {}) => ({ id, x, y, w: 100, h: 60, ...extra })
+    const at = (nodes: object[]) => ({ nodes }) as unknown as Scene
+    const from = at([box('a', 0, 0), box('b', 400, 0), box('c', 800, 0), box('d', 600, 200, { fade: 0.5 })])
+    const f = free(vp)
+    // the middle of the free part over b's right half
+    const v = { x: 0, y: 0, k: 2 }
+    const mid = toScene(v, vp, f.x + f.w / 2, f.y + f.h / 2)
+    const over = { ...v, x: v.x + (470 - mid.x), y: v.y + (30 - mid.y) }
+    expect(anchorOf(over, vp, from, at([box('a', 0, 0), box('b', 0, 300), box('c', 0, 0)]))).toEqual({
+      id: 'b',
+      dx: over.x - 450,
+      dy: over.y - 30,
+    })
+    // b leaves: the nearest box that stays; a box still fading is never held
+    expect(anchorOf(over, vp, from, at([box('a', 0, 0), box('c', 0, 0), box('d', 0, 0)]))?.id).toBe('c')
+    expect(anchorOf(over, vp, from, at([box('e', 0, 0)]))).toBeNull()
   })
 
   it('places a viewBox on the board as SVG does: scaled to fit and centred', () => {
