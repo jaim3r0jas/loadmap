@@ -8,14 +8,20 @@ import {
   frame,
   placement,
   range,
+  seen,
   shot,
   shown,
+  towards,
   type Viewpoint,
   type Viewport,
 } from './viewpoint'
 
 // the whole scene, as camera.ts has it: written here, so this chunk takes nothing from the page's first load
 const whole = (s: { width: number; height: number }): Rect => ({ x: 0, y: 0, w: s.width, h: s.height })
+/** Seconds a jump from a button, a key or `show` takes; reduced motion cuts. */
+const FLIGHT = 0.2
+/** Room `show` leaves around the boxes, in scene units: a limit's tag sits above its box. */
+const ROOM = 30
 
 /**
  * The reader's view of a board that pans and zooms: the board in pixels with what floats over it, and where the reader
@@ -29,6 +35,8 @@ export class Viewer {
   #view: Viewpoint | null = null
   /** The box the view keeps still while the diagram moves to a new structure, and the view's centre from it. */
   #anchor: { id: string; dx: number; dy: number } | null = null
+  /** The frame a flight asked for next: a new move of the reader's takes over from it. */
+  #flight = 0
 
   constructor(engine: Engine, viewport: Viewport) {
     this.engine = engine
@@ -102,6 +110,55 @@ export class Viewer {
     // during a move, from the box nearest its middle where it is now: the move goes on carrying the view with it
     this.#anchor = this.#view && scene && f !== scene ? anchorOf(this.#view, this.viewport, f!, scene) : null
     this.#show()
+  }
+
+  /**
+   * Moves the view to `to` (null: fitted). With `fly` it flies there, on the wall clock (a reader's view is never in a
+   * recording); without, and with reduced motion, it is there at once.
+   */
+  go(to: Viewpoint | null, fly: boolean): void {
+    this.land()
+    const { engine } = this
+    const from = this.shownView()
+    const target = to ?? this.fit()
+    if (!fly || engine.reducedMotion || !from || !target) {
+      this.setView(to)
+      return
+    }
+    // the reader takes the view from a story playing now; one that starts during the flight takes it back
+    if (engine.playing) this.setView(from)
+    const t0 = performance.now()
+    const frame = (now: number) => {
+      const t = (now - t0) / 1000 / FLIGHT
+      if (engine.playing) return
+      this.setView(t >= 1 ? to : towards(from, target, t))
+      if (t < 1) this.#flight = requestAnimationFrame(frame)
+    }
+    this.#flight = requestAnimationFrame(frame)
+  }
+
+  /** Ends a flight where it is. */
+  land(): void {
+    cancelAnimationFrame(this.#flight)
+  }
+
+  /**
+   * Brings these boxes into view, flying there: at the same zoom, further out only as far as it takes to show them
+   * all. Nothing when they show already: a view the reader never moved shows the whole diagram.
+   */
+  show(ids: readonly string[]): void {
+    const v = this.#view && !this.engine.camera && this.shownView()
+    const ns = this.engine.frame?.nodes.filter((n) => ids.includes(n.id))
+    if (!v || !ns?.length) return
+    const x = Math.min(...ns.map((n) => n.x)) - ROOM
+    const y = Math.min(...ns.map((n) => n.y)) - ROOM
+    const r = {
+      x,
+      y,
+      w: Math.max(...ns.map((n) => n.x + n.w)) + ROOM - x,
+      h: Math.max(...ns.map((n) => n.y + n.h)) + ROOM - y,
+    }
+    if (!seen(v, this.viewport, r)) this.go(frame(r, this.viewport, v.k), true)
   }
 
   /** The part of the scene the board shows now: its viewBox. */

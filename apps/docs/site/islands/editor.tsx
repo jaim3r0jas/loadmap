@@ -32,6 +32,8 @@ const SPLIT = 'loadmap-editor-card'
 const LAYOUT = 'loadmap-editor-layout'
 const PANEL = 'loadmap-editor-panel'
 const PANEL_WIDTH = 'loadmap-editor-panel-width'
+/** Whether the reader tracks live changes. */
+const TRACK = 'loadmap-editor-track'
 
 function read(key: string): string | null {
   try {
@@ -258,6 +260,8 @@ function Editor({ root }: { root: URL }) {
       onPanelWidth={(n) => write(PANEL_WIDTH, String(n))}
       // a link opens as its sender meant it: what the reader does with it is not how they leave their own editor
       onLayout={(l) => !linked && write(LAYOUT, l)}
+      track={read(TRACK) === 'on'}
+      onTrack={(on) => write(TRACK, on ? 'on' : 'off')}
       start={
         <>
           <a

@@ -71,7 +71,8 @@ under which the diagram runs down, default 640), `elk` (where ELK runs; default 
 selected), and `ref`.
 
 The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `storyStep()`, `ready()`, `pause()`,
-`resume()`, `step(dt)`, `reset(seed)`, `board()`. Export and recording drive the page through it.
+`resume()`, `step(dt)`, `reset(seed)`, `board()`, and `show(ids)`, which brings boxes into view on a board that zooms.
+Export and recording drive the page through it.
 
 ## The language (`@loadmap/dsl`)
 
@@ -95,7 +96,8 @@ The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `
 `layout` is `'code'` (the default: the text beside the diagram) or `'reader'` (the diagram with an inspector, the text
 hidden); `fill` makes it a page of its own, the diagram a canvas between two panels that resize and fold: the text on its left
 (`split`, `onSplit`, `onLayout`) and the verdict and the rest on its right (`panel`: `'pinned'` or `'auto'`,
-`onPanel`, `panelWidth`, `onPanelWidth`); `theme` takes `'inherit'` as `<Loadmap>` does. Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
+`onPanel`, `panelWidth`, `onPanelWidth`); `track` (and `onTrack`) turns on Track live changes, the code panel's button:
+each edit brings the boxes it changed into view and marks them; off, the view stays where the reader left it; `theme` takes `'inherit'` as `<Loadmap>` does. Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
 `format()`. `TEMPLATES` (also from
 `@loadmap/editor/templates`, without CodeMirror) lists the starters.
 

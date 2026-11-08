@@ -184,6 +184,11 @@ export const EDITOR_CSS = `
 .lme .lme-pane-head h2 { flex: none; margin: 0; font: 600 .92rem var(--lm-font); }
 .lme-pane-head > .lm-btn { display: inline-flex; align-items: center; justify-content: center; height: 30px; }
 .lme-pane-head > .lme-icon { width: 30px; font-size: 1.1rem; }
+.lme-pane-head > .lm-btn[aria-pressed="true"] { border-color: var(--lm-accent); color: var(--lm-accent); }
+/* what an edit changed, tracked: a glow that fades; with reduced motion it stays still until it goes */
+.lme-preview [data-node][data-changed] { animation: lme-changed 1.6s ease-out; }
+@keyframes lme-changed { 0%, 35% { filter: drop-shadow(0 0 6px var(--lm-accent)); } to { filter: none; } }
+@media (prefers-reduced-motion: reduce) { .lme-preview [data-node][data-changed] { animation: none; filter: drop-shadow(0 0 4px var(--lm-accent)); } }
 .lme[data-canvas] .lme-code { border: 0; border-radius: 0; }
 .lme[data-canvas] .lme-problems { padding: 6px; border-top: 1px solid var(--lm-line); }
 .lme-resize { position: absolute; z-index: 6; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
