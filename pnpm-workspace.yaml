@@ -13,3 +13,7 @@ minimumReleaseAgeExclude:
 trustPolicy: no-downgrade
 strictDepBuilds: true
 blockExoticSubdeps: true
+allowBuilds:
+  # vsce's signing tool: its script copies a platform binary into place (or downloads one). Packaging and publishing
+  # the VS Code extension never sign locally (the Marketplace signs), so it stays unbuilt
+  "@vscode/vsce-sign": false

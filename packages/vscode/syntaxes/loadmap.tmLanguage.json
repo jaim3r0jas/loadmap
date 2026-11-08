@@ -1,0 +1,171 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "loadmap",
+  "scopeName": "source.loadmap",
+  "patterns": [
+    {
+      "include": "#statement"
+    },
+    {
+      "include": "#property"
+    },
+    {
+      "include": "#expression"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.loadmap",
+      "match": "#.*$"
+    },
+    "statement": {
+      "match": "(?:^|(?<=[{;]))\\s*\\b(autoscale|cache|cluster|component|drop|expect|fanout|fit|flow|growth|let|limit|load|loadmap|merge|node|param|partitions|pass|points|pool|preset|queue|retry|scenario|sink|step|store|thresholds|tier|workers)\\b(?!\\s*:)(?:\\s+([A-Za-z_]\\w*))?",
+      "captures": {
+        "1": {
+          "name": "keyword.other.statement.loadmap"
+        },
+        "2": {
+          "name": "entity.name.type.loadmap"
+        }
+      }
+    },
+    "property": {
+      "match": "(?:^|(?<=[{;,]))\\s*([A-Za-z_]\\w*)\\s*(:)",
+      "captures": {
+        "1": {
+          "name": "support.type.property-name.loadmap"
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.loadmap"
+        }
+      }
+    },
+    "expression": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string-double"
+        },
+        {
+          "include": "#string-single"
+        },
+        {
+          "include": "#template"
+        },
+        {
+          "name": "constant.numeric.loadmap",
+          "match": "\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?"
+        },
+        {
+          "name": "constant.language.boolean.loadmap",
+          "match": "\\b(?:true|false)\\b"
+        },
+        {
+          "name": "support.function.builtin.loadmap",
+          "match": "\\b(?:abs|ceil|compact|configured|estimated|exp|floor|fmt|log|max|measured|min|pct|pow|round|secs|sqrt)\\b(?=\\s*\\()"
+        },
+        {
+          "name": "variable.language.loadmap",
+          "match": "\\b(?:load|flows|at|demand|util|derived)\\b"
+        },
+        {
+          "name": "keyword.operator.arrow.loadmap",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.loadmap",
+          "match": "===|!==|\\+/-|==|!=|<=|>=|&&|\\|\\||[-+*/%<>!?=±]"
+        },
+        {
+          "name": "punctuation.section.block.loadmap",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.brackets.loadmap",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.parens.loadmap",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.separator.comma.loadmap",
+          "match": ","
+        },
+        {
+          "name": "punctuation.terminator.statement.loadmap",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.key-value.loadmap",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.accessor.loadmap",
+          "match": "\\."
+        },
+        {
+          "name": "variable.other.loadmap",
+          "match": "[A-Za-z_]\\w*"
+        }
+      ]
+    },
+    "string-double": {
+      "name": "string.quoted.double.loadmap",
+      "begin": "\"",
+      "end": "\"|$",
+      "patterns": [
+        {
+          "include": "#escape"
+        }
+      ]
+    },
+    "string-single": {
+      "name": "string.quoted.single.loadmap",
+      "begin": "'",
+      "end": "'|$",
+      "patterns": [
+        {
+          "include": "#escape"
+        }
+      ]
+    },
+    "template": {
+      "name": "string.template.loadmap",
+      "begin": "`",
+      "end": "`",
+      "patterns": [
+        {
+          "include": "#escape"
+        },
+        {
+          "name": "meta.template.expression.loadmap",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.begin.loadmap"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.end.loadmap"
+            }
+          },
+          "contentName": "meta.embedded.line.loadmap",
+          "patterns": [
+            {
+              "include": "#expression"
+            }
+          ]
+        }
+      ]
+    },
+    "escape": {
+      "name": "constant.character.escape.loadmap",
+      "match": "\\\\."
+    }
+  }
+}

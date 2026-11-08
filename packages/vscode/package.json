@@ -1,0 +1,123 @@
+{
+  "name": "@loadmap/vscode",
+  "private": true,
+  "version": "0.0.0",
+  "displayName": "loadmap",
+  "description": "Capacity models in .loadmap: highlighting, errors and failing expectations as you type, completion, hover with the values, quick fixes, rename and formatting.",
+  "publisher": "jaim3r0jas",
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/vscode"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
+  "icon": "icons/loadmap.png",
+  "galleryBanner": {
+    "color": "#0d141b",
+    "theme": "dark"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "loadmap",
+    "capacity planning",
+    "capacity model",
+    "language server"
+  ],
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onLanguage:loadmap"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a workspace you have not trusted, the language server is always the one that comes with the extension.",
+      "restrictedConfigurations": [
+        "loadmap.server.path"
+      ]
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "loadmap",
+        "aliases": [
+          "loadmap"
+        ],
+        "extensions": [
+          ".loadmap"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/file-light.svg",
+          "dark": "./icons/file-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "loadmap",
+        "scopeName": "source.loadmap",
+        "path": "./syntaxes/loadmap.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "loadmap.restartServer",
+        "title": "Restart the language server",
+        "category": "loadmap"
+      }
+    ],
+    "configurationDefaults": {
+      "[loadmap]": {
+        "editor.unicodeHighlight.ambiguousCharacters": false
+      }
+    },
+    "configuration": {
+      "title": "loadmap",
+      "properties": {
+        "loadmap.server.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "A `loadmap` command to run as the language server (`loadmap lsp`) instead of the one that comes with the extension, such as `node_modules/.bin/loadmap` for the version a project's CI checks with. A bare name (`loadmap`) is looked up on the `PATH`, a relative path starts at the first workspace folder. Empty: the extension's own. In a workspace you have not trusted, the extension's own always runs."
+        },
+        "loadmap.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the messages between VS Code and the language server in the loadmap output."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "package": "node scripts/stage.ts",
+    "test:e2e": "tsdown && node scripts/stage.ts --folder && tsdown -c tsdown.e2e.config.ts && node test/e2e/run.ts"
+  },
+  "devDependencies": {
+    "@loadmap/cli": "workspace:*",
+    "@loadmap/dsl": "workspace:*",
+    "@types/vscode": "1.91.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.1.0",
+    "tsdown": "0.23.4",
+    "vscode-languageclient": "11.0.0",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}

@@ -27,6 +27,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check
+      # the VS Code extension as it ships, in a pinned VS Code on a virtual display; then its .vsix, packed and sized
+      - run: xvfb-run -a pnpm --filter @loadmap/vscode test:e2e
+      - run: pnpm --filter @loadmap/vscode package
       # the tarballs in a fresh app, as a stranger installs them
       - run: pnpm verify:pack
 
