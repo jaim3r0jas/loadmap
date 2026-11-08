@@ -14,6 +14,7 @@ const MAX_BYTES = 3_000_000
 const SHIPPED = [
   'dist/extension.cjs',
   'dist/server.cjs',
+  'dist/webview',
   'syntaxes',
   'icons',
   'language-configuration.json',
@@ -36,8 +37,8 @@ rmSync(out, { recursive: true, force: true })
 mkdirSync(join(folder, 'dist'), { recursive: true })
 for (const path of SHIPPED) cpSync(join(root, path), join(folder, path), { recursive: true })
 const { private: _, type: __, scripts: ___, devDependencies: ____, ...shipped } = manifest
-// README.md and LICENSE go in by themselves
-const files = SHIPPED.filter((p) => p !== 'README.md' && p !== 'LICENSE')
+// README.md goes in by itself; a `files` list that leaves LICENSE out leaves it out of the .vsix
+const files = SHIPPED.filter((p) => p !== 'README.md')
 writeFileSync(
   join(folder, 'package.json'),
   `${JSON.stringify({ ...shipped, name: 'loadmap', version, files }, null, 2)}\n`,
@@ -49,6 +50,14 @@ if (!process.argv.includes('--folder')) {
     cwd: folder,
     stdio: 'inherit',
   })
+  const listed = execFileSync('unzip', ['-Z1', vsix], { encoding: 'utf8' }).split('\n')
+  for (const need of [
+    'extension/LICENSE.txt',
+    'extension/readme.md',
+    'extension/dist/server.cjs',
+    'extension/dist/webview/main.js',
+  ])
+    if (!listed.includes(need)) throw new Error(`${vsix} has no ${need}`)
   const size = statSync(vsix).size
   if (size > MAX_BYTES) throw new Error(`${vsix} is ${size} bytes, more than ${MAX_BYTES}`)
   console.log(`${vsix}: ${(size / 1000).toFixed(0)} kB`)

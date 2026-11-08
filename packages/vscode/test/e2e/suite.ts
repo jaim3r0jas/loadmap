@@ -2,17 +2,20 @@
 // through VS Code's own commands, as a user's editor reaches them.
 import { strict as assert } from 'node:assert'
 import { join } from 'node:path'
+import { decodeShare } from '@loadmap/dsl'
 import {
   CompletionItemKind,
   type CompletionList,
   commands,
   DiagnosticSeverity,
   type DocumentSymbol,
+  env,
   extensions,
   type Hover,
   type Location,
   languages,
   type Position,
+  Selection,
   type SignatureHelp,
   type TextDocument,
   type TextEdit,
@@ -163,6 +166,49 @@ test("loadmap.server.path runs a project's own loadmap, and a fixed path brings 
     await config.update('server.path', undefined, true)
   }
   assert.match(await hoverText(), /param pods "Worker pods"/)
+})
+
+/** What the preview shows, from the webview itself (the extension's API). */
+const shown = () =>
+  extensions
+    .getExtension<{ preview: { shown(): Promise<{ boxes: string[]; selected: string | null } | undefined> } }>(
+      'jaim3r0jas.loadmap',
+    )!
+    .exports.preview.shown()
+
+test('the preview draws the file beside it, under its content security policy', async () => {
+  await open('checkout.loadmap')
+  await commands.executeCommand('loadmap.showPreviewToSide')
+  const s = await until(
+    async () => {
+      const x = await shown()
+      return x?.boxes.length ? x : undefined
+    },
+    'boxes drawn',
+    30_000,
+  )
+  assert.deepEqual([...s.boxes].sort(), ['db', 'gateway', 'kafka', 'phones', 'workers'])
+})
+
+test('the cursor in a declaration picks its box; an edit is drawn', async () => {
+  const doc = await open('checkout.loadmap')
+  const editor = window.activeTextEditor!
+  const p = at(doc, 'node db', 6)
+  editor.selection = new Selection(p, p)
+  await until(async () => ((await shown())?.selected === 'db' ? true : undefined), 'db selected')
+  // a box added: the preview draws it after the pause
+  await editor.edit((e) => e.insert(doc.positionAt(doc.getText().length), '\nnode extra "Extra"\n'))
+  await until(async () => ((await shown())?.boxes.includes('extra') ? true : undefined), 'the new box drawn')
+  await commands.executeCommand('workbench.action.files.revert')
+})
+
+test('Copy Share Link puts the text in a link to the live editor', async () => {
+  const doc = await open('checkout.loadmap')
+  await commands.executeCommand('loadmap.copyShareLink')
+  const link = await env.clipboard.readText()
+  assert.ok(link.startsWith('https://jaim3r0jas.github.io/loadmap/editor/#v1.'), link.slice(0, 80))
+  const shared = await decodeShare(link.slice(link.indexOf('#')))
+  assert.ok('source' in shared && shared.source === doc.getText())
 })
 
 export async function run() {
