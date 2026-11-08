@@ -7,14 +7,17 @@ import { compile, formatDiagnostic } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { check } from './check'
 import { fmt } from './fmt'
+import { lsp } from './lsp'
 import { type Chromium, playwright } from './playwright'
 
 export { type CheckOptions, check, github } from './check'
 export { type FmtOptions, fmt } from './fmt'
+export { lsp } from './lsp'
 
 export const USAGE = `loadmap check <file.loadmap>… [--format text|github]
 loadmap fmt <file.loadmap>… [--check] | loadmap fmt -
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
+loadmap lsp
 
 check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
 bound). It exits 1 when a definition has an error or an expectation fails, 0 when everything holds.
@@ -26,6 +29,10 @@ operators; numbers, texts and formulas stay as written. A file with a syntax err
 
   --check               change nothing; exit 1 when a file is not laid out so (for CI)
   -                     read standard input, write standard output
+
+lsp serves the language server protocol over standard input and output, for any editor that speaks it: errors and
+failing expectations, completion, hover with the values at the defaults, signature help, formatting, quick fixes,
+definition, references, rename and an outline. It runs without Playwright.
 
 record opens the page in headless Chromium, finds the loadmap it exposes (expose() from @loadmap/export) and
 records it on a fixed clock, so the same options give the same file. A .loadmap file is drawn by the viewer that
@@ -75,6 +82,8 @@ export async function main(argv: string[], log: (s: string) => void = console.lo
   const [command, ...rest] = argv
   if (command === 'check') return check(rest, { log })
   if (command === 'fmt') return fmt(rest, { log })
+  // --stdio is what most clients pass: standard input and output are the only channel
+  if (command === 'lsp') return lsp()
   if (command !== 'record') {
     log(USAGE)
     return command === '--help' || command === '-h' ? 0 : 2

@@ -205,7 +205,7 @@ createRoot(document.getElementById('root')!).render(<LoadmapSource source={text}
 
 // on its own: a failure above must not hide this one
 try {
-  step('the cli alone, without Playwright: --help, check, and record says how to add it')
+  step('the cli alone, without Playwright: --help, check, lsp, and record says how to add it')
   const cli = join(root, 'cli')
   mkdirSync(cli)
   writeFileSync(
@@ -230,6 +230,13 @@ try {
     }
   }
   try {
+    const caps = await speak(bin, cli)
+    if (!caps?.hoverProvider) fail.push(`loadmap lsp: no capabilities (${JSON.stringify(caps)})`)
+    else console.log('  loadmap lsp: initializes, shuts down, exits 0')
+  } catch (e) {
+    fail.push(`loadmap lsp without Playwright: ${e.message ?? e}`)
+  }
+  try {
     run(bin, ['record', checkout, '--out', join(cli, 'x.png')], cli)
     fail.push('loadmap record ran without Playwright')
   } catch (e) {
@@ -246,6 +253,46 @@ try {
 for (const f of fail) console.error(`✗ ${f}`)
 console.log(fail.length ? `${fail.length} failed` : '✓ the tarballs install, typecheck, build and draw')
 process.exitCode = fail.length ? 1 : 0
+
+/** Starts `loadmap lsp`, asks initialize, then shutdown and exit: resolves to its capabilities once it exits 0. */
+function speak(bin, cwd) {
+  return new Promise((resolve, reject) => {
+    const server = spawn(bin, ['lsp', '--stdio'], { cwd, stdio: ['pipe', 'pipe', 'inherit'] })
+    const timer = setTimeout(() => {
+      server.kill()
+      reject(new Error('no answer in 20 s'))
+    }, 20_000)
+    const send = (m) => {
+      const json = JSON.stringify({ jsonrpc: '2.0', ...m })
+      server.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`)
+    }
+    // Content-Length frames: the first response holds the capabilities
+    let out = Buffer.alloc(0)
+    let caps
+    server.stdout.on('data', (chunk) => {
+      out = Buffer.concat([out, chunk])
+      for (;;) {
+        const end = out.indexOf('\r\n\r\n')
+        if (end < 0) return
+        const length = Number(/Content-Length: (\d+)/i.exec(out.subarray(0, end).toString())?.[1])
+        if (out.length < end + 4 + length) return
+        const m = JSON.parse(out.subarray(end + 4, end + 4 + length).toString('utf8'))
+        out = out.subarray(end + 4 + length)
+        if (m.id === 1 && !caps) {
+          caps = m.result?.capabilities ?? {}
+          send({ id: 2, method: 'shutdown' })
+          send({ method: 'exit' })
+        }
+      }
+    })
+    server.on('exit', (code) => {
+      clearTimeout(timer)
+      if (code === 0) resolve(caps)
+      else reject(new Error(`exit ${code}`))
+    })
+    send({ id: 1, method: 'initialize', params: { processId: null, rootUri: null, capabilities: {} } })
+  })
+}
 
 async function until(url, ms = 60_000) {
   const t0 = Date.now()

@@ -3,6 +3,7 @@
 ```bash
 npx @loadmap/cli check shop.loadmap          # exit 1 when an expect line fails; GitHub annotations under Actions
 npx @loadmap/cli fmt shop.loadmap            # lays it out the one way; --check exits 1 instead (for CI)
+npx @loadmap/cli lsp                         # a language server over stdio, for Neovim, Helix and others
 
 npm i -D @loadmap/cli playwright && npx playwright install chromium   # once, to record
 npx loadmap record shop.loadmap --out shop.gif --caption
@@ -15,5 +16,8 @@ around operators; numbers, texts and formulas as written), `--check` only names 
 standard input. `loadmap record` draws a `.loadmap` (or opens a page that calls `expose()` from `@loadmap/export`) in
 headless Chromium and records it on a fixed clock: the same options give the same file. Only recording needs
 Playwright and its Chromium, installed next to the command (`npx @loadmap/cli record` alone cannot find them);
-`check` and `fmt` run without them. `loadmap --help` lists every option.
+`check`, `fmt` and `lsp` run without them. `loadmap lsp` serves the language server protocol over standard input
+and output: errors and failing expectations, completion, hover with the values at the defaults, signature help,
+formatting, quick fixes, definition, references, rename and an outline; the language guide shows how to set it up in
+Neovim and Helix. `loadmap --help` lists every option.
 Docs: https://jaim3r0jas.github.io/loadmap/ · MIT

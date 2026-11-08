@@ -1,7 +1,7 @@
 {
   "name": "@loadmap/cli",
   "version": "0.22.0",
-  "description": "loadmap check (capacity expectations in CI) and loadmap record (GIF, video, PNG or SVG of a page or a .loadmap file).",
+  "description": "loadmap check (capacity expectations in CI), loadmap fmt, loadmap lsp (a language server for any editor) and loadmap record (GIF, video, PNG or SVG of a page or a .loadmap file).",
   "keywords": [
     "loadmap",
     "cli",
