@@ -1,5 +1,12 @@
 # @loadmap/export
 
+## 0.23.0
+
+### Patch Changes
+
+- @loadmap/react@0.23.0
+  - @loadmap/core@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes
