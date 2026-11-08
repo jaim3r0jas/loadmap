@@ -80,13 +80,19 @@ export interface Scene {
   tiers: SceneTier[]
 }
 
-/** A tier's band, the whole board across the flow, and its label in the margin before the boxes. */
+/** A tier's lane: its band, the whole board across the flow, and a header with its name before the boxes. */
 export interface SceneTier extends Box {
   id: string
-  /** The label, cut short with "…" when the band is narrower. */
-  text: string
-  spot: TextSpot
-  /** Running down, the label reads up the band's left side, ending at the band's top (`spot`). */
+  /** A strip across the band's top running right, a column down its left running down. */
+  head: Box
+  /**
+   * The name in capitals from the band's start: one line, or two where a name is wider than its band (then every
+   * header on the board takes two), the last cut short with "…" past that.
+   */
+  lines: (TextSpot & Fading & { text: string })[]
+  /** The room between letters, in px. */
+  spacing: number
+  /** Running down, each line reads up the band's left side, ending at its spot. */
   vertical: boolean
 }
 
@@ -127,12 +133,16 @@ export function localElk(): Promise<ElkEngine> {
 const T_TITLE = { size: 13, weight: 600 }
 const T_SUB = { size: 11, weight: 400 }
 const T_SMALL = { size: 9, weight: 400 }
-const T_TIER = { size: 11, weight: 600 }
+/** A tier's name: capitals, 0.08em apart. */
+const T_TIER = { size: 11.5, weight: 600 }
+const TIER_SPACING = 0.92
 /** The room ELK leaves around the boxes. */
 const PADDING = 16
-/** The margin a tier's label takes before the boxes, and its distance from the band's edges. */
-const TIER_ROOM = 20
-const TIER_PAD = 8
+/** A tier's header across the flow, one more line where a name needs two, and the name's distance from the band's
+ * start. */
+const HEAD = 30
+const HEAD_LINE = 14
+const TIER_PAD = 10
 const PAD = 8
 const GAP = 6
 const CELL = 9
@@ -651,7 +661,7 @@ async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
       'elk.algorithm': 'layered',
       'elk.direction': frame.direction,
       'elk.edgeRouting': 'ORTHOGONAL',
-      // tier labels stand in the margin before the boxes: above them running right, to their left running down
+      // tier headers stand in the margin before the boxes: above them running right, to their left running down
       'elk.padding': padding(frame),
       ...(frame.tiers?.length ? { 'elk.partitioning.activate': 'true' } : {}),
       'elk.spacing.nodeNode': '28',
@@ -734,8 +744,9 @@ function layerOf(o: number | 'FIRST' | 'LAST' | undefined): Record<string, strin
  * The scene at these values on a laid-out frame: each box at its own size in the middle of its slot, each edge drawn
  * at these values, its ends moved along their last straight run to the sides of the boxes as drawn.
  */
-function place(prep: Prepared, l: Laid, key: string, frame: Frame, view: View, measure: TextMeasure): Scene {
+function place(prep: Prepared, laid: Laid, key: string, frame: Frame, view: View, measure: TextMeasure): Scene {
   const down = prep.direction === 'DOWN'
+  const { l, tiers } = lanes(laid, frame, view, measure)
   const across = (p: [number, number]) => (down ? p[0] : p[1])
   const ends = new Map<string, number[]>()
   const end = (id: string, p: [number, number] | undefined) => {
@@ -802,65 +813,109 @@ function place(prep: Prepared, l: Laid, key: string, frame: Frame, view: View, m
     edges,
     stageNode: prep.stageNode,
     flowFrom: prep.flowFrom,
-    tiers: bands(l, frame, view, measure),
+    tiers,
   }
 }
 
 /**
- * Each tier's band: from halfway to the tier before it to halfway to the tier after, the first and last to the board's
- * edges, the whole board across the flow. Its label sits in the margin ELK leaves before the boxes.
+ * Each tier's lane: its band from halfway to the tier before it to halfway to the tier after, the first and last to
+ * the board's edges, the whole board across the flow; its header in the margin ELK leaves before the boxes. Where a
+ * name needs two lines, every header takes them: the frame moves that much across the flow, the board grows with it.
  */
-function bands(l: Laid, frame: Frame, view: View, measure: TextMeasure): SceneTier[] {
+function lanes(laid: Laid, frame: Frame, view: View, measure: TextMeasure): { l: Laid; tiers: SceneTier[] } {
   const ids = frame.tiers ?? []
-  if (!ids.length) return []
+  if (!ids.length) return { l: laid, tiers: [] }
   const down = frame.direction === 'DOWN'
   const along = (b: Box): [number, number] => (down ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
   const spans = ids.map((_, i) => {
-    const mine = frame.nodes.filter((n) => frame.order?.[n.id] === i).map((n) => along(l.slots.get(n.id)!))
+    const mine = frame.nodes.filter((n) => frame.order?.[n.id] === i).map((n) => along(laid.slots.get(n.id)!))
     return mine.length ? ([Math.min(...mine.map((s) => s[0])), Math.max(...mine.map((s) => s[1]))] as const) : null
   })
-  const length = down ? l.height : l.width
-  const out: SceneTier[] = []
-  ids.forEach((id, i) => {
+  const length = down ? laid.height : laid.width
+  const named = ids.flatMap((id, i) => {
     const span = spans[i]
-    if (!span) return
+    if (!span) return []
     const before = spans.slice(0, i).findLast((x) => x != null)
     const after = spans.slice(i + 1).find((x) => x != null)
     const a = before ? (before[1] + span[0]) / 2 : 0
     const b = after ? (span[1] + after[0]) / 2 : length
     const label = (view.def.tiers ?? {})[id]?.label ?? id
+    return [{ id, a, b, lines: wrap(label.toUpperCase(), b - a - 2 * TIER_PAD, measure) }]
+  })
+  if (!named.length) return { l: laid, tiers: [] }
+  const count = Math.max(...named.map((t) => t.lines.length))
+  const head = HEAD + (count - 1) * HEAD_LINE
+  const l = moved(laid, head - HEAD, down)
+  const tiers = named.map(({ id, a, b, lines }): SceneTier => {
     const box = down ? { x: 0, y: a, w: l.width, h: b - a } : { x: a, y: 0, w: b - a, h: l.height }
-    out.push({
+    return {
       id,
       ...box,
-      text: fit(label, b - a - 2 * TIER_PAD, measure),
-      // at the board's outer edge: clear of a limit's tag above a box and of its glow beside one
-      spot: down
-        ? { x: TIER_PAD + T_TIER.size, y: a + TIER_PAD, ...T_TIER }
-        : { x: a + TIER_PAD, y: TIER_PAD + T_TIER.size, ...T_TIER },
+      head: down ? { x: 0, y: a, w: head, h: b - a } : { x: a, y: 0, w: b - a, h: head },
+      // centred across the header, a capital's middle 0.35em above its baseline; at the board's outer edge, clear
+      // of a limit's tag above a box and of its glow beside one
+      lines: lines.map((text, k) => {
+        const across = head / 2 + (k - (lines.length - 1) / 2) * HEAD_LINE + 0.35 * T_TIER.size
+        return { text, ...T_TIER, ...(down ? { x: across, y: a + TIER_PAD } : { x: a + TIER_PAD, y: across }) }
+      }),
+      spacing: TIER_SPACING,
       vertical: down,
-    })
+    }
   })
-  return out
+  return { l, tiers }
+}
+
+/** The laid-out frame moved `d` across the flow, the board that much larger. */
+function moved(l: Laid, d: number, down: boolean): Laid {
+  if (!d) return l
+  const [dx, dy] = down ? [d, 0] : [0, d]
+  const box = (b: Box): Box => ({ ...b, x: b.x + dx, y: b.y + dy })
+  return {
+    width: l.width + dx,
+    height: l.height + dy,
+    slots: new Map([...l.slots].map(([id, b]) => [id, box(b)])),
+    routes: new Map(
+      [...l.routes].map(([id, r]) => [
+        id,
+        { points: r.points.map(([x, y]): [number, number] => [x + dx, y + dy]), label: r.label && box(r.label) },
+      ]),
+    ),
+  }
+}
+
+/** A tier's name as drawn: in capitals, its letters spaced. */
+const nameWidth = (text: string, measure: TextMeasure) =>
+  measure(text, T_TIER.size, T_TIER.weight) + TIER_SPACING * text.length
+
+/** The name on one line, or on two broken at a space; past that, each line cut short with "…". */
+function wrap(name: string, room: number, measure: TextMeasure): string[] {
+  const words = name.trim().split(/\s+/)
+  const whole = words.join(' ')
+  if (words.length < 2 || nameWidth(whole, measure) <= room) return [fit(whole, room, measure)]
+  // the most words that fit the first line, or the first alone
+  let n = words.length - 1
+  while (n > 1 && nameWidth(words.slice(0, n).join(' '), measure) > room) n--
+  const lines = [words.slice(0, n), words.slice(n)].map((w) => fit(w.join(' '), room, measure)).filter(Boolean)
+  return lines.length ? lines : ['']
 }
 
 /** The text cut short with "…" to fit `room`. */
 function fit(text: string, room: number, measure: TextMeasure): string {
   const cut = (n: number) => `${text.slice(0, n).trimEnd()}…`
-  if (measure(text, T_TIER.size, T_TIER.weight) <= room) return text
+  if (nameWidth(text, measure) <= room) return text
   // the longest start that fits, found by halves
   let [lo, hi] = [0, text.length - 1]
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2)
-    if (measure(cut(mid), T_TIER.size, T_TIER.weight) <= room) lo = mid
+    if (nameWidth(cut(mid), measure) <= room) lo = mid
     else hi = mid - 1
   }
   return lo > 0 ? cut(lo) : ''
 }
 
-/** The room around the boxes, and the margin before them that tier labels take. */
+/** The room around the boxes, and the margin before them that a tier's header takes (one line: two move the frame). */
 function padding(frame: Frame): string {
-  const room = frame.tiers?.length ? TIER_ROOM : 0
+  const room = frame.tiers?.length ? HEAD : 0
   const [top, left] = frame.direction === 'DOWN' ? [PADDING, PADDING + room] : [PADDING + room, PADDING]
   return `[top=${top},left=${left},bottom=${PADDING},right=${PADDING}]`
 }

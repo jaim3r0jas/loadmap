@@ -1,5 +1,4 @@
-import type { Box, Scene, SceneNode, SceneTier } from './layout'
-import { estimateText } from './text'
+import type { Box, Scene, SceneNode } from './layout'
 
 export type Point = [number, number]
 
@@ -11,11 +10,11 @@ export interface Collision {
 const overlap = (p: Box, q: Box, slack: number) =>
   p.x < q.x + q.w - slack && q.x < p.x + p.w - slack && p.y < q.y + q.h - slack && q.y < p.y + p.h - slack
 
-/** Every edge or tier label that overlaps another label or a node. An empty list is the layout's promise. */
+/** Every edge label or tier header that overlaps another label or a node. An empty list is the layout's promise. */
 export function collisions(scene: Scene, slack = 0.5): Collision[] {
   const labels = [
     ...scene.edges.filter((e) => e.label).map((e) => ({ id: `label ${e.id} (${e.from}→${e.to})`, box: e.label! })),
-    ...scene.tiers.map((t) => ({ id: `tier ${t.id}`, box: tierLabel(t) })),
+    ...scene.tiers.map((t) => ({ id: `tier ${t.id}`, box: t.head })),
   ]
   const out: Collision[] = []
   labels.forEach((l, i) => {
@@ -27,15 +26,6 @@ export function collisions(scene: Scene, slack = 0.5): Collision[] {
       if (overlap(n, m, slack)) out.push({ a: `node ${n.id}`, b: `node ${m.id}` })
   })
   return out
-}
-
-/** Where a tier's label is drawn: along the band from its spot, or up from it running down. */
-function tierLabel(t: SceneTier): Box {
-  const w = estimateText(t.text, t.spot.size, t.spot.weight)
-  const h = t.spot.size + 2
-  return t.vertical
-    ? { x: t.spot.x - t.spot.size, y: t.spot.y, w: h, h: w }
-    : { x: t.spot.x, y: t.spot.y - t.spot.size, w, h }
 }
 
 const centre = (b: Box): Point => [b.x + b.w / 2, b.y + b.h / 2]

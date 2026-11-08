@@ -80,7 +80,16 @@ export function morph(from: Scene, to: Scene): (t: number) => Scene {
     // a band moves with the boxes it holds
     const tiers = to.tiers.map((t) => {
       const a = from.tiers.find((x) => x.id === t.id)
-      return a ? { ...box(a, t, k), spot: spot(a.spot, t.spot, k) } : t
+      if (!a) return t
+      // a line that keeps its text moves; one that changes it (a name now broken in two, or whole again) fades
+      const lines = [
+        ...t.lines.map((x, i) => {
+          const y = a.lines[i]
+          return y?.text === x.text ? { ...x, ...spot(y, x, k), ...stays(y, f) } : { ...x, fade: f.enter }
+        }),
+        ...a.lines.filter((y, i) => y.text !== t.lines[i]?.text).map((y) => goes(y, f)),
+      ]
+      return { ...box(a, t, k), head: box(a.head, t.head, k), lines }
     })
     return {
       ...to,

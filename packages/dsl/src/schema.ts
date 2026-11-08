@@ -467,7 +467,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   tier: {
-    doc: 'A band across the flow (edge, app, data) drawn behind its boxes. Tiers run in the order they are declared.',
+    doc: 'A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.',
     example: 'tier data "Data"',
     args: [
       { name: 'id', kind: 'id' },
