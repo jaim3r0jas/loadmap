@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Engine } from './engine'
 import { Viewer } from './viewer'
-import { bring, free, type Insets, panBy, towards, type Viewpoint, zoomAt } from './viewpoint'
+import { bring, free, type Insets, panBy, type Viewpoint, zoomAt } from './viewpoint'
 
 /**
  * Injected with the code that uses it: a board the reader zooms keeps its own shape, the SVG filling it whatever part of
@@ -40,49 +40,6 @@ const SLOP = { mouse: 4, other: 8 }
 export const ZOOM_STEP = 1.25
 /** Pixels an arrow key pans, and with Shift. */
 const ARROW = { step: 40, shift: 200 }
-/** Seconds a jump from a button or a key takes; reduced motion cuts. */
-const FLIGHT = 0.2
-
-// one flight per board: a new move of the reader's takes over from it
-const flights = new WeakMap<Viewer, number>()
-
-function land(viewer: Viewer): void {
-  const raf = flights.get(viewer)
-  if (raf != null) cancelAnimationFrame(raf)
-  flights.delete(viewer)
-}
-
-/**
- * Moves the reader's view to `to` (null: fitted). From a button or a key it flies there, on the wall clock (a reader's
- * view is never in a recording); from a drag or the wheel, and with reduced motion, it is there at once.
- */
-export function goTo(viewer: Viewer, to: Viewpoint | null, fly: boolean): void {
-  land(viewer)
-  const from = viewer.shownView()
-  const target = to ?? viewer.fit()
-  if (!fly || viewer.engine.reducedMotion || !from || !target) {
-    viewer.setView(to)
-    return
-  }
-  // the reader takes the view from a story playing now; one that starts during the flight takes it back
-  if (viewer.engine.playing) viewer.setView(from)
-  const t0 = performance.now()
-  const frame = (now: number) => {
-    if (viewer.engine.playing) {
-      flights.delete(viewer)
-      return
-    }
-    const t = (now - t0) / 1000 / FLIGHT
-    if (t >= 1) {
-      flights.delete(viewer)
-      viewer.setView(to)
-      return
-    }
-    viewer.setView(towards(from, target, t))
-    flights.set(viewer, requestAnimationFrame(frame))
-  }
-  flights.set(viewer, requestAnimationFrame(frame))
-}
 
 /** Zooms by `factor` about the middle of the free part of the board. */
 export function zoomBy(viewer: Viewer, factor: number): void {
@@ -92,7 +49,7 @@ export function zoomBy(viewer: Viewer, factor: number): void {
   if (!v || !vp || !r) return
   const f = free(vp)
   const k = Math.min(r.max, Math.max(r.min, v.k * factor))
-  goTo(viewer, zoomAt(v, vp, f.x + f.w / 2, f.y + f.h / 2, k / v.k), true)
+  viewer.go(zoomAt(v, vp, f.x + f.w / 2, f.y + f.h / 2, k / v.k), true)
 }
 
 /** The scene at one board pixel a scene unit, about the middle of the free part. */
@@ -128,7 +85,7 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
     } catch {}
   }
   const move = (to: Viewpoint) => {
-    land(viewer)
+    viewer.land()
     viewer.setView(to)
   }
   // one finger scrolls a page until the reader has zoomed: then it pans, as it always does on a board of its own. Two
@@ -219,8 +176,8 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
     const pan = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key]
     if (e.key === '+' || e.key === '=') zoomBy(viewer, ZOOM_STEP)
     else if (e.key === '-' || e.key === '_') zoomBy(viewer, 1 / ZOOM_STEP)
-    else if (e.key === '0') goTo(viewer, null, true)
-    else if (pan) goTo(viewer, panBy(v, pan[0]!, pan[1]!), false)
+    else if (e.key === '0') viewer.go(null, true)
+    else if (pan) viewer.go(panBy(v, pan[0]!, pan[1]!), false)
     else return
     e.preventDefault()
   }
@@ -233,7 +190,7 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
     const v = viewer.shownView()
     if (!n || !v || !viewer.viewport || viewer.engine.playing) return
     const to = bring(v, viewer.viewport, n)
-    if (to) goTo(viewer, to, true)
+    if (to) viewer.go(to, true)
   }
 
   touch()
@@ -247,7 +204,7 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
   board.addEventListener('keydown', key)
   board.addEventListener('focusin', focus)
   return () => {
-    land(viewer)
+    viewer.land()
     off()
     for (const a of ['tabindex', 'role', 'aria-label']) board.removeAttribute(a)
     board.style.removeProperty('touch-action')
@@ -361,7 +318,7 @@ function ZoomControls({ engine }: { engine: Engine }) {
       >
         +
       </button>
-      <button type="button" className="lm-btn" aria-keyshortcuts="0" onClick={() => goTo(viewer, null, true)}>
+      <button type="button" className="lm-btn" aria-keyshortcuts="0" onClick={() => viewer.go(null, true)}>
         Fit
       </button>
     </div>

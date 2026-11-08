@@ -90,6 +90,12 @@ export interface LoadmapHandle {
    * length in seconds. Picking a step or a value stops it.
    */
   playStory(): number
+  /**
+   * On a board the reader pans and zooms, brings these boxes (node ids) into view, flying there: at the same zoom,
+   * further out only as far as it takes to show them all. Nothing when they show already, while the diagram is fitted
+   * or the story plays.
+   */
+  show(ids: readonly string[]): void
   /** The drawn board, for capturing frames: while the structure moves, `scene` is the frame drawn. */
   board(): { svg: SVGSVGElement; canvas: HTMLCanvasElement; scene: Scene } | null
   engine: Engine
@@ -326,6 +332,7 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
       engine.paused = false
     },
     values: () => engine.ev.values,
+    show: (ids) => engine.viewer?.show(ids),
     setValues: (v) => lm.setValues(v),
     setStoryStep: (i) => lm.setStep(i),
     storyStep: () => engine.storyStep,

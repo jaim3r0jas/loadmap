@@ -49,6 +49,7 @@ import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
+import { changedBoxes, type Drawn, type Range } from './track'
 
 /** What a page can drive from outside. */
 export interface LoadmapEditorHandle {
@@ -115,6 +116,14 @@ export interface LoadmapEditorProps {
   /** The reader showed or hid the code; a page can keep it. */
   onLayout?: (layout: EditorLayout) => void
   /**
+   * Track live changes: once an edit is drawn and the text rests a moment, the board brings the boxes it changed into
+   * view (at the same zoom, further out only as far as it takes) and marks them. Off, the view stays where the reader
+   * left it. Default off.
+   */
+  track?: boolean
+  /** The reader turned tracking on or off; a page can keep it. */
+  onTrack?: (on: boolean) => void
+  /**
    * The starters in the New menu; false leaves them out. Default: the ten that come with the editor (`TEMPLATES`),
    * the list loaded when the menu first opens, each one's text when the reader picks it.
    */
@@ -162,6 +171,8 @@ export function LoadmapEditor({
   panelWidth,
   onPanelWidth,
   onLayout,
+  track: initialTrack = false,
+  onTrack,
   fileName,
   templates,
   layout: initialLayout = 'code',
@@ -180,6 +191,27 @@ export function LoadmapEditor({
   const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
   // setSource starts the new text from its own defaults: the next compile must not carry the old values over
   const fresh = useRef(false)
+  const [track, setTrackState] = useState(initialTrack)
+  const tracking = useRef(track)
+  tracking.current = track
+  const setTrack = (on: boolean) => {
+    setTrackState(on)
+    onTrack?.(on)
+    before.current = null
+    edits.current = []
+  }
+  // for tracking: what the board drew before the edits it has not followed yet, where they changed the text (in its
+  // offsets now), and when the reader last typed
+  const before = useRef<Drawn | null>(null)
+  const edits = useRef<Range[]>([])
+  const typed = useRef(0)
+  // the boxes marked last, and when the mark goes: a new mark takes over from it
+  const marked = useRef<{ els: Element[]; timer: number }>({ els: [], timer: 0 })
+  const [unmark] = useState(() => () => {
+    clearTimeout(marked.current.timer)
+    for (const el of marked.current.els) el.removeAttribute('data-changed')
+  })
+  useEffect(() => unmark, [unmark])
   // the text last loaded whole (the initial one or a template): replacing anything else asks first
   const loaded = useRef(initial)
   const latest = useRef({ onChange, functions })
@@ -248,6 +280,11 @@ export function LoadmapEditor({
     const whole = fresh.current
     if (whole) fresh.current = !result.definition
     else if (h) shown.current = h.values()
+    const e = h?.engine
+    if (whole) {
+      before.current = null
+      edits.current = []
+    } else if (tracking.current && !before.current && e?.scene) before.current = { scene: e.scene, ev: e.ev }
     setState((prev) => {
       if (prev.source === source && prev.result === result) return prev
       if (!result.definition) return { ...prev, source, result }
@@ -294,6 +331,17 @@ export function LoadmapEditor({
           }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) {
+              typed.current = performance.now()
+              // what tracking follows: an edit's own lines, never what Format re-indents
+              if (tracking.current) {
+                const moved = edits.current.map((r) => ({
+                  from: u.changes.mapPos(r.from, -1),
+                  to: u.changes.mapPos(r.to, 1),
+                }))
+                if (!u.transactions.some((t) => t.isUserEvent('format')))
+                  u.changes.iterChangedRanges((_a, _b, from, to) => moved.push({ from, to }))
+                edits.current = moved
+              }
               const doc = u.state.doc.toString()
               // only the inspector reads it: typing in the code layout re-renders nothing
               if (shownLayout.current === 'reader') setText(doc)
@@ -318,6 +366,43 @@ export function LoadmapEditor({
   }, [])
 
   const def = state.good
+
+  // tracking: once a new version is drawn, its move done and the text at rest a moment, the board shows what it
+  // changed. A version that comes meanwhile takes over, from the same drawing before
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each version drawn; the rest is read through refs
+  useEffect(() => {
+    const was = before.current
+    const h = preview.current
+    if (!was || !h) return
+    let live = true
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+    ;(async () => {
+      try {
+        await h.ready()
+      } catch {
+        return
+      }
+      const e = h.engine
+      while (live && (e.frame !== e.scene || performance.now() - typed.current < REST)) await wait(100)
+      const text = view.current?.state.doc.toString()
+      if (!live || !e.scene || text == null || !tracking.current) return
+      const ids = changedBoxes(was, { scene: e.scene, ev: e.ev }, text, edits.current, symbols.current)
+      before.current = null
+      edits.current = []
+      h.show(ids)
+      unmark()
+      const els = [...(root.current?.querySelectorAll('.lme-preview [data-node]') ?? [])].filter((el) =>
+        ids.includes(el.getAttribute('data-node')!),
+      )
+      // read between, so a box still marked glows again from the start
+      for (const el of els) el.getBoundingClientRect()
+      for (const el of els) el.setAttribute('data-changed', '')
+      marked.current = { els, timer: window.setTimeout(unmark, MARK) }
+    })()
+    return () => {
+      live = false
+    }
+  }, [state.good])
 
   /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
   const replace = (source: string) => {
@@ -384,7 +469,10 @@ export function LoadmapEditor({
       return false
     }
     if (r.text !== doc) {
-      v.dispatch({ changes: between(doc, r.text), annotations: isolateHistory.of('full') })
+      v.dispatch({
+        changes: between(doc, r.text),
+        annotations: [isolateHistory.of('full'), Transaction.userEvent.of('format')],
+      })
     }
     setNote('Formatted')
     return true
@@ -789,6 +877,15 @@ export function LoadmapEditor({
                 )
               }}
             >
+              <button
+                type="button"
+                className="lm-btn"
+                aria-pressed={track}
+                onClick={() => setTrack(!track)}
+                title="Bring what each edit changes into view"
+              >
+                Track live changes
+              </button>
               <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
                 Format
               </button>
@@ -1035,6 +1132,9 @@ function usePhoneTyping(phone: boolean, root: RefObject<HTMLDivElement | null>):
   return typing
 }
 
+/** Milliseconds the text rests before tracking shows what an edit changed, and the boxes stay marked. */
+const REST = 500
+const MARK = 1600
 const MAC = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform)
 const Starters = later(() => import('./Starters'), 'The templates did not load: reload the page.')
 const Actions = later(() => import('./Actions'))

@@ -130,13 +130,18 @@ export function cameraOf(v: Viewpoint, scene: { width: number; height: number },
   return { x: c.x - w / 2, y: c.y - h / 2, w, h }
 }
 
-/** The view that brings `r` (a box) into the middle of the free part at the same scale; null when it shows whole. */
-export function bring(v: Viewpoint, vp: Viewport, r: Rect): Viewpoint | null {
+/** Whether `r` (a part of the scene) shows whole in the free part. */
+export function seen(v: Viewpoint, vp: Viewport, r: Rect): boolean {
   const f = free(vp)
   const left = vp.w / 2 + (r.x - v.x) * v.k
   const top = vp.h / 2 + (r.y - v.y) * v.k
-  const inside = left >= f.x && top >= f.y && left + r.w * v.k <= f.x + f.w && top + r.h * v.k <= f.y + f.h
-  return inside ? null : at(r.x + r.w / 2, r.y + r.h / 2, f.x + f.w / 2, f.y + f.h / 2, v.k, vp)
+  return left >= f.x && top >= f.y && left + r.w * v.k <= f.x + f.w && top + r.h * v.k <= f.y + f.h
+}
+
+/** The view that brings `r` (a box) into the middle of the free part at the same scale; null when it shows whole. */
+export function bring(v: Viewpoint, vp: Viewport, r: Rect): Viewpoint | null {
+  const f = free(vp)
+  return seen(v, vp, r) ? null : at(r.x + r.w / 2, r.y + r.h / 2, f.x + f.w / 2, f.y + f.h / 2, v.k, vp)
 }
 
 /**
