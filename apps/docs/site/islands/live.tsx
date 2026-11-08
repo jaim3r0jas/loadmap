@@ -1,4 +1,5 @@
-// A ```loadmap live fence: the definition drawn, its source under it, and a link that opens it in the editor.
+// A ```loadmap live fence: the definition drawn (the reader pans and zooms it), its source under it, and a link that
+// opens it in the editor.
 import { compile, encodeShare, formatDiagnostic } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap } from '@loadmap/react'
@@ -34,5 +35,5 @@ export function mount(el: HTMLElement) {
       details.before(p)
     })
   const { model, view, options } = r.definition
-  createRoot(host).render(<Loadmap model={model} view={view} theme="inherit" {...pageOptions(options)} />)
+  createRoot(host).render(<Loadmap model={model} view={view} theme="inherit" zoom {...pageOptions(options)} />)
 }

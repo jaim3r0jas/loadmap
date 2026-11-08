@@ -1,4 +1,5 @@
-// The templates: a card each, the picked one drawn below, and a link that opens it in the editor.
+// The templates: a card each, the picked one drawn below (the reader pans and zooms it), and a link that opens it in
+// the editor.
 import { compile } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
 import { TEMPLATES } from '@loadmap/editor/templates'
@@ -27,7 +28,9 @@ function Gallery({ editor }: { editor: string }) {
           Open “{t.title}” in the editor
         </a>
       </p>
-      {def && <Loadmap key={t.id} model={def.model} view={def.view} theme="inherit" {...pageOptions(def.options)} />}
+      {def && (
+        <Loadmap key={t.id} model={def.model} view={def.view} theme="inherit" zoom {...pageOptions(def.options)} />
+      )}
     </>
   )
 }

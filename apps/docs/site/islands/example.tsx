@@ -1,5 +1,6 @@
 // An example from the repository, as TypeScript draws it, with the buttons that export it and a link that opens its
-// .loadmap in the editor at the values the reader set.
+// .loadmap in the editor at the values the reader set. The reader pans and zooms it; data-headroom="false" leaves out
+// the headroom chart.
 import type { ParamValue } from '@loadmap/core'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
 import { Checkout, checkoutSource } from '@loadmap/example-checkout'
@@ -12,7 +13,17 @@ const EXAMPLES = { checkout: Checkout, alerts: Alerts } as const
 const SOURCES = { checkout: checkoutSource, alerts: alertsSource } as const
 type Name = keyof typeof EXAMPLES
 
-function Example({ name, exports, editor }: { name: Name; exports: boolean; editor?: string }) {
+function Example({
+  name,
+  exports,
+  editor,
+  headroom,
+}: {
+  name: Name
+  exports: boolean
+  editor?: string
+  headroom: boolean
+}) {
   const handle = useRef<LoadmapHandle>(null)
   const [get] = useState(() => () => handle.current)
   const { png, poster, svg, record } = useRecorder(name, get)
@@ -57,7 +68,7 @@ function Example({ name, exports, editor }: { name: Name; exports: boolean; edit
           </button>
         </div>
       )}
-      <Shown ref={handle} theme="inherit" />
+      <Shown ref={handle} theme="inherit" zoom headroom={headroom} />
     </>
   )
 }
@@ -67,7 +78,12 @@ export function mount(el: HTMLElement) {
   if (!(name in EXAMPLES)) throw new Error(`no example "${name}"`)
   createRoot(el).render(
     <StrictMode>
-      <Example name={name} exports={el.dataset.exports !== 'false'} editor={el.dataset.editor} />
+      <Example
+        name={name}
+        exports={el.dataset.exports !== 'false'}
+        editor={el.dataset.editor}
+        headroom={el.dataset.headroom !== 'false'}
+      />
     </StrictMode>,
   )
 }
