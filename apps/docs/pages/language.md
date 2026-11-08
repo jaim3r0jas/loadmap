@@ -1,3 +1,4 @@
-@include(docs/dsl.md, "# The .loadmap language", "## Reference")
+@include(docs/dsl.md, "# The .loadmap language", "## In your editor")
 
-Every statement and property is listed in [the reference](/reference/).
+Write it in VS Code, Neovim, Helix or any editor with a language server: [In your editor](/in-your-editor/). Every
+statement and property is listed in [the reference](/reference/).

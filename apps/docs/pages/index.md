@@ -23,5 +23,5 @@ chart, the exports, and the promises it keeps.
 npm i @loadmap/react react react-dom
 ```
 
-[Getting started](/getting-started/) has a model on your page in a few minutes. You can also write a model as text
-in [the editor](/editor/), or start from [a template](/templates/).
+[Getting started](/getting-started/) has a model on your page in a few minutes. You can also write a model as text,
+in [the editor](/editor/) or [in your own](/in-your-editor/), or start from [a template](/templates/).

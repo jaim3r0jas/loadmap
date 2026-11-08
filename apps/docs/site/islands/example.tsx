@@ -1,5 +1,5 @@
 // An example from the repository, as TypeScript draws it, with the buttons that export it and a link that opens its
-// .loadmap in the editor at the values the reader set. The reader pans and zooms it; data-headroom="false" leaves out
+// .loadmap in the editor at the values the reader set, or downloads it. The reader pans and zooms it; data-headroom="false" leaves out
 // the headroom chart.
 import type { ParamValue } from '@loadmap/core'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
@@ -54,6 +54,14 @@ function Example({
               Edit in the editor ⤢
             </a>
           )}
+          {/* the text to open in the reader's own editor */}
+          <a
+            className="button"
+            download={`${name}.loadmap`}
+            href={`data:text/plain;charset=utf-8,${encodeURIComponent(SOURCES[name])}`}
+          >
+            {name}.loadmap ↓
+          </a>
           <button type="button" onClick={png}>
             PNG
           </button>

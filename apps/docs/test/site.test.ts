@@ -21,7 +21,8 @@ const DOCS = PAGES.filter((p) => !p.frame)
 function expectLinks(html: string, route: string, label: string) {
   // data-editor: where an island's Edit link leads
   for (const [, href] of html.matchAll(/(?:href|data-editor)="([^"]+)"/g)) {
-    if (/^(https?:|mailto:|\/assets\/)/.test(href!)) continue
+    // vscode: opens the extension's page in a desktop VS Code
+    if (/^(https?:|mailto:|vscode:|\/assets\/)/.test(href!)) continue
     if (href!.startsWith('#')) expect(html, `${label} links to ${href}`).toContain(`id="${href!.slice(1)}"`)
     else {
       const path = routeOf(href!, route).replace(/#.*$/, '')
@@ -49,6 +50,10 @@ describe('the pages', () => {
     const html = (route: string) => rendered.find((r) => r.page.route === route)!.html
     expect(html('language')).toContain('id="boxes-stages-and-components"')
     expect(html('language')).not.toContain('id="the-top-level"')
+    // the setup for editors has a page of its own, from the same lines
+    expect(html('language')).not.toContain('vim.lsp.config')
+    expect(html('in-your-editor')).toContain('vim.lsp.config')
+    expect(html('in-your-editor')).toContain('href="vscode:extension/jaim3r0jas.loadmap"')
     for (const statement of ['flow', 'node', 'scenario', 'expect', 'step', 'fanout'])
       expect(html('reference')).toContain(`<h3 id="${statement}">${statement}</h3>`)
   })
@@ -613,6 +618,11 @@ describe('the built site', () => {
 
       await page.goto(`${url}examples/checkout/`)
       await page.waitForSelector('[data-node]')
+      // the text itself, to open in the reader's own editor
+      const download = page.getByRole('link', { name: 'checkout.loadmap ↓' })
+      expect(await download.getAttribute('download')).toBe('checkout.loadmap')
+      const text = decodeURIComponent((await download.getAttribute('href'))!.replace(/^data:[^,]*,/, ''))
+      expect(text).toBe(readFileSync(join(import.meta.dirname, '../../../examples/checkout/checkout.loadmap'), 'utf8'))
       await page
         .getByRole('button', { name: /^Black Friday/ })
         .first()

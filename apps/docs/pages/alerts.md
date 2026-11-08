@@ -9,5 +9,7 @@ into the brokers: drag, pinch or Ctrl-scroll.
 
 <div class="island" data-island="example" data-name="alerts" data-editor="../../editor/"></div>
 
-The same model as text is
-[`alerts.loadmap`](https://github.com/jaim3r0jas/loadmap/blob/main/examples/alerts/alerts.loadmap).
+**alerts.loadmap ↓** is the same model as text
+([on GitHub](https://github.com/jaim3r0jas/loadmap/blob/main/examples/alerts/alerts.loadmap)). Open it in VS Code
+with the loadmap extension for a live preview beside the text, or in Neovim or Helix:
+[In your editor](/in-your-editor/).
