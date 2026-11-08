@@ -693,8 +693,15 @@ describe('the built site', () => {
     try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
       await page.goto(`${url}concepts/`)
-      const title = await page.locator('.island .lm h2').first().textContent()
-      await page.locator('.island .edit a').first().click()
+      // the page has several fences, drawn and linked in any order: every one linked first, then a title and a link
+      // from the same one
+      await page.waitForFunction(() => {
+        const fences = document.querySelectorAll('[data-island="loadmap"]')
+        return [...fences].every((f) => f.querySelector('.edit a') && f.querySelector('.lm h2'))
+      })
+      const fence = page.locator('[data-island="loadmap"]').first()
+      const title = await fence.locator('.lm h2').textContent()
+      await fence.locator('.edit a').click()
       await page.waitForURL(/\/editor\/\?code#v1\./)
       await page.waitForSelector('[data-node]')
       expect(await page.locator('.lme-title').first().textContent()).toBe(title)
