@@ -73,7 +73,12 @@ describe('the pages', () => {
   it('tell the dev server which repository files they include', () => {
     const files = included().map((f) => f.slice(f.lastIndexOf('/', f.lastIndexOf('/') - 1) + 1))
     // and the package.json %VERSION% comes from
-    expect(files.sort()).toEqual(['docs/dsl.md', 'react/README.md', 'react/package.json'])
+    expect(files.sort()).toEqual(['checkout/checkout.loadmap', 'docs/dsl.md', 'react/README.md', 'react/package.json'])
+  })
+
+  it("show checkout's promises as its text writes them", () => {
+    const html = rendered.find((r) => r.page.route === 'examples/checkout')!.html
+    expect(html).toContain('expect &quot;Today keeps 7×&quot; { target: 7 }\nexpect &quot;Proposed keeps 14×&quot;')
   })
 
   it('find the site root from any depth', () => {
@@ -175,7 +180,10 @@ describe('the built site', () => {
     const browser = await chromium.launch()
     try {
       for (const [route, nodes] of [
+        ['', 5],
         ['examples/checkout/', 5],
+        ['examples/alerts/', 10],
+        ['templates/', 4],
         ['getting-started/', 3],
         ['concepts/', 3],
         ['editor/', 5],
@@ -191,6 +199,14 @@ describe('the built site', () => {
         expect(await page.evaluate(() => document.querySelectorAll('[data-node]').length), route).toBe(nodes)
         if (route.startsWith('examples'))
           expect(await page.evaluate(() => Boolean((globalThis as { __loadmap?: object }).__loadmap))).toBe(true)
+        // every board of the docs pans and zooms, but the quick start's, which is the react README's code; the
+        // landing board leaves its headroom chart to the example's page
+        if (route !== 'editor/') {
+          const zoom = page.locator('.island .lm-zoom')
+          if (route === 'getting-started/') expect(await zoom.count(), route).toBe(0)
+          else await zoom.first().waitFor({ timeout: 10_000 })
+          expect(await page.locator('.island [data-panel="headroom"]').count(), route).toBe(route === '' ? 0 : 1)
+        }
         expect(errors, route).toEqual([])
         await page.close()
       }
