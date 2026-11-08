@@ -1,5 +1,13 @@
 # @loadmap/export
 
+## 0.26.0
+
+### Patch Changes
+
+- Updated dependencies [e4884f9]
+  - @loadmap/react@0.26.0
+  - @loadmap/core@0.26.0
+
 ## 0.25.0
 
 ### Patch Changes

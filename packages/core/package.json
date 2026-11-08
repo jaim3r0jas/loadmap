@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/core",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Capacity models in plain TypeScript: params, flows, components with capacities that say where they came from, limits, verdict, scenarios, growth and checks.",
   "keywords": [
     "loadmap",
