@@ -1,6 +1,9 @@
-import { commands, type ExtensionContext, window, workspace } from 'vscode'
+import { encodeShare } from '@loadmap/dsl'
+import { commands, type ExtensionContext, env, Uri, window, workspace } from 'vscode'
 import { LanguageClient, type ServerOptions, TransportKind } from 'vscode-languageclient/node'
 import { launch } from './launch'
+import { editorUrl } from './links'
+import { Preview } from './preview'
 
 let client: LanguageClient | undefined
 /** Starts and restarts run one after another: two at once would leave a server nobody stops. */
@@ -8,7 +11,8 @@ let queue: Promise<void> = Promise.resolve()
 
 /**
  * The language server for `.loadmap` files: the bundled `loadmap lsp` (or the command `loadmap.server.path` names),
- * started when the first one opens. A new path, or trust given to the workspace, starts it again.
+ * started when the first one opens. A new path, or trust given to the workspace, starts it again. The preview and the
+ * links to the docs' editor.
  */
 export async function activate(context: ExtensionContext) {
   const restart = () => {
@@ -30,7 +34,51 @@ export async function activate(context: ExtensionContext) {
     }),
     workspace.onDidGrantWorkspaceTrust(() => void restart()),
   )
+  const preview = new Preview(context)
+  const loadmapEditor = () => {
+    const e = window.activeTextEditor
+    if (e?.document.languageId === 'loadmap') return e.document
+    void window.showInformationMessage('loadmap: open a .loadmap file first.')
+    return undefined
+  }
+  /** The docs' editor with the text (and the preview's values) in the link's hash, which never reaches a server. */
+  const link = async () => {
+    const s = await preview.shared()
+    if (!s) {
+      void window.showInformationMessage('loadmap: open a .loadmap file first.')
+      return undefined
+    }
+    const config = workspace.getConfiguration('loadmap')
+    const set = config.get<string>('editorUrl')
+    const url = editorUrl(set)
+    if (set && !url)
+      void window.showWarningMessage("loadmap.editorUrl is not an http(s) link: the docs' own editor opens.")
+    const base = url ?? editorUrl(config.inspect<string>('editorUrl')?.defaultValue)!
+    return `${base}#${await encodeShare(s.doc.getText(), s.values)}`
+  }
+  context.subscriptions.push(
+    commands.registerCommand('loadmap.showPreview', () => {
+      const doc = loadmapEditor()
+      if (doc) preview.show(doc, false)
+    }),
+    commands.registerCommand('loadmap.showPreviewToSide', () => {
+      const doc = loadmapEditor()
+      if (doc) preview.show(doc, true)
+    }),
+    commands.registerCommand('loadmap.copyShareLink', async () => {
+      const url = await link()
+      if (!url) return
+      await env.clipboard.writeText(url)
+      void window.showInformationMessage('loadmap: the link is on the clipboard. It holds the whole text.')
+    }),
+    commands.registerCommand('loadmap.openInEditor', async () => {
+      const url = await link()
+      if (url) await env.openExternal(Uri.parse(url))
+    }),
+  )
   await restart()
+  // for tests and other extensions: what the preview shows
+  return { preview: { shown: () => preview.shown() } }
 }
 
 async function start(context: ExtensionContext) {

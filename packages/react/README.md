@@ -80,7 +80,9 @@ its width.
 
 A `.loadmap` text draws with `<LoadmapSource source={text} name="shop.loadmap" />` from `@loadmap/react/source`: it
 compiles when the text changes, passes on the options the definition declares (your props win), and while the text
-does not compile shows its diagnostics as `loadmap check` prints them. It is the one entry that loads the compiler.
+does not compile shows its diagnostics as `loadmap check` prints them. An edit keeps the values the board shows (the
+load, the scenario, the controls) where they still fit; `initial` is for the first version, and a `key` per file
+starts another file from its own defaults. It is the one entry that loads the compiler.
 
 A scenario, a story step or a control that changes the structure (more pods, more brokers) moves the diagram to it:
 what stays moves to its new place, what is new fades in. `transition={1.2}` sets the seconds it takes (default 0.8);

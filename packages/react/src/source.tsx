@@ -1,7 +1,7 @@
-import { type CompileOptions, compile, type Definition, formatDiagnostic } from '@loadmap/dsl'
+import { type CompileOptions, compile, type Definition, formatDiagnostic, sharedValues } from '@loadmap/dsl'
 import { fingerprint, pageOptions } from '@loadmap/dsl/internal'
-import { useEffect, useMemo, useRef } from 'react'
-import { Loadmap, type LoadmapProps, type Theme, usePageTheme } from './Loadmap'
+import { type Ref, useCallback, useEffect, useMemo, useRef } from 'react'
+import { Loadmap, type LoadmapHandle, type LoadmapProps, type Theme, usePageTheme } from './Loadmap'
 import { injectStyles } from './styles'
 
 export interface LoadmapSourceProps extends Omit<LoadmapProps<any>, 'model' | 'view'> {
@@ -16,7 +16,9 @@ export interface LoadmapSourceProps extends Omit<LoadmapProps<any>, 'model' | 'v
 /**
  * A `.loadmap` text drawn as `<Loadmap>`, with the options it declares (the page's props win; its `assumptions` come
  * first). While the text does not compile: its diagnostics, as `loadmap check` prints them, above the last version
- * that did. A separate entry: a page built from code never loads the compiler.
+ * that did. A new version keeps the values the board shows (the load, a scenario's, the controls) where they still
+ * fit it, as the editor does; `initial` is for the first. A separate entry: a page built from code never loads the
+ * compiler.
  */
 export function LoadmapSource({
   source,
@@ -24,6 +26,8 @@ export function LoadmapSource({
   functions,
   theme,
   assumptions,
+  initial,
+  ref,
   ...props
 }: LoadmapSourceProps) {
   // read when the text compiles, so an object made on every render recompiles nothing
@@ -35,6 +39,23 @@ export function LoadmapSource({
   const good = useRef<Definition | null>(null)
   if (compiled.r.ok && compiled.r.definition) good.current = compiled.r.definition
   const def = good.current
+  // the board's values, read as a new definition replaces it, so an edit does not reset the sliders
+  const board = useRef<LoadmapHandle | null>(null)
+  const drawn = useRef<{ def: Definition | null; values: Readonly<Record<string, unknown>> }>({
+    def: null,
+    values: initial ?? {},
+  })
+  if (def !== drawn.current.def) {
+    if (drawn.current.def && board.current) drawn.current.values = board.current.values()
+    drawn.current.def = def
+  }
+  const handle = useCallback(
+    (h: LoadmapHandle | null) => {
+      board.current = h
+      pass(ref, h)
+    },
+    [ref],
+  )
   // a prop passed as undefined leaves the definition's option alone
   const set = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined))
   const lines = def && [...(assumptions ?? []), ...def.options.assumptions]
@@ -51,12 +72,20 @@ export function LoadmapSource({
           view={def.view}
           {...pageOptions(def.options)}
           {...set}
+          ref={handle}
+          initial={sharedValues(def.model, drawn.current.values)}
           theme={theme}
           {...(lines?.length ? { assumptions: lines } : {})}
         />
       )}
     </>
   )
+}
+
+/** Hands the board to the page's own ref, an object or a function. */
+function pass(ref: Ref<LoadmapHandle> | undefined, h: LoadmapHandle | null) {
+  if (typeof ref === 'function') ref(h)
+  else if (ref) ref.current = h
 }
 
 function Problems({ theme, stale, children }: { theme?: Theme; stale: boolean; children: string }) {

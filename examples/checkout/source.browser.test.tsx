@@ -72,6 +72,29 @@ it('keeps the last version drawn while the text has an error, and the values thr
   expect(ref.current?.values().load).toBe(30)
 })
 
+it('keeps the values through an edit of the model, where they still fit it; initial is for the first version', async () => {
+  const el = host()
+  const ref = createRef<LoadmapHandle>()
+  root!.render(<LoadmapSource source={source} ref={ref} initial={{ load: 30, pods: 4 }} />)
+  await expect.poll(() => ref.current).toBeTruthy()
+  await ref.current!.ready()
+  expect(ref.current!.values()).toMatchObject({ load: 30, pods: 4 })
+  const first = ref.current
+
+  // a new label is a new model: the board's values carry over
+  root!.render(
+    <LoadmapSource source={source.replace('"API gateway"', '"Edge gateway"')} ref={ref} initial={{ load: 1 }} />,
+  )
+  await expect.poll(() => el.querySelector('[data-node="gateway"]')?.textContent).toContain('Edge gateway')
+  expect(ref.current).not.toBe(first)
+  expect(ref.current!.values()).toMatchObject({ load: 30, pods: 4 })
+
+  // an option taken away: that value goes back to its default, the others stay
+  root!.render(<LoadmapSource source={source.replace('options: [2, 3, 4, 6]', 'options: [2, 3, 6]')} ref={ref} />)
+  await expect.poll(() => ref.current!.values().pods).toBe(3)
+  expect(ref.current!.values().load).toBe(30)
+})
+
 it("puts the page's assumptions first, and lets a prop left undefined keep the definition's option", async () => {
   const el = host()
   const ref = createRef<LoadmapHandle>()

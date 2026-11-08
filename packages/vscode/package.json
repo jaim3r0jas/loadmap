@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "displayName": "loadmap",
-  "description": "Capacity models in .loadmap: highlighting, errors and failing expectations as you type, completion, hover with the values, quick fixes, rename and formatting.",
+  "description": "Capacity models in .loadmap: a live preview of the diagram beside the text, highlighting, errors and failing expectations as you type, completion, hover with the values, quick fixes, rename and formatting.",
   "publisher": "jaim3r0jas",
   "license": "MIT",
   "author": "Jaime Rojas",
@@ -36,14 +36,16 @@
   "type": "module",
   "main": "./dist/extension.cjs",
   "activationEvents": [
-    "onLanguage:loadmap"
+    "onLanguage:loadmap",
+    "onWebviewPanel:loadmap.preview"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In a workspace you have not trusted, the language server is always the one that comes with the extension.",
+      "description": "In a workspace you have not trusted, the language server is always the one that comes with the extension, and share links always open the docs' own editor.",
       "restrictedConfigurations": [
-        "loadmap.server.path"
+        "loadmap.server.path",
+        "loadmap.editorUrl"
       ]
     }
   },
@@ -73,8 +75,32 @@
     ],
     "commands": [
       {
+        "command": "loadmap.showPreviewToSide",
+        "title": "Open Preview to the Side",
+        "category": "loadmap",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "loadmap.showPreview",
+        "title": "Open Preview",
+        "category": "loadmap",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "loadmap.copyShareLink",
+        "title": "Copy Share Link",
+        "category": "loadmap",
+        "icon": "$(link)"
+      },
+      {
+        "command": "loadmap.openInEditor",
+        "title": "Open in the Live Editor",
+        "category": "loadmap",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "loadmap.restartServer",
-        "title": "Restart the language server",
+        "title": "Restart the Language Server",
         "category": "loadmap"
       }
     ],
@@ -100,22 +126,83 @@
           ],
           "default": "off",
           "description": "Log the messages between VS Code and the language server in the loadmap output."
+        },
+        "loadmap.editorUrl": {
+          "type": "string",
+          "default": "https://jaim3r0jas.github.io/loadmap/editor/",
+          "markdownDescription": "The live editor a share link opens (an `http` or `https` link): the docs' own, or a copy of the docs site hosted elsewhere. The text travels in the link's `#`, which never reaches the server. A workspace you have not trusted cannot change it."
         }
       }
-    }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "loadmap.showPreviewToSide",
+          "when": "editorLangId == loadmap",
+          "group": "navigation"
+        },
+        {
+          "command": "loadmap.copyShareLink",
+          "when": "activeWebviewPanelId == 'loadmap.preview'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "loadmap.openInEditor",
+          "when": "activeWebviewPanelId == 'loadmap.preview'",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "loadmap.showPreviewToSide",
+          "when": "editorLangId == loadmap"
+        },
+        {
+          "command": "loadmap.showPreview",
+          "when": "editorLangId == loadmap"
+        },
+        {
+          "command": "loadmap.copyShareLink",
+          "when": "editorLangId == loadmap || activeWebviewPanelId == 'loadmap.preview'"
+        },
+        {
+          "command": "loadmap.openInEditor",
+          "when": "editorLangId == loadmap || activeWebviewPanelId == 'loadmap.preview'"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "loadmap.showPreviewToSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == loadmap"
+      },
+      {
+        "command": "loadmap.showPreview",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorLangId == loadmap"
+      }
+    ]
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && vite build -c vite.webview.config.ts",
     "package": "node scripts/stage.ts",
-    "test:e2e": "tsdown && node scripts/stage.ts --folder && tsdown -c tsdown.e2e.config.ts && node test/e2e/run.ts"
+    "test:e2e": "pnpm run build && node scripts/stage.ts --folder && tsdown -c tsdown.e2e.config.ts && node test/e2e/run.ts"
   },
   "devDependencies": {
     "@loadmap/cli": "workspace:*",
     "@loadmap/dsl": "workspace:*",
+    "@loadmap/react": "workspace:*",
     "@types/vscode": "1.91.0",
+    "@vitejs/plugin-react": "6.1.2",
     "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "4.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "tsdown": "0.23.4",
+    "vite": "8.3.5",
     "vscode-languageclient": "11.0.0",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.3.2"
