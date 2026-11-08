@@ -1,5 +1,31 @@
 # @loadmap/react
 
+## 0.26.1
+
+### Patch Changes
+
+- 108ff09: The alerts example compares a design: Today against Proposed (twice the position pods, a fourth push node), a growth
+  rate that turns load into dates, the gateway's capacity as an estimate ± 30 %, and two expectations
+  `loadmap check` keeps. Its docs page shows them.
+- 0d5fa74: The docs site: every board pans and zooms (the examples, the live definitions, the templates), and each says in a
+  line what to try on it. The landing page's board leaves its headroom chart to the checkout page, which shows the
+  promises `loadmap check` keeps, included from `checkout.loadmap`.
+- 8aba396: The docs site's concepts page shows a diagram that runs down by its shape, its lanes named up the left, and the
+  embedding page frames a live embed of the checkout example with the HTML that does it.
+- 08d4af1: The docs site's examples and templates are one Examples page: the walkthroughs (checkout, alerts) and the ten
+  starters in one gallery, each card listing what its model shows, read from the model, and each walkthrough naming
+  the starters it grew from. `/templates/` sends readers there; the web editor moves to The language.
+- 42d7068: The docs site has a page for writing `.loadmap` in your own editor: the VS Code extension's install links, and the
+  setup for `loadmap lsp` in Neovim and Helix. Each example page offers its `.loadmap` to download and says where to
+  open it.
+- 43a38f2: A third example, Search: a rate limiter, an autoscaled API, a cache and clients that retry, in three lanes, with a
+  four-step story, two expectations and `layout: stable`, in TypeScript and as a `.loadmap`. The docs site has its page,
+  its card among the examples, and the editor's New menu offers it.
+- @loadmap/core@0.26.1
+  - @loadmap/dsl@0.26.1
+  - @loadmap/layout@0.26.1
+  - @loadmap/sim@0.26.1
+
 ## 0.26.0
 
 ### Minor Changes
