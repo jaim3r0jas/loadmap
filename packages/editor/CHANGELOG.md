@@ -1,5 +1,19 @@
 # @loadmap/editor
 
+## 0.26.1
+
+### Patch Changes
+
+- Updated dependencies [108ff09]
+- Updated dependencies [0d5fa74]
+- Updated dependencies [8aba396]
+- Updated dependencies [08d4af1]
+- Updated dependencies [42d7068]
+- Updated dependencies [43a38f2]
+  - @loadmap/react@0.26.1
+  - @loadmap/core@0.26.1
+  - @loadmap/dsl@0.26.1
+
 ## 0.26.0
 
 ### Minor Changes

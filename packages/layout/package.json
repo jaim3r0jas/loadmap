@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/layout",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "description": "Views for loadmap models and their ELK layout: nodes, clusters, pools, edges, labels that never collide.",
   "keywords": [
     "loadmap",

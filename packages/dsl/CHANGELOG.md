@@ -1,5 +1,12 @@
 # @loadmap/dsl
 
+## 0.26.1
+
+### Patch Changes
+
+- @loadmap/core@0.26.1
+  - @loadmap/layout@0.26.1
+
 ## 0.26.0
 
 ### Patch Changes
