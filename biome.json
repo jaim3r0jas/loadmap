@@ -33,7 +33,12 @@
   },
   "overrides": [
     {
-      "includes": ["packages/dsl/**", "packages/editor/**", "packages/cli/test/lsp.test.ts"],
+      "includes": [
+        "packages/dsl/**",
+        "packages/editor/**",
+        "packages/cli/test/lsp.test.ts",
+        "packages/vscode/test/grammar.test.ts"
+      ],
       "linter": {
         "rules": {
           "suspicious": {

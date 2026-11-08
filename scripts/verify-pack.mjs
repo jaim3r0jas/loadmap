@@ -23,7 +23,10 @@ try {
   step('build and pack every package')
   run('pnpm', ['-r', '--filter', './packages/*', 'build'], repo)
   mkdirSync(packs)
-  const packages = readdirSync(join(repo, 'packages'))
+  // what npm publishes: the VS Code extension is private, a .vsix of its own
+  const packages = readdirSync(join(repo, 'packages')).filter(
+    (p) => !JSON.parse(readFileSync(join(repo, 'packages', p, 'package.json'), 'utf8')).private,
+  )
   for (const p of packages) run('pnpm', ['pack', '--pack-destination', packs], join(repo, 'packages', p))
   const tarballs = Object.fromEntries(
     readdirSync(packs).map((f) => [`@loadmap/${f.replace(/^loadmap-/, '').replace(/-\d+\.\d+\.\d+.*\.tgz$/, '')}`, f]),
