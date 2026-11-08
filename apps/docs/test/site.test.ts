@@ -209,7 +209,7 @@ describe('the built site', () => {
         ['examples/search/', 5],
         ['examples/', 4],
         ['getting-started/', 3],
-        ['concepts/', 3],
+        ['concepts/', 3 + 8],
         ['editor/', 5],
       ] as const) {
         const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
@@ -229,11 +229,47 @@ describe('the built site', () => {
           const zoom = page.locator('.island .lm-zoom')
           if (route === 'getting-started/') expect(await zoom.count(), route).toBe(0)
           else await zoom.first().waitFor({ timeout: 10_000 })
-          expect(await page.locator('.island [data-panel="headroom"]').count(), route).toBe(route === '' ? 0 : 1)
+          const boards = await page.locator('.island .lm').count()
+          expect(await page.locator('.island [data-panel="headroom"]').count(), route).toBe(route === '' ? 0 : boards)
         }
         expect(errors, route).toEqual([])
         await page.close()
       }
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('runs the fan-out in concepts down by its shape, on a wide screen, and frames an embed on its page', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+      await page.goto(`${url}concepts/`)
+      const fan = page.locator('.island .lm', { has: page.locator('[data-node="stock"]') })
+      await fan.locator('[data-node="db"]').waitFor({ timeout: 30_000 })
+      // each box's middle: a box is drawn at its own size in the middle of its slot
+      const top = (id: string) =>
+        fan.locator(`[data-node="${id}"]`).evaluate((n) => {
+          const r = n.getBoundingClientRect()
+          return Math.round(r.top + r.height / 2)
+        })
+      expect(await top('gateway')).toBeLessThan(await top('search'))
+      expect(await top('search')).toBeLessThan(await top('db'))
+      // the five services side by side, in one row
+      expect(new Set(await Promise.all(['search', 'cart', 'orders', 'profile', 'stock'].map(top))).size).toBe(1)
+
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(`${url}embedding/`)
+      const frame = (await (await page.waitForSelector('.island iframe')).contentFrame())!
+      await frame.waitForFunction(() => document.querySelectorAll('[data-node]').length === 5, null, {
+        timeout: 30_000,
+      })
+      // the HTML shown is the frame's own link
+      const src = await page.locator('.island iframe').getAttribute('src')
+      expect(src).toMatch(/\/embed\/#v1\./)
+      expect(await page.locator('.island details code').textContent()).toContain(`src="${src}"`)
+      expect(errors).toEqual([])
     } finally {
       await browser.close()
     }
@@ -878,7 +914,7 @@ describe('the built site', () => {
       )
       await page.goto(`${url}concepts/`)
       await drawn(page)
-      expect(await looks(page)).toMatchObject({ kept: 'system', page: 'dark', boards: ['dark'] })
+      expect(await looks(page)).toMatchObject({ kept: 'system', page: 'dark', boards: ['dark', 'dark'] })
       await page.locator('.bar > .theme label', { hasText: 'Light' }).click()
       await expect.poll(() => looks(page), { timeout: 5000 }).toMatchObject({ kept: 'light', page: 'light' })
       expect(errors).toEqual([])

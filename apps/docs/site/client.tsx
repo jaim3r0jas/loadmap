@@ -9,6 +9,7 @@ const ISLANDS: Record<string, () => Promise<{ mount: (el: HTMLElement) => void }
   example: () => import('./islands/example'),
   editor: () => import('./islands/editor'),
   gallery: () => import('./islands/gallery'),
+  framed: () => import('./islands/framed'),
   quickstart: () => import('./islands/quickstart'),
 }
 

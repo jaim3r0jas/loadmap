@@ -70,6 +70,53 @@ across the whole load range and every range control, so dragging a slider never 
 another. `layout: 'stable'`
 gives every box one place instead, so nothing but a box's own size changes between steps.
 
+The diagram runs right or down by its shape, unless the view says which: right when its longest chain is at least as
+long as its widest layer, down when the widest layer is wider. Here a gateway feeds five services that share one
+database, so it runs down, even on a wide screen, and its tiers become lanes with their names up the left:
+
+```loadmap live
+loadmap 1
+title: "Five services, one database"
+load "Requests, × today" { max: 20; default: 1 }
+
+flow search "search" { rate: 400 * load; route: gateway -> search -> db; from: users }
+flow cart "cart" { rate: 150 * load; route: gateway -> cart -> db; from: users }
+flow orders "orders" { rate: 60 * load; route: gateway -> orders -> db; from: users }
+flow profile "profile" { rate: 100 * load; route: gateway -> profile -> db; from: users }
+flow stock "stock" { rate: 80 * load; route: gateway -> stock -> db; from: users }
+
+tier edge "Edge"
+tier apps "Apps"
+tier data "Data"
+
+node users "Users"
+node gateway "Gateway" {
+  tier: edge
+  pass
+  capacity: measured(10_000, "req/s", "load test")
+  over: "clients get 429s"
+}
+node search "Search" { tier: apps; pass; capacity: measured(4_000, "req/s", "load test"); over: "requests queue" }
+node cart "Cart" { tier: apps; pass; capacity: measured(2_000, "req/s", "load test"); over: "requests queue" }
+node orders "Orders" { tier: apps; pass; capacity: measured(1_000, "req/s", "load test"); over: "requests queue" }
+node profile "Profile" { tier: apps; pass; capacity: measured(2_000, "req/s", "load test"); over: "requests queue" }
+node stock "Stock" { tier: apps; pass; capacity: measured(1_500, "req/s", "load test"); over: "requests queue" }
+node db "Database" {
+  tier: data
+  shape: cylinder
+  store
+  capacity: estimated(3_000, "queries/s", "vendor sizing")
+  over: "queries queue"
+}
+
+users -> gateway
+gateway -> search -> db
+gateway -> cart -> db
+gateway -> orders -> db
+gateway -> profile -> db
+gateway -> stock -> db
+```
+
 ## As text
 
 Everything above can be written as a `.loadmap` definition instead of TypeScript, and edited next to its live
