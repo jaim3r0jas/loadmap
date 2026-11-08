@@ -1,3 +1,4 @@
+import { check } from '@loadmap/core'
 import { collisions, layout } from '@loadmap/layout'
 import { createSim } from '@loadmap/sim'
 import { describe, expect, it } from 'vitest'
@@ -22,9 +23,27 @@ describe('alerts model', () => {
     const s = alerts.evaluate()
     expect(s.firstLimit?.id).toBe('posPods')
     expect(s.verdict.text).toBe(
-      'At 10×, everything still fits, but the position consumer runs above the 50 % target. The 50 % target holds up to 7.6×, limited by the position consumer.',
+      'At 10×, everything still fits, but the position consumer runs above the 50 % target. The 50 % target holds up to 7.6× (around March 2031), limited by the position consumer.',
     )
     expect(alerts.evaluate({ load: 80 }).verdict.text).toContain('the brokers are past capacity')
+  })
+
+  it('compares today with a proposal, keeps its promises, and ranges only the gateway', () => {
+    expect(alerts.scenarios.map((s) => s.label)).toEqual(['Today', 'Proposed'])
+    // twice the position pods: the consumer's 50 % target moves from 7.7× to 15.4×, and it is still the first limit
+    const proposed = alerts.evaluate(alerts.scenarios[1]!.values)
+    expect(proposed.firstLimit?.id).toBe('posPods')
+    expect(proposed.components.posPods.full).toBeCloseTo(12 / (260 * 0.0015), 6)
+    expect(check(alerts).every((r) => r.ok)).toBe(true)
+    // the gateway's load test is pending: ± 30 %, and even at its low edge it stays out of the top three
+    const g = alerts.evaluate().assumptions.find((a) => a.kind === 'capacity' && a.component === 'gateway')
+    expect(g?.kind === 'capacity' && g.capacity.within).toBe(0.3)
+    expect(
+      alerts
+        .evaluate()
+        .ranked.slice(0, 3)
+        .map((c) => c.id),
+    ).not.toContain('gateway')
   })
 
   it('resolves the fan-out and the merge rule from the switches', () => {

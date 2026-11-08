@@ -1,7 +1,5 @@
 loadmap 1
-# Alerts and positions: two flows on two topics that share three brokers, a pool of pods each, and a push broker
-# that fans out to the people who receive them. Made-up names and numbers; the same model and view as model.ts and
-# view.ts.
+# Alerts and positions, made up: the same model and view as model.ts and view.ts.
 title: "Alerts and live positions"
 speed: 10
 transition: 1
@@ -26,7 +24,13 @@ param watchOnly "Push positions only to users watching" {
 
 preset "Launch week" { load: 25; posPods: 8; alertPods: 4 }
 
-# the walk Play takes: the whole diagram, a close-up on what each step changes, the change, the whole again
+scenario "Today" {}
+scenario "Proposed" { posPods: 6; pushNodes: 4 }
+growth { rate: 0.04; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 7×" { target: 7 }
+expect "Alerts never wait before 50×" { component: alertPods; full: 50 }
+
 step "An ordinary peak: the position consumer is already past the 50 % target, and runs out first." {
   title: "Today at 10×"
 }
@@ -109,7 +113,7 @@ node gateway "Gateway" {
   pass "the gateway"
   short: "the gateway"
   demand: flows.alerts + flows.positions
-  capacity: estimated(30_000, "req/s", "load test pending")
+  capacity: estimated(30_000 ± 30%, "req/s", "load test pending")
   over: "phones get timeouts, alerts and positions alike"
 }
 
