@@ -1,7 +1,10 @@
 # Embedding
 
 A model made in the [editor](/editor/) can live inside another page: a ClickUp doc, a wiki, a status page. The embed
-page draws it filling its frame, with nothing around it, and never scrolls.
+page draws it filling its frame, with nothing around it, and never scrolls. This is the checkout example, framed as
+another page frames it:
+
+<div class="island" data-island="framed" data-root="../"></div>
 
 ## Get the link
 
