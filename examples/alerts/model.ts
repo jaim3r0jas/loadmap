@@ -29,6 +29,13 @@ export const alerts = defineModel({
     }),
   },
   presets: { 'Launch week': { load: 25, posPods: 8, alertPods: 4 } },
+  // the design review: today against twice the position pods and a fourth push node
+  scenarios: { Today: {}, Proposed: { posPods: 6, pushNodes: 4 } },
+  growth: { rate: 0.04, per: 'month', asOf: '2026-11-01' },
+  expect: [
+    { label: 'Today keeps 7×', target: 7 },
+    { label: 'Alerts never wait before 50×', component: 'alertPods', full: 50 },
+  ],
   // the walk Play takes: the whole diagram, a close-up on what each step changes, the change, the whole again
   story: [
     {
@@ -67,7 +74,7 @@ export const alerts = defineModel({
       name: 'Gateway',
       short: 'the gateway',
       demand: ({ flows }) => flows.alerts + flows.positions,
-      capacity: estimated(30_000, 'req/s', 'load test pending'),
+      capacity: estimated(30_000, 'req/s', { source: 'load test pending', within: 0.3 }),
       over: 'phones get timeouts, alerts and positions alike',
     },
     brokers: {

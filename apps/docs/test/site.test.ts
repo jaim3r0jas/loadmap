@@ -78,7 +78,13 @@ describe('the pages', () => {
   it('tell the dev server which repository files they include', () => {
     const files = included().map((f) => f.slice(f.lastIndexOf('/', f.lastIndexOf('/') - 1) + 1))
     // and the package.json %VERSION% comes from
-    expect(files.sort()).toEqual(['checkout/checkout.loadmap', 'docs/dsl.md', 'react/README.md', 'react/package.json'])
+    expect(files.sort()).toEqual([
+      'alerts/alerts.loadmap',
+      'checkout/checkout.loadmap',
+      'docs/dsl.md',
+      'react/README.md',
+      'react/package.json',
+    ])
   })
 
   it("show checkout's promises as its text writes them", () => {
