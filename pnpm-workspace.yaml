@@ -17,3 +17,8 @@ allowBuilds:
   # vsce's signing tool: its script copies a platform binary into place (or downloads one). Packaging and publishing
   # the VS Code extension never sign locally (the Marketplace signs), so it stays unbuilt
   "@vscode/vsce-sign": false
+overrides:
+  # vscode-languageclient (bundled into the VS Code extension) and vsce ask for minimatch 10, which a crafted glob can
+  # slow to a halt (fixed in 11.0.1). The extension matches only its own globs; 11 is the same API, and its e2e tests
+  # and packaging run on it. Only 10 is lifted: an older major's callers may need its default export
+  minimatch@>=10 <11.0.1: 11.0.4

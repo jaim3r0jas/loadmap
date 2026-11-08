@@ -1,0 +1,102 @@
+# The VS Code extension (packages/vscode): its .vsix of the version npm has, to the VS Code Marketplace, Open VSX and
+# the CLI's GitHub release. A maintainer starts it on main (Actions → vscode → Run workflow, or
+# `gh workflow run vscode.yml`) once a release is on npm: publishing is a choice, and a run can be repeated, since
+# whatever a store already has is skipped. Its own workflow, so a run waiting for the `marketplace` environment's
+# approval holds up no release. Three jobs, so the credentials are near as little code as possible:
+# - vsix builds and packs the extension at the CLI's version on main, without any credential, once npm has it.
+# - marketplace publishes it: the only job with id-token: write (the Marketplace's Trusted Publishing policy names this
+#   workflow and the `marketplace` environment, which only main may use) and OVSX_PAT (Open VSX's token).
+# - release-asset puts the .vsix on the CLI's GitHub release with the workflow's own token, whatever the stores did.
+name: vscode
+on:
+  workflow_dispatch:
+
+concurrency: vscode
+
+permissions: {}
+
+jobs:
+  vsix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false # pnpm arrives after this step, through corepack
+      - run: corepack enable pnpm
+      # the version a release put on npm: a .vsix is never ahead of the server it bundles
+      - id: version
+        run: |
+          version=$(node -p "require('./packages/cli/package.json').version")
+          if [ "$(npm view "@loadmap/cli@$version" version)" != "$version" ]; then
+            echo "::error::@loadmap/cli@$version is not on npm yet: merge the Version Packages pull request first"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: pnpm install --frozen-lockfile --filter '@loadmap/vscode...'
+      - run: pnpm --filter @loadmap/vscode build
+      - run: pnpm --filter @loadmap/vscode package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vsix
+          path: packages/vscode/out/*.vsix
+          if-no-files-found: error
+          retention-days: 7 # long enough to re-run a failed publish
+
+  marketplace:
+    needs: vsix
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write # the Marketplace's Trusted Publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false # pnpm arrives after this step, through corepack
+      - run: corepack enable pnpm
+      # vsce and ovsx at the lockfile's versions, with no install scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts --filter @loadmap/vscode
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vsix
+          path: vsix
+      # run beside the .vsix: its manifest is the one that counts, not the workspace's
+      - name: VS Code Marketplace
+        working-directory: vsix
+        run: ../packages/vscode/node_modules/.bin/vsce publish --oidc --skip-duplicate --packagePath ./*.vsix
+      - name: Open VSX
+        working-directory: vsix
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: ../packages/vscode/node_modules/.bin/ovsx publish ./*.vsix --skip-duplicate
+
+  release-asset:
+    needs: vsix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # an asset on the release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vsix
+          path: vsix
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.vsix.outputs.version }}
+        run: gh release upload "@loadmap/cli@$VERSION" vsix/*.vsix --repo "$REPO" --clobber
