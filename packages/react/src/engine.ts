@@ -124,10 +124,10 @@ function fade(el: Element, show: number): void {
  * updates the moving parts every frame, and export drives it frame by frame instead of the animation loop.
  */
 export class Engine {
-  readonly model: Model
-  readonly view: View
-  sim: Sim
-  ev: Evaluation
+  model!: Model
+  view!: View
+  sim!: Sim
+  ev!: Evaluation
   scene: Scene | null = null
   /** What the diagram draws now: the scene, or a frame of the move to it. */
   frame: Scene | null = null
@@ -161,7 +161,7 @@ export class Engine {
   svg: SVGSVGElement | null = null
   canvas: HTMLCanvasElement | null = null
 
-  #o: SimOptions
+  #o!: SimOptions
   #slots: { el: SVGRectElement; stage: string; index: number; y: number; s: number }[] = []
   #paths = new Map<number, { key: string; points: Point[] }>()
   #move: { at: (t: number) => Scene; t: number; seconds: number } | null = null
@@ -174,13 +174,27 @@ export class Engine {
   #clock = 0
   #story: Playing | null = null
   #hand: Handover | null = null
+  /** The sim is the old model's until the new model's scene comes. */
+  #stale = false
 
   constructor(model: Model, view: View, ev: Evaluation, o: SimOptions = {}) {
+    this.setModel(model, view, ev, o)
+  }
+
+  /**
+   * A new version of the model and view (the text edited): a story stops, and what is drawn stays, its dots running,
+   * until the new scene moves in from it; the sim starts over on the new model then, so no dot looks for a box the
+   * old scene does not have.
+   */
+  setModel(model: Model, view: View, ev: Evaluation, o: SimOptions): void {
+    this.stopStory({ cut: true })
     this.model = model
     this.view = view
     this.ev = ev
     this.#o = o
-    this.sim = createSim(model, ev, o)
+    this.#setHand(null)
+    if (this.frame) this.#stale = true
+    else this.sim = createSim(model, ev, o)
   }
 
   setEvaluation(ev: Evaluation): void {
@@ -189,7 +203,7 @@ export class Engine {
     const was = this.ev.firstLimit?.id
     const now = ev.firstLimit?.id
     this.ev = ev
-    if (!same) this.sim.update(ev)
+    if (!same && !this.#stale) this.sim.update(ev)
     if (was === now) return
     // a story shows its step's values in the change shot; anything else is the reader's, and quicker. Paused with
     // nothing stepping it, nothing would move it on: it cuts, as a new structure does
@@ -241,6 +255,11 @@ export class Engine {
     const seconds = this.transition
     this.scene = scene
     this.#paths.clear()
+    if (this.#stale) {
+      this.#stale = false
+      this.sim = createSim(this.model, this.ev, this.#o)
+    }
+    this.viewer?.hold(from, scene)
     const move =
       from &&
       !o.cut &&

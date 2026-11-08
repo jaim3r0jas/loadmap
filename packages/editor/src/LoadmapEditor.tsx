@@ -137,6 +137,8 @@ interface Compiled {
   good: Definition | null
   /** Its tokens: an edit that leaves them alone (a comment, spacing) keeps the same model and view. */
   goodKey: string
+  /** Counts the whole texts loaded (a template, a shared link): each starts a new diagram, fitted; an edit keeps it. */
+  doc: number
 }
 
 /** A text editor for a `.loadmap` definition next to its live diagram. */
@@ -168,7 +170,7 @@ export function LoadmapEditor({
   useEffect(() => injectEditorStyles(), [])
   const [state, setState] = useState<Compiled>(() => {
     const result = compile(initial, { functions })
-    return { source: initial, result, good: result.definition ?? null, goodKey: fingerprint(initial) }
+    return { source: initial, result, good: result.definition ?? null, goodKey: fingerprint(initial), doc: 0 }
   })
   const [note, setNote] = useState('')
   const host = useRef<HTMLDivElement>(null)
@@ -242,14 +244,16 @@ export function LoadmapEditor({
 
   const accept = (source: string, result: CompileResult) => {
     const h = preview.current
-    if (fresh.current) fresh.current = false
+    // a whole new text stays one until a version of it compiles: fixing its errors starts it fitted, from its defaults
+    const whole = fresh.current
+    if (whole) fresh.current = !result.definition
     else if (h) shown.current = h.values()
     setState((prev) => {
       if (prev.source === source && prev.result === result) return prev
       if (!result.definition) return { ...prev, source, result }
       const key = fingerprint(source)
       if (key === prev.goodKey && prev.good) return { ...prev, source, result }
-      return { source, result, good: result.definition, goodKey: key }
+      return { source, result, good: result.definition, goodKey: key, doc: prev.doc + (whole ? 1 : 0) }
     })
   }
   const acceptRef = useRef(accept)
@@ -857,6 +861,7 @@ export function LoadmapEditor({
           <div className="lme-preview" data-stale={stale || undefined} hidden={phone && !reader && pane === 'text'}>
             {def ? (
               <EditorCanvas
+                key={state.doc}
                 ref={preview}
                 def={def}
                 look={look}
@@ -891,6 +896,7 @@ export function LoadmapEditor({
             {staleNote}
             {def ? (
               <Loadmap
+                key={state.doc}
                 ref={preview}
                 model={def.model}
                 view={def.view}

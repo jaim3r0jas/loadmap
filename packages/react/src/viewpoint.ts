@@ -1,3 +1,4 @@
+import type { Scene } from '@loadmap/layout'
 import type { Rect } from './camera'
 
 /** What the reader looks at: the scene point at the board's centre, and how many board pixels a scene unit takes. */
@@ -136,6 +137,37 @@ export function bring(v: Viewpoint, vp: Viewport, r: Rect): Viewpoint | null {
   const top = vp.h / 2 + (r.y - v.y) * v.k
   const inside = left >= f.x && top >= f.y && left + r.w * v.k <= f.x + f.w && top + r.h * v.k <= f.y + f.h
   return inside ? null : at(r.x + r.w / 2, r.y + r.h / 2, f.x + f.w / 2, f.y + f.h / 2, v.k, vp)
+}
+
+/**
+ * The box `v` holds on to as the diagram moves from `from` to `to`: of the boxes in both, the one nearest the middle of
+ * the free part, and the view's centre from that box's centre. Null when no box stays.
+ */
+export function anchorOf(
+  v: Viewpoint,
+  vp: Viewport,
+  from: Scene,
+  to: Scene,
+): { id: string; dx: number; dy: number } | null {
+  const f = free(vp)
+  const c = toScene(v, vp, f.x + f.w / 2, f.y + f.h / 2)
+  const stays = new Set(to.nodes.map((n) => n.id))
+  let best: { id: string; dx: number; dy: number } | null = null
+  // how far the middle is from the box, then from its centre: a box the middle is inside of wins over one it is near,
+  // and of those, the one whose centre is nearest
+  let near = { out: Number.POSITIVE_INFINITY, mid: Number.POSITIVE_INFINITY }
+  for (const n of from.nodes) {
+    if (!stays.has(n.id) || n.fade != null) continue
+    const cx = n.x + n.w / 2
+    const cy = n.y + n.h / 2
+    const out = Math.hypot(Math.max(0, Math.abs(c.x - cx) - n.w / 2), Math.max(0, Math.abs(c.y - cy) - n.h / 2))
+    const mid = Math.hypot(c.x - cx, c.y - cy)
+    if (out < near.out || (out === near.out && mid < near.mid)) {
+      near = { out, mid }
+      best = { id: n.id, dx: v.x - cx, dy: v.y - cy }
+    }
+  }
+  return best
 }
 
 /** Where a part of the scene (a viewBox) draws on a board of w × h pixels: scaled to fit and centred, as SVG does. */

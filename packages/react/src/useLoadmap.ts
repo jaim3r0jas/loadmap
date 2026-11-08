@@ -12,7 +12,7 @@ import {
 } from '@loadmap/layout'
 import { shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { pageElk } from './elk'
 import { type Cue, Engine } from './engine'
 
@@ -126,9 +126,13 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   )
 
   const engineRef = useRef<Engine | null>(null)
-  if (!engineRef.current || engineRef.current.model !== model || engineRef.current.view !== view)
-    engineRef.current = new Engine(model, view, ev, o)
+  engineRef.current ??= new Engine(model, view, ev, o)
   const engine = engineRef.current
+  // a new model or view (the text edited) keeps the engine: what is drawn moves to the new structure, the view stays.
+  // Once committed, with the newest numbers: it tells the board, which must not hear of it while this renders
+  useLayoutEffect(() => {
+    if (engine.model !== model || engine.view !== view) engine.setModel(model, view, evaluated.current?.ev ?? ev, o)
+  })
   engine.transition = o.transition ?? 0.8
 
   const [root, setRoot] = useState<HTMLElement | null>(null)
@@ -197,7 +201,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     [engine, model],
   )
 
-  // the player's state is its engine's: a new model (a new engine) has no story playing
+  // the player's state is its engine's; a new model stops the story (`setModel`)
   const [played, setPlayed] = useState<{ engine: Engine; on: boolean; cue: Cue | null }>({
     engine,
     on: false,

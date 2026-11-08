@@ -1,6 +1,18 @@
+import type { Scene } from '@loadmap/layout'
 import type { Rect } from './camera'
 import type { Engine } from './engine'
-import { cameraOf, clamp, frame, placement, range, shot, shown, type Viewpoint, type Viewport } from './viewpoint'
+import {
+  anchorOf,
+  cameraOf,
+  clamp,
+  frame,
+  placement,
+  range,
+  shot,
+  shown,
+  type Viewpoint,
+  type Viewport,
+} from './viewpoint'
 
 // the whole scene, as camera.ts has it: written here, so this chunk takes nothing from the page's first load
 const whole = (s: { width: number; height: number }): Rect => ({ x: 0, y: 0, w: s.width, h: s.height })
@@ -15,6 +27,8 @@ export class Viewer {
   viewport: Viewport
   /** The reader's view; null keeps the diagram fitted as the board changes. */
   #view: Viewpoint | null = null
+  /** The box the view keeps still while the diagram moves to a new structure, and the view's centre from it. */
+  #anchor: { id: string; dx: number; dy: number } | null = null
 
   constructor(engine: Engine, viewport: Viewport) {
     this.engine = engine
@@ -45,7 +59,28 @@ export class Viewer {
     const fit = this.fit()
     const c = this.engine.camera
     if (!fit) return null
-    return c ? shot(c, this.engine.frame!, fit, this.viewport) : (this.#view ?? fit)
+    return c ? shot(c, this.engine.frame!, fit, this.viewport) : (this.#on(this.engine.frame!, fit) ?? fit)
+  }
+
+  /** The reader's view on frame `f`: where the box it holds is in it, when it holds one. */
+  #on(f: Scene, fit: Viewpoint): Viewpoint | null {
+    const a = this.#anchor
+    const v = this.#view
+    const n = a && v && f.nodes.find((x) => x.id === a.id)
+    return n
+      ? clamp({ x: n.x + n.w / 2 + a.dx, y: n.y + n.h / 2 + a.dy, k: v.k }, this.viewport, whole(f), range(fit))
+      : v
+  }
+
+  /**
+   * The engine moves from frame `from` to a new structure (a phase, the text edited): the reader's view holds on to
+   * the box nearest its middle, keeping it where it is on the board at the same zoom each frame of the move, so what
+   * the reader looked at stays under their eyes while the rest moves around it.
+   */
+  hold(from: Scene | null, to: Scene): void {
+    const fit = this.fit()
+    if (from && fit) this.#view = this.#on(from, fit)
+    this.#anchor = this.#view && from && anchorOf(this.#view, this.viewport, from, to)
   }
 
   /** The zoom's range, in board pixels a scene unit. */
@@ -62,7 +97,10 @@ export class Viewer {
     const fit = this.fit()
     if (!fit) return
     if (this.engine.story) this.engine.stopStory({ cut: true })
-    this.#view = v && clamp(v, this.viewport, whole(this.engine.frame!), range(fit))
+    const { frame: f, scene } = this.engine
+    this.#view = v && clamp(v, this.viewport, whole(f!), range(fit))
+    // during a move, from the box nearest its middle where it is now: the move goes on carrying the view with it
+    this.#anchor = this.#view && scene && f !== scene ? anchorOf(this.#view, this.viewport, f!, scene) : null
     this.#show()
   }
 
@@ -80,9 +118,10 @@ export class Viewer {
 
   /** Play starts: the camera the first shot flies from, where the reader had moved; the view is the story's now. */
   lead(): Rect | undefined {
-    const v = this.#view
+    const v = this.#view && this.shownView()
     const fit = this.fit()
     this.#view = null
+    this.#anchor = null
     return v && fit && !this.engine.reducedMotion ? cameraOf(v, this.engine.frame!, fit, this.viewport) : undefined
   }
 
