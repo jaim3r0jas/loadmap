@@ -187,6 +187,115 @@ A published figure is a best case elsewhere, not a measurement of your system: t
 published, a best case)", and the assumptions name its conditions, who ran it and link its source. Autocomplete
 offers the components, their conditions and the values their runs used.
 
+### Measured data
+
+Numbers read from the metrics stores a team already runs (Prometheus, Elasticsearch, …) reach a model as a
+**snapshot**: a JSON file with each measurement's value, the points it came from and its origin (the provider, the
+query, the window, the step, when it was read and how many samples it has). The model reads the file and never the
+store, so a page and its recordings say the same thing on any day.
+
+```json
+{
+  "format": "loadmap-snapshot",
+  "version": 1,
+  "fetched": "2026-11-08T06:00:00Z",
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-08T00:00:00Z",
+  "measurements": {
+    "apiCapacity": {
+      "unit": "req/s",
+      "value": 1200,
+      "origin": {
+        "provider": "prometheus",
+        "query": "max_over_time(sum(rate(http_requests_total[5m]))[7d:5m])",
+        "from": "2026-11-01T00:00:00Z",
+        "to": "2026-11-08T00:00:00Z",
+        "step": 300,
+        "fetched": "2026-11-08T06:00:00Z",
+        "samples": 2016,
+        "min": 30,
+        "stat": "max"
+      }
+    },
+    "hit": { "unit": "share", "missing": "the query returned no series" }
+  }
+}
+```
+
+In TypeScript, `parseSnapshot` checks the file (an opened file is untrusted input) and `fromSnapshot` reads it inside
+the model's functions. Every read names the value the definition uses when the snapshot has none: a measurement that
+is missing, or has fewer samples than its `min`, falls back to it, never to an invented one, and the assumptions say
+why.
+
+```ts
+import { estimated, fromSnapshot, parseSnapshot } from '@loadmap/react'
+
+const snapshot = parseSnapshot(await (await fetch('./checkout.snapshot.json')).text())
+const read = fromSnapshot(snapshot)
+// capacity: read.capacity('apiCapacity', estimated(1_000, 'req/s', 'vendor benchmark'))
+// rate: ({ load }) => read.value('requests', 40) * load
+// calibration: { 'Worker CPU per request': read.fit('rate', 'cores', workerCores) }
+// defineModel({ snapshot, … }) lists every measurement with the assumptions
+```
+
+A value read from a snapshot is `measured`, and its source is its origin: "prometheus: sum(rate(…)), 2026-11-01 to
+2026-11-08, every 5 min, 2016 samples, max". A fit can come from two series in it (cost against rate, joined on
+their timestamps). `summarize(points, stat)` turns a window into one value (`mean`, `min`, `max`, `last`, `p50`,
+`p95`, `p99`).
+
+Each kind has standard measurements, so every provider maps its results onto the same names (`MEASURES`). The role
+says what a number is about: `capacity`, `limit`, `latency` and `cost` mean what a published figure's measure means,
+so a measured and a published p99 land in the same place. A measurement for a part of the model that is not built
+yet (latency, slots, splits) is read and listed, and nothing uses it.
+
+<!-- measures: written from MEASURES in packages/core; UPDATE_DOCS=1 pnpm test:node rewrites it -->
+
+| Kind | Measurement | Role | Dimension | Sets | |
+| --- | --- | --- | --- | --- | --- |
+| `flow` | `rate` | rate | per second | `rate` | Units per second at the source. |
+| `pass` | `served` | rate | per second |  | Units handled per second. |
+| `pass` | `rejected` | rate | per second |  | Units turned away per second (429, 503). |
+| `pass` | `capacity` | capacity | per second | `capacity` | The most it handled: a load test or a saturated peak. |
+| `pass` | `instances` | count | count |  | Instances serving. |
+| `pass` | `latencyP50` | latency | ms | not modelled yet | Median response time. |
+| `pass` | `latencyP95` | latency | ms | not modelled yet | 95th percentile response time. |
+| `pass` | `latencyP99` | latency | ms | not modelled yet | 99th percentile response time. |
+| `queue` | `produced` | rate | per second | `rate` | Messages written per second. |
+| `queue` | `consumed` | rate | per second |  | Messages read per second. |
+| `queue` | `lag` | count | count |  | Messages waiting. |
+| `queue` | `lagSeconds` | duration | seconds |  | How old the oldest waiting message is. |
+| `queue` | `partitions` | count | count | `partitions` | Partitions of the topic. |
+| `queue` | `bytesIn` | rate | bytes per second |  | Bytes written per second. |
+| `queue` | `bytesOut` | rate | bytes per second |  | Bytes read per second. |
+| `workers` | `pods` | count | count | `pods` | Pods running. |
+| `workers` | `perPod` | count | count | `perPod` | Workers in each pod. |
+| `workers` | `busy` | share | share |  | The share of workers busy. |
+| `workers` | `cores` | cost | cores |  | CPU cores used: fitted against a rate, the cost per unit. |
+| `workers` | `coresLimit` | capacity | cores | `capacity` | CPU cores the pool may use. |
+| `cache` | `ops` | rate | per second |  | Lookups per second. |
+| `cache` | `hit` | share | share | `hit` | The share of lookups answered from the cache. |
+| `cache` | `evictions` | rate | per second |  | Entries evicted per second. |
+| `cache` | `memory` | size | bytes |  | Memory used. |
+| `cache` | `capacity` | capacity | per second | `capacity` | The most lookups it handled. |
+| `limit` | `allowed` | rate | per second |  | Units let through per second. |
+| `limit` | `rejected` | rate | per second |  | Units rejected per second. |
+| `limit` | `limit` | limit | per second | `capacity` | The limit it is set to. |
+| `store` | `queries` | rate | per second |  | Queries per second. |
+| `store` | `commits` | rate | per second |  | Commits per second. |
+| `store` | `capacity` | capacity | per second | `capacity` | The most commits (or queries) it handled. |
+| `store` | `replicaLag` | duration | seconds |  | How far the replicas are behind. |
+| `store` | `writeLatency` | latency | ms | not modelled yet | Time a write takes. |
+| `store` | `connections` | count | count | not modelled yet | Connections open: a pool of slots. |
+| `fanout` | `copies` | share | per unit | `share` | Copies sent per unit, per branch. |
+| `fanout` | `deliveries` | rate | per second |  | Copies delivered per second, per branch. |
+| `split` | `share` | share | share | not modelled yet | The share of units sent to each branch. |
+| `slots` | `inUse` | count | count | not modelled yet | Slots in use: connections, sessions, in-flight requests. |
+| `slots` | `available` | capacity | count | not modelled yet | Slots there are. |
+| `slots` | `held` | duration | seconds | not modelled yet | How long each is held. |
+| `slots` | `wait` | duration | seconds | not modelled yet | The wait for a free slot. |
+
+<!-- end of measures -->
+
 ### Building blocks
 
 Four shapes of real systems have statements of their own, so a model says what they do instead of working it out in

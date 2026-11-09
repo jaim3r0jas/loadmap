@@ -1,3 +1,4 @@
+import type { Origin } from './measure'
 import type { Reference } from './published'
 
 export type Provenance = 'measured' | 'estimated' | 'configured' | 'published'
@@ -16,12 +17,18 @@ export interface Capacity {
   ref?: Reference
   /** Why there is no published figure for this configuration: the component is then not ranked. */
   missing?: string
+  /** A value read from a snapshot: the provider, the query and the window. */
+  origin?: Origin
+  /** Why the snapshot gave no value (missing data, too few samples): this is the definition's own value instead. */
+  unread?: string
 }
 
 export interface CapacityOptions {
   source?: string
   /** ±, as a share of the value: 0.3 is ±30 %. At least 0, below 1. */
   within?: number
+  /** Where a provider read it. */
+  origin?: Origin
 }
 
 /** A capacity read off a dashboard or a load test. */
@@ -40,11 +47,12 @@ export function configured(value: number, unit: string, source?: string): Capaci
 }
 
 function capacity(value: number, unit: string, provenance: Provenance, o?: string | CapacityOptions): Capacity {
-  const { source, within } = typeof o === 'string' ? { source: o, within: undefined } : (o ?? {})
+  const { source, within, origin } = typeof o === 'string' ? { source: o } : (o ?? {})
   if (within != null && !(within >= 0 && within < 1))
     throw new Error(`loadmap: within is a share from 0 to below 1 (0.3 is ±30 %), not ${within}`)
   const c: Capacity = { value, unit, provenance, source }
   if (within) c.within = within
+  if (origin) c.origin = origin
   return c
 }
 

@@ -4,6 +4,7 @@ import type { Expectation } from './check'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
+import type { Measurement, Snapshot } from './measure'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import { type Branch, dyn, hitOf, type ResolvedStage, rejectShare, resolveStage, type StageDef } from './stages'
 
@@ -115,6 +116,11 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   routes: { [K in NoInfer<F>]: readonly NoInfer<S>[] }
   /** Fits used by the model, listed with the assumptions. */
   calibration?: Readonly<Record<string, LinearFit>>
+  /**
+   * The measured data the model reads (through `fromSnapshot`), as `parseSnapshot` returns it: each measurement is
+   * listed with the assumptions, with its origin, or with why the definition's own value is used instead.
+   */
+  snapshot?: Snapshot
   /** Utilization of the target (default 0.5) and of "runs out" (default 1). */
   thresholds?: { target?: number; full?: number }
   /** The highest load multiple the limits search; beyond it a component "never" runs out. Default 2000. */
@@ -206,6 +212,8 @@ export interface MeasureHint<C extends string = string> {
 export type Assumption =
   | { kind: 'capacity'; component: string; name: string; capacity: Capacity }
   | { kind: 'fit'; name: string; fit: LinearFit }
+  /** A measurement of the snapshot; a missing one says why, and the definition's own value is used. */
+  | { kind: 'measurement'; name: string; measurement: Measurement }
 
 export interface Evaluation<P = any, F extends string = string, C extends string = string, S extends string = string> {
   values: Values<P>
@@ -568,6 +576,14 @@ export function defineModel<
       assumptions.push({ kind: 'capacity', component: c, name: def.components[c].name, capacity: cap })
     }
     for (const [name, fit] of Object.entries(def.calibration ?? {})) assumptions.push({ kind: 'fit', name, fit })
+    // a reading a capacity or a fit already shows with its origin is not listed twice
+    const shown = new Set(
+      assumptions.flatMap((a) =>
+        a.kind === 'capacity' ? [a.capacity.origin] : a.kind === 'fit' ? [a.fit.origin?.x, a.fit.origin?.y] : [],
+      ),
+    )
+    for (const [name, m] of Object.entries(def.snapshot?.measurements ?? {}))
+      if (!m.origin || !shown.has(m.origin)) assumptions.push({ kind: 'measurement', name, measurement: m })
 
     return {
       values,
