@@ -12,6 +12,15 @@ export {
   sourceText,
 } from './capacity'
 export { assertHolds, type CheckResult, check, type Expectation, type Outcome } from './check'
+export {
+  type ComponentDiff,
+  type ComponentSide,
+  compareDefinitions,
+  type DefinitionChange,
+  type DefinitionSide,
+  type Tolerance,
+  type Trigger,
+} from './diff'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
 export type {
   Measurement,
