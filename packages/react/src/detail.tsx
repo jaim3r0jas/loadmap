@@ -116,6 +116,7 @@ export function Detail({
             <strong>{pct(c.util)}</strong> · {num(c.demand ?? 0)} of {fmt(cap.value)} {cap.unit}
             {cap.within ? ` ${plusMinus(cap)}` : ''}
           </span>
+          {c.held && heldText(model, c.held) && <span>{heldText(model, c.held)}</span>}
           <span className="lm-sub">
             capacity{' '}
             <span className="lm-prov" data-kind={cap.provenance}>
@@ -156,6 +157,19 @@ export function Detail({
       )}
     </div>
   )
+}
+
+/** How long a unit of each flow holds a slot: "held 20 ms per order". */
+function heldText(model: LoadmapController['model'], held: Readonly<Record<string, number>>): string {
+  const time = (s: number) =>
+    s < 1 ? `${fmt(s * 1000)} ms` : s < 120 ? `${fmt(s)} s` : s < 7200 ? `${fmt(s / 60)} min` : `${fmt(s / 3600)} h`
+  const per = Object.entries(held)
+    .filter(([, s]) => s > 0)
+    .map(([f, s]) => {
+      const flow = model.def.flows[f]
+      return `${time(s)} per ${flow?.unit ?? `unit of ${flow?.label ?? f}`}`
+    })
+  return per.length ? `held ${per.join(', ')}` : ''
 }
 
 /** What a box's building blocks do at these values: pods running, cache answers, what a stage turns away. */

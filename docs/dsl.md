@@ -541,7 +541,7 @@ their timestamps). `summarize(points, stat)` turns a window into one value (`mea
 Each kind has standard measurements, so every provider maps its results onto the same names (`MEASURES`). The role
 says what a number is about: `capacity`, `limit`, `latency` and `cost` mean what a published figure's measure means,
 so a measured and a published p99 land in the same place. A measurement for a part of the model that is not built
-yet (latency, slots) is read and listed, and nothing uses it.
+yet (latency, the wait for a slot) is read and listed, and nothing uses it.
 
 <!-- measures: written from MEASURES in packages/core; UPDATE_DOCS=1 pnpm test:node rewrites it -->
 
@@ -580,13 +580,13 @@ yet (latency, slots) is read and listed, and nothing uses it.
 | `store` | `capacity` | capacity | per second | `capacity` | The most commits (or queries) it handled. |
 | `store` | `replicaLag` | duration | seconds |  | How far the replicas are behind. |
 | `store` | `writeLatency` | latency | ms | not modelled yet | Time a write takes. |
-| `store` | `connections` | count | count | not modelled yet | Connections open: a pool of slots. |
+| `store` | `connections` | count | count |  | Connections open: a pool of slots (see slots). |
 | `fanout` | `copies` | share | per unit | `share` | Copies sent per unit, per branch. |
 | `fanout` | `deliveries` | rate | per second |  | Copies delivered per second, per branch. |
 | `split` | `share` | share | share | `share` | The share of units sent each way. |
-| `slots` | `inUse` | count | count | not modelled yet | Slots in use: connections, sessions, in-flight requests. |
-| `slots` | `available` | capacity | count | not modelled yet | Slots there are. |
-| `slots` | `held` | duration | seconds | not modelled yet | How long each is held. |
+| `slots` | `inUse` | count | count |  | Slots in use: connections, sessions, in-flight requests. Over the rate, the time each is held. |
+| `slots` | `available` | capacity | count | `capacity` | Slots there are. |
+| `slots` | `held` | duration | seconds | `held` | How long each is held. |
 | `slots` | `wait` | duration | seconds | not modelled yet | The wait for a free slot. |
 
 <!-- end of measures -->
@@ -675,6 +675,25 @@ With `route: gateway -> app -> router -> respond`, writes end at the primary and
 `respond`. Each component then sees the share of the flow that goes its way: `at.replica.orders` is the reads, and a
 replica past capacity turns away only the reads. In TypeScript, `split({ to: [{ stages: ['primary'], share: 0.2 },
 …] })`, and `ev.paths` lists each flow's ways with their shares.
+
+**A pool of slots** runs out of slots, not of rate: connections, sessions, threads, requests in flight. `held` says
+how many seconds each unit holds one, and the demand is then the slots in use, by Little's law: what reaches its
+stages each second times `held`. Its capacity counts slots. A pool beside the limit that runs a stage names the stage
+with `on`:
+
+```
+component conns "Postgres connections" {
+  on: db
+  held: 0.02
+  capacity: configured(100, "connections", "pool size")
+  over: "orders wait for a connection"
+}
+```
+
+At 40 orders a second, 0.8 connections are in use; the pool reaches half at 62.5×. Flows that hold a slot for
+different times take a block, `held { orders: 0.02; sessions: 3600 }`, and a flow it does not name holds none. A
+slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
+`held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
 
 ### A story
 
@@ -1224,10 +1243,24 @@ After the keyword: [id] [label].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
+
+Holds: `held`.
+
+### held
+
+How long a unit of each flow holds one of the component's slots, in seconds; a flow it does not name holds none.
+
+```
+held { orders: 0.02; sessions: 3600 }
+```
+
+Its properties are named by flows.
 
 ### tier
 
@@ -1263,12 +1296,14 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `fanout`, `split`, `cache`, `limit`, `component`.
+Holds: `pass`, `store`, `sink`, `fanout`, `split`, `cache`, `limit`, `component`, `held`.
 
 ### cluster
 
@@ -1290,12 +1325,14 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `queue`, `component`.
+Holds: `queue`, `component`, `held`.
 
 ### pool
 
@@ -1316,12 +1353,14 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
+| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `workers`, `component`.
+Holds: `workers`, `component`, `held`.
 
 ### pass
 

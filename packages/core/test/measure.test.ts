@@ -236,7 +236,7 @@ describe('MEASURES', () => {
   })
 
   it('gives every measurement a role and a dimension, and sets only what the model has', () => {
-    const sets = new Set(['rate', 'capacity', 'hit', 'pods', 'perPod', 'partitions', 'share'])
+    const sets = new Set(['rate', 'capacity', 'hit', 'pods', 'perPod', 'partitions', 'share', 'held'])
     for (const specs of Object.values(MEASURES))
       for (const s of Object.values(specs as Record<string, MeasureSpec>)) {
         expect(s.dimension).not.toBe('')

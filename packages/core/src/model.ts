@@ -98,6 +98,14 @@ export interface ComponentDef<X> {
   plural?: boolean
   /** In the capacity's unit. Without one: the units per second reaching the stages that use this component. */
   demand?: (ctx: X) => number
+  /**
+   * The seconds each unit holds one of its slots (a connection, a session, a request in flight): one time for every
+   * flow, or one per flow. Its demand is then the slots in use, by Little's law: the units per second reaching `on`
+   * times the time held, and its capacity counts slots.
+   */
+  held?: number | Readonly<Record<string, number>> | ((ctx: X) => number | Readonly<Record<string, number>>)
+  /** The stages whose units hold its slots; by default the stages that use it. */
+  on?: readonly string[]
   capacity: Capacity | ((ctx: X) => Capacity)
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
@@ -186,6 +194,8 @@ export interface ComponentResult<C extends string = string> {
   fullRange: CrossingRange | null
   over: string
   describe?: string
+  /** For a component that counts slots: the seconds a unit of each flow holds one. */
+  held?: Readonly<Record<string, number>>
   /** Why it has no published figure for this configuration: it is then not ranked, like a switched-off one. */
   missing?: string
 }
@@ -332,9 +342,21 @@ export function defineModel<
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
   }
-  for (const c of componentIds)
-    if (!def.components[c].demand && !stageIds.some((s) => (def.stages[s] as { component?: string }).component === c))
+  for (const c of componentIds) {
+    const d = def.components[c]
+    if (d.held != null && d.demand)
+      throw new Error(`loadmap: component "${c}" takes held or demand, not both: held works out its demand`)
+    for (const s of d.on ?? [])
+      if (!(stageIds as readonly string[]).includes(s))
+        throw new Error(`loadmap: component "${c}" is held on unknown stage "${s}"`)
+    if (d.on && d.held == null)
+      throw new Error(`loadmap: component "${c}" names the stages that hold its slots (on): give it held too`)
+    const used = stageIds.some((s) => (def.stages[s] as { component?: string }).component === c)
+    if (d.held != null && !d.on?.length && !used)
+      throw new Error(`loadmap: component "${c}" is held on no stage: name them with on`)
+    if (!d.demand && d.held == null && !used)
       throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
+  }
   for (const s of stageIds) {
     const st = def.stages[s] as StageDef
     if (st.kind === 'workers' && (st.pods == null) === (st.autoscale == null))
@@ -544,6 +566,8 @@ export function defineModel<
       retries,
       shed,
       paths,
+      held,
+      holders,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
 
@@ -567,6 +591,13 @@ export function defineModel<
         describe: describe(c),
       }
       if (missing != null) components[c].missing = missing
+      const h = off ? null : held(c)
+      if (h) {
+        const on = holders(c)
+        components[c].held = Object.fromEntries(
+          Object.entries(h).filter(([f]) => paths(f).some((p) => p.stages.some((s) => on.includes(s)))),
+        )
+      }
     }
 
     const all = componentIds.map((c) => components[c])
@@ -738,6 +769,29 @@ function context(
       return typeof cap === 'function' ? cap(ctx as any) : cap
     })
   const enabled = (c: string) => memo(`${c} enabled`, () => def.components[c]!.when?.(ctx as any) ?? true)
+  /** The seconds a unit of each flow holds one of the component's slots; null when it does not count slots. */
+  const held = (c: string) =>
+    memo(`held of ${c}`, () => {
+      const d = def.components[c]!
+      if (d.held == null) return null
+      const h = typeof d.held === 'function' ? d.held(ctx as any) : d.held
+      if (typeof h !== 'number')
+        for (const f of Object.keys(h))
+          if (!flowIds.includes(f)) throw new Error(`loadmap: component "${c}" is held by unknown flow "${f}"`)
+      const out: Record<string, number> = {}
+      for (const f of flowIds) {
+        const v = typeof h === 'number' ? h : (h[f] ?? 0)
+        if (!Number.isFinite(v) || v < 0)
+          throw new Error(`loadmap: component "${c}" is held ${v} s by each unit of "${f}": a time from 0 up`)
+        out[f] = v
+      }
+      const unit = capacity(c).unit
+      if (/\/\s*(s|sec|second|min|minute|h|hour)$|\bper (sec|min|hour)|^[rq]p[sm]$/i.test(unit.trim()))
+        throw new Error(
+          `loadmap: component "${c}" is held, so its capacity counts slots ("connections", "sessions"), not "${unit}"`,
+        )
+      return out
+    })
   const overload = (f: string): Overload =>
     memo(`overload of ${f}`, () => {
       const o = def.flows[f]!.overload
@@ -1034,8 +1088,32 @@ function context(
     })
 
   const usedBy = (c: string) => stageIds.filter((s) => (stages[s] as { component?: string }).component === c)
+  /** The stages whose units hold a component's slots. */
+  const holders = (c: string) => {
+    const on = def.components[c]!.on
+    return on?.length ? on : usedBy(c)
+  }
   ctx.demand = table(componentIds, (c) =>
     memo(`demand of ${c}`, () => {
+      const h = held(c)
+      if (h) {
+        // Little's law: the slots in use are what arrives each second times how long each unit holds one
+        let slots = 0
+        const on = holders(c)
+        for (const f of flowIds) {
+          if (!h[f]) continue
+          // a unit holds one slot however many of these stages it passes
+          for (const p of paths(f)) {
+            const twice = p.stages.filter((s) => on.includes(s))
+            if (twice.length > 1)
+              throw new Error(
+                `loadmap: component "${c}" is held on "${twice[0]}" and "${twice[1]}", and "${f}" passes both: a unit holds one slot, so name one of them`,
+              )
+          }
+          for (const s of on) slots += arriving(s, f) * h[f]
+        }
+        return slots
+      }
       const d = def.components[c]!.demand
       if (d) return d(ctx as any)
       let total = 0
@@ -1066,6 +1144,8 @@ function context(
     retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
     describe: (c: string) => text(def.components[c]!.describe),
+    held,
+    holders,
   }
 }
 

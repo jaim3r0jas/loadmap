@@ -145,6 +145,14 @@ component lookups "Cache lookups" {
 
 node cache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
 
+# a pool of slots: each unit holds a connection for a while, so it counts slots in use, not a rate
+component conns "DB connections" {
+  on: db
+  held { orders: 0.05 }
+  capacity: configured(200, "connections", "pool size")
+  over: "requests wait for a connection"
+}
+
 node db "Database" "primary" {
   tier: data
   shape: cylinder
