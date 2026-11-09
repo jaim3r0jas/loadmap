@@ -166,4 +166,22 @@ describe('the order along the flow', () => {
       }),
     ).toThrow('node "b" stands in unknown tier "nope"')
   })
+
+  it("carries a tier's own fills to its lane", async () => {
+    const tiers = {
+      app: { label: 'App', fill: '#e6f2ec' },
+      data: { label: 'Data', fill: 'rgb(1 2 3)', fillDark: '#123' },
+    }
+    const view = defineView(m, {
+      nodes: { ...nodes, b: { ...nodes.b, tier: 'app' }, d: { ...nodes.d, tier: 'data' } },
+      edges,
+      flows,
+      tiers,
+    })
+    const s = await layout(view, m.evaluate())
+    expect(s.tiers.map(({ id, fill, fillDark }) => ({ id, fill, fillDark }))).toEqual([
+      { id: 'app', fill: '#e6f2ec', fillDark: undefined },
+      { id: 'data', fill: 'rgb(1 2 3)', fillDark: '#123' },
+    ])
+  })
 })

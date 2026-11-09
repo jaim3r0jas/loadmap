@@ -41,6 +41,7 @@ import {
   inspect,
   latestEdition,
   pageOptions,
+  setProperty,
 } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
 import {
@@ -512,6 +513,30 @@ export function LoadmapEditor({
     setSelected(r.box)
     setNote(note)
   }
+  /**
+   * Properties of the definition (`path` '') or of a tier written, changed or taken out (null), as one undo step;
+   * nothing changes when one of them is refused.
+   */
+  const setOwn = (...steps: [path: string, name: string, value: string | boolean | null][]): string | null => {
+    const v = view.current
+    if (!v) return 'the editor is not ready'
+    let source = v.state.doc.toString()
+    const changes = []
+    for (const [path, name, value] of steps) {
+      const r = setProperty(source, path, name, value, { functions })
+      if ('error' in r) return r.error
+      source = r.source
+      changes.push(r.changes)
+    }
+    v.dispatch(
+      ...changes.map((c) => ({
+        changes: c,
+        sequential: true,
+        annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.inspector')],
+      })),
+    )
+    return null
+  }
   const formatText = () => {
     const v = view.current
     if (!v) return false
@@ -692,6 +717,12 @@ export function LoadmapEditor({
         tab={tab}
         onTab={setTab}
         onEdit={change}
+        lanes={Object.entries(def?.view.def.tiers ?? {}).map(([id, t]) => ({ id, ...t }))}
+        onLane={(id, key, value) =>
+          key
+            ? setOwn([`tier:${id}`, key, value])
+            : setOwn([`tier:${id}`, 'fill', null], [`tier:${id}`, 'fillDark', null])
+        }
         blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
         gone={tab === 'box' && !!selected && !inspection}
         onClose={() => setSelected(null)}
@@ -728,6 +759,28 @@ export function LoadmapEditor({
       <Starters templates={templates || undefined} sheet={sheet} onPick={startFrom} />
     </Suspense>
   )
+  // the lanes' fills and the canvas's grid: a line of the text each, written only when it differs from the default
+  const filled = def?.view.def.lanes !== 'striped'
+  const grid = def?.options.grid !== false
+  // while the text has errors, as the inspector, they change nothing: no line can be written then
+  const lookItems = (sheet?: boolean) =>
+    !errors && (
+      <>
+        <MenuItem
+          sheet={sheet}
+          toggle
+          checked={filled}
+          onSelect={() => setOwn(['', 'lanes', filled ? 'striped' : null])}
+        >
+          Lane fills
+        </MenuItem>
+        {canvas && (
+          <MenuItem sheet={sheet} toggle checked={grid} onSelect={() => setOwn(['', 'grid', grid ? false : null])}>
+            Dot grid
+          </MenuItem>
+        )}
+      </>
+    )
   // the box selected, for "Use for" in the catalog picker
   const node = selected
     ? (def?.view.def.nodes as Record<string, { label?: unknown }> | undefined)?.[selected]
@@ -763,6 +816,7 @@ export function LoadmapEditor({
           Format
         </MenuItem>
       )}
+      {lookItems(sheet)}
     </MenuGroup>
   )
   const exportGroups = (sheet?: boolean) => (
@@ -892,6 +946,11 @@ export function LoadmapEditor({
                 <button type="button" className="lm-btn lme-wide" onClick={formatText} title="Shift+Alt+F">
                   Format
                 </button>
+              )}
+              {!errors && (
+                <Menu label="View" className="lme-wide">
+                  {() => lookItems()}
+                </Menu>
               )}
               {(hasTemplates || catalog || !!newItems?.length) && (
                 <Menu label="New" className="lme-wide">

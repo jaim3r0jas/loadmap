@@ -92,6 +92,8 @@ export interface DefinitionOptions {
   assumptions: string[]
   fullScreen?: (typeof PANELS)[number][]
   fullScreenMode?: (typeof FULL_SCREEN_MODES)[number]
+  /** The editor's dot grid; only the editor reads it. */
+  grid?: boolean
 }
 
 /** The page options as `<Loadmap>` props, leaving out the unset ones so it keeps its defaults. */
@@ -446,7 +448,7 @@ class Compiler {
           )
       }
       const color = this.prop(b, 'color')
-      if (color) view.color = this.color(color.value)
+      if (color) view.color = this.color(color.value) ?? 'accent'
       if (label != null) view.label = label
       flowViews[id.name] = view
     }
@@ -511,8 +513,16 @@ class Compiler {
 
     // the view
     const tiers: Record<string, TierDef> = {}
-    for (const b of byKind('tier'))
-      if (b.args.id) tiers[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
+    for (const b of byKind('tier')) {
+      if (!b.args.id) continue
+      const tier: TierDef = { label: this.text(b.args.label) ?? b.args.id.name }
+      for (const k of ['fill', 'fillDark'] as const) {
+        const p = this.prop(b, k)
+        const c = p && this.color(p.value, false)
+        if (c) tier[k] = c
+      }
+      tiers[b.args.id.name] = tier
+    }
     const nodes: Record<string, AnyNodeDef> = {}
     for (const box of boxes) {
       nodes[box.id] = this.node(box)
@@ -572,6 +582,9 @@ class Compiler {
         mode,
         SCHEMA['']!.props.fullScreenMode!,
       ) as DefinitionOptions['fullScreenMode']
+    const grid = this.constProp<boolean>(root, 'grid')
+    if (grid != null) options.grid = grid
+    const lanes = this.constProp<'filled' | 'striped'>(root, 'lanes')
     for (const a of root.props.get('assume') ?? []) {
       const v = this.constant(a.value, 'string')
       if (typeof v === 'string') options.assumptions.push(v)
@@ -584,6 +597,7 @@ class Compiler {
       flows: flowViews,
       ...(Object.keys(tiers).length ? { tiers } : {}),
       ...(arrange ? { layout: arrange } : {}),
+      ...(lanes ? { lanes } : {}),
     }
     return this.build(model, view, options, byKind('preset'), byKind('scenario'))
   }
@@ -597,6 +611,7 @@ class Compiler {
       flows: Record<string, FlowView>
       tiers?: Record<string, TierDef>
       layout?: 'compact' | 'stable'
+      lanes?: 'filled' | 'striped'
     },
     options: DefinitionOptions,
     presets: Block[],
@@ -1045,15 +1060,17 @@ class Compiler {
     return out
   }
 
-  private color(e: Expr): string {
-    if (e.t === 'id') {
+  /** A CSS colour in quotes, or with `themes` a theme colour by name; undefined (and an error) for anything else. */
+  private color(e: Expr, themes = true): string | undefined {
+    const or = themes ? ' or a theme colour' : ''
+    if (e.t === 'id' && themes) {
       if ((COLORS as readonly string[]).includes(e.name)) return e.name
       this.report.error(e, `"${e.name}" is not a theme colour`, didYouMean(e.name, COLORS) ?? 'or quote a CSS colour')
     } else if (e.t === 'str') {
       if (CSS_COLOR.test(e.value.trim())) return e.value.trim()
-      this.report.error(e, `"${e.value}" is not a colour`, 'use #rrggbb, rgb(…), hsl(…) or a theme colour')
-    } else this.report.error(e, 'a colour is a theme colour or a CSS colour in quotes')
-    return 'accent'
+      this.report.error(e, `"${e.value}" is not a colour`, `use #rrggbb, rgb(…), hsl(…)${or}`)
+    } else this.report.error(e, `a colour is a CSS colour in quotes${or}`)
+    return undefined
   }
 
   private count(what: keyof typeof LIMITS) {
@@ -1603,7 +1620,9 @@ class Compiler {
 }
 
 const FORBIDDEN = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype'])
-const CSS_COLOR = /^(#[0-9a-f]{3,8}|(rgb|hsl)a?\([\d\s.,%/+-]+\))$/i
+// hex of 3, 4, 6 or 8 digits, or rgb() and hsl() with three numbers and an alpha: nothing a paint would fetch
+const CSS_COLOR =
+  /^(#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(rgb|hsl)a?\(\s*([+-]?[\d.]+%?(\s*,\s*|\s+)){2}[+-]?[\d.]+%?(\s*[,/]\s*[\d.]+%?)?\s*\))$/i
 
 function usage(keyword: string): string | undefined {
   const ex = own(SCHEMA, keyword)?.example

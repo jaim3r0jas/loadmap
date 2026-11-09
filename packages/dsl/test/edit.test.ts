@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compile, loadCatalog } from '../src'
-import { type EditValue, edit, type InspectField, inspect } from '../src/internal'
+import { type EditValue, edit, type InspectField, inspect, setProperty } from '../src/internal'
 
 const root = new URL('../../../', import.meta.url)
 const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
@@ -291,4 +291,71 @@ describe('edit', () => {
     // a compile a field: about 35 s for every-statement.loadmap on a laptop, two to three times that on CI
     180_000,
   )
+})
+
+describe('setProperty', () => {
+  const set = (source: string, path: string, name: string, value: string | boolean | null) => {
+    const r = setProperty(source, path, name, value)
+    if ('error' in r) throw new Error(r.error)
+    return r.source
+  }
+  const tiers = (...lines: string[]) =>
+    mini(
+      'node a "A" { tier: x }',
+      'node b "B" { pass; capacity: measured(9, "x"); over: "y"; tier: y }',
+      'a -> b',
+      ...lines,
+    )
+
+  it('writes a property of the definition after its last one, changes it, and takes it out', () => {
+    const src = tiers('tier x "X"', 'tier y "Y"')
+    const on = set(src, '', 'grid', false)
+    expect(on).toBe(src.replace('load {', 'grid: false\nload {'))
+    expect(compile(on).definition!.options.grid).toBe(false)
+    const titled = src.replace('load {', 'title: "T"\nload {')
+    const striped = set(titled, '', 'lanes', 'striped')
+    expect(striped).toContain('title: "T"\nlanes: striped\nload {')
+    expect(compile(striped).definition!.view.def.lanes).toBe('striped')
+    expect(set(striped, '', 'lanes', 'filled')).toContain('lanes: filled\n')
+    expect(set(striped, '', 'lanes', null)).toBe(titled)
+    expect(set(titled, '', 'grid', null)).toBe(titled)
+    // after a value that runs over several lines, never inside it; and taken out whole
+    const long = src.replace('load {', 'fullScreen: [\n  verdict,\n  live\n]\nload {')
+    const after = set(long, '', 'grid', false)
+    expect(after).toContain('  live\n]\ngrid: false\nload {')
+    expect(set(set(long, '', 'lanes', 'striped'), '', 'fullScreen', null)).toBe(
+      src.replace('load {', 'lanes: striped\nload {'),
+    )
+  })
+
+  it('gives a tier a block for its fill, adds to it, and drops it with its last line', () => {
+    const src = tiers('tier x "X"', 'tier y "Y"')
+    const one = set(src, 'tier:y', 'fill', '#e6f2ec')
+    expect(one).toContain('tier y "Y" { fill: "#e6f2ec" }')
+    const two = set(one, 'tier:y', 'fillDark', '#1c2b26')
+    expect(two).toContain('tier y "Y" { fill: "#e6f2ec"; fillDark: "#1c2b26" }')
+    expect(compile(two).definition!.view.def.tiers).toEqual({
+      x: { label: 'X' },
+      y: { label: 'Y', fill: '#e6f2ec', fillDark: '#1c2b26' },
+    })
+    expect(set(two, 'tier:y', 'fill', '#ffffff')).toContain('{ fill: "#ffffff"; fillDark: "#1c2b26" }')
+    expect(set(set(two, 'tier:y', 'fillDark', null), 'tier:y', 'fill', null)).toBe(src)
+    const lines = tiers('tier x "X" {', '  fill: "#e6f2ec"', '}', 'tier y "Y"')
+    expect(set(lines, 'tier:x', 'fillDark', '#1c2b26')).toContain('  fill: "#e6f2ec"\n  fillDark: "#1c2b26"\n}')
+    expect(set(set(lines, 'tier:x', 'fillDark', '#1c2b26'), 'tier:x', 'fillDark', null)).toBe(lines)
+  })
+
+  it('refuses what does not fit, and what would break the definition', () => {
+    const src = tiers('tier x "X"', 'tier y "Y"')
+    const refuses = (path: string, name: string, v: string | boolean | null) => {
+      const r = setProperty(src, path, name, v)
+      return 'error' in r ? r.error : null
+    }
+    expect(refuses('', 'grid', 'yes')).toBe('a boolean')
+    expect(refuses('', 'lanes', 'dotted')).toBe('one of filled, striped')
+    expect(refuses('', 'colour', true)).toBe('a definition has no colour')
+    expect(refuses('tier:z', 'fill', '#fff')).toBe('nothing at "tier:z"')
+    expect(refuses('tier:x', 'fill', 'url(https://example.com/x)')).toBe('"url(https://example.com/x)" is not a colour')
+    expect(refuses('tier:x', 'fill', '#12345')).toBe('"#12345" is not a colour')
+  })
 })

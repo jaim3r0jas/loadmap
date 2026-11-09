@@ -505,7 +505,7 @@ const Structure = memo(function Structure({
         </marker>
       </defs>
       {scene.tiers.map((t, i) => (
-        <Tier key={t.id} t={t} i={i} />
+        <Tier key={t.id} t={t} i={i} striped={lm.view.def.lanes === 'striped'} />
       ))}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
@@ -540,18 +540,25 @@ const Structure = memo(function Structure({
 })
 
 /**
- * A tier's lane behind the boxes: every other band shaded, a divider before all but the first, and its header with the
- * name. Paint goes in attributes, never classes: export resolves the tokens in them and drops the classes.
+ * A tier's lane behind the boxes: filled in two alternating shades (striped: every other one clear) or its own colours,
+ * a divider before all but the first, and its header with the name. Paint goes in attributes, never classes: export
+ * resolves the tokens in them and drops the classes. Its own colours go in its style as well, for each theme
+ * (`light-dark()`, and without a dark one the light one's hue at the lightness of the theme's dark lanes): a browser
+ * that cannot read that drops it and keeps the attribute, the light colour.
  */
-function Tier({ t, i }: { t: SceneTier; i: number }) {
+function Tier({ t, i, striped }: { t: SceneTier; i: number; striped: boolean }) {
   const h = t.head
+  const fill = t.fill ?? (i % 2 ? 'var(--lm-tier)' : striped ? 'transparent' : 'var(--lm-tier-base)')
+  const own = (t.fill || t.fillDark) && `light-dark(${fill}, ${t.fillDark ?? `oklch(from ${t.fill} .28 c h)`})`
   const [x2, y2] = t.vertical ? [t.x + t.w, t.y] : [t.x, t.y + t.h]
   const under = t.vertical
     ? { x1: h.x + h.w, y1: h.y, x2: h.x + h.w, y2: h.y + h.h }
     : { x1: h.x, y1: h.y + h.h, x2: h.x + h.w, y2: h.y + h.h }
   return (
     <g className="lm-tier" data-tier-id={t.id} pointerEvents="none">
-      {i % 2 === 1 && <rect x={t.x} y={t.y} width={t.w} height={t.h} fill="var(--lm-tier)" />}
+      {(own || fill !== 'transparent') && (
+        <rect data-lane x={t.x} y={t.y} width={t.w} height={t.h} fill={fill} style={own ? { fill: own } : undefined} />
+      )}
       <rect x={h.x} y={h.y} width={h.w} height={h.h} fill="var(--lm-tier-head)" />
       <line {...under} stroke="var(--lm-tier-line)" />
       {i > 0 && <line x1={t.x} y1={t.y} x2={x2} y2={y2} stroke="var(--lm-tier-line)" />}

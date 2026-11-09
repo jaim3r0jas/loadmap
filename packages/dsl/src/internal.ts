@@ -16,6 +16,7 @@ export {
   inspect,
   type OptionValue,
   type Provenance,
+  setProperty,
   type TextChange,
 } from './edit'
 export { BUILTINS } from './expr'

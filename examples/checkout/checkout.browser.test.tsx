@@ -398,10 +398,14 @@ describe('checkout in the browser', () => {
       { id: 'data', text: 'DATA', turned: false },
     ])
     expect(whole(wide.el)).toBe(true)
-    // behind everything else on the board, every other lane shaded, a divider before all but the first
+    // behind everything else on the board, every lane filled in two alternating shades, a divider before all but the first
     expect(wide.el.querySelector('svg > .lm-tier')?.previousElementSibling?.tagName).toBe('defs')
     const g = [...wide.el.querySelectorAll('svg .lm-tier')]
-    expect(g.map((t) => !!t.querySelector('rect[fill="var(--lm-tier)"]'))).toEqual([false, true, false])
+    expect(g.map((t) => t.querySelector('rect[data-lane]')?.getAttribute('fill'))).toEqual([
+      'var(--lm-tier-base)',
+      'var(--lm-tier)',
+      'var(--lm-tier-base)',
+    ])
     expect(g.map((t) => t.querySelectorAll('line').length)).toEqual([1, 2, 2])
     root?.unmount()
     host?.remove()
@@ -425,10 +429,51 @@ describe('checkout in the browser', () => {
       const fg = lum(getComputedStyle(t.querySelector('text')!).fill)
       const head = lum(getComputedStyle(t.querySelector('rect[fill="var(--lm-tier-head)"]')!).fill)
       expect((Math.max(fg, head) + 0.05) / (Math.min(fg, head) + 0.05)).toBeGreaterThan(7)
-      // the shaded lane stands apart from the board
-      const shaded = getComputedStyle(el.querySelector('svg rect[fill="var(--lm-tier)"]')!).fill
-      expect(shaded).not.toBe(getComputedStyle(el.querySelector('.lm-board')!).backgroundColor)
+      // the two shades stand apart from each other and from the boxes on them (the board's own colour)
+      const fill = (sel: string) => getComputedStyle(el.querySelector(sel)!).fill
+      const shades = [fill('svg rect[fill="var(--lm-tier-base)"]'), fill('svg rect[fill="var(--lm-tier)"]')]
+      const box = fill('[data-node="gateway"] > rect')
+      expect(box).toBe(getComputedStyle(el.querySelector('.lm-board')!).backgroundColor)
+      expect(new Set([...shades, box]).size).toBe(3)
       await page.screenshot({ path: `__screenshots__/checkout-lanes-${theme}.png`, element: el })
+    })
+
+  for (const theme of ['light', 'dark'] as const)
+    it(`fills a lane in its own colour, and leaves every other one clear when striped (${theme})`, async () => {
+      await page.viewport(1280, 900)
+      host = document.createElement('div')
+      document.body.appendChild(host)
+      const ref = createRef<LoadmapHandle>()
+      const tiers = {
+        edge: { label: 'Edge' },
+        services: { label: 'Services', fill: '#e6f2ec' },
+        data: { label: 'Data', fill: '#fdf1e4', fillDark: '#2e2418' },
+      }
+      root = createRoot(host)
+      root.render(
+        <Loadmap
+          ref={ref}
+          model={checkout}
+          view={{ ...view, def: { ...view.def, lanes: 'striped', tiers } }}
+          theme={theme}
+        />,
+      )
+      await expect.poll(() => ref.current).toBeTruthy()
+      await ref.current!.ready()
+      const el = host.querySelector<HTMLElement>('.lm')!
+      const lanes = [...el.querySelectorAll('svg .lm-tier')].map((g) => g.querySelector('rect[data-lane]'))
+      // striped: the first lane, without a colour of its own, clear
+      expect(lanes[0]).toBeNull()
+      const drawn = lanes.slice(1).map((r) => getComputedStyle(r!).fill)
+      const dark = theme === 'dark'
+      // the services lane's dark fill is a fifth of its colour in the theme's dark lane; data says its own
+      if (!dark) expect(drawn).toEqual(['rgb(230, 242, 236)', 'rgb(253, 241, 228)'])
+      else expect([drawn[0] === 'rgb(230, 242, 236)', drawn[1]]).toEqual([false, 'rgb(46, 36, 24)'])
+      // exported, every paint is resolved to rgb: no var(), light-dark() or oklch() left for another viewer to read
+      const text = await exportSvg(ref.current!)
+      expect(text).not.toMatch(/var\(--lm-|light-dark\(|oklch\(/)
+      expect(text).toContain(dark ? 'rgb(46, 36, 24)' : 'rgb(253, 241, 228)')
+      await page.screenshot({ path: `__screenshots__/checkout-lanes-own-${theme}.png`, element: el })
     })
 })
 

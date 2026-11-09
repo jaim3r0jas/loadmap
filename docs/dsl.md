@@ -304,12 +304,24 @@ pool api "API" { tier: services; workers { pods: pods; perPod: 8 } }
 node db "Database" { tier: data; store }
 ```
 
-Each tier is a lane behind its boxes: every other one shaded, a line between them, and a header with its name in
-capitals at the lane's start, a strip across the top (a column on the left running down, and on a phone, the name
-reading up). A name wider than its lane takes two lines, and every header on the board then takes two. A box without
-a tier stands in the tier of the boxes that feed it, or of those it feeds when nothing feeds it, so a definition names
-the tier where it changes. In TypeScript:
+Each tier is a lane behind its boxes: filled in two alternating shades, a line between them, and a header with its
+name in capitals at the lane's start, a strip across the top (a column on the left running down, and on a phone, the
+name reading up). A name wider than its lane takes two lines, and every header on the board then takes two. A box
+without a tier stands in the tier of the boxes that feed it, or of those it feeds when nothing feeds it, so a
+definition names the tier where it changes. In TypeScript:
 `tiers: { edge: { label: 'Edge' }, … }` in the view, `tier: 'edge'` on a box.
+
+`lanes: striped` leaves every other lane clear. A tier can have a colour of its own, and one for the dark theme;
+without it, dark keeps the colour's hue as dark as the theme's lanes, and a dark one alone leaves light the theme's. A colour is `"#rrggbb"`, `"rgb(…)"` or
+`"hsl(…)"`, nothing that fetches:
+
+```loadmap
+tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }
+```
+
+In TypeScript: `lanes: 'striped'` in the view, `fill` and `fillDark` beside a tier's `label`. The page's theme sets
+the shades: `--lm-tier-base` for the first, third… lanes, `--lm-tier` for the others. In the editor, **View** switches
+the lanes' fills and the dot grid behind the diagram (`grid: false`), and the model's tab gives each lane its colours.
 
 ### Full screen
 
@@ -451,6 +463,8 @@ A loadmap definition.
 | `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
+| `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
+| `grid` | boolean, constant | The editor's dot grid. Default true. |
 
 Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
 
@@ -731,6 +745,11 @@ tier data "Data"
 ```
 
 After the keyword: id [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `fill` | string, constant | The lane's own colour: "#rrggbb", "rgb(…)" or "hsl(…)". |
+| `fillDark` | string, constant | Its colour in the dark theme. Default: fill's hue, as dark as the theme's lanes. |
 
 ### node
 

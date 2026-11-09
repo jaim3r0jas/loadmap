@@ -381,6 +381,61 @@ describe('the editor filling its container', () => {
     }
   }
 
+  it('switches the lanes’ fills and the dot grid from the View menu, and gives a lane its own colour', async () => {
+    const { host, handle } = await fill(1400, { layout: 'reader' })
+    const lanes = () =>
+      [...host.querySelectorAll('.lme-preview .lm-tier')].map((g) => g.querySelector<SVGRectElement>('[data-lane]'))
+    // by a part of its name: the ✓ before a checked one is drawn in CSS, which Playwright reads into it
+    const item = (name: string) => page.getByRole('menuitemcheckbox', { name: new RegExp(name) })
+    const view = async (name: string) => {
+      await page.getByRole('button', { name: 'View' }).click()
+      await item(name).click()
+    }
+    // on the grid, every lane lets the dots through
+    expect(host.querySelector('.lme-canvas')!.hasAttribute('data-grid')).toBe(false)
+    expect(lanes().map((r) => r && getComputedStyle(r).fillOpacity)).toEqual(['0.55', '0.55', '0.55'])
+    await page.getByRole('button', { name: 'View' }).click()
+    await expect.element(item('Lane fills')).toHaveAttribute('aria-checked', 'true')
+    await expect.element(item('Dot grid')).toHaveAttribute('aria-checked', 'true')
+    await userEvent.keyboard('{Escape}')
+    // each switch writes a line of the text, and switched back takes it out
+    const before = handle.source()
+    await view('Dot grid')
+    expect(handle.source()).toContain('\ngrid: false\n')
+    await expect.poll(() => host.querySelector('.lme-canvas')!.getAttribute('data-grid')).toBe('off')
+    expect(getComputedStyle(lanes()[0]!).fillOpacity).toBe('1')
+    await view('Lane fills')
+    expect(handle.source()).toContain('\nlanes: striped\n')
+    await expect.poll(() => lanes().map((r) => !!r)).toEqual([false, true, false])
+    await view('Lane fills')
+    await view('Dot grid')
+    expect(handle.source()).toBe(before)
+    // the model's tab: a colour of its own for the data lane, light then dark, and Reset takes both out
+    await userEvent.click(host.querySelector('.lme-preview [data-node="gateway"]')!)
+    await page.getByRole('tab', { name: 'Model' }).click()
+    const picker = (n: number) =>
+      host.querySelectorAll<HTMLInputElement>('[data-key="tier:data"] input[type="color"]')[n]!
+    const pick = (n: number, c: string) => {
+      picker(n).value = c
+      picker(n).dispatchEvent(new Event('change'))
+    }
+    pick(0, '#e6f2ec')
+    await expect.poll(() => handle.source()).toContain('tier data "Data" { fill: "#e6f2ec" }')
+    pick(1, '#1c2b26')
+    await expect.poll(() => handle.source()).toContain('tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }')
+    await expect.poll(() => lanes()[2]?.style.fill).toBe('light-dark(rgb(230, 242, 236), rgb(28, 43, 38))')
+    // Reset goes away as it is pressed: the focus stays on the lane
+    const reset = host.querySelector<HTMLButtonElement>('[data-key="tier:data"] button')!
+    reset.focus()
+    reset.click()
+    await expect.poll(() => handle.source()).toBe(before)
+    expect(document.activeElement).toBe(host.querySelector('[data-key="tier:data"]'))
+    // a dark colour alone: light keeps the theme's shade
+    pick(1, '#1c2b26')
+    await expect.poll(() => handle.source()).toContain('tier data "Data" { fillDark: "#1c2b26" }')
+    await expect.poll(() => lanes()[2]?.getAttribute('fill')).toBe('var(--lm-tier-base)')
+  })
+
   it('draws the diagram as a canvas between the code’s panel and the side panel’s rail, the code’s edge resizing it', async () => {
     const moved: number[] = []
     const { host } = await fill(1200, { split: 0.5, onSplit: (n) => moved.push(n), start: 'Back' })
@@ -532,9 +587,11 @@ describe('the editor filling its container', () => {
     const { host } = await fill(1200, site)
     const tools = host.querySelector<HTMLElement>('[role="toolbar"]')!
     const stops = () => [...tools.querySelectorAll<HTMLElement>('button')].filter((b) => b.tabIndex === 0)
-    expect(stops().map((b) => b.textContent)).toEqual(['New'])
+    expect(stops().map((b) => b.textContent)).toEqual(['View'])
     const name = () => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent
     stops()[0]!.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(name()).toBe('New')
     await userEvent.keyboard('{ArrowRight}')
     expect(name()).toBe('Export')
     await userEvent.keyboard('{ArrowRight}')
@@ -542,7 +599,7 @@ describe('the editor filling its container', () => {
     await userEvent.keyboard('{End}')
     expect(name()).toBe('More ways to share')
     await userEvent.keyboard('{ArrowRight}')
-    expect(name()).toBe('New')
+    expect(name()).toBe('View')
     await userEvent.keyboard('{ArrowLeft}')
     expect(name()).toBe('More ways to share')
     // Tab comes back to the last one used

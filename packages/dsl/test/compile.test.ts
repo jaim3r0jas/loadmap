@@ -167,6 +167,43 @@ describe('tiers', () => {
     expect(errors(def({ top: 'tier app\ntier app' }))).toMatchObject([{ message: '"app" is declared twice' }])
   })
 
+  it("take a fill of their own, a lanes style and the editor's grid", () => {
+    const src = def({
+      top: 'lanes: striped\ngrid: false\ntier app "Services" { fill: "#e6f2ec"; fillDark: "#1c2b26" }',
+    })
+    const d = compile(src).definition!
+    expect(d.view.def.tiers).toEqual({ app: { label: 'Services', fill: '#e6f2ec', fillDark: '#1c2b26' } })
+    expect(d.view.def.lanes).toBe('striped')
+    expect(d.options.grid).toBe(false)
+    // only the editor reads the grid: <Loadmap> never sees it
+    expect(pageOptions(d.options)).not.toHaveProperty('grid')
+  })
+
+  it('refuse a fill that is not a colour, and take a dark one alone', () => {
+    expect(errors(def({ top: 'tier app { fill: "url(https://example.com/x)" }' }))).toMatchObject([
+      { message: '"url(https://example.com/x)" is not a colour', text: '"url(https://example.com/x)"' },
+    ])
+    // only whole colours: one a browser cannot read draws the lane black
+    for (const c of ['#12345', '#1234567', 'rgb(1)', 'rgb( )', 'hsl(,,)', 'accent'])
+      expect(errors(def({ top: `tier app { fill: "${c}" }` })).map((e) => e.message)).toEqual([
+        `"${c}" is not a colour`,
+      ])
+    for (const c of [
+      '#abc',
+      '#abcd',
+      '#aabbcc',
+      '#aabbccdd',
+      'rgb(1, 2, 3)',
+      'rgb(1 2 3 / 50%)',
+      'hsla(120, 50%, 40%, 0.5)',
+    ])
+      expect(errors(def({ top: `tier app { fill: "${c}" }` }))).toEqual([])
+    expect(compile(def({ top: 'tier app { fillDark: "#000" }' })).definition!.view.def.tiers).toEqual({
+      app: { label: 'app', fillDark: '#000' },
+    })
+    expect(errors(def({ top: 'lanes: dotted' }))).toMatchObject([{ text: 'dotted' }])
+  })
+
   it('warn about an edge that runs back to an earlier tier', () => {
     const src = def({ top: 'tier front\ntier back' })
       .replace('node client "Client"', 'node client "Client" { tier: back }')
