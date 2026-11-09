@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fromSnapshot, parseSnapshot } from '@loadmap/core/measure'
 import { describe, expect, it } from 'vitest'
-import { compile, completions, format, hover, rename } from '../src'
+import { compile, completions, format, hover, problems, rename } from '../src'
 
 const SRC = `loadmap 1
 title: "Shop"
@@ -104,9 +104,9 @@ describe('metric and measure', () => {
     const fit = model.def.calibration!['Worker CPU per request']!
     expect(fit.n).toBe(6)
     expect(fit.origin?.y.query).toContain('container_cpu_usage_seconds_total')
-    // listed once: the capacity and the fit already show their readings
+    // listed once: the capacity and the fit show their readings, and what no measure declares is left out
     const listed = ev.assumptions.flatMap((a) => (a.kind === 'measurement' ? [a.name] : []))
-    expect(listed).toEqual(['rate_old', 'hit', 'lag'])
+    expect(listed).toEqual([])
   })
 
   it('falls back, with why, for what the snapshot lacks', () => {
@@ -268,5 +268,28 @@ users -> api
     expect(esErrors('  stat: p95\n', '  stat: p95\n  prometheus { query: "x" }\n')).toContain(
       'error: a metric reads from one provider | e.g. prometheus { query: "sum(rate(http_requests_total[5m]))" }',
     )
+  })
+})
+
+describe('expect outcomes in the language', () => {
+  const src = (expectLine: string) =>
+    SRC.replace('flow req "requests"', `${expectLine}\nflow req "requests"`).replace(
+      'fallback: estimated(1_000, "req/s", "vendor benchmark")',
+      'fallback: estimated(1_000 ± 30%, "req/s", "vendor benchmark")',
+    )
+  const lines = (text: string, failed: 'warning' | 'error' = 'error', unsure: 'warning' | 'error' = 'warning') =>
+    problems(compile(text), failed, unsure).map((d) => `${d.severity}: ${d.message}`)
+
+  it('marks a warning-level expect as a warning, and an inconclusive one with why', () => {
+    // 40 req/s against 1,000 ± 30 %: the target between 8.75× and 16.25×
+    expect(lines(src('expect "Soft" { target: 30; severity: warn }'))).toEqual([
+      'warning: "Soft" fails: expected at least 30×, but the 50 % target holds up to between 8.7× and 16×, limited by API (capacity estimated ±30 %)',
+    ])
+    expect(lines(src('expect "Edge" { target: 10 }'))).toEqual([
+      'warning: "Edge" is inconclusive: holds at 10× only at the high edge of a ±; expected at least 10×, but the 50 % target holds up to between 8.7× and 16×, limited by API (capacity estimated ±30 %)',
+    ])
+    expect(lines(src('expect "Edge" { target: 10 }'), 'error', 'error')[0]).toMatch(/^error: "Edge" is inconclusive/)
+    expect(errors(src('expect { target: 5; severity: maybe }'))[0]).toMatch(/maybe/)
+    expect(lines(src('expect { target: 10 }'))[0]).toMatch(/^warning: inconclusive: holds at 10× only at the high edge/)
   })
 })

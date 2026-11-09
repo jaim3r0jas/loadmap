@@ -342,6 +342,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       component: { value: 'component', scope: 'const', doc: 'One component; the first limit without one.' },
       target: { value: 'number', scope: 'const', doc: 'The target holds up to at least this load multiple.' },
       full: { value: 'number', scope: 'const', doc: 'Nothing (or the component) runs out before this load multiple.' },
+      severity: {
+        value: 'enum',
+        scope: 'const',
+        values: ['fail', 'warn'],
+        doc: 'warn: `loadmap check` reports it, and never fails because of it. Default fail.',
+      },
     },
     children: [],
   },

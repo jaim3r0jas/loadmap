@@ -96,10 +96,12 @@ describe('fromSnapshot', () => {
 
   it('falls back to the definition’s value with why, never to an invented one', () => {
     const fallback = estimated(1000, 'req/s', 'vendor benchmark')
-    expect(read.capacity('lag', fallback)).toEqual({ ...fallback, unread: '3 of at least 30 samples' })
+    expect(read.capacity('lag', fallback)).toEqual({ ...fallback, unread: '3 of at least 30 samples', measure: 'lag' })
     expect(read.capacity('hit', fallback).unread).toBe('the query returned no series')
     expect(read.capacity('nothing', fallback).unread).toBe('"nothing" is not in the snapshot')
-    expect(fromSnapshot(undefined).capacity('apiCapacity', fallback)).toEqual({ ...fallback, unread: 'no snapshot' })
+    // no snapshot at all: the definition's value stands as it is, nothing is missing
+    expect(fromSnapshot(undefined).capacity('apiCapacity', fallback)).toBe(fallback)
+    expect(fromSnapshot(undefined).unread('apiCapacity')).toBe('no snapshot')
     expect(read.value('requests', 40)).toBe(110)
     expect(read.value('lag', 5)).toBe(5)
     expect(read.value('hit', 0.8)).toBe(0.8)

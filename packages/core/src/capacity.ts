@@ -21,6 +21,8 @@ export interface Capacity {
   origin?: Origin
   /** Why the snapshot gave no value (missing data, too few samples): this is the definition's own value instead. */
   unread?: string
+  /** The snapshot measurement it reads, whether or not it had a value: a check scopes missing data by it. */
+  measure?: string
 }
 
 export interface CapacityOptions {

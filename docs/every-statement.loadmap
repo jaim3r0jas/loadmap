@@ -29,7 +29,7 @@ preset "Sale day" { load: 20; pods: 8 }
 scenario "Bigger API" { pods: 8 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 2×" { target: 2 }
+expect "Today keeps 2×" { target: 2; severity: warn }
 expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; full: 10 }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }

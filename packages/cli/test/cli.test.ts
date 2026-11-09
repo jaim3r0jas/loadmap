@@ -175,8 +175,8 @@ describe('loadmap check', () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'loadmap-check-'))
     failing = join(dir, 'checkout.loadmap')
-    // the same definition, promising 8× today: the pessimistic edge is 7.4×
-    const src = (await readFile(checkout, 'utf8')).replace('{ target: 7 }', '{ target: 8 }')
+    // the same definition, promising 12× today: beyond both edges of its ± (7.4× to 10×)
+    const src = (await readFile(checkout, 'utf8')).replace('{ target: 7 }', '{ target: 12 }')
     await writeFile(failing, src)
   })
   afterAll(async () => {
@@ -201,9 +201,9 @@ describe('loadmap check', () => {
     expect(code).toBe(1)
     const line = (await readFile(failing, 'utf8')).split('\n').findIndex((l) => l.startsWith('expect "Today')) + 1
     expect(out).toContain(
-      `${failing}:${line}:1 error: "Today keeps 7×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×`,
+      `${failing}:${line}:1 error: "Today keeps 7×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×`,
     )
-    expect(out).toContain(`${line} | expect "Today keeps 7×" { target: 8 }`)
+    expect(out).toContain(`${line} | expect "Today keeps 7×" { target: 12 }`)
     expect(out).toContain('checkout.loadmap: 1 of 2 expectations failed')
     // the command line gives the same code
     expect(await main(['check', failing], () => {})).toBe(1)
@@ -212,7 +212,7 @@ describe('loadmap check', () => {
   it('annotates the line for GitHub, by flag or under GitHub Actions', async () => {
     const line = (await readFile(failing, 'utf8')).split('\n').findIndex((l) => l.startsWith('expect "Today')) + 1
     const file = failing.replaceAll(':', '%3A').replaceAll(',', '%2C')
-    const annotation = `::error file=${file},line=${line},col=1,endLine=${line},endColumn=24,title=loadmap check::"Today keeps 7×" fails: expected at least 8×, but the 50 %25 target holds up to`
+    const annotation = `::error file=${file},line=${line},col=1,endLine=${line},endColumn=24,title=loadmap check::"Today keeps 7×" fails: expected at least 12×, but the 50 %25 target holds up to`
     expect((await run(['--format', 'github', failing])).out).toContain(annotation)
     expect((await run([failing], { GITHUB_ACTIONS: 'true' })).out).toContain(annotation)
     expect((await run([failing])).out).not.toContain('::error')

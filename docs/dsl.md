@@ -140,14 +140,35 @@ loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectat
 ```
 
 ```
-checkout.loadmap:26:1 error: "Today keeps 8×" fails: expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
-  26 | expect "Today keeps 8×" { target: 8 }
-     | ^^^^^^^^^^^^^^^^^^^^^^^
+checkout.loadmap:26:1 error: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
+  26 | expect "Today keeps 12×" { target: 12 }
+     | ^^^^^^^^^^^^^^^^^^^^^^^^
 checkout.loadmap: 1 of 2 expectations failed
 ```
 
+Each expectation ends **pass**, **fail** or **inconclusive**. It is inconclusive when the answer rests on what is not
+known: it holds at the high edge of a ± but not at the low one (`target: 8` above, between 7.4× and 10×), a
+component has no published benchmark, or measured data it reads is missing or too thin. The line says why, and
+`loadmap check` reports it as a warning; `--inconclusive fail` makes it fail the run. `severity: warn` makes an
+expectation a warning whatever it finds: it is reported, and never fails the run.
+
+```
+expect "Black Friday keeps 3×" { scenario: Proposed; target: 3; severity: warn }
+```
+
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
-line in the pull request.
+line in the pull request, and a table of the expectations goes into the job summary.
+
+`loadmap check --pull` reads the definition's measures first, as `loadmap pull` does (the same `--window`, `--step`
+and `--to`), writes the snapshot next to it, and checks against it; `--snapshot <file>` checks against one already
+there (a pull request from a fork gets no secrets, and a rerun reads exactly the data a job used). `--dry-run` reports
+everything and exits 0, to watch a gate before it blocks. `--json <file>` writes the run's result: the commit
+(`GITHUB_SHA`, or `--commit`), the snapshot's window, each expectation's outcome, severity and reasons, the first
+limit and each component's utilization and headroom; `--format json` prints it instead of the lines.
+
+```bash
+loadmap check shop.loadmap --pull --window 7d --json result.json   # LOADMAP_PROMETHEUS_URL and its token from CI secrets
+```
 
 ### Published figures
 
@@ -739,6 +760,7 @@ After the keyword: [label].
 | `component` | component, constant | One component; the first limit without one. |
 | `target` | number, constant | The target holds up to at least this load multiple. |
 | `full` | number, constant | Nothing (or the component) runs out before this load multiple. |
+| `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
 
 ### step
 

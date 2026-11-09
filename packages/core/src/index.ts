@@ -11,7 +11,7 @@ export {
   type Provenance,
   sourceText,
 } from './capacity'
-export { assertHolds, type CheckResult, check, type Expectation } from './check'
+export { assertHolds, type CheckResult, check, type Expectation, type Outcome } from './check'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
 export type {
   Measurement,

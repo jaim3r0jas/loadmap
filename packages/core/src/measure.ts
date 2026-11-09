@@ -285,17 +285,24 @@ export function fromSnapshot(snapshot: Snapshot | undefined): SnapshotReader {
     snapshot,
     unread,
     capacity(name, fallback) {
+      // no snapshot at all (a pull request from a fork): the definition's values stand, and nothing is missing
+      if (!snapshot) return fallback
       const m = usable(name)
-      if (!m) return { ...fallback, unread: unread(name)! }
+      if (!m) return { ...fallback, unread: unread(name)!, measure: name }
       // the file is data: a wrong unit is a measurement that does not count, not a page that fails
-      if (m.unit !== fallback.unit) return { ...fallback, unread: `"${name}" is in ${m.unit}, not ${fallback.unit}` }
+      if (m.unit !== fallback.unit)
+        return { ...fallback, unread: `"${name}" is in ${m.unit}, not ${fallback.unit}`, measure: name }
       // the fallback's ± was about a guess, not about this reading
-      return measured(m.value, m.unit, { source: m.source ?? originText(m.origin), origin: m.origin })
+      return {
+        ...measured(m.value, m.unit, { source: m.source ?? originText(m.origin), origin: m.origin }),
+        measure: name,
+      }
     },
     value(name, fallback) {
       return usable(name)?.value ?? fallback
     },
     fit(x, y, fallback, o = {}) {
+      if (!snapshot) return fallback
       const mx = usable(x)
       const my = usable(y)
       const why = (n: string, m: typeof mx) => (m ? (m.series?.length ? null : `"${n}" has no series`) : unread(n))
