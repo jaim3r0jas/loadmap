@@ -127,7 +127,7 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   const items: { key: string; value: string; label: string; state: 'ok' | 'warn' | 'over' }[] = []
   for (const s of Object.values(ev.stages)) {
     if (s.kind === 'queue')
-      for (const f of model.flowIds.filter((x) => ev.routes[x]?.includes(s.id))) {
+      for (const f of model.flowIds.filter((x) => ev.paths[x]?.some((p) => p.stages.includes(s.id)))) {
         const q = sim.queue(s.id, f)
         const rules = ev.overload[f] ?? {}
         items.push({
@@ -180,7 +180,7 @@ export function Meters({ lm }: { lm: LoadmapController }) {
         state: 'ok',
       })
     }
-    if ((s.kind === 'pass' || s.kind === 'limit' || s.kind === 'cache') && sim.shed(s.id) > 0)
+    if ((s.kind === 'pass' || s.kind === 'limit' || s.kind === 'cache' || s.kind === 'split') && sim.shed(s.id) > 0)
       items.push({ key: `${s.id}/shed`, value: pct(sim.shed(s.id)), label: `rejected at ${s.label}`, state: 'over' })
   }
   for (const f of model.flowIds) {

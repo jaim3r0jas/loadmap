@@ -18,9 +18,11 @@ import {
   queue,
   type RetryRule,
   type SnapshotReader,
+  type SplitBranch,
   type StageDef,
   type Stat,
   sink,
+  split,
   store,
   workers,
 } from '@loadmap/core'
@@ -1859,6 +1861,60 @@ class Compiler {
         }
         const fixed = branches.every(([, , v]) => typeof v === 'number')
         return fanout({ ...base, to: fixed ? build(undefined) : build, ...(component ? { component } : {}) })
+      }
+      case 'split': {
+        const ways: [string, string[], number | ((c: any) => number), Edge][] = []
+        // a flow with a way that did not compile has its error already: its shares are not added up
+        const broken = new Set<string>()
+        for (const e of b.edges) {
+          if (e.chain.length < 2) {
+            this.report.error(e, 'a way is one "flow -> stage -> …: share" line')
+            continue
+          }
+          const [f, ...through] = e.chain as [Ident, ...Ident[]]
+          if (!flows.has(f.name)) this.report.error(f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
+          const stages = through.map((n) => resolve(n, 'stage'))
+          for (const s of stages) if (s) reached.add(s)
+          if (e.colon) {
+            broken.add(f.name)
+            this.report.error(
+              e.colon,
+              'a way takes its share after ":", not a block',
+              `${f.name} -> ${through[0]!.name}: 0.5`,
+            )
+            continue
+          }
+          if (!e.value)
+            this.report.error(e, 'what share of the flow goes this way?', `${f.name} -> ${through[0]!.name}: 0.5`)
+          if (e.body) this.report.error(e.bodySpan ?? e, 'a way has no block')
+          if (e.value && flows.has(f.name) && stages.every((s) => s))
+            ways.push([f.name, stages as string[], this.dyn<number>(e.value, 'number'), e])
+          else broken.add(f.name)
+        }
+        const build = (ctx: any) => {
+          const to: Record<string, SplitBranch[]> = {}
+          for (const [f, stages, share] of ways) {
+            const list = to[f] ?? []
+            list.push({ stages, share: typeof share === 'function' ? share(ctx) : share })
+            to[f] = list
+          }
+          return to
+        }
+        const fixed = ways.every(([, , v]) => typeof v === 'number')
+        if (fixed)
+          // shares written as numbers are checked now; formulas when the model runs
+          for (const [f, list] of Object.entries(build(undefined))) {
+            const sum = list.reduce((a, w) => a + w.share, 0)
+            if (!broken.has(f) && Math.abs(sum - 1) > 1e-9) {
+              const first = ways.find(([g]) => g === f)![3]
+              this.report.error(
+                first,
+                `the shares of "${f}" add up to ${Math.round(sum * 1000) / 1000}, not 1`,
+                'every unit goes one way',
+              )
+            }
+          }
+        return split({ ...base, to: fixed ? build(undefined) : build, ...(component ? { component } : {}) })
       }
     }
     return undefined

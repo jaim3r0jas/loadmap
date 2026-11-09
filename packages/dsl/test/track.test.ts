@@ -7,7 +7,7 @@ const edge = (from: string, to: string) => ({ id: `${from}->${to}`, from, to, po
 const drawn = (nodes: object[], edges: object[] = [], o: object = {}): Drawn =>
   ({
     scene: { nodes, edges, stageNode: { topic: 'kafka' }, flowFrom: { orders: 'phones' }, ...o },
-    ev: { stages: {}, components: {}, routes: { orders: ['topic'] } },
+    ev: { stages: {}, components: {}, paths: { orders: [{ stages: ['topic'], share: 1 }] } },
   }) as unknown as Drawn
 const sym = (kind: DslSymbol['kind'], id: string, from: number, to: number, detail?: string): DslSymbol => ({
   kind,

@@ -354,7 +354,7 @@ export interface MeasureSpec {
 
 /**
  * The standard measurements per kind: what loadmap expects to know about a flow and each stage, so every provider
- * maps its query results onto the same names. `split` and `slots` are kinds the model does not have yet.
+ * maps its query results onto the same names. `slots` is a kind the model does not have yet.
  */
 export const MEASURES = {
   flow: {
@@ -420,7 +420,7 @@ export const MEASURES = {
     deliveries: { role: 'rate', dimension: 'per second', doc: 'Copies delivered per second, per branch.' },
   },
   split: {
-    share: { role: 'share', dimension: 'share', later: true, doc: 'The share of units sent to each branch.' },
+    share: { role: 'share', dimension: 'share', sets: 'share', doc: 'The share of units sent each way.' },
   },
   slots: {
     inUse: {

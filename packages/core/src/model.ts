@@ -6,7 +6,17 @@ import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
 import type { Measurement, Snapshot } from './measure'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
-import { type Branch, dyn, hitOf, type ResolvedStage, rejectShare, resolveStage, type StageDef } from './stages'
+import {
+  type Branch,
+  dyn,
+  hitOf,
+  type ResolvedStage,
+  rejectShare,
+  resolveStage,
+  type SplitBranch,
+  type StageDef,
+  splitOf,
+} from './stages'
 
 /** What every model function receives: the parameter values plus the model's own derived numbers. */
 export type Ctx<P, F extends string, C extends string, D extends string, S extends string = string> = Values<P> & {
@@ -209,6 +219,12 @@ export interface MeasureHint<C extends string = string> {
   text: string
 }
 
+/** One way through a model: the stages a share of a flow's units go through, in order. */
+export interface FlowPath<S extends string = string> {
+  stages: readonly S[]
+  share: number
+}
+
 export type Assumption =
   | { kind: 'capacity'; component: string; name: string; capacity: Capacity }
   | { kind: 'fit'; name: string; fit: LinearFit }
@@ -238,6 +254,11 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   routes: Readonly<Record<F, readonly S[]>>
   /** Units per second of each flow reaching each stage. */
   at: Readonly<Record<S, Readonly<Record<F, number>>>>
+  /**
+   * Each flow's ways through, with the share of its units that go each way: its route, once per branch of every split
+   * on it. A flow without a split has one, its route, with a share of 1.
+   */
+  paths: Readonly<Record<F, readonly FlowPath<S>[]>>
   /** Each flow's overload rules for these values. */
   overload: Readonly<Record<F, Overload>>
   /** The retries of each flow that has a retry rule. */
@@ -494,13 +515,16 @@ export function defineModel<
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
       const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
-      stages[s] = st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' ? { ...st, shed: shed(s) } : st
+      stages[s] =
+        st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'
+          ? { ...st, shed: shed(s) }
+          : st
     }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
         for (const b of Object.values(st.to).flat()) {
           const to = (stages as Record<string, ResolvedStage>)[b.stage]
-          if (!to || to.kind === 'queue' || to.kind === 'workers' || to.kind === 'fanout')
+          if (!to || to.kind === 'queue' || to.kind === 'workers' || to.kind === 'fanout' || to.kind === 'split')
             throw new Error(
               `loadmap: fan-out "${st.id}" branches to "${b.stage}", which is not a sink, store or pass stage`,
             )
@@ -510,7 +534,17 @@ export function defineModel<
 
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
     const values = { ...defaults(), ...partial } as Values<P>
-    const { ctx, capacity, enabled, over, describe, overload: overloadOf, retries, shed } = context(def as any, values)
+    const {
+      ctx,
+      capacity,
+      enabled,
+      over,
+      describe,
+      overload: overloadOf,
+      retries,
+      shed,
+      paths,
+    } = context(def as any, values)
     const crossings = crossingsFor(values)
 
     const components = {} as Record<C, ComponentResult<C>>
@@ -602,6 +636,7 @@ export function defineModel<
       assumptions,
       stages,
       routes: def.routes as Record<F, readonly S[]>,
+      paths: Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>,
       at,
       overload,
       retry: retries() as Partial<Record<F, Retry>>,
@@ -734,11 +769,75 @@ function context(
     ),
   )
 
+  /** A split's branches for each flow, checked. */
+  const branchesOf = (s: string) =>
+    memo(`branches of ${s}`, () =>
+      splitOf(s, stages[s] as Extract<StageDef, { kind: 'split' }>, ctx as LooseValues, flowIds),
+    ) as Readonly<Record<string, readonly SplitBranch[]>>
+  /**
+   * A flow's ways through: its route, once per branch of each split on it, with the share of units that go that way.
+   * A branch that ends in a store, a sink or a fan-out ends there; any other rejoins the route after the split.
+   */
+  const paths = (f: string) =>
+    memo(
+      `paths of ${f}`,
+      () => {
+        const out: FlowPath[] = []
+        const walk = (done: string[], rest: readonly string[], share: number, depth: number) => {
+          if (depth > 16) throw new Error(`loadmap: the splits on the route of "${f}" nest more than 16 deep`)
+          for (const [i, s] of rest.entries()) {
+            const st = stages[s]
+            if (!st) throw new Error(`loadmap: flow "${f}" goes through unknown stage "${s}"`)
+            const branches = st.kind === 'split' ? branchesOf(s)[f] : undefined
+            if (branches?.length) {
+              const after = rest.slice(i + 1)
+              for (const b of branches) {
+                const end = stages[b.stages.at(-1)!]?.kind
+                const ends = end === 'store' || end === 'sink' || end === 'fanout'
+                const twice = ends ? undefined : b.stages.find((x) => after.includes(x))
+                if (twice)
+                  throw new Error(
+                    `loadmap: split "${s}" sends "${f}" through "${twice}", which the route takes after it: a way names only the stages before it rejoins`,
+                  )
+                walk([...done, s], [...b.stages, ...(ends ? [] : after)], share * b.share, depth + 1)
+              }
+              return
+            }
+            done.push(s)
+          }
+          out.push({ stages: done, share })
+        }
+        walk([], routes[f] ?? [], 1, 0)
+        for (const p of out)
+          p.stages.forEach((s, i) => {
+            if (stages[s]!.kind === 'fanout' && i < p.stages.length - 1)
+              throw new Error(`loadmap: fan-out "${s}" must be the last stage on every way "${f}" goes`)
+            // a queue is drained by the stage after it; a split without a component would drain it at any rate
+            const next = stages[p.stages[i + 1] ?? '']
+            if (stages[s]!.kind === 'queue' && next?.kind === 'split' && !next.component)
+              throw new Error(
+                `loadmap: queue "${s}" is drained by split "${p.stages[i + 1]}", which has no component: give it one, or split before the queue`,
+              )
+          })
+        return out as readonly FlowPath[]
+      },
+      f,
+    )
+
   /** The share a stage turns away: past its component's `full`, what is above it. */
   const rejects = (s: string) =>
     memo(`rejects at ${s}`, () => {
       const st = stages[s]!
-      if (!(st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'fanout') || !st.component)
+      if (
+        !(
+          st.kind === 'pass' ||
+          st.kind === 'limit' ||
+          st.kind === 'cache' ||
+          st.kind === 'fanout' ||
+          st.kind === 'split'
+        ) ||
+        !st.component
+      )
         return 0
       return rejectShare(ctx.util[st.component] as number | null, full)
     })
@@ -762,17 +861,19 @@ function context(
   }
   const arriving = (s: string, f: string) =>
     memo(`${f} at ${s}`, () => {
-      const route = routes[f] ?? []
-      // past the last place that reaches s (the stage itself, or a fan-out that copies to it) nothing counts, so a
-      // stage never needs what it lets through to know what reaches it
-      const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
       let total = 0
-      let r = ctx.flows[f] as number
-      for (const [i, t] of route.entries()) {
-        if (t === s) total += r
-        total += r * copies(t, f, s)
-        if (i >= last) break
-        r *= onward(t)
+      // each way the flow goes, for the share of its units that go that way
+      for (const { stages: route, share } of paths(f)) {
+        // past the last place that reaches s (the stage itself, or a fan-out that copies to it) nothing counts, so a
+        // stage never needs what it lets through to know what reaches it
+        const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
+        let r = (ctx.flows[f] as number) * share
+        for (const [i, t] of route.entries()) {
+          if (t === s) total += r
+          total += r * copies(t, f, s)
+          if (i >= last) break
+          r *= onward(t)
+        }
       }
       return total
     })
@@ -792,20 +893,24 @@ function context(
    */
   const failure = (f: string) =>
     memo(`failures of ${f}`, () => {
-      let offered = 1
-      let actual = 1
-      let answered = 0
-      for (const s of routes[f] ?? []) {
-        // a fan-out turns away copies, not the unit
-        const r = stages[s]!.kind === 'fanout' ? 0 : rejects(s)
-        if (r > 0) actual = Math.min(actual, offered * (1 - r))
-        if (stages[s]!.kind === 'cache') {
-          answered += actual * hit(s)
-          actual *= 1 - hit(s)
+      let failed = 0
+      for (const { stages: route, share } of paths(f)) {
+        let offered = 1
+        let actual = 1
+        let answered = 0
+        for (const s of route) {
+          // a fan-out turns away copies, not the unit
+          const r = stages[s]!.kind === 'fanout' ? 0 : rejects(s)
+          if (r > 0) actual = Math.min(actual, offered * (1 - r))
+          if (stages[s]!.kind === 'cache') {
+            answered += actual * hit(s)
+            actual *= 1 - hit(s)
+          }
+          offered *= onward(s)
         }
-        offered *= onward(s)
+        failed += share * Math.max(0, 1 - answered - actual)
       }
-      return Math.max(0, 1 - answered - actual)
+      return failed
     })
 
   /**
@@ -814,18 +919,23 @@ function context(
    */
   const actual = (s: string, f: string) =>
     memo(`${f} reaching ${s}`, () => {
-      const route = routes[f] ?? []
-      const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
+      const ways = paths(f)
       let total = 0
-      let r = ctx.flows[f] as number
-      for (const [i, t] of route.entries()) {
-        if (t === s) total += r
-        // a fan-out's copies, less the share it turns away
-        total += r * copies(t, f, s) * (1 - rejects(t))
-        if (i >= last) break
-        const cut = rejects(t)
-        if (cut > 0) r = Math.min(r, arriving(t, f) * (1 - cut))
-        if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
+      for (const { stages: route, share } of ways) {
+        const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
+        let r = (ctx.flows[f] as number) * share
+        // what is offered at each stage on this way: on a route with one way, what reaches it
+        let offered = r
+        for (const [i, t] of route.entries()) {
+          if (t === s) total += r
+          // a fan-out's copies, less the share it turns away
+          total += r * copies(t, f, s) * (1 - rejects(t))
+          if (i >= last) break
+          const cut = rejects(t)
+          if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
+          if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
+          offered *= onward(t)
+        }
       }
       return total
     })
@@ -952,6 +1062,7 @@ function context(
     overload,
     failure,
     shed,
+    paths,
     retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
     describe: (c: string) => text(def.components[c]!.describe),

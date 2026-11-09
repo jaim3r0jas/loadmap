@@ -47,7 +47,7 @@ export function reference(): string {
     if (holds.length) out.push(`Holds: ${holds.map((c) => `\`${c}\``).join(', ')}.`, '')
     if (spec.open) out.push(`Its properties are named by ${OPEN[spec.open.names]}.`, '')
     if (spec.edges === 'edges') out.push('Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.', '')
-    if (spec.edges === 'branches') out.push('Holds branches: `flow -> stage: copies per unit`.', '')
+    if (spec.edges === 'branches') out.push(`Holds branches: ${spec.branch}.`, '')
   }
   for (const [name, spec] of Object.entries(SCHEMA)) block(name, spec)
   out.push(

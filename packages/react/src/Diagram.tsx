@@ -620,30 +620,38 @@ function RateStrokes({ lm, scene }: { lm: LoadmapController; scene: Scene }) {
   const max = Math.max(1e-9, ...Object.values(ev.flows as Record<string, number>))
   const out: ReactNode[] = []
   for (const f of Object.keys(flows)) {
-    const seq = [scene.flowFrom[f], ...(ev.routes[f] ?? []).map((s) => scene.stageNode[s])].filter(
-      (n, i, a) => n && n !== a[i - 1],
-    )
-    const rate = ev.flows[f] ?? 0
-    const legs: [string | undefined, string | undefined, number][] = seq.slice(1).map((to, i) => [seq[i], to, rate])
-    // a fan-out's branches carry the rate times their share
-    const last = (ev.routes[f] ?? []).at(-1)
-    const st = last ? ev.stages[last] : undefined
-    if (st?.kind === 'fanout')
-      for (const b of st.to[f] ?? []) legs.push([scene.stageNode[last!], scene.stageNode[b.stage], rate * b.share])
+    const legs: [string | undefined, string | undefined, number][] = []
+    // each way the flow goes carries its share of the rate; ways that share an edge add up on it
+    for (const way of ev.paths[f] ?? []) {
+      const seq = [scene.flowFrom[f], ...way.stages.map((s) => scene.stageNode[s])].filter(
+        (n, i, a) => n && n !== a[i - 1],
+      )
+      const rate = (ev.flows[f] ?? 0) * way.share
+      for (const [i, to] of seq.slice(1).entries()) legs.push([seq[i], to, rate])
+      // a fan-out's branches carry the rate times their share
+      const last = way.stages.at(-1)
+      const st = last ? ev.stages[last] : undefined
+      if (st?.kind === 'fanout')
+        for (const b of st.to[f] ?? []) legs.push([scene.stageNode[last!], scene.stageNode[b.stage], rate * b.share])
+    }
+    const on = new Map<string, { points: Scene['edges'][number]['points']; r: number }>()
     for (const [from, to, r] of legs) {
       const e = scene.edges.find((x) => x.from === from && x.to === to)
-      if (e)
-        out.push(
-          <path
-            key={`${f}:${e.id}`}
-            d={pathOf(e.points)}
-            fill="none"
-            stroke={tokenColor(flows[f]!.color)}
-            strokeOpacity=".45"
-            strokeWidth={1.5 + (6 * Math.min(r, max)) / max}
-          />,
-        )
+      if (!e) continue
+      const had = on.get(e.id)
+      on.set(e.id, { points: e.points, r: (had?.r ?? 0) + r })
     }
+    for (const [id, { points, r }] of on)
+      out.push(
+        <path
+          key={`${f}:${id}`}
+          d={pathOf(points)}
+          fill="none"
+          stroke={tokenColor(flows[f]!.color)}
+          strokeOpacity=".45"
+          strokeWidth={1.5 + (6 * Math.min(r, max)) / max}
+        />,
+      )
   }
   return <g>{out}</g>
 }

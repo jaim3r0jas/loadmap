@@ -431,7 +431,7 @@ class Help {
 
   private routesMemo?: Map<string, Set<string>>
 
-  /** Each flow's stages: its route, and the stages a fan-out copies it to. */
+  /** Each flow's stages: its route, and the stages a fan-out copies it to or a split sends it through. */
   routes(): Map<string, Set<string>> {
     if (this.routesMemo) return this.routesMemo
     const out = new Map<string, Set<string>>()
@@ -451,7 +451,7 @@ class Help {
             for (const n of route.chain ?? [route.value]) if ('name' in n) add(id.name, stageOf(n.name))
         }
         if (s.kind === 'edge' && fanout) for (const n of s.chain.slice(1)) add(s.chain[0]!.name, stageOf(n.name))
-        if (s.kind === 'decl' && s.body) visit(s.body, s.keyword.name === 'fanout')
+        if (s.kind === 'decl' && s.body) visit(s.body, s.keyword.name === 'fanout' || s.keyword.name === 'split')
       }
     }
     visit(this.body, false)

@@ -43,7 +43,7 @@ export function changedBoxes(
       for (const n of scene.nodes) if (component(n, ev) === s.id) add(n.id)
     } else if (s.kind === 'flow') {
       add(scene.flowFrom[s.id])
-      for (const st of ev.routes[s.id] ?? []) add(scene.stageNode[st])
+      for (const p of ev.paths[s.id] ?? []) for (const st of p.stages) add(scene.stageNode[st])
     }
   }
   // the lines an edit is on: the boxes and stages they name (an edge, a route)

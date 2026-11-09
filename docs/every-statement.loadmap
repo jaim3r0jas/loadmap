@@ -102,7 +102,7 @@ flow events "events" {
 }
 
 # a constant rate: the same at any load
-flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> api; from: users }
+flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> api -> mailer; from: users }
 
 # bands across the flow, in the order the flow meets them; a box without a tier stands in the tier of what feeds it
 tier edge "Edge"
@@ -185,6 +185,16 @@ node push "Push broker" {
 
 node phones "Phones" "notified" { sink "phones" }
 
+# each signup is welcomed one way: by email, or by text where there is no email
+node mailer "Mailer" {
+  split {
+    signups -> email: 0.7
+    signups -> sms: 0.3
+  }
+}
+node email "Email" { sink }
+node sms "SMS" { sink }
+
 users -> gateway: "HTTPS"
 gateway -> limiter
 gateway -> kafka
@@ -194,3 +204,6 @@ cache -> db
 kafka -> workers
 workers -> push
 push -> phones
+api -> mailer
+mailer -> email
+mailer -> sms

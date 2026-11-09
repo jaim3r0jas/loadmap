@@ -92,6 +92,24 @@ export interface FanoutStage<C extends string = string> extends StageBase {
   to: Dyn<readonly Branch[] | Readonly<Record<string, readonly Branch[]>>>
 }
 
+/** One way out of a split: the stages a unit goes through, and the share of units that go this way. */
+export interface SplitBranch {
+  stages: readonly string[]
+  share: number
+}
+
+/**
+ * Each unit goes on to one of several branches, by share: a read/write split, shards, regions, an A/B test,
+ * failover. A branch that ends in a store, a sink or a fan-out ends there; any other rejoins the route after the
+ * split. A flow's shares add up to 1; a flow it does not name goes straight on. `to` is one list for every flow, or a
+ * list per flow.
+ */
+export interface SplitStage<C extends string = string> extends StageBase {
+  kind: 'split'
+  component?: C
+  to: Dyn<readonly SplitBranch[] | Readonly<Record<string, readonly SplitBranch[]>>>
+}
+
 export type StageDef<C extends string = string> =
   | PassStage<C>
   | QueueStage<C>
@@ -101,6 +119,7 @@ export type StageDef<C extends string = string> =
   | FanoutStage<C>
   | CacheStage<C>
   | LimitStage<C>
+  | SplitStage<C>
 
 export function pass<const C extends string>(component: C, o: StageBase = {}): PassStage<C> {
   return { kind: 'pass', component, ...o }
@@ -140,10 +159,17 @@ export function sink(o: StageBase = {}): SinkStage {
   return { kind: 'sink', ...o }
 }
 
+// the component only from the argument: from the stages the result goes into, a split beside it reads as any string
 export function fanout<const C extends string = never>(
   o: { to: FanoutStage['to']; component?: C } & StageBase,
-): FanoutStage<C> {
+): FanoutStage<NoInfer<C>> {
   return { kind: 'fanout', ...o }
+}
+
+export function split<const C extends string = never>(
+  o: { to: SplitStage['to']; component?: C } & StageBase,
+): SplitStage<NoInfer<C>> {
+  return { kind: 'split', ...o }
 }
 
 /** A stage with its numbers worked out for one set of values. */
@@ -179,6 +205,14 @@ export type ResolvedStage = { id: string; label: string } & (
       shed: number
     }
   | { kind: 'cache'; component?: string; hit: number; rejects: number; shed: number }
+  | {
+      kind: 'split'
+      component?: string
+      /** Each flow's branches; a flow without any goes straight on. */
+      to: Readonly<Record<string, readonly SplitBranch[]>>
+      rejects: number
+      shed: number
+    }
 )
 
 /** The share a stage turns away when its component is past `full`: what is above it. */
@@ -221,6 +255,16 @@ export function resolveStage(
     }
     case 'cache':
       return { id, label, kind: 'cache', component: s.component, hit: hitOf(id, s, ctx), rejects, shed: rejects }
+    case 'split':
+      return {
+        id,
+        label,
+        kind: 'split',
+        component: s.component,
+        to: splitOf(id, s, ctx, flowIds),
+        rejects,
+        shed: rejects,
+      }
     case 'sink':
       return { id, label, kind: 'sink' }
     case 'store':
@@ -229,6 +273,36 @@ export function resolveStage(
       return { id, label, kind: s.kind, component: s.component, rejects, shed: rejects }
   }
 }
+
+/** A split's branches per flow, checked: each share from 0 to 1, a flow's adding up to 1. */
+export function splitOf(
+  id: string,
+  s: SplitStage,
+  ctx: LooseValues,
+  flowIds: readonly string[],
+): Record<string, readonly SplitBranch[]> {
+  const to = dyn(s.to, ctx)
+  const out: Record<string, readonly SplitBranch[]> = {}
+  for (const f of flowIds) {
+    const list = Array.isArray(to)
+      ? (to as readonly SplitBranch[])
+      : ((to as Record<string, readonly SplitBranch[]>)[f] ?? [])
+    if (!list.length) continue
+    let sum = 0
+    for (const b of list) {
+      if (!(b.share >= 0 && b.share <= 1))
+        throw new Error(`loadmap: split "${id}" sends a share from 0 to 1 of "${f}" each way, not ${b.share}`)
+      if (!b.stages.length) throw new Error(`loadmap: split "${id}" has a branch of "${f}" through no stage`)
+      sum += b.share
+    }
+    if (Math.abs(sum - 1) > 1e-9)
+      throw new Error(`loadmap: split "${id}" sends ${fmtShare(sum)} of "${f}" on: its shares add up to 1`)
+    out[f] = list
+  }
+  return out
+}
+
+const fmtShare = (x: number) => `${Math.round(x * 1000) / 10} %`
 
 /** A cache's hit share, checked: a share outside 0 to 1 is a mistake, not a rate. */
 export function hitOf(id: string, s: CacheStage, ctx: LooseValues): number {
