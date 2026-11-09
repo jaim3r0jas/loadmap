@@ -1,6 +1,6 @@
 // Product search: a rate limiter, an autoscaled API, a cache and clients that retry, the four building blocks in one
-// system. Made-up names and numbers.
-import { cache, configured, defineModel, estimated, limit, measured, p, store, workers } from '@loadmap/core'
+// system, and an index of two shards behind a coordinator that sends each miss to one. Made-up names and numbers.
+import { cache, configured, defineModel, estimated, limit, measured, p, split, store, workers } from '@loadmap/core'
 
 export const search = defineModel({
   title: 'Product search',
@@ -86,9 +86,15 @@ export const search = defineModel({
       over: 'lookups time out and fall through',
     },
     db: {
-      name: 'Search index',
-      short: 'the search index',
-      capacity: estimated(2_000, 'queries/s', { source: 'a load test of one replica', within: 0.3 }),
+      name: 'Index shard 1',
+      short: 'the first shard',
+      capacity: estimated(1_000, 'queries/s', { source: 'a load test of one shard', within: 0.3 }),
+      over: 'queries queue, and the API waits on them',
+    },
+    db2: {
+      name: 'Index shard 2',
+      short: 'the second shard',
+      capacity: estimated(1_000, 'queries/s', { source: 'a load test of one shard', within: 0.3 }),
       over: 'queries queue, and the API waits on them',
     },
   },
@@ -96,7 +102,15 @@ export const search = defineModel({
     limiter: limit('limiter'),
     api: workers('api', { perPod: 4, autoscale: { min: 2, max: ({ maxPods }) => maxPods, target: 0.7 } }),
     cache: cache({ hit: ({ hit }) => hit, component: 'cache' }),
+    // each miss goes to one shard: half to each
+    shards: split({
+      to: [
+        { stages: ['db'], share: 0.5 },
+        { stages: ['db2'], share: 0.5 },
+      ],
+    }),
     db: store('db'),
+    db2: store('db2'),
   },
-  routes: { searches: ['limiter', 'api', 'cache', 'db'] },
+  routes: { searches: ['limiter', 'api', 'cache', 'shards'] },
 })

@@ -1,6 +1,7 @@
 # Search
 
-Clients search a product catalog through a rate limiter, an autoscaled API and a cache in front of a search index.
+Clients search a product catalog through a rate limiter, an autoscaled API and a cache in front of a search index of
+two shards, where a coordinator sends each miss to one.
 The four building blocks in one system: the limiter turns away what is over its limit, and what it turns away is gone
 from every box after it; the API adds pods up to its most; the cache answers most searches, so only the misses reach
 the index; and the clients retry a search the limiter turned away, which past the limit multiplies what it sees. It

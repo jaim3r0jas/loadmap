@@ -206,7 +206,7 @@ describe('the built site', () => {
         ['', 5],
         ['examples/checkout/', 5],
         ['examples/alerts/', 10],
-        ['examples/search/', 5],
+        ['examples/search/', 7],
         ['examples/', 4],
         ['getting-started/', 3],
         ['concepts/', 3 + 8],

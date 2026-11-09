@@ -1,6 +1,7 @@
 loadmap 1
 # Product search, made up: the same model and view as model.ts and view.ts. A rate limiter, an autoscaled API, a
-# cache and clients that retry: the four building blocks in one system.
+# cache and clients that retry: the four building blocks in one system, and an index of two shards behind a
+# coordinator that sends each miss to one.
 title: "Product search"
 speed: 10
 transition: 0.8
@@ -52,7 +53,7 @@ flow searches "searches" {
   rate: 300 * load
   # without the budget, at most three retries a search: never more than 300 %
   retry { times: retries; budget: budget ? 0.1 : 3 }
-  route: limiter -> api -> cache -> db
+  route: limiter -> api -> cache -> shards
   from: clients
   color: accent
 }
@@ -87,16 +88,36 @@ node cache "Cache" `${hit * 100} % hits` {
   over: "lookups time out and fall through"
 }
 
-node db "Search index" "primary" {
+# each miss goes to one shard: half to each
+node shards "Coordinator" "a miss to one shard" {
+  tier: data
+  split {
+    searches -> db: 0.5
+    searches -> db2: 0.5
+  }
+}
+
+node db "Index shard 1" {
   tier: data
   shape: cylinder
   store
-  short: "the search index"
-  capacity: estimated(2_000 ± 30%, "queries/s", "a load test of one replica")
+  short: "the first shard"
+  capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
+  over: "queries queue, and the API waits on them"
+}
+
+node db2 "Index shard 2" {
+  tier: data
+  shape: cylinder
+  store
+  short: "the second shard"
+  capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
   over: "queries queue, and the API waits on them"
 }
 
 clients -> limiter: `${compact(flows.searches)} searches/s`
 limiter -> api
 api -> cache
-cache -> db: `${compact(at.db.searches)} misses/s`
+cache -> shards: `${compact(at.shards.searches)} misses/s`
+shards -> db
+shards -> db2

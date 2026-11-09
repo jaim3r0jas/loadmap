@@ -90,8 +90,10 @@ export interface BlockSpec {
    * partitions; by the catalog's component in a `published` statement.
    */
   open?: { names: 'values' | 'params' | 'flows' | 'conditions' | 'arguments'; spec: PropSpec }
-  /** It holds `a -> b` lines: edges at the top, branches in a fan-out. */
+  /** It holds `a -> b` lines: edges at the top, branches in a fan-out or a split. */
   edges?: 'edges' | 'branches'
+  /** How one of its branches is written, for the reference. */
+  branch?: string
   /** It holds rows of numbers. */
   rows?: boolean
   /** The inspector's Model tab shows it (a top-level statement). */
@@ -669,7 +671,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       tier: TIER,
       ...COMPONENT_PROPS,
     },
-    children: ['pass', 'store', 'sink', 'fanout', 'cache', 'limit', 'component'],
+    children: ['pass', 'store', 'sink', 'fanout', 'split', 'cache', 'limit', 'component'],
   },
   cluster: {
     doc: 'Members (brokers) holding the partitions of one or more queues (topics).',
@@ -794,6 +796,15 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     },
     children: [],
   },
+  split: {
+    doc: 'Each unit goes on one way of several, by share: a read/write split, shards, regions, an A/B test, failover. One "flow -> stage -> …: share" line per way; a flow\'s shares add up to 1, and a flow it names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any other goes on with the route after the split.',
+    example: 'split "DB router" {\n  orders -> primary: 0.2\n  orders -> replica: 0.8\n}',
+    args: STAGE_LABEL,
+    props: { component: STAGE_COMPONENT },
+    children: [],
+    edges: 'branches',
+    branch: '`flow -> stage -> …: share`',
+  },
   fanout: {
     doc: 'Each unit is copied to several stages; one "flow -> stage: copies" line per branch. Last on a route.',
     example: 'fanout "push broker" {\n  alerts -> contacts: 1\n}',
@@ -801,6 +812,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: { component: STAGE_COMPONENT },
     children: [],
     edges: 'branches',
+    branch: '`flow -> stage: copies per unit`',
   },
   thresholds: {
     inspector: 'model',
@@ -822,4 +834,4 @@ export const EDGE_PROPS: Readonly<Record<string, PropSpec>> = {
 }
 
 export const BOXES = ['node', 'cluster', 'pool'] as const
-export const STAGES = ['pass', 'store', 'sink', 'queue', 'workers', 'fanout', 'cache', 'limit'] as const
+export const STAGES = ['pass', 'store', 'sink', 'queue', 'workers', 'fanout', 'split', 'cache', 'limit'] as const

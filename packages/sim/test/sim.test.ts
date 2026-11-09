@@ -1,4 +1,18 @@
-import { cache, configured, defineModel, fanout, limit, measured, p, pass, queue, sink, workers } from '@loadmap/core'
+import {
+  cache,
+  configured,
+  defineModel,
+  fanout,
+  limit,
+  measured,
+  p,
+  pass,
+  queue,
+  sink,
+  split,
+  store,
+  workers,
+} from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { busyOf, createSim, fillOrder } from '../src'
 
@@ -577,5 +591,90 @@ describe('building blocks', () => {
       // 1 + p + p² + p³ = 3.14 attempts per unit
       expect((first.size + again.size) / first.size).toBeCloseTo(ev.retry.req!.attempts / 2000, 1)
     })
+  })
+})
+
+describe('a split', () => {
+  // 100 units a second: a fifth to the primary, the rest through a replica to the response
+  const routed = () =>
+    defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100 } },
+      components: {
+        db: { name: 'Primary', capacity: measured(1e6, 'u/s'), over: '' },
+        rep: { name: 'Replica', capacity: measured(1e6, 'u/s'), over: '' },
+      },
+      stages: {
+        router: split({
+          to: [
+            { stages: ['primary'], share: 0.2 },
+            { stages: ['replica'], share: 0.8 },
+          ],
+        }),
+        primary: store('db'),
+        replica: pass('rep'),
+        out: sink(),
+      },
+      routes: { req: ['router', 'out'] },
+    })
+
+  it('sends each dot one way by share, the same ways for the same seed', () => {
+    const count = (seed: number) => {
+      const m = routed()
+      const sim = createSim(m, m.evaluate(), { seed, speed: 10, maxDots: 60, dotTarget: 100 })
+      const seen = new Map<number, Set<string>>()
+      for (let i = 0; i < 60 * 40; i++) {
+        sim.step(1 / 60)
+        for (const d of sim.particles) {
+          const s = seen.get(d.id) ?? new Set<string>()
+          if (d.to.stage) s.add(d.to.stage)
+          seen.set(d.id, s)
+        }
+      }
+      const primary = [...seen.values()].filter((s) => s.has('primary')).length
+      const replica = [...seen.values()].filter((s) => s.has('replica')).length
+      return { primary, replica, sim }
+    }
+    const a = count(1)
+    // a fifth, give or take the draw
+    expect(a.primary / (a.primary + a.replica)).toBeGreaterThan(0.12)
+    expect(a.primary / (a.primary + a.replica)).toBeLessThan(0.28)
+    // the replica's way goes on to the response; the primary's ends there
+    expect(a.sim.particles.every((d) => !(d.path === 0 && d.to.stage === 'out'))).toBe(true)
+    expect(count(1).sim.particles).toEqual(a.sim.particles)
+  })
+
+  it('turns dots away at a split that runs out, as the model does', () => {
+    // a coordinator of 50 u/s gets 100: half turned away
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100 } },
+      components: {
+        co: { name: 'Coordinator', capacity: measured(50, 'u/s'), over: '' },
+        db: { name: 'Shard', capacity: measured(1e6, 'u/s'), over: '' },
+      },
+      stages: {
+        router: split({
+          component: 'co',
+          to: [
+            { stages: ['a'], share: 0.5 },
+            { stages: ['b'], share: 0.5 },
+          ],
+        }),
+        a: store('db'),
+        b: store('db'),
+      },
+      routes: { req: ['router'] },
+    })
+    const sim = createSim(m, m.evaluate(), { seed: 3, speed: 10, maxDots: 60, dotTarget: 100 })
+    expect(sim.shed('router')).toBeCloseTo(0.5, 9)
+    const outcomes = new Map<number, string>()
+    for (let i = 0; i < 60 * 40; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) if (d.outcome) outcomes.set(d.id, d.outcome)
+    }
+    const rejected = [...outcomes.values()].filter((o) => o === 'rejected').length
+    expect(rejected / outcomes.size).toBeGreaterThan(0.35)
+    expect(rejected / outcomes.size).toBeLessThan(0.65)
   })
 })

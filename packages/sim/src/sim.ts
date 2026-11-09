@@ -28,8 +28,10 @@ export interface Place {
 export interface Particle {
   id: number
   flow: string
-  /** Index into the flow's route of the stage it is heading to or at. */
+  /** Index into its way through (its path) of the stage it is heading to or at. */
   leg: number
+  /** Which of the flow's paths it takes, past a split; the only one without. */
+  path?: number
   phase: 'move' | 'hold' | 'fade'
   /** Real seconds into the current phase, and its length. */
   t: number
@@ -168,13 +170,18 @@ export class Sim {
     for (const s of stages) this.#shed.set(s.id, 'shed' in s ? s.shed : 0)
     this.#inflow.clear()
     for (const f of this.#model.flowIds) {
-      let rate = ev.flows[f] ?? 0
-      for (const st of ev.routes[f] ?? []) {
-        this.#inflow.set(`${st}/${f}`, rate)
-        const s = ev.stages[st] as ResolvedStage
-        // a fan-out turns away copies, not arrivals
-        if (s.kind !== 'fanout') rate *= 1 - (this.#shed.get(st) ?? 0)
-        if (s.kind === 'cache') rate *= 1 - s.hit
+      const ways = ev.paths[f] ?? []
+      for (const way of ways) {
+        let rate = (ev.flows[f] ?? 0) * way.share
+        for (const st of way.stages) {
+          const key = `${st}/${f}`
+          // past a split, the ways that meet again add up
+          this.#inflow.set(key, ways.length > 1 ? (this.#inflow.get(key) ?? 0) + rate : rate)
+          const s = ev.stages[st] as ResolvedStage
+          // a fan-out turns away copies, not arrivals
+          if (s.kind !== 'fanout') rate *= 1 - (this.#shed.get(st) ?? 0)
+          if (s.kind === 'cache') rate *= 1 - s.hit
+        }
       }
     }
     // a stage drains what reaches it at the load where its component runs out, the same point the limits show
@@ -290,8 +297,9 @@ export class Sim {
       const qs = this.#queues.get(q.id) ?? new Map()
       this.#queues.set(q.id, qs)
       for (const f of this.#model.flowIds) {
-        const route = ev.routes[f] ?? []
-        if (!route.includes(q.id)) continue
+        // the stage after a queue is the same on every way through it: the ways part only at a split
+        const route = (ev.paths[f] ?? []).find((p) => p.stages.includes(q.id))?.stages
+        if (!route) continue
         const fq = qs.get(f) ?? { cohorts: [], s: emptyQueue() }
         qs.set(f, fq)
         const inflow = this.#inflow.get(`${q.id}/${f}`) ?? 0
@@ -372,16 +380,17 @@ export class Sim {
       while (acc >= 1) {
         acc -= 1
         if (this.particles.length >= maxParticles) continue
-        const first = this.#ev.routes[f]![0]!
+        const path = this.#pick(f)
         this.particles.push({
           id: this.#nextId++,
           flow: f,
           leg: 0,
+          ...(path != null && { path }),
           phase: 'move',
           t: 0,
           dur: legSeconds,
           from: { stage: null },
-          to: this.#place(first, f),
+          to: this.#place(this.#way(f, path)[0]!, f),
         })
       }
       this.#spawn.set(f, acc)
@@ -393,17 +402,41 @@ export class Sim {
     const r = this.#ev.retry[d.flow]
     const attempt = (d.attempt ?? 0) + 1
     if (!r || attempt > r.times || this.#r() >= r.retried) return null
+    // a retry is a new attempt: it may go another way
+    const path = this.#pick(d.flow)
     return {
       id: this.#nextId++,
       flow: d.flow,
       leg: 0,
+      ...(path != null && { path }),
       phase: 'move',
       t: 0,
       dur: this.#o.legSeconds,
       from: { stage: null },
-      to: this.#place(this.#ev.routes[d.flow]![0]!, d.flow),
+      to: this.#place(this.#way(d.flow, path)[0]!, d.flow),
       attempt,
     }
+  }
+
+  /**
+   * The way a new dot goes, by the share of each: drawn only when a flow has more than one, so a model without a split
+   * draws what it always drew, and its recordings stay the same.
+   */
+  #pick(flow: string): number | undefined {
+    const ways = this.#ev.paths[flow] ?? []
+    if (ways.length < 2) return undefined
+    let x = this.#r()
+    for (const [i, w] of ways.entries()) {
+      x -= w.share
+      if (x < 0) return i
+    }
+    return ways.length - 1
+  }
+
+  /** The stages a dot's way goes through; the first way when the shares changed and its way is gone. */
+  #way(flow: string, path: number | undefined): readonly string[] {
+    const ways = this.#ev.paths[flow] ?? []
+    return (ways[path ?? 0] ?? ways[0])?.stages ?? this.#ev.routes[flow] ?? []
   }
 
   #moveDots(dtReal: number): void {
@@ -416,7 +449,7 @@ export class Sim {
       d.from = d.to
     }
     const advance = (d: Particle) => {
-      const route = ev.routes[d.flow]!
+      const route = this.#way(d.flow, d.path)
       if (d.leg + 1 >= route.length) return fade(d, 'delivered', 0.35)
       d.leg++
       d.phase = 'move'
@@ -472,7 +505,8 @@ export class Sim {
         if (made) fade(d, 'delivered', 0)
         else fade(d, 'unread', 0.6)
       } else if (d.phase === 'move') {
-        const turnsAway = stage.kind === 'pass' || stage.kind === 'limit' || stage.kind === 'cache'
+        const turnsAway =
+          stage.kind === 'pass' || stage.kind === 'limit' || stage.kind === 'cache' || stage.kind === 'split'
         if (turnsAway && this.#r() < this.shed(stage.id)) reject(d)
         else if (stage.kind === 'cache' && this.#r() < stage.hit) {
           // answered here: back along the edge it came in on

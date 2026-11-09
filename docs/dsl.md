@@ -55,7 +55,7 @@ tests check that each draws exactly what its TypeScript draws.
 A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things can live in a box:
 
 - **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink`, `fanout`,
-  `cache` or `limit` in a node, one or more `queue` in a cluster, one `workers` in a pool. Its id is the box's id unless you give it one.
+  `split`, `cache` or `limit` in a node, one or more `queue` in a cluster, one `workers` in a pool. Its id is the box's id unless you give it one.
   A label after the keyword names it in the meters: `pass "the gateway"`.
 - **A component:** what can run out. Write its lines on the box: `demand`, `capacity`, `over`, and optionally
   `name`, `short`, `plural`, `describe` and `when`. Its id is the box's id and its name is the box's label. A stage in
@@ -541,7 +541,7 @@ their timestamps). `summarize(points, stat)` turns a window into one value (`mea
 Each kind has standard measurements, so every provider maps its results onto the same names (`MEASURES`). The role
 says what a number is about: `capacity`, `limit`, `latency` and `cost` mean what a published figure's measure means,
 so a measured and a published p99 land in the same place. A measurement for a part of the model that is not built
-yet (latency, slots, splits) is read and listed, and nothing uses it.
+yet (latency, slots) is read and listed, and nothing uses it.
 
 <!-- measures: written from MEASURES in packages/core; UPDATE_DOCS=1 pnpm test:node rewrites it -->
 
@@ -583,7 +583,7 @@ yet (latency, slots, splits) is read and listed, and nothing uses it.
 | `store` | `connections` | count | count | not modelled yet | Connections open: a pool of slots. |
 | `fanout` | `copies` | share | per unit | `share` | Copies sent per unit, per branch. |
 | `fanout` | `deliveries` | rate | per second |  | Copies delivered per second, per branch. |
-| `split` | `share` | share | share | not modelled yet | The share of units sent to each branch. |
+| `split` | `share` | share | share | `share` | The share of units sent each way. |
 | `slots` | `inUse` | count | count | not modelled yet | Slots in use: connections, sessions, in-flight requests. |
 | `slots` | `available` | capacity | count | not modelled yet | Slots there are. |
 | `slots` | `held` | duration | seconds | not modelled yet | How long each is held. |
@@ -656,6 +656,25 @@ against a bottleneck of capacity `C`, each attempt fails with share `p = (1 − 
 tries) but multiply what everything in front sees: with 3 retries a gateway of 2,000 req/s before a service of
 1,000 runs out at 1,067 req/s instead of 2,000. `flows.requests` is the attempts; the meters show the attempts per
 request and the share failing after every retry, and the retries are drawn as rings.
+
+**A split** sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
+failover. One line per way, the flow, the stages it goes through and its share; a flow's shares add up to 1, and a
+flow the split names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any
+other goes on with the route after the split, so reads can return through the API they came from:
+
+```
+node router "DB router" {
+  split {
+    orders -> primary: 1 - reads
+    orders -> replica: reads
+  }
+}
+```
+
+With `route: gateway -> app -> router -> respond`, writes end at the primary and reads go through the replica to
+`respond`. Each component then sees the share of the flow that goes its way: `at.replica.orders` is the reads, and a
+replica past capacity turns away only the reads. In TypeScript, `split({ to: [{ stages: ['primary'], share: 0.2 },
+…] })`, and `ev.paths` lists each flow's ways with their shares.
 
 ### A story
 
@@ -1249,7 +1268,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `fanout`, `cache`, `limit`, `component`.
+Holds: `pass`, `store`, `sink`, `fanout`, `split`, `cache`, `limit`, `component`.
 
 ### cluster
 
@@ -1429,6 +1448,25 @@ autoscale { min: 2; max: 10; target: 0.7 }
 | `min` (required) | number, formula | The fewest pods, at least 1. |
 | `max` (required) | number, formula | The most pods. |
 | `target` (required) | number, formula | The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %. |
+
+### split
+
+Each unit goes on one way of several, by share: a read/write split, shards, regions, an A/B test, failover. One "flow -> stage -> …: share" line per way; a flow's shares add up to 1, and a flow it names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any other goes on with the route after the split.
+
+```
+split "DB router" {
+  orders -> primary: 0.2
+  orders -> replica: 0.8
+}
+```
+
+After the keyword: [id] [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
+
+Holds branches: `flow -> stage -> …: share`.
 
 ### fanout
 
