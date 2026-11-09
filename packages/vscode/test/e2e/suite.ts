@@ -2,8 +2,9 @@
 // through VS Code's own commands, as a user's editor reaches them.
 import { strict as assert } from 'node:assert'
 import { join } from 'node:path'
-import { decodeShare } from '@loadmap/dsl'
+import { compile, decodeShare, loadCatalog } from '@loadmap/dsl'
 import {
+  type CodeAction,
   CompletionItemKind,
   type CompletionList,
   commands,
@@ -15,6 +16,7 @@ import {
   type Location,
   languages,
   type Position,
+  Range,
   Selection,
   type SignatureHelp,
   type TextDocument,
@@ -168,13 +170,15 @@ test("loadmap.server.path runs a project's own loadmap, and a fixed path brings 
   assert.match(await hoverText(), /param pods "Worker pods"/)
 })
 
-/** What the preview shows, from the webview itself (the extension's API). */
-const shown = () =>
-  extensions
-    .getExtension<{ preview: { shown(): Promise<{ boxes: string[]; selected: string | null } | undefined> } }>(
-      'jaim3r0jas.loadmap',
-    )!
-    .exports.preview.shown()
+/** The extension's API: what the preview shows (from the webview itself), and the boxes it showed as changed. */
+const api = () =>
+  extensions.getExtension<{
+    preview: {
+      shown(): Promise<{ boxes: string[]; selected: string | null } | undefined>
+      tracked(): readonly string[]
+    }
+  }>('jaim3r0jas.loadmap')!.exports.preview
+const shown = () => api().shown()
 
 test('the preview draws the file beside it, under its content security policy', async () => {
   await open('checkout.loadmap')
@@ -200,6 +204,56 @@ test('the cursor in a declaration picks its box; an edit is drawn', async () => 
   await editor.edit((e) => e.insert(doc.positionAt(doc.getText().length), '\nnode extra "Extra"\n'))
   await until(async () => ((await shown())?.boxes.includes('extra') ? true : undefined), 'the new box drawn')
   await commands.executeCommand('workbench.action.files.revert')
+})
+
+test('Track Live Changes: the preview shows the box an edit changed', async () => {
+  const doc = await open('checkout.loadmap')
+  const editor = window.activeTextEditor!
+  // a configuration read is a snapshot: read again after each change
+  const tracking = () => workspace.getConfiguration('loadmap').get('preview.trackChanges')
+  await commands.executeCommand('loadmap.trackChanges')
+  try {
+    assert.equal(tracking(), true)
+    await until(async () => ((await shown())?.boxes.length ? true : undefined), 'boxes drawn', 30_000)
+    const p = at(doc, '4_000')
+    await editor.edit((e) => e.replace(new Range(p, p.translate(0, 5)), '8_000'))
+    await until(() => (api().tracked().includes('db') ? true : undefined), 'db shown as changed')
+    assert.deepEqual(api().tracked(), ['db'])
+  } finally {
+    await commands.executeCommand('loadmap.stopTrackingChanges')
+    await commands.executeCommand('workbench.action.files.revert')
+  }
+  assert.equal(tracking(), false)
+})
+
+test('Add from the Catalog writes a published figure and a box that compile; a box offers it as a code action', async () => {
+  const doc = await open('checkout.loadmap')
+  const editor = window.activeTextEditor!
+  const db = at(doc, 'node db', 6)
+  const actions = await ask<CodeAction[]>('vscode.executeCodeActionProvider', doc.uri, new Range(db, db))
+  assert.ok(
+    actions.some(
+      (a) => a.title === 'Use a published figure for db…' && a.command?.command === 'loadmap.addFromCatalog',
+    ),
+  )
+  // outside every box: the last step is "Add as a new box" alone; each step takes its first row
+  editor.selection = new Selection(0, 0, 0, 0)
+  const done = commands.executeCommand('loadmap.addFromCatalog')
+  try {
+    await until(async () => {
+      await commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem')
+      await new Promise((r) => setTimeout(r, 300))
+      return /^published \w+Figure \w+ \{/m.test(doc.getText()) ? true : undefined
+    }, 'the published statement')
+    await done
+    assert.match(doc.getText(), /^node \w+ "[^"]+" \{\n {2}(shape: cylinder\n {2})?# what reaches it/m)
+    // compiled here, as the server does: its diagnostics could still be those of the text before
+    await loadCatalog()
+    const errors = compile(doc.getText()).diagnostics.filter((d) => d.severity === 'error')
+    assert.deepEqual(errors, [])
+  } finally {
+    await commands.executeCommand('workbench.action.files.revert')
+  }
 })
 
 test('Copy Share Link puts the text in a link to the live editor', async () => {

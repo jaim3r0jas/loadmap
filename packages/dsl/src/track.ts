@@ -1,8 +1,6 @@
 import type { Evaluation } from '@loadmap/core'
-import type { DslSymbol } from '@loadmap/dsl'
-import type { Engine } from '@loadmap/react'
-
-type Scene = NonNullable<Engine['scene']>
+import type { Scene } from '@loadmap/layout'
+import type { DslSymbol } from './compile'
 
 /** A version of the diagram as drawn: its scene and its numbers. */
 export interface Drawn {

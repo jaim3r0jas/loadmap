@@ -478,6 +478,9 @@ importers:
       '@loadmap/cli':
         specifier: workspace:*
         version: link:../cli
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:../core
       '@loadmap/dsl':
         specifier: workspace:*
         version: link:../dsl

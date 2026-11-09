@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "displayName": "loadmap",
-  "description": "Capacity models in .loadmap: a live preview of the diagram beside the text, highlighting, errors and failing expectations as you type, completion, hover with the values, quick fixes, rename and formatting.",
+  "description": "Capacity models in .loadmap: a live preview of the diagram beside the text that can follow your edits, published figures from the catalog, highlighting, errors and failing expectations as you type, completion, hover with the values, quick fixes, rename and formatting.",
   "publisher": "jaim3r0jas",
   "license": "MIT",
   "author": "Jaime Rojas",
@@ -99,6 +99,24 @@
         "icon": "$(link-external)"
       },
       {
+        "command": "loadmap.trackChanges",
+        "title": "Track Live Changes",
+        "category": "loadmap",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "loadmap.stopTrackingChanges",
+        "title": "Stop Tracking Live Changes",
+        "category": "loadmap",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "loadmap.addFromCatalog",
+        "title": "Add from the Catalog…",
+        "category": "loadmap",
+        "icon": "$(library)"
+      },
+      {
         "command": "loadmap.restartServer",
         "title": "Restart the Language Server",
         "category": "loadmap"
@@ -131,6 +149,11 @@
           "type": "string",
           "default": "https://jaim3r0jas.github.io/loadmap/editor/",
           "markdownDescription": "The live editor a share link opens (an `http` or `https` link): the docs' own, or a copy of the docs site hosted elsewhere. The text travels in the link's `#`, which never reaches the server. A workspace you have not trusted cannot change it."
+        },
+        "loadmap.preview.trackChanges": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Track live changes in the preview: once an edit is drawn and the text rests about half a second, the preview brings the boxes it changed into view (at the same zoom, and further out only as far as it takes) and marks them with a short glow. Off, the view stays where you left it. The eye button over the preview turns it on and off."
         }
       }
     },
@@ -150,6 +173,21 @@
           "command": "loadmap.openInEditor",
           "when": "activeWebviewPanelId == 'loadmap.preview'",
           "group": "navigation@2"
+        },
+        {
+          "command": "loadmap.trackChanges",
+          "when": "activeWebviewPanelId == 'loadmap.preview' && !config.loadmap.preview.trackChanges",
+          "group": "navigation@0"
+        },
+        {
+          "command": "loadmap.stopTrackingChanges",
+          "when": "activeWebviewPanelId == 'loadmap.preview' && config.loadmap.preview.trackChanges",
+          "group": "navigation@0"
+        },
+        {
+          "command": "loadmap.addFromCatalog",
+          "when": "activeWebviewPanelId == 'loadmap.preview'",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
@@ -167,6 +205,18 @@
         },
         {
           "command": "loadmap.openInEditor",
+          "when": "editorLangId == loadmap || activeWebviewPanelId == 'loadmap.preview'"
+        },
+        {
+          "command": "loadmap.trackChanges",
+          "when": "!config.loadmap.preview.trackChanges"
+        },
+        {
+          "command": "loadmap.stopTrackingChanges",
+          "when": "config.loadmap.preview.trackChanges"
+        },
+        {
+          "command": "loadmap.addFromCatalog",
           "when": "editorLangId == loadmap || activeWebviewPanelId == 'loadmap.preview'"
         }
       ]
@@ -193,6 +243,7 @@
   },
   "devDependencies": {
     "@loadmap/cli": "workspace:*",
+    "@loadmap/core": "workspace:*",
     "@loadmap/dsl": "workspace:*",
     "@loadmap/react": "workspace:*",
     "@types/vscode": "1.91.0",

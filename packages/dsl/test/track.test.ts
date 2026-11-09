@@ -1,5 +1,5 @@
-import type { DslSymbol } from '@loadmap/dsl'
 import { describe, expect, it } from 'vitest'
+import type { DslSymbol } from '../src'
 import { changedBoxes, type Drawn } from '../src/track'
 
 const box = (id: string, x: number, w = 100, extra = {}) => ({ id, x, y: 0, w, h: 60, stages: [], ...extra })

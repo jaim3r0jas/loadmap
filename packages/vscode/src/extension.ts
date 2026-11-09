@@ -1,6 +1,19 @@
 import { encodeShare } from '@loadmap/dsl'
-import { commands, type ExtensionContext, env, Uri, window, workspace } from 'vscode'
+import {
+  CodeAction,
+  CodeActionKind,
+  type CodeActionProvider,
+  ConfigurationTarget,
+  commands,
+  type ExtensionContext,
+  env,
+  languages,
+  Uri,
+  window,
+  workspace,
+} from 'vscode'
 import { LanguageClient, type ServerOptions, TransportKind } from 'vscode-languageclient/node'
+import { addFromCatalog, boxAt, type Target } from './catalog'
 import { launch } from './launch'
 import { editorUrl } from './links'
 import { Preview } from './preview'
@@ -11,8 +24,8 @@ let queue: Promise<void> = Promise.resolve()
 
 /**
  * The language server for `.loadmap` files: the bundled `loadmap lsp` (or the command `loadmap.server.path` names),
- * started when the first one opens. A new path, or trust given to the workspace, starts it again. The preview and the
- * links to the docs' editor.
+ * started when the first one opens. A new path, or trust given to the workspace, starts it again. The preview (which
+ * can track live changes), the links to the docs' editor, and Add from the catalog.
  */
 export async function activate(context: ExtensionContext) {
   const restart = () => {
@@ -75,10 +88,55 @@ export async function activate(context: ExtensionContext) {
       const url = await link()
       if (url) await env.openExternal(Uri.parse(url))
     }),
+    commands.registerCommand('loadmap.trackChanges', () => track(true)),
+    commands.registerCommand('loadmap.stopTrackingChanges', () => track(false)),
+    // from a code action: the document and the box; else the cursor's box in the editor, or the preview's selection
+    commands.registerCommand('loadmap.addFromCatalog', async (at?: { uri: string; box: string }) => {
+      const e = window.activeTextEditor
+      const doc = at
+        ? workspace.textDocuments.find((d) => d.uri.toString() === at.uri)
+        : e?.document.languageId === 'loadmap'
+          ? e.document
+          : undefined
+      const target: Target | undefined = doc
+        ? { doc, box: at?.box ?? boxAt(doc, doc.offsetAt(e!.selection.active)) }
+        : await preview.target()
+      if (target) await addFromCatalog(target)
+      else void window.showInformationMessage('loadmap: open a .loadmap file first.')
+    }),
+    languages.registerCodeActionsProvider('loadmap', catalogAction, {
+      providedCodeActionKinds: [CodeActionKind.RefactorRewrite],
+    }),
   )
   await restart()
   // for tests and other extensions: what the preview shows
-  return { preview: { shown: () => preview.shown() } }
+  return { preview: { shown: () => preview.shown(), tracked: () => preview.tracked } }
+}
+
+/** Track live changes on or off, where the setting is set: a workspace's own value wins over the user's. */
+function track(on: boolean) {
+  const config = workspace.getConfiguration('loadmap')
+  const inWorkspace = config.inspect<boolean>('preview.trackChanges')?.workspaceValue !== undefined
+  return config.update(
+    'preview.trackChanges',
+    on,
+    inWorkspace ? ConfigurationTarget.Workspace : ConfigurationTarget.Global,
+  )
+}
+
+/** In a box's declaration: its capacity from a published figure, through Add from the catalog. */
+const catalogAction: CodeActionProvider = {
+  provideCodeActions(doc, range) {
+    const box = boxAt(doc, doc.offsetAt(range.start))
+    if (!box) return []
+    const action = new CodeAction(`Use a published figure for ${box}…`, CodeActionKind.RefactorRewrite)
+    action.command = {
+      command: 'loadmap.addFromCatalog',
+      title: action.title,
+      arguments: [{ uri: doc.uri.toString(), box }],
+    }
+    return [action]
+  },
 }
 
 async function start(context: ExtensionContext) {

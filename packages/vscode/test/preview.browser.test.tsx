@@ -52,7 +52,7 @@ describe('the preview', () => {
   it('says what to do before a file is sent, then draws the one it gets', async () => {
     const p = await mount()
     expect(p.el.textContent).toContain('Open a .loadmap file')
-    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap' })
+    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 1, edits: null })
     await expect.poll(() => p.box('gateway'), { timeout: 5000 }).toBeTruthy()
     expect(p.box('workers')).toBeTruthy()
     expect((await p.shown()).boxes.sort()).toEqual(['db', 'gateway', 'kafka', 'phones', 'workers'])
@@ -60,7 +60,7 @@ describe('the preview', () => {
 
   it('asks for the declaration of a box clicked, and marks the box the cursor is in', async () => {
     const p = await mount()
-    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap' })
+    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 1, edits: null })
     await expect.poll(() => p.box('gateway'), { timeout: 5000 }).toBeTruthy()
     await userEvent.click(p.box('workers')!)
     await expect.poll(() => p.posted.find((m) => m.type === 'reveal')).toEqual({ type: 'reveal', id: 'workers' })
@@ -73,7 +73,7 @@ describe('the preview', () => {
 
   it('keeps its values across edits, and shows the problems over the last good diagram', async () => {
     const p = await mount()
-    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap' })
+    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 1, edits: null })
     await expect.poll(() => p.box('gateway'), { timeout: 5000 }).toBeTruthy()
     expect(await p.values()).toEqual({})
     await userEvent.click(page.getByRole('button', { name: 'Proposed' }))
@@ -84,6 +84,8 @@ describe('the preview', () => {
       uri,
       source: checkout.replace('"API gateway"', '"Edge gateway"'),
       name: 'checkout.loadmap',
+      version: 2,
+      edits: null,
     })
     await expect.poll(() => p.box('gateway')?.textContent, { timeout: 5000 }).toContain('Edge gateway')
     expect(await p.values()).toEqual({ gateways: 2, pods: 6 })
@@ -93,6 +95,8 @@ describe('the preview', () => {
       uri,
       source: `${checkout}\nnode broken { pass { volume: 5 } }\n`,
       name: 'checkout.loadmap',
+      version: 2,
+      edits: null,
     })
     await expect.poll(() => p.el.querySelector('.lm-problems')?.textContent).toContain('checkout.loadmap')
     expect(p.el.querySelector('.lm-problems')!.textContent).toContain('volume')
@@ -114,7 +118,7 @@ describe('the preview', () => {
     // another file starts from its own defaults, on a board of its own
     const switchTo = async (to: string) => {
       const before = p.box('gateway')
-      p.send({ type: 'source', uri: to, source: checkout, name: to.split('/').at(-1)! })
+      p.send({ type: 'source', uri: to, source: checkout, name: to.split('/').at(-1)!, version: 1, edits: null })
       await expect.poll(() => p.box('gateway') !== before && p.box('gateway') !== null, { timeout: 5000 }).toBe(true)
     }
     await switchTo('file:///shop/other.loadmap')
@@ -123,6 +127,42 @@ describe('the preview', () => {
     // and back: the values it had when the preview left it, not the ones from before the reload
     await switchTo(uri)
     expect(await p.values()).toEqual({ load: 30, gateways: 2, pods: 6 })
+  })
+})
+
+describe('tracking live changes', () => {
+  /** The text with the database's capacity doubled, and where the edit is. */
+  const edited = (version = 2) => {
+    const from = checkout.indexOf('4_000')
+    return { source: checkout.replace('4_000', '8_000'), version, edits: [{ from, to: from + 5, version }] }
+  }
+
+  it('brings the box an edit changed into view and marks it, then says it followed the edits', async () => {
+    const p = await mount()
+    p.send({ type: 'track', on: true })
+    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 1, edits: null })
+    await expect.poll(() => p.box('db'), { timeout: 5000 }).toBeTruthy()
+    p.send({ type: 'source', uri, name: 'checkout.loadmap', ...edited() })
+    await expect
+      .poll(() => p.posted.find((m) => m.type === 'tracked'), { timeout: 10_000 })
+      .toEqual({ type: 'tracked', uri, version: 2, boxes: ['db'] })
+    expect(p.box('db')!.hasAttribute('data-changed')).toBe(true)
+    expect(p.box('gateway')!.hasAttribute('data-changed')).toBe(false)
+    // the mark goes after a moment
+    await expect.poll(() => p.box('db')!.hasAttribute('data-changed'), { timeout: 5000 }).toBe(false)
+  })
+
+  it('follows no edit made while it is off, nor a whole new text', async () => {
+    const p = await mount()
+    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 1, edits: null })
+    await expect.poll(() => p.box('db'), { timeout: 5000 }).toBeTruthy()
+    p.send({ type: 'source', uri, name: 'checkout.loadmap', ...edited() })
+    p.send({ type: 'track', on: true })
+    p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 3, edits: null })
+    // the first edit it follows comes after them: only that one is said, so neither of those was
+    p.send({ type: 'source', uri, name: 'checkout.loadmap', ...edited(4) })
+    await expect.poll(() => p.posted.filter((m) => m.type === 'tracked'), { timeout: 10_000 }).not.toEqual([])
+    expect(p.posted.filter((m) => m.type === 'tracked')).toEqual([{ type: 'tracked', uri, version: 4, boxes: ['db'] }])
   })
 })
 
