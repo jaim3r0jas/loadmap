@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/dsl",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "The .loadmap language: a text definition of a capacity model and its diagram, compiled to what <Loadmap> takes.",
   "keywords": [
     "loadmap",
