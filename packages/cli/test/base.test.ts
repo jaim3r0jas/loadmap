@@ -193,7 +193,8 @@ describe('the workflow in the guide', () => {
 
   it('finds its comment by the marker the command writes', async () => {
     const w = await workflow()
-    expect(w).toContain(`startswith("${COMMENT_MARKER}")`)
+    // \u003c is jq's "<": the guide holds no HTML comment, the workflow still finds the marker
+    expect(w).toContain(`startswith("${COMMENT_MARKER.replace('<', '\\u003c')}")`)
     // only its own comment: anyone may write the marker
     expect(w).toContain('.user.login == "github-actions[bot]"')
     // a label is the approval path, so a label runs it again

@@ -253,7 +253,7 @@ jobs:
         # one comment, found again by its marker and its author and updated in place
         run: |
           id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[]
-            | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- loadmap-check -->"))) | .id' \
+            | select(.user.login == "github-actions[bot]" and (.body | startswith("\u003c!-- loadmap-check -->"))) | .id' \
             | head -n 1)
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@comment.md
