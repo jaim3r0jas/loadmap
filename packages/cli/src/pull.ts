@@ -51,14 +51,15 @@ export async function pull(argv: string[], o: PullCommandOptions = {}): Promise<
     log(`${a.file}: has no measure lines; nothing to pull`)
     return 0
   }
+  const needed = [...new Set(r.measures.map((m) => m.provider))]
   let providers: ReturnType<typeof providersFromEnv>
   try {
-    providers = providersFromEnv(o.env ?? process.env, o.fetch ? { fetch: o.fetch } : {})
+    providers = providersFromEnv(o.env ?? process.env, { only: needed, ...(o.fetch && { fetch: o.fetch }) })
   } catch (err) {
     log(`${a.file}: ${(err as Error).message.replace(/^loadmap: /, '')}`)
     return 1
   }
-  const unset = [...new Set(r.measures.map((m) => m.provider))].filter((p) => !Object.hasOwn(providers, p))
+  const unset = needed.filter((p) => !Object.hasOwn(providers, p))
   if (unset.length) {
     for (const p of unset) log(`${a.file}: ${p} is not configured: set ${PROVIDER_ENV[p] ?? p}`)
     return 1
@@ -102,6 +103,7 @@ function parse(argv: string[], now: Date) {
   const file = positionals[0]!
   const window = seconds(values.window ?? '7d', 'window')
   const step = seconds(values.step ?? '5m', 'step')
+  if (window < step) throw new Error(`--window ${values.window ?? '7d'} is shorter than --step ${values.step ?? '5m'}`)
   if (window / step > 11_000)
     throw new Error(
       `--window ${values.window ?? '7d'} at --step ${values.step ?? '5m'} is too many points: Prometheus takes at most 11,000`,

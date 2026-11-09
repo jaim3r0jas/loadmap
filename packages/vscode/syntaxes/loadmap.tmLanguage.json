@@ -19,7 +19,7 @@
       "match": "#.*$"
     },
     "statement": {
-      "match": "(?:^|(?<=[{;]))\\s*\\b(autoscale|cache|cluster|component|drop|expect|fanout|fit|flow|growth|let|limit|load|loadmap|measure|merge|metric|node|param|partitions|pass|points|pool|preset|prometheus|published|queue|retry|scenario|sink|step|store|thresholds|tier|workers)\\b(?!\\s*:)(?:\\s+([A-Za-z_]\\w*))?",
+      "match": "(?:^|(?<=[{;]))\\s*\\b(autoscale|cache|cluster|component|drop|elasticsearch|expect|fanout|fit|flow|growth|let|limit|load|loadmap|measure|merge|metric|node|param|partitions|pass|points|pool|preset|prometheus|published|queue|retry|scenario|sink|step|store|thresholds|tier|workers)\\b(?!\\s*:)(?:\\s+([A-Za-z_]\\w*))?",
       "captures": {
         "1": {
           "name": "keyword.other.statement.loadmap"

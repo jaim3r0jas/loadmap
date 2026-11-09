@@ -244,9 +244,23 @@ argument the query needs and one it never uses. `stat` says how the window becom
 series when there is a snapshot, and from its own `points` when there is none. A value read from a snapshot is
 today's system's: it does not change with the parameters.
 
+A metric can read from **Elasticsearch** or OpenSearch instead: the documents of an index, counted or aggregated at
+each step of the window. `agg: rate` (the default) is documents per second, `count` documents per step, and `avg`,
+`sum`, `min` and `max` read a `field`. The `query` is Elasticsearch query JSON that picks the documents, an argument
+inside its texts (filled in escaped, so a measure's word never changes the query's shape), and `time` names the time
+field (`@timestamp` by default). A window where nothing matches is missing, not zero:
+
+```
+metric logins "Logins" {
+  elasticsearch { index: "auth-*"; query: '{"term": {"service": "{{ args.service }}"}}'; agg: rate }
+  stat: p95
+}
+```
+
 **Nothing in a definition fetches anything.** `loadmap pull` reads every measure from its provider and writes the
 snapshot next to the definition; the address and the credentials come from the environment, never from the text, so a
-shared link cannot make anyone's browser or CLI call a server:
+shared link cannot make anyone's browser or CLI call a server (Elasticsearch: `LOADMAP_ELASTICSEARCH_URL`, with
+`LOADMAP_ELASTICSEARCH_API_KEY` or a user and password):
 
 ```bash
 export LOADMAP_PROMETHEUS_URL=https://prometheus.example:9090 LOADMAP_PROMETHEUS_TOKEN=…
@@ -793,7 +807,7 @@ After the keyword: id [label].
 | `stat` | `mean` \| `min` \| `max` \| `last` \| `p50` \| `p95` \| `p99` | How the window becomes one value. Default mean. |
 | `min` | number, constant | The samples a window needs before its value counts; with fewer, the fallback is used. |
 
-Holds: `prometheus`.
+Holds: `prometheus`, `elasticsearch`.
 
 ### prometheus
 
@@ -806,6 +820,22 @@ prometheus { query: "sum(rate(http_requests_total[5m]))" }
 | Property | Value | |
 | --- | --- | --- |
 | `query` (required) | string, constant | The PromQL query; `{{ args.name }}` is filled by each measure. |
+
+### elasticsearch
+
+A metric read from Elasticsearch or OpenSearch: an index, counted or aggregated at each step, from `LOADMAP_ELASTICSEARCH_URL`.
+
+```
+elasticsearch { index: "logs-*"; query: '{"term": {"service": "{{ args.service }}"}}'; agg: rate }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `index` (required) | string, constant | A name, a pattern ("logs-*") or names joined by commas. |
+| `query` | string, constant | Which documents count: query JSON, `{{ args.name }}` inside its texts. Default all. |
+| `agg` | `rate` \| `count` \| `avg` \| `sum` \| `min` \| `max` | rate (documents per second, the default), count (per step), or avg, sum, min or max of `field`. |
+| `field` | string, constant | What avg, sum, min and max read: "duration_ms". |
+| `time` | string, constant | The time field. Default "@timestamp". |
 
 ### measure
 

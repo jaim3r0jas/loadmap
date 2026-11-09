@@ -196,3 +196,77 @@ describe('metric and measure', () => {
     expect(hover(SRC, SRC.indexOf('metric served') + 8)?.body.at(-1)).toBe('Measured by `apiCapacity`.')
   })
 })
+
+describe('an elasticsearch metric', () => {
+  const ES = `loadmap 1
+load { max: 50 }
+
+metric logins "Logins" {
+  elasticsearch { index: "auth-*"; query: '{"term": {"service": "{{ args.service }}"}}'; agg: rate }
+  stat: p95
+}
+metric latency "Latency" {
+  elasticsearch { index: "traces"; agg: avg; field: "duration_ms"; time: "ts" }
+}
+
+measure loginRate logins { service: "web \\"edge\\""; fallback: 12; unit: "logins/s" }
+measure slow latency { fallback: 40; unit: "ms" }
+
+flow req "logins" { rate: loginRate * load; from: users; route: api }
+
+node users "Users"
+node api "API" {
+  pass
+  demand: flows.req
+  capacity: estimated(100, "logins/s")
+  over: "logins wait"
+}
+
+users -> api
+`
+  const esErrors = (a: string, b: string) =>
+    compile(ES.replace(a, b)).diagnostics.map((d) => `${d.severity}: ${d.message}${d.hint ? ` | ${d.hint}` : ''}`)
+
+  it('writes its request as one JSON text, an argument escaped inside the query', () => {
+    const r = compile(ES)
+    expect(r.diagnostics).toEqual([])
+    expect(r.measures.map((m) => [m.id, m.provider, JSON.parse(m.query)])).toEqual([
+      [
+        'loginRate',
+        'elasticsearch',
+        { index: 'auth-*', time: '@timestamp', agg: 'rate', query: { term: { service: 'web "edge"' } } },
+      ],
+      ['slow', 'elasticsearch', { index: 'traces', time: 'ts', agg: 'avg', field: 'duration_ms' }],
+    ])
+    expect(format(ES).text).toBe(ES)
+  })
+
+  it('says what is wrong with its request', () => {
+    expect(esErrors('agg: avg; field: "duration_ms"; ', 'agg: avg; ')).toContain(
+      'error: avg reads a field | field: "duration_ms"',
+    )
+    expect(esErrors('agg: rate }', 'agg: rate; field: "x" }')).toContain(
+      'error: rate counts documents: it takes no field',
+    )
+    expect(esErrors(`'{"term": {"service": "{{ args.service }}"}}'`, `'{"term": {{ args.service }}}'`)[0]).toMatch(
+      /^error: the query is Elasticsearch query JSON/,
+    )
+    expect(esErrors('index: "traces"', 'index: "traces/../x"')).toContain(
+      'error: an index is a name or a pattern | "logs-*", or names joined by commas',
+    )
+    expect(esErrors('agg: avg', 'agg: median')[0]).toMatch(/median/)
+    expect(esErrors('index: "traces"', 'index: "a,,b"')).toContain(
+      'error: an index is a name or a pattern | "logs-*", or names joined by commas',
+    )
+    // an argument in the index is a pattern
+    const env = ES.replace('index: "traces"', 'index: "traces-{{ args.env }}"').replace(
+      'measure slow latency {',
+      'measure slow latency { env: "prod";',
+    )
+    expect(compile(env).diagnostics).toEqual([])
+    expect(JSON.parse(compile(env).measures[1]!.query).index).toBe('traces-prod')
+    expect(esErrors('  stat: p95\n', '  stat: p95\n  prometheus { query: "x" }\n')).toContain(
+      'error: a metric reads from one provider | e.g. prometheus { query: "sum(rate(http_requests_total[5m]))" }',
+    )
+  })
+})

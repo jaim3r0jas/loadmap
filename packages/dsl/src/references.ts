@@ -188,11 +188,11 @@ class NameIndex {
           if (k === 'param' || k === 'let' || k === 'fit' || k === 'published' || k === 'measure')
             this.add('formula', id, id.name, true)
           else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric') this.add(k, id, id.name, true)
-          const metric = s.args[1]
-          if (k === 'measure' && metric?.t === 'id') this.add('metric', metric, metric.name)
           else if ((BOXES as readonly string[]).includes(k)) this.add('node', id, id.name, true)
           else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)
         }
+        const metric = s.args[1]
+        if (k === 'measure' && metric?.t === 'id') this.add('metric', metric, metric.name)
         if (k === 'scenario' && s.args[0]) this.scenario(s.args[0], true)
         for (const a of s.args) if (a.t === 'tpl') this.expr(a)
         if (s.init) this.expr(s.init)

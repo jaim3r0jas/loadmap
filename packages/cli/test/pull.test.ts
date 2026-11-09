@@ -120,6 +120,11 @@ describe('loadmap pull', () => {
     expect(await pull([path, '--window', '7 days'], { log, env: ENV, now: NOW })).toBe(2)
     expect(lines.at(-1)).toBe('--window is a whole number and s, m, h or d ("7d", "5m"), not "7 days"')
     expect(await pull([path, '--window', '90d', '--step', '15s'], { log, env: ENV, now: NOW })).toBe(2)
+    expect(await pull([path, '--window', '1m'], { log, env: ENV, now: NOW })).toBe(2)
+    expect(lines.at(-1)).toBe('--window 1m is shorter than --step 5m')
+    // an address for a provider the definition does not use is not read
+    const both = { ...ENV, LOADMAP_ELASTICSEARCH_URL: 'not a url' }
+    expect(await pull([path], { log, env: both, fetch: server().fetch, now: NOW })).toBe(0)
     expect(await pull([], { log })).toBe(2)
   })
 

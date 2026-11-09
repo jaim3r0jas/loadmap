@@ -35,7 +35,8 @@ operators; numbers, texts and formulas stay as written. A file with a syntax err
 
 pull reads each measure of the definition from its provider and writes the snapshot the model reads, next to
 the definition (x.snapshot.json). The address and the credentials come from the environment, never from the file:
-LOADMAP_PROMETHEUS_URL, with LOADMAP_PROMETHEUS_TOKEN or LOADMAP_PROMETHEUS_USER and LOADMAP_PROMETHEUS_PASSWORD. A
+LOADMAP_PROMETHEUS_URL, with LOADMAP_PROMETHEUS_TOKEN or LOADMAP_PROMETHEUS_USER and LOADMAP_PROMETHEUS_PASSWORD;
+LOADMAP_ELASTICSEARCH_URL, with LOADMAP_ELASTICSEARCH_API_KEY or LOADMAP_ELASTICSEARCH_USER and _PASSWORD. A
 query that fails, or a window with fewer samples than its metric's min, leaves that measurement missing: the model
 uses the definition's fallback, and the line says why. It exits 1 when the definition has an error or a provider it
 needs is not configured.
