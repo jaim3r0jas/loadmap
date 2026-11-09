@@ -2,6 +2,7 @@
 export * from '@loadmap/core'
 export { fitLinear } from '@loadmap/core/calibrate'
 export { compact, fmt, multiple, pct, secs } from '@loadmap/core/format'
+export { fromSnapshot, MEASURES, originText, parseSnapshot, summarize } from '@loadmap/core/measure'
 export {
   type AnyNodeDef,
   type ClusterDef,

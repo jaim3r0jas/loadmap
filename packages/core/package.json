@@ -23,6 +23,7 @@
     "./calibrate": "./src/calibrate.ts",
     "./catalog": "./src/catalog.ts",
     "./format": "./src/format.ts",
+    "./measure": "./src/measure.ts",
     "./internal": "./src/internal.ts"
   },
   "publishConfig": {
@@ -42,6 +43,10 @@
       "./format": {
         "types": "./dist/format.d.ts",
         "import": "./dist/format.js"
+      },
+      "./measure": {
+        "types": "./dist/measure.d.ts",
+        "import": "./dist/measure.js"
       },
       "./internal": {
         "types": "./dist/internal.d.ts",

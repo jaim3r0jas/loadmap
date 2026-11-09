@@ -418,7 +418,7 @@ export function Assumptions({ lm, extra = [] }: { lm: LoadmapController; extra?:
           <li key={i}>{x}</li>
         ))}
         {lm.ev.assumptions.map((a) => (
-          <li key={a.kind === 'capacity' ? `c:${a.component}` : `f:${a.name}`}>{describe(a)}</li>
+          <li key={a.kind === 'capacity' ? `c:${a.component}` : `${a.kind[0]}:${a.name}`}>{describe(a)}</li>
         ))}
       </ul>
     </div>
@@ -435,20 +435,44 @@ function describe(a: Assumption): ReactNode {
           <span className="lm-prov" data-kind="published">
             no published benchmark
           </span>{' '}
-          {c.missing}.
+          {c.missing}.{unread(c.unread)}
         </>
       )
-    if (c.ref) return <Published name={a.name} c={c} />
+    if (c.ref)
+      return (
+        <>
+          <Published name={a.name} c={c} />
+          {unread(c.unread)}
+        </>
+      )
     return (
       <>
-        <b>{a.name}:</b> {fmt(c.value)} {c.unit}
+        <b>{a.name}:</b> {c.unit === 'share' ? pct(c.value) : `${fmt(c.value)} ${c.unit}`}
         {c.within ? ` ${plusMinus(c)}` : ''},{' '}
         <span className="lm-prov" data-kind={c.provenance}>
           {c.provenance}
         </span>
-        {c.source ? ` (${c.source})` : ''}.
+        {c.source ? ` (${c.source})` : ''}.{unread(c.unread)}
       </>
     )
+  }
+  if (a.kind === 'measurement') {
+    // a reading is drawn as a measured capacity would be
+    const { label, unit, value, missing, source } = a.measurement
+    const name = label ?? a.name
+    if (missing != null)
+      return (
+        <>
+          <b>{name}:</b>
+          {unread(missing)}
+        </>
+      )
+    return describe({
+      kind: 'capacity',
+      component: '',
+      name,
+      capacity: { value, unit, provenance: 'measured', source },
+    })
   }
   const f = a.fit
   return (
@@ -457,10 +481,13 @@ function describe(a: Assumption): ReactNode {
       <span className="lm-prov" data-kind="measured">
         measured
       </span>
-      {f.source ? ` (${f.source})` : ''}.
+      {f.source ? ` (${f.source})` : ''}.{unread(f.unread)}
     </>
   )
 }
+
+/** A snapshot that gave no value: the line says the written one stands in. */
+const unread = (why: string | undefined) => (why == null ? '' : ` No data from the snapshot (${why}).`)
 
 /** A published figure with what it is, its conditions and where it comes from: a vendor's run, not this system. */
 function Published({ name, c }: { name: string; c: Capacity }) {

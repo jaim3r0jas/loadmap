@@ -1,3 +1,5 @@
+import type { Origin } from './measure'
+
 export { type Capacity, estimated, measured, type Provenance } from './capacity'
 
 /** cost = a + b × x, fitted from a measured series. Callable: `fit(x)` is the cost at x. */
@@ -12,6 +14,10 @@ export interface LinearFit {
   y: string
   source?: string
   provenance: 'measured'
+  /** Fitted from a snapshot: where each series was read. */
+  origin?: { x: Origin; y: Origin }
+  /** Why the snapshot gave no series to fit: this is the definition's own fit instead. */
+  unread?: string
 }
 
 /**
