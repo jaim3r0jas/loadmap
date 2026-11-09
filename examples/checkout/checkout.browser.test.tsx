@@ -1249,6 +1249,7 @@ describe('export', () => {
     )
   })
 
+  // three recordings of 51 frames: 8 to 13 s on a laptop, past the default 15 s on a busy CI runner
   it('records the story as Play plays it, the same twice, and puts the page back', async () => {
     const { handle } = await mount()
     handle.setValues({ load: 7 })
@@ -1295,7 +1296,7 @@ describe('export', () => {
     await run()
     expect(handle.storyStep()).toBe(0)
     expect(handle.values().load).toBe(12)
-  })
+  }, 120_000)
 
   it('records the same WebM frames twice', async () => {
     const { handle } = await mount()
