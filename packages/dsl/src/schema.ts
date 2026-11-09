@@ -121,6 +121,16 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     scope: 'ctx',
     doc: "What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages.",
   },
+  held: {
+    value: 'number',
+    scope: 'ctx',
+    doc: 'The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots.',
+  },
+  on: {
+    value: 'route',
+    scope: 'const',
+    doc: 'The stages whose units hold its slots, a -> b; without it, the stages it runs.',
+  },
   capacity: {
     inspector: 'main',
     value: 'capacity',
@@ -638,7 +648,15 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       { name: 'label', kind: 'text', optional: true },
     ],
     props: COMPONENT_PROPS,
+    children: ['held'],
+  },
+  held: {
+    doc: "How long a unit of each flow holds one of the component's slots, in seconds; a flow it does not name holds none.",
+    example: 'held { orders: 0.02; sessions: 3600 }',
+    args: [],
+    props: {},
     children: [],
+    open: { names: 'flows', spec: { value: 'number', scope: 'ctx', doc: 'Seconds a unit of this flow holds a slot.' } },
   },
   tier: {
     doc: 'A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.',
@@ -671,7 +689,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       tier: TIER,
       ...COMPONENT_PROPS,
     },
-    children: ['pass', 'store', 'sink', 'fanout', 'split', 'cache', 'limit', 'component'],
+    children: ['pass', 'store', 'sink', 'fanout', 'split', 'cache', 'limit', 'component', 'held'],
   },
   cluster: {
     doc: 'Members (brokers) holding the partitions of one or more queues (topics).',
@@ -684,7 +702,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       tier: TIER,
       ...COMPONENT_PROPS,
     },
-    children: ['queue', 'component'],
+    children: ['queue', 'component', 'held'],
   },
   pool: {
     doc: 'A workers stage drawn as pods holding a grid of workers.',
@@ -696,7 +714,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       tier: TIER,
       ...COMPONENT_PROPS,
     },
-    children: ['workers', 'component'],
+    children: ['workers', 'component', 'held'],
   },
   pass: {
     doc: 'Flows pass through; past capacity the share above 100 % is rejected.',

@@ -346,7 +346,10 @@ export interface MeasureSpec {
    */
   dimension: string
   doc: string
-  /** What of the model it sets, when it sets one: `rate`, `capacity`, `hit`, `pods`, `perPod`, `partitions`, `share`. */
+  /**
+   * What of the model it sets, when it sets one: `rate`, `capacity`, `hit`, `pods`, `perPod`, `partitions`, `share`,
+   * `held`.
+   */
   sets?: string
   /** Kept for a part of the model that is not built yet: read and listed, but nothing uses it. */
   later?: true
@@ -354,7 +357,7 @@ export interface MeasureSpec {
 
 /**
  * The standard measurements per kind: what loadmap expects to know about a flow and each stage, so every provider
- * maps its query results onto the same names. `slots` is a kind the model does not have yet.
+ * maps its query results onto the same names. `slots` is a component with `held`: it counts slots, not a rate.
  */
 export const MEASURES = {
   flow: {
@@ -413,7 +416,7 @@ export const MEASURES = {
     },
     replicaLag: { role: 'duration', dimension: 'seconds', doc: 'How far the replicas are behind.' },
     writeLatency: { role: 'latency', dimension: 'ms', later: true, doc: 'Time a write takes.' },
-    connections: { role: 'count', dimension: 'count', later: true, doc: 'Connections open: a pool of slots.' },
+    connections: { role: 'count', dimension: 'count', doc: 'Connections open: a pool of slots (see slots).' },
   },
   fanout: {
     copies: { role: 'share', dimension: 'per unit', sets: 'share', doc: 'Copies sent per unit, per branch.' },
@@ -426,11 +429,10 @@ export const MEASURES = {
     inUse: {
       role: 'count',
       dimension: 'count',
-      later: true,
-      doc: 'Slots in use: connections, sessions, in-flight requests.',
+      doc: 'Slots in use: connections, sessions, in-flight requests. Over the rate, the time each is held.',
     },
-    available: { role: 'capacity', dimension: 'count', later: true, doc: 'Slots there are.' },
-    held: { role: 'duration', dimension: 'seconds', later: true, doc: 'How long each is held.' },
+    available: { role: 'capacity', dimension: 'count', sets: 'capacity', doc: 'Slots there are.' },
+    held: { role: 'duration', dimension: 'seconds', sets: 'held', doc: 'How long each is held.' },
     wait: { role: 'duration', dimension: 'seconds', later: true, doc: 'The wait for a free slot.' },
   },
 } as const satisfies Readonly<Record<string, Readonly<Record<string, MeasureSpec>>>>

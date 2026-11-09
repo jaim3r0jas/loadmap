@@ -540,10 +540,36 @@ class Compiler {
       flowViews[id.name] = view
     }
 
-    const componentDefs: Record<string, unknown> = {}
-    for (const box of boxes)
-      if (box.component) componentDefs[box.component.id] = this.component(box.component.block, box.block)
-    for (const b of loose) if (b.args.id) componentDefs[b.args.id.name] = this.component(b)
+    const componentDefs: Record<string, Record<string, unknown>> = {}
+    const componentBlocks = new Map<string, Block>()
+    for (const box of boxes) {
+      const stray = box.component?.own ? undefined : box.block.children.find((c) => c.keyword === 'held')
+      if (stray)
+        this.report.error(
+          stray.at,
+          'held belongs to a component',
+          box.component ? `move it into component ${box.component.id}` : 'give the box capacity and over lines',
+        )
+      if (box.component) {
+        componentDefs[box.component.id] = this.component(box.component.block, flowNames, box.block)
+        componentBlocks.set(box.component.id, box.component.block)
+      }
+    }
+    for (const b of loose)
+      if (b.args.id) {
+        componentDefs[b.args.id.name] = this.component(b, flowNames)
+        componentBlocks.set(b.args.id.name, b)
+      }
+    // the stages whose units hold a component's slots, once every stage is known
+    for (const [id, b] of componentBlocks) {
+      const on = this.prop(b, 'on')
+      if (!on) continue
+      if (on.value.t !== 'id') this.report.error(on.value, 'on is a list of stages: a -> b')
+      const stages = (on.chain ?? (on.value.t === 'id' ? [on.value as Ident] : [])).map((n) => resolveStage(n, 'stage'))
+      if (stages.every((s) => s)) componentDefs[id]!.on = stages
+      if (!this.prop(b, 'held') && !b.children.some((c) => c.keyword === 'held'))
+        this.report.error(on.key, 'on names the stages that hold its slots: give it held too', 'held: 0.02')
+    }
 
     const stageDefs: Record<string, StageDef> = {}
     for (const box of boxes)
@@ -555,13 +581,17 @@ class Compiler {
       if (!reached.has(id) && s.block.keyword !== 'fanout')
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
-    for (const [id, c] of Object.entries(componentDefs))
-      if ((c as { demand?: unknown }).demand == null && !used.has(id) && !this.plainBoxes.has(id))
+    for (const [id, c] of Object.entries(componentDefs)) {
+      if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
+      if (c.held != null)
+        this.report.error(componentNames.get(id)!, `the component "${id}" is held on no stage`, 'on: stage')
+      else if (c.demand == null)
         this.report.error(
           componentNames.get(id)!,
           `the component "${id}" needs "demand: …": no stage uses it`,
           COMPONENT_PROPS.demand!.doc,
         )
+    }
 
     const calibration: Record<string, LinearFit> = {}
     for (const f of fits) {
@@ -1702,7 +1732,7 @@ class Compiler {
     return !when && typeof times !== 'function' && typeof budget !== 'function' ? at(undefined) : at
   }
 
-  private component(b: Block, box?: Block) {
+  private component(b: Block, flows: Map<string, Span>, box?: Block) {
     const o: Record<string, unknown> = {}
     const name = this.constProp<string>(b, 'name') ?? this.text(b.args.label) ?? this.text(box?.args.label)
     if (name == null) {
@@ -1733,6 +1763,12 @@ class Compiler {
       // the model takes demand and when as functions only: a constant (demand: 0) becomes one
       o[k] = (k === 'demand' || k === 'when') && v !== undefined && typeof v !== 'function' ? () => v : v
     }
+    const held = this.held(b, flows)
+    if (held !== undefined) {
+      o.held = held
+      const demand = this.prop(b, 'demand')
+      if (demand) this.report.error(demand.key, 'a component that is held works out its demand: drop one of them')
+    }
     const at = box ? (box.args.id ?? box.at) : b.at
     const missing = ['capacity', 'over'].filter((k) => !(k in o))
     // none of the lines that make one: the box was not meant as a component
@@ -1746,6 +1782,32 @@ class Compiler {
     // without a demand line the component handles what reaches its stages: checked once the stages are known
     for (const k of missing) this.report.error(at, `the component needs "${k}: …"`, COMPONENT_PROPS[k]!.doc)
     return o
+  }
+
+  /** How long a unit holds one of the component's slots: `held: 0.02` for every flow, or `held { orders: 0.02 }`. */
+  private held(b: Block, flows: Map<string, Span>) {
+    const prop = this.prop(b, 'held')
+    const block = b.children.find((c) => c.keyword === 'held')
+    if (prop && block)
+      this.report.error(block.at, 'held is set twice', 'held: 0.02 for every flow, or a held block per flow')
+    const time = (v: unknown) => {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0)
+        throw new Error(`a time held is seconds from 0 up, not ${String(v)}`)
+    }
+    if (prop) return this.dyn<number>(prop.value, 'number', 'ctx', time)
+    if (!block) return undefined
+    const entries: [string, number | ((c: any) => number)][] = []
+    for (const [f, props] of block.props) {
+      const p = props[0]!
+      if (!flows.has(f)) {
+        this.report.error(p.key, `unknown flow "${f}"`, didYouMean(f, flows.keys()))
+        continue
+      }
+      entries.push([f, this.dyn<number>(p.value, 'number', 'ctx', time)])
+    }
+    const at = (ctx: any): Record<string, number> =>
+      Object.fromEntries(entries.map(([k, v]) => [k, typeof v === 'function' ? v(ctx) : v]))
+    return entries.every(([, v]) => typeof v === 'number') ? at(undefined) : at
   }
 
   private stage(

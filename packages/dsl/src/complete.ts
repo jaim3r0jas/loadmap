@@ -308,7 +308,9 @@ class Help {
         return this.ids('stage').map((s) => entry(s, 'at'))
       // a component's own demand or utilization in its own lines would need itself
       case 'demand':
-        return this.ids('component').flatMap((c) => (c === self && slot.key === 'demand' ? [] : [entry(c, 'demand')]))
+        return this.ids('component').flatMap((c) =>
+          c === self && (slot.key === 'demand' || slot.key === 'held') ? [] : [entry(c, 'demand')],
+        )
       case 'util':
         return this.ids('component').flatMap((c) => (c === self ? [] : [entry(c, 'util')]))
       case 'derived': {
@@ -479,7 +481,7 @@ class Help {
   /** The component whose line the cursor is on: a nested `component`, or the box that owns its lines. */
   component(slot: Slot): string | undefined {
     // what its utilization is made of; its texts may show it
-    if (!slot.key || !['demand', 'capacity', 'when'].includes(slot.key)) return undefined
+    if (!slot.key || !['demand', 'capacity', 'when', 'held'].includes(slot.key)) return undefined
     const inner = this.path.at(-1)
     if (inner?.kind === 'decl' && inner.keyword.name === 'component') {
       const id = inner.args[0]

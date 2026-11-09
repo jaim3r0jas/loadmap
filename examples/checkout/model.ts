@@ -1,5 +1,5 @@
 // The checkout pipeline: pure TypeScript, tested in Vitest without a browser.
-import { defineModel, estimated, measured, p, pass, queue, store, workers } from '@loadmap/core'
+import { configured, defineModel, estimated, measured, p, pass, queue, store, workers } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
 import cpu from './worker-cpu.json'
 
@@ -73,6 +73,15 @@ export const checkout = defineModel({
       demand: ({ flows, batch, rows }) => (batch ? flows.orders / rows : flows.orders),
       capacity: estimated(4_000, 'commits/s', { within: 0.3 }),
       over: 'commits queue on the primary',
+    },
+    // a pool of slots, not a rate: each order holds a connection while its row is written (Little's law)
+    conns: {
+      name: 'Postgres connections',
+      held: 0.02,
+      on: ['db'],
+      capacity: configured(100, 'connections', 'pool size'),
+      over: 'orders wait for a connection',
+      describe: 'each order holds one for 20 ms',
     },
   },
   stages: {

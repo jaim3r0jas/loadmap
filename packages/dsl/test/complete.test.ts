@@ -19,7 +19,7 @@ const inside = (opener: string, line: string) => checkout.replace(opener, `${ope
 describe('completions', () => {
   it('offers the entries of a table after its dot', () => {
     expect(at(inside('flow orders "orders" {', 'rate: flows.ev|')).labels).toEqual(['orders', 'events'])
-    expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual(['gateway', 'workers', 'db'])
+    expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual(['gateway', 'workers', 'db', 'conns'])
     expect(at(inside('flow orders "orders" {', 'rate: at.|')).labels).toEqual(['gateway', 'topic', 'workers', 'db'])
     // at.<stage>.: only the flows that reach that stage (events ends at the workers)
     expect(at(inside('flow orders "orders" {', 'rate: at.db.o|')).labels).toEqual(['orders'])
@@ -107,7 +107,7 @@ describe('completions for expect', () => {
     const { labels, c } = at(`${src}\nexpect { scenario: | }`)
     expect(labels).toEqual(['Today', 'Two gateways', 'Proposed'])
     expect(c.options.map((o) => o.apply)).toEqual(['Today', '"Two gateways"', 'Proposed'])
-    expect(at(`${checkout}\nexpect { component: | }`).labels).toEqual(['gateway', 'workers', 'db'])
+    expect(at(`${checkout}\nexpect { component: | }`).labels).toEqual(['gateway', 'workers', 'db', 'conns'])
   })
 })
 
@@ -207,8 +207,8 @@ describe('completions that know where they are', () => {
   it('leave out what would read itself', () => {
     expect(at(`${checkout}\nlet x = |`).labels).not.toContain('x')
     expect(at(`${checkout}\nlet y = 1\nlet x = derived.|`).labels).toEqual(['y'])
-    expect(at(inside(PG, 'demand: util.|')).labels).toEqual(['gateway', 'workers'])
-    expect(at(inside(PG, 'demand: demand.|')).labels).toEqual(['gateway', 'workers'])
+    expect(at(inside(PG, 'demand: util.|')).labels).toEqual(['gateway', 'workers', 'conns'])
+    expect(at(inside(PG, 'demand: demand.|')).labels).toEqual(['gateway', 'workers', 'conns'])
     expect(at(inside(PG, 'capacity: estimated(demand.|)')).labels).toContain('db')
     expect(at(inside(PG, 'capacity: estimated(util.|)')).labels).not.toContain('db')
     // its texts may show its own utilization
