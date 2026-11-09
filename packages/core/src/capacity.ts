@@ -1,4 +1,6 @@
-export type Provenance = 'measured' | 'estimated' | 'configured'
+import type { Reference } from './published'
+
+export type Provenance = 'measured' | 'estimated' | 'configured' | 'published'
 
 /** A capacity always says where it came from: the verdict and the assumptions list show it. */
 export interface Capacity {
@@ -8,6 +10,12 @@ export interface Capacity {
   source?: string
   /** How sure the value is, as a share: 0.3 is ±30 %. The limits become ranges between the two bounds. */
   within?: number
+  /** The value is a best case: a ± only lowers it, so the high bound is the value itself. */
+  ceiling?: boolean
+  /** A published figure: the catalog's component, the run, its conditions and its source. */
+  ref?: Reference
+  /** Why there is no published figure for this configuration: the component is then not ranked. */
+  missing?: string
 }
 
 export interface CapacityOptions {
@@ -43,7 +51,8 @@ function capacity(value: number, unit: string, provenance: Provenance, o?: strin
 /** The capacity's value at its low or high bound; the value itself without a ±. */
 export function boundOf(c: Capacity, bound: Bound | undefined): number {
   if (!bound || !c.within) return c.value
-  return c.value * (bound === 'low' ? 1 - c.within : 1 + c.within)
+  if (bound === 'high') return c.ceiling ? c.value : c.value * (1 + c.within)
+  return c.value * (1 - c.within)
 }
 
 /** Every capacity at its low bound (the pessimistic edge) or its high bound. */

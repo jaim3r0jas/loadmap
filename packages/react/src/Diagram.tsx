@@ -459,7 +459,7 @@ const Structure = memo(function Structure({
       tabIndex: 0,
       role: 'button',
       className: 'lm-node',
-      'aria-label': `${title && title !== c.name ? `${title}, ` : ''}${c.name}: ${c.util == null ? 'switched off' : pct(c.util)}`,
+      'aria-label': `${title && title !== c.name ? `${title}, ` : ''}${c.name}: ${c.missing != null ? 'no published benchmark' : c.util == null ? 'switched off' : pct(c.util)}`,
       ...(onClick ? { 'aria-pressed': selected === n.id } : {}),
       onPointerEnter: (e: React.PointerEvent) =>
         e.pointerType === 'mouse' && setTip((t) => (t?.pinned ? t : { id: n.id, pinned: false })),

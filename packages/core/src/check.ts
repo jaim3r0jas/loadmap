@@ -1,6 +1,6 @@
 import type { CrossingRange } from './capacity'
 import { fmt, multiples, pct } from './format'
-import { type Model, sureness } from './model'
+import { type ComponentResult, type Model, sureness } from './model'
 import type { Values } from './params'
 
 /**
@@ -45,6 +45,12 @@ export function check<P, C extends string>(
     const range = (k: 'target' | 'full') => (c ? c[`${k}Range`] : ev[k])
     const found = { target: range('target'), full: range('full') }
 
+    // a component without a published figure may run out first: no claim about it, or about the first limit, holds
+    const unknown = (c ? [c] : Object.values<ComponentResult<C>>(ev.components)).filter((x) => x.missing != null)
+    const none = unknown
+      .map((x) => `${x.short} ${x.plural ? 'have' : 'has'} no published benchmark ${x.missing}${where}`)
+      .join('; ')
+    if (c && unknown.length) return { expectation: e, ok: false, ...found, message: none }
     if (c && c.util == null)
       return { expectation: e, ok: true, ...found, message: `${c.short} is switched off${where}` }
     const claims: { ok: boolean; text: string; min: number }[] = []
@@ -74,6 +80,8 @@ export function check<P, C extends string>(
     const message = failed.length
       ? failed.map((x) => `expected at least ${fmt(x.min)}×, but ${x.text}`).join('; ')
       : claims.map((x) => x.text).join('; ')
+    // what the ranked components show still says how much headroom is left
+    if (unknown.length) return { expectation: e, ok: false, ...found, message: `${none}; among the rest, ${message}` }
     return { expectation: e, ok: !failed.length, ...found, message }
   })
 }

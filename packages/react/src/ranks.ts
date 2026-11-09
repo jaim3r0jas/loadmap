@@ -1,5 +1,5 @@
 import type { ComponentResult, Evaluation, Model } from '@loadmap/core'
-import { multiple } from '@loadmap/core/format'
+import { capital, multiple } from '@loadmap/core/format'
 
 /** What the diagram says on a component's box: the limit, or the next ones in line. */
 export interface RankLabel {
@@ -37,8 +37,6 @@ export function rankLabels(ev: Evaluation, model: Model): Map<string, RankLabel>
   })
   return out
 }
-
-const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** The limit moves from one component to another between these values. */
 export const handsOver = (a: Evaluation, b: Evaluation): boolean =>

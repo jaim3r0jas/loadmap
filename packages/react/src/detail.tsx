@@ -3,6 +3,7 @@ import { compact, fmt, multiple, multiples, pct } from '@loadmap/core/format'
 import type { Scene, SceneNode } from '@loadmap/layout'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { boxComponent } from './camera'
+import { plusMinus } from './panels'
 import { rankLabels } from './ranks'
 import { scenarioColor, useComparison } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
@@ -105,13 +106,15 @@ export function Detail({
           </span>
         )}
       </b>
-      {c.util == null || !cap ? (
+      {c.missing != null ? (
+        <span>No published benchmark {c.missing}.</span>
+      ) : c.util == null || !cap ? (
         <span>switched off</span>
       ) : (
         <>
           <span>
             <strong>{pct(c.util)}</strong> · {num(c.demand ?? 0)} of {fmt(cap.value)} {cap.unit}
-            {cap.within ? ` ±${pct(cap.within)}` : ''}
+            {cap.within ? ` ${plusMinus(cap)}` : ''}
           </span>
           <span className="lm-sub">
             capacity{' '}

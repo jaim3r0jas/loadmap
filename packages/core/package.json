@@ -21,6 +21,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./calibrate": "./src/calibrate.ts",
+    "./catalog": "./src/catalog.ts",
     "./format": "./src/format.ts",
     "./internal": "./src/internal.ts"
   },
@@ -33,6 +34,10 @@
       "./calibrate": {
         "types": "./dist/calibrate.d.ts",
         "import": "./dist/calibrate.js"
+      },
+      "./catalog": {
+        "types": "./dist/catalog.d.ts",
+        "import": "./dist/catalog.js"
       },
       "./format": {
         "types": "./dist/format.d.ts",

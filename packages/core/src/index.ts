@@ -50,6 +50,19 @@ export {
   type Values,
 } from './params'
 export {
+  type Catalog,
+  type CatalogComponent,
+  type Condition,
+  type ConditionValue,
+  type Figure,
+  type Published,
+  type PublishedConfig,
+  published,
+  type Reference,
+  type Source,
+  sourceText,
+} from './published'
+export {
   type Comparison,
   type ComponentChange,
   compare,

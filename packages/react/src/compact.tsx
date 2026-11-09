@@ -2,7 +2,7 @@ import type { Series } from '@loadmap/core'
 import { fmt, multiple, multiples, pct } from '@loadmap/core/format'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import type { LoadmapPanel } from './Loadmap'
-import { Controls, Meters, plusMinus } from './panels'
+import { CapTag, Controls, Meters, plusMinus } from './panels'
 import { Compare, scenarioColor, useHeadroom, useSize, whenRange } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
@@ -44,7 +44,12 @@ export function VerdictLine({
   const range = ev.target
   const target = `${pct(model.thresholds.target)} target`
   const c = first?.capacity
-  const sure = !c ? '' : c.provenance === 'estimated' ? `est${c.within ? ` ${plusMinus(c)}` : ''}` : plusMinus(c)
+  const kind = c?.ref ? 'published' : c?.provenance === 'estimated' ? 'estimated' : 'range'
+  const sure = !c
+    ? ''
+    : kind === 'range'
+      ? plusMinus(c)
+      : `${kind === 'published' ? 'pub' : 'est'}${c.within ? ` ${plusMinus(c)}` : ''}`
   const over = ev.ranked.filter((x) => (x.util ?? 0) > model.thresholds.full)
   const when = range ? whenRange(model, range) : ''
   const estimated = ev.assumptions.filter((a) => a.kind === 'capacity' && a.capacity.provenance === 'estimated').length
@@ -69,7 +74,7 @@ export function VerdictLine({
               )}{' '}
               · limited by <b>{first.name}</b>
               {sure && (
-                <span className="lm-tag" data-kind={c?.provenance === 'estimated' ? 'estimated' : 'range'}>
+                <span className="lm-tag" data-kind={kind}>
                   {sure}
                 </span>
               )}
@@ -231,17 +236,7 @@ function MiniLimits({ lm }: { lm: LoadmapController }) {
           <div className="lm-mini-lim" key={c.id} data-component={c.id}>
             <span className="lm-name" title={c.name}>
               {c.name}
-              {c.capacity?.provenance === 'estimated' ? (
-                <span className="lm-tag" data-kind="estimated">
-                  est
-                </span>
-              ) : (
-                !!c.capacity?.within && (
-                  <span className="lm-tag" data-kind="range">
-                    ±
-                  </span>
-                )
-              )}
+              <CapTag c={c.capacity} short />
             </span>
             <span className="lm-track" role="img" aria-label={`${c.name} at ${c.util == null ? 'off' : pct(c.util)}`}>
               <span
@@ -254,11 +249,13 @@ function MiniLimits({ lm }: { lm: LoadmapController }) {
             </span>
             <span className="lm-val">{c.util == null ? '—' : pct(c.util)}</span>
             <span className="lm-val lm-sub">
-              {c.util == null
-                ? 'off'
-                : c.full != null && !Number.isFinite(c.full)
-                  ? `full > ${fmt(model.searchMax)}×`
-                  : `full ${c.fullRange ? multiples(c.fullRange, model.searchMax, true) : multiple(c.full, model.searchMax)}`}
+              {c.missing != null
+                ? 'none published'
+                : c.util == null
+                  ? 'off'
+                  : c.full != null && !Number.isFinite(c.full)
+                    ? `full > ${fmt(model.searchMax)}×`
+                    : `full ${c.fullRange ? multiples(c.fullRange, model.searchMax, true) : multiple(c.full, model.searchMax)}`}
             </span>
           </div>
         ))}

@@ -1,5 +1,5 @@
 // Media that stands alone: a caption around the board, the board as SVG, and a poster with the limits.
-import { type CrossingRange, compare, parseAsOf } from '@loadmap/core'
+import { type CrossingRange, compare, parseAsOf, sourceText } from '@loadmap/core'
 import { fmt, monthOf, multiple, multiples, pct } from '@loadmap/core/format'
 import type { Cue, LoadmapHandle } from '@loadmap/react'
 
@@ -314,6 +314,16 @@ export async function drawPoster(
   const estimates = ev.assumptions.flatMap((a) =>
     a.kind === 'capacity' && a.capacity.provenance === 'estimated' ? [a.name] : [],
   )
+  // a vendor's figure names where it comes from; a component without one says so
+  const sourced = ev.assumptions.flatMap((a) =>
+    a.kind !== 'capacity' || a.capacity.provenance !== 'published'
+      ? []
+      : [
+          a.capacity.ref
+            ? `${a.name} (${sourceText(a.capacity.ref)}, catalog ${a.capacity.ref.edition})`
+            : `${a.name} (no published benchmark ${a.capacity.missing})`,
+        ],
+  )
 
   const measure = document.createElement('canvas').getContext('2d')!
   const font = (weight: number, size: number, mono = false) => `${weight} ${size}px ${mono ? k.mono : k.font}`
@@ -400,9 +410,11 @@ export async function drawPoster(
         const first = c === ev.firstLimit ? ' · limit' : ''
         text(ctx, `${c.name}${first}`, pad, y + 16, font(600, 14), k.fg)
         const right =
-          c.util == null
-            ? 'switched off'
-            : `${pct(c.util)} now · ${pct(model.thresholds.target)} at ${at(c.targetRange, c.target)} · ${pct(model.thresholds.full)} at ${at(c.fullRange, c.full)}`
+          c.missing != null
+            ? 'no published benchmark'
+            : c.util == null
+              ? 'switched off'
+              : `${pct(c.util)} now · ${pct(model.thresholds.target)} at ${at(c.targetRange, c.target)} · ${pct(model.thresholds.full)} at ${at(c.fullRange, c.full)}`
         text(ctx, right, W - pad, y + 16, font(400, 12, true), k.muted, 'right')
         ctx.fillStyle = k.bg
         ctx.fillRect(pad, y + 24, inner, 10)
@@ -438,6 +450,14 @@ export async function drawPoster(
       ])
     })
   }
+  const published = sourced.length ? lines(`Published figures: ${sourced.join('; ')}.`, font(400, 12), inner) : []
+  if (published.length)
+    blocks.push([
+      18 * published.length + 12,
+      (ctx, y) => {
+        for (const [i, l] of published.entries()) text(ctx, l, pad, y + 22 + 18 * i, font(400, 12), k.muted)
+      },
+    ])
   if (estimates.length)
     blocks.push([
       30,
