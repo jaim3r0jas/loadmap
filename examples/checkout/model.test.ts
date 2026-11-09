@@ -25,9 +25,9 @@ describe('checkout model', () => {
     const s = checkout.evaluate()
     // the gateway's pessimistic 7.4× comes before the workers' exact 10×, though its stated 10.6× does not
     expect(s.ranked.map((c) => c.id)).toEqual(['gateway', 'workers', 'conns', 'db'])
-    // 40 orders/s a load, each holding a connection 20 ms: 0.8 of 100 a load, half of them at 62.5×
+    // 40 orders/s a load, each holding a connection 20 ms: 0.8 of 200 a load, half of them at 125×
     expect(s.components.conns.demand).toBeCloseTo(8, 9)
-    expect(s.components.conns.target).toBeCloseTo(62.5, 6)
+    expect(s.components.conns.target).toBeCloseTo(125, 6)
     expect(s.firstLimit?.id).toBe('gateway')
     expect(s.firstFull?.id).toBe('gateway')
     expect(s.target?.low).toBeCloseTo(7_000 / 940, 6)

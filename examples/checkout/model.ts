@@ -79,7 +79,7 @@ export const checkout = defineModel({
       name: 'Postgres connections',
       held: 0.02,
       on: ['db'],
-      capacity: configured(100, 'connections', 'pool size'),
+      capacity: configured(200, 'connections', 'pool size'),
       over: 'orders wait for a connection',
       describe: 'each order holds one for 20 ms',
     },

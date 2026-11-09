@@ -15,7 +15,6 @@ describe('the limit and the next in line', () => {
     expect(labels(checkout, checkout.evaluate(checkout.defaults()))).toEqual([
       ['API gateway', 'LIMIT · 7.4×'],
       ['Worker pool', '2nd · 10×'],
-      ['Postgres connections', '3rd · 62×'],
     ])
     const [launch, push] = alerts.story.slice(2).map((st) => alerts.evaluate(st.values))
     expect(labels(alerts, launch!)).toEqual([
