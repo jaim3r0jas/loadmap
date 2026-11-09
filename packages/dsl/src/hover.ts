@@ -1,6 +1,8 @@
-import type { ComponentResult, Evaluation } from '@loadmap/core'
+import { type Capacity, type ComponentResult, type Evaluation, sourceText } from '@loadmap/core'
 import { fmt, months, multiple, multiples, pct } from '@loadmap/core/format'
+import { conditionText } from '@loadmap/core/internal'
 import type { Decl, Edge, Expr, Stmt } from './ast'
+import { componentOf } from './catalog'
 import { type Definition, type DslSymbol, declarations } from './compile'
 import { blockAt, propOf as prop } from './complete'
 import { callAt, cursorAt } from './cursor'
@@ -147,7 +149,7 @@ class Lookup {
     if (punct(next, '.') && own(TABLES, name)) return out(`${name}.…`, [TABLES[name]!])
 
     const statementStart = !cur.part && !cur.head.length
-    if (statementStart && punct(next, ':')) return this.key(name, spec, edgeBody, out)
+    if (statementStart && punct(next, ':')) return this.key(name, spec, edgeBody, out, path)
     if (statementStart && punct(next, '->'))
       return spec.edges === 'branches' ? this.flow(name, out) : this.box(name, out)
     if (statementStart && own(SCHEMA, name) && name !== 'loadmap') return this.keyword(name, out)
@@ -183,6 +185,8 @@ class Lookup {
         }
         return this.formulaName(name, out)
       }
+      // published x kafka
+      if (first?.text === 'published' && cur.head.length === 2) return this.catalogComponent(cur.head[1]!.text, out)
       // let x = …
       if (first?.text === 'let') return cur.head.length === 1 ? this.let(name, out) : this.formulaName(name, out)
       // what a statement declares: node db, param pods, tier data, queue topic
@@ -197,7 +201,8 @@ class Lookup {
     return out(s.example || k, [s.doc])
   }
 
-  key(key: string, spec: BlockSpec, edgeBody: boolean, out: Out): Hover | null {
+  key(key: string, spec: BlockSpec, edgeBody: boolean, out: Out, path: readonly (Decl | Edge)[] = []): Hover | null {
+    if (spec === SCHEMA.published && !own(spec.props, key)) return this.condition(key, path, out)
     const prop = edgeBody ? own(EDGE_PROPS, key) : own(spec.props, key)
     if (prop) {
       const values = key === 'color' ? 'a theme colour' : prop.values?.join(' | ')
@@ -216,6 +221,7 @@ class Lookup {
     if (keyword === 'param') return this.param(id, out)
     if (keyword === 'let') return this.let(id, out)
     if (keyword === 'fit') return this.fit(id, out)
+    if (keyword === 'published') return this.published(id, out)
     if (keyword === 'flow') return this.flow(id, out)
     if (keyword === 'tier') return this.tier(id, out)
     if (keyword === 'component') return this.component(id, out)
@@ -229,6 +235,7 @@ class Lookup {
     if (this.has('param', name)) return this.param(name, out)
     if (this.has('let', name)) return this.let(name, out)
     if (this.has('fit', name)) return this.fit(name, out)
+    if (this.has('published', name)) return this.published(name, out)
     const b = own(BUILTINS, name)
     if (b) return out(callLabel(name, b.params, !!b.variadic), [b.doc])
     if (own(TABLES, name)) return out(`${name}.…`, [TABLES[name]!])
@@ -286,6 +293,52 @@ class Lookup {
     if (ev && (typeof v === 'number' || typeof v === 'boolean'))
       body.push(`${typeof v === 'number' ? fmt(v) : v} at the defaults (load ${multiple(ev.values.load as number)}).`)
     return out(head, body)
+  }
+
+  /** A published figure: what it is, at the defaults, under which conditions, from where. */
+  published(id: string, out: Out): Hover | null {
+    const d = findDecl(this.body, 'published', id)
+    if (!d) return null
+    const ev = this.evaluation()
+    const cap = (ev?.ctx.derived as Record<string, unknown> | undefined)?.[id] as Capacity | undefined
+    const body = [SCHEMA.published!.doc]
+    if (cap?.missing != null) body.push(`No published benchmark ${cap.missing} at the defaults: not ranked.`)
+    else if (cap?.ref) {
+      const r = cap.ref
+      body.push(
+        `${fmt(cap.value)} ${cap.unit} at the defaults: ${r.name}, ${r.what}, ${r.scope}.`,
+        `Under: ${r.conditions.join('; ')}.`,
+        `${r.name} ${r.versions.join(', ')}${r.version ? `, you run ${r.version}` : ''}. ${sourceText(r)}: [${r.source.title}](${r.source.url}). Catalog ${r.edition}.`,
+      )
+    }
+    return out(this.line(d), body)
+  }
+
+  /** A component of the catalog: what it is, and whether anything is published for it. */
+  catalogComponent(ref: string, out: Out): Hover | null {
+    const d = findDecl(this.body, 'published', ref)
+    const c = d && componentOf(d)
+    if (!c) return null
+    const conditions = Object.keys(c.conditions)
+    return out(c.name, [
+      c.about,
+      c.figures.length
+        ? `${c.figures.length} published figure${c.figures.length === 1 ? '' : 's'}${conditions.length ? `, decided by ${conditions.join(', ')}` : ''}${c.versionMatters ? ' and the version' : ''}.`
+        : 'Nothing is published with its conditions: give a measured or estimated capacity.',
+      ...(c.tags.length ? [`Also: ${c.tags.join(', ')}.`] : []),
+    ])
+  }
+
+  /** A condition of a published statement: what it is, and the values its published runs used. */
+  condition(key: string, path: readonly (Decl | Edge)[], out: Out): Hover | null {
+    const d = path.at(-1)
+    const c = d?.kind === 'decl' ? componentOf(d) : undefined
+    const def = c && own(c.conditions, key)
+    if (!c || !def) return null
+    const runs = [
+      ...new Set(c.figures.flatMap((f) => (f.when[key] == null ? [] : [conditionText(c, key, f.when[key]!)]))),
+    ]
+    return out(`${key}: ${def.label}`, [def.doc, ...(runs.length ? [`Published runs: ${runs.join(', ')}.`] : [])])
   }
 
   fit(id: string, out: Out): Hover | null {
@@ -408,6 +461,7 @@ class Lookup {
     const model = this.definition?.model
     if (!ev || !c || !model) return []
     const cap = c.capacity
+    if (c.missing != null) return [`${c.name} has no published benchmark ${c.missing} at the defaults: not ranked.`]
     if (c.util == null || !cap) return [`${c.name} is switched off at the defaults.`]
     const at = (r: ComponentResult['targetRange']) =>
       r ? `${multiples(r, model.searchMax, true)}${months(model.dateAt(r.low), model.dateAt(r.high))}` : '—'

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
-import { compile, type Diagnostic, formatDiagnostic, problems } from '@loadmap/dsl'
+import { compile, type Diagnostic, formatDiagnostic, loadCatalogFor, problems } from '@loadmap/dsl'
 
 export interface CheckOptions {
   log?: (s: string) => void
@@ -31,6 +31,7 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
       failed = true
       continue
     }
+    await loadCatalogFor(source)
     const r = compile(source)
     const list = problems(r, 'error')
     if (parsed.format === 'github') for (const d of list) log(github(d, file, source))

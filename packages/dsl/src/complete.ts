@@ -1,4 +1,6 @@
+import type { ConditionValue, Published } from '@loadmap/core'
 import { childrenOf, type Decl, type Edge, type Expr, type Stmt } from './ast'
+import { componentOf, latestEdition, loadedCatalog } from './catalog'
 import { type DslSymbol, declarations } from './compile'
 import { type Cursor, callAt, cursorAt } from './cursor'
 import { Reporter } from './diagnostics'
@@ -101,6 +103,8 @@ class Help {
     // node db `${|}`: a box's label and sub may be computed
     const kw = own(SCHEMA, first.text)
     if (cur.part && kw) return this.formula(cur.part, { scope: kw.args.some((a) => a.dynamic) ? 'ctx' : 'const' })
+    // published x |: a component of the catalog
+    if (first.text === 'published' && head.length === 2 && cur.in === 'code') return this.catalogComponents()
     // keyword lines (node x "…") take names and texts: nothing to offer
     return []
   }
@@ -125,6 +129,11 @@ class Help {
     if (spec.open?.names === 'values') list.push(...open(['load', ...this.ids('param')]))
     if (spec.open?.names === 'params') list.push(...open(this.ids('param')))
     if (spec.open?.names === 'flows') list.push(...open(this.ids('flow')))
+    if (spec.open?.names === 'conditions') {
+      const c = this.publishedComponent()
+      for (const [label, def] of Object.entries(c?.conditions ?? {}))
+        if (!written.has(label)) list.push({ label, type: 'variable', apply: `${label}: `, info: def.doc, boost: 1 })
+    }
     if (spec.edges === 'edges') list.push(...this.nodes())
     if (spec.edges === 'branches') list.push(...this.ids('flow').map((label) => ({ label, type: 'variable' as const })))
     return list
@@ -149,6 +158,21 @@ class Help {
       }))
     if (kind === 'enum' || kind === 'names')
       return (key === 'color' ? COLORS : (p?.values ?? [])).map((label) => ({ label, type: 'constant' }))
+    // a published run's value of a condition, or a parameter that holds it
+    if (this.spec === SCHEMA.published && (p === this.spec.open?.spec || key === 'version'))
+      return [...this.runValues(key), ...this.formula(cur.part ?? rest, { scope: 'values', key, prop: p })]
+    if (this.spec === SCHEMA.published && key === 'edition' && cur.in === 'code')
+      return Object.keys(loadedCatalog() ?? {})
+        .reverse()
+        .map((label, i) => ({ label, type: 'constant', apply: JSON.stringify(label), boost: i ? 0 : 2 }))
+    if (this.spec === SCHEMA.published && key === 'figure' && cur.in === 'code')
+      return (this.publishedComponent()?.figures ?? []).map((f) => ({
+        label: f.id,
+        type: 'constant',
+        apply: JSON.stringify(f.id),
+        detail: `${f.value} ${f.unit}`,
+        info: `${f.what}, ${f.scope}`,
+      }))
     // a value of the load or a parameter, in a preset, a scenario or a step
     if (kind === 'value' && this.spec.open && p === this.spec.open.spec) return this.paramValues(key)
     // a parameter's default: one of its options
@@ -212,6 +236,9 @@ class Help {
       })),
     ]
     if (scope === 'values') return list
+    const capacity = slot.prop?.value === 'capacity'
+    for (const label of this.ids('published'))
+      list.push({ label, type: 'variable', detail: 'published', boost: capacity ? 3 : -1 })
     const self = this.selfLet()
     list.push(
       ...this.ids('let').flatMap((label) =>
@@ -302,6 +329,42 @@ class Help {
       detail: i < used.length ? 'used here' : undefined,
       apply: inText ? label : JSON.stringify(label),
       boost: i < used.length ? 1 : undefined,
+    }))
+  }
+
+  /** The components of the catalog, once it is loaded: each by its id, with its name and what it is. */
+  catalogComponents(): Completion[] {
+    const e = loadedCatalog()
+    if (!e) return []
+    return Object.values(e[latestEdition(e)]!.components).map((c) => ({
+      label: c.id,
+      type: 'type',
+      detail: c.figures.length ? c.name : `${c.name}, nothing published`,
+      info: `${c.about}${c.tags.length ? ` Also: ${c.tags.join(', ')}.` : ''}`,
+    }))
+  }
+
+  /** The component the `published` statement around the cursor names, in its edition (or the latest). */
+  publishedComponent(): Published | undefined {
+    const d = this.path.at(-1)
+    return d?.kind === 'decl' && d.keyword.name === 'published' ? componentOf(d) : undefined
+  }
+
+  /** The values a condition (or the version) takes in the component's published runs, as they are written. */
+  runValues(key: string): Completion[] {
+    const c = this.publishedComponent()
+    if (!c || this.cur.in !== 'code') return []
+    const vs = new Set<ConditionValue>(
+      c.figures.flatMap((f): readonly ConditionValue[] =>
+        key === 'version' ? f.versions : f.when[key] == null ? [] : [f.when[key]!],
+      ),
+    )
+    return [...vs].map((v) => ({
+      label: String(v),
+      type: 'constant',
+      apply: typeof v === 'string' ? JSON.stringify(v) : String(v),
+      detail: key === 'version' ? 'a run' : 'published',
+      boost: 2,
     }))
   }
 

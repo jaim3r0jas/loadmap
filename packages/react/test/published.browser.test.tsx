@@ -12,6 +12,7 @@ import {
   published,
 } from '@loadmap/react'
 import { kafka } from '@loadmap/react/catalog'
+import { LoadmapSource } from '@loadmap/react/source'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -107,5 +108,49 @@ describe('a published capacity', () => {
     expect(
       el.querySelector('.lm-lim .lm-tag[data-kind="first"]')?.closest('.lm-lim')?.getAttribute('data-component'),
     ).toBe('consumers')
+  })
+})
+
+const SOURCE = `loadmap 1
+title: "Events"
+load { max: 20 }
+param brokers "Brokers" { options: [3, 6]; default: 6 }
+
+published brokersRef kafka {
+  edition: "2026-11"
+  brokers: brokers
+  replication: 3
+  acks: "all"
+  messageSize: "1 KB"
+  producers: 4
+}
+
+flow events "events" { unit: "MB"; from: producers; rate: 150 * load; route: kafka }
+
+node producers "Producers"
+cluster kafka "Brokers" {
+  members: brokers
+  queue topic { partitions { events: 12 } }
+  short: "the brokers"
+  plural: true
+  demand: flows.events
+  capacity: brokersRef
+  over: "producers wait"
+}
+
+producers -> kafka
+`
+
+describe('a .loadmap with a published statement', () => {
+  it('loads the catalog, then draws it, saying when no published run matches', async () => {
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    root.render(<LoadmapSource source={SOURCE} />)
+    await expect
+      .poll(() => host!.querySelector('.lm-verdict')?.textContent, { timeout: 5000 })
+      .toContain('The brokers have no published benchmark for 6 brokers')
+    // never the error of a catalog not yet loaded
+    expect(host.querySelector('.lm-problems')).toBeNull()
   })
 })

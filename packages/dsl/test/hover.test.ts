@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-import { compile, hover, signatureHelp } from '../src'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { compile, hover, loadCatalog, signatureHelp } from '../src'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const cache = read('../../editor/src/templates/cache.loadmap')
@@ -20,6 +20,9 @@ const put = (src: string, needle: string, k = 1) => {
   if (i < 0) throw new Error(`no "${needle}"`)
   return `${src.slice(0, i + k)}|${src.slice(i + k)}`
 }
+
+// docs/every-statement.loadmap has a published statement
+beforeAll(() => loadCatalog())
 
 describe('hover', () => {
   it('says what a statement and a property are, from the schema', () => {

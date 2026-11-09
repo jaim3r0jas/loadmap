@@ -1,6 +1,15 @@
-import { type CompileOptions, compile, type Definition, formatDiagnostic, sharedValues } from '@loadmap/dsl'
+import {
+  type CompileOptions,
+  compile,
+  type Definition,
+  formatDiagnostic,
+  loadCatalogFor,
+  loadedCatalog,
+  needsCatalog,
+  sharedValues,
+} from '@loadmap/dsl'
 import { fingerprint, pageOptions } from '@loadmap/dsl/internal'
-import { type Ref, useCallback, useEffect, useMemo, useRef } from 'react'
+import { type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loadmap, type LoadmapHandle, type LoadmapProps, type Theme, usePageTheme } from './Loadmap'
 import { injectStyles } from './styles'
 
@@ -34,10 +43,14 @@ export function LoadmapSource({
   const fns = useRef(functions)
   fns.current = functions
   const key = useMemo(() => fingerprint(source), [source])
+  const waiting = useCatalog(source)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the same tokens are the same model, and the values stay
-  const compiled = useMemo(() => ({ source, r: compile(source, fns.current ? { functions: fns.current } : {}) }), [key])
+  const compiled = useMemo(
+    () => (waiting ? null : { source, r: compile(source, fns.current ? { functions: fns.current } : {}) }),
+    [key, waiting],
+  )
   const good = useRef<Definition | null>(null)
-  if (compiled.r.ok && compiled.r.definition) good.current = compiled.r.definition
+  if (compiled?.r.ok && compiled.r.definition) good.current = compiled.r.definition
   const def = good.current
   // the board's values, read as a new definition replaces it, so an edit does not reset the sliders
   const board = useRef<LoadmapHandle | null>(null)
@@ -61,7 +74,7 @@ export function LoadmapSource({
   const lines = def && [...(assumptions ?? []), ...def.options.assumptions]
   return (
     <>
-      {!compiled.r.ok && (
+      {compiled && !compiled.r.ok && (
         <Problems theme={theme} stale={def != null}>
           {compiled.r.diagnostics.map((d) => formatDiagnostic(d, compiled.source, name)).join('\n')}
         </Problems>
@@ -80,6 +93,17 @@ export function LoadmapSource({
       )}
     </>
   )
+}
+
+/** True while a text with a `published` statement waits for the catalog, which loads once, on the first such text. */
+export function useCatalog(source: string): boolean {
+  const waiting = needsCatalog(source) && !loadedCatalog()
+  // loaded or not, the text then compiles: without the catalog it says so where the text names it
+  const [tried, setTried] = useState(false)
+  useEffect(() => {
+    if (waiting) void loadCatalogFor(source).then(() => setTried(true))
+  }, [waiting, source])
+  return waiting && !tried
 }
 
 /** Hands the board to the page's own ref, an object or a function. */

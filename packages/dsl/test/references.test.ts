@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-import { compile, definition, references, rename } from '../src'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { compile, definition, loadCatalog, references, rename } from '../src'
 import { parse, Reporter } from '../src/internal'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -14,6 +14,9 @@ function refs(src: string, needle: string, k: number) {
   return references(src, i)?.map((s) => src.slice(s.from, s.to))
 }
 const at = (src: string, needle: string, k: number) => src.indexOf(needle) + k
+
+// docs/every-statement.loadmap has a published statement: each rename must compile
+beforeAll(() => loadCatalog())
 
 describe('references and definition', () => {
   it('find a box by its id, the stage and the component that take it, wherever they are written', () => {

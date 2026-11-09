@@ -9,3 +9,6 @@ export const flowOf = (err: unknown): string | undefined =>
 export function blame(err: unknown, flow: string) {
   if (typeof err === 'object' && err !== null && !blamed.has(err)) blamed.set(err, flow)
 }
+
+/** "3 brokers", "acks all": a catalog condition as the editor and hover show it. */
+export { conditionText } from './published'

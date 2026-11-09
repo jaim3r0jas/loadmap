@@ -1,11 +1,13 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { expect, it } from 'vitest'
-import { compile, formatDiagnostic } from '../src'
+import { beforeAll, expect, it } from 'vitest'
+import { compile, formatDiagnostic, loadCatalog } from '../src'
 import { parse, reference, SCHEMA, type Stmt } from '../src/internal'
 
 const file = new URL('../../../docs/dsl.md', import.meta.url)
 const START = '<!-- reference: written by reference() in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->'
 const END = '<!-- end of reference -->'
+
+beforeAll(() => loadCatalog())
 
 it('docs/dsl.md holds the reference the schema writes', () => {
   const doc = readFileSync(file, 'utf8')
