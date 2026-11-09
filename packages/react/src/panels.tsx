@@ -1,4 +1,4 @@
-import type { Assumption, Capacity, Preset } from '@loadmap/core'
+import { type Assumption, type Capacity, type Preset, sourceText } from '@loadmap/core'
 import { compact, fmt, multiple, multiples, pct, secs } from '@loadmap/core/format'
 import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useId, useState } from 'react'
 import { Scenarios, useSize, when } from './scenarios'
@@ -22,8 +22,27 @@ export function Verdict({ lm }: { lm: LoadmapController }) {
   )
 }
 
-/** "±30 %" for a capacity with a range. */
-export const plusMinus = (c: Capacity | null) => (c?.within ? `±${pct(c.within)}` : '')
+/** "±30 %" for a capacity with a range; "−30 %" for a best case, which a range only lowers. */
+export const plusMinus = (c: Capacity | null) => (c?.within ? `${c.ceiling ? '−' : '±'}${pct(c.within)}` : '')
+
+/** The tag beside a component's name when its capacity is not plainly measured: estimated, published, a range, none. */
+export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: boolean }) {
+  const pm = plusMinus(c ?? null)
+  const kind =
+    c?.missing != null ? 'none' : c?.ref ? 'published' : c?.provenance === 'estimated' ? 'estimated' : 'range'
+  const word = {
+    none: short ? 'none' : 'no published benchmark',
+    published: short ? 'pub' : 'published',
+    estimated: short ? 'est' : 'estimate',
+    range: '',
+  }[kind]
+  if (kind === 'range' && !pm) return null
+  return (
+    <span className="lm-tag" data-kind={kind}>
+      {short && kind === 'range' ? '±' : [word, short ? '' : pm].filter(Boolean).join(' ')}
+    </span>
+  )
+}
 
 /** Each component's utilization in the order they reach the target, with where they cross it and 100 %. */
 export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: LoadmapController; title?: ReactNode }) {
@@ -56,23 +75,19 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                     limit
                   </span>
                 )}
-                {c.capacity?.provenance === 'estimated' ? (
-                  <span className="lm-tag" data-kind="estimated">
-                    estimate{c.capacity.within ? ` ${plusMinus(c.capacity)}` : ''}
-                  </span>
-                ) : (
-                  !!c.capacity?.within && (
-                    <span className="lm-tag" data-kind="range">
-                      {plusMinus(c.capacity)}
-                    </span>
-                  )
-                )}
+                <CapTag c={c.capacity} />
               </b>
               <span className="lm-sub">
-                {c.describe ?? (c.capacity ? `${fmt(c.capacity.value)} ${c.capacity.unit}` : 'switched off')}
+                {c.missing != null
+                  ? `No published benchmark ${c.missing}.`
+                  : (c.describe ?? (c.capacity ? `${fmt(c.capacity.value)} ${c.capacity.unit}` : 'switched off'))}
               </span>
             </div>
-            <div className="lm-track" role="img" aria-label={`${c.name} at ${c.util == null ? 'off' : pct(c.util)}`}>
+            <div
+              className="lm-track"
+              role="img"
+              aria-label={`${c.name} at ${c.missing != null ? 'no published benchmark' : c.util == null ? 'off' : pct(c.util)}`}
+            >
               <div
                 className="lm-fill"
                 data-state={c.state}
@@ -413,6 +428,17 @@ export function Assumptions({ lm, extra = [] }: { lm: LoadmapController; extra?:
 function describe(a: Assumption): ReactNode {
   if (a.kind === 'capacity') {
     const c = a.capacity
+    if (c.missing != null)
+      return (
+        <>
+          <b>{a.name}:</b> no capacity:{' '}
+          <span className="lm-prov" data-kind="published">
+            no published benchmark
+          </span>{' '}
+          {c.missing}.
+        </>
+      )
+    if (c.ref) return <Published name={a.name} c={c} />
     return (
       <>
         <b>{a.name}:</b> {fmt(c.value)} {c.unit}
@@ -432,6 +458,31 @@ function describe(a: Assumption): ReactNode {
         measured
       </span>
       {f.source ? ` (${f.source})` : ''}.
+    </>
+  )
+}
+
+/** A published figure with what it is, its conditions and where it comes from: a vendor's run, not this system. */
+function Published({ name, c }: { name: string; c: Capacity }) {
+  const r = c.ref!
+  const runs = r.versions.join(', ')
+  return (
+    <>
+      <b>{name}:</b> {fmt(c.value)} {c.unit}
+      {c.within ? ` ${plusMinus(c)}` : ''},{' '}
+      <span className="lm-prov" data-kind="published">
+        {r.measure === 'limit' ? 'published limit' : 'published'}
+      </span>
+      : {r.name}, {r.what}, {r.scope} ({r.conditions.join('; ')}); {r.name} {runs}
+      {r.version && r.version !== runs ? `, you run ${r.version}` : ''}; {sourceText(r)} (
+      {/^https:\/\//.test(r.source.url) ? (
+        <a href={r.source.url} target="_blank" rel="noopener noreferrer">
+          source
+        </a>
+      ) : (
+        r.source.url
+      )}
+      , catalog {r.edition}).{r.measure === 'limit' ? '' : ' A best case elsewhere, not a measurement of this system.'}
     </>
   )
 }

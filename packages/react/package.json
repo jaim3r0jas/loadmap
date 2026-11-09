@@ -22,6 +22,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./catalog": "./src/catalog.ts",
     "./source": "./src/source.tsx",
     "./elk.worker.js": "./src/elk.worker.js"
   },
@@ -30,6 +31,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./catalog": {
+        "types": "./dist/catalog.d.ts",
+        "import": "./dist/catalog.js"
       },
       "./source": {
         "types": "./dist/source.d.ts",

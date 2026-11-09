@@ -1,0 +1,3323 @@
+{
+  "edition": "2026-11",
+  "components": {
+    "kafka": {
+      "id": "kafka",
+      "name": "Apache Kafka",
+      "about": "A distributed log: brokers hold the partitions of topics.",
+      "kind": "stream",
+      "box": "cluster",
+      "tags": [
+        "Kafka",
+        "streaming",
+        "broker"
+      ],
+      "versionMatters": false,
+      "conditions": {
+        "brokers": {
+          "label": "brokers",
+          "doc": "Brokers in the cluster.",
+          "unit": "brokers"
+        },
+        "replication": {
+          "label": "replication factor",
+          "doc": "Copies of each partition."
+        },
+        "acks": {
+          "label": "acks",
+          "doc": "What a producer waits for: all (every in-sync replica) or 1 (the leader)."
+        },
+        "messageSize": {
+          "label": "message size",
+          "doc": "The size of each message."
+        },
+        "producers": {
+          "label": "producers",
+          "doc": "Producers writing at once.",
+          "unit": "producers"
+        }
+      },
+      "figures": [
+        {
+          "id": "omb-2020",
+          "measure": "capacity",
+          "value": 605,
+          "unit": "MB/s",
+          "what": "peak throughput, produced and consumed",
+          "scope": "for the whole cluster",
+          "when": {
+            "brokers": 3,
+            "replication": 3,
+            "acks": "all",
+            "messageSize": "1 KB",
+            "producers": 4
+          },
+          "conditions": [
+            "brokers of 8 vCPU, 64 GB, 2 × 2.5 TB NVMe, 25 Gbps (AWS i3en.2xlarge)",
+            "100 partitions, 4 producers and 4 consumers",
+            "min.insync.replicas 2, batch.size 1 MB, linger.ms 10, flushing left to the OS page cache",
+            "OpenMessaging Benchmark, Java 11"
+          ],
+          "versions": [
+            "2.6"
+          ],
+          "source": {
+            "title": "Benchmarking Apache Kafka, Apache Pulsar, and RabbitMQ: Which is the Fastest?",
+            "url": "https://www.confluent.io/blog/kafka-fastest-messaging-system/",
+            "by": "Confluent",
+            "date": "2020-08-21",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "omb-2020-latency",
+          "measure": "latency",
+          "value": 5,
+          "unit": "ms",
+          "what": "p99 latency at 200 MB/s",
+          "scope": "for the whole cluster",
+          "when": {
+            "brokers": 3,
+            "replication": 3,
+            "acks": "all",
+            "messageSize": "1 KB",
+            "producers": 4
+          },
+          "conditions": [
+            "brokers of 8 vCPU, 64 GB, 2 × 2.5 TB NVMe, 25 Gbps (AWS i3en.2xlarge)",
+            "100 partitions, 4 producers and 4 consumers",
+            "min.insync.replicas 2, batch.size 1 MB, linger.ms 10, flushing left to the OS page cache",
+            "OpenMessaging Benchmark, Java 11"
+          ],
+          "versions": [
+            "2.6"
+          ],
+          "source": {
+            "title": "Benchmarking Apache Kafka, Apache Pulsar, and RabbitMQ: Which is the Fastest?",
+            "url": "https://www.confluent.io/blog/kafka-fastest-messaging-system/",
+            "by": "Confluent",
+            "date": "2020-08-21",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "linkedin-2014",
+          "measure": "capacity",
+          "value": 193,
+          "unit": "MB/s",
+          "what": "produce throughput, 2,024,032 records/s, asynchronous replication",
+          "scope": "for the whole cluster",
+          "when": {
+            "brokers": 3,
+            "replication": 3,
+            "acks": "1",
+            "messageSize": "100 B",
+            "producers": 3
+          },
+          "conditions": [
+            "brokers of 6-core Xeon 2.5 GHz, 32 GB, 6 × 7200 rpm SATA (JBOD), 1 GbE",
+            "6 partitions, 50 million records, no consumers; MB/s counts the values only",
+            "acks as in the commands the post links"
+          ],
+          "versions": [
+            "0.8.1"
+          ],
+          "source": {
+            "title": "Benchmarking Apache Kafka: 2 Million Writes Per Second (On Three Cheap Machines)",
+            "url": "https://engineering.linkedin.com/kafka/benchmarking-apache-kafka-2-million-writes-second-three-cheap-machines",
+            "by": "LinkedIn",
+            "date": "2014-04-27",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "linkedin-2014-async",
+          "measure": "capacity",
+          "value": 75.1,
+          "unit": "MB/s",
+          "what": "produce throughput, 786,980 records/s, asynchronous replication",
+          "scope": "for the whole cluster",
+          "when": {
+            "brokers": 3,
+            "replication": 3,
+            "acks": "1",
+            "messageSize": "100 B",
+            "producers": 1
+          },
+          "conditions": [
+            "brokers of 6-core Xeon 2.5 GHz, 32 GB, 6 × 7200 rpm SATA (JBOD), 1 GbE",
+            "6 partitions, 50 million records, no consumers; MB/s counts the values only",
+            "acks as in the commands the post links"
+          ],
+          "versions": [
+            "0.8.1"
+          ],
+          "source": {
+            "title": "Benchmarking Apache Kafka: 2 Million Writes Per Second (On Three Cheap Machines)",
+            "url": "https://engineering.linkedin.com/kafka/benchmarking-apache-kafka-2-million-writes-second-three-cheap-machines",
+            "by": "LinkedIn",
+            "date": "2014-04-27",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "linkedin-2014-sync",
+          "measure": "capacity",
+          "value": 40.2,
+          "unit": "MB/s",
+          "what": "produce throughput, 421,823 records/s, synchronous replication",
+          "scope": "for the whole cluster",
+          "when": {
+            "brokers": 3,
+            "replication": 3,
+            "acks": "all",
+            "messageSize": "100 B",
+            "producers": 1
+          },
+          "conditions": [
+            "brokers of 6-core Xeon 2.5 GHz, 32 GB, 6 × 7200 rpm SATA (JBOD), 1 GbE",
+            "6 partitions, 50 million records, no consumers; MB/s counts the values only",
+            "acks as in the commands the post links"
+          ],
+          "versions": [
+            "0.8.1"
+          ],
+          "source": {
+            "title": "Benchmarking Apache Kafka: 2 Million Writes Per Second (On Three Cheap Machines)",
+            "url": "https://engineering.linkedin.com/kafka/benchmarking-apache-kafka-2-million-writes-second-three-cheap-machines",
+            "by": "LinkedIn",
+            "date": "2014-04-27",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "rabbitmq": {
+      "id": "rabbitmq",
+      "name": "RabbitMQ",
+      "about": "A message broker: queues and streams over AMQP.",
+      "kind": "queue",
+      "box": "node",
+      "tags": [
+        "AMQP",
+        "broker",
+        "queue"
+      ],
+      "versionMatters": true,
+      "conditions": {
+        "nodes": {
+          "label": "nodes",
+          "doc": "Nodes in the cluster.",
+          "unit": "nodes"
+        },
+        "queueType": {
+          "label": "queue type",
+          "doc": "quorum, classic or stream."
+        },
+        "protocol": {
+          "label": "protocol",
+          "doc": "AMQP 1.0 or AMQP 0.9.1."
+        },
+        "messageSize": {
+          "label": "message size",
+          "doc": "The size of each message."
+        },
+        "flowControl": {
+          "label": "flow control",
+          "doc": "default, or raised (larger credits and windows)."
+        }
+      },
+      "figures": [
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end",
+            "flow control raised: credit_flow_default_credit {5000, 2500}, max_incoming_window 5000, max_link_credit 2000, max_queue_credit 5000"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "quorum-amqp-1.0-raised",
+          "value": 83181,
+          "when": {
+            "nodes": 1,
+            "queueType": "quorum",
+            "protocol": "AMQP 1.0",
+            "messageSize": "12 B",
+            "flowControl": "raised"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end",
+            "flow control raised: credit_flow_default_credit {5000, 2500}, max_incoming_window 5000, max_link_credit 2000, max_queue_credit 5000"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "quorum-amqp-0.9.1-raised",
+          "value": 70067,
+          "when": {
+            "nodes": 1,
+            "queueType": "quorum",
+            "protocol": "AMQP 0.9.1",
+            "messageSize": "12 B",
+            "flowControl": "raised"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end",
+            "each fsync took 5.9 ms on average: the page puts the gap down to the disk"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "quorum-amqp-1.0",
+          "value": 9983,
+          "when": {
+            "nodes": 1,
+            "queueType": "quorum",
+            "protocol": "AMQP 1.0",
+            "messageSize": "12 B",
+            "flowControl": "default"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end",
+            "each fsync took 5.9 ms on average: the page puts the gap down to the disk"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "quorum-amqp-0.9.1",
+          "value": 9931,
+          "when": {
+            "nodes": 1,
+            "queueType": "quorum",
+            "protocol": "AMQP 0.9.1",
+            "messageSize": "12 B",
+            "flowControl": "default"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "classic-amqp-1.0",
+          "value": 99413,
+          "when": {
+            "nodes": 1,
+            "queueType": "classic",
+            "protocol": "AMQP 1.0",
+            "messageSize": "12 B",
+            "flowControl": "default"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "classic-amqp-0.9.1",
+          "value": 88534,
+          "when": {
+            "nodes": 1,
+            "queueType": "classic",
+            "protocol": "AMQP 0.9.1",
+            "messageSize": "12 B",
+            "flowControl": "default"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "stream-amqp-1.0",
+          "value": 112196,
+          "when": {
+            "nodes": 1,
+            "queueType": "stream",
+            "protocol": "AMQP 1.0",
+            "messageSize": "12 B",
+            "flowControl": "default"
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "msg/s",
+          "what": "messages through the queue",
+          "scope": "for one node",
+          "conditions": [
+            "one node on an Intel NUC 11 (8 cores, 32 GB), 3 Erlang schedulers (+S 3), Erlang/OTP 27.0.1",
+            "the clients on the same machine, 1 million messages, measured end to end"
+          ],
+          "versions": [
+            "4.0"
+          ],
+          "source": {
+            "title": "AMQP 1.0 Benchmarks",
+            "url": "https://www.rabbitmq.com/blog/2024/08/21/amqp-benchmarks",
+            "by": "the RabbitMQ team",
+            "date": "2024-08-21",
+            "checked": "2026-11-09"
+          },
+          "id": "stream-amqp-0.9.1",
+          "value": 88912,
+          "when": {
+            "nodes": 1,
+            "queueType": "stream",
+            "protocol": "AMQP 0.9.1",
+            "messageSize": "12 B",
+            "flowControl": "default"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "valkey": {
+      "id": "valkey",
+      "name": "Valkey",
+      "about": "An in-memory key-value store, Redis-compatible.",
+      "kind": "cache",
+      "box": "node",
+      "tags": [
+        "Redis",
+        "Redis-compatible",
+        "cache",
+        "key-value"
+      ],
+      "versionMatters": true,
+      "conditions": {
+        "operation": {
+          "label": "operation",
+          "doc": "The command measured: SET or GET."
+        },
+        "valueSize": {
+          "label": "value size",
+          "doc": "The size of each value."
+        },
+        "ioThreads": {
+          "label": "io-threads",
+          "doc": "The io-threads setting: the main thread and the I/O threads."
+        }
+      },
+      "figures": [
+        {
+          "id": "set-8.0",
+          "measure": "capacity",
+          "value": 1190000,
+          "unit": "req/s",
+          "what": "SET requests",
+          "scope": "for one node",
+          "when": {
+            "operation": "SET",
+            "valueSize": "512 B",
+            "ioThreads": 9
+          },
+          "conditions": [
+            "AWS c7g.4xlarge (16 Arm cores), no RDB saves, the main thread pinned",
+            "valkey-benchmark -t set -d 512 -r 3000000 -c 650 --threads 50, from another instance"
+          ],
+          "versions": [
+            "8.0"
+          ],
+          "source": {
+            "title": "Unlock 1 Million RPS: Experience Triple the Speed with Valkey - part 2",
+            "url": "https://valkey.io/blog/unlock-one-million-rps-part2/",
+            "by": "the Valkey project",
+            "date": "2024-09-13",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "etcd": {
+      "id": "etcd",
+      "name": "etcd",
+      "about": "A consistent key-value store for configuration and coordination.",
+      "kind": "store",
+      "box": "cluster",
+      "tags": [
+        "key-value",
+        "Raft",
+        "coordination"
+      ],
+      "versionMatters": false,
+      "conditions": {
+        "members": {
+          "label": "members",
+          "doc": "Members in the cluster.",
+          "unit": "members"
+        },
+        "operation": {
+          "label": "operation",
+          "doc": "write, or read."
+        },
+        "clients": {
+          "label": "clients",
+          "doc": "Clients at once.",
+          "unit": "clients"
+        },
+        "target": {
+          "label": "writes to",
+          "doc": "leader (every write sent to the leader) or all members."
+        },
+        "consistency": {
+          "label": "reads",
+          "doc": "linearizable or serializable."
+        }
+      },
+      "figures": [
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "writes",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "write-1-leader",
+          "value": 583,
+          "when": {
+            "members": 3,
+            "operation": "write",
+            "clients": 1,
+            "target": "leader"
+          }
+        },
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "writes",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "write-1000-leader",
+          "value": 44341,
+          "when": {
+            "members": 3,
+            "operation": "write",
+            "clients": 1000,
+            "target": "leader"
+          }
+        },
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "writes",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "write-1000-all-members",
+          "value": 50104,
+          "when": {
+            "members": 3,
+            "operation": "write",
+            "clients": 1000,
+            "target": "all members"
+          }
+        },
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "reads",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "read-1-linearizable",
+          "value": 1353,
+          "when": {
+            "members": 3,
+            "operation": "read",
+            "clients": 1,
+            "consistency": "linearizable"
+          }
+        },
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "reads",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "read-1-serializable",
+          "value": 2909,
+          "when": {
+            "members": 3,
+            "operation": "read",
+            "clients": 1,
+            "consistency": "serializable"
+          }
+        },
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "reads",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "read-1000-linearizable",
+          "value": 141578,
+          "when": {
+            "members": 3,
+            "operation": "read",
+            "clients": 1000,
+            "consistency": "linearizable"
+          }
+        },
+        {
+          "unit": "ops/s",
+          "scope": "for the whole cluster",
+          "versions": [
+            "3.2"
+          ],
+          "source": {
+            "title": "etcd: Performance",
+            "url": "https://etcd.io/docs/v3.6/op-guide/performance/",
+            "by": "the etcd project",
+            "date": "2023-04-17",
+            "checked": "2026-11-09"
+          },
+          "measure": "capacity",
+          "what": "reads",
+          "conditions": [
+            "members of 8 vCPU, 16 GB, 50 GB SSD on Google Cloud, a client machine of 16 vCPU",
+            "keys of 8 B, values of 256 B, the etcd benchmark tool, Go 1.8.3"
+          ],
+          "id": "read-1000-serializable",
+          "value": 185758,
+          "when": {
+            "members": 3,
+            "operation": "read",
+            "clients": 1000,
+            "consistency": "serializable"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "cockroachdb": {
+      "id": "cockroachdb",
+      "name": "CockroachDB",
+      "about": "A distributed SQL database.",
+      "kind": "database",
+      "box": "cluster",
+      "shape": "cylinder",
+      "tags": [
+        "SQL",
+        "PostgreSQL-compatible",
+        "distributed"
+      ],
+      "versionMatters": true,
+      "conditions": {
+        "nodes": {
+          "label": "nodes",
+          "doc": "Nodes in the cluster.",
+          "unit": "nodes"
+        },
+        "warehouses": {
+          "label": "TPC-C warehouses",
+          "doc": "The size of the TPC-C dataset.",
+          "unit": "warehouses"
+        }
+      },
+      "figures": [
+        {
+          "id": "tpcc-140k",
+          "measure": "capacity",
+          "value": 1684437,
+          "unit": "tpmC",
+          "what": "TPC-C new orders per minute, 95.45 % efficiency",
+          "scope": "for the whole cluster",
+          "when": {
+            "nodes": 81,
+            "warehouses": 140000
+          },
+          "conditions": [
+            "nodes of AWS c5d.9xlarge, 5 workload machines",
+            "11.2 TB, SERIALIZABLE isolation",
+            "cockroach workload tpcc"
+          ],
+          "versions": [
+            "21.1"
+          ],
+          "source": {
+            "title": "CockroachDB: Performance",
+            "url": "https://docs.cockroachlabs.com/docs/v25.4/performance",
+            "by": "Cockroach Labs",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "clickhouse": {
+      "id": "clickhouse",
+      "name": "ClickHouse",
+      "about": "A column-oriented database for analytics.",
+      "kind": "analytics",
+      "box": "node",
+      "shape": "cylinder",
+      "tags": [
+        "OLAP",
+        "SQL",
+        "analytics"
+      ],
+      "versionMatters": false,
+      "conditions": {
+        "vcpus": {
+          "label": "vCPUs",
+          "doc": "vCPUs of the instance.",
+          "unit": "vCPUs"
+        },
+        "workload": {
+          "label": "workload",
+          "doc": "The query mix: ClickBench (43 analytic queries on 100 million rows)."
+        }
+      },
+      "figures": [
+        {
+          "id": "clickbench-concurrent",
+          "measure": "capacity",
+          "value": 1.615,
+          "unit": "queries/s",
+          "what": "analytic queries over 10 connections for 600 s, none failed",
+          "scope": "for one instance",
+          "when": {
+            "vcpus": 16,
+            "workload": "ClickBench"
+          },
+          "conditions": [
+            "AWS c6a.4xlarge (16 vCPU, 32 GB), 500 GB gp2, untuned",
+            "the hits table: about 100 million rows, 9.5 GB stored",
+            "ClickBench says its main sweep does not test system capacity: this is its supplementary concurrent test"
+          ],
+          "versions": [
+            "the release served on 2026-11-09"
+          ],
+          "source": {
+            "title": "ClickBench: ClickHouse on c6a.4xlarge",
+            "url": "https://github.com/ClickHouse/ClickBench/blob/main/clickhouse/results/20261109/c6a.4xlarge.json",
+            "by": "ClickHouse",
+            "date": "2026-11-09",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "opensearch": {
+      "id": "opensearch",
+      "name": "OpenSearch",
+      "about": "A search and analytics engine, Elasticsearch-compatible.",
+      "kind": "search",
+      "box": "cluster",
+      "tags": [
+        "Elasticsearch",
+        "Elasticsearch-compatible",
+        "search"
+      ],
+      "versionMatters": true,
+      "conditions": {
+        "nodes": {
+          "label": "nodes",
+          "doc": "Nodes in the cluster.",
+          "unit": "nodes"
+        },
+        "workload": {
+          "label": "workload",
+          "doc": "The benchmark workload: Big5."
+        }
+      },
+      "figures": [
+        {
+          "id": "big5-text-queries",
+          "measure": "latency",
+          "value": 6.39,
+          "unit": "ms",
+          "what": "mean latency of text queries",
+          "scope": "for one node",
+          "when": {
+            "nodes": 1,
+            "workload": "Big5"
+          },
+          "conditions": [
+            "AWS c5.2xlarge (8 vCPU, 16 GB), 8 GB heap, 1 primary shard, no replicas",
+            "Big5: about 100 GB, 116 million documents; throughput throttled, the mean of 3 runs after warm-up"
+          ],
+          "versions": [
+            "3.3"
+          ],
+          "source": {
+            "title": "OpenSearch 3.3: Performance innovations for AI search solutions",
+            "url": "https://opensearch.org/blog/opensearch-3-3-performance-innovations-for-ai-search-solutions/",
+            "by": "the OpenSearch project",
+            "date": "2025-12-08",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "nginx": {
+      "id": "nginx",
+      "name": "NGINX",
+      "about": "A web server and reverse proxy.",
+      "kind": "proxy",
+      "box": "node",
+      "tags": [
+        "web server",
+        "reverse proxy",
+        "load balancer"
+      ],
+      "versionMatters": false,
+      "conditions": {
+        "cpus": {
+          "label": "CPUs",
+          "doc": "CPUs given to NGINX: one worker process each.",
+          "unit": "CPUs"
+        },
+        "traffic": {
+          "label": "traffic",
+          "doc": "HTTP or HTTPS requests, or new HTTP or HTTPS connections."
+        },
+        "responseSize": {
+          "label": "response size",
+          "doc": "The size of each response, for requests."
+        }
+      },
+      "figures": [
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-1cpu-0kb",
+          "value": 145551,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-1cpu-1kb",
+          "value": 74091,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-1cpu-10kb",
+          "value": 54684,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-1cpu-100kb",
+          "value": 33125,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-2cpu-0kb",
+          "value": 249293,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-2cpu-1kb",
+          "value": 131466,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-2cpu-10kb",
+          "value": 102069,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-2cpu-100kb",
+          "value": 62554,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-4cpu-0kb",
+          "value": 543061,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-4cpu-1kb",
+          "value": 261269,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-4cpu-10kb",
+          "value": 207848,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-4cpu-100kb",
+          "value": 88691,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-8cpu-0kb",
+          "value": 1048421,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-8cpu-1kb",
+          "value": 524745,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-8cpu-10kb",
+          "value": 392151,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-8cpu-100kb",
+          "value": 91640,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-16cpu-0kb",
+          "value": 2001846,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-16cpu-1kb",
+          "value": 972382,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-16cpu-10kb",
+          "value": 663921,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-16cpu-100kb",
+          "value": 91623,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-32cpu-0kb",
+          "value": 3019182,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-32cpu-1kb",
+          "value": 1316362,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-32cpu-10kb",
+          "value": 774567,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-32cpu-100kb",
+          "value": 91640,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-36cpu-0kb",
+          "value": 3298511,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTP",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-36cpu-1kb",
+          "value": 1309358,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTP",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-36cpu-10kb",
+          "value": 764744,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTP",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTP requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "http-36cpu-100kb",
+          "value": 91655,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTP",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-1cpu-0kb",
+          "value": 71561,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-1cpu-1kb",
+          "value": 40207,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-1cpu-10kb",
+          "value": 23308,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-1cpu-100kb",
+          "value": 4830,
+          "when": {
+            "cpus": 1,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-2cpu-0kb",
+          "value": 151325,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-2cpu-1kb",
+          "value": 85139,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-2cpu-10kb",
+          "value": 48654,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-2cpu-100kb",
+          "value": 9871,
+          "when": {
+            "cpus": 2,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-4cpu-0kb",
+          "value": 324654,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-4cpu-1kb",
+          "value": 178395,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-4cpu-10kb",
+          "value": 96808,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-4cpu-100kb",
+          "value": 19355,
+          "when": {
+            "cpus": 4,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-8cpu-0kb",
+          "value": 647213,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-8cpu-1kb",
+          "value": 359576,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-8cpu-10kb",
+          "value": 198818,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-8cpu-100kb",
+          "value": 38900,
+          "when": {
+            "cpus": 8,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-16cpu-0kb",
+          "value": 1262999,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-16cpu-1kb",
+          "value": 690329,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-16cpu-10kb",
+          "value": 383860,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-16cpu-100kb",
+          "value": 77427,
+          "when": {
+            "cpus": 16,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-32cpu-0kb",
+          "value": 2197336,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-32cpu-1kb",
+          "value": 1207959,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-32cpu-10kb",
+          "value": 692804,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-32cpu-100kb",
+          "value": 90430,
+          "when": {
+            "cpus": 32,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-36cpu-0kb",
+          "value": 2175945,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTPS",
+            "responseSize": "0 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-36cpu-1kb",
+          "value": 1239624,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTPS",
+            "responseSize": "1 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-36cpu-10kb",
+          "value": 733745,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTPS",
+            "responseSize": "10 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "req/s",
+          "what": "HTTPS requests",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "https-36cpu-100kb",
+          "value": 89842,
+          "when": {
+            "cpus": 36,
+            "traffic": "HTTPS",
+            "responseSize": "100 KB"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-1cpu",
+          "value": 34344,
+          "when": {
+            "cpus": 1,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-2cpu",
+          "value": 54368,
+          "when": {
+            "cpus": 2,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-4cpu",
+          "value": 123164,
+          "when": {
+            "cpus": 4,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-8cpu",
+          "value": 194967,
+          "when": {
+            "cpus": 8,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-16cpu",
+          "value": 255032,
+          "when": {
+            "cpus": 16,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-32cpu",
+          "value": 261033,
+          "when": {
+            "cpus": 32,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTP connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1"
+          ],
+          "id": "cps-36cpu",
+          "value": 257277,
+          "when": {
+            "cpus": 36,
+            "traffic": "new HTTP connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-1cpu",
+          "value": 428,
+          "when": {
+            "cpus": 1,
+            "traffic": "new HTTPS connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-2cpu",
+          "value": 869,
+          "when": {
+            "cpus": 2,
+            "traffic": "new HTTPS connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-4cpu",
+          "value": 1735,
+          "when": {
+            "cpus": 4,
+            "traffic": "new HTTPS connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-8cpu",
+          "value": 3399,
+          "when": {
+            "cpus": 8,
+            "traffic": "new HTTPS connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-16cpu",
+          "value": 6676,
+          "when": {
+            "cpus": 16,
+            "traffic": "new HTTPS connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-24cpu",
+          "value": 10274,
+          "when": {
+            "cpus": 24,
+            "traffic": "new HTTPS connections"
+          }
+        },
+        {
+          "measure": "capacity",
+          "scope": "for one instance",
+          "versions": [
+            "1.9.7"
+          ],
+          "source": {
+            "title": "Testing the Performance of NGINX and NGINX Plus Web Servers",
+            "url": "https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers",
+            "by": "NGINX (F5)",
+            "date": "2017-08-24",
+            "checked": "2026-11-09"
+          },
+          "unit": "conn/s",
+          "what": "new HTTPS connections, one request each with an empty response, closed after it",
+          "conditions": [
+            "2 × Intel Xeon E5-2699 v3 2.3 GHz (36 cores, hyper-threading off), 2 × 40 GbE, 16 GB",
+            "a worker process per CPU, wrk 4.0.0 with 50 connections, Ubuntu 14.04.1",
+            "OpenSSL 1.0.1f, ECDHE-RSA-AES256-GCM-SHA384, 2048-bit RSA key"
+          ],
+          "id": "tls-cps-36cpu",
+          "value": 10067,
+          "when": {
+            "cpus": 36,
+            "traffic": "new HTTPS connections"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "haproxy": {
+      "id": "haproxy",
+      "name": "HAProxy",
+      "about": "A load balancer and reverse proxy.",
+      "kind": "proxy",
+      "box": "node",
+      "tags": [
+        "load balancer",
+        "reverse proxy"
+      ],
+      "versionMatters": false,
+      "conditions": {
+        "cores": {
+          "label": "cores",
+          "doc": "Cores HAProxy runs on.",
+          "unit": "cores"
+        },
+        "traffic": {
+          "label": "traffic",
+          "doc": "HTTP or HTTPS."
+        }
+      },
+      "figures": [
+        {
+          "id": "http-46cores",
+          "measure": "capacity",
+          "value": 2040000,
+          "unit": "req/s",
+          "what": "HTTP requests forwarded (2.04 to 2.05 million)",
+          "scope": "for one instance",
+          "when": {
+            "cores": 46,
+            "traffic": "HTTP"
+          },
+          "conditions": [
+            "AWS c6gn.16xlarge (64 Graviton2 cores, 100 Gbps) for the clients, HAProxy and the servers alike; network interrupts on 16 other cores",
+            "h1load with 46 threads and 1,150 connections, empty responses, 120 s; p99.9 latency 5 ms"
+          ],
+          "versions": [
+            "2.3.7"
+          ],
+          "source": {
+            "title": "HAProxy Forwards Over 2 Million HTTP Requests per Second on a Single Arm-based AWS Graviton2 Instance",
+            "url": "https://www.haproxy.com/blog/haproxy-forwards-over-2-million-http-requests-per-second-on-a-single-aws-arm-instance",
+            "by": "HAProxy Technologies",
+            "date": "2021-04-08",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "coredns": {
+      "id": "coredns",
+      "name": "CoreDNS",
+      "about": "A DNS server, the default in Kubernetes.",
+      "kind": "dns",
+      "box": "node",
+      "tags": [
+        "DNS",
+        "Kubernetes"
+      ],
+      "versionMatters": false,
+      "conditions": {
+        "vcpus": {
+          "label": "vCPUs",
+          "doc": "vCPUs of the instance.",
+          "unit": "vCPUs"
+        },
+        "names": {
+          "label": "names",
+          "doc": "cluster (names inside the cluster) or external."
+        },
+        "autopath": {
+          "label": "autopath",
+          "doc": "The autopath plugin, which saves the search-path lookups."
+        }
+      },
+      "figures": [
+        {
+          "measure": "capacity",
+          "unit": "queries/s",
+          "what": "DNS queries",
+          "scope": "for one instance",
+          "conditions": [
+            "GCE n1-standard-2 (2 vCPU), both CPUs busy",
+            "Kubernetes 1.13.0-alpha.2, dnsperf from kubernetes/perf-tests",
+            "an external name takes 5 lookups through the search path without autopath"
+          ],
+          "versions": [
+            "1.2.5"
+          ],
+          "source": {
+            "title": "Scaling CoreDNS in Kubernetes Clusters",
+            "url": "https://github.com/coredns/deployment/blob/master/kubernetes/Scaling_CoreDNS.md",
+            "by": "the CoreDNS project",
+            "checked": "2026-11-09"
+          },
+          "id": "cluster-names",
+          "value": 33669,
+          "when": {
+            "vcpus": 2,
+            "names": "cluster",
+            "autopath": false
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "queries/s",
+          "what": "DNS queries",
+          "scope": "for one instance",
+          "conditions": [
+            "GCE n1-standard-2 (2 vCPU), both CPUs busy",
+            "Kubernetes 1.13.0-alpha.2, dnsperf from kubernetes/perf-tests",
+            "an external name takes 5 lookups through the search path without autopath"
+          ],
+          "versions": [
+            "1.2.5"
+          ],
+          "source": {
+            "title": "Scaling CoreDNS in Kubernetes Clusters",
+            "url": "https://github.com/coredns/deployment/blob/master/kubernetes/Scaling_CoreDNS.md",
+            "by": "the CoreDNS project",
+            "checked": "2026-11-09"
+          },
+          "id": "external-names",
+          "value": 6733,
+          "when": {
+            "vcpus": 2,
+            "names": "external",
+            "autopath": false
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "queries/s",
+          "what": "DNS queries",
+          "scope": "for one instance",
+          "conditions": [
+            "GCE n1-standard-2 (2 vCPU), both CPUs busy",
+            "Kubernetes 1.13.0-alpha.2, dnsperf from kubernetes/perf-tests",
+            "an external name takes 5 lookups through the search path without autopath"
+          ],
+          "versions": [
+            "1.2.5"
+          ],
+          "source": {
+            "title": "Scaling CoreDNS in Kubernetes Clusters",
+            "url": "https://github.com/coredns/deployment/blob/master/kubernetes/Scaling_CoreDNS.md",
+            "by": "the CoreDNS project",
+            "checked": "2026-11-09"
+          },
+          "id": "cluster-names-autopath",
+          "value": 33918,
+          "when": {
+            "vcpus": 2,
+            "names": "cluster",
+            "autopath": true
+          }
+        },
+        {
+          "measure": "capacity",
+          "unit": "queries/s",
+          "what": "DNS queries",
+          "scope": "for one instance",
+          "conditions": [
+            "GCE n1-standard-2 (2 vCPU), both CPUs busy",
+            "Kubernetes 1.13.0-alpha.2, dnsperf from kubernetes/perf-tests",
+            "an external name takes 5 lookups through the search path without autopath"
+          ],
+          "versions": [
+            "1.2.5"
+          ],
+          "source": {
+            "title": "Scaling CoreDNS in Kubernetes Clusters",
+            "url": "https://github.com/coredns/deployment/blob/master/kubernetes/Scaling_CoreDNS.md",
+            "by": "the CoreDNS project",
+            "checked": "2026-11-09"
+          },
+          "id": "external-names-autopath",
+          "value": 31428,
+          "when": {
+            "vcpus": 2,
+            "names": "external",
+            "autopath": true
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "kubernetes": {
+      "id": "kubernetes",
+      "name": "Kubernetes",
+      "about": "A container orchestrator: its control plane and the nodes it schedules on.",
+      "kind": "platform",
+      "box": "cluster",
+      "tags": [
+        "k8s",
+        "orchestrator",
+        "control plane"
+      ],
+      "versionMatters": false,
+      "conditions": {},
+      "figures": [
+        {
+          "id": "nodes",
+          "measure": "limit",
+          "value": 5000,
+          "unit": "nodes",
+          "what": "nodes in a cluster",
+          "scope": "for the whole cluster",
+          "when": {},
+          "conditions": [
+            "the most the project supports with its scalability SLOs met"
+          ],
+          "versions": [
+            "1.37"
+          ],
+          "source": {
+            "title": "Considerations for large clusters",
+            "url": "https://kubernetes.io/docs/setup/best-practices/cluster-large/",
+            "by": "the Kubernetes project",
+            "date": "2026-02-08",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "pods",
+          "measure": "limit",
+          "value": 150000,
+          "unit": "pods",
+          "what": "pods in a cluster",
+          "scope": "for the whole cluster",
+          "when": {},
+          "conditions": [
+            "the most the project supports with its scalability SLOs met"
+          ],
+          "versions": [
+            "1.37"
+          ],
+          "source": {
+            "title": "Considerations for large clusters",
+            "url": "https://kubernetes.io/docs/setup/best-practices/cluster-large/",
+            "by": "the Kubernetes project",
+            "date": "2026-02-08",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "containers",
+          "measure": "limit",
+          "value": 300000,
+          "unit": "containers",
+          "what": "containers in a cluster",
+          "scope": "for the whole cluster",
+          "when": {},
+          "conditions": [
+            "the most the project supports with its scalability SLOs met"
+          ],
+          "versions": [
+            "1.37"
+          ],
+          "source": {
+            "title": "Considerations for large clusters",
+            "url": "https://kubernetes.io/docs/setup/best-practices/cluster-large/",
+            "by": "the Kubernetes project",
+            "date": "2026-02-08",
+            "checked": "2026-11-09"
+          }
+        },
+        {
+          "id": "pods-per-node",
+          "measure": "limit",
+          "value": 110,
+          "unit": "pods",
+          "what": "pods on one node",
+          "scope": "per node",
+          "when": {},
+          "conditions": [
+            "the most the project supports with its scalability SLOs met"
+          ],
+          "versions": [
+            "1.37"
+          ],
+          "source": {
+            "title": "Considerations for large clusters",
+            "url": "https://kubernetes.io/docs/setup/best-practices/cluster-large/",
+            "by": "the Kubernetes project",
+            "date": "2026-02-08",
+            "checked": "2026-11-09"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "istio": {
+      "id": "istio",
+      "name": "Istio",
+      "about": "A service mesh: a proxy beside or in front of every workload.",
+      "kind": "mesh",
+      "box": "pool",
+      "tags": [
+        "service mesh",
+        "Envoy",
+        "sidecar"
+      ],
+      "versionMatters": true,
+      "conditions": {
+        "proxy": {
+          "label": "proxy",
+          "doc": "sidecar, waypoint or ztunnel."
+        }
+      },
+      "figures": [
+        {
+          "measure": "cost",
+          "unit": "vCPU per 1,000 req/s",
+          "what": "CPU of the proxy",
+          "scope": "per proxy",
+          "conditions": [
+            "1,000 HTTP requests/s of 1 KB, 2 worker threads (the ztunnel aside)",
+            "a load-test mesh of 1,000 services and 2,000 pods"
+          ],
+          "versions": [
+            "1.24"
+          ],
+          "source": {
+            "title": "Istio: Performance and Scalability",
+            "url": "https://istio.io/latest/docs/ops/deployment/performance-and-scalability/",
+            "by": "the Istio project",
+            "checked": "2026-11-09"
+          },
+          "id": "sidecar-cpu",
+          "value": 0.2,
+          "when": {
+            "proxy": "sidecar"
+          }
+        },
+        {
+          "measure": "cost",
+          "unit": "vCPU per 1,000 req/s",
+          "what": "CPU of the proxy",
+          "scope": "per proxy",
+          "conditions": [
+            "1,000 HTTP requests/s of 1 KB, 2 worker threads (the ztunnel aside)",
+            "a load-test mesh of 1,000 services and 2,000 pods"
+          ],
+          "versions": [
+            "1.24"
+          ],
+          "source": {
+            "title": "Istio: Performance and Scalability",
+            "url": "https://istio.io/latest/docs/ops/deployment/performance-and-scalability/",
+            "by": "the Istio project",
+            "checked": "2026-11-09"
+          },
+          "id": "waypoint-cpu",
+          "value": 0.25,
+          "when": {
+            "proxy": "waypoint"
+          }
+        },
+        {
+          "measure": "cost",
+          "unit": "vCPU per 1,000 req/s",
+          "what": "CPU of the proxy",
+          "scope": "per proxy",
+          "conditions": [
+            "1,000 HTTP requests/s of 1 KB, 2 worker threads (the ztunnel aside)",
+            "a load-test mesh of 1,000 services and 2,000 pods"
+          ],
+          "versions": [
+            "1.24"
+          ],
+          "source": {
+            "title": "Istio: Performance and Scalability",
+            "url": "https://istio.io/latest/docs/ops/deployment/performance-and-scalability/",
+            "by": "the Istio project",
+            "checked": "2026-11-09"
+          },
+          "id": "ztunnel-cpu",
+          "value": 0.06,
+          "when": {
+            "proxy": "ztunnel"
+          }
+        }
+      ],
+      "edition": "2026-11"
+    },
+    "postgresql": {
+      "id": "postgresql",
+      "name": "PostgreSQL",
+      "about": "A relational database.",
+      "kind": "database",
+      "box": "node",
+      "shape": "cylinder",
+      "tags": [
+        "SQL",
+        "Postgres"
+      ],
+      "versionMatters": false,
+      "conditions": {},
+      "figures": [],
+      "edition": "2026-11"
+    },
+    "mysql": {
+      "id": "mysql",
+      "name": "MySQL",
+      "about": "A relational database.",
+      "kind": "database",
+      "box": "node",
+      "shape": "cylinder",
+      "tags": [
+        "SQL",
+        "MariaDB"
+      ],
+      "versionMatters": false,
+      "conditions": {},
+      "figures": [],
+      "edition": "2026-11"
+    },
+    "mongodb": {
+      "id": "mongodb",
+      "name": "MongoDB",
+      "about": "A document database.",
+      "kind": "database",
+      "box": "cluster",
+      "shape": "cylinder",
+      "tags": [
+        "NoSQL",
+        "documents"
+      ],
+      "versionMatters": false,
+      "conditions": {},
+      "figures": [],
+      "edition": "2026-11"
+    },
+    "envoy": {
+      "id": "envoy",
+      "name": "Envoy",
+      "about": "A proxy for services and the edge.",
+      "kind": "proxy",
+      "box": "node",
+      "tags": [
+        "proxy",
+        "load balancer"
+      ],
+      "versionMatters": false,
+      "conditions": {},
+      "figures": [],
+      "edition": "2026-11"
+    }
+  }
+}

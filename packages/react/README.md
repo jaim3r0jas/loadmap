@@ -67,7 +67,9 @@ export function App() {
 ```
 
 Every capacity says where it came from (`measured`, `estimated`, or a fit from measurements), and `± 30 %` turns
-each limit into a range. Add `scenarios` to compare designs, `growth` to turn multiples into dates, `expect` to fail
+each limit into a range. `published(kafka, { brokers: 3, replication: 3, acks: 'all', messageSize: '1 KB', producers: 4
+})`, with `kafka` from `@loadmap/react/catalog`, takes the figure published for that configuration, labelled and
+linked to its source; a configuration no published run matches gets no number, and the verdict says so. Add `scenarios` to compare designs, `growth` to turn multiples into dates, `expect` to fail
 a test when headroom is lost. The layout runs in a Web Worker; nothing loads it before the first diagram. A page
 without a bundler (from a CDN, or one self-contained HTML file) hands in its own: `elk={workerElk(…)}`, with
 `@loadmap/react/elk.worker.js` to inline; https://jaim3r0jas.github.io/loadmap/without-a-bundler/ has both recipes.

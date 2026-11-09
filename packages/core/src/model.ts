@@ -1,7 +1,7 @@
 import type { LinearFit } from './calibrate'
 import { type Bound, boundOf, type Capacity, type CrossingRange } from './capacity'
 import type { Expectation } from './check'
-import { fmt, joinAnd, months, multiple, multiples, pct } from './format'
+import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
@@ -170,6 +170,8 @@ export interface ComponentResult<C extends string = string> {
   fullRange: CrossingRange | null
   over: string
   describe?: string
+  /** Why it has no published figure for this configuration: it is then not ranked, like a switched-off one. */
+  missing?: string
 }
 
 export interface VerdictResult {
@@ -500,7 +502,7 @@ export function defineModel<
 
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
     const values = { ...defaults(), ...partial } as Values<P>
-    const { ctx, capacity, over, describe, overload: overloadOf, retries, shed } = context(def as any, values)
+    const { ctx, capacity, enabled, over, describe, overload: overloadOf, retries, shed } = context(def as any, values)
     const crossings = crossingsFor(values)
 
     const components = {} as Record<C, ComponentResult<C>>
@@ -508,6 +510,7 @@ export function defineModel<
       const d = def.components[c]
       const util = ctx.util[c] as number | null
       const off = util == null
+      const missing = off && enabled(c) ? capacity(c).missing : undefined
       components[c] = {
         id: c,
         name: d.name,
@@ -515,12 +518,13 @@ export function defineModel<
         plural: d.plural ?? false,
         util,
         demand: off ? null : (ctx.demand[c] as number),
-        capacity: off ? null : capacity(c),
+        capacity: off && missing == null ? null : capacity(c),
         state: off ? 'off' : util > thresholds.full ? 'over' : util > thresholds.target ? 'warn' : 'ok',
         ...crossings.components[c]!,
         over: over(c),
         describe: describe(c),
       }
+      if (missing != null) components[c].missing = missing
     }
 
     const all = componentIds.map((c) => components[c])
@@ -574,7 +578,7 @@ export function defineModel<
       firstFull,
       target,
       full,
-      verdict: verdict(values.load, live, firstLimit, target, thresholds, searchMax, when),
+      verdict: verdict(values.load, live, firstLimit, target, thresholds, searchMax, when, unranked(all)),
       get measure() {
         return measureText(crossings.measure(), components, firstLimit, thresholds, searchMax)
       },
@@ -915,7 +919,7 @@ function context(
   )
   ctx.util = table(componentIds, (c) =>
     memo(`utilization of ${c}`, () => {
-      if (!enabled(c)) return null
+      if (!enabled(c) || capacity(c).missing != null) return null
       const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
       const d = ctx.demand[c] as number
       return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
@@ -928,6 +932,7 @@ function context(
   return {
     ctx: Object.freeze(ctx),
     capacity,
+    enabled,
     overload,
     failure,
     shed,
@@ -1021,13 +1026,45 @@ export function reach(
   return `${multiples(r, searchMax)}${months(when(r.low), when(r.high))}`
 }
 
-/** " (capacity estimated ±30 %)"; nothing for a measured capacity without a ± or a configured one. */
+/**
+ * " (capacity estimated ±30 %)", " (capacity published, a best case)"; nothing for a measured capacity without a ± or
+ * a configured one.
+ */
 export function sureness(c: Capacity | null): string {
+  if (c?.ref?.measure === 'limit') return ' (a published limit)'
+  if (c?.ref) return ` (capacity published${c.within ? ` −${pct(c.within)}` : ''}, a best case)`
   if (!c || (c.provenance !== 'estimated' && !c.within)) return ''
   return ` (capacity ${c.provenance}${c.within ? ` ±${pct(c.within)}` : ''})`
 }
 
+/** " The brokers have no published benchmark for 6 brokers, so they are not ranked." */
+function unranked(all: readonly ComponentResult[]): string {
+  return all
+    .filter((c) => c.missing != null)
+    .map(
+      (c) =>
+        ` ${capital(c.short)} ${c.plural ? 'have' : 'has'} no published benchmark ${c.missing}, so ${c.plural ? 'they are' : 'it is'} not ranked.`,
+    )
+    .join('')
+}
+
 function verdict(
+  load: number,
+  live: readonly ComponentResult[],
+  first: ComponentResult | null,
+  range: CrossingRange | null,
+  th: { target: number; full: number },
+  searchMax: number,
+  when: (x: number | null) => Date | null,
+  unranked = '',
+): VerdictResult {
+  if (!first && unranked) return { tier: 'warn', text: `At ${fmt(load)}×, no component has a capacity.${unranked}` }
+  const v = stated(load, live, first, range, th, searchMax, when)
+  // an unranked component may run out first: never call that ok
+  return unranked ? { tier: v.tier === 'ok' ? 'warn' : v.tier, text: v.text + unranked } : v
+}
+
+function stated(
   load: number,
   live: readonly ComponentResult[],
   first: ComponentResult | null,

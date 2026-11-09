@@ -61,11 +61,14 @@ export function niceStep(x: number): number {
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p
 }
 
-/** "a", "a and b", "a, b and c". */
-export function joinAnd(items: readonly string[]): string {
+/** "a", "a and b", "a, b and c"; with `or`, "a, b or c". */
+export function joinAnd(items: readonly string[], word: 'and' | 'or' = 'and'): string {
   if (items.length <= 1) return items[0] ?? ''
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+  return `${items.slice(0, -1).join(', ')} ${word} ${items[items.length - 1]}`
 }
+
+/** The first letter in capitals: a sentence that starts with a name. */
+export const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
 const MONTHS = [
   'January',
