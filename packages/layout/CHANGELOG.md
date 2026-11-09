@@ -1,5 +1,11 @@
 # @loadmap/layout
 
+## 0.28.0
+
+### Patch Changes
+
+- @loadmap/core@0.28.0
+
 ## 0.27.0
 
 ### Patch Changes
