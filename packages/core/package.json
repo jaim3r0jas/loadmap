@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/core",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "Capacity models in plain TypeScript: params, flows, components with capacities that say where they came from, limits, verdict, scenarios, growth and checks.",
   "keywords": [
     "loadmap",
@@ -23,6 +23,7 @@
     "./calibrate": "./src/calibrate.ts",
     "./catalog": "./src/catalog.ts",
     "./format": "./src/format.ts",
+    "./measure": "./src/measure.ts",
     "./internal": "./src/internal.ts"
   },
   "publishConfig": {
@@ -42,6 +43,10 @@
       "./format": {
         "types": "./dist/format.d.ts",
         "import": "./dist/format.js"
+      },
+      "./measure": {
+        "types": "./dist/measure.d.ts",
+        "import": "./dist/measure.js"
       },
       "./internal": {
         "types": "./dist/internal.d.ts",

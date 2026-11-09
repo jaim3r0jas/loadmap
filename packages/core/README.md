@@ -11,6 +11,7 @@ import { shop } from './shop'
 it('keeps its headroom', () => assertHolds(shop)) // throws, listing every failed expectation
 ```
 
-`@loadmap/core/calibrate` fits `cost = a + b × rate` from measurements (`fitLinear`); `@loadmap/core/format` has the
-number formats the verdict uses. Most pages install [`@loadmap/react`](https://www.npmjs.com/package/@loadmap/react),
+`@loadmap/core/calibrate` fits `cost = a + b × rate` from measurements (`fitLinear`); `@loadmap/core/measure` reads a
+snapshot of measured data (`parseSnapshot`, `fromSnapshot`) and has the standard measurements per kind (`MEASURES`);
+`@loadmap/core/format` has the number formats the verdict uses. Most pages install [`@loadmap/react`](https://www.npmjs.com/package/@loadmap/react),
 which re-exports all of this. MIT.

@@ -13,6 +13,16 @@ export {
 } from './capacity'
 export { assertHolds, type CheckResult, check, type Expectation } from './check'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
+export type {
+  Measurement,
+  MeasureRole,
+  MeasureSpec,
+  Origin,
+  Snapshot,
+  SnapshotReader,
+  Stat,
+  TimeSeries,
+} from './measure'
 export {
   type Assumption,
   type ComponentDef,

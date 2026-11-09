@@ -1,0 +1,104 @@
+{
+  "format": "loadmap-snapshot",
+  "version": 1,
+  "fetched": "2026-11-08T06:00:00Z",
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-08T00:00:00Z",
+  "measurements": {
+    "apiCapacity": {
+      "label": "API peak served",
+      "unit": "req/s",
+      "value": 1200,
+      "origin": {
+        "provider": "prometheus",
+        "query": "max_over_time(sum(rate(http_requests_total{job=\"api\"}[5m]))[7d:5m])",
+        "metric": "served",
+        "from": "2026-11-01T00:00:00Z",
+        "to": "2026-11-08T00:00:00Z",
+        "step": 300,
+        "fetched": "2026-11-08T06:00:00Z",
+        "samples": 2016,
+        "min": 30,
+        "stat": "max"
+      }
+    },
+    "requests": {
+      "unit": "req/s",
+      "value": 110,
+      "origin": {
+        "provider": "prometheus",
+        "query": "sum(rate(http_requests_total{job=\"api\"}[5m]))",
+        "from": "2026-11-05T10:00:00Z",
+        "to": "2026-11-05T10:25:00Z",
+        "step": 300,
+        "fetched": "2026-11-08T06:00:00Z",
+        "samples": 6,
+        "min": 5,
+        "stat": "p95"
+      }
+    },
+    "rate": {
+      "unit": "req/s",
+      "value": 350,
+      "series": [
+        [1793872800, 100],
+        [1793873100, 200],
+        [1793873400, 300],
+        [1793873700, 400],
+        [1793874000, 500],
+        [1793874300, 600]
+      ],
+      "origin": {
+        "provider": "prometheus",
+        "query": "sum(rate(jobs_done_total[5m]))",
+        "from": "2026-11-05T10:00:00Z",
+        "to": "2026-11-05T10:25:00Z",
+        "step": 300,
+        "fetched": "2026-11-08T06:00:00Z",
+        "samples": 6,
+        "stat": "mean"
+      }
+    },
+    "cores": {
+      "unit": "cores",
+      "value": 0.55,
+      "series": [
+        [1793872800, 0.3],
+        [1793873100, 0.4],
+        [1793873400, 0.52],
+        [1793873700, 0.6],
+        [1793874000, 0.71],
+        [1793874300, 0.8]
+      ],
+      "origin": {
+        "provider": "prometheus",
+        "query": "sum(rate(container_cpu_usage_seconds_total{pod=~\"worker-.*\"}[5m]))",
+        "from": "2026-11-05T10:00:00Z",
+        "to": "2026-11-05T10:25:00Z",
+        "step": 300,
+        "fetched": "2026-11-08T06:00:00Z",
+        "samples": 6,
+        "stat": "mean"
+      }
+    },
+    "hit": {
+      "unit": "share",
+      "missing": "the query returned no series"
+    },
+    "lag": {
+      "unit": "messages",
+      "value": 40,
+      "origin": {
+        "provider": "prometheus",
+        "query": "sum(kafka_consumergroup_lag{topic=\"orders\"})",
+        "from": "2026-11-05T10:00:00Z",
+        "to": "2026-11-05T10:10:00Z",
+        "step": 300,
+        "fetched": "2026-11-08T06:00:00Z",
+        "samples": 3,
+        "min": 30,
+        "stat": "max"
+      }
+    }
+  }
+}
