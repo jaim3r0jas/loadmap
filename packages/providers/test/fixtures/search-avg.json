@@ -1,0 +1,14 @@
+{
+  "took": 6,
+  "timed_out": false,
+  "hits": { "total": { "value": 900, "relation": "eq" }, "max_score": null, "hits": [] },
+  "aggregations": {
+    "t": {
+      "buckets": [
+        { "key": 1793872800000, "doc_count": 300, "v": { "value": 41.5 } },
+        { "key": 1793873100000, "doc_count": 0, "v": { "value": null } },
+        { "key": 1793873400000, "doc_count": 600, "v": { "value": 52.25 } }
+      ]
+    }
+  }
+}

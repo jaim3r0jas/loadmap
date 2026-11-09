@@ -1,0 +1,15 @@
+{
+  "took": 4,
+  "timed_out": false,
+  "hits": { "total": { "value": 1500, "relation": "eq" }, "max_score": null, "hits": [] },
+  "aggregations": {
+    "t": {
+      "buckets": [
+        { "key_as_string": "2026-11-05T10:00:00.000Z", "key": 1793872800000, "doc_count": 300 },
+        { "key_as_string": "2026-11-05T10:05:00.000Z", "key": 1793873100000, "doc_count": 600 },
+        { "key_as_string": "2026-11-05T10:10:00.000Z", "key": 1793873400000, "doc_count": 0 },
+        { "key_as_string": "2026-11-05T10:15:00.000Z", "key": 1793873700000, "doc_count": 600 }
+      ]
+    }
+  }
+}

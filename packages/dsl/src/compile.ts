@@ -79,6 +79,9 @@ const MAX_TRANSITION = 5
 /** `{{ args.job }}` in a metric's query: the measure's argument `job`. */
 const TEMPLATE = /\{\{\s*args\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
+/** A metric's query with a measure's arguments filled in. */
+type Fill = (args: ReadonlyMap<string, string>) => string
+
 /** The arguments a metric's query names, in order, once each. */
 export function templateArgs(query: string): string[] {
   return [...new Set([...query.matchAll(TEMPLATE)].map((m) => m[1]!))]
@@ -106,7 +109,8 @@ export interface MeasureQuery {
   metric: string
   /** The metric's label. */
   label?: string
-  provider: 'prometheus'
+  provider: 'prometheus' | 'elasticsearch'
+  /** PromQL for Prometheus; for Elasticsearch, the request as JSON: index, time field, agg, field and query. */
   query: string
   stat?: Stat
   min?: number
@@ -1071,11 +1075,7 @@ class Compiler {
     }
     const q = this.metricQuery(metric)
     if (!q) return undefined
-    const used = new Set<string>()
-    const query = q.query.replace(TEMPLATE, (_, arg: string) => {
-      used.add(arg)
-      return args.get(arg)?.value ?? ''
-    })
+    const used = q.names
     const missing = [...used].filter((a) => !args.has(a))
     if (missing.length)
       this.report.error(
@@ -1087,6 +1087,7 @@ class Compiler {
       if (!used.has(k))
         this.report.error(a.at, `the query of "${name.name}" has no {{ args.${k} }}`, didYouMean(k, [...used]))
     if (missing.length) return undefined
+    const query = q.fill(new Map([...args].map(([k, a]) => [k, a.value])))
 
     const label = this.text(metric.args.label)
     this.measures.push({
@@ -1129,22 +1130,95 @@ class Compiler {
       return undefined
     }
     const p = providers[0]!
-    const at = this.prop(p, 'query')
-    const query = this.constProp<string>(p, 'query')
-    if (!at || query == null) return undefined
-    for (const m of query.matchAll(/\{\{(.*?)\}\}/g))
-      if (!new RegExp(`^${TEMPLATE.source}$`).test(m[0]))
-        this.report.error(at.value, `"${m[0]}" is not an argument`, 'write {{ args.name }}: each measure gives name')
+    // every text of the provider's block may name the measure's arguments
+    const texts = new Map<string, { text: string; at: Property }>()
+    for (const [k, spec] of Object.entries(p.spec.props)) {
+      const at = this.prop(p, k)
+      const text = spec.value === 'string' ? this.constProp<string>(p, k) : undefined
+      if (!at || text == null) continue
+      texts.set(k, { text, at })
+      for (const m of text.matchAll(/\{\{(.*?)\}\}/g))
+        if (!new RegExp(`^${TEMPLATE.source}$`).test(m[0]))
+          this.report.error(at.value, `"${m[0]}" is not an argument`, 'write {{ args.name }}: each measure gives name')
+    }
     const min = this.constProp<number>(b, 'min')
     if (min != null && !(Number.isInteger(min) && min >= 0)) {
       this.report.error(this.prop(b, 'min')!.value, 'min is a whole number of samples from 0')
       return undefined
     }
+    const read = { prometheus: () => this.prometheus(texts), elasticsearch: () => this.elasticsearch(p, texts) }
+    if (!own(read, p.keyword)) throw new Error(`loadmap: no reader for the provider "${p.keyword}"`)
+    const fill = read[p.keyword as keyof typeof read]()
+    if (!fill) return undefined
     return {
       provider: p.keyword as MeasureQuery['provider'],
-      query,
+      names: new Set([...texts.values()].flatMap((t) => templateArgs(t.text))),
+      fill,
       stat: this.constProp<Stat>(b, 'stat'),
       min,
+    }
+  }
+
+  private prometheus(texts: ReadonlyMap<string, { text: string }>): Fill | undefined {
+    const query = texts.get('query')?.text
+    if (query == null) return undefined
+    return (args) => query.replace(TEMPLATE, (_, a: string) => args.get(a) ?? '')
+  }
+
+  /**
+   * The request an Elasticsearch metric sends, as one JSON text (the query a snapshot's origin shows): the index, the
+   * time field, what is counted or aggregated at each step, and which documents. An argument goes into the query JSON
+   * escaped, so a measure's word never changes its shape.
+   */
+  private elasticsearch(p: Block, texts: ReadonlyMap<string, { text: string; at: Property }>): Fill | undefined {
+    const index = texts.get('index')
+    if (!index) return undefined
+    // the provider's rule, on the text without its arguments: "logs-{{ args.env }}" is a pattern
+    const parts = index.text.replace(TEMPLATE, 'x').split(',')
+    if (parts.some((s) => !s || s === '.' || s === '..' || /[\s/?#]/.test(s))) {
+      this.report.error(index.at.value, 'an index is a name or a pattern', '"logs-*", or names joined by commas')
+      return undefined
+    }
+    const agg = this.constProp<string>(p, 'agg') ?? 'rate'
+    const field = texts.get('field')
+    const counts = agg === 'rate' || agg === 'count'
+    if (!counts && !field) {
+      this.report.error(this.prop(p, 'agg')!.value, `${agg} reads a field`, 'field: "duration_ms"')
+      return undefined
+    }
+    if (counts && field) {
+      this.report.error(field.at.key, `${agg} counts documents: it takes no field`)
+      return undefined
+    }
+    const filter = texts.get('query')
+    if (filter) {
+      let v: unknown
+      try {
+        v = JSON.parse(filter.text.replace(TEMPLATE, 'x'))
+      } catch {
+        v = undefined
+      }
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        this.report.error(
+          filter.at.value,
+          'the query is Elasticsearch query JSON, an argument inside its texts',
+          `'{"term": {"service": "{{ args.service }}"}}'`,
+        )
+        return undefined
+      }
+    }
+    const time = texts.get('time')?.text ?? '@timestamp'
+    return (args) => {
+      const plain = (s: string) => s.replace(TEMPLATE, (_, a: string) => args.get(a) ?? '')
+      const escaped = (s: string) =>
+        s.replace(TEMPLATE, (_, a: string) => JSON.stringify(args.get(a) ?? '').slice(1, -1))
+      return JSON.stringify({
+        index: plain(index.text),
+        time: plain(time),
+        agg,
+        ...(field && { field: plain(field.text) }),
+        ...(filter && { query: JSON.parse(escaped(filter.text)) }),
+      })
     }
   }
 

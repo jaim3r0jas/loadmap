@@ -1,4 +1,5 @@
 import type { TimeSeries } from '@loadmap/core'
+import { endpoint, unreachable } from './http'
 import type { Provider, ProviderQuery, ProviderResult } from './pull'
 
 export interface PrometheusOptions {
@@ -27,21 +28,11 @@ interface QueryRange {
  */
 export function prometheus(o: PrometheusOptions): Provider {
   const get = o.fetch ?? fetch
-  // a user and password in the address go in the header: fetch refuses them in a URL, and repeats the URL saying so
-  let base: URL
-  try {
-    base = new URL(o.url.endsWith('/') ? o.url : `${o.url}/`)
-  } catch {
-    // never the text itself: it may hold a password
-    throw new Error('loadmap: the Prometheus address is not a URL')
-  }
-  const user = o.user ?? (base.username ? decodeURIComponent(base.username) : undefined)
-  const password = o.password ?? decodeURIComponent(base.password)
-  base.username = ''
-  base.password = ''
-  const headers: Record<string, string> = { accept: 'application/json' }
-  if (o.token) headers.authorization = `Bearer ${o.token}`
-  else if (user != null) headers.authorization = `Basic ${btoa(`${user}:${password}`)}`
+  const { base, headers } = endpoint('Prometheus', o.url, {
+    ...(o.user != null && { user: o.user }),
+    ...(o.password != null && { password: o.password }),
+    ...(o.token && { header: `Bearer ${o.token}` }),
+  })
   return {
     id: 'prometheus',
     async read(q: ProviderQuery): Promise<ProviderResult> {
@@ -51,9 +42,7 @@ export function prometheus(o: PrometheusOptions): Provider {
       try {
         res = await get(url, { headers })
       } catch (err) {
-        // the code, never the message: a message may name the host or worse
-        const code = (err as { cause?: { code?: unknown } })?.cause?.code
-        return { error: `Prometheus cannot be reached${typeof code === 'string' ? ` (${code})` : ''}` }
+        return unreachable('Prometheus', err)
       }
       let body: QueryRange | undefined
       try {

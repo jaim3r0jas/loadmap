@@ -17,7 +17,7 @@ import {
   type Span,
   signatureHelp,
 } from '@loadmap/dsl'
-import { BOXES, type Decl, parse, Reporter, STAGES } from '@loadmap/dsl/internal'
+import { BOXES, type Decl, parse, Reporter, SCHEMA, STAGES } from '@loadmap/dsl/internal'
 
 /**
  * `loadmap lsp`: the language server protocol over standard input and output, for any editor that speaks it. The
@@ -398,7 +398,8 @@ function toLsp(d: Doc, x: Diagnostic) {
 function outline(d: Doc) {
   const symbol = (s: Decl): object | null => {
     const k = s.keyword.name
-    if (k === 'loadmap' || k === 'points' || k === 'prometheus') return null
+    // a metric's provider block is part of the metric, not a name of its own
+    if (k === 'loadmap' || k === 'points' || SCHEMA.metric!.children.includes(k)) return null
     const first = s.args[0]
     const name = first?.t === 'id' ? first.name : first?.t === 'str' ? first.value : k
     const children = (BOXES as readonly string[]).includes(k)

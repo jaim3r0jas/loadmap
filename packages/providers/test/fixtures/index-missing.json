@@ -1,0 +1,9 @@
+{
+  "error": {
+    "root_cause": [{ "type": "index_not_found_exception", "reason": "no such index [logs-x]", "index": "logs-x" }],
+    "type": "index_not_found_exception",
+    "reason": "no such index [logs-x]",
+    "index": "logs-x"
+  },
+  "status": 404
+}

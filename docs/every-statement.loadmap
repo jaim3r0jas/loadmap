@@ -72,9 +72,13 @@ metric ordersPlaced "Orders placed" {
 metric apiCpu "API CPU" {
   prometheus { query: 'sum(rate(container_cpu_usage_seconds_total{pod=~"api-.*"}[5m]))' }
 }
+metric signupsLogged "Signups logged" {
+  elasticsearch { index: "events-*"; query: '{"term": {"event": "signup"}}'; agg: rate }
+}
 # without a snapshot, each is its fallback
 measure orderRate ordersPlaced { shop: "main"; fallback: 50; unit: "orders/s" }
 measure apiCoresNow apiCpu { fallback: 0.5; unit: "cores" }
+measure signupRate signupsLogged { fallback: 0.0002; unit: "signups/s" }
 
 flow orders "orders" {
   unit: "order"
