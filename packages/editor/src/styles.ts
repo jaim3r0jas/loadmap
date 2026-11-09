@@ -39,7 +39,7 @@ export const EDITOR_CSS = `
 .lme-item small { grid-column: 1; color: var(--lm-muted); font-size: .76rem; line-height: 1.35; }
 .lme-item:hover, .lme-item:focus { background: var(--lm-accent-soft); outline: none; }
 .lme-item:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
-.lme-item[role="menuitemradio"] { padding-left: 30px; position: relative; }
+.lme-item:is([role="menuitemradio"], [role="menuitemcheckbox"]) { padding-left: 30px; position: relative; }
 .lme-item[aria-checked="true"]::before { content: "✓" / ""; position: absolute; left: 11px; top: 6px; color: var(--lm-accent); font-weight: 700; }
 .lme-mh { padding: 8px 10px 4px; font: 700 .68rem var(--lm-font); letter-spacing: .07em; text-transform: uppercase; color: var(--lm-muted); }
 .lme-menu > [role="group"] + *, .lme-menu > * + [role="group"] { margin-top: 4px; padding-top: 2px; border-top: 1px solid var(--lm-line); }
@@ -121,6 +121,9 @@ export const EDITOR_CSS = `
 .lme-capacity { gap: 6px; }
 .lme-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
 .lme-row > :last-child:nth-child(2) { grid-column: 2 / 4; }
+.lme-lane > .lme-row { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.lme-lane input[type="color"] { width: 36px; height: 24px; padding: 1px; border: 1px solid var(--lm-line); border-radius: 4px; background: var(--lm-surface); cursor: pointer; }
+.lme-lane .lm-btn { margin-left: auto; padding: 3px 10px; }
 .lme-formula { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .lme-formula code { font: 12px/1.4 var(--lm-mono); color: var(--lm-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .lme-formula input[type="text"] { width: auto; font-family: var(--lm-mono); }
@@ -144,7 +147,10 @@ export const EDITOR_CSS = `
 .lme[data-canvas] .lme-preview > .lme-empty { margin: 72px 24px 0; }
 .lme-canvas { position: absolute; inset: 0 var(--lme-r) 0 0; container: lme-canvas / inline-size; }
 .lme-canvas > .lm-wrap { position: absolute; inset: 0; }
-.lme-canvas .lm-board { height: 100%; border: 0; border-radius: 0; background-color: var(--lm-bg); background-image: radial-gradient(color-mix(in srgb, var(--lm-muted) 30%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
+.lme-canvas .lm-board { height: 100%; border: 0; border-radius: 0; background-color: var(--lm-bg); }
+.lme-canvas:not([data-grid="off"]) .lm-board { background-image: radial-gradient(color-mix(in srgb, var(--lm-muted) 30%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
+/* the grid shows through the lanes; an export, which drops the classes, keeps them whole */
+.lme-canvas:not([data-grid="off"]) .lm-tier > [data-lane] { fill-opacity: .55; }
 .lme-over { position: absolute; z-index: 2; left: 0; right: 0; display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
 .lme-over > * { pointer-events: auto; max-width: min(760px, 100%); }
 .lme-over > .lm-loadbar { flex: 1 1 auto; position: static; }

@@ -196,6 +196,17 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         doc: 'The highest load multiple the limits search. Default 2000.',
       },
+      lanes: {
+        value: 'enum',
+        scope: 'const',
+        values: ['filled', 'striped'],
+        doc: 'filled (the default): every lane in two alternating shades; striped: every other one clear.',
+      },
+      grid: {
+        value: 'boolean',
+        scope: 'const',
+        doc: "The editor's dot grid. Default true.",
+      },
     },
     children: [
       'loadmap',
@@ -517,7 +528,18 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       { name: 'id', kind: 'id' },
       { name: 'label', kind: 'text', optional: true },
     ],
-    props: {},
+    props: {
+      fill: {
+        value: 'string',
+        scope: 'const',
+        doc: 'The lane\'s own colour: "#rrggbb", "rgb(…)" or "hsl(…)".',
+      },
+      fillDark: {
+        value: 'string',
+        scope: 'const',
+        doc: "Its colour in the dark theme. Default: fill's hue, as dark as the theme's lanes.",
+      },
+    },
     children: [],
   },
   node: {

@@ -94,6 +94,9 @@ export interface SceneTier extends Box {
   spacing: number
   /** Running down, each line reads up the band's left side, ending at its spot. */
   vertical: boolean
+  /** The tier's own fills (`TierDef`), when it has them. */
+  fill?: string
+  fillDark?: string
 }
 
 export interface LayoutOptions {
@@ -839,14 +842,23 @@ function lanes(laid: Laid, frame: Frame, view: View, measure: TextMeasure): { l:
     const after = spans.slice(i + 1).find((x) => x != null)
     const a = before ? (before[1] + span[0]) / 2 : 0
     const b = after ? (span[1] + after[0]) / 2 : length
-    const label = (view.def.tiers ?? {})[id]?.label ?? id
-    return [{ id, a, b, lines: wrap(label.toUpperCase(), b - a - 2 * TIER_PAD, measure) }]
+    const def = view.def.tiers?.[id]
+    const lines = wrap((def?.label ?? id).toUpperCase(), b - a - 2 * TIER_PAD, measure)
+    return [
+      {
+        id,
+        a,
+        b,
+        lines,
+        paint: { ...(def?.fill && { fill: def.fill }), ...(def?.fillDark && { fillDark: def.fillDark }) },
+      },
+    ]
   })
   if (!named.length) return { l: laid, tiers: [] }
   const count = Math.max(...named.map((t) => t.lines.length))
   const head = HEAD + (count - 1) * HEAD_LINE
   const l = moved(laid, head - HEAD, down)
-  const tiers = named.map(({ id, a, b, lines }): SceneTier => {
+  const tiers = named.map(({ id, a, b, lines, paint }): SceneTier => {
     const box = down ? { x: 0, y: a, w: l.width, h: b - a } : { x: a, y: 0, w: b - a, h: l.height }
     return {
       id,
@@ -860,6 +872,7 @@ function lanes(laid: Laid, frame: Frame, view: View, measure: TextMeasure): { l:
       }),
       spacing: TIER_SPACING,
       vertical: down,
+      ...paint,
     }
   })
   return { l, tiers }

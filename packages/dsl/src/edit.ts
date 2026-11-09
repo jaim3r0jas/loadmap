@@ -122,10 +122,94 @@ export function edit(source: string, key: string, value: EditValue, options?: Co
   if (!entry) return { error: `nothing to change at "${key}"` }
   const changes = entry.apply(key.slice(base.length), value)
   if (typeof changes === 'string') return { error: changes }
+  return checked(source, changes, options)
+}
+
+/**
+ * The text with a property of the definition (`path` '') or of a statement at the top (`tier:data`) set, written or
+ * taken out (`null`): a new one goes after the statement's last property, in a block of its own when it has none; a
+ * block goes with its last line. Refused, as `edit()` is, when the result would not compile.
+ */
+export function setProperty(
+  source: string,
+  path: string,
+  name: string,
+  value: string | boolean | null,
+  options?: CompileOptions,
+): EditResult {
+  const { doc, report } = parse(source)
+  if (report.failed) return { error: 'the text has a syntax error' }
+  const [keyword = '', id] = path.split(':')
+  const d = doc.body.find(
+    (x): x is Decl => x.kind === 'decl' && x.keyword.name === keyword && x.args[0]?.t === 'id' && x.args[0].name === id,
+  )
+  if (path && !d) return { error: `nothing at "${path}"` }
+  const spec = own(own(SCHEMA, keyword)?.props ?? {}, name)
+  if (!spec) return { error: `${keyword || 'a definition'} has no ${name}` }
+  const body = d ? (d.body ?? []) : doc.body
+  const props = body.filter((x): x is Property => x.kind === 'prop')
+  const at = props.find((x) => x.key.name === name)
+  if (value !== null) {
+    const ok =
+      spec.value === 'boolean'
+        ? typeof value === 'boolean'
+        : spec.value === 'enum'
+          ? spec.values!.includes(value as string)
+          : spec.value === 'string' && typeof value === 'string'
+    if (!ok) return { error: spec.value === 'enum' ? `one of ${spec.values!.join(', ')}` : `a ${spec.value}` }
+  }
+  const text =
+    value === null || typeof value === 'boolean' || spec.value === 'enum'
+      ? String(value)
+      : writer(source).quote(value, at?.value.t === 'str' ? at.value : undefined)
+  const line = (i: number): [number, number] => [
+    source.lastIndexOf('\n', i - 1) + 1,
+    source.indexOf('\n', i) + 1 || source.length,
+  ]
+  let changes: TextChange[]
+  if (at && value !== null) changes = [replace(at.value, text)]
+  else if (at && d?.bodySpan && body.length === 1)
+    changes = [{ from: d.args.at(-1)!.to, to: d.bodySpan.to, insert: '' }]
+  else if (at) {
+    // from its first line to its last: a value may run over several
+    const [a, b] = [line(at.from)[0], line(at.to)[1]]
+    const alone = !source.slice(a, at.from).trim() && /^\s*(#.*)?$/.test(source.slice(at.to, b))
+    // on a line with others, its "; " goes with it
+    const after = /^\s*;\s*/.exec(source.slice(at.to))
+    const before = /;\s*$/.exec(source.slice(0, at.from))
+    changes = [
+      alone
+        ? { from: a, to: b, insert: '' }
+        : after
+          ? { from: at.from, to: at.to + after[0].length, insert: '' }
+          : { from: at.from - (before?.[0].length ?? 0), to: at.to, insert: '' },
+    ]
+  } else if (value === null) changes = []
+  else if (d && !d.bodySpan) changes = [{ from: d.to, to: d.to, insert: ` { ${name}: ${text} }` }]
+  else {
+    const last = props.at(-1)
+    const close = d?.bodySpan ? d.bodySpan.to - 1 : -1
+    if (last && d && line(last.from)[0] === line(close)[0])
+      changes = [{ from: last.to, to: last.to, insert: `; ${name}: ${text}` }]
+    else if (last) {
+      const [a, b] = [line(last.from)[0], line(last.to)[1]]
+      const indent = /^[ \t]*/.exec(source.slice(a))![0]
+      changes = [{ from: b, to: b, insert: `${source[b - 1] === '\n' ? '' : '\n'}${indent}${name}: ${text}\n` }]
+    } else if (d) changes = [{ from: d.bodySpan!.from, to: d.bodySpan!.to, insert: `{ ${name}: ${text} }` }]
+    else {
+      const first = doc.body.find((x) => !(x.kind === 'decl' && x.keyword.name === 'loadmap'))
+      const a = first ? line(first.from)[0] : source.length
+      changes = [{ from: a, to: a, insert: `${name}: ${text}\n` }]
+    }
+  }
+  return checked(source, changes, options)
+}
+
+/** The changes applied, refused for an error they bring, not for one the text already had. */
+function checked(source: string, changes: TextChange[], options?: CompileOptions): EditResult {
   changes.sort((a, b) => b.from - a.from)
   let next = source
   for (const c of changes) next = next.slice(0, c.from) + c.insert + next.slice(c.to)
-  // refused for an error it brings, not for one the text already had
   const errors = (src: string) =>
     compile(src, options)
       .diagnostics.filter((d) => d.severity === 'error')

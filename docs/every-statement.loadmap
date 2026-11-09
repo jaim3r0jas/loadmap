@@ -10,6 +10,8 @@ transition: 0.8
 fullScreen: [verdict, live, limits, controls]
 fullScreenMode: focus
 searchMax: 120
+lanes: filled
+grid: true
 assume: "1× is today's busiest hour; the numbers are made up."
 
 thresholds { target: 0.7; full: 1 }
@@ -85,7 +87,7 @@ flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> ap
 # bands across the flow, in the order the flow meets them; a box without a tier stands in the tier of what feeds it
 tier edge "Edge"
 tier services "Services"
-tier data "Data"
+tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }
 
 node users "Users" "web and app"
 

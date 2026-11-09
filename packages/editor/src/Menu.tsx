@@ -197,29 +197,31 @@ export function Menu({
 }
 
 /**
- * One choice in a menu, or a row in the phone's sheet (`sheet`). With `checked` it is one of a set (the theme). The
- * hint is a second line, said after the name.
+ * One choice in a menu, or a row in the phone's sheet (`sheet`). With `checked` it is one of a set (the theme), or
+ * with `toggle` a switch of its own (the lanes' fills). The hint is a second line, said after the name.
  */
 export function MenuItem({
   children,
   hint,
   checked,
+  toggle,
   sheet,
   onSelect,
 }: {
   children: ReactNode
   hint?: string
   checked?: boolean
+  toggle?: boolean
   sheet?: boolean
   onSelect: () => void
 }) {
   const id = useId()
   return (
-    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: with `checked` its role is menuitemradio, which has it
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: with `checked` its role is menuitemradio or menuitemcheckbox, which have it
     <button
       type="button"
       className="lme-item"
-      role={sheet ? undefined : checked == null ? 'menuitem' : 'menuitemradio'}
+      role={sheet ? undefined : checked == null ? 'menuitem' : toggle ? 'menuitemcheckbox' : 'menuitemradio'}
       aria-checked={checked}
       // the name alone, the hint said after it
       aria-labelledby={hint ? `${id}n` : undefined}

@@ -168,6 +168,18 @@ export function drawTitle(ctx: CanvasRenderingContext2D, handle: LoadmapHandle, 
 
 const PAINT = ['fill', 'stroke', 'color'] as const
 
+let pixel: CanvasRenderingContext2D | undefined
+/** A computed colour as rgb(): one in oklch() (a lane's derived dark) is not read by every SVG viewer. */
+function srgb(c: string): string {
+  if (!/^(oklch|oklab|lch|lab|color)\(/.test(c)) return c
+  pixel ??= document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+  pixel.clearRect(0, 0, 1, 1)
+  pixel.fillStyle = c
+  pixel.fillRect(0, 0, 1, 1)
+  const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data
+  return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${+(a! / 255).toFixed(3)})`
+}
+
 /** The viewBox a file of the board takes: what the camera frames, never the view the reader panned or zoomed to. */
 export function sceneBox(handle: LoadmapHandle): string {
   const { camera, frame } = handle.engine
@@ -190,9 +202,14 @@ export function standalone(svg: SVGSVGElement, w: number, h: number, box?: strin
     const out = dst[i] as SVGElement
     for (const p of PAINT) {
       const a = out.getAttribute(p)
-      if (a && (a.includes('var(') || a === 'currentColor')) out.setAttribute(p, cs.getPropertyValue(p))
+      if (a && (a.includes('var(') || a === 'currentColor')) out.setAttribute(p, srgb(cs.getPropertyValue(p)))
     }
     if (out.style?.color) out.style.color = cs.color
+    // a lane's own colours, for each theme: the one the page shows
+    if (out.style?.fill) {
+      out.setAttribute('fill', srgb(cs.fill))
+      out.style.removeProperty('fill')
+    }
     // what the page adds for readers has no place in a file
     for (const a of ['tabindex', 'aria-describedby', 'class']) out.removeAttribute(a)
   })

@@ -66,6 +66,10 @@ export interface FlowView<N extends string = string> {
 /** A band the diagram is cut into across the flow (edge, app, data), in the order the flow meets them. */
 export interface TierDef {
   label: string
+  /** The lane's own fill in place of the theme's: a CSS colour (a definition's text takes hex, `rgb()` or `hsl()`). */
+  fill?: string
+  /** Its fill in the dark theme, also without `fill` (light keeps the theme's). Default: `fill`'s hue, as dark as the theme's lanes. */
+  fillDark?: string
 }
 
 export interface ViewDef<F extends string, S extends string, N extends string, T extends string = string> {
@@ -85,6 +89,8 @@ export interface ViewDef<F extends string, S extends string, N extends string, T
    * a range control moves one either way.
    */
   layout?: 'compact' | 'stable'
+  /** `filled` (the default) gives every lane a fill, alternating two shades; `striped` leaves every other one clear. */
+  lanes?: 'filled' | 'striped'
 }
 
 export interface View<F extends string = string, S extends string = string, N extends string = string> {

@@ -117,7 +117,7 @@ export function EditorCanvas({
   } as React.CSSProperties
   return (
     <LoadmapRoot lm={lm} theme={look}>
-      <div className="lme-canvas" style={free}>
+      <div className="lme-canvas" style={free} data-grid={def.options.grid === false ? 'off' : undefined}>
         <Diagram lm={lm} canvas={{ top, bottom }} onNodeClick={onNodeClick} selected={selected} />
         {note && <div className="lme-over lme-over-note">{note}</div>}
         {phone ? (

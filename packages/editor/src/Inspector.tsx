@@ -24,13 +24,24 @@ export interface InspectorProps {
   gone?: boolean
   /** Lets go of the box: on a phone the panel shrinks back to its hint. */
   onClose?: () => void
+  /** The tiers, with the fills of their own, for the model's tab. */
+  lanes?: Lane[]
+  /** Gives a tier's lane a fill, light or dark, or takes both out (null); returns why it was refused, or null. */
+  onLane?: (id: string, key: 'fill' | 'fillDark' | null, value: string | null) => string | null
+}
+
+export interface Lane {
+  id: string
+  label: string
+  fill?: string
+  fillDark?: string
 }
 
 /**
  * The fields of a box or of the model, for a reader who does not read the text. Every change goes back to the text
  * as the smallest edit; a change the definition would not take is refused under its field.
  */
-export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClose }: InspectorProps) {
+export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClose, lanes, onLane }: InspectorProps) {
   // Close goes away when pressed: the focus moves to the panel, not to the page
   const self = useRef<HTMLElement>(null)
   return (
@@ -77,6 +88,14 @@ export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClo
           {inspection.sections.map((s) => (
             <Section key={s.path} s={s} onEdit={onEdit} />
           ))}
+          {tab === 'model' && onLane && !!lanes?.length && (
+            <fieldset className="lme-section" data-keyword="lanes">
+              <legend>Lanes</legend>
+              {lanes.map((l) => (
+                <LaneFill key={l.id} l={l} onLane={onLane} />
+              ))}
+            </fieldset>
+          )}
         </>
       )}
     </aside>
@@ -196,6 +215,65 @@ function Field({ f, onEdit }: { f: InspectField; onEdit: InspectorProps['onEdit'
         </small>
       )}
     </div>
+  )
+}
+
+/**
+ * A colour picker shows #rrggbb only: #rgb is spelled out, and rgb(), hsl() or no colour of its own start from the
+ * theme's default lane (`--lm-tier-base`, light and dark).
+ */
+const hex = (c: string | undefined, theme: string) =>
+  !c ? theme : /^#[0-9a-f]{6}$/i.test(c) ? c : /^#[0-9a-f]{3}$/i.test(c) ? c.replace(/[0-9a-f]/gi, '$&$&') : theme
+
+/** A tier's lane in a colour of its own, light and dark: each picked colour written when the picker closes. */
+function LaneFill({ l, onLane }: { l: Lane; onLane: NonNullable<InspectorProps['onLane']> }) {
+  const [error, setError] = useState<string | null>(null)
+  const id = useId()
+  // Reset goes away when pressed: the focus moves to the lane, not to the page
+  const self = useRef<HTMLFieldSetElement>(null)
+  // the picker says "change" once the colour is picked, React's onChange on every move of it
+  const picker = (key: 'fill' | 'fillDark') => (el: HTMLInputElement | null) => {
+    if (el) el.onchange = () => setError(onLane(l.id, key, el.value))
+  }
+  return (
+    <fieldset className="lme-field lme-lane" data-key={`tier:${l.id}`} data-kind="lane" ref={self} tabIndex={-1}>
+      <legend>{l.label}</legend>
+      <div className="lme-row">
+        <label htmlFor={`${id}l`}>Light</label>
+        <input
+          id={`${id}l`}
+          type="color"
+          key={`l${l.fill}`}
+          defaultValue={hex(l.fill, '#f4f7fa')}
+          ref={picker('fill')}
+        />
+        <label htmlFor={`${id}d`}>Dark</label>
+        <input
+          id={`${id}d`}
+          type="color"
+          key={`d${l.fillDark}`}
+          defaultValue={hex(l.fillDark, '#1b2530')}
+          ref={picker('fillDark')}
+        />
+        {(l.fill || l.fillDark) && (
+          <button
+            type="button"
+            className="lm-btn"
+            onClick={() => {
+              self.current?.focus()
+              setError(onLane(l.id, null, null))
+            }}
+          >
+            Reset
+          </button>
+        )}
+      </div>
+      {error && (
+        <small className="lme-error" role="alert">
+          {error}
+        </small>
+      )}
+    </fieldset>
   )
 }
 
