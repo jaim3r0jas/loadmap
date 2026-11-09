@@ -33,6 +33,13 @@ an error or an expectation fails, 0 when everything holds; a severity: warn line
   --dry-run             report everything, the annotations and the job summary, and exit 0
   --json <file>         write the run's result: outcomes, reasons, headroom, the window, the commit
   --commit <sha>        the commit the result is keyed by (default GITHUB_SHA)
+  --base <ref>          compare each definition with itself at a git ref (origin/main), against the same data: it
+                        fails when the first limit's headroom drops by more than --tolerance, the first limit moves
+                        to another component without more headroom, or a component crosses the target or 100 %
+                        from below at today's load
+  --tolerance <t>       how much headroom a change may lose: "10%" (the default) or load multiples ("0.5×")
+  --accept <reason>     a deliberate loss: what --base finds is reported as warnings, with the reason
+  --comment <file>      write the pull request comment (Markdown, behind a marker a workflow updates it by)
 
 fmt lays each definition out the one way, in place: two spaces a block, a statement a line, one space around
 operators; numbers, texts and formulas stay as written. A file with a syntax error is left alone (exit 1).

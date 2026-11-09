@@ -170,6 +170,101 @@ limit and each component's utilization and headroom; `--format json` prints it i
 loadmap check shop.loadmap --pull --window 7d --json result.json   # LOADMAP_PROMETHEUS_URL and its token from CI secrets
 ```
 
+`--base <ref>` compares each definition with itself at a git ref, both against the same data (a pull reads the
+measures of both). It fails when the first limit's headroom drops by more than `--tolerance` (`10%` by default, or
+load multiples: `0.5×`), when the first limit moves to another component without more headroom, or when a component
+crosses the target or 100 % from below at today's load, so a design already over its limit does not block every later
+change. Each of those is an annotation on the line of the component it is about. `--accept "<reason>"` turns them
+into warnings for a deliberate trade-off; the comment and the summary still say so. `--comment <file>` writes the pull
+request comment: one sentence ("The first limit moves from the database at 3.1× to the cache at 1.4×, and runs out in
+March 2027 instead of November 2027."), what fails, a table of each component's headroom before and after, and the
+assumptions with where each number comes from, behind a marker a workflow finds it by again.
+
+A workflow that runs it on every pull request, and keeps one comment up to date. The check job reads the secrets; the
+comment job alone may write to the pull request. A pull request from a fork gets no secrets: it checks against the
+snapshot committed next to the definition, gets no comment, and its job summary says so. The `capacity-accepted`
+label is the approval path: adding or taking it off runs the check again.
+
+```yaml
+# loadmap check on every pull request: the change against its base, on fresh data. A label runs it again.
+# No paths filter: a required check must report on every pull request, or one that touches no definition never merges.
+name: capacity
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base, for --base
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci # @loadmap/cli pinned by the lockfile
+      - env:
+          LOADMAP_PROMETHEUS_URL: ${{ secrets.LOADMAP_PROMETHEUS_URL }}
+          LOADMAP_PROMETHEUS_TOKEN: ${{ secrets.LOADMAP_PROMETHEUS_TOKEN }}
+          BASE: origin/${{ github.base_ref }}
+          FORK: ${{ github.event.pull_request.head.repo.fork }}
+          ACCEPTED: ${{ contains(github.event.pull_request.labels.*.name, 'capacity-accepted') }}
+        run: |
+          args=(capacity.loadmap --base "$BASE" --comment comment.md --json result.json)
+          if [ "$FORK" = true ]; then
+            echo "A pull request from a fork gets no secrets: checked against the committed snapshot." >> "$GITHUB_STEP_SUMMARY"
+            args+=(--snapshot capacity.snapshot.json)
+          else
+            args+=(--pull)
+          fi
+          if [ "$ACCEPTED" = true ]; then args+=(--accept "the capacity-accepted label"); fi
+          npx loadmap check "${args[@]}"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capacity-${{ github.sha }}
+          path: |
+            result.json
+            capacity.snapshot.json
+            comment.md
+
+  comment:
+    needs: check
+    if: ${{ !cancelled() && !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: capacity-${{ github.sha }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        # one comment, found again by its marker and its author and updated in place
+        run: |
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[]
+            | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- loadmap-check -->"))) | .id' \
+            | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@comment.md
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -F body=@comment.md
+          fi
+```
+
+Make `check` a required status check in the branch's rules, and a failure blocks the merge. Notifications beyond the
+comment (Slack, email) go through the CI's own means: a step after the check with `if: failure()`.
+
 ### Published figures
 
 A **published** statement takes a capacity from the component catalog: the figure published for a component, under
