@@ -135,7 +135,7 @@ node db "Postgres" "primary" {
 component conns "Postgres connections" {
   on: db
   held: 0.02
-  capacity: configured(100, "connections", "pool size")
+  capacity: configured(200, "connections", "pool size")
   over: "orders wait for a connection"
   describe: "each order holds one for 20 ms"
 }
