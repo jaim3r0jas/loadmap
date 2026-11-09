@@ -16,6 +16,7 @@ import {
   window,
   workspace,
 } from 'vscode'
+import { Edits } from './edits'
 import { type FromPreview, ID, type ParamValue, type PreviewState, type Shown, type ToPreview } from './protocol'
 
 export const VIEW_TYPE = 'loadmap.preview'
@@ -37,6 +38,10 @@ export class Preview {
   /** The cursor move answered last: a slower outline for an older one must not win. */
   private moves = 0
   private outline: { uri: string; version: number; boxes: Promise<DocumentSymbol[]> } | undefined
+  /** Track live changes: the edits the preview has not followed yet, and the boxes it showed last. */
+  private tracking = Preview.trackSetting()
+  private edits = new Edits('')
+  private changed: string[] = []
   private readonly listening: Disposable[] = []
 
   constructor(private readonly context: ExtensionContext) {
@@ -51,7 +56,12 @@ export class Preview {
         },
       }),
       workspace.onDidChangeTextDocument((e) => {
-        if (this.follows(e.document)) this.later()
+        if (!this.follows(e.document) || !e.contentChanges.length) return
+        if (this.tracking) this.edits.apply(e.contentChanges, e.document.getText(), e.document.version)
+        this.later()
+      }),
+      workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('loadmap.preview.trackChanges')) this.track(Preview.trackSetting())
       }),
       window.onDidChangeActiveTextEditor((editor) => {
         if (this.panel && editor?.document.languageId === 'loadmap') this.follow(editor.document)
@@ -101,6 +111,31 @@ export class Preview {
     return { doc, values: this.follows(doc) ? ((await this.shown())?.values ?? {}) : {} }
   }
 
+  /** The document the preview shows and the box selected on it, for a pick made over the preview. */
+  async target(): Promise<{ doc: TextDocument; box?: string } | undefined> {
+    const doc = this.doc
+    if (!this.panel || !doc) return undefined
+    const box = (await this.shown())?.selected
+    return box ? { doc, box } : { doc }
+  }
+
+  /** The boxes the preview showed last as changed by an edit. */
+  get tracked(): readonly string[] {
+    return this.changed
+  }
+
+  static trackSetting(): boolean {
+    return workspace.getConfiguration('loadmap').get<boolean>('preview.trackChanges') === true
+  }
+
+  private track(on: boolean) {
+    if (on === this.tracking) return
+    this.tracking = on
+    // the edits made while it did not track are not followed; the next one is, from what the preview draws now
+    this.edits.reset(this.doc?.getText() ?? '', false)
+    this.post({ type: 'track', on })
+  }
+
   private get root() {
     return Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
   }
@@ -128,6 +163,7 @@ export class Preview {
 
   private follow(doc: TextDocument) {
     this.doc = doc
+    this.edits.reset(doc.getText())
     this.selected = null
     this.moves++
     if (this.panel) this.panel.title = `Preview ${basename(doc.uri.path)}`
@@ -147,6 +183,8 @@ export class Preview {
       uri: this.doc.uri.toString(),
       source: this.doc.getText(),
       name: basename(this.doc.uri.path),
+      version: this.doc.version,
+      edits: this.edits.take(),
     })
   }
 
@@ -187,8 +225,17 @@ export class Preview {
   }
 
   private async receive(m: FromPreview) {
-    if (m?.type === 'ready') this.send()
-    else if (m?.type === 'state' && typeof m.request === 'number') {
+    if (m?.type === 'ready') {
+      this.post({ type: 'track', on: this.tracking })
+      this.send()
+    } else if (m?.type === 'tracked' && Number.isSafeInteger(m.version)) {
+      // a late answer about the document shown before follows nothing here
+      if (m.uri !== this.doc?.uri.toString()) return
+      this.edits.tracked(m.version)
+      this.changed = Array.isArray(m.boxes)
+        ? m.boxes.filter((b): b is string => typeof b === 'string' && ID.test(b))
+        : []
+    } else if (m?.type === 'state' && typeof m.request === 'number') {
       const values: Record<string, ParamValue> = {}
       for (const [k, v] of Object.entries(m.values && typeof m.values === 'object' ? m.values : {}))
         if (ID.test(k) && ['number', 'string', 'boolean'].includes(typeof v)) values[k] = v
@@ -241,6 +288,10 @@ export class Preview {
   #root { display: flex; flex-direction: column; }
   #root > .lm { --lm-root-bg: var(--vscode-editor-background); flex: none; }
   #root > .lm[data-full="fill"] { flex: 1; min-height: 0; height: auto; }
+  /* what an edit changed, tracked: a glow that fades; with reduced motion it stays still until it goes */
+  #root [data-node][data-changed] { animation: lmv-changed 1.6s ease-out; }
+  @keyframes lmv-changed { 0%, 35% { filter: drop-shadow(0 0 6px var(--lm-accent)); } to { filter: none; } }
+  @media (prefers-reduced-motion: reduce) { #root [data-node][data-changed] { animation: none; filter: drop-shadow(0 0 4px var(--lm-accent)); } }
   .lmv-empty { font: 13px var(--vscode-font-family); color: var(--vscode-descriptionForeground); padding: 16px; }
 </style>
 </head>

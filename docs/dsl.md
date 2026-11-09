@@ -509,8 +509,9 @@ links: `#v1.` followed by the text deflated and base64url-encoded, then the valu
 In **VS Code** (and Cursor, VSCodium and the other editors on Open VSX), install the extension **loadmap**
 (`jaim3r0jas.loadmap`, from the Marketplace or Open VSX). It brings the language server below, highlighting, and a
 live preview beside the text: **loadmap: Open Preview to the Side** (Ctrl+K V, ⌘K V on a Mac) draws the file as you
-type, a click on a box selects its declaration, and **Copy Share Link** opens the text in this editor. Nothing else to
-install; `loadmap.server.path` runs a project's own `loadmap` instead.
+type, a click on a box selects its declaration, the eye over it tracks live changes (the boxes each edit changed come
+into view and glow), **loadmap: Add from the Catalog…** writes a component's published figure, and **Copy Share Link**
+opens the text in this editor. Nothing else to install; `loadmap.server.path` runs a project's own `loadmap` instead.
 
 `loadmap lsp` (in `@loadmap/cli`) speaks the language server protocol over standard input and output, so an editor
 that speaks it gets the help the docs' editor has: errors and failing `expect` lines as you type, completion with

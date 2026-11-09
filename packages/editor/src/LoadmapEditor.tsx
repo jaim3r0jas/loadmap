@@ -35,12 +35,15 @@ import {
 import {
   type AddResult,
   addPublished,
+  changedBoxes,
+  type Drawn,
   type EditValue,
   edit,
   fingerprint,
   inspect,
   latestEdition,
   pageOptions,
+  type Range,
   setProperty,
 } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
@@ -67,7 +70,6 @@ import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
-import { changedBoxes, type Drawn, type Range } from './track'
 
 /** What a page can drive from outside. */
 export interface LoadmapEditorHandle {
