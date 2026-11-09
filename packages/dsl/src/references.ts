@@ -129,7 +129,7 @@ class NameIndex {
     const ids = (...kinds: DslSymbol['kind'][]) => this.symbols.filter((s) => kinds.includes(s.kind)).map((s) => s.id)
     const key = this.entity(at)
     if (key.startsWith('box:') || at.space === 'stage') return new Set(ids('node', 'stage', 'component'))
-    if (at.space === 'formula') return new Set([...ids('param', 'let', 'fit'), 'load'])
+    if (at.space === 'formula') return new Set([...ids('param', 'let', 'fit', 'published'), 'load'])
     return new Set(ids(at.space as DslSymbol['kind']))
   }
 
@@ -155,7 +155,8 @@ class NameIndex {
         if (!prop && spec.open) {
           const k = s.key.name
           if (spec.open.names === 'flows') this.add('flow', s.key, k)
-          else if (k !== 'load') this.add('formula', s.key, k)
+          // a catalog condition is no name of the definition
+          else if (k !== 'load' && spec.open.names !== 'conditions') this.add('formula', s.key, k)
           this.expr(s.value)
           continue
         }
@@ -180,7 +181,7 @@ class NameIndex {
         const k = s.keyword.name
         const id = s.args[0]?.t === 'id' ? s.args[0] : undefined
         if (id) {
-          if (k === 'param' || k === 'let' || k === 'fit') this.add('formula', id, id.name, true)
+          if (k === 'param' || k === 'let' || k === 'fit' || k === 'published') this.add('formula', id, id.name, true)
           else if (k === 'flow' || k === 'tier' || k === 'component') this.add(k, id, id.name, true)
           else if ((BOXES as readonly string[]).includes(k)) this.add('node', id, id.name, true)
           else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)

@@ -1,6 +1,6 @@
 // The page `loadmap record x.loadmap` records: it draws the definition the command serves next to it and exposes
 // the board. The command has already compiled it in Node, so errors here are only a safety net.
-import { compile, formatDiagnostic } from '@loadmap/dsl'
+import { compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
 import { expose } from '@loadmap/export'
 import { Loadmap, type LoadmapHandle } from '@loadmap/react'
@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client'
 
 const source = await (await fetch('definition.loadmap')).text()
 const root = document.getElementById('root')!
+await loadCatalogFor(source)
 const r = compile(source)
 if (!r.ok || !r.definition) {
   const pre = document.createElement('pre')

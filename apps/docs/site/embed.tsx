@@ -2,7 +2,7 @@
 // The query picks how it shows (?mode=focus|panels&panels=verdict,controls&theme=auto|light|dark&play=1); the fragment
 // is the editor's share link, which never reaches the server. The text is untrusted: it compiles with the language's
 // limits, and its formulas never reach eval.
-import { compile, type Definition, decodeShare, formatDiagnostic, sharedValues } from '@loadmap/dsl'
+import { compile, type Definition, decodeShare, formatDiagnostic, loadCatalogFor, sharedValues } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
 import { LOADMAP_PANELS, Loadmap, type LoadmapHandle, type LoadmapPanel } from '@loadmap/react'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
@@ -97,6 +97,7 @@ async function main(el: HTMLElement) {
     root.render(<Problem title="This link holds no loadmap model." detail={detail} fix="Make one in the editor" />)
     return
   }
+  await loadCatalogFor(shared.source)
   const r = compile(shared.source)
   if (!r.ok || !r.definition) {
     const first = r.diagnostics.find((d) => d.severity === 'error') ?? r.diagnostics[0]

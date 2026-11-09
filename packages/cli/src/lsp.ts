@@ -9,6 +9,7 @@ import {
   definition,
   format,
   hover,
+  loadCatalog,
   problems,
   quickFixes,
   references,
@@ -147,7 +148,13 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
       if (stopped) return
     }
   }
-  input.on('data', read)
+  // the catalog first, so a published statement compiles, completes and hovers from the first message on; without it
+  // (a build that left it out), everything else still works
+  void loadCatalog()
+    .catch(() => undefined)
+    .then(() => {
+      if (!stopped) input.on('data', read)
+    })
   input.on('end', () => done(shutdown ? 0 : 1))
   // the client gone mid-write (EPIPE) or its pipe broken: an exit, not a crash
   input.on('error', () => done(1))

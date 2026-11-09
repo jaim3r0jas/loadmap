@@ -47,6 +47,17 @@ fit apiCores "API CPU per order" {
   }
 }
 
+# a figure from the component catalog: it applies only under its run's conditions
+published brokersRef kafka {
+  edition: "2026-11"
+  version: "4.4"
+  brokers: 3
+  replication: 3
+  acks: "all"
+  messageSize: "1 KB"
+  producers: 4
+}
+
 flow orders "orders" {
   unit: "order"
   rate: 50 * load
@@ -126,6 +137,11 @@ cluster kafka "Kafka" "events" {
   members: 3
   memberLabel: `broker ${i}`
   queue topic "events topic" { partitions { events: 12 } }
+  short: "the brokers"
+  plural: true
+  demand: flows.events / 1_000
+  capacity: brokersRef
+  over: "producers wait"
 }
 
 pool workers "Event workers" "2 to 6 pods" {

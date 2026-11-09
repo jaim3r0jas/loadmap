@@ -22,6 +22,9 @@ import {
   encodeShare,
   format,
   type HostFunctions,
+  loadCatalogFor,
+  loadedCatalog,
+  needsCatalog,
   problems,
   sharedValues,
 } from '@loadmap/dsl'
@@ -183,6 +186,18 @@ export function LoadmapEditor({
     const result = compile(initial, { functions })
     return { source: initial, result, good: result.definition ?? null, goodKey: fingerprint(initial), doc: 0 }
   })
+  // a first text with a published statement: compiled again once the catalog has loaded
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the first text only, as the state above
+  useEffect(() => {
+    if (!needsCatalog(initial) || loadedCatalog()) return
+    void loadCatalogFor(initial).then(() =>
+      setState((s) => {
+        if (s.source !== initial) return s
+        const result = compile(initial, { functions })
+        return { ...s, result, good: result.definition ?? s.good }
+      }),
+    )
+  }, [])
   const [note, setNote] = useState('')
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)

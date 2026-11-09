@@ -11,6 +11,8 @@ const common: UserConfig = {
   minify: true,
   dts: false,
   noExternal: [/^(?!vscode$|playwright)/],
+  // the component catalog, which the dsl imports lazily, goes in the same file: the .vsix ships no other chunk
+  outputOptions: { inlineDynamicImports: true },
 }
 
 export default defineConfig([

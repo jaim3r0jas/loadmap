@@ -42,7 +42,7 @@ After a change to `packages/vscode` (or what it bundles: the cli's `lsp`, `<Load
 @loadmap/vscode test:e2e` runs the extension as it ships in a pinned VS Code (downloaded once into `.vscode-test`; CI
 runs it under xvfb in `check`), and `pnpm --filter @loadmap/vscode package` makes the .vsix.
 `pnpm budget` (in `check`) builds `scripts/budget/*.html` and fails when a `<Loadmap>` page loads more than 53 kB gzip of
-loadmap first, the editor adds more than 170 kB, or ELK is in a first load. Before a release, and after a change to
+loadmap first, the editor adds more than 175 kB, or ELK is in a first load. Before a release, and after a change to
 exports, dependencies or the build: `pnpm verify:pack` (packs every package, installs the tarballs with npm in a fresh
 Vite app outside the monorepo, runs tsc, builds, measures the budget, draws checkout and the react README's quick
 start in Chromium, built and in dev). The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to

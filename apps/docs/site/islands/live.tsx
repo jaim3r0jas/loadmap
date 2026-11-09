@@ -1,13 +1,14 @@
 // A ```loadmap live fence: the definition drawn (the reader pans and zooms it), its source under it, and a link that
 // opens it in the editor.
-import { compile, encodeShare, formatDiagnostic } from '@loadmap/dsl'
+import { compile, encodeShare, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap } from '@loadmap/react'
 import { createRoot } from 'react-dom/client'
 
-export function mount(el: HTMLElement) {
+export async function mount(el: HTMLElement) {
   const pre = el.querySelector('pre')!
   const source = pre.textContent ?? ''
+  await loadCatalogFor(source)
   const r = compile(source)
   const host = document.createElement('div')
   el.prepend(host)

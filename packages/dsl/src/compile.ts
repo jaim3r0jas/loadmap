@@ -1,5 +1,6 @@
 import {
   type Branch,
+  type Catalog,
   type CheckResult,
   cache,
   check,
@@ -9,9 +10,11 @@ import {
   limit,
   type Model,
   type Overload,
+  type PublishedConfig,
   p,
   parseAsOf,
   pass,
+  published,
   queue,
   type RetryRule,
   type StageDef,
@@ -32,6 +35,7 @@ import {
   type View,
 } from '@loadmap/layout'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
+import { catalogComponent, latestEdition, loadedCatalog } from './catalog'
 import { type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
   compileFormula,
@@ -76,6 +80,8 @@ export const LIMITS = { members: 64, pods: 256, perPod: 256, partitions: 1024 } 
 export interface CompileOptions {
   /** Functions formulas may call beyond the built-in ones: the escape hatch for what formulas cannot say. */
   functions?: HostFunctions
+  /** The component catalog's editions, for `published` statements; by default the one `loadCatalog()` loaded. */
+  catalog?: Readonly<Record<string, Catalog>>
 }
 
 /** What the definition sets beyond the model and the view: props of `<Loadmap>`. */
@@ -108,7 +114,7 @@ export interface Definition {
 
 /** A name the definition declares, where: for autocomplete, and for finding a node's source. */
 export interface DslSymbol {
-  kind: 'param' | 'let' | 'fit' | 'flow' | 'node' | 'stage' | 'component' | 'scenario' | 'tier'
+  kind: 'param' | 'let' | 'fit' | 'published' | 'flow' | 'node' | 'stage' | 'component' | 'scenario' | 'tier'
   id: string
   /** The id where it is written (or the keyword, for an id taken from its box). */
   span: Span
@@ -141,7 +147,7 @@ export interface CompileResult {
 /** Reads a definition: parses, checks, and builds the model and view `<Loadmap>` takes. Never throws. */
 export function compile(source: string, o: CompileOptions = {}): CompileResult {
   const report = new Reporter(source)
-  const c = new Compiler(source, report, o.functions ?? {})
+  const c = new Compiler(source, report, o.functions ?? {}, o.catalog ?? loadedCatalog())
   let doc: Document = { body: [] }
   let definition: Definition | undefined
   let expectations: ExpectationResult[] = []
@@ -203,6 +209,7 @@ interface Args {
   version?: Expr
   x?: Ident
   y?: Ident
+  component?: Ident
 }
 
 /** A statement with its shape checked against the schema. */
@@ -239,6 +246,7 @@ class Compiler {
     readonly source: string,
     readonly report: Reporter,
     readonly functions: HostFunctions,
+    readonly catalog?: Readonly<Record<string, Catalog>>,
   ) {}
 
   /** With `namesOnly`, stops once every name is declared: `symbols` is then complete, and nothing is built. */
@@ -254,6 +262,7 @@ class Compiler {
     const params = byKind('param')
     const lets = byKind('let')
     const fits = byKind('fit')
+    const publisheds = byKind('published')
     const flows = byKind('flow')
     const boxes = root.children
       .filter((b) => (BOXES as readonly string[]).includes(b.keyword) && b.args.id)
@@ -266,8 +275,8 @@ class Compiler {
       if (!id) return
       this.declare(kind, id.name, id, b, taken)
     }
-    for (const b of [...params, ...lets, ...fits]) {
-      own(b.keyword === 'param' ? 'param' : b.keyword === 'let' ? 'let' : 'fit', b, formulaNames)
+    for (const b of [...params, ...lets, ...fits, ...publisheds]) {
+      own(b.keyword as 'param' | 'let' | 'fit' | 'published', b, formulaNames)
       if (b.args.id && RESERVED.has(b.args.id.name))
         this.report.error(b.args.id, `"${b.args.id.name}" is a reserved name; pick another`)
     }
@@ -299,6 +308,8 @@ class Compiler {
     const paramTypes = new Map<string, Type>([['load', 'number']])
     for (const b of params) if (b.args.id) paramTypes.set(b.args.id.name, this.paramType(b))
     for (const f of fits) this.fit(f)
+    // a published figure is read like a let: a capacity in `derived`
+    for (const b of publisheds) if (b.args.id) this.lets.set(b.args.id.name, 'capacity')
     this.names = {
       params: paramTypes,
       lets: this.lets,
@@ -367,6 +378,10 @@ class Compiler {
     const derived: Record<string, unknown> = {}
     for (const b of lets)
       if (b.args.id && b.decl?.init) derived[b.args.id.name] = placed(b.decl.init, this.formula(b.decl.init, 'ctx').run)
+    for (const b of publisheds) {
+      const run = this.published(b)
+      if (run && b.args.id) derived[b.args.id.name] = run
+    }
 
     const resolveStage = (n: Ident, what: string): string | undefined => {
       if (stageOf.has(n.name)) return n.name
@@ -706,7 +721,7 @@ class Compiler {
       }
       if (a.t === 'tpl' && !slot.dynamic)
         this.report.error(a, `the ${slot.name} of "${b.keyword}" must be a plain text`)
-      if (a.t === 'id') b.args[slot.name as 'id' | 'x' | 'y'] = { name: a.name, from: a.from, to: a.to }
+      if (a.t === 'id') b.args[slot.name as 'id' | 'x' | 'y' | 'component'] = { name: a.name, from: a.from, to: a.to }
       else (b.args as Record<string, Expr>)[slot.name] = a
     }
     if (missing) this.report.error(b.at, `"${b.keyword}" needs its ${missing.name}`, usage(b.keyword))
@@ -800,6 +815,121 @@ class Compiler {
 
   private slice(s: Span) {
     return this.source.slice(s.from, s.to)
+  }
+
+  /**
+   * A `published` statement: its component of the pinned edition, the conditions as formulas of the parameters, and
+   * the capacity `published()` gives for them. Only the catalog loadmap ships resolves: a shared link names no URL.
+   */
+  private published(b: Block): ((ctx: any) => unknown) | undefined {
+    const comp = b.args.component
+    if (!b.args.id || !comp) return undefined
+    const editions = this.catalog
+    if (!editions) {
+      this.report.error(comp, 'the component catalog is not loaded', 'a host awaits loadCatalog() before it compiles')
+      return undefined
+    }
+    const at = this.prop(b, 'edition')
+    const edition = this.text(at?.value)
+    if (!at || edition == null) return undefined
+    if (!Object.hasOwn(editions, edition)) {
+      const known = Object.keys(editions)
+      this.report.error(
+        at.value,
+        `no catalog edition "${edition}"`,
+        `this loadmap has ${known.join(', ')}; a later edition needs a later loadmap`,
+      )
+      return undefined
+    }
+    const c = catalogComponent(editions, edition, comp.name)
+    if (!c) {
+      const all = Object.values(editions[edition]!.components)
+      const tagged = all.find((x) => x.tags.some((t) => t.toLowerCase() === comp.name.toLowerCase()))
+      this.report.error(
+        comp,
+        `no component "${comp.name}" in the catalog`,
+        tagged
+          ? `${tagged.id} (${tagged.name}) covers ${comp.name}`
+          : didYouMean(
+              comp.name,
+              all.map((x) => x.id),
+            ),
+      )
+      return undefined
+    }
+    const latest = latestEdition(editions)
+    if (latest !== edition && JSON.stringify(c.figures) !== JSON.stringify(editions[latest]!.components[c.id]?.figures))
+      this.report.warning(
+        at.value,
+        `edition ${latest} of the catalog has other figures for ${c.name}`,
+        `edition: "${latest}"`,
+      )
+
+    const runs: [string, (ctx: any) => unknown][] = []
+    const constants: Record<string, unknown> = {}
+    let allConstant = true
+    for (const [k, props] of b.props) {
+      if (own(b.spec.props, k) && k !== 'version') continue
+      const p = props[0]!
+      if (k !== 'version' && !Object.hasOwn(c.conditions, k)) {
+        const names = Object.keys(c.conditions)
+        this.report.error(
+          p.key,
+          `${c.name} has no condition "${k}"`,
+          didYouMean(k, names) ??
+            (names.length ? `its conditions: ${names.join(', ')}` : `${c.name} has no conditions`),
+        )
+        continue
+      }
+      const f = this.formula(p.value, 'values', k === 'version' ? 'string' : undefined)
+      runs.push([k, placed(p.value, f.run)])
+      if (f.constant) constants[k] = f.run(undefined)
+      else allConstant = false
+    }
+    const figure = this.constProp<string>(b, 'figure')
+    if (figure != null && !c.figures.some((f) => f.id === figure)) {
+      this.report.error(
+        this.prop(b, 'figure')!.value,
+        `${c.name} has no figure "${figure}"`,
+        didYouMean(
+          figure,
+          c.figures.map((f) => f.id),
+        ) ?? c.figures.map((f) => f.id).join(', '),
+      )
+      return undefined
+    }
+    const margin = this.constProp<number>(b, 'margin')
+    if (margin != null && !(margin >= 0 && margin < 1)) {
+      this.report.error(this.prop(b, 'margin')!.value, 'margin is a share from 0 to below 1: 0.3 is 30 %')
+      return undefined
+    }
+    // a documented limit is exact: refused here, not where a parameter happens to reach one
+    if (margin && c.figures.some((f) => f.measure === 'limit' && (figure == null || f.id === figure))) {
+      this.report.error(this.prop(b, 'margin')!.value, `${c.name} has documented limits: exact, so they take no margin`)
+      return undefined
+    }
+    const fixed: PublishedConfig = {
+      ...(figure != null && { figure }),
+      ...(margin != null && { margin }),
+    }
+    // every condition fixed in the text: say now that no published run matches
+    if (allConstant) {
+      try {
+        const cap = published(c, { ...(constants as PublishedConfig), ...fixed })
+        if (cap.missing != null)
+          this.report.warning(comp, `no published benchmark ${cap.missing}`, 'the component is not ranked')
+        // the same for every load and every value: matched once
+        return () => cap
+      } catch (err) {
+        this.runError(err, comp, false)
+        return undefined
+      }
+    }
+    return (ctx) => {
+      const config: PublishedConfig = { ...fixed }
+      for (const [k, run] of runs) config[k] = run(ctx) as PublishedConfig[string]
+      return published(c, config)
+    }
   }
 
   private prop(b: Block, key: string): Property | undefined {

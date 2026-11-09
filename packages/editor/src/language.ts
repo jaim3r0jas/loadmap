@@ -31,6 +31,8 @@ import {
   definition,
   type Hover,
   hover,
+  loadCatalogFor,
+  loadedCatalog,
   problems,
   quickFixes,
   references,
@@ -363,7 +365,7 @@ export function startRename(view: EditorView): boolean {
 export function loadmapLanguage(
   o: CompileOptions & { onResult?: (source: string, result: CompileResult) => void; delay?: number } = {},
 ): Extension {
-  let last: { source: string; result: CompileResult } | null = null
+  let last: { source: string; catalog: boolean; result: CompileResult } | null = null
   // the last definition without errors: a hover's values while the text has one; not another text's, once replaced
   let good: Definition | undefined
   const replaced = EditorView.updateListener.of((u) => {
@@ -373,7 +375,9 @@ export function loadmapLanguage(
       })
   })
   const result = (source: string) => {
-    if (last?.source !== source) last = { source, result: compile(source, o) }
+    // a result from before the catalog loaded is not this text's
+    const catalog = !!loadedCatalog()
+    if (last?.source !== source || last.catalog !== catalog) last = { source, catalog, result: compile(source, o) }
     good = last.result.definition ?? good
     return last.result
   }
@@ -387,8 +391,10 @@ export function loadmapLanguage(
     const note = stale ? 'Values from the last version without errors.' : undefined
     return { pos: h.from, end: h.to, above: true, create: () => ({ dom: hoverDom(h, note) }) }
   })
-  const lint = (view: EditorView): CmDiagnostic[] => {
+  const lint = async (view: EditorView): Promise<CmDiagnostic[]> => {
     const source = view.state.doc.toString()
+    // a published statement: the catalog loads once, the first time a text needs it
+    await loadCatalogFor(source)
     const r = result(source)
     o.onResult?.(source, r)
     const end = source.length

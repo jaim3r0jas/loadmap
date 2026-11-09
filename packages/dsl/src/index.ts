@@ -1,3 +1,4 @@
+export { loadCatalog, loadCatalogFor, loadedCatalog, needsCatalog } from './catalog'
 export {
   type CompileOptions,
   type CompileResult,

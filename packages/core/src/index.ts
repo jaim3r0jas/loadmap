@@ -9,6 +9,7 @@ export {
   estimated,
   measured,
   type Provenance,
+  sourceText,
 } from './capacity'
 export { assertHolds, type CheckResult, check, type Expectation } from './check'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
@@ -60,7 +61,6 @@ export {
   published,
   type Reference,
   type Source,
-  sourceText,
 } from './published'
 export {
   type Comparison,

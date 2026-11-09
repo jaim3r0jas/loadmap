@@ -1,4 +1,4 @@
-import type { Capacity } from './capacity'
+import { type Capacity, sourceText } from './capacity'
 import { fmt, joinAnd } from './format'
 
 /** A value a run was made under: a count, a word or a switch. */
@@ -226,9 +226,4 @@ export function published(c: Published, config: PublishedConfig = {}): Capacity 
   if (f.measure === 'capacity') cap.ceiling = true
   if (margin) cap.within = margin
   return cap
-}
-
-/** "Apache Kafka, run by Confluent, 2020-08-21": the line a capacity's source shows. */
-export function sourceText(r: Reference): string {
-  return `${r.name}, ${r.measure === 'limit' ? 'documented by' : 'run by'} ${r.source.by}${r.source.date ? `, ${r.source.date}` : ''}`
 }

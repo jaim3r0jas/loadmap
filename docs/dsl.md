@@ -149,6 +149,44 @@ checkout.loadmap: 1 of 2 expectations failed
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
 line in the pull request.
 
+### Published figures
+
+A **published** statement takes a capacity from the component catalog: the figure published for a component, under
+the conditions its run was made with. One entry per component, whoever runs it: Apache Kafka, RabbitMQ, Valkey
+(Redis-compatible), etcd, CockroachDB, ClickHouse, OpenSearch (Elasticsearch-compatible), NGINX, HAProxy, CoreDNS,
+Kubernetes and Istio, and PostgreSQL, MySQL, MongoDB and Envoy, for which nothing is published with its conditions.
+
+```
+published brokersRef kafka {
+  edition: "2026-11"
+  version: "4.4"
+  brokers: brokers
+  replication: 3
+  acks: "all"
+  messageSize: "1 KB"
+  producers: 4
+}
+
+cluster kafka "Brokers" {
+  members: brokers
+  demand: flows.events / 1_000
+  capacity: brokersRef
+  over: "producers wait"
+}
+```
+
+Its properties are the component's conditions; a value is a number, a switch, a quoted word or a formula of the
+parameters. The figure applies only when every condition its run decided on matches: with `brokers: 6` against runs
+of 3 brokers, the brokers have no published benchmark, are not ranked, and the verdict, the limits and `loadmap check`
+say so. Nothing is scaled or interpolated. `edition` pins the numbers, so a file keeps them when the catalog adds a
+newer edition (the checker says when one has other figures). `version` is kept beside the figure, and decides only for
+a component whose published figures change with it (RabbitMQ, Valkey, CockroachDB, OpenSearch, Istio). `figure`
+picks one when several match; `margin: 0.3` reads a best case from 70 % of the figure up to it, never above.
+
+A published figure is a best case elsewhere, not a measurement of your system: the verdict says "(capacity
+published, a best case)", and the assumptions name its conditions, who ran it and link its source. Autocomplete
+offers the components, their conditions and the values their runs used.
+
 ### Building blocks
 
 Four shapes of real systems have statements of their own, so a model says what they do instead of working it out in
@@ -414,7 +452,7 @@ A loadmap definition.
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -567,6 +605,25 @@ After the keyword: id [label].
 | `through` | `origin` | origin: a cost with no idle part (a = 0). |
 
 Holds: `points`.
+
+### published
+
+A figure from the component catalog, as published for a configuration: its id is a capacity (`capacity: brokersRef`). It applies only when every condition its run was made under matches; otherwise the component has no published benchmark and is not ranked. Nothing is scaled.
+
+```
+published brokersRef kafka { edition: "2026-11"; brokers: 3; replication: 3; acks: "all"; messageSize: "1 KB"; producers: 4 }
+```
+
+After the keyword: id component.
+
+| Property | Value | |
+| --- | --- | --- |
+| `edition` (required) | string, constant | The catalog edition its figures come from, "YYYY-MM": an old file keeps its numbers. |
+| `version` | string, formula of parameters | The version you run. It decides only for a component whose figures change with the version; elsewhere it is kept beside the figure. |
+| `figure` | string, constant | Which figure, when several match: its id in the catalog. |
+| `margin` | number, constant | Lowers the best case, as a share from 0 to below 1: 0.3 reads the capacity from 70 % of the figure up to it. |
+
+Its properties are named by the catalog component's conditions (its runs' brokers, message size, …).
 
 ### points
 

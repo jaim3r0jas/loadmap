@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { parseArgs } from 'node:util'
-import { compile, formatDiagnostic } from '@loadmap/dsl'
+import { compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { check } from './check'
 import { fmt } from './fmt'
@@ -186,6 +186,7 @@ export async function record(a: RecordArgs, o: { viewer?: string } = {}): Promis
   const { chromium } = await playwright()
   if (!a.file) return recordPage(a, format, chromium)
   const source = await readFile(a.file, 'utf8')
+  await loadCatalogFor(source)
   const r = compile(source)
   if (!r.ok) throw new Error(r.diagnostics.map((d) => formatDiagnostic(d, source, a.file)).join('\n'))
   const server = await serve(source, o.viewer ?? join(import.meta.dirname, '../dist/viewer'))

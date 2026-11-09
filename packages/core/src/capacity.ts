@@ -63,3 +63,8 @@ export interface CrossingRange {
   low: number
   high: number
 }
+
+/** "Apache Kafka, run by Confluent, 2020-08-21": the line a capacity's source shows. */
+export function sourceText(r: Reference): string {
+  return `${r.name}, ${r.measure === 'limit' ? 'documented by' : 'run by'} ${r.source.by}${r.source.date ? `, ${r.source.date}` : ''}`
+}

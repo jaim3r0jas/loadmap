@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-import { compile } from '../src'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { compile, loadCatalog } from '../src'
 import { type EditValue, edit, type InspectField, inspect } from '../src/internal'
 
 const root = new URL('../../../', import.meta.url)
@@ -33,6 +33,9 @@ const mini = (...lines: string[]) =>
 
 const fieldsOf = (source: string, target: Parameters<typeof inspect>[1]) =>
   new Map(inspect(source, target)!.sections.flatMap((s) => s.fields.map((f): [string, InspectField] => [f.key, f])))
+
+// docs/every-statement.loadmap has a published statement
+beforeAll(() => loadCatalog())
 
 describe('inspect', () => {
   it("shows a box's label, capacity and the parameters its formulas read", () => {

@@ -49,7 +49,7 @@ export interface PropSpec {
 }
 
 export interface ArgSpec {
-  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y'
+  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y' | 'component'
   kind: 'id' | 'text' | 'number'
   optional?: boolean
   /** A text that may be a template computed from the model. */
@@ -83,8 +83,11 @@ export interface BlockSpec {
   props: Readonly<Record<string, PropSpec>>
   /** Keywords of the statements it may hold. */
   children: readonly string[]
-  /** Its properties are named by the model: the load and parameters in a preset, parameters only in a scenario, flows in partitions. */
-  open?: { names: 'values' | 'params' | 'flows'; spec: PropSpec }
+  /**
+   * Its properties are named by the model: the load and parameters in a preset, parameters only in a scenario, flows in
+   * partitions; by the catalog's component in a `published` statement.
+   */
+  open?: { names: 'values' | 'params' | 'flows' | 'conditions'; spec: PropSpec }
   /** It holds `a -> b` lines: edges at the top, branches in a fan-out. */
   edges?: 'edges' | 'branches'
   /** It holds rows of numbers. */
@@ -205,6 +208,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'step',
       'let',
       'fit',
+      'published',
       'flow',
       'component',
       'node',
@@ -373,6 +377,46 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       through: { value: 'enum', scope: 'const', values: ['origin'], doc: 'origin: a cost with no idle part (a = 0).' },
     },
     children: ['points'],
+  },
+  published: {
+    inspector: 'model',
+    doc: 'A figure from the component catalog, as published for a configuration: its id is a capacity (`capacity: brokersRef`). It applies only when every condition its run was made under matches; otherwise the component has no published benchmark and is not ranked. Nothing is scaled.',
+    example:
+      'published brokersRef kafka { edition: "2026-11"; brokers: 3; replication: 3; acks: "all"; messageSize: "1 KB"; producers: 4 }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'component', kind: 'id' },
+    ],
+    props: {
+      edition: {
+        inspector: 'main',
+        value: 'string',
+        scope: 'const',
+        required: true,
+        doc: 'The catalog edition its figures come from, "YYYY-MM": an old file keeps its numbers.',
+      },
+      version: {
+        inspector: 'main',
+        value: 'string',
+        scope: 'values',
+        doc: 'The version you run. It decides only for a component whose figures change with the version; elsewhere it is kept beside the figure.',
+      },
+      figure: { value: 'string', scope: 'const', doc: 'Which figure, when several match: its id in the catalog.' },
+      margin: {
+        value: 'number',
+        scope: 'const',
+        doc: 'Lowers the best case, as a share from 0 to below 1: 0.3 reads the capacity from 70 % of the figure up to it.',
+      },
+    },
+    open: {
+      names: 'conditions',
+      spec: {
+        value: 'value',
+        scope: 'values',
+        doc: 'A condition the published run was made under: a number, a switch or a quoted word, or a formula of the parameters.',
+      },
+    },
+    children: [],
   },
   points: {
     doc: 'The measured points of a fit: the names of x and y, then one "x y" row per line.',

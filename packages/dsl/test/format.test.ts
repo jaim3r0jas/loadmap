@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-import { compile, format } from '../src'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { compile, format, loadCatalog } from '../src'
 import { lex, Reporter } from '../src/internal'
 
 const root = new URL('../../../', import.meta.url)
@@ -50,6 +50,9 @@ const fmt = (src: string) => {
   expect(r.diagnostics).toEqual([])
   return r.text
 }
+
+// docs/every-statement.loadmap has a published statement
+beforeAll(() => loadCatalog())
 
 describe('format', () => {
   it('finds the definitions it checks', () => {
