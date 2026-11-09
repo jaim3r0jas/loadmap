@@ -17,7 +17,9 @@ import {
   published,
   queue,
   type RetryRule,
+  type SnapshotReader,
   type StageDef,
+  type Stat,
   sink,
   store,
   workers,
@@ -74,6 +76,14 @@ export const LANGUAGE_VERSION = 1
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
 
+/** `{{ args.job }}` in a metric's query: the measure's argument `job`. */
+const TEMPLATE = /\{\{\s*args\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+
+/** The arguments a metric's query names, in order, once each. */
+export function templateArgs(query: string): string[] {
+  return [...new Set([...query.matchAll(TEMPLATE)].map((m) => m[1]!))]
+}
+
 /** Counts that size the drawing; larger ones would hang the layout, so a shared link cannot ask for them. */
 export const LIMITS = { members: 64, pods: 256, perPod: 256, partitions: 1024 } as const
 
@@ -82,6 +92,26 @@ export interface CompileOptions {
   functions?: HostFunctions
   /** The component catalog's editions, for `published` statements; by default the one `loadCatalog()` loaded. */
   catalog?: Readonly<Record<string, Catalog>>
+  /**
+   * Measured data for the `measure` statements: `fromSnapshot(parseSnapshot(text))` from `@loadmap/core/measure`.
+   * Without one, every measure is its fallback.
+   */
+  snapshot?: SnapshotReader
+}
+
+/** A `measure` as `loadmap pull` reads it: the query with its arguments filled in. */
+export interface MeasureQuery {
+  /** The measure's id: the measurement's name in the snapshot. */
+  id: string
+  metric: string
+  /** The metric's label. */
+  label?: string
+  provider: 'prometheus'
+  query: string
+  stat?: Stat
+  min?: number
+  /** The fallback's unit, or the measure's own for a number. */
+  unit: string
 }
 
 /** What the definition sets beyond the model and the view: props of `<Loadmap>`. */
@@ -116,7 +146,19 @@ export interface Definition {
 
 /** A name the definition declares, where: for autocomplete, and for finding a node's source. */
 export interface DslSymbol {
-  kind: 'param' | 'let' | 'fit' | 'published' | 'flow' | 'node' | 'stage' | 'component' | 'scenario' | 'tier'
+  kind:
+    | 'param'
+    | 'let'
+    | 'fit'
+    | 'published'
+    | 'measure'
+    | 'metric'
+    | 'flow'
+    | 'node'
+    | 'stage'
+    | 'component'
+    | 'scenario'
+    | 'tier'
   id: string
   /** The id where it is written (or the keyword, for an id taken from its box). */
   span: Span
@@ -142,6 +184,8 @@ export interface CompileResult {
   definition?: Definition
   /** Each `expect` line, tested on the pessimistic edge; empty when the definition has errors. */
   expectations: ExpectationResult[]
+  /** Every `measure`, with its query filled in: what `loadmap pull` reads. Empty when the definition has errors. */
+  measures: MeasureQuery[]
   symbols: DslSymbol[]
   doc: Document
 }
@@ -149,7 +193,7 @@ export interface CompileResult {
 /** Reads a definition: parses, checks, and builds the model and view `<Loadmap>` takes. Never throws. */
 export function compile(source: string, o: CompileOptions = {}): CompileResult {
   const report = new Reporter(source)
-  const c = new Compiler(source, report, o.functions ?? {}, o.catalog ?? loadedCatalog())
+  const c = new Compiler(source, report, o.functions ?? {}, o.catalog ?? loadedCatalog(), o.snapshot)
   let doc: Document = { body: [] }
   let definition: Definition | undefined
   let expectations: ExpectationResult[] = []
@@ -170,7 +214,8 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
       report.error({ from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
   }
   const diagnostics = [...report.list].sort((a, b) => a.from - b.from)
-  return { ok: !report.failed && !!definition, diagnostics, definition, expectations, symbols: c.symbols, doc }
+  const ok = !report.failed && !!definition
+  return { ok, diagnostics, definition, expectations, measures: ok ? c.measures : [], symbols: c.symbols, doc }
 }
 
 /**
@@ -212,6 +257,7 @@ interface Args {
   x?: Ident
   y?: Ident
   component?: Ident
+  metric?: Ident
 }
 
 /** A statement with its shape checked against the schema. */
@@ -241,14 +287,19 @@ class Compiler {
   /** Where each expectation of the model is written, in order. */
   readonly expectSpans: Span[] = []
   names!: Names
+  readonly measures: MeasureQuery[] = []
   private fits = new Map<string, LinearFit | null>()
   private lets = new Map<string, Type>()
+  private measureIds = new Set<string>()
+  /** The measures whose fallback is a number. */
+  private numbers = new Set<string>()
 
   constructor(
     readonly source: string,
     readonly report: Reporter,
     readonly functions: HostFunctions,
     readonly catalog?: Readonly<Record<string, Catalog>>,
+    readonly snapshot?: SnapshotReader,
   ) {}
 
   /** With `namesOnly`, stops once every name is declared: `symbols` is then complete, and nothing is built. */
@@ -265,6 +316,8 @@ class Compiler {
     const lets = byKind('let')
     const fits = byKind('fit')
     const publisheds = byKind('published')
+    const metrics = byKind('metric')
+    const measures = byKind('measure')
     const flows = byKind('flow')
     const boxes = root.children
       .filter((b) => (BOXES as readonly string[]).includes(b.keyword) && b.args.id)
@@ -277,11 +330,14 @@ class Compiler {
       if (!id) return
       this.declare(kind, id.name, id, b, taken)
     }
-    for (const b of [...params, ...lets, ...fits, ...publisheds]) {
-      own(b.keyword as 'param' | 'let' | 'fit' | 'published', b, formulaNames)
+    for (const b of [...params, ...lets, ...fits, ...publisheds, ...measures]) {
+      own(b.keyword as 'param' | 'let' | 'fit' | 'published' | 'measure', b, formulaNames)
       if (b.args.id && RESERVED.has(b.args.id.name))
         this.report.error(b.args.id, `"${b.args.id.name}" is a reserved name; pick another`)
     }
+    for (const b of measures) if (b.args.id) this.measureIds.add(b.args.id.name)
+    const metricNames = new Map<string, Span>()
+    for (const b of metrics) own('metric', b, metricNames)
     const flowNames = new Map<string, Span>()
     for (const b of flows) own('flow', b, flowNames)
     const nodeNames = new Map<string, Span>()
@@ -329,6 +385,17 @@ class Compiler {
     const tierNames = new Map<string, Span>()
     for (const b of byKind('tier')) if (b.args.id) this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
     if (namesOnly) return undefined
+    // a measure is read like a let, of its fallback's type: a capacity or a number
+    const metricOf = new Map(metrics.flatMap((b) => (b.args.id ? [[b.args.id.name, b] as const] : [])))
+    // checked whether or not a measure uses it yet
+    for (const b of metrics) this.metricQuery(b)
+    const measured = new Map<string, unknown>()
+    for (const b of measures) {
+      const v = this.measure(b, metricOf)
+      if (v === undefined || !b.args.id) continue
+      measured.set(b.args.id.name, v)
+      this.lets.set(b.args.id.name, typeof v === 'number' ? 'number' : 'capacity')
+    }
     // a let's type comes from its formula, which may use other lets: settle them on a scratch reporter first
     for (const b of lets) if (b.args.id) this.lets.set(b.args.id.name, 'any')
     // until nothing changes: each pass settles at least one more let of a chain, so it ends within lets.length
@@ -384,6 +451,8 @@ class Compiler {
       const run = this.published(b)
       if (run && b.args.id) derived[b.args.id.name] = run
     }
+    // the same for every load and every value: today's system, or the definition's fallback
+    for (const [id, v] of measured) derived[id] = () => v
 
     const resolveStage = (n: Ident, what: string): string | undefined => {
       if (stageOf.has(n.name)) return n.name
@@ -499,6 +568,20 @@ class Compiler {
     if (story.length) model.story = story
     if (Object.keys(derived).length) model.derived = derived
     if (Object.keys(calibration).length) model.calibration = calibration
+    const snap = this.snapshot?.snapshot
+    if (snap) {
+      // a number read nowhere else shows that it fell back: listed missing, with why, like a capacity's line does
+      const absent = this.measures.filter((m) => this.numbers.has(m.id) && !Object.hasOwn(snap.measurements, m.id))
+      model.snapshot = absent.length
+        ? {
+            ...snap,
+            measurements: {
+              ...snap.measurements,
+              ...Object.fromEntries(absent.map((m) => [m.id, { unit: m.unit, missing: this.snapshot!.unread(m.id)! }])),
+            },
+          }
+        : snap
+    }
     const th = byKind('thresholds')[0]
     if (th) {
       const t: Record<string, number> = {}
@@ -947,6 +1030,124 @@ class Compiler {
     }
   }
 
+  /**
+   * A measure's value: the snapshot's, or its fallback. Records the query `loadmap pull` reads, with the measure's
+   * arguments filled in; nothing here reads anything.
+   */
+  private measure(b: Block, metrics: ReadonlyMap<string, Block>): unknown {
+    const id = b.args.id
+    const name = b.args.metric
+    if (!id || !name) return undefined
+    const metric = metrics.get(name.name)
+    if (!metric) {
+      this.report.error(
+        name,
+        `no metric "${name.name}"`,
+        didYouMean(name.name, [...metrics.keys()]) ?? `metric ${name.name} { prometheus { query: "…" } }`,
+      )
+      return undefined
+    }
+    const fb = this.prop(b, 'fallback')
+    if (!fb) return undefined
+    const fallback = this.constant(fb.value, 'any')
+    if (fallback === undefined) return undefined
+    const capacity = isCapacity(fallback)
+    if (!capacity && typeof fallback !== 'number') {
+      this.report.error(fb.value, 'a fallback is a capacity or a number', 'fallback: estimated(1_000, "req/s", "…")')
+      return undefined
+    }
+    const unitAt = this.prop(b, 'unit')
+    if (capacity && unitAt) this.report.error(unitAt.key, 'a capacity has its own unit', `"${fallback.unit}"`)
+
+    const args = new Map<string, { value: string; at: Span }>()
+    for (const [k, props] of b.props) {
+      if (own(b.spec.props, k)) continue
+      const v = this.constant(props[0]!.value, 'any')
+      if (typeof v !== 'string' && typeof v !== 'number') {
+        if (v !== undefined) this.report.error(props[0]!.value, 'an argument is a word or a number')
+        continue
+      }
+      args.set(k, { value: String(v), at: props[0]!.key })
+    }
+    const q = this.metricQuery(metric)
+    if (!q) return undefined
+    const used = new Set<string>()
+    const query = q.query.replace(TEMPLATE, (_, arg: string) => {
+      used.add(arg)
+      return args.get(arg)?.value ?? ''
+    })
+    const missing = [...used].filter((a) => !args.has(a))
+    if (missing.length)
+      this.report.error(
+        id,
+        `the query of "${name.name}" needs ${missing.map((a) => `{{ args.${a} }}`).join(' and ')}`,
+        missing.map((a) => `${a}: "…"`).join('; '),
+      )
+    for (const [k, a] of args)
+      if (!used.has(k))
+        this.report.error(a.at, `the query of "${name.name}" has no {{ args.${k} }}`, didYouMean(k, [...used]))
+    if (missing.length) return undefined
+
+    const label = this.text(metric.args.label)
+    this.measures.push({
+      id: id.name,
+      metric: name.name,
+      ...(label != null && { label }),
+      provider: q.provider,
+      query,
+      ...(q.stat && { stat: q.stat }),
+      ...(q.min != null && { min: q.min }),
+      unit: capacity ? fallback.unit : (this.constProp<string>(b, 'unit') ?? ''),
+    })
+    if (!capacity) this.numbers.add(id.name)
+    if (!this.snapshot) return fallback
+    try {
+      return capacity ? this.snapshot.capacity(id.name, fallback) : this.snapshot.value(id.name, fallback as number)
+    } catch (err) {
+      this.runError(err, id, false)
+      return undefined
+    }
+  }
+
+  private metricQueries = new Map<Block, ReturnType<Compiler['readMetric']>>()
+
+  /** A metric's provider, query and window rules, checked once however many measures use it. */
+  private metricQuery(b: Block) {
+    if (!this.metricQueries.has(b)) this.metricQueries.set(b, this.readMetric(b))
+    return this.metricQueries.get(b)
+  }
+
+  private readMetric(b: Block) {
+    // every statement a metric holds is a provider
+    const providers = b.children.filter((c) => SCHEMA.metric!.children.includes(c.keyword))
+    if (providers.length !== 1) {
+      this.report.error(
+        b.args.id ?? b.at,
+        providers.length ? 'a metric reads from one provider' : 'a metric needs a provider to read from',
+        usage('prometheus'),
+      )
+      return undefined
+    }
+    const p = providers[0]!
+    const at = this.prop(p, 'query')
+    const query = this.constProp<string>(p, 'query')
+    if (!at || query == null) return undefined
+    for (const m of query.matchAll(/\{\{(.*?)\}\}/g))
+      if (!new RegExp(`^${TEMPLATE.source}$`).test(m[0]))
+        this.report.error(at.value, `"${m[0]}" is not an argument`, 'write {{ args.name }}: each measure gives name')
+    const min = this.constProp<number>(b, 'min')
+    if (min != null && !(Number.isInteger(min) && min >= 0)) {
+      this.report.error(this.prop(b, 'min')!.value, 'min is a whole number of samples from 0')
+      return undefined
+    }
+    return {
+      provider: p.keyword as MeasureQuery['provider'],
+      query,
+      stat: this.constProp<Stat>(b, 'stat'),
+      min,
+    }
+  }
+
   private prop(b: Block, key: string): Property | undefined {
     return b.props.get(key)?.[0]
   }
@@ -1325,10 +1526,38 @@ class Compiler {
       const o: Parameters<typeof fitLinear>[1] = { x: x.name, y: y.name }
       if (source != null) o.source = source
       if (through) o.through = through
-      this.fits.set(id.name, fitLinear(points, o))
+      const fit = fitLinear(points, o)
+      this.fits.set(id.name, fit)
+      const series = this.fitSeries(b)
+      if (series && this.snapshot)
+        this.fits.set(id.name, this.snapshot.fit(series.x, series.y, fit, through ? { through } : {}))
     } catch (err) {
       this.report.error(block.at, (err as Error).message.replace(/^loadmap: /, ''))
     }
+  }
+
+  /** The measures a fit reads its series from, when it names both: its points are then the fallback. */
+  private fitSeries(b: Block): { x: string; y: string } | undefined {
+    const name = (k: 'x' | 'y') => {
+      const p = this.prop(b, k)
+      if (!p) return undefined
+      if (p.value.t !== 'id' || !this.measureIds.has(p.value.name)) {
+        const word = p.value.t === 'id' ? `"${p.value.name}"` : 'this'
+        this.report.error(
+          p.value,
+          `${word} is not a measure`,
+          didYouMean(p.value.t === 'id' ? p.value.name : '', [...this.measureIds]),
+        )
+        return null
+      }
+      return p.value.name
+    }
+    const x = name('x')
+    const y = name('y')
+    if (x === undefined && y === undefined) return undefined
+    if (x === undefined || y === undefined)
+      this.report.error(b.args.id ?? b.at, 'a fit reads its series from two measures: x and y', 'x: rate; y: cores')
+    return x && y ? { x, y } : undefined
   }
 
   private overload(b: Block): Overload | ((ctx: any) => Overload) | undefined {

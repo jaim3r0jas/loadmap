@@ -52,6 +52,7 @@ const KIND_WORDS: Partial<Record<PropSpec['value'], string>> = {
   component: 'a component',
   scenario: 'a scenario',
   tier: 'a tier',
+  measure: 'a measure',
   options: '[…]',
   value: 'a value',
 }
@@ -175,6 +176,8 @@ class Lookup {
             return this.component(name, out)
           case 'tier':
             return this.tier(name, out)
+          case 'measure':
+            return this.measure(name, out)
           case 'scenario':
             return this.scenario(name, out)
           case 'enum':
@@ -203,6 +206,8 @@ class Lookup {
 
   key(key: string, spec: BlockSpec, edgeBody: boolean, out: Out, path: readonly (Decl | Edge)[] = []): Hover | null {
     if (spec === SCHEMA.published && !own(spec.props, key)) return this.condition(key, path, out)
+    if (spec.open?.names === 'arguments' && !own(spec.props, key))
+      return out(`${key}: an argument`, [`It fills \`{{ args.${key} }}\` in the query of the metric it measures.`])
     const prop = edgeBody ? own(EDGE_PROPS, key) : own(spec.props, key)
     if (prop) {
       const values = key === 'color' ? 'a theme colour' : prop.values?.join(' | ')
@@ -222,6 +227,8 @@ class Lookup {
     if (keyword === 'let') return this.let(id, out)
     if (keyword === 'fit') return this.fit(id, out)
     if (keyword === 'published') return this.published(id, out)
+    if (keyword === 'measure') return this.measure(id, out)
+    if (keyword === 'metric') return this.metric(id, out)
     if (keyword === 'flow') return this.flow(id, out)
     if (keyword === 'tier') return this.tier(id, out)
     if (keyword === 'component') return this.component(id, out)
@@ -236,6 +243,7 @@ class Lookup {
     if (this.has('let', name)) return this.let(name, out)
     if (this.has('fit', name)) return this.fit(name, out)
     if (this.has('published', name)) return this.published(name, out)
+    if (this.has('measure', name)) return this.measure(name, out)
     const b = own(BUILTINS, name)
     if (b) return out(callLabel(name, b.params, !!b.variadic), [b.doc])
     if (own(TABLES, name)) return out(`${name}.…`, [TABLES[name]!])
@@ -311,6 +319,38 @@ class Lookup {
         `${r.name} ${r.versions.join(', ')}${r.version ? `, you run ${r.version}` : ''}. ${sourceText(r)}: [${r.source.title}](${r.source.url}). Catalog ${r.edition}.`,
       )
     }
+    return out(this.line(d), body)
+  }
+
+  /** A measure: its value at the defaults, measured with its origin or the fallback. */
+  measure(id: string, out: Out): Hover | null {
+    const d = findDecl(this.body, 'measure', id)
+    if (!d) return null
+    const v = (this.evaluation()?.ctx.derived as Record<string, unknown> | undefined)?.[id]
+    const body = [SCHEMA.measure!.doc]
+    if (typeof v === 'number') body.push(`${fmt(v)} at the defaults.`)
+    else if (v && typeof v === 'object' && 'value' in v) {
+      const c = v as Capacity
+      body.push(
+        c.origin
+          ? `${fmt(c.value)} ${c.unit}, measured: ${c.source}.`
+          : `${fmt(c.value)} ${c.unit}, its fallback${c.unread ? `: no data from the snapshot (${c.unread})` : ''}.`,
+      )
+    }
+    return out(this.line(d), body)
+  }
+
+  /** A metric: what it reads, and which measures use it. */
+  metric(id: string, out: Out): Hover | null {
+    const d = findDecl(this.body, 'metric', id)
+    if (!d) return null
+    const users = this.body.flatMap((s) =>
+      s.kind === 'decl' && s.keyword.name === 'measure' && s.args[1]?.t === 'id' && s.args[1].name === id
+        ? [s.args[0]?.t === 'id' ? s.args[0].name : '']
+        : [],
+    )
+    const body = [SCHEMA.metric!.doc]
+    body.push(users.length ? `Measured by ${users.map((u) => `\`${u}\``).join(', ')}.` : 'No measure uses it yet.')
     return out(this.line(d), body)
   }
 

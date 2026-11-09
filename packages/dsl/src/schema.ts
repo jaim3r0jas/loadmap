@@ -29,6 +29,8 @@ export type ValueKind =
   | 'scenario'
   /** The id of a tier: `tier: data`. */
   | 'tier'
+  /** The id of a measure: `x: requestRate`. */
+  | 'measure'
   /** A list of options: `[2, 3, 4]`. */
   | 'options'
   /** A list of words from `values`, bare or quoted: `fullScreen: [verdict, controls]`. */
@@ -49,7 +51,7 @@ export interface PropSpec {
 }
 
 export interface ArgSpec {
-  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y' | 'component'
+  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y' | 'component' | 'metric'
   kind: 'id' | 'text' | 'number'
   optional?: boolean
   /** A text that may be a template computed from the model. */
@@ -87,7 +89,7 @@ export interface BlockSpec {
    * Its properties are named by the model: the load and parameters in a preset, parameters only in a scenario, flows in
    * partitions; by the catalog's component in a `published` statement.
    */
-  open?: { names: 'values' | 'params' | 'flows' | 'conditions'; spec: PropSpec }
+  open?: { names: 'values' | 'params' | 'flows' | 'conditions' | 'arguments'; spec: PropSpec }
   /** It holds `a -> b` lines: edges at the top, branches in a fan-out. */
   edges?: 'edges' | 'branches'
   /** It holds rows of numbers. */
@@ -220,6 +222,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'let',
       'fit',
       'published',
+      'metric',
+      'measure',
       'flow',
       'component',
       'node',
@@ -386,8 +390,86 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: {
       source: { value: 'string', scope: 'const', doc: 'Where the points came from.' },
       through: { value: 'enum', scope: 'const', values: ['origin'], doc: 'origin: a cost with no idle part (a = 0).' },
+      x: {
+        value: 'measure',
+        scope: 'const',
+        doc: 'A measure whose series is x: with `y`, a snapshot fits the two, and the points are what it falls back to.',
+      },
+      y: { value: 'measure', scope: 'const', doc: 'A measure whose series is y (the cost), with `x`.' },
     },
     children: ['points'],
+  },
+  metric: {
+    inspector: 'model',
+    doc: 'A mapping written once: the query that measures something, how its window becomes one value, and how many samples it needs. Each `measure` that uses it fills `{{ args.name }}` in the query. Nothing is read until `loadmap pull`, which takes the address and the credentials from the environment, never from the text.',
+    example:
+      'metric served "Requests served" {\n  prometheus { query: "sum(rate(http_requests_total{job=\\"{{ args.job }}\\"}[5m]))" }\n  stat: max\n  min: 30\n}',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {
+      stat: {
+        inspector: 'main',
+        value: 'enum',
+        scope: 'const',
+        values: ['mean', 'min', 'max', 'last', 'p50', 'p95', 'p99'],
+        doc: 'How the window becomes one value. Default mean.',
+      },
+      min: {
+        value: 'number',
+        scope: 'const',
+        doc: 'The samples a window needs before its value counts; with fewer, the fallback is used.',
+      },
+    },
+    children: ['prometheus'],
+  },
+  prometheus: {
+    doc: 'A metric read from Prometheus: a PromQL query over a range, at the address `LOADMAP_PROMETHEUS_URL` gives `loadmap pull`. The query is data sent to Prometheus, never code loadmap runs; it must return one series.',
+    example: 'prometheus { query: "sum(rate(http_requests_total[5m]))" }',
+    args: [],
+    props: {
+      query: {
+        inspector: 'main',
+        value: 'string',
+        scope: 'const',
+        required: true,
+        doc: 'The PromQL query; `{{ args.name }}` is filled by each measure.',
+      },
+    },
+    children: [],
+  },
+  measure: {
+    inspector: 'model',
+    doc: "One use of a metric: its arguments, and the value the definition uses until a snapshot has one. Its id is a capacity or a number, as its fallback is (`capacity: apiPeak`), and names the measurement in the snapshot `loadmap pull` writes. Read from a snapshot, the value is today's system's: it does not change with the parameters.",
+    example: 'measure apiPeak served { job: "api"; fallback: estimated(1_000, "req/s", "vendor benchmark") }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'metric', kind: 'id' },
+    ],
+    props: {
+      fallback: {
+        inspector: 'main',
+        value: 'value',
+        scope: 'const',
+        required: true,
+        doc: 'A capacity (`measured(…)`, `estimated(…)`) or a number: what the definition uses when the snapshot has no value, or there is no snapshot.',
+      },
+      unit: {
+        value: 'string',
+        scope: 'const',
+        doc: 'The unit of a number, as the snapshot writes it: "orders/s". A capacity has its own.',
+      },
+    },
+    open: {
+      names: 'arguments',
+      spec: {
+        value: 'value',
+        scope: 'const',
+        doc: 'An argument of its metric, a word or a number: it fills `{{ args.name }}` in the query.',
+      },
+    },
+    children: [],
   },
   published: {
     inspector: 'model',

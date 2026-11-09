@@ -8,6 +8,7 @@ export {
   type DslSymbol,
   type ExpectationResult,
   LANGUAGE_VERSION,
+  type MeasureQuery,
   problems,
 } from './compile'
 export { type Diagnostic, formatDiagnostic, type Span } from './diagnostics'

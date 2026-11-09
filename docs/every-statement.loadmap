@@ -41,6 +41,9 @@ let perEvent = newest ? 1 : 2
 # cost = a + b × rate, fitted from a series
 fit apiCores "API CPU per order" {
   source: "made-up series"
+  # with a snapshot, fitted from these two measures' series; the points are what it falls back to
+  x: orderRate
+  y: apiCoresNow
   points rate cores {
     100 0.31
     200 0.52
@@ -60,9 +63,22 @@ published brokersRef kafka {
   producers: 4
 }
 
+# a query written once; each measure fills its arguments, and `loadmap pull` reads it into a snapshot
+metric ordersPlaced "Orders placed" {
+  prometheus { query: 'sum(rate(orders_total{shop="{{ args.shop }}"}[5m]))' }
+  stat: p95
+  min: 30
+}
+metric apiCpu "API CPU" {
+  prometheus { query: 'sum(rate(container_cpu_usage_seconds_total{pod=~"api-.*"}[5m]))' }
+}
+# without a snapshot, each is its fallback
+measure orderRate ordersPlaced { shop: "main"; fallback: 50; unit: "orders/s" }
+measure apiCoresNow apiCpu { fallback: 0.5; unit: "cores" }
+
 flow orders "orders" {
   unit: "order"
-  rate: 50 * load
+  rate: orderRate * load
   priority: 1
   retry { times: tries; budget: 0.1 }
   route: gateway -> limiter -> api -> cache -> db

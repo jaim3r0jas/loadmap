@@ -222,6 +222,48 @@ store, so a page and its recordings say the same thing on any day.
 }
 ```
 
+A **metric** is the query that measures something, written once; a **measure** is one use of it, with its
+arguments and its **fallback**: the value the definition uses until a snapshot has one. Its id is a capacity or a
+number, as its fallback is, and names the measurement in the snapshot:
+
+```
+metric served "Requests served" {
+  prometheus { query: 'max_over_time(sum(rate(http_requests_total{job="{{ args.job }}"}[5m]))[7d:5m])' }
+  stat: max
+  min: 30
+}
+measure apiCapacity served { job: "api"; fallback: estimated(1_000, "req/s", "vendor benchmark") }
+measure orderRate served { job: "orders"; fallback: 40; unit: "orders/s" }
+
+# capacity: apiCapacity    rate: orderRate * load
+```
+
+`{{ args.job }}` is filled by each measure's `job`, so one metric serves several components; the checker names an
+argument the query needs and one it never uses. `stat` says how the window becomes one value (`mean` by default) and
+`min` how many samples it needs before it counts. A `fit` with `x` and `y` naming two measures is fitted from their
+series when there is a snapshot, and from its own `points` when there is none. A value read from a snapshot is
+today's system's: it does not change with the parameters.
+
+**Nothing in a definition fetches anything.** `loadmap pull` reads every measure from its provider and writes the
+snapshot next to the definition; the address and the credentials come from the environment, never from the text, so a
+shared link cannot make anyone's browser or CLI call a server:
+
+```bash
+export LOADMAP_PROMETHEUS_URL=https://prometheus.example:9090 LOADMAP_PROMETHEUS_TOKEN=…
+loadmap pull shop.loadmap --window 7d --step 5m        # writes shop.snapshot.json
+```
+
+```
+shop.snapshot.json: 1 of 2 measurements, 2026-11-01T06:00:00Z to 2026-11-08T06:00:00Z
+  ✓ apiCapacity: 1,200 req/s (2,016 samples, max)
+  ✗ orderRate: the query returned 3 series: sum them into one
+```
+
+The window ends on the step's grid, so two pulls in the same step read the same points. A query that fails, or a
+window with fewer samples than `min`, leaves that measurement missing: the model uses the fallback, and the
+assumptions say why. A host compiles with the snapshot, `compile(source, { snapshot: fromSnapshot(parseSnapshot(text))
+})`; without one, every measure is its fallback.
+
 In TypeScript, `parseSnapshot` checks the file (an opened file is untrusted input) and `fromSnapshot` reads it inside
 the model's functions. Every read names the value the definition uses when the snapshot has none: a measurement that
 is missing, or has fewer samples than its `min`, falls back to it, never to an invented one, and the assumptions say
@@ -576,7 +618,7 @@ A loadmap definition.
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
 | `grid` | boolean, constant | The editor's dot grid. Default true. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -727,8 +769,60 @@ After the keyword: id [label].
 | --- | --- | --- |
 | `source` | string, constant | Where the points came from. |
 | `through` | `origin` | origin: a cost with no idle part (a = 0). |
+| `x` | measure, constant | A measure whose series is x: with `y`, a snapshot fits the two, and the points are what it falls back to. |
+| `y` | measure, constant | A measure whose series is y (the cost), with `x`. |
 
 Holds: `points`.
+
+### metric
+
+A mapping written once: the query that measures something, how its window becomes one value, and how many samples it needs. Each `measure` that uses it fills `{{ args.name }}` in the query. Nothing is read until `loadmap pull`, which takes the address and the credentials from the environment, never from the text.
+
+```
+metric served "Requests served" {
+  prometheus { query: "sum(rate(http_requests_total{job=\"{{ args.job }}\"}[5m]))" }
+  stat: max
+  min: 30
+}
+```
+
+After the keyword: id [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `stat` | `mean` \| `min` \| `max` \| `last` \| `p50` \| `p95` \| `p99` | How the window becomes one value. Default mean. |
+| `min` | number, constant | The samples a window needs before its value counts; with fewer, the fallback is used. |
+
+Holds: `prometheus`.
+
+### prometheus
+
+A metric read from Prometheus: a PromQL query over a range, at the address `LOADMAP_PROMETHEUS_URL` gives `loadmap pull`. The query is data sent to Prometheus, never code loadmap runs; it must return one series.
+
+```
+prometheus { query: "sum(rate(http_requests_total[5m]))" }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `query` (required) | string, constant | The PromQL query; `{{ args.name }}` is filled by each measure. |
+
+### measure
+
+One use of a metric: its arguments, and the value the definition uses until a snapshot has one. Its id is a capacity or a number, as its fallback is (`capacity: apiPeak`), and names the measurement in the snapshot `loadmap pull` writes. Read from a snapshot, the value is today's system's: it does not change with the parameters.
+
+```
+measure apiPeak served { job: "api"; fallback: estimated(1_000, "req/s", "vendor benchmark") }
+```
+
+After the keyword: id metric.
+
+| Property | Value | |
+| --- | --- | --- |
+| `fallback` (required) | value, constant | A capacity (`measured(…)`, `estimated(…)`) or a number: what the definition uses when the snapshot has no value, or there is no snapshot. |
+| `unit` | string, constant | The unit of a number, as the snapshot writes it: "orders/s". A capacity has its own. |
+
+Its properties are named by the arguments its metric's query names (`{{ args.job }}`: `job`).
 
 ### published
 

@@ -95,7 +95,7 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
   // a published figure reads parameters as a let does
   const lets = new Map(
     w.owners
-      .filter((o) => o.depth === 1 && (o.keyword === 'let' || o.keyword === 'published'))
+      .filter((o) => o.depth === 1 && (o.keyword === 'let' || o.keyword === 'published' || o.keyword === 'measure'))
       .map((o) => [o.id, o.reads]),
   )
   const reads = new Set(mine.flatMap((o) => [...o.reads]))
@@ -105,7 +105,7 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
       o.depth === 1 &&
       !!o.id &&
       ((o.keyword === 'component' && components.has(o.id)) ||
-        ((o.keyword === 'param' || o.keyword === 'published') && reads.has(o.id))),
+        ((o.keyword === 'param' || o.keyword === 'published' || o.keyword === 'measure') && reads.has(o.id))),
   )
   return { title: box.title, sections: [...mine, ...extra].map(section).filter((s) => s.fields.length) }
 }
@@ -299,7 +299,7 @@ function walk(source: string) {
     owners.push(o)
     if (d) for (const a of d.args) names(a, o.reads)
     // a published statement's component is a word of the catalog, not a name the definition reads
-    if (keyword === 'published' && d?.args[1]?.t === 'id') o.reads.delete(d.args[1].name)
+    if ((keyword === 'published' || keyword === 'measure') && d?.args[1]?.t === 'id') o.reads.delete(d.args[1].name)
     for (const slot of spec.args) {
       if (slot.kind !== 'text') continue
       const a = arg(slot.name)
