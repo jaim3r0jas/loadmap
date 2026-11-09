@@ -1,5 +1,9 @@
 # @loadmap/core
 
+## 0.28.0
+
+No changes in this release.
+
 ## 0.27.0
 
 ### Minor Changes
