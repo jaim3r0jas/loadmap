@@ -1,5 +1,26 @@
 # @loadmap/core
 
+## 0.27.0
+
+### Minor Changes
+
+- 6408be2: A component catalog: `published(kafka, { brokers: 3, … })` is a fourth kind of capacity, the figure published for a
+  component (Apache Kafka, RabbitMQ, Valkey, etcd, CockroachDB, ClickHouse, NGINX, HAProxy, CoreDNS, Kubernetes, and
+  more) under the conditions it was run with, its source linked, its version and who ran it kept as metadata. The data
+  is `@loadmap/core/catalog` (or `@loadmap/react/catalog`), off every first load; editions pin the numbers. A figure is
+  a best case (a `margin` only lowers it), a published limit is exact, and a configuration no run matches gets no number:
+  the component is not ranked, the verdict says why, and an expectation that depends on it fails.
+
+### Patch Changes
+
+- 4346ee1: The `.loadmap` language takes published figures: `published brokersRef kafka { edition: "2026-11"; brokers: 3; … }`
+  names a component of the catalog and the conditions of its run, and `capacity: brokersRef` uses the figure. The
+  checker names a component, condition, edition or figure that does not exist (and which component covers `redis`),
+  warns when the conditions written match no published run, and says when a later edition has other figures;
+  autocomplete offers the components, their conditions and the values their runs used, hover the figure with its
+  conditions and source. The catalog loads only for a text that names it: `loadCatalog()` (and `needsCatalog(text)`)
+  from `@loadmap/dsl`; `<LoadmapSource>`, the editor, the CLI and the language server load it themselves.
+
 ## 0.26.1
 
 No changes in this release.
