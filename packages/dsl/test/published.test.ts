@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { compile, completions, format, hover, loadCatalog, needsCatalog, rename } from '../src'
+import { compile, completions, format, hover, loadCatalog, loadedCatalog, needsCatalog, rename } from '../src'
+import { addPublished, edit, inspect } from '../src/internal'
 
 const SRC = `loadmap 1
 title: "Events"
@@ -130,4 +131,82 @@ describe('a published statement', () => {
     const k = hover(SRC, SRC.indexOf('messageSize') + 2, r.definition)!
     expect(k.body.join('\n')).toContain('Published runs: message size 1 KB, message size 100 B.')
   })
+})
+
+describe('the catalog picker', () => {
+  beforeAll(() => loadCatalog())
+  const kafka = () => loadedCatalog()!['2026-11']!.components.kafka!
+  const conditions = { brokers: 3, replication: 3, acks: 'all', messageSize: '1 KB', producers: 4 }
+  const base = `loadmap 1
+load { max: 10 }
+flow events "events" { from: producers; rate: 100 * load; route: workers }
+node producers "Producers"
+node workers "Workers" { pass; demand: flows.events; capacity: estimated(900, "MB/s"); over: "a backlog grows" }
+producers -> workers
+`
+
+  it('adds a published statement and a box that uses it, with ids the text does not have', () => {
+    const r = addPublished(base, { component: kafka(), conditions, version: '4.4', into: 'new' })
+    if ('error' in r) throw new Error(r.error)
+    expect(r).toMatchObject({ id: 'kafkaFigure', box: 'kafka' })
+    expect(r.source).toContain(
+      'published kafkaFigure kafka {\n  edition: "2026-11"\n  version: "4.4"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
+    )
+    expect(r.source).toContain('node kafka "Apache Kafka" {\n  # what reaches it')
+    const def = compile(r.source).definition!
+    expect(def.model.evaluate().components.kafka!.capacity).toMatchObject({ value: 605, provenance: 'published' })
+    // again: new ids
+    const again = addPublished(r.source, { component: kafka(), conditions, into: 'new' })
+    expect(again).toMatchObject({ id: 'kafkaFigure2', box: 'kafka2' })
+  })
+
+  it("sets a box's capacity to it, and the inspector shows its conditions as the values its runs used", () => {
+    const r = addPublished(base, { component: kafka(), conditions, into: { box: 'workers' } })
+    if ('error' in r) throw new Error(r.error)
+    expect(r.source).toContain('capacity: kafkaFigure; over')
+    const i = inspect(r.source, { node: 'workers' })!
+    const s = i.sections.find((x) => x.keyword === 'published')!
+    expect(s.title).toBe('Apache Kafka, published (kafkaFigure)')
+    expect(s.fields.find((f) => f.label === 'Acks')).toMatchObject({
+      kind: 'choice',
+      value: 'all',
+      choices: ['all', '1'],
+    })
+    const changed = edit(r.source, s.fields.find((f) => f.label === 'Message size')!.key, '100 B')
+    expect('source' in changed && changed.source).toContain('messageSize: "100 B"')
+    expect(addPublished(base, { component: kafka(), conditions, into: { box: 'nope' } })).toEqual({
+      error: 'no box "nope"',
+    })
+    // a box with no body, last in the text: its new lines stay on it
+    const bare = `${base}node cache "Cache"\n`
+    const r2 = addPublished(bare, { component: kafka(), conditions, into: { box: 'cache' } })
+    if ('error' in r2) throw new Error(r2.error)
+    expect(r2.source).toContain(
+      'node cache "Cache" {\n  demand: 0\n  capacity: kafkaFigure\n  over: "past its published capacity"\n}\n\npublished',
+    )
+    // a figure in another unit than the box's capacity is refused
+    const msgs = base.replace('estimated(900, "MB/s")', 'estimated(900, "msg/s")')
+    expect(addPublished(msgs, { component: kafka(), conditions, into: { box: 'workers' } })).toEqual({
+      error: "workers's capacity is in msg/s, Apache Kafka's figure in MB/s",
+    })
+  })
+})
+
+it('takes a constant demand, as the picker writes for a new box', () => {
+  const src = (d: string) => `loadmap 1
+load { max: 10 }
+flow events "events" { from: p; rate: 100 * load; route: w }
+node p "P"
+node w "W" { pass; demand: flows.events; capacity: estimated(900, "MB/s"); over: "x" }
+node k "K" { demand: ${d}; capacity: estimated(10, "MB/s"); over: "y" }
+p -> w
+`
+  for (const [d, util] of [
+    ['5', 0.5],
+    ['0', 0],
+  ] as const) {
+    const r = compile(src(d))
+    expect(r.diagnostics, d).toEqual([])
+    expect(r.definition!.model.evaluate().components.k!.util).toBe(util)
+  }
 })
