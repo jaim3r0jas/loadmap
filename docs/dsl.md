@@ -265,6 +265,129 @@ jobs:
 Make `check` a required status check in the branch's rules, and a failure blocks the merge. Notifications beyond the
 comment (Slack, email) go through the CI's own means: a step after the check with `if: failure()`.
 
+**Drift** is what moves in the data while no line of the definition does: a slower query, a cache that hits less, a
+cost per request that grew. `loadmap drift` looks for it in a snapshot, against main's own history:
+
+```bash
+loadmap drift capacity.loadmap --pull --window 1d --history history/ --markers deploys.json --issue issue.md
+```
+
+```
+capacity.loadmap: 3 drifts, 2026-11-12T04:00:00Z to 2026-11-13T04:00:00Z, against 30 past runs
+  ✗ dbWrites shifted +23 % from the run of 2026-11-09T04:17:00Z: 410 → 504 writes/s (p 4.1e-12), after deploy 4f2a1c
+  ✗ API CPU per request: a slope of 0.003, above the band of the last 30 runs (0.00191 to 0.00209)
+  ✗ headroom: the target at 5.7×, below the band of the last 30 runs (8.8 to 10.1)
+```
+
+- **Change points**, as Apache Otava finds them: each measurement's value across main's runs, one a run, is split
+  where its energy statistic peaks (E-divisive), and a split is kept only when Welch's t-test between its two sides is
+  below `--p-value` (0.001). One value a run, not the points inside a window: those are too alike, and a day's shape
+  is no shift. A shift needs five runs on either side, and is reported while it is in the last seven. `--markers`
+  names the latest deploy before it, since the run before. Deterministic: the same data gives the same report.
+- **Two windows**, as Kayenta judges them: each series against the last run's, by a Mann-Whitney U test at
+  `--confidence` (98 %), with a `--dead-zone` (5 %) so a tiny shift never counts. Only the points the last run did not
+  read are compared: what both windows hold is no evidence either way.
+- **Main's own history**, as Bencher sets its thresholds: each measured value, each fit's slope (the cost per unit)
+  and the first limit's headroom, against the band of the last `--runs` (30) snapshots in `--history`, once there are
+  `--min-runs` (5). `--test` builds it: `t_test` (the default, at 99 %), `percentage` (± 10 %) or `iqr`. A slope counts
+  only above its band and headroom only below: a cheaper request or more room is no drift.
+
+It exits 1 when something drifted and 3 when it cannot look: a definition with an error, a snapshot it cannot read or
+with no data at all (a provider down, a token expired), a file it cannot write. A scheduled job opens an issue for a
+drift and fails for a broken run, and nobody's pull request fails for either. `--json` writes the result, and `--issue` the body of
+an issue a workflow opens and keeps up to date. A nightly one, keeping the history in the Actions cache:
+
+```yaml
+# loadmap drift every night on main: what moved in the measured data, in one issue kept up to date
+name: capacity drift
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      drifted: ${{ steps.drift.outputs.drifted }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci # @loadmap/cli pinned by the lockfile
+      # main's past snapshots, as the last night left them
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: history
+          key: capacity-history-${{ github.run_id }}
+          restore-keys: capacity-history-
+      - id: drift
+        env:
+          LOADMAP_PROMETHEUS_URL: ${{ secrets.LOADMAP_PROMETHEUS_URL }}
+          LOADMAP_PROMETHEUS_TOKEN: ${{ secrets.LOADMAP_PROMETHEUS_TOKEN }}
+        run: |
+          mkdir -p history
+          now="history/$(date -u +%Y-%m-%dT%H%MZ).snapshot.json"
+          set +e
+          npx loadmap drift capacity.loadmap --pull --window 1d --out "$now" --history history \
+            --issue issue.md --json drift.json
+          code=$?
+          set -e
+          # 0: nothing moved, 1: a drift, for the issue; anything else is a broken run, and fails here
+          case "$code" in
+            0) echo "drifted=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "drifted=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+          # sixty nights are history enough
+          ls history/*.json | sort | head -n -60 | xargs -r rm --
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: history
+          key: capacity-history-${{ github.run_id }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capacity-drift-${{ github.run_id }}
+          path: |
+            drift.json
+            issue.md
+
+  issue:
+    needs: drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: capacity-drift-${{ github.run_id }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRIFTED: ${{ needs.drift.outputs.drifted }}
+        # one open issue, found again by its title and its author: updated on a drift, closed on a quiet night
+        run: |
+          title="Capacity drift in capacity.loadmap"
+          n=$(gh issue list --state open --author "app/github-actions" --search "\"$title\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ "$DRIFTED" = true ] && [ -n "$n" ]; then
+            gh issue edit "$n" --body-file issue.md
+          elif [ "$DRIFTED" = true ]; then
+            gh issue create --title "$title" --body-file issue.md
+          elif [ -n "$n" ]; then
+            gh issue close "$n" --comment "$(cat issue.md)"
+          fi
+```
+
 ### Published figures
 
 A **published** statement takes a capacity from the component catalog: the figure published for a component, under

@@ -6,12 +6,14 @@ import { parseArgs } from 'node:util'
 import { compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { check } from './check'
+import { drift } from './drift'
 import { fmt } from './fmt'
 import { lsp } from './lsp'
 import { type Chromium, playwright } from './playwright'
 import { pull } from './pull'
 
 export { type CheckOptions, check, github } from './check'
+export { type Drift, drift } from './drift'
 export { type FmtOptions, fmt } from './fmt'
 export { lsp } from './lsp'
 export { type PullCommandOptions, pull } from './pull'
@@ -19,6 +21,7 @@ export { type PullCommandOptions, pull } from './pull'
 export const USAGE = `loadmap check <file.loadmap>… [--format text|github|json] [--pull | --snapshot <file.json>] [options]
 loadmap fmt <file.loadmap>… [--check] | loadmap fmt -
 loadmap pull <file.loadmap> [--window 7d] [--step 5m] [--to <instant>] [--out <file.json>]
+loadmap drift <file.loadmap> (--snapshot <file.json> | --pull) [--history <dir>] [options]
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
 loadmap lsp
 
@@ -59,6 +62,21 @@ needs is not configured.
   --step <d>            seconds between points (default 5m)
   --to <instant>        the end of the window (default now, on the step's grid)
   --out <file>          where to write it (default the definition's name, .snapshot.json)
+
+drift finds what moved in the measured data that no change of the definition shows: change points in each value
+across main's runs (E-divisive with a t-test), a series unlike the last run's (a Mann-Whitney U test with a dead
+zone), and each value, fit slope and the first limit's headroom outside the band of the last runs. It exits 1 when
+something drifted, 3 when it cannot look (a definition with an error, a snapshot unreadable or without data, a
+provider not configured, a file it cannot write).
+
+  --history <dir>       past snapshots of main (*.json), oldest to newest by when they were read
+  --markers <file>      deploys to name a shift by: [{ "at": "2026-11-05T10:12:00Z", "label": "deploy 4f2a1c" }]
+  --p-value <p>         a change point counts below it (default 0.001)
+  --confidence <c>      of the two-window test (default 98%)
+  --dead-zone <d>       a smaller change never counts (default 5%)
+  --test <t>            the history's band: t_test (default), percentage (±10 %) or iqr
+  --runs <n>            the last runs the band reads (default 30); --min-runs <n> it needs first (default 5)
+  --json <file>         write the result; --issue <file> the body of the issue a workflow opens or updates
 
 lsp serves the language server protocol over standard input and output, for any editor that speaks it: errors and
 failing expectations, completion, hover with the values at the defaults, signature help, formatting, quick fixes,
@@ -113,6 +131,7 @@ export async function main(argv: string[], log: (s: string) => void = console.lo
   if (command === 'check') return check(rest, { log })
   if (command === 'fmt') return fmt(rest, { log })
   if (command === 'pull') return pull(rest, { log })
+  if (command === 'drift') return drift(rest, { log })
   // --stdio is what most clients pass: standard input and output are the only channel
   if (command === 'lsp') return lsp()
   if (command !== 'record') {

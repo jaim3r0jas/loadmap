@@ -244,15 +244,20 @@ export function summarize(series: TimeSeries, stat: Stat): number {
       return vs.reduce((a, b) => Math.max(a, b))
     case 'last':
       return series.reduce((a, b) => (b[0] >= a[0] ? b : a))[1]
-    default: {
-      const q = Number(stat.slice(1)) / 100
-      const sorted = [...vs].sort((a, b) => a - b)
-      const rank = q * (sorted.length - 1)
-      const lo = Math.floor(rank)
-      const hi = Math.ceil(rank)
-      return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (rank - lo)
-    }
+    default:
+      return quantile(
+        [...vs].sort((a, b) => a - b),
+        Number(stat.slice(1)) / 100,
+      )
   }
+}
+
+/** The q-quantile of a sorted sample, interpolating between the two nearest ranks. */
+export function quantile(sorted: readonly number[], q: number): number {
+  const rank = q * (sorted.length - 1)
+  const lo = Math.floor(rank)
+  const hi = Math.ceil(rank)
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (rank - lo)
 }
 
 /** Reads a snapshot inside model functions: each read falls back to the definition's own value, with why. */

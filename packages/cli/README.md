@@ -5,6 +5,7 @@ npx @loadmap/cli check shop.loadmap          # exit 1 when an expect line fails;
 npx @loadmap/cli fmt shop.loadmap            # lays it out the one way; --check exits 1 instead (for CI)
 npx @loadmap/cli lsp                         # a language server over stdio, for Neovim, Helix and others
 npx @loadmap/cli pull shop.loadmap           # reads its measures into shop.snapshot.json (LOADMAP_PROMETHEUS_URL)
+npx @loadmap/cli drift shop.loadmap --pull --history history/   # what moved in the data: exit 1 on a drift
 
 npm i -D @loadmap/cli playwright && npx playwright install chromium   # once, to record
 npx loadmap record shop.loadmap --out shop.gif --caption
