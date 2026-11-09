@@ -184,9 +184,10 @@ describe('the editor', () => {
     const { host, handle } = await mount()
     await userEvent.click(page.getByRole('button', { name: 'New' }))
     // the list loads as the menu first opens
-    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length)
+    // the templates, and Add → From the catalog
+    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length + 1)
     const names = [...host.querySelectorAll('[role="menuitem"]')].map((i) => i.firstChild?.textContent)
-    expect(names).toEqual(TEMPLATES.map((t) => t.title))
+    expect(names).toEqual([...TEMPLATES.map((t) => t.title), 'From the catalog…'])
     // each with its line, said after its name
     const queue = page.getByRole('menuitem', { name: 'Queue and workers' })
     await expect.element(queue).toHaveAccessibleDescription('An API that queues jobs for a pool of workers.')
@@ -243,11 +244,11 @@ describe('the editor', () => {
     }
   })
 
-  it('hides New with templates={false} and nothing else in it', async () => {
+  it('hides New with templates={false}, catalog={false} and nothing else in it', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    root.render(<LoadmapEditor initial={checkout} templates={false} />)
+    root.render(<LoadmapEditor initial={checkout} templates={false} catalog={false} />)
     await expect.poll(() => host.querySelector('.lme-bar')).toBeTruthy()
     expect(page.getByRole('button', { name: 'New' }).query()).toBeNull()
     expect(page.getByRole('button', { name: 'Export' }).query()).toBeTruthy()

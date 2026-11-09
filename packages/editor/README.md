@@ -18,7 +18,8 @@ resizes by its inner edge (`split`, `onSplit`; `panelWidth`, `onPanelWidth`) and
 `panel`, `onPanel`). An edit keeps the view the reader zoomed to; **Track live changes** in the code panel (`track`,
 `onTrack`) brings the boxes each edit changed into view and marks them. On a phone (below 720 px wide or 500 px high)
 the text or the diagram, switched at the bottom, the panels in a sheet over the diagram, and a row of keys over the
-keyboard. The bar shows the model's title, **New** (the templates), **Export** (the `.loadmap` file) and **Share**
+keyboard. The bar shows the model's title, **New** (the templates, and **Add → From the catalog**: a component's published
+figure for the conditions picked, as a new box or the capacity of the box selected), **Export** (the `.loadmap` file) and **Share**
 (the link; with `embedLink`, an embed too). `start` adds controls before the title, `newItems` and `exportItems`
 sections to the two menus, and `actions` controls before Share:
 

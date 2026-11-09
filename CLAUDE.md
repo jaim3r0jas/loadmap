@@ -94,6 +94,12 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
   verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`± 30%` in the
   language) makes every crossing a range; the ranking, the first limit, presets, `compare()` and expectations use
   its pessimistic edge (every capacity at its low bound), and without a ± every text reads as before.
+- **A published figure applies only under its run's conditions** (`published(...)`, `@loadmap/core/catalog`, the
+  `published` statement): one entry per component, vendors and versions as metadata (the version decides only where a
+  source shows it changing the figure). Never scale, interpolate or invent one: a configuration no run matches has no
+  published benchmark, is not ranked, and says so. Every number is read on its source page; a released edition never
+  changes (`catalog.test.ts` snapshots it), a correction goes into the next. The catalog stays off every first load:
+  hosts call `loadCatalogFor(text)` before they compile.
 - **Dates only from `growth.asOf`**, never `Date.now()` or the locale: a page and its recordings say the same date
   on any day, on any machine.
 - **Randomness only through `rng(seed)`** (`@loadmap/sim`). `Math.random` anywhere in sim, layout, engine or export
@@ -168,6 +174,6 @@ lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 ## Not yet
 
 State in the URL for TypeScript pages (editor links carry it), search in the docs. Two live diagrams side by side,
-cost per scenario, goal seek; ranges for fits, Monte Carlo. In the editor: adding or removing boxes and edges in the
-UI, editing formulas in the inspector, edge labels, hover help, Export → TypeScript, the source in exported PNGs, a Vite
+cost per scenario, goal seek; ranges for fits, Monte Carlo. In the editor: removing boxes and adding edges in the
+UI (the catalog picker adds a box), editing formulas in the inspector, edge labels, hover help, Export → TypeScript, the source in exported PNGs, a Vite
 plugin for `import m from './m.loadmap'`.

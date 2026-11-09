@@ -1,4 +1,6 @@
+import type { Published } from '@loadmap/core'
 import { childrenOf, type Decl, type Expr, type Property, type Stmt } from './ast'
+import { componentOf } from './catalog'
 import { type CompileOptions, compile } from './compile'
 import { parse } from './parser'
 import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, SCHEMA } from './schema'
@@ -90,14 +92,20 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
   const mine = [box, ...descendants(box)]
   // a stage may use a component declared on its mine; and the parameters its formulas read (through lets too) come along
   const components = new Set(mine.flatMap((o) => o.uses))
-  const lets = new Map(w.owners.filter((o) => o.depth === 1 && o.keyword === 'let').map((o) => [o.id, o.reads]))
+  // a published figure reads parameters as a let does
+  const lets = new Map(
+    w.owners
+      .filter((o) => o.depth === 1 && (o.keyword === 'let' || o.keyword === 'published'))
+      .map((o) => [o.id, o.reads]),
+  )
   const reads = new Set(mine.flatMap((o) => [...o.reads]))
   for (const r of reads) for (const x of lets.get(r) ?? []) reads.add(x)
   const extra = w.owners.filter(
     (o) =>
       o.depth === 1 &&
       !!o.id &&
-      ((o.keyword === 'component' && components.has(o.id)) || (o.keyword === 'param' && reads.has(o.id))),
+      ((o.keyword === 'component' && components.has(o.id)) ||
+        ((o.keyword === 'param' || o.keyword === 'published') && reads.has(o.id))),
   )
   return { title: box.title, sections: [...mine, ...extra].map(section).filter((s) => s.fields.length) }
 }
@@ -153,6 +161,8 @@ interface Owner {
   /** The names its formulas read, and the components its stages name. */
   reads: Set<string>
   uses: string[]
+  /** For a `published` statement: its component, whose conditions are its open properties. */
+  catalog?: Published
 }
 
 const isBox = (k: string) => (BOXES as readonly string[]).includes(k)
@@ -195,8 +205,17 @@ function walk(source: string) {
       reads: new Set(),
       uses: [],
     }
+    if (keyword === 'published' && d) {
+      const c = componentOf(d)
+      if (c) {
+        o.catalog = c
+        o.title = `${c.name}, published (${id ?? ''})`
+      }
+    }
     owners.push(o)
     if (d) for (const a of d.args) names(a, o.reads)
+    // a published statement's component is a word of the catalog, not a name the definition reads
+    if (keyword === 'published' && d?.args[1]?.t === 'id') o.reads.delete(d.args[1].name)
     for (const slot of spec.args) {
       if (slot.kind !== 'text') continue
       const a = arg(slot.name)
@@ -229,7 +248,10 @@ function walk(source: string) {
     for (const s of body) {
       if (s.kind === 'prop') {
         names(s.value, o.reads)
-        const p = own(spec.props, s.key.name)
+        // a published statement's conditions are named by its component
+        const p =
+          own(spec.props, s.key.name) ??
+          (o.catalog && own(o.catalog.conditions, s.key.name) ? spec.open?.spec : undefined)
         // a repeated property (assume) is told apart by its place
         const n = (seen.get(s.key.name) ?? 0) + 1
         seen.set(s.key.name, n)
@@ -247,8 +269,32 @@ function walk(source: string) {
 
   const prop = (o: Owner, key: string, s: Property, p: PropSpec, body: Stmt[]) => {
     const e = s.value
-    const base = { key, label: words(s.key.name), doc: p.doc, more: p.inspector !== 'main' }
+    const condition = o.catalog && own(o.catalog.conditions, s.key.name)
+    const base = {
+      key,
+      label: condition ? words(condition.label) : words(s.key.name),
+      doc: condition ? condition.doc : p.doc,
+      more: !condition && p.inspector !== 'main',
+    }
     const n = literal(e)
+    // a condition written as a value its runs used: a choice of those values
+    if (condition && (n != null || e.t === 'str')) {
+      const name = s.key.name
+      // 1 and "1" are one value, as the catalog matches them
+      const seen = new Map<string, OptionValue>()
+      for (const f of o.catalog!.figures) {
+        const v = f.when[name]
+        if (v != null && typeof v !== 'boolean' && !seen.has(String(v))) seen.set(String(v), v)
+      }
+      const choices = [...seen.values()]
+      const value = seen.get(String(e.t === 'str' ? e.value : n!))
+      if (value != null)
+        return add(o, { ...base, kind: 'choice', value, choices }, (_, v) => {
+          if ((typeof v !== 'number' && typeof v !== 'string') || !choices.includes(v))
+            return 'one of its published runs'
+          return [replace(e, typeof v === 'string' ? quote(v, e.t === 'str' ? e : undefined) : number(v, e))]
+        })
+    }
     if (p.value === 'capacity' && e.t === 'call' && isProvenance(e.callee.name)) {
       const c = capacity(o, base, e)
       if (c) return

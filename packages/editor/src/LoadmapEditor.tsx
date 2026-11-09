@@ -13,6 +13,9 @@ import { bracketMatching, indentOnInput } from '@codemirror/language'
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
+import { published } from '@loadmap/core'
+import { fmt } from '@loadmap/core/format'
+import { conditionText } from '@loadmap/core/internal'
 import {
   type CompileResult,
   compile,
@@ -22,13 +25,23 @@ import {
   encodeShare,
   format,
   type HostFunctions,
+  loadCatalog,
   loadCatalogFor,
   loadedCatalog,
   needsCatalog,
   problems,
   sharedValues,
 } from '@loadmap/dsl'
-import { type EditValue, edit, fingerprint, inspect, pageOptions } from '@loadmap/dsl/internal'
+import {
+  type AddResult,
+  addPublished,
+  type EditValue,
+  edit,
+  fingerprint,
+  inspect,
+  latestEdition,
+  pageOptions,
+} from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
 import {
   type CSSProperties,
@@ -44,6 +57,7 @@ import {
   useState,
 } from 'react'
 import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
+import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
 import type { InspectorProps, InspectorTab } from './Inspector'
@@ -131,6 +145,11 @@ export interface LoadmapEditorProps {
    * the list loaded when the menu first opens, each one's text when the reader picks it.
    */
   templates?: readonly Template[] | false
+  /**
+   * Add → From the catalog in the New menu: a component's published figure, as a new box or the capacity of the box
+   * selected. Default true; false leaves it out.
+   */
+  catalog?: boolean
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
   fileName?: string
   /**
@@ -178,6 +197,7 @@ export function LoadmapEditor({
   onTrack,
   fileName,
   templates,
+  catalog = true,
   layout: initialLayout = 'code',
   ref,
 }: LoadmapEditorProps) {
@@ -286,6 +306,7 @@ export function LoadmapEditor({
   const tools = useRef<HTMLDivElement>(null)
   // the phone's sheet of actions, drawn while it is open
   const [sheet, setSheet] = useState(false)
+  const [picking, setPicking] = useState(false)
   const shareGroup = useRef<HTMLSpanElement>(null)
   const embed = useRef<EmbedHandle>(null)
 
@@ -473,6 +494,23 @@ export function LoadmapEditor({
         annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.inspector')],
       })
     return null
+  }
+  /** What the catalog picker reads and writes through: the catalog, the figure for a pick, its text. */
+  const catalogApi: CatalogApi = {
+    components: () => loadCatalog().then((e) => Object.values(e[latestEdition(e)]!.components)),
+    figure: published,
+    condition: conditionText,
+    number: fmt,
+    add: (pick) => addPublished(view.current?.state.doc.toString() ?? '', pick, { functions }),
+  }
+  /** A pick from the catalog: its text added (a published statement, a box or its capacity), the box selected. */
+  const addFromCatalog = (r: Extract<AddResult, { box: string }>, note: string) => {
+    view.current?.dispatch({
+      changes: r.changes,
+      annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.catalog')],
+    })
+    setSelected(r.box)
+    setNote(note)
   }
   const formatText = () => {
     const v = view.current
@@ -664,7 +702,7 @@ export function LoadmapEditor({
   const title = def?.model.title ?? 'Untitled'
   const hasTemplates = templates == null || (templates !== false && templates.length > 0)
   const embedOn = !!embedLink && !!def
-  useToolbar(tools, `${phone} ${canvas} ${reader} ${embedOn} ${hasTemplates || !!newItems?.length}`)
+  useToolbar(tools, `${phone} ${canvas} ${reader} ${embedOn} ${hasTemplates || catalog || !!newItems?.length}`)
   /** The embed's options, under what asked for them, once the menu or the sheet that asked has closed. */
   const showEmbed = (anchor: Element | null | undefined) =>
     requestAnimationFrame(() => anchor && embed.current?.show(anchor))
@@ -690,6 +728,30 @@ export function LoadmapEditor({
       <Starters templates={templates || undefined} sheet={sheet} onPick={startFrom} />
     </Suspense>
   )
+  // the box selected, for "Use for" in the catalog picker
+  const node = selected
+    ? (def?.view.def.nodes as Record<string, { label?: unknown }> | undefined)?.[selected]
+    : undefined
+  const picker = picking && (
+    <Suspense fallback={null}>
+      <CatalogPicker
+        box={
+          selected && node ? { id: selected, label: typeof node.label === 'string' ? node.label : selected } : undefined
+        }
+        api={catalogApi}
+        onPick={addFromCatalog}
+        onClose={() => setPicking(false)}
+      />
+    </Suspense>
+  )
+  const addGroup = (sheet?: boolean) =>
+    catalog && (
+      <MenuGroup label="Add">
+        <MenuItem sheet={sheet} onSelect={() => setPicking(true)}>
+          From the catalog…
+        </MenuItem>
+      </MenuGroup>
+    )
   // the same groups in the phone's sheet and in a narrow column's menu
   const viewGroup = (sheet?: boolean) => (
     <MenuGroup label="View">
@@ -804,6 +866,7 @@ export function LoadmapEditor({
                       ...(newItems ?? []).map((s) => ({ label: s.label, items: () => barItems(s.items, true) })),
                     ]}
                   >
+                    {addGroup(true)}
                     {viewGroup(true)}
                     {exportGroups(true)}
                     {embedOn && (
@@ -830,11 +893,12 @@ export function LoadmapEditor({
                   Format
                 </button>
               )}
-              {(hasTemplates || !!newItems?.length) && (
+              {(hasTemplates || catalog || !!newItems?.length) && (
                 <Menu label="New" className="lme-wide">
                   {() => (
                     <>
                       {hasTemplates && <MenuGroup label="Templates">{templateItems()}</MenuGroup>}
+                      {addGroup()}
                       {sections(newItems)}
                     </>
                   )}
@@ -855,6 +919,7 @@ export function LoadmapEditor({
                     <>
                       {viewGroup()}
                       {hasTemplates && <MenuGroup label="Templates">{templateItems()}</MenuGroup>}
+                      {addGroup()}
                       {sections(newItems)}
                       {exportGroups()}
                     </>
@@ -1063,6 +1128,7 @@ export function LoadmapEditor({
           ))}
         </div>
       )}
+      {picker}
     </div>
   )
 }
@@ -1153,6 +1219,7 @@ const MARK = 1600
 const MAC = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform)
 const Starters = later(() => import('./Starters'), 'The templates did not load: reload the page.')
 const Actions = later(() => import('./Actions'))
+const CatalogPicker = later(() => import('./CatalogPicker'), 'The catalog did not load: reload the page.')
 const Inspector = later<InspectorProps>(
   () => import('./Inspector').then((m) => ({ default: m.Inspector })),
   'The inspector did not load: reload the page.',

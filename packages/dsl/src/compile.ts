@@ -467,7 +467,7 @@ class Compiler {
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs))
-      if (!(c as { demand?: unknown }).demand && !used.has(id) && !this.plainBoxes.has(id))
+      if ((c as { demand?: unknown }).demand == null && !used.has(id) && !this.plainBoxes.has(id))
         this.report.error(
           componentNames.get(id)!,
           `the component "${id}" needs "demand: …": no stage uses it`,
@@ -1393,7 +1393,9 @@ class Compiler {
               if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
             }
           : undefined
-      o[k] = this.dyn(prop.value, want, 'ctx', check)
+      const v = this.dyn(prop.value, want, 'ctx', check)
+      // the model takes demand and when as functions only: a constant (demand: 0) becomes one
+      o[k] = (k === 'demand' || k === 'when') && v !== undefined && typeof v !== 'function' ? () => v : v
     }
     const at = box ? (box.args.id ?? box.at) : b.at
     const missing = ['capacity', 'over'].filter((k) => !(k in o))
