@@ -69,10 +69,11 @@ describe('the editor', () => {
       .poll(() => verdict(host), { timeout: 5000 })
       .toContain('but the API gateway runs above the 50 % target')
     expect(handle.loadmap()!.values().pods).toBe(6)
-    // ten times the orders breaks both promises: a warning on each line, the diagram still shown
+    // ten times the orders breaks both promises: a warning on each line, the diagram still shown; at 6 pods the
+    // first holds only at the high edge of the gateway's ±, so it is inconclusive, not a failure
     await expect.poll(() => host.querySelector('.lme-status')!.textContent).toBe('2 warnings')
     expect(host.querySelector('.lme-problems [data-severity="warning"]')!.textContent).toMatch(
-      /^\d+:1 "Today keeps 7×" fails: expected at least 7×, but the 50 % target holds up to between/,
+      /^\d+:1 "Today keeps 7×" is inconclusive: holds at 7× only at the high edge of a ±; expected at least 7×, but the 50 % target holds up to between/,
     )
     expect(host.querySelector('.lme-preview')!.hasAttribute('data-stale')).toBe(false)
     edit('"Postgres primary"', '"Main database"')
