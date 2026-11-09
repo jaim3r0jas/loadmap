@@ -237,16 +237,28 @@ export function declarations(source: string, doc: Document): DslSymbol[] {
 }
 
 /**
- * The diagnostics and every failing expectation, in source order: an editor marks a failure as a warning (the
- * diagram still shows), `loadmap check` as an error.
+ * The diagnostics and every expectation that does not pass, in source order: an editor marks a failure as a warning
+ * (the diagram still shows), `loadmap check` as an error. An inconclusive one says why; an expect with `severity:
+ * warn` is a warning either way.
  */
-export function problems(r: CompileResult, failed: Diagnostic['severity'] = 'warning'): Diagnostic[] {
+export function problems(
+  r: CompileResult,
+  failed: Diagnostic['severity'] = 'warning',
+  inconclusive: Diagnostic['severity'] = 'warning',
+): Diagnostic[] {
   const out = [...r.diagnostics]
-  for (const e of r.expectations)
-    if (!e.result.ok) {
-      const name = e.result.expectation.label ? `"${e.result.expectation.label}" fails: ` : ''
-      out.push({ severity: failed, message: `${name}${e.result.message}`, ...e.at, line: e.line, column: e.column })
-    }
+  for (const e of r.expectations) {
+    const { outcome, expectation, reasons, message } = e.result
+    if (outcome === 'pass') continue
+    const label = expectation.label ? `"${expectation.label}" ` : ''
+    const text =
+      outcome === 'fail'
+        ? `${label ? `${label}fails: ` : ''}${message}`
+        : `${label ? `${label}is inconclusive` : 'inconclusive'}: ${reasons.join('; ')}${reasons.length ? '; ' : ''}${message}`
+    // a warning-level expect is never more than a warning
+    const severity = expectation.severity === 'warn' ? 'warning' : outcome === 'fail' ? failed : inconclusive
+    out.push({ severity, message: text, ...e.at, line: e.line, column: e.column })
+  }
   return out.sort((a, b) => a.from - b.from)
 }
 
@@ -575,16 +587,16 @@ class Compiler {
     const snap = this.snapshot?.snapshot
     if (snap) {
       // a number read nowhere else shows that it fell back: listed missing, with why, like a capacity's line does
+      // only what this definition measures: a measure taken out leaves nothing behind in its checks
+      const kept = Object.entries(snap.measurements).filter(([k]) => this.measureIds.has(k))
       const absent = this.measures.filter((m) => this.numbers.has(m.id) && !Object.hasOwn(snap.measurements, m.id))
-      model.snapshot = absent.length
-        ? {
-            ...snap,
-            measurements: {
-              ...snap.measurements,
-              ...Object.fromEntries(absent.map((m) => [m.id, { unit: m.unit, missing: this.snapshot!.unread(m.id)! }])),
-            },
-          }
-        : snap
+      model.snapshot = {
+        ...snap,
+        measurements: Object.fromEntries([
+          ...kept,
+          ...absent.map((m) => [m.id, { unit: m.unit, missing: this.snapshot!.unread(m.id)! }] as const),
+        ]),
+      }
     }
     const th = byKind('thresholds')[0]
     if (th) {
@@ -1502,6 +1514,8 @@ class Compiler {
       if (!(v > 0 && Number.isFinite(v))) this.report.error(this.prop(b, k)!.value, `${k} is a load multiple above 0`)
       else e[k] = v
     }
+    const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
+    if (severity) e.severity = severity
     if (!b.props.has('target') && !b.props.has('full')) {
       this.report.error(b.at, 'an expect needs a target or a full multiple', 'expect { target: 8 }')
       return undefined

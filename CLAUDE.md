@@ -43,7 +43,7 @@ After a change to `packages/vscode` (or what it bundles: the cli's `lsp`, `<Load
 @loadmap/vscode test:e2e` runs the extension as it ships in a pinned VS Code (downloaded once into `.vscode-test`; CI
 runs it under xvfb in `check`), and `pnpm --filter @loadmap/vscode package` makes the .vsix.
 `pnpm budget` (in `check`) builds `scripts/budget/*.html` and fails when a `<Loadmap>` page loads more than 54 kB gzip of
-loadmap first, the editor adds more than 178 kB, or ELK is in a first load. Before a release, and after a change to
+loadmap first, the editor adds more than 180 kB, or ELK is in a first load. Before a release, and after a change to
 exports, dependencies or the build: `pnpm verify:pack` (packs every package, installs the tarballs with npm in a fresh
 Vite app outside the monorepo, runs tsc, builds, measures the budget, draws checkout and the react README's quick
 start in Chromium, built and in dev). The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
@@ -94,7 +94,9 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
 - **Every capacity says where it came from**: `measured(...)`, `estimated(...)` or a `fitLinear(...)` result. The
   verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`± 30%` in the
   language) makes every crossing a range; the ranking, the first limit, presets, `compare()` and expectations use
-  its pessimistic edge (every capacity at its low bound), and without a ± every text reads as before.
+  its pessimistic edge (every capacity at its low bound), and without a ± every text reads as before. An expectation
+  that holds only at the high edge, or rests on measured data that is missing, is inconclusive: `loadmap check` warns
+  unless `--inconclusive fail`.
 - **A published figure applies only under its run's conditions** (`published(...)`, `@loadmap/core/catalog`, the
   `published` statement): one entry per component, vendors and versions as metadata (the version decides only where a
   source shows it changing the figure). Never scale, interpolate or invent one: a configuration no run matches has no

@@ -16,16 +16,23 @@ export { type FmtOptions, fmt } from './fmt'
 export { lsp } from './lsp'
 export { type PullCommandOptions, pull } from './pull'
 
-export const USAGE = `loadmap check <file.loadmap>… [--format text|github]
+export const USAGE = `loadmap check <file.loadmap>… [--format text|github|json] [--pull | --snapshot <file.json>] [options]
 loadmap fmt <file.loadmap>… [--check] | loadmap fmt -
 loadmap pull <file.loadmap> [--window 7d] [--step 5m] [--to <instant>] [--out <file.json>]
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
 loadmap lsp
 
 check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
-bound). It exits 1 when a definition has an error or an expectation fails, 0 when everything holds.
+bound). Each ends pass, fail or inconclusive (data missing, or a ± that decides it). It exits 1 when a definition has
+an error or an expectation fails, 0 when everything holds; a severity: warn line never fails it.
 
-  --format <f>          text, or github to add annotations on the lines (the default under GitHub Actions)
+  --format <f>          text, github to add annotations on the lines (the default under GitHub Actions), or json
+  --pull                read the measures first (as pull does: --window, --step, --to, --out) and check against them
+  --snapshot <file>     check one definition against a snapshot already written
+  --inconclusive <i>    warn (the default) or fail
+  --dry-run             report everything, the annotations and the job summary, and exit 0
+  --json <file>         write the run's result: outcomes, reasons, headroom, the window, the commit
+  --commit <sha>        the commit the result is keyed by (default GITHUB_SHA)
 
 fmt lays each definition out the one way, in place: two spaces a block, a statement a line, one space around
 operators; numbers, texts and formulas stay as written. A file with a syntax error is left alone (exit 1).
