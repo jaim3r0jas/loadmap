@@ -170,8 +170,10 @@ describe('the workflow in the guide', () => {
   const guide = readFile(new URL('../../../docs/dsl.md', import.meta.url), 'utf8')
   const workflow = async () => /```yaml\n(# loadmap check on every pull request[\s\S]*?)```/.exec(await guide)![1]!
 
-  it('follows the repository’s workflow rules', async () => {
-    const w = await workflow()
+  it.each(['pull request', 'night'])('of every %s follows the repository’s workflow rules', async (which) => {
+    const blocks = [...(await guide).matchAll(/```yaml\n(# loadmap [\s\S]*?)```/g)].map((m) => m[1]!)
+    expect(blocks).toHaveLength(2)
+    const w = blocks.find((b) => b.split('\n')[0]!.includes(which))!
     expect(w).toMatch(/^permissions: \{\}$/m)
     expect(w).not.toContain('pull_request_target')
     // every action pinned to a full SHA, with its version beside it
@@ -180,7 +182,8 @@ describe('the workflow in the guide', () => {
     for (const u of uses) expect(u, u).toMatch(/@[0-9a-f]{40}$/)
     for (const checkout of w.split('uses: actions/checkout@').slice(1))
       expect(checkout.slice(0, 200)).toContain('persist-credentials: false')
-    const jobs = [...w.matchAll(/^ {2}([a-z-]+):$/gm)].length
+    // the jobs: the keys under jobs, not under on
+    const jobs = [...w.slice(w.indexOf('\njobs:')).matchAll(/^ {2}([a-z-]+):$/gm)].length
     expect([...w.matchAll(/timeout-minutes:/g)].length).toBe(jobs)
     expect([...w.matchAll(/^ {4}permissions:$/gm)].length).toBe(jobs)
     // nothing from an event inside a script: every value comes in through env
