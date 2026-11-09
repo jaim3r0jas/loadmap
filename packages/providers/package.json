@@ -1,0 +1,43 @@
+{
+  "name": "@loadmap/providers",
+  "version": "0.29.0",
+  "description": "Data providers for loadmap: read measured data from Prometheus into a snapshot a model reads, on an explicit pull, with the address and the credentials from the environment.",
+  "keywords": [
+    "loadmap",
+    "prometheus",
+    "metrics",
+    "capacity-planning"
+  ],
+  "license": "MIT",
+  "author": "Jaime Rojas",
+  "homepage": "https://jaim3r0jas.github.io/loadmap/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaim3r0jas/loadmap.git",
+    "directory": "packages/providers"
+  },
+  "bugs": "https://github.com/jaim3r0jas/loadmap/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown"
+  },
+  "dependencies": {
+    "@loadmap/core": "workspace:*"
+  },
+  "peerDependencies": {}
+}

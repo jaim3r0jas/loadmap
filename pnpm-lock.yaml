@@ -344,12 +344,18 @@ importers:
         specifier: ^0.12.1
         version: 0.12.1
     devDependencies:
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:../core
       '@loadmap/dsl':
         specifier: workspace:*
         version: link:../dsl
       '@loadmap/export':
         specifier: workspace:*
         version: link:../export
+      '@loadmap/providers':
+        specifier: workspace:*
+        version: link:../providers
       '@loadmap/react':
         specifier: workspace:*
         version: link:../react
@@ -442,6 +448,12 @@ importers:
       elkjs:
         specifier: ^0.12.1
         version: 0.12.1
+
+  packages/providers:
+    dependencies:
+      '@loadmap/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/react:
     dependencies:

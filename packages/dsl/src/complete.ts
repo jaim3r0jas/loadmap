@@ -1,7 +1,7 @@
 import type { ConditionValue, Published } from '@loadmap/core'
 import { childrenOf, type Decl, type Edge, type Expr, type Stmt } from './ast'
 import { componentOf, latestEdition, loadedCatalog } from './catalog'
-import { type DslSymbol, declarations } from './compile'
+import { type DslSymbol, declarations, templateArgs } from './compile'
 import { type Cursor, callAt, cursorAt } from './cursor'
 import { Reporter } from './diagnostics'
 import { BUILTINS } from './expr'
@@ -134,6 +134,10 @@ class Help {
       for (const [label, def] of Object.entries(c?.conditions ?? {}))
         if (!written.has(label)) list.push({ label, type: 'variable', apply: `${label}: `, info: def.doc, boost: 1 })
     }
+    if (spec.open?.names === 'arguments')
+      for (const label of this.metricArguments())
+        if (!written.has(label))
+          list.push({ label, type: 'variable', apply: `${label}: `, detail: 'argument', boost: 1 })
     if (spec.edges === 'edges') list.push(...this.nodes())
     if (spec.edges === 'branches') list.push(...this.ids('flow').map((label) => ({ label, type: 'variable' as const })))
     return list
@@ -149,6 +153,8 @@ class Help {
     if (kind === 'node') return cur.in === 'code' ? this.nodes() : []
     if (kind === 'component')
       return cur.in === 'code' ? this.ids('component').map((label) => ({ label, type: 'variable' })) : []
+    if (kind === 'measure')
+      return cur.in === 'code' ? this.ids('measure').map((label) => ({ label, type: 'variable' })) : []
     if (kind === 'tier') return cur.in === 'code' ? this.ids('tier').map((label) => ({ label, type: 'constant' })) : []
     if (kind === 'scenario')
       return this.ids('scenario').map((label) => ({
@@ -239,6 +245,8 @@ class Help {
     const capacity = slot.prop?.value === 'capacity'
     for (const label of this.ids('published'))
       list.push({ label, type: 'variable', detail: 'published', boost: capacity ? 3 : -1 })
+    for (const label of this.ids('measure'))
+      list.push({ label, type: 'variable', detail: 'measure', boost: capacity ? 2 : 0 })
     const self = this.selfLet()
     list.push(
       ...this.ids('let').flatMap((label) =>
@@ -342,6 +350,15 @@ class Help {
       detail: c.figures.length ? c.name : `${c.name}, nothing published`,
       info: `${c.about}${c.tags.length ? ` Also: ${c.tags.join(', ')}.` : ''}`,
     }))
+  }
+
+  /** The arguments the query of the measure's metric names: `{{ args.job }}` gives `job`. */
+  metricArguments(): string[] {
+    const d = this.path.at(-1)
+    const name = d?.kind === 'decl' && d.keyword.name === 'measure' ? d.args[1] : undefined
+    const metric = name?.t === 'id' ? this.symbols.find((s) => s.kind === 'metric' && s.id === name.name) : undefined
+    if (!metric) return []
+    return templateArgs(this.source.slice(metric.decl.from, metric.decl.to))
   }
 
   /** The component the `published` statement around the cursor names, in its edition (or the latest). */

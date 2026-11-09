@@ -15,6 +15,7 @@ const OPEN: Record<NonNullable<BlockSpec['open']>['names'], string> = {
   params: 'parameters (not `load`)',
   flows: 'flows',
   conditions: "the catalog component's conditions (its runs' brokers, message size, …)",
+  arguments: "the arguments its metric's query names (`{{ args.job }}`: `job`)",
 }
 
 export function reference(): string {

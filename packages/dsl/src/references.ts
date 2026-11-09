@@ -7,7 +7,7 @@ import { parse } from './parser'
 import { type BlockSpec, BOXES, EDGE_PROPS, own, SCHEMA, STAGES } from './schema'
 
 /** Where names live: a name is unique in its space, and a reference finds its declaration there. */
-type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario'
+type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario' | 'metric'
 
 interface Ref extends Span {
   space: Space
@@ -129,7 +129,7 @@ class NameIndex {
     const ids = (...kinds: DslSymbol['kind'][]) => this.symbols.filter((s) => kinds.includes(s.kind)).map((s) => s.id)
     const key = this.entity(at)
     if (key.startsWith('box:') || at.space === 'stage') return new Set(ids('node', 'stage', 'component'))
-    if (at.space === 'formula') return new Set([...ids('param', 'let', 'fit', 'published'), 'load'])
+    if (at.space === 'formula') return new Set([...ids('param', 'let', 'fit', 'published', 'measure'), 'load'])
     return new Set(ids(at.space as DslSymbol['kind']))
   }
 
@@ -155,8 +155,9 @@ class NameIndex {
         if (!prop && spec.open) {
           const k = s.key.name
           if (spec.open.names === 'flows') this.add('flow', s.key, k)
-          // a catalog condition is no name of the definition
-          else if (k !== 'load' && spec.open.names !== 'conditions') this.add('formula', s.key, k)
+          // a catalog condition or a metric's argument is no name of the definition
+          else if (k !== 'load' && spec.open.names !== 'conditions' && spec.open.names !== 'arguments')
+            this.add('formula', s.key, k)
           this.expr(s.value)
           continue
         }
@@ -171,6 +172,9 @@ class NameIndex {
           case 'tier':
             if (s.value.t === 'id') this.add(prop.value, s.value, s.value.name)
             break
+          case 'measure':
+            if (s.value.t === 'id') this.add('formula', s.value, s.value.name)
+            break
           case 'scenario':
             this.scenario(s.value)
             break
@@ -181,8 +185,11 @@ class NameIndex {
         const k = s.keyword.name
         const id = s.args[0]?.t === 'id' ? s.args[0] : undefined
         if (id) {
-          if (k === 'param' || k === 'let' || k === 'fit' || k === 'published') this.add('formula', id, id.name, true)
-          else if (k === 'flow' || k === 'tier' || k === 'component') this.add(k, id, id.name, true)
+          if (k === 'param' || k === 'let' || k === 'fit' || k === 'published' || k === 'measure')
+            this.add('formula', id, id.name, true)
+          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric') this.add(k, id, id.name, true)
+          const metric = s.args[1]
+          if (k === 'measure' && metric?.t === 'id') this.add('metric', metric, metric.name)
           else if ((BOXES as readonly string[]).includes(k)) this.add('node', id, id.name, true)
           else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)
         }

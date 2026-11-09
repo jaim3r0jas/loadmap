@@ -9,13 +9,16 @@ import { check } from './check'
 import { fmt } from './fmt'
 import { lsp } from './lsp'
 import { type Chromium, playwright } from './playwright'
+import { pull } from './pull'
 
 export { type CheckOptions, check, github } from './check'
 export { type FmtOptions, fmt } from './fmt'
 export { lsp } from './lsp'
+export { type PullCommandOptions, pull } from './pull'
 
 export const USAGE = `loadmap check <file.loadmap>… [--format text|github]
 loadmap fmt <file.loadmap>… [--check] | loadmap fmt -
+loadmap pull <file.loadmap> [--window 7d] [--step 5m] [--to <instant>] [--out <file.json>]
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
 loadmap lsp
 
@@ -29,6 +32,18 @@ operators; numbers, texts and formulas stay as written. A file with a syntax err
 
   --check               change nothing; exit 1 when a file is not laid out so (for CI)
   -                     read standard input, write standard output
+
+pull reads each measure of the definition from its provider and writes the snapshot the model reads, next to
+the definition (x.snapshot.json). The address and the credentials come from the environment, never from the file:
+LOADMAP_PROMETHEUS_URL, with LOADMAP_PROMETHEUS_TOKEN or LOADMAP_PROMETHEUS_USER and LOADMAP_PROMETHEUS_PASSWORD. A
+query that fails, or a window with fewer samples than its metric's min, leaves that measurement missing: the model
+uses the definition's fallback, and the line says why. It exits 1 when the definition has an error or a provider it
+needs is not configured.
+
+  --window <d>          how far back from --to (default 7d): s, m, h or d
+  --step <d>            seconds between points (default 5m)
+  --to <instant>        the end of the window (default now, on the step's grid)
+  --out <file>          where to write it (default the definition's name, .snapshot.json)
 
 lsp serves the language server protocol over standard input and output, for any editor that speaks it: errors and
 failing expectations, completion, hover with the values at the defaults, signature help, formatting, quick fixes,
@@ -82,6 +97,7 @@ export async function main(argv: string[], log: (s: string) => void = console.lo
   const [command, ...rest] = argv
   if (command === 'check') return check(rest, { log })
   if (command === 'fmt') return fmt(rest, { log })
+  if (command === 'pull') return pull(rest, { log })
   // --stdio is what most clients pass: standard input and output are the only channel
   if (command === 'lsp') return lsp()
   if (command !== 'record') {

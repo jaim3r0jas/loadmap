@@ -398,7 +398,7 @@ function toLsp(d: Doc, x: Diagnostic) {
 function outline(d: Doc) {
   const symbol = (s: Decl): object | null => {
     const k = s.keyword.name
-    if (k === 'loadmap' || k === 'points') return null
+    if (k === 'loadmap' || k === 'points' || k === 'prometheus') return null
     const first = s.args[0]
     const name = first?.t === 'id' ? first.name : first?.t === 'str' ? first.value : k
     const children = (BOXES as readonly string[]).includes(k)

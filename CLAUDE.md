@@ -11,17 +11,18 @@ pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (
 mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
 stops first with that hint on an older Node (`scripts/node-version.mjs`).
 
-| Package           | What                                                                                      | Depends on                           |
-| ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
-| `@loadmap/core`   | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate | nothing                              |
-| `@loadmap/sim`    | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                         | core                                 |
-| `@loadmap/layout` | view definition, grid packers, ELK layout, collisions, dot paths                          | core, elkjs                          |
-| `@loadmap/react`  | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme      | core, sim, layout, dsl; react (peer) |
-| `@loadmap/export` | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI        | react, mediabunny                    |
-| `@loadmap/cli`    | `loadmap check` (expectations, CI annotations), `loadmap fmt`; `loadmap record`           | dsl (bundled); playwright peer       |
-| `@loadmap/dsl`    | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links      | core, layout                         |
-| `@loadmap/editor` | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector     | dsl, react, @codemirror/*            |
-| `@loadmap/vscode` | VS Code extension (private, a .vsix): grammar, `loadmap lsp` client, the live preview     | cli, dsl, react (bundled)            |
+| Package              | What                                                                                       | Depends on                                |
+| -------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `@loadmap/core`      | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate  | nothing                                   |
+| `@loadmap/sim`       | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                          | core                                      |
+| `@loadmap/layout`    | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                               |
+| `@loadmap/react`     | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme       | core, sim, layout, dsl; react (peer)      |
+| `@loadmap/export`    | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI         | react, mediabunny                         |
+| `@loadmap/cli`       | `loadmap check` (expectations, CI annotations), `loadmap fmt`, `loadmap pull`; `record`    | dsl, providers (bundled); playwright peer |
+| `@loadmap/dsl`       | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links       | core, layout                              |
+| `@loadmap/editor`    | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector      | dsl, react, @codemirror/*                 |
+| `@loadmap/vscode`    | VS Code extension (private, a .vsix): grammar, `loadmap lsp` client, the live preview      | cli, dsl, react (bundled)                 |
+| `@loadmap/providers` | providers (Prometheus) and `pull`: measured data into a snapshot, credentials from the env | core                                      |
 
 `examples/checkout` (the small reference), `examples/alerts` (two topics on shared brokers, merge, fan-out) and
 `examples/search` (a rate limiter, an autoscaled pool, a cache and retries, laid out stable) hold the end-to-end tests,
@@ -42,7 +43,7 @@ After a change to `packages/vscode` (or what it bundles: the cli's `lsp`, `<Load
 @loadmap/vscode test:e2e` runs the extension as it ships in a pinned VS Code (downloaded once into `.vscode-test`; CI
 runs it under xvfb in `check`), and `pnpm --filter @loadmap/vscode package` makes the .vsix.
 `pnpm budget` (in `check`) builds `scripts/budget/*.html` and fails when a `<Loadmap>` page loads more than 54 kB gzip of
-loadmap first, the editor adds more than 175 kB, or ELK is in a first load. Before a release, and after a change to
+loadmap first, the editor adds more than 178 kB, or ELK is in a first load. Before a release, and after a change to
 exports, dependencies or the build: `pnpm verify:pack` (packs every package, installs the tarballs with npm in a fresh
 Vite app outside the monorepo, runs tsc, builds, measures the budget, draws checkout and the react README's quick
 start in Chromium, built and in dev). The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to

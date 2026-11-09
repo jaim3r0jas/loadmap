@@ -1,0 +1,10 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "matrix",
+    "result": [
+      { "metric": { "pod": "api-1" }, "values": [[1793872800, "1"]] },
+      { "metric": { "pod": "api-2" }, "values": [[1793872800, "2"]] }
+    ]
+  }
+}
