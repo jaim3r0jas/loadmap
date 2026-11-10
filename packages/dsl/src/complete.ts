@@ -151,8 +151,8 @@ class Help {
       return this.stages(rest.at(-2)?.text)
     }
     if (kind === 'node') return cur.in === 'code' ? this.nodes() : []
-    if (kind === 'component')
-      return cur.in === 'code' ? this.ids('component').map((label) => ({ label, type: 'variable' })) : []
+    if (kind === 'component' || kind === 'flow')
+      return cur.in === 'code' ? this.ids(kind).map((label) => ({ label, type: 'variable' })) : []
     if (kind === 'measure')
       return cur.in === 'code' ? this.ids('measure').map((label) => ({ label, type: 'variable' })) : []
     if (kind === 'tier') return cur.in === 'code' ? this.ids('tier').map((label) => ({ label, type: 'constant' })) : []

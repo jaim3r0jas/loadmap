@@ -541,7 +541,7 @@ their timestamps). `summarize(points, stat)` turns a window into one value (`mea
 Each kind has standard measurements, so every provider maps its results onto the same names (`MEASURES`). The role
 says what a number is about: `capacity`, `limit`, `latency` and `cost` mean what a published figure's measure means,
 so a measured and a published p99 land in the same place. A measurement for a part of the model that is not built
-yet (latency, the wait for a slot) is read and listed, and nothing uses it.
+yet (the wait for a slot) is read and listed, and nothing uses it.
 
 <!-- measures: written from MEASURES in packages/core; UPDATE_DOCS=1 pnpm test:node rewrites it -->
 
@@ -552,9 +552,9 @@ yet (latency, the wait for a slot) is read and listed, and nothing uses it.
 | `pass` | `rejected` | rate | per second |  | Units turned away per second (429, 503). |
 | `pass` | `capacity` | capacity | per second | `capacity` | The most it handled: a load test or a saturated peak. |
 | `pass` | `instances` | count | count |  | Instances serving. |
-| `pass` | `latencyP50` | latency | ms | not modelled yet | Median response time. |
-| `pass` | `latencyP95` | latency | ms | not modelled yet | 95th percentile response time. |
-| `pass` | `latencyP99` | latency | ms | not modelled yet | 99th percentile response time. |
+| `pass` | `latencyP50` | latency | ms |  | Median response time. |
+| `pass` | `latencyP95` | latency | ms |  | 95th percentile response time. |
+| `pass` | `latencyP99` | latency | ms |  | 99th percentile response time. |
 | `queue` | `produced` | rate | per second | `rate` | Messages written per second. |
 | `queue` | `consumed` | rate | per second |  | Messages read per second. |
 | `queue` | `lag` | count | count |  | Messages waiting. |
@@ -694,6 +694,29 @@ At 40 orders a second, 0.8 connections are in use; the pool reaches half at 62.5
 different times take a block, `held { orders: 0.02; sessions: 3600 }`, and a flow it does not name holds none. A
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
+
+**Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
+each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
+no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
+share), and `ev.latency.orders` gives its mean, p50, p95 and p99. The limits still say when a box runs out; the
+latency says how slow it gets on the way, and the Live panel shows each flow's p99.
+
+```
+node api "API" {
+  pass
+  capacity: measured(2_000, "req/s")
+  service: 0.01
+  over: "clients wait"
+}
+
+expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 0.15; target: 10 }
+```
+
+The expect holds when the p99 stays under 150 ms up to 10× on the pessimistic edge (every capacity at its low
+bound); without `target`, at the values. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
+the shape, not a measurement. To set a service time from data, take a measured p99 at today's utilization: a single
+queue's p99 is `service × ln 100 ÷ (1 − utilization)`, so `service: latencyP99 / 1_000 * (1 - 0.4) / 4.6` for a p99
+in ms at 40 %.
 
 ### A story
 
@@ -1014,6 +1037,10 @@ After the keyword: [label].
 | --- | --- | --- |
 | `scenario` | scenario, constant | The scenario whose values it checks; the defaults without one. |
 | `component` | component, constant | One component; the first limit without one. |
+| `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to target, or at the values. |
+| `p50` | number, constant | The flow's median stays under this many seconds. |
+| `p95` | number, constant | The flow's 95th percentile stays under this many seconds. |
+| `p99` | number, constant | The flow's 99th percentile stays under this many seconds. |
 | `target` | number, constant | The target holds up to at least this load multiple. |
 | `full` | number, constant | Nothing (or the component) runs out before this load multiple. |
 | `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
@@ -1244,6 +1271,7 @@ After the keyword: [id] [label].
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1297,6 +1325,7 @@ After the keyword: id [label] [sub].
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1326,6 +1355,7 @@ After the keyword: id [label] [sub].
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1354,6 +1384,7 @@ After the keyword: id [label] [sub].
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |

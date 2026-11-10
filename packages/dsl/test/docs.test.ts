@@ -42,7 +42,7 @@ it('docs/every-statement.loadmap holds every statement and top-level property, e
   const r = compile(src)
   expect(r.diagnostics).toEqual([])
   // its promises hold, as `loadmap check` would say
-  expect(r.expectations.map((e) => e.result.ok)).toEqual([true, true])
+  expect(r.expectations.map((e) => e.result.ok)).toEqual([true, true, true])
   const seen = new Set<string>()
   const walk = (body: Stmt[]) => {
     for (const s of body) {

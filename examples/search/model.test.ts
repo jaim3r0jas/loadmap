@@ -46,6 +46,21 @@ describe('search model', () => {
     expect(check(search).map((x) => [x.expectation.label, x.ok])).toEqual([
       ['Today keeps 10×', true],
       ['Proposed keeps 20×', true],
+      ['Searches answer in 150 ms to 10×', true],
     ])
+  })
+
+  it('answers in time, as its service times and queues say', () => {
+    // a hit: limiter, API (10 ms when idle), cache (1 ms); a miss adds a shard (20 ms)
+    const ev = at({ load: 1 })
+    const l = ev.latency.searches!
+    expect(l.p50).toBeLessThan(l.p95)
+    expect(l.p95).toBeLessThan(l.p99)
+    expect(l.p99).toBeGreaterThan(0.05)
+    expect(l.p99).toBeLessThan(0.1)
+    const [, , p99] = check(search)
+    // the p99 reaches 150 ms past the promise, on the low edge of the shards' ±
+    expect(p99!.target!.low).toBeGreaterThan(10)
+    expect(p99!.message).toMatch(/^the p99 of searches stays under 150 ms up to between \d/)
   })
 })

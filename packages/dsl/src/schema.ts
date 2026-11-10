@@ -25,6 +25,7 @@ export type ValueKind =
   /** The id of a node, a component, a flow. */
   | 'node'
   | 'component'
+  | 'flow'
   /** A scenario's label, bare or quoted: `scenario: Proposed`. */
   | 'scenario'
   /** The id of a tier: `tier: data`. */
@@ -125,6 +126,11 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     value: 'number',
     scope: 'ctx',
     doc: 'The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots.',
+  },
+  service: {
+    value: 'number',
+    scope: 'ctx',
+    doc: 'The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99).',
   },
   on: {
     value: 'route',
@@ -352,6 +358,14 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'The scenario whose values it checks; the defaults without one.',
       },
       component: { value: 'component', scope: 'const', doc: 'One component; the first limit without one.' },
+      flow: {
+        value: 'flow',
+        scope: 'const',
+        doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to target, or at the values.",
+      },
+      p50: { value: 'number', scope: 'const', doc: "The flow's median stays under this many seconds." },
+      p95: { value: 'number', scope: 'const', doc: "The flow's 95th percentile stays under this many seconds." },
+      p99: { value: 'number', scope: 'const', doc: "The flow's 99th percentile stays under this many seconds." },
       target: { value: 'number', scope: 'const', doc: 'The target holds up to at least this load multiple.' },
       full: { value: 'number', scope: 'const', doc: 'Nothing (or the component) runs out before this load multiple.' },
       severity: {

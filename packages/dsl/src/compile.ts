@@ -449,7 +449,7 @@ class Compiler {
     }
     const expects: Record<string, unknown>[] = []
     for (const b of byKind('expect')) {
-      const e = this.expectation(b, scenarios, componentNames)
+      const e = this.expectation(b, scenarios, componentNames, flowNames)
       if (!e) continue
       expects.push(e)
       this.expectSpans.push({ from: b.at.from, to: b.args.label?.to ?? b.at.to })
@@ -1531,15 +1531,39 @@ class Compiler {
     b: Block,
     scenarios: Record<string, unknown>,
     components: Map<string, Span>,
+    flows: Map<string, Span>,
   ): Record<string, unknown> | undefined {
     const e: Record<string, unknown> = {}
     const label = this.text(b.args.label)
     if (label != null) e.label = label
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const component = this.named(b, 'component', [...components.keys()], 'component')
-    if (scenario === null || component === null) return undefined
+    const flow = this.named(b, 'flow', [...flows.keys()], 'flow')
+    if (scenario === null || component === null || flow === null) return undefined
     if (scenario != null) e.scenario = scenario
     if (component != null) e.component = component
+    // a flow's latency: one percentile under a time, at the values or up to the target
+    const qs = ['p50', 'p95', 'p99'].filter((q) => b.props.has(q))
+    if (flow != null || qs.length) {
+      if (flow == null) {
+        this.report.error(this.prop(b, qs[0]!)!.key, `${qs[0]} is the latency of a flow: name it`, 'flow: orders')
+        return undefined
+      }
+      if (qs.length !== 1) {
+        this.report.error(b.at, `the latency of "${flow}" takes one of p50, p95 or p99`, `p99: 0.5`)
+        return undefined
+      }
+      for (const k of ['component', 'full'])
+        if (b.props.has(k))
+          this.report.error(this.prop(b, k)!.key, `an expect on the latency of "${flow}" takes no ${k}`)
+      const v = this.constProp<number>(b, qs[0]!)
+      if (!(v != null && v > 0 && Number.isFinite(v))) {
+        this.report.error(this.prop(b, qs[0]!)!.value, `${qs[0]} is a time in seconds above 0`)
+        return undefined
+      }
+      e.flow = flow
+      e[qs[0]!] = v
+    }
     for (const k of ['target', 'full']) {
       const v = this.constProp<number>(b, k)
       if (v == null) continue
@@ -1548,6 +1572,7 @@ class Compiler {
     }
     const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
     if (severity) e.severity = severity
+    if (e.flow != null) return e
     if (!b.props.has('target') && !b.props.has('full')) {
       this.report.error(b.at, 'an expect needs a target or a full multiple', 'expect { target: 8 }')
       return undefined
@@ -1750,6 +1775,7 @@ class Compiler {
       ['when', 'any'],
       ['over', 'string'],
       ['describe', 'string'],
+      ['service', 'number'],
     ] as const) {
       const prop = this.prop(b, k)
       if (!prop) continue
@@ -1758,7 +1784,12 @@ class Compiler {
           ? (v: unknown) => {
               if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
             }
-          : undefined
+          : k === 'service'
+            ? (v: unknown) => {
+                if (typeof v !== 'number' || !Number.isFinite(v) || v < 0)
+                  throw new Error(`a service time is seconds from 0 up, not ${String(v)}`)
+              }
+            : undefined
       const v = this.dyn(prop.value, want, 'ctx', check)
       // the model takes demand and when as functions only: a constant (demand: 0) becomes one
       o[k] = (k === 'demand' || k === 'when') && v !== undefined && typeof v !== 'function' ? () => v : v

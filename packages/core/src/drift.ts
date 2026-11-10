@@ -1,3 +1,4 @@
+import { logGamma } from './latency'
 import { quantile, type TimeSeries } from './measure'
 
 /**
@@ -315,18 +316,4 @@ function betaFraction(x: number, a: number, b: number): number {
     if (Math.abs(del - 1) < 3e-14) break
   }
   return h
-}
-
-/** ln Γ(x), by Lanczos's approximation (g = 7, nine terms). */
-function logGamma(x: number): number {
-  const g = [
-    0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059,
-    12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
-  ]
-  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x)
-  const z = x - 1
-  let s = g[0]!
-  for (let i = 1; i < 9; i++) s += g[i]! / (z + i)
-  const t = z + 7.5
-  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(s)
 }

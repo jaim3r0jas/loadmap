@@ -108,6 +108,34 @@ describe('loadmap check --base', () => {
     })
   })
 
+  it('compares the p99 of each flow that has one, and says when it has no end', async () => {
+    // the API at a tenth of 1,000 with 4 ms of service: 4.44 ms on average, its p99 that times ln 100
+    const timed = (db: number, dbService?: number) =>
+      shop(1000, db)
+        .replace(
+          'capacity: measured(1000, "req/s", "load test")',
+          'capacity: measured(1000, "req/s", "load test")\n  service: 0.004',
+        )
+        .replace(
+          `capacity: measured(${db}, "req/s", "load test")`,
+          `capacity: measured(${db}, "req/s", "load test")${dbService ? `\n  service: ${dbService}` : ''}`,
+        )
+    const { dir, path } = await repo(timed(2000), timed(90, 0.01))
+    const comment = join(dir, 'comment.md')
+    const json = join(dir, 'result.json')
+    await run([path, '--base', 'main', '--comment', comment, '--json', json])
+    const md = await readFile(comment, 'utf8')
+    expect(md).toContain('| Flow | Base p99 | Head p99 |\n| --- | --- | --- |\n| requests | 20.5 ms | unbounded |')
+    const f = (JSON.parse(await readFile(json, 'utf8')) as { files: CheckedFile[] }).files[0]!
+    expect(f.base!.latency).toEqual([
+      { flow: 'req', name: 'requests', base: expect.closeTo((0.004 / 0.9) * Math.log(100), 9), head: 'unbounded' },
+    ])
+    // without a service time on either side, no table
+    const plain = await repo(shop(1000, 2000), shop(1000, 3000))
+    await run([plain.path, '--base', 'main', '--comment', join(plain.dir, 'c.md')])
+    expect(await readFile(join(plain.dir, 'c.md'), 'utf8')).not.toContain('p99')
+  })
+
   it('says why there is nothing to compare, and refuses a ref git does not know', async () => {
     const { dir } = await repo(shop(1000, 2000), shop(1000, 2000))
     const added = join(dir, 'new.loadmap')

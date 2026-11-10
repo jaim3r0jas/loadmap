@@ -169,6 +169,7 @@ class NameIndex {
             break
           case 'node':
           case 'component':
+          case 'flow':
           case 'tier':
             if (s.value.t === 'id') this.add(prop.value, s.value, s.value.name)
             break

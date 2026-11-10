@@ -32,6 +32,8 @@ export const search = defineModel({
   expect: [
     { label: 'Today keeps 10×', target: 10 },
     { label: 'Proposed keeps 20×', scenario: 'Proposed', target: 20 },
+    // from the service times: 99 searches in 100 answer within 150 ms, up to ten times today
+    { label: 'Searches answer in 150 ms to 10×', flow: 'searches', p99: 0.15, target: 10 },
   ],
   story: [
     {
@@ -77,24 +79,29 @@ export const search = defineModel({
       short: 'the search API',
       demand: ({ at }) => at.api.searches * 0.001,
       capacity: ({ maxPods }) => measured(maxPods * 1, 'cores', '1 core a pod'),
+      // the time a search takes when nothing waits: with these, the searches have a latency
+      service: 0.01,
       over: 'the pool is at its most pods, and searches queue',
     },
     cache: {
       name: 'Cache',
       short: 'the cache',
       capacity: estimated(40_000, 'ops/s', 'vendor sizing'),
+      service: 0.001,
       over: 'lookups time out and fall through',
     },
     db: {
       name: 'Index shard 1',
       short: 'the first shard',
       capacity: estimated(1_000, 'queries/s', { source: 'a load test of one shard', within: 0.3 }),
+      service: 0.02,
       over: 'queries queue, and the API waits on them',
     },
     db2: {
       name: 'Index shard 2',
       short: 'the second shard',
       capacity: estimated(1_000, 'queries/s', { source: 'a load test of one shard', within: 0.3 }),
+      service: 0.02,
       over: 'queries queue, and the API waits on them',
     },
   },
