@@ -1,6 +1,7 @@
 import type { CrossingRange } from './capacity'
-import { fmt, multiples, pct } from './format'
-import { type ComponentResult, type Model, sureness } from './model'
+import { duration, fmt, multiples, pct } from './format'
+import { PERCENTILES } from './latency'
+import { type ComponentResult, crossing, type Model, sureness } from './model'
 import type { Values } from './params'
 
 /**
@@ -18,6 +19,14 @@ export interface Expectation<C extends string = string> {
   target?: number
   /** Nothing runs out (or this component does not) before this multiple. */
   full?: number
+  /**
+   * One flow's latency: its p50, p95 or p99 (one of them, in seconds) stays under this up to `target`, or at the
+   * scenario's values without one.
+   */
+  flow?: string
+  p50?: number
+  p95?: number
+  p99?: number
   /** A warning is reported but never fails a check run (`loadmap check`); default fail. */
   severity?: 'warn' | 'fail'
 }
@@ -57,6 +66,8 @@ export function check<P, C extends string>(
     const c = e.component == null ? null : ev.components[e.component]
     if (e.component != null && !c) throw new Error(`loadmap: no component "${e.component}"`)
     const where = scenario ? ` in ${scenario.label}` : ''
+    if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
+      return latencyCheck(model, e, scenario?.values ?? {}, ev, where, gaps)
     const range = (k: 'target' | 'full') => (c ? c[`${k}Range`] : ev[k])
     const found = { target: range('target'), full: range('full') }
 
@@ -129,6 +140,71 @@ export function check<P, C extends string>(
       unknown.length ? `${none}; among the rest, ${message}` : message,
     )
   })
+}
+
+/** A flow's percentile against a time: at the values, or up to `target` on every capacity's range. */
+function latencyCheck<P, C extends string>(
+  model: Model<P, string, C>,
+  e: Expectation<C>,
+  values: object,
+  ev: ReturnType<Model<P, string, C>['evaluate']>,
+  where: string,
+  gaps: readonly [string, { missing?: string }][],
+): CheckResult<C> {
+  const qs = PERCENTILES.filter((q) => e[q] != null)
+  const f = e.flow
+  if (f == null || qs.length !== 1)
+    throw new Error('loadmap: a latency expectation names a flow and one of p50, p95 or p99')
+  if (e.component != null || e.full != null)
+    throw new Error(`loadmap: an expectation on the latency of "${f}" takes no component and no full`)
+  if (!model.flowIds.includes(f)) throw new Error(`loadmap: no flow "${f}"`)
+  const q = qs[0]!
+  const under = e[q]!
+  const name = `the ${q} of ${model.def.flows[f]?.label ?? f}`
+  const none = () =>
+    result(e, 'fail', [], { target: null, full: null }, `"${f}" has no latency: no stage on its way has a service time`)
+  const load = ev.values.load
+  const now = ev.latency[f]
+  if (!now) return none()
+  const at = (bound: 'low' | 'high', l: number) =>
+    model.latency({ ...values, load: l } as Partial<Values<P>>, bound, [f])[f]?.[q] ?? Number.NaN
+  // measured data that is missing may move the answer either way: a capacity on its way, or any other reading
+  const all = Object.values<ComponentResult<C>>(ev.components)
+  const onWay = new Set(
+    (ev.paths[f] ?? []).flatMap((w) => w.stages.map((s) => (ev.stages[s] as { component?: string }).component)),
+  )
+  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
+  const data = [
+    ...all.filter((x) => onWay.has(x.id) && x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
+    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
+    ...(now.unknown ?? []).map((c) => `${c}: its time is not known, so it counts as none`),
+  ]
+  const verdict = (low: boolean, high: boolean): Outcome =>
+    !high && !data.length ? 'fail' : data.length || !low ? 'inconclusive' : 'pass'
+  const reasons = (outcome: Outcome, edge: string[]) => (outcome === 'fail' ? [] : [...data, ...edge])
+  if (e.target == null) {
+    const [low, high] = [at('low', load), at('high', load)]
+    const outcome = verdict(low <= under, high <= under)
+    // the wording says what the pessimistic edge shows; the outcome says how sure it is
+    const message =
+      low <= under
+        ? `${name} is ${duration(low)} at ${fmt(load)}×${where}, under ${duration(under)}`
+        : `expected ${name} under ${duration(under)}, but it is ${duration(low)} at ${fmt(load)}×${where}`
+    const edge = low > under && high <= under ? ['holds only at the high edge of a ±'] : []
+    return result(e, outcome, reasons(outcome, edge), { target: null, full: null }, message)
+  }
+  const max = model.searchMax
+  const cross = (bound: 'low' | 'high') => crossing((l) => at(bound, l) / under, 1, max) ?? Number.POSITIVE_INFINITY
+  const range = { low: cross('low'), high: cross('high') }
+  const outcome = verdict(range.low >= e.target, range.high >= e.target)
+  const found = Number.isFinite(range.low) ? multiples(range, max) : `past ${fmt(max)}×`
+  const message =
+    range.low >= e.target
+      ? `${name} stays under ${duration(under)} ${Number.isFinite(range.low) ? 'up to ' : ''}${found}${where}`
+      : `expected at least ${fmt(e.target)}×, but ${name} passes ${duration(under)} at ${found}${where}`
+  const edge =
+    range.low < e.target && range.high >= e.target ? [`holds at ${fmt(e.target)}× only at the high edge of a ±`] : []
+  return result(e, outcome, reasons(outcome, edge), { target: range, full: null }, message)
 }
 
 function result<C extends string>(

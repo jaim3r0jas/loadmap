@@ -5,6 +5,14 @@ export function fmt(n: number): string {
   return (Math.round(n * 10) / 10).toString()
 }
 
+/** A time for a reader: 180 ms / 1.2 s / 3 min; unbounded once a stage on the way is past full. */
+export function duration(s: number): string {
+  if (!Number.isFinite(s)) return 'unbounded'
+  if (s < 1) return `${fmt(s * 1000)} ms`
+  if (s < 120) return `${fmt(s)} s`
+  return `${fmt(s / 60)} min`
+}
+
 /** A compact number: 980 / 1.2k / 34k / 1.5M. */
 export function compact(n: number): string {
   if (!Number.isFinite(n)) return n > 0 ? '∞' : '—'

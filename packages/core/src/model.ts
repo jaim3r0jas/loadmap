@@ -4,6 +4,7 @@ import type { Expectation } from './check'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
+import { type Latency, latencyOf, PERCENTILES, type WayTime } from './latency'
 import type { Measurement, Snapshot } from './measure'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import {
@@ -106,6 +107,11 @@ export interface ComponentDef<X> {
   held?: number | Readonly<Record<string, number>> | ((ctx: X) => number | Readonly<Record<string, number>>)
   /** The stages whose units hold its slots; by default the stages that use it. */
   on?: readonly string[]
+  /**
+   * The seconds a unit takes here when nothing waits: each stage it runs is then a queue (M/M/1) whose time grows as
+   * service ÷ (1 − utilization), and the flows through it have a latency.
+   */
+  service?: number | ((ctx: X) => number)
   capacity: Capacity | ((ctx: X) => Capacity)
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
@@ -273,6 +279,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   overload: Readonly<Record<F, Overload>>
   /** The retries of each flow that has a retry rule. */
   retry: Readonly<Partial<Record<F, Retry>>>
+  /** Each flow's time through, from the service times of its stages; null for a flow none of them has one on. */
+  latency: Readonly<Record<F, Latency | null>>
   /** The context model functions saw: for labels and other view callbacks. */
   ctx: LooseValues
 }
@@ -308,6 +316,15 @@ export interface Model<P = any, F extends string = string, C extends string = st
    * bound, every capacity is read at its low or high bound.
    */
   utilization(values?: Partial<Values<P>>, bound?: Bound): Readonly<Record<C, number | null>>
+  /**
+   * Each flow's latency at these values, as `evaluate` gives it; with a bound, every capacity at that bound. With
+   * flows, only theirs.
+   */
+  latency(
+    values?: Partial<Values<P>>,
+    bound?: Bound,
+    flows?: readonly F[],
+  ): Readonly<Partial<Record<F, Latency | null>>>
   /** The scenario whose values these are, ignoring the load; null when they match none. */
   scenarioOf(values: LooseValues): Scenario<P> | null
   /**
@@ -413,7 +430,20 @@ export function defineModel<
       throw new Error(`loadmap: ${name} names unknown scenario "${e.scenario}"`)
     if (e.component != null && !componentIds.includes(e.component))
       throw new Error(`loadmap: ${name} names unknown component "${e.component}"`)
-    if (e.target == null && e.full == null) throw new Error(`loadmap: ${name} needs a target or a full multiple`)
+    if (e.flow != null && !(flowIds as readonly string[]).includes(e.flow))
+      throw new Error(`loadmap: ${name} names unknown flow "${e.flow}"`)
+    const qs = PERCENTILES.filter((q) => e[q] != null)
+    if ((e.flow != null || qs.length) && (e.flow == null || qs.length !== 1))
+      throw new Error(`loadmap: ${name} holds a latency: a flow and one of p50, p95 or p99`)
+    if (e.flow != null && (e.component != null || e.full != null))
+      throw new Error(`loadmap: ${name} holds the latency of "${e.flow}": no component and no full`)
+    for (const q of qs) {
+      const x = e[q]!
+      if (!(x > 0 && Number.isFinite(x))) throw new Error(`loadmap: ${name} has a ${q} of ${x}: a time above 0`)
+    }
+    // a flow's latency is checked at the values without a target
+    if (e.target == null && e.full == null && e.flow == null)
+      throw new Error(`loadmap: ${name} needs a target or a full multiple`)
     for (const k of ['target', 'full'] as const) {
       const x = e[k]
       if (x != null && !(x > 0 && Number.isFinite(x)))
@@ -568,8 +598,10 @@ export function defineModel<
       paths,
       held,
       holders,
+      latencies,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
+    let latency: Record<F, Latency | null> | undefined
 
     const components = {} as Record<C, ComponentResult<C>>
     for (const c of componentIds) {
@@ -671,6 +703,11 @@ export function defineModel<
       at,
       overload,
       retry: retries() as Partial<Record<F, Retry>>,
+      // the gamma fits cost a bisection each: only for a reader that asks
+      get latency() {
+        latency ??= latencies() as Record<F, Latency | null>
+        return latency
+      },
       ctx,
     }
   }
@@ -704,6 +741,8 @@ export function defineModel<
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
       return Object.fromEntries(componentIds.map((c) => [c, util[c]])) as Record<C, number | null>
     },
+    latency: (partial, bound, only) =>
+      context(def as any, { ...defaults(), ...partial }, bound).latencies(only) as Record<F, Latency | null>,
     scenarioOf,
     dateAt: when,
   }
@@ -1088,6 +1127,56 @@ function context(
     })
 
   const usedBy = (c: string) => stageIds.filter((s) => (stages[s] as { component?: string }).component === c)
+  const service = (c: string) =>
+    memo(`service of ${c}`, () => {
+      const s = def.components[c]!.service
+      if (s == null) return null
+      const v = typeof s === 'function' ? s(ctx as any) : s
+      if (!Number.isFinite(v) || v < 0)
+        throw new Error(`loadmap: component "${c}" takes ${v} s a unit: a service time from 0 up`)
+      return v
+    })
+  /** The seconds a unit spends at a stage: its component's service time, stretched by the queue in front (M/M/1). */
+  const response = (s: string) =>
+    memo(`response at ${s}`, () => {
+      const c = (stages[s] as { component?: string }).component
+      const time = c == null ? null : service(c)
+      if (time == null) return null
+      const u = ctx.util[c!] as number | null
+      // switched off it is not there; without a figure its time is not known
+      if (u == null) return enabled(c!) && capacity(c!).missing != null ? Number.NaN : 0
+      return u >= 1 ? Number.POSITIVE_INFINITY : time / (1 - u)
+    })
+  /** A flow's time through: the stages of each way add up; a cache's hits leave the way there. */
+  const latency = (f: string) =>
+    memo(`latency of ${f}`, () => {
+      const ways: WayTime[] = []
+      const unknown = new Set<string>()
+      let timed = false
+      for (const p of paths(f)) {
+        let left = p.share
+        let mean = 0
+        let variance = 0
+        for (const s of p.stages) {
+          const r = response(s)
+          if (r != null) timed = true
+          if (r != null && Number.isNaN(r))
+            unknown.add(def.components[(stages[s] as { component: string }).component]!.name)
+          else if (r != null) {
+            mean += r
+            variance += r * r
+          }
+          if (stages[s]!.kind === 'cache') {
+            ways.push({ share: left * hit(s), mean, variance })
+            left *= 1 - hit(s)
+          }
+        }
+        ways.push({ share: left, mean, variance })
+      }
+      if (!timed) return null
+      const l = latencyOf(ways)
+      return unknown.size ? { ...l, unknown: [...unknown] } : l
+    })
   /** The stages whose units hold a component's slots. */
   const holders = (c: string) => {
     const on = def.components[c]!.on
@@ -1146,6 +1235,10 @@ function context(
     describe: (c: string) => text(def.components[c]!.describe),
     held,
     holders,
+    latencies: (only: readonly string[] = flowIds) => {
+      const timed = componentIds.some((c) => def.components[c]!.service != null)
+      return Object.fromEntries(only.map((f) => [f, timed ? latency(f) : null]))
+    },
   }
 }
 

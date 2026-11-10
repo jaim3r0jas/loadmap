@@ -1,8 +1,15 @@
 import { execFile } from 'node:child_process'
 import { basename, dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { type Assumption, compareDefinitions, type DefinitionChange, type Tolerance } from '@loadmap/core'
-import { fmt, multiples, pct } from '@loadmap/core/format'
+import {
+  type Assumption,
+  compareDefinitions,
+  type DefinitionChange,
+  type Latency,
+  type Model,
+  type Tolerance,
+} from '@loadmap/core'
+import { duration, fmt, multiples, pct } from '@loadmap/core/format'
 import type { CompileResult, Diagnostic } from '@loadmap/dsl'
 import { Reporter } from '@loadmap/dsl/internal'
 
@@ -28,6 +35,8 @@ export interface CheckedBase {
     head: { util: number | null; target: Range | null; full: Range | null } | null
     change: number | null
   }[]
+  /** Each flow's p99 at the defaults, in seconds, for a flow with a latency on either side; null where it has none. */
+  latency: { flow: string; name: string; base: P99; head: P99 }[]
   /** The head's assumptions, with where each number comes from. */
   assumptions: string[]
   /** Measures the base reads that the snapshot does not have: on its side they are its own values. */
@@ -35,6 +44,8 @@ export interface CheckedBase {
 }
 
 type Range = { low: number | null; high: number | null }
+/** Seconds, or unbounded once a stage on the way is past full. */
+type P99 = number | 'unbounded' | null
 
 /** The definition as it is at `ref`, from git: null when the file is new in this change. Throws on a git error. */
 export async function baseSource(file: string, ref: string): Promise<string | null> {
@@ -119,11 +130,29 @@ export function compareFile(
         head: side(c.head),
         change: c.change == null ? null : Number.isFinite(c.change) ? c.change : null,
       })),
+      latency: latencyRows(base.definition.model, head.definition.model),
       assumptions: head.definition.model.evaluate().assumptions.map(assumptionText),
       lacking: [...(o.lacking ?? [])],
     },
   }
 }
+
+/** Each flow's p99 on both sides, for the flows that have one on either. */
+function latencyRows(base: Model, head: Model): CheckedBase['latency'] {
+  const was = base.evaluate().latency as Record<string, Latency | null>
+  const now = head.evaluate().latency as Record<string, Latency | null>
+  // a flow the head removed keeps its row, with nothing on the head's side
+  return [...new Set([...head.flowIds, ...base.flowIds])]
+    .filter((f) => was[f] || now[f])
+    .map((f) => ({
+      flow: f,
+      name: head.def.flows[f]?.label ?? base.def.flows[f]?.label ?? f,
+      base: p99Of(was[f]),
+      head: p99Of(now[f]),
+    }))
+}
+
+const p99Of = (l: Latency | null | undefined): P99 => (!l ? null : Number.isFinite(l.p99) ? l.p99 : 'unbounded')
 
 /** An assumption as one line, with where its number comes from. */
 function assumptionText(a: Assumption): string {
@@ -174,6 +203,11 @@ export function changeMarkdown(file: string, b: CheckedBase): string {
     out.push(
       `| ${cell(c.name)} | ${short(c.base?.target ?? null)} | ${short(c.head?.target ?? null)} | ${delta} | ${short(c.head?.full ?? null)} |`,
     )
+  }
+  if (b.latency.length) {
+    const p99 = (x: P99) => (x == null ? '—' : x === 'unbounded' ? x : duration(x))
+    out.push('', '| Flow | Base p99 | Head p99 |', '| --- | --- | --- |')
+    for (const l of b.latency) out.push(`| ${cell(l.name)} | ${p99(l.base)} | ${p99(l.head)} |`)
   }
   out.push('', '<details><summary>What this assumes, and where each number comes from</summary>', '')
   for (const a of b.assumptions) out.push(`- ${cell(a)}`)

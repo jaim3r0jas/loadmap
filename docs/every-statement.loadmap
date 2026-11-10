@@ -31,6 +31,8 @@ growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 2×" { target: 2; severity: warn }
 expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; full: 10 }
+# a flow's latency, from the service times on its way: here the database's
+expect "Orders answer in a second" { flow: orders; p99: 1 }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }
 step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: workers }
@@ -159,6 +161,7 @@ node db "Database" "primary" {
   store
   short: "the database"
   capacity: estimated(1_500 ± 30%, "commits/s", "load test of a replica")
+  service: 0.005
   over: "commits queue on the primary"
 }
 

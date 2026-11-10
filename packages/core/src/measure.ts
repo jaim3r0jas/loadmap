@@ -373,9 +373,9 @@ export const MEASURES = {
       doc: 'The most it handled: a load test or a saturated peak.',
     },
     instances: { role: 'count', dimension: 'count', doc: 'Instances serving.' },
-    latencyP50: { role: 'latency', dimension: 'ms', later: true, doc: 'Median response time.' },
-    latencyP95: { role: 'latency', dimension: 'ms', later: true, doc: '95th percentile response time.' },
-    latencyP99: { role: 'latency', dimension: 'ms', later: true, doc: '99th percentile response time.' },
+    latencyP50: { role: 'latency', dimension: 'ms', doc: 'Median response time.' },
+    latencyP95: { role: 'latency', dimension: 'ms', doc: '95th percentile response time.' },
+    latencyP99: { role: 'latency', dimension: 'ms', doc: '99th percentile response time.' },
   },
   queue: {
     produced: { role: 'rate', dimension: 'per second', sets: 'rate', doc: 'Messages written per second.' },

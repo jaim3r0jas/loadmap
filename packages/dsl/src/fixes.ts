@@ -108,6 +108,8 @@ function placeholder(
       return doc().ids('node')[0] ?? 'node'
     case 'component':
       return doc().ids('component')[0] ?? 'component'
+    case 'flow':
+      return doc().ids('flow')[0] ?? 'flow'
     default:
       return '1'
   }

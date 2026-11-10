@@ -1,5 +1,5 @@
 import { type Assumption, type Capacity, type Preset, sourceText } from '@loadmap/core'
-import { compact, fmt, multiple, multiples, pct, secs } from '@loadmap/core/format'
+import { compact, duration, fmt, multiple, multiples, pct, secs } from '@loadmap/core/format'
 import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useId, useState } from 'react'
 import { Scenarios, useSize, when } from './scenarios'
 import { labelled, loadScale, marksOf, zones } from './track'
@@ -198,6 +198,26 @@ export function Meters({ lm }: { lm: LoadmapController }) {
       value: pct(r.failed),
       label: `${flowLabel(f)} failing after ${r.times} ${r.times === 1 ? 'retry' : 'retries'}`,
       state: r.failed > 0.005 ? 'over' : 'ok',
+    })
+  }
+  // from the service times: a flow whose way has one
+  for (const f of model.flowIds) {
+    const l = ev.latency[f]
+    if (!l) continue
+    // a p99 promised for these values: the scenario shown, up to its target (or at the values without one)
+    const scenario = model.scenarioOf(lm.values)?.label
+    const goal = model.expectations.find(
+      (e) =>
+        e.flow === f &&
+        e.p99 != null &&
+        (e.scenario == null || e.scenario === scenario) &&
+        (e.target == null || lm.values.load <= e.target),
+    )?.p99
+    items.push({
+      key: `${f}/p99`,
+      value: duration(l.p99),
+      label: `${flowLabel(f)} p99`,
+      state: !Number.isFinite(l.p99) || (goal != null && l.p99 > goal) ? 'over' : 'ok',
     })
   }
   return (

@@ -29,6 +29,7 @@ growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 10×" { target: 10 }
 expect "Proposed keeps 20×" { scenario: Proposed; target: 20 }
+expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 0.15; target: 10 }
 
 step "An ordinary peak: the API runs a few pods, and the cache answers nine searches in ten." {
   title: "An ordinary peak"
@@ -78,6 +79,7 @@ pool api "Search API" `2 to ${maxPods} pods` {
   short: "the search API"
   demand: at.api.searches * 0.001
   capacity: measured(maxPods * 1, "cores", "1 core a pod")
+  service: 0.01
   over: "the pool is at its most pods, and searches queue"
 }
 
@@ -85,6 +87,7 @@ node cache "Cache" `${hit * 100} % hits` {
   cache { hit: hit }
   short: "the cache"
   capacity: estimated(40_000, "ops/s", "vendor sizing")
+  service: 0.001
   over: "lookups time out and fall through"
 }
 
@@ -103,6 +106,7 @@ node db "Index shard 1" {
   store
   short: "the first shard"
   capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
+  service: 0.02
   over: "queries queue, and the API waits on them"
 }
 
@@ -112,6 +116,7 @@ node db2 "Index shard 2" {
   store
   short: "the second shard"
   capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
+  service: 0.02
   over: "queries queue, and the API waits on them"
 }
 

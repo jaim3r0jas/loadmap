@@ -174,6 +174,8 @@ class Lookup {
             return this.box(name, out)
           case 'component':
             return this.component(name, out)
+          case 'flow':
+            return this.flow(name, out)
           case 'tier':
             return this.tier(name, out)
           case 'measure':

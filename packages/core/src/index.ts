@@ -22,6 +22,7 @@ export {
   type Trigger,
 } from './diff'
 export { dateAt, type Growth, growth, parseAsOf } from './growth'
+export type { Latency } from './latency'
 export type {
   Measurement,
   MeasureRole,
