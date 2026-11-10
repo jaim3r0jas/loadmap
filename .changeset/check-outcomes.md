@@ -2,7 +2,6 @@
 '@loadmap/core': minor
 '@loadmap/dsl': minor
 '@loadmap/cli': minor
-'@loadmap/vscode': patch
 ---
 
 Every expectation ends pass, fail or inconclusive (`check()` gives `outcome` and `reasons`; `ok` is a pass).

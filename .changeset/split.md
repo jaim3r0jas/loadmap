@@ -3,7 +3,6 @@
 '@loadmap/sim': minor
 '@loadmap/dsl': minor
 '@loadmap/react': patch
-'@loadmap/vscode': patch
 ---
 
 A `split` stage sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,

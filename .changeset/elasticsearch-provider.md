@@ -2,7 +2,6 @@
 '@loadmap/providers': minor
 '@loadmap/dsl': minor
 '@loadmap/cli': minor
-'@loadmap/vscode': patch
 ---
 
 A metric can read from Elasticsearch or OpenSearch: `elasticsearch { index: "auth-*"; query: '{"term": {"service":

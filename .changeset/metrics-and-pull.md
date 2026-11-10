@@ -2,7 +2,6 @@
 '@loadmap/dsl': minor
 '@loadmap/cli': minor
 '@loadmap/providers': minor
-'@loadmap/vscode': patch
 ---
 
 The language maps a model onto measured data, and `loadmap pull` reads it. A `metric` is a query written once

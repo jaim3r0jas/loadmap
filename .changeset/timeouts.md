@@ -3,7 +3,6 @@
 '@loadmap/sim': minor
 '@loadmap/dsl': minor
 '@loadmap/react': patch
-'@loadmap/vscode': patch
 ---
 
 Timeouts: `timeout` on a flow (seconds) fails the share of its units slower than it, from the latency of its way; with
