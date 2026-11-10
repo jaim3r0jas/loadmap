@@ -1,5 +1,45 @@
 # @loadmap/react
 
+## 0.31.0
+
+### Patch Changes
+
+- de327ef: Latency as an output: `service` on a component (the seconds a unit takes when nothing waits) makes each stage it runs
+  a queue whose time grows as service ÷ (1 − utilization); a flow's time through is the sum of its stages, fitted to a
+  gamma per way and mixed over its ways, and `ev.latency` gives its mean, p50, p95 and p99. An expectation holds a
+  percentile under a time, `{ flow: orders; p99: 0.5; target: 8 }`, on the pessimistic edge; `loadmap check --base`
+  shows each flow's p99 against its base, and the Live panel each flow's p99.
+- b9b71c3: A component can count slots instead of a rate: `held` (seconds a unit holds a connection, a session, a thread) makes
+  its demand the slots in use by Little's law, what reaches its stages times `held`, one time for every flow or one per
+  flow; `on` names the stages for a pool beside the limit that runs them. `held: 0.02` or `held { orders: 0.02 }` in the
+  language. The `slots` measurements set its capacity and its time held.
+- 0097fc9: A `split` stage sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
+  failover. In the language, one `flow -> stage -> …: share` line per way inside `split { … }` on a box; in TypeScript,
+  `split({ to: [{ stages: ['primary'], share: 0.2 }, …] })`. A flow's shares add up to 1 (formulas of the parameters
+  allowed) and a flow the split does not name goes straight on; a way that ends in a store, a sink or a fan-out ends
+  there, any other goes on with the route after the split. The model works out each flow's ways (`ev.paths`), and what
+  reaches each stage, the demand, the rejections and the retries add up over them; the dots each take one way, drawn by
+  share, and a model without a split draws exactly what it drew before. The search example's index is now two shards
+  behind a coordinator.
+- ed5d6d2: Timeouts: `timeout` on a flow (seconds) fails the share of its units slower than it, from the latency of its way; with
+  `retry` they are sent again, which loads every stage and slows it further, settled at the least fixed point. The
+  retry solve now holds that share while it settles the attempts, and stops at the least fixed point where a share
+  can meet the attempts twice. `ev.latency[f].timedOut`, a Live meter, and the sim fades that share of dots as timed
+  out. `timeout: 2` in the language.
+- Updated dependencies [11b78ee]
+- Updated dependencies [0ab6855]
+- Updated dependencies [717b95e]
+- Updated dependencies [9cf2028]
+- Updated dependencies [de327ef]
+- Updated dependencies [0fb5d08]
+- Updated dependencies [b9b71c3]
+- Updated dependencies [0097fc9]
+- Updated dependencies [ed5d6d2]
+  - @loadmap/core@0.31.0
+  - @loadmap/dsl@0.31.0
+  - @loadmap/sim@0.31.0
+  - @loadmap/layout@0.31.0
+
 ## 0.30.1
 
 ### Patch Changes
