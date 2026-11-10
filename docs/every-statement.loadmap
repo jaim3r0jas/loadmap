@@ -98,6 +98,8 @@ flow events "events" {
   priority: 2
   drop { olderThan: 60; reason: "too old" }
   merge { when: newest; share: 0.5; reason: "newest kept" }
+  # a client that waits at most 5 s: slower events fail
+  timeout: 5
   route: gateway -> topic -> workers -> push
   from: users
   color: alt
@@ -118,6 +120,7 @@ node gateway "Gateway" {
   pass "the gateway"
   short: "the gateway"
   capacity: estimated(30_000, "req/s", "vendor figure")
+  service: 0.002
   over: "every client gets errors"
 }
 

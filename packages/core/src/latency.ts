@@ -15,6 +15,13 @@ export interface Latency {
   p99: number
   /** Components on its way whose time is not known (no published figure, no data): they count as no time. */
   unknown?: readonly string[]
+  /** With a timeout: the share of units slower than it, which fail (and are retried when the flow retries). */
+  timedOut?: number
+  /**
+   * With a timeout, the same for each way: the units that end path `path` of `ev.paths` (or that the cache
+   * `answeredAt` answers on it), and the share of them slower than the timeout.
+   */
+  ways?: readonly { path: number; answeredAt?: string; timedOut: number }[]
 }
 
 /** One way through: the share of units that take it, and the mean and variance of their time. */
@@ -78,6 +85,13 @@ function done(w: WayTime, t: number): number {
   if (!Number.isFinite(w.mean)) return 0
   if (w.variance <= 0 || w.mean <= 0) return t >= w.mean ? 1 : 0
   return gammaP((w.mean * w.mean) / w.variance, (t * w.mean) / w.variance)
+}
+
+/** The share of the units not done within t seconds, over every way. */
+export function beyond(all: readonly WayTime[], t: number): number {
+  const ways = all.filter((w) => w.share > 0)
+  const total = ways.reduce((a, w) => a + w.share, 0)
+  return total > 0 ? Math.max(0, 1 - ways.reduce((a, w) => a + w.share * done(w, t), 0) / total) : 0
 }
 
 /** The time within which a share q of the units are done, over every way. */
