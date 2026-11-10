@@ -595,6 +595,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       unit: { value: 'string', scope: 'const', doc: 'One unit of the flow, singular: "order".' },
       rate: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Units per second.', required: true },
       priority: { value: 'number', scope: 'const', doc: '1 is served first. Flows of the same priority share.' },
+      timeout: {
+        value: 'number',
+        scope: 'values',
+        doc: 'Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way.',
+      },
       route: { value: 'route', scope: 'const', doc: 'The stages it passes, in order: a -> b -> c.', required: true },
       from: { value: 'node', scope: 'const', doc: 'The node its dots start from.', required: true },
       color: {

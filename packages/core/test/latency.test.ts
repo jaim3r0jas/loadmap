@@ -84,7 +84,7 @@ describe('a flow’s latency', () => {
     })
     expect(plain.evaluate().latency).toEqual({ req: null })
     expect(shop().latency({ load: 1 }).req!.mean).toBeCloseTo(0.034, 12)
-    expect(() => shop({ serviceB: -1 }).evaluate().latency).toThrow(
+    expect(() => shop({ serviceB: -1 }).evaluate().latency.req).toThrow(
       'loadmap: component "b" takes -1 s a unit: a service time from 0 up',
     )
   })

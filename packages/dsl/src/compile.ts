@@ -508,6 +508,10 @@ class Compiler {
       if (overload) def.overload = overload
       const retry = this.retry(b)
       if (retry) def.retry = retry
+      const timeout = this.dynProp<number>(b, 'timeout', 'number', (v) => {
+        if (typeof v !== 'number' || !(v > 0)) throw new Error(`a timeout is seconds above 0, not ${String(v)}`)
+      })
+      if (timeout !== undefined) def.timeout = timeout
       flowDefs[id.name] = def
 
       const route = this.prop(b, 'route')

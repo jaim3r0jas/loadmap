@@ -4,7 +4,7 @@ import type { Expectation } from './check'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
-import { type Latency, latencyOf, PERCENTILES, type WayTime } from './latency'
+import { beyond, type Latency, latencyOf, PERCENTILES, type WayTime } from './latency'
 import type { Measurement, Snapshot } from './measure'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import {
@@ -50,6 +50,11 @@ export interface FlowDef<X> {
    * number the model computes, so they cannot depend on one.
    */
   retry?: RetryRule | ((values: LooseValues) => RetryRule | undefined)
+  /**
+   * Seconds a client waits: a unit slower than this fails (and is sent again with `retry`), though the work it set off
+   * still runs. It needs a latency, a `service` on its way. It reads only the load and the parameters, as retry does.
+   */
+  timeout?: number | ((values: LooseValues) => number)
 }
 
 /** Rules for a flow's backlog in a queue. */
@@ -83,9 +88,9 @@ export interface Retry {
   rate: number
   /** Attempts per second, retries included: what every stage on its route sees. */
   attempts: number
-  /** The share of attempts turned away somewhere on the route. */
+  /** The share of attempts that fail: turned away somewhere on the route, or slower than the flow's timeout. */
   rejected: number
-  /** The share of turned-away attempts that are sent again: 1 unless the budget holds some back. */
+  /** The share of failed attempts that are sent again: 1 unless the budget holds some back. */
   retried: number
   /** The share of units that fail every attempt. */
   failed: number
@@ -358,6 +363,32 @@ export function defineModel<
       if (st.kind === 'fanout' && i < route.length - 1)
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
+  }
+  // a timeout needs a time: a service on the flow's way. A split whose ways are worked out from the values may lead
+  // anywhere, so then any service counts
+  for (const f of flowIds) {
+    const timeout = def.flows[f].timeout
+    if (timeout == null) continue
+    if (typeof timeout === 'number' && !(timeout > 0))
+      throw new Error(`loadmap: flow "${f}" times out after ${timeout} s: a time above 0`)
+    const way = new Set<string>(def.routes[f] ?? [])
+    let open = false
+    for (const s of way) {
+      const st = (def.stages as Record<string, StageDef>)[s]
+      if (st?.kind !== 'split') continue
+      const to = st.to
+      if (typeof to === 'function') open = true
+      else
+        for (const b of Array.isArray(to) ? to : ((to as Record<string, SplitBranch[]>)[f] ?? []))
+          for (const x of b.stages) way.add(x)
+    }
+    const timedStage = (s: string) => {
+      const c = ((def.stages as Record<string, StageDef>)[s] as { component?: string } | undefined)?.component
+      return c != null && (def.components as Record<string, ComponentDef<unknown>>)[c]?.service != null
+    }
+    const any = componentIds.some((c) => def.components[c].service != null)
+    if (open ? !any : ![...way].some(timedStage))
+      throw new Error(`loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`)
   }
   for (const c of componentIds) {
     const d = def.components[c]
@@ -761,6 +792,8 @@ function context(
   pinned?: string,
   /** The attempts of every retrying flow, held while the retries are solved. */
   fixed?: Readonly<Record<string, number>>,
+  /** The share of each retrying flow too slow for its timeout, held while the retries are solved. */
+  slow?: Readonly<Record<string, number>>,
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
@@ -1003,7 +1036,9 @@ function context(
         }
         failed += share * Math.max(0, 1 - answered - actual)
       }
-      return failed
+      // a unit that got through can still be too slow for its client
+      const late = slow?.[f] ?? timedOut(f)
+      return late > 0 ? 1 - (1 - failed) * (1 - late) : failed
     })
 
   /**
@@ -1063,67 +1098,134 @@ function context(
       }
       // The unknowns are the excess of each flow, attempts = λ (1 + e): just past the knee e is tiny, and λ·S(p) − λ
       // would lose it to rounding where p + p² + … + pⁿ keeps every digit, so flows behind one bottleneck step alike.
-      const wanted = (e: Record<string, number>) => {
-        const sub = context(def, values, bound, pinned, attempts(e))
+      // The share of each flow too slow for its timeout is held while they settle: timing a flow costs the time of
+      // every stage on its way, too much for each trial of the attempts.
+      const wanted = (e: Record<string, number>, late: Readonly<Record<string, number>>) => {
+        const sub = context(def, values, bound, pinned, attempts(e), late)
         const w: Record<string, number> = {}
         const p: Record<string, number> = {}
         for (const f of ids) {
           p[f] = sub.failure(f)
           w[f] = Math.min(excess(p[f], retryOf(f)!.times), most(f))
         }
-        return { w, p }
+        return { w, p, sub }
       }
       // From below, never past the answer: where the excess calls for more, step along that call as far as it still
       // holds. Flows that share a bottleneck settle on that line in one search; the call rises with the attempts when
       // formulas rise with the load, so the steps climb to the least fixed point.
-      let e: Record<string, number> = Object.fromEntries(ids.map((f) => [f, 0]))
-      for (let step = 0; step < 100; step++) {
-        const { w, p: failed } = wanted(e)
-        const d: Record<string, number> = {}
-        for (const f of ids) d[f] = Math.max(0, w[f]! - e[f]!)
-        // after the first search, what is left below 1e-10 is rounding; before it any call counts, since just past the
-        // knee a tiny call can still be far from the answer
-        const live = ids.filter((f) => lam[f]! > 0 && d[f]! > (step ? 1e-10 * (1 + e[f]!) : 0))
-        if (!live.length) {
-          const a = attempts(e)
-          const out: Record<string, Retry> = {}
-          for (const f of ids) {
-            const l = lam[f]!
-            const p = failed[f]!
-            const times = retryOf(f)!.times
-            // with a budget only a share q of rejections is sent again: pq solves pq + … + (pq)ⁿ = the excess
-            const retried =
-              p > 0 && excess(p, times) > e[f]! * (1 + 1e-12) ? root((y) => excess(y, times), e[f]!, p) / p : 1
-            out[f] = {
-              times,
-              rate: l,
-              attempts: a[f]!,
-              rejected: p,
-              retried,
-              failed: l > 0 ? 1 - (1 - p) * (1 + e[f]!) : 0,
+      const solve = (from: Record<string, number>, late: Readonly<Record<string, number>>) => {
+        let e = from
+        for (let step = 0; step < 100; step++) {
+          const { w, p: failed, sub } = wanted(e, late)
+          const d: Record<string, number> = {}
+          for (const f of ids) d[f] = Math.max(0, w[f]! - e[f]!)
+          // after the first search, what is left below 1e-10 is rounding; before it any call counts, since just past
+          // the knee a tiny call can still be far from the answer
+          const live = ids.filter((f) => lam[f]! > 0 && d[f]! > (step ? 1e-10 * (1 + e[f]!) : 0))
+          if (!live.length) return { e, failed, sub }
+          const along = (t: number) => {
+            const y = { ...e }
+            for (const f of live) y[f] = e[f]! + t * d[f]!
+            return y
+          }
+          const holds = (t: number) => {
+            const y = along(t)
+            const wy = wanted(y, late).w
+            return Math.min(...live.map((f) => (wy[f]! - y[f]!) / d[f]!))
+          }
+          const far = Math.min(...live.map((f) => (most(f) - e[f]!) / d[f]!))
+          // t = 1 is the plain step, which always holds: the call rises with the attempts
+          if (far <= 1) e = along(far)
+          else {
+            const h1 = holds(1)
+            e = along(h1 > 0 ? settle(holds, 1, far, h1) : 1)
+          }
+        }
+        throw new Error(`loadmap: the retries of ${joinAnd(ids.map((f) => `"${f}"`))} do not settle`)
+      }
+      // the timed-out share at the attempts they settled at, held again: it rises with them, so plain rounds climb to
+      // the least fixed point of both, never past it, but just past a knee by tiny steps. Where what is left shrinks, a
+      // secant step (never more than a thousand plain ones) saves rounds; where it grows the steps double, and a doubled one
+      // is held only when the share at its middle still reaches the middle. One that overshoots steps back to the plain
+      // one. A dip narrower than half a step can be missed: only at a tipping point, where the storm then starts a
+      // little early
+      const timed = ids.filter((f) => timeoutOf(f) != null)
+      const zero = Object.fromEntries(ids.map((f) => [f, 0]))
+      const share = (s: { sub: { timedOut: (f: string) => number } }, late: Record<string, number>) => {
+        const next = { ...late }
+        for (const f of timed) next[f] = s.sub.timedOut(f)
+        return next
+      }
+      let late: Record<string, number> = zero
+      let e: Record<string, number> = zero
+      let last: { late: Record<string, number>; next: Record<string, number>; e: Record<string, number> } | undefined
+      let gain = 1
+      for (let round = 0; ; round++) {
+        if (round === 2000)
+          throw new Error(`loadmap: the timeouts of ${joinAnd(timed.map((f) => `"${f}"`))} do not settle`)
+        const s = solve(e, late)
+        // the held share changes only the failures, never the time: the solve's last context reads it
+        const next = share(s, late)
+        const tol = (f: string) => 1e-10 * (1 + late[f]!)
+        if (timed.some((f) => Math.abs(next[f]! - late[f]!) > tol(f))) {
+          if (last && timed.some((f) => next[f]! < late[f]! - tol(f))) {
+            late = last.next
+            e = last.e
+            last = undefined
+            gain = 1
+            continue
+          }
+          const step = { ...next }
+          let doubled = false
+          if (last)
+            for (const f of timed) {
+              const now = next[f]! - late[f]!
+              const before = last.next[f]! - last.late[f]!
+              if (!(now > 0)) continue
+              if (before > now) {
+                const x = late[f]! + (now * (late[f]! - last.late[f]!)) / (before - now)
+                if (x > next[f]!) step[f] = Math.min(x, late[f]! + 1000 * now, (next[f]! + 1) / 2)
+              } else {
+                doubled = true
+                step[f] = Math.max(next[f]!, Math.min(late[f]! + 2 * gain * now, (next[f]! + 1) / 2))
+              }
+            }
+          gain = doubled ? gain * 2 : 1
+          if (doubled) {
+            // the middle of the jump must still be below the answer: its share reaches past it
+            const mid = Object.fromEntries(ids.map((f) => [f, (next[f]! + step[f]!) / 2]))
+            const atMid = share(solve(s.e, mid), mid)
+            if (timed.some((f) => atMid[f]! < mid[f]! - tol(f))) {
+              for (const f of timed) step[f] = next[f]!
+              gain = 1
             }
           }
-          return out
+          last = { late, next, e: s.e }
+          late = step
+          e = s.e
+          continue
         }
-        const along = (t: number) => {
-          const y = { ...e }
-          for (const f of live) y[f] = e[f]! + t * d[f]!
-          return y
+        e = s.e
+        const a = attempts(e)
+        const out: Record<string, Retry> = {}
+        for (const f of ids) {
+          const l = lam[f]!
+          const p = s.failed[f]!
+          const times = retryOf(f)!.times
+          // with a budget only a share q of rejections is sent again: pq solves pq + … + (pq)ⁿ = the excess
+          const retried =
+            p > 0 && excess(p, times) > e[f]! * (1 + 1e-12) ? root((y) => excess(y, times), e[f]!, p) / p : 1
+          out[f] = {
+            times,
+            rate: l,
+            attempts: a[f]!,
+            rejected: p,
+            retried,
+            failed: l > 0 ? 1 - (1 - p) * (1 + e[f]!) : 0,
+          }
         }
-        const holds = (t: number) => {
-          const y = along(t)
-          const wy = wanted(y).w
-          return Math.min(...live.map((f) => (wy[f]! - y[f]!) / d[f]!))
-        }
-        const far = Math.min(...live.map((f) => (most(f) - e[f]!) / d[f]!))
-        // t = 1 is the plain step, which always holds: the call rises with the attempts
-        if (far <= 1) e = along(far)
-        else {
-          const h1 = holds(1)
-          e = along(h1 > 0 ? settle(holds, 1, far, h1) : 1)
-        }
+        return out
       }
-      throw new Error(`loadmap: the retries of ${joinAnd(ids.map((f) => `"${f}"`))} do not settle`)
     })
 
   const usedBy = (c: string) => stageIds.filter((s) => (stages[s] as { component?: string }).component === c)
@@ -1147,13 +1249,15 @@ function context(
       if (u == null) return enabled(c!) && capacity(c!).missing != null ? Number.NaN : 0
       return u >= 1 ? Number.POSITIVE_INFINITY : time / (1 - u)
     })
-  /** A flow's time through: the stages of each way add up; a cache's hits leave the way there. */
-  const latency = (f: string) =>
-    memo(`latency of ${f}`, () => {
+  /** A flow's ways through, timed: the stages of each way add up; a cache's hits leave the way there. */
+  const timesOf = (f: string) =>
+    memo(`times of ${f}`, () => {
       const ways: WayTime[] = []
+      // which way each is: the path, and the cache that answered it
+      const tags: { path: number; answeredAt?: string }[] = []
       const unknown = new Set<string>()
       let timed = false
-      for (const p of paths(f)) {
+      for (const [i, p] of paths(f).entries()) {
         let left = p.share
         let mean = 0
         let variance = 0
@@ -1168,14 +1272,55 @@ function context(
           }
           if (stages[s]!.kind === 'cache') {
             ways.push({ share: left * hit(s), mean, variance })
+            tags.push({ path: i, answeredAt: s })
             left *= 1 - hit(s)
           }
         }
         ways.push({ share: left, mean, variance })
+        tags.push({ path: i })
       }
-      if (!timed) return null
-      const l = latencyOf(ways)
-      return unknown.size ? { ...l, unknown: [...unknown] } : l
+      return timed ? { ways, tags, unknown: [...unknown] } : null
+    })
+  const timeoutOf = (f: string) => {
+    const t = def.flows[f]!.timeout
+    const v = typeof t === 'function' ? t(values) : t
+    if (v != null && !(v > 0 && !Number.isNaN(v)))
+      throw new Error(`loadmap: flow "${f}" times out after ${v} s: a time above 0`)
+    return v
+  }
+  /** The share of a flow's units slower than its timeout: 0 without one. */
+  const timedOut = (f: string) =>
+    memo(`timed out of ${f}`, () => {
+      const t = timeoutOf(f)
+      if (t == null) return 0
+      const times = timesOf(f)
+      if (!times)
+        throw new Error(`loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`)
+      // below a millionth it moves no capacity number: none, so the retries stay unsolved below their knee, as without
+      // a timeout
+      const late = beyond(times.ways, t)
+      return late < 1e-6 ? 0 : late
+    })
+  const latency = (f: string) =>
+    memo(`latency of ${f}`, () => {
+      const times = timesOf(f)
+      if (!times) {
+        // a timeout without a latency: refused there
+        timedOut(f)
+        return null
+      }
+      const l: Latency = latencyOf(times.ways)
+      const t = timeoutOf(f)
+      return {
+        ...l,
+        ...(times.unknown.length ? { unknown: times.unknown } : {}),
+        ...(t != null
+          ? {
+              timedOut: timedOut(f),
+              ways: times.tags.map((tag, i) => ({ ...tag, timedOut: beyond([{ ...times.ways[i]!, share: 1 }], t) })),
+            }
+          : {}),
+      }
     })
   /** The stages whose units hold a component's slots. */
   const holders = (c: string) => {
@@ -1235,9 +1380,13 @@ function context(
     describe: (c: string) => text(def.components[c]!.describe),
     held,
     holders,
+    timedOut,
     latencies: (only: readonly string[] = flowIds) => {
       const timed = componentIds.some((c) => def.components[c]!.service != null)
-      return Object.fromEntries(only.map((f) => [f, timed ? latency(f) : null]))
+      // each flow's on first read: the quantiles cost a bisection each
+      const out = {}
+      for (const f of only) Object.defineProperty(out, f, { enumerable: true, get: () => (timed ? latency(f) : null) })
+      return out
     },
   }
 }

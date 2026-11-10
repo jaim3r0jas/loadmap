@@ -678,3 +678,70 @@ describe('a split', () => {
     expect(rejected / outcomes.size).toBeLessThan(0.65)
   })
 })
+
+describe('a timeout', () => {
+  // 100 units a second at half of 200, 10 ms when idle: 20 ms on average; a timeout of 20 ms × ln 2 fails half
+  const timed = (timeout?: number) =>
+    defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100, timeout } },
+      components: { api: { name: 'API', capacity: measured(200, 'u/s'), service: 0.01, over: '' } },
+      stages: { api: pass('api'), out: sink() },
+      routes: { req: ['api', 'out'] },
+    })
+
+  it('fades the share of dots the model says are too slow, at the end of their way', () => {
+    const outcomes = (m: ReturnType<typeof timed>, seed: number) => {
+      const sim = createSim(m, m.evaluate(), { seed, speed: 10, maxDots: 60, dotTarget: 100 })
+      const seen = new Map<number, string>()
+      for (let i = 0; i < 60 * 40; i++) {
+        sim.step(1 / 60)
+        for (const d of sim.particles) if (d.outcome) seen.set(d.id, d.outcome)
+      }
+      return { seen: [...seen.values()], sim }
+    }
+    const half = timed(0.02 * Math.log(2))
+    expect(half.evaluate().latency.req!.timedOut).toBeCloseTo(0.5, 9)
+    const { seen, sim } = outcomes(half, 5)
+    const late = seen.filter((o) => o === 'timedout').length / seen.length
+    expect(late).toBeGreaterThan(0.35)
+    expect(late).toBeLessThan(0.65)
+    // the same seed, the same dots
+    expect(outcomes(half, 5).sim.particles).toEqual(sim.particles)
+    // without a timeout no dot times out
+    expect(outcomes(timed(), 5).seen).not.toContain('timedout')
+  })
+
+  it('times out the dots of each way at that way’s share: a cache’s answers are fast', () => {
+    // 100 units: a cache answers four in five at once; the misses wait at the API (20 ms on average) for 10 ms
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100, timeout: 0.01 } },
+      components: {
+        lookups: { name: 'Cache', capacity: measured(1e6, 'u/s'), over: '' },
+        api: { name: 'API', capacity: measured(40, 'u/s'), service: 0.01, over: '' },
+      },
+      stages: { cache: cache({ hit: 0.8, component: 'lookups' }), api: pass('api'), out: sink() },
+      routes: { req: ['cache', 'api', 'out'] },
+    })
+    const l = m.evaluate().latency.req!
+    // the misses: e^(−10 / 20); the hits: none
+    expect(l.ways).toEqual([
+      { path: 0, answeredAt: 'cache', timedOut: 0 },
+      { path: 0, timedOut: expect.closeTo(Math.exp(-0.5), 9) },
+    ])
+    expect(l.timedOut).toBeCloseTo(0.2 * Math.exp(-0.5), 9)
+    const sim = createSim(m, m.evaluate(), { seed: 2, speed: 10, maxDots: 80, dotTarget: 100 })
+    const seen = new Map<number, string>()
+    for (let i = 0; i < 60 * 60; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) if (d.outcome) seen.set(d.id, d.outcome)
+    }
+    const all = [...seen.values()]
+    const late = all.filter((o) => o === 'timedout').length
+    const misses = late + all.filter((o) => o === 'delivered').length
+    // of the misses, e^(−0.5) = 61 %; none of the answered
+    expect(late / misses).toBeGreaterThan(0.45)
+    expect(late / misses).toBeLessThan(0.75)
+  })
+})

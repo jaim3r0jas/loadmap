@@ -48,7 +48,7 @@ export interface Particle {
    * superseded: merged into a newer unit of its key; unread: a fan-out that made no copy; answered: a cache hit back
    * where it came from.
    */
-  outcome?: 'delivered' | 'dropped' | 'rejected' | 'superseded' | 'unread' | 'answered'
+  outcome?: 'delivered' | 'dropped' | 'rejected' | 'superseded' | 'unread' | 'answered' | 'timedout'
 }
 
 export interface QueueState {
@@ -108,6 +108,7 @@ export class Sim {
   #busy = new Map<string, number>()
   #fills = new Map<string, Fill>() // `${stage}/${running pods}` → fill order over the running pods
   #shed = new Map<string, number>()
+  #late = new Map<string, number>() // `${flow}/${path}` or `${flow}/${path}/${cache}` → the share of those too slow
   #inflow = new Map<string, number>() // `${stage}/${flow}` → units per second reaching that stage
   #capacity = new Map<string, number>() // stage → units per second it can drain
   #spawn = new Map<string, number>()
@@ -168,6 +169,12 @@ export class Sim {
     // what each stage turns away of what actually reaches it, worked out by the model (the bottleneck decides)
     this.#shed.clear()
     for (const s of stages) this.#shed.set(s.id, 'shed' in s ? s.shed : 0)
+    // the latency is worked out only for a flow with a timeout, per way: no other recording reads it
+    this.#late.clear()
+    for (const f of this.#model.flowIds)
+      if (this.#model.def.flows[f]?.timeout != null)
+        for (const w of ev.latency[f]?.ways ?? [])
+          this.#late.set(`${f}/${w.path}${w.answeredAt ? `/${w.answeredAt}` : ''}`, w.timedOut)
     this.#inflow.clear()
     for (const f of this.#model.flowIds) {
       const ways = ev.paths[f] ?? []
@@ -448,9 +455,15 @@ export class Sim {
       d.dur = dur
       d.from = d.to
     }
+    const born: Particle[] = []
     const advance = (d: Particle) => {
       const route = this.#way(d.flow, d.path)
-      if (d.leg + 1 >= route.length) return fade(d, 'delivered', 0.35)
+      if (d.leg + 1 >= route.length) {
+        // too slow for its client: it fails at the end of its way and is sent again, as the model's share says
+        const late = this.#late.get(`${d.flow}/${d.path ?? 0}`)
+        if (late && this.#r() < late) return reject(d, 'timedout')
+        return fade(d, 'delivered', 0.35)
+      }
       d.leg++
       d.phase = 'move'
       d.t = 0
@@ -459,9 +472,8 @@ export class Sim {
       d.to = this.#place(route[d.leg]!, d.flow)
     }
 
-    const born: Particle[] = []
-    const reject = (d: Particle) => {
-      fade(d, 'rejected', 0.6)
+    const reject = (d: Particle, outcome: Particle['outcome'] = 'rejected') => {
+      fade(d, outcome, 0.6)
       const again = this.particles.length + born.length < this.#o.maxParticles ? this.#retry(d) : null
       if (again) born.push(again)
     }
@@ -469,7 +481,10 @@ export class Sim {
       d.t += dtReal
       if (d.t < d.dur) continue
       if (d.phase === 'move' && d.back) {
-        fade(d, 'answered', 0.35)
+        // answered by a cache, still too slow: its share of the way answered there
+        const late = this.#late.get(`${d.flow}/${d.path ?? 0}/${d.from.stage ?? ''}`)
+        if (late && this.#r() < late) reject(d, 'timedout')
+        else fade(d, 'answered', 0.35)
         continue
       }
       const stage = ev.stages[d.to.stage ?? '']

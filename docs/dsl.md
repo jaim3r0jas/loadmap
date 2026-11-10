@@ -718,6 +718,13 @@ the shape, not a measurement. To set a service time from data, take a measured p
 queue's p99 is `service × ln 100 ÷ (1 − utilization)`, so `service: latencyP99 / 1_000 * (1 - 0.4) / 4.6` for a p99
 in ms at 40 %.
 
+A **timeout** on a flow (`timeout: 2`, in seconds) turns its latency into failures: the units slower than it fail, as
+if the client gave up, though the work they set off still uses its capacity. With `retry` they come back as attempts,
+which load every stage again and make it slower still: a timeout storm. The retries settle where the share too slow
+gives back the same attempts, the least such point, and past the knee there is none below what the retries allow.
+`ev.latency.orders.timedOut` is the share, the Live panel shows it, and the dots that time out fade where they end. A
+timeout needs a latency: a `service` on the flow's way.
+
 ### A story
 
 `step` lines walk a reader through the model in order: what to look at, and the values to show it at. Each step starts
@@ -1206,6 +1213,7 @@ After the keyword: id [label].
 | `unit` | string, constant | One unit of the flow, singular: "order". |
 | `rate` (required) | number, formula | Units per second. |
 | `priority` | number, constant | 1 is served first. Flows of the same priority share. |
+| `timeout` | number, formula of parameters | Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way. |
 | `route` (required) | route, constant | The stages it passes, in order: a -> b -> c. |
 | `from` (required) | node, constant | The node its dots start from. |
 | `color` | `accent` \| `alt` \| `ok` \| `warn` \| `drop` \| `muted` | A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes. |

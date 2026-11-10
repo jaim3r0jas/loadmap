@@ -29,10 +29,10 @@ describe('completions', () => {
   it("offers a block's properties and statements at the start of a line", () => {
     const { labels, word, c } = at(`${checkout}\nflow q {\n  pri|\n}`)
     expect(word).toBe('pri')
-    expect(labels).toEqual(['unit', 'rate', 'priority', 'route', 'from', 'color', 'drop', 'merge', 'retry'])
+    expect(labels).toEqual(['unit', 'rate', 'priority', 'timeout', 'route', 'from', 'color', 'drop', 'merge', 'retry'])
     expect(c.options.find((o) => o.label === 'rate')).toMatchObject({ apply: 'rate: ', detail: 'required', boost: 2 })
     // what the block already sets is not offered again, but for the line being written
-    expect(at(inside('flow orders "orders" {', 'pri|')).labels).toEqual(['drop', 'merge', 'retry'])
+    expect(at(inside('flow orders "orders" {', 'pri|')).labels).toEqual(['timeout', 'drop', 'merge', 'retry'])
     expect(at(checkout.replace('rate: 40 * load', 'rat|e: 40 * load')).labels).toContain('rate')
   })
 

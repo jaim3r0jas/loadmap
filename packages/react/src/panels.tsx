@@ -219,6 +219,13 @@ export function Meters({ lm }: { lm: LoadmapController }) {
       label: `${flowLabel(f)} p99`,
       state: !Number.isFinite(l.p99) || (goal != null && l.p99 > goal) ? 'over' : 'ok',
     })
+    if (l.timedOut != null)
+      items.push({
+        key: `${f}/late`,
+        value: pct(l.timedOut),
+        label: `${flowLabel(f)} timed out`,
+        state: l.timedOut > 0.005 ? 'over' : l.timedOut > 0 ? 'warn' : 'ok',
+      })
   }
   return (
     <>

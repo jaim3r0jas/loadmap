@@ -1,3 +1,4 @@
+import { defineModel, measured, p, pass } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, format } from '../src'
 
@@ -58,5 +59,35 @@ describe('latency in the language', () => {
     expect(errors(SRC.replace('service: 0.03', 'service: -0.03'))[0]).toMatch(
       /^error: a service time is seconds from 0 up, not -0.03/,
     )
+  })
+
+  it('times a flow out', () => {
+    const r = compile(SRC.replace('route: a -> b }', 'route: a -> b; timeout: 0.2 }'))
+    expect(r.diagnostics).toEqual([])
+    const l = r.definition!.model.evaluate({ load: 1 }).latency.req!
+    // a gamma of shape 1.6 and scale 50 ms (mean 80 ms): its share past 200 ms, scipy.special.gammaincc(1.6, 4)
+    expect(l.timedOut).toBeCloseTo(0.05361299815678208, 10)
+    // as TypeScript does, retries and all
+    const both = SRC.replace('route: a -> b }', 'route: a -> b; timeout: 0.2; retry { times: 2 } }')
+    const ts = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: ({ load }) => 100 * load, timeout: 0.2, retry: { times: 2 } } },
+      components: {
+        a: { name: 'A', capacity: measured(200, 'req/s'), service: 0.01, over: 'clients wait' },
+        b: { name: 'B', capacity: measured(200, 'req/s'), service: 0.03, over: 'clients wait' },
+      },
+      stages: { a: pass('a'), b: pass('b') },
+      routes: { req: ['a', 'b'] },
+    })
+    for (const load of [1, 1.5])
+      expect(compile(both).definition!.model.evaluate({ load }).retry).toEqual(ts.evaluate({ load }).retry)
+    expect(errors(SRC.replace('route: a -> b }', 'route: a -> b; timeout: -1 }'))[0]).toMatch(
+      /^error: a timeout is seconds above 0, not -1/,
+    )
+    const untimed = SRC.replace('route: a -> b }', 'route: a -> b; timeout: 1 }')
+      .replace('  service: 0.01\n', '')
+      .replace('  service: 0.03\n', '')
+      .replace('expect "Fast to 1.2×" { flow: req; p99: 0.5; target: 1.2 }\n', '')
+    expect(errors(untimed).join('\n')).toContain('flow "req" has a timeout but no latency')
   })
 })
