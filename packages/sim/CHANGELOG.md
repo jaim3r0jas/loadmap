@@ -1,5 +1,34 @@
 # @loadmap/sim
 
+## 0.31.0
+
+### Minor Changes
+
+- 0097fc9: A `split` stage sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
+  failover. In the language, one `flow -> stage -> …: share` line per way inside `split { … }` on a box; in TypeScript,
+  `split({ to: [{ stages: ['primary'], share: 0.2 }, …] })`. A flow's shares add up to 1 (formulas of the parameters
+  allowed) and a flow the split does not name goes straight on; a way that ends in a store, a sink or a fan-out ends
+  there, any other goes on with the route after the split. The model works out each flow's ways (`ev.paths`), and what
+  reaches each stage, the demand, the rejections and the retries add up over them; the dots each take one way, drawn by
+  share, and a model without a split draws exactly what it drew before. The search example's index is now two shards
+  behind a coordinator.
+- ed5d6d2: Timeouts: `timeout` on a flow (seconds) fails the share of its units slower than it, from the latency of its way; with
+  `retry` they are sent again, which loads every stage and slows it further, settled at the least fixed point. The
+  retry solve now holds that share while it settles the attempts, and stops at the least fixed point where a share
+  can meet the attempts twice. `ev.latency[f].timedOut`, a Live meter, and the sim fades that share of dots as timed
+  out. `timeout: 2` in the language.
+
+### Patch Changes
+
+- Updated dependencies [11b78ee]
+- Updated dependencies [0ab6855]
+- Updated dependencies [717b95e]
+- Updated dependencies [de327ef]
+- Updated dependencies [b9b71c3]
+- Updated dependencies [0097fc9]
+- Updated dependencies [ed5d6d2]
+  - @loadmap/core@0.31.0
+
 ## 0.30.1
 
 ### Patch Changes

@@ -1,5 +1,71 @@
 # @loadmap/dsl
 
+## 0.31.0
+
+### Minor Changes
+
+- 0ab6855: Every expectation ends pass, fail or inconclusive (`check()` gives `outcome` and `reasons`; `ok` is a pass).
+  Inconclusive is an answer that rests on what is not known: it holds at the high edge of a ± but not at the low one, a
+  component has no published benchmark, or measured data it reads is missing or too thin. `expect { …; severity: warn
+  }` is reported and never fails a run. `loadmap check` reports an inconclusive expectation as a warning (it failed
+  before when only a ± or a missing benchmark decided it); `--inconclusive fail` fails on it. `--pull` reads the
+  measures first and checks against them, `--snapshot <file>` against a snapshot already written, `--dry-run` reports
+  everything and exits 0, `--json <file>` (and `--format json`) writes the run's result keyed by the commit, and under
+  GitHub Actions a table of the expectations goes into the job summary.
+- 9cf2028: A metric can read from Elasticsearch or OpenSearch: `elasticsearch { index: "auth-*"; query: '{"term": {"service":
+  "{{ args.service }}"}}'; agg: rate }` reads an index as a date histogram at the step, documents per second (`rate`,
+  the default) or per step (`count`), or the `avg`, `sum`, `min` or `max` of a `field`; `time` names the time field.
+  A measure's argument goes into the query JSON escaped. The checker refuses a field aggregation without a field, a
+  count with one, a query that is not JSON and an index that is not a name or a pattern. `elasticsearch()` in
+  `@loadmap/providers` sends the search; a window where nothing matches is missing, not zero. `loadmap pull` takes
+  `LOADMAP_ELASTICSEARCH_URL` with `LOADMAP_ELASTICSEARCH_API_KEY` (or a user and password). Both providers move a user
+  and password written in the address into the header.
+- de327ef: Latency as an output: `service` on a component (the seconds a unit takes when nothing waits) makes each stage it runs
+  a queue whose time grows as service ÷ (1 − utilization); a flow's time through is the sum of its stages, fitted to a
+  gamma per way and mixed over its ways, and `ev.latency` gives its mean, p50, p95 and p99. An expectation holds a
+  percentile under a time, `{ flow: orders; p99: 0.5; target: 8 }`, on the pessimistic edge; `loadmap check --base`
+  shows each flow's p99 against its base, and the Live panel each flow's p99.
+- 0fb5d08: The language maps a model onto measured data, and `loadmap pull` reads it. A `metric` is a query written once
+  (`prometheus { query: '…{{ args.job }}…' }`, with a `stat` and a `min` of samples); a `measure` is one use of it,
+  with its arguments and a `fallback`, and its id is a capacity or a number as its fallback is (`capacity: apiCapacity`,
+  `rate: orderRate * load`). A `fit` with `x` and `y` naming two measures is fitted from their series. `compile(source,
+  { snapshot: fromSnapshot(parseSnapshot(text)) })` reads a snapshot; without one every measure is its fallback, and
+  `compile(…).measures` lists each query with its arguments filled in. The checker names an unknown metric, an argument
+  a query needs or never uses, a fallback that is neither a capacity nor a number; completion, hover, rename and the VS
+  Code grammar know the new statements. The new `@loadmap/providers` reads Prometheus (`/api/v1/query_range`, one
+  series per query, errors as data) and writes the snapshot (`pull`); `loadmap pull x.loadmap [--window 7d] [--step
+  5m] [--to …]` writes `x.snapshot.json` next to the definition, with the address and the credentials from
+  `LOADMAP_PROMETHEUS_URL` and `LOADMAP_PROMETHEUS_TOKEN` (or a user and password), never from the text.
+- b9b71c3: A component can count slots instead of a rate: `held` (seconds a unit holds a connection, a session, a thread) makes
+  its demand the slots in use by Little's law, what reaches its stages times `held`, one time for every flow or one per
+  flow; `on` names the stages for a pool beside the limit that runs them. `held: 0.02` or `held { orders: 0.02 }` in the
+  language. The `slots` measurements set its capacity and its time held.
+- 0097fc9: A `split` stage sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
+  failover. In the language, one `flow -> stage -> …: share` line per way inside `split { … }` on a box; in TypeScript,
+  `split({ to: [{ stages: ['primary'], share: 0.2 }, …] })`. A flow's shares add up to 1 (formulas of the parameters
+  allowed) and a flow the split does not name goes straight on; a way that ends in a store, a sink or a fan-out ends
+  there, any other goes on with the route after the split. The model works out each flow's ways (`ev.paths`), and what
+  reaches each stage, the demand, the rejections and the retries add up over them; the dots each take one way, drawn by
+  share, and a model without a split draws exactly what it drew before. The search example's index is now two shards
+  behind a coordinator.
+- ed5d6d2: Timeouts: `timeout` on a flow (seconds) fails the share of its units slower than it, from the latency of its way; with
+  `retry` they are sent again, which loads every stage and slows it further, settled at the least fixed point. The
+  retry solve now holds that share while it settles the attempts, and stops at the least fixed point where a share
+  can meet the attempts twice. `ev.latency[f].timedOut`, a Live meter, and the sim fades that share of dots as timed
+  out. `timeout: 2` in the language.
+
+### Patch Changes
+
+- Updated dependencies [11b78ee]
+- Updated dependencies [0ab6855]
+- Updated dependencies [717b95e]
+- Updated dependencies [de327ef]
+- Updated dependencies [b9b71c3]
+- Updated dependencies [0097fc9]
+- Updated dependencies [ed5d6d2]
+  - @loadmap/core@0.31.0
+  - @loadmap/layout@0.31.0
+
 ## 0.30.1
 
 ### Patch Changes
