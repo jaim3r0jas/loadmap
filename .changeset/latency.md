@@ -3,7 +3,6 @@
 '@loadmap/dsl': minor
 '@loadmap/cli': minor
 '@loadmap/react': patch
-'@loadmap/vscode': patch
 ---
 
 Latency as an output: `service` on a component (the seconds a unit takes when nothing waits) makes each stage it runs

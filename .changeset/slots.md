@@ -2,7 +2,6 @@
 '@loadmap/core': minor
 '@loadmap/dsl': minor
 '@loadmap/react': patch
-'@loadmap/vscode': patch
 ---
 
 A component can count slots instead of a rate: `held` (seconds a unit holds a connection, a session, a thread) makes
