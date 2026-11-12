@@ -9,26 +9,17 @@ what multiple of today's load). `README.md` has the picture; `docs/prior-art.md`
 
 pnpm workspaces · TypeScript 7 (strict, `noUncheckedIndexedAccess`) · tsdown (build) · Vitest 5 (Node, and browser
 mode on Playwright Chromium) · Biome (lint and format) · Vite 8 + React 19 (peer: `^19`, for `ref` as a prop). Node 24: `nvm use`; every script
-stops first with that hint on an older Node (`scripts/node-version.mjs`).
-
-| Package              | What                                                                                       | Depends on                                |
-| -------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| `@loadmap/core`      | params, limits as ranges, verdict, scenarios, growth, compare, headroom, check; calibrate  | nothing                                   |
-| `@loadmap/sim`       | fluid queues, priority, drop rules, dots, worker fill, seeded RNG                          | core                                      |
-| `@loadmap/layout`    | view definition, grid packers, ELK layout, collisions, dot paths                           | core, elkjs                               |
-| `@loadmap/react`     | `<Loadmap>`, `useLoadmap`, Diagram, panels, scenarios, headroom chart, engine, theme       | core, sim, layout, dsl; react (peer)      |
-| `@loadmap/export`    | PNG, GIF, WebM/MP4 on a fixed clock; captions, SVG, poster; `expose()` for the CLI         | react, mediabunny                         |
-| `@loadmap/cli`       | `loadmap check` (expectations, CI annotations), `loadmap fmt`, `loadmap pull`; `record`    | dsl, providers (bundled); playwright peer |
-| `@loadmap/dsl`       | the `.loadmap` language: parser, checker, formulas, `compile`, `format`, share links       | core, layout                              |
-| `@loadmap/editor`    | `<LoadmapEditor>`: CodeMirror 6 beside a live `<Loadmap>`; a reader layout, inspector      | dsl, react, @codemirror/*                 |
-| `@loadmap/vscode`    | VS Code extension (private, a .vsix): grammar, `loadmap lsp` client, the live preview      | cli, dsl, react (bundled)                 |
-| `@loadmap/providers` | providers (Prometheus) and `pull`: measured data into a snapshot, credentials from the env | core                                      |
+stops first with that hint on an older Node (`scripts/node-version.mjs`). The packages are `packages/*`: each
+`package.json` says what it holds and what it depends on.
 
 `examples/checkout` (the small reference), `examples/alerts` (two topics on shared brokers, merge, fan-out) and
 `examples/search` (a rate limiter, an autoscaled pool, a cache and retries, laid out stable) hold the end-to-end tests,
 each also written as a `.loadmap` that must draw exactly what its TypeScript draws (`definition.test.ts`,
 `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): the examples (walkthroughs and the templates as starters) and the editor
-live. `docs/dsl.md` is the language guide; the site includes it.
+live (its rules: `apps/docs/CLAUDE.md`). `docs/dsl.md` is the language guide: the site includes it, the build writes it
+with `docs/every-statement.loadmap` into `llms-full.txt`, and the dsl build copies it into its `dist/REFERENCE.md`.
+`docs/every-statement.loadmap` must hold every statement of the schema (`docs.test.ts`). Recording a page or a
+`.loadmap` (`pnpm record`, `expose()`): the `record` skill.
 
 ## Verification
 
@@ -38,7 +29,6 @@ Run before every commit that lands:
 pnpm check        # typecheck, biome check, every test (Node + browser), build
 ```
 
-Pieces: `pnpm typecheck`, `pnpm lint` (`pnpm format` fixes), `pnpm test:node`, `pnpm test:browser`, `pnpm build`.
 After a change to `packages/vscode` (or what it bundles: the cli's `lsp`, `<LoadmapSource>`): `pnpm --filter
 @loadmap/vscode test:e2e` runs the extension as it ships in a pinned VS Code (downloaded once into `.vscode-test`; CI
 runs it under xvfb in `check`), and `pnpm --filter @loadmap/vscode package` makes the .vsix.
@@ -71,19 +61,13 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
 - `pnpm format` realigns a whole Markdown table when one row is wider than the rest: keep a new row within the
   table's column widths.
 
-`pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
-(quoted: zsh globs the brackets).
-
 ## Landing
 
 Work lands on `main` only through a pull request: rulesets on GitHub require the `check`, `workflows` (zizmor) and
 `dependency-review` jobs to pass on a branch up to date with main, keep the history linear and refuse force pushes and
 deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --rebase`: it merges once green.
 
-- Workflows: `permissions: {}` at the top and per job only what it needs, every action pinned to a full SHA with its
-  version in a comment (Dependabot bumps them), `persist-credentials: false`, `timeout-minutes`. Never
-  `pull_request_target`, never `${{ … }}` from an event inside `run:` (pass it through `env:`). `uvx zizmor .github/`
-  runs the `workflows` check locally.
+- Workflows: their rules are in `.github/CLAUDE.md`.
 - `pnpm-workspace.yaml` refuses a dependency younger than 3 days, one whose trust dropped (lost provenance), one that
   wants an install script (`allowBuilds` after reading what it runs) and git or tarball dependencies deep in the tree.
   A fresh fix you must have now goes in `minimumReleaseAgeExclude` with its exact version.
@@ -128,7 +112,7 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
 - **The public API is what a stranger imports**: `@loadmap/react` re-exports the model and view API (one install);
   format helpers live in `@loadmap/core/format`; what only loadmap's own packages need goes in a `./internal` entry
   (`@loadmap/dsl/internal`), which promises nothing between versions. A new export takes its final name now.
-- Code style is Biome's (single quotes, no semicolons, 120 columns). Comments say why, not what.
+- Comments say why, not what.
 - Text in the UI and the verdict: short plain sentences, numbers with units, `×` for load multiples, `%` with a space.
 - The example and docs are generic: no figures, component names or links from anyone's employer.
 - **Formulas in `.loadmap` never reach `eval` or `new Function`.** They are parsed and run as closures over the syntax
@@ -143,36 +127,6 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
   otherwise. `loadmap fmt <file>` fixes it.
 - A feature of the TypeScript API that the language should express gets a line in both examples' `.loadmap` or a
   `compile.test.ts` case; the round-trip tests catch a drift.
-
-## Docs
-
-`apps/docs` is the site (Vite + React, static HTML). Pages are Markdown in `apps/docs/pages`, listed in `PAGES`
-(`apps/docs/pages.ts`), written into `apps/docs/site/` (the Vite root; the HTML is ignored by git) before Vite runs.
-`@include(path, "from", "to")` pulls lines from a repository file (the guide and the reference come from
-`docs/dsl.md`, the quick start from `packages/react/README.md`); site links are written from the root (`/language/`)
-and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
-under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
-`<div class="island" data-island="example|editor|gallery|quickstart">`. A page with `frame: 'app'` (the editor at
-`/editor/`) is its Markdown alone in the window, without the site's frame, pager or llms.txt entry; `hidden: true`
-leaves a page out of the sidebar. A page that moves keeps its old route in `MOVED` (a page that sends the reader on,
-in no list). `/embed/` is not a page: `writePages` writes it bare (no docs CSS) for
-`site/embed.tsx`, which draws a share link's definition filling an iframe (`<Loadmap fill>`); the editor's "Copy embed
-link" makes its links. `apps/docs/test/site.test.ts` builds the site, checks every link, and draws the live
-pages in Chromium. The build also writes `llms.txt` (the pages) and
-`llms-full.txt` (`docs/dsl.md` and `docs/every-statement.loadmap`, which must hold every statement of the schema:
-`docs.test.ts`); the dsl build copies `docs/dsl.md` into its `dist/REFERENCE.md`.
-
-## Recording
-
-A page calls `expose(handle)` (`@loadmap/export`); then `pnpm record <url> --out demo.gif [--script s.json]
-[--set load=30]` records it in headless Chromium on a fixed clock: the same options give the same GIF, byte for byte.
-Each example page of the docs exposes its example: `pnpm dev`, then
-`pnpm record 'http://localhost:5173/examples/alerts/' --out alerts.gif`. `--caption` adds the title, scenario, load and verdict to every frame, `--scenario <label>`
-starts from a scenario, `--poster` (with `.png`) draws the board with the limits and the scenarios compared, and
-`.svg` writes the board as a file. `--story` plays the model's `story` steps (each step resolved from the defaults, so
-any step looks the same whichever came before). `pnpm record x.loadmap --out x.gif` compiles the definition and draws
-it in the viewer built into `packages/cli/dist/viewer` (`pnpm record` builds it). `loadmap check x.loadmap` runs its `expect`
-lines: exit 1 on a failure or an error, GitHub annotations under Actions.
 
 ## Not yet
 
