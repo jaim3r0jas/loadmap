@@ -1,5 +1,30 @@
 # @loadmap/sim
 
+## 0.32.0
+
+### Minor Changes
+
+- 53b93be: Connections on the board: behind an exclusive connection each unit goes to the worker that reads its partition, a
+  worker is as busy as its partitions make it, one that reads none stays idle and is drawn dashed, and a partition a
+  quieter worker reads waits less of the queue's lag. `ev.stages[pool].assignment` gives the worker of each partition
+  and each worker's share of the work. The latency times each group of workers at its own utilization, instead of
+  every unit at the busiest one's.
+- 7f55166: Connections on the stage they reach: `assign: 'key'` sends each unit to the part its key hashes to, partition i of
+  each flow on member i mod `members`, and the busiest member bounds the stage; `skew` puts a share of a flow on its
+  hottest part, and the sim sends that share of the dots there; `assign: 'leader'` sends every unit to one member. A
+  published capacity keeps its number, and the limits list says why. In the language a cluster's queue takes the
+  cluster's members. A connection's spread reads the flows' rates only when several share a stage.
+
+### Patch Changes
+
+- Updated dependencies [f2c3fd3]
+- Updated dependencies [c302028]
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [7f55166]
+- Updated dependencies [55c4e7f]
+  - @loadmap/core@0.32.0
+
 ## 0.31.0
 
 ### Minor Changes
