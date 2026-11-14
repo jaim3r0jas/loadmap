@@ -58,6 +58,25 @@ describe('queues', () => {
     expect(sim.busy('pool')).toBeCloseTo(0.5, 2)
   })
 
+  it('draw the average busy, not the busiest member, behind an exclusive connection', () => {
+    // 8 partitions on 12 workers: the busiest is at 75 %, the pool on average at 50 %
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load } },
+      components: { pool: { name: 'Pool', capacity: measured(200, 'u/s'), over: '' } },
+      stages: { topic: queue({ partitions: { a: 8 } }), pool: workers('pool', { pods: 3, perPod: 4 }) },
+      routes: { a: ['topic', 'pool'] },
+      connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } },
+    })
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.components.pool.util).toBeCloseTo(0.75, 9)
+    const sim = createSim(m, ev, { seed: 1, speed: 10 })
+    expect(sim.busy('pool')).toBeCloseTo(0.5, 9)
+    for (let i = 0; i < 720; i++) sim.step(1 / 60)
+    expect(sim.queue('topic', 'a')).toMatchObject({ backlog: 0, lag: 0 })
+    expect(sim.busy('pool')).toBeCloseTo(0.5, 2)
+  })
+
   it('grow over capacity: the oldest unit ages at (λ − μ) / λ', () => {
     // λ = 200, μ = 100: after 120 s, 12,000 units wait and the oldest arrived at 60 s
     const sim = run(pipeline({ a: 0, b: 200, cap: 100 }), 120)

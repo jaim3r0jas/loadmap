@@ -12,6 +12,7 @@ export {
   sourceText,
 } from './capacity'
 export { assertHolds, type CheckResult, check, type Expectation, type Outcome } from './check'
+export type { Assign, ConnectionDef, Member, Spread } from './connections'
 export {
   type ComponentDiff,
   type ComponentSide,

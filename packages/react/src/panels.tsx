@@ -82,6 +82,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                   ? `No published benchmark ${c.missing}.`
                   : (c.describe ?? (c.capacity ? `${fmt(c.capacity.value)} ${c.capacity.unit}` : 'switched off'))}
               </span>
+              {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
             </div>
             <div
               className="lm-track"
@@ -445,7 +446,7 @@ export function Assumptions({ lm, extra = [] }: { lm: LoadmapController; extra?:
           <li key={i}>{x}</li>
         ))}
         {lm.ev.assumptions.map((a) => (
-          <li key={a.kind === 'capacity' ? `c:${a.component}` : `${a.kind[0]}:${a.name}`}>{describe(a)}</li>
+          <li key={a.kind === 'capacity' ? `c:${a.component}` : `${a.kind}:${a.name}`}>{describe(a)}</li>
         ))}
       </ul>
     </div>
@@ -483,6 +484,12 @@ function describe(a: Assumption): ReactNode {
       </>
     )
   }
+  if (a.kind === 'connection')
+    return (
+      <>
+        <b>{a.name}:</b> {a.text}
+      </>
+    )
   if (a.kind === 'measurement') {
     // a reading is drawn as a measured capacity would be
     const { label, unit, value, missing, source } = a.measurement
