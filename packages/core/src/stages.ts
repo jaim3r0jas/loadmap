@@ -224,12 +224,32 @@ export function dyn<T>(v: Dyn<T>, ctx: LooseValues): T {
   return typeof v === 'function' ? (v as (ctx: LooseValues) => T)(ctx) : v
 }
 
+/**
+ * The pods a workers stage draws and runs. An autoscaler reads `util`: the plain utilization, the average its metric
+ * sees, never one a connection's spread raised (the spread itself depends on the pods running).
+ */
+export function podsOf(
+  id: string,
+  s: WorkersStage,
+  ctx: LooseValues,
+  util: number | null | undefined,
+): { pods: number; running: number; autoscale?: { min: number; max: number; target: number } } {
+  if (!s.autoscale) {
+    const pods = dyn(s.pods ?? 0, ctx)
+    return { pods, running: pods }
+  }
+  const a = autoscaleOf(id, s.autoscale, ctx)
+  return { pods: a.max, running: running(a, util), autoscale: a }
+}
+
 export function resolveStage(
   id: string,
   s: StageDef,
   ctx: LooseValues,
   flowIds: readonly string[],
   full: number,
+  /** The utilization before any connection's spread, for an autoscaler; `ctx.util` without one. */
+  plain?: (c: string) => number | null,
 ): ResolvedStage {
   const label = s.label ?? id
   const util = (c: string | undefined) => (c ? (ctx.util as Record<string, number | null>)[c] : null)
@@ -240,12 +260,7 @@ export function resolveStage(
     case 'workers': {
       const perPod = dyn(s.perPod, ctx)
       const base = { id, label, kind: 'workers' as const, component: s.component, perPod, fill: s.fill }
-      if (!s.autoscale) {
-        const pods = dyn(s.pods ?? 0, ctx)
-        return { ...base, pods, running: pods }
-      }
-      const a = autoscaleOf(id, s.autoscale, ctx)
-      return { ...base, pods: a.max, running: running(a, util(s.component)), autoscale: a }
+      return { ...base, ...podsOf(id, s, ctx, plain ? plain(s.component) : util(s.component)) }
     }
     case 'fanout': {
       const to = dyn(s.to, ctx)

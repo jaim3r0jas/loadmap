@@ -163,6 +163,7 @@ function assumptionText(a: Assumption): string {
     const unread = c.unread ? `; no data from the snapshot (${c.unread})` : ''
     return `${a.name}: ${fmt(c.value)} ${c.unit}${within}, ${c.provenance}${c.source ? ` (${c.source})` : ''}${unread}`
   }
+  if (a.kind === 'connection') return `${a.name}: ${a.text}`
   if (a.kind === 'fit') {
     const f = a.fit
     return `${a.name}: ${f.y} = ${fmt(f.a)} + ${fmt(f.b)} × ${f.x}, fitted over ${f.n} points${f.source ? ` (${f.source})` : ''}`

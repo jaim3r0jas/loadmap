@@ -279,7 +279,16 @@ export class Sim {
   #steadyBusy(stage: string): number {
     const s = this.#ev.stages[stage]
     const u = s?.component ? this.#util(s.component) : null
-    return Math.min(1, ((u ?? 0) / this.#model.thresholds.full) * this.#scaled(stage))
+    return Math.min(1, ((u ?? 0) / this.#model.thresholds.full) * this.#scaled(stage) * this.#even(stage))
+  }
+
+  /**
+   * A connection's spread raises the utilization to its busiest member's; the workers drawn busy are the average, so
+   * the fill takes it back out.
+   */
+  #even(stage: string): number {
+    const c = this.#ev.stages[stage]?.component
+    return 1 / ((c && this.#ev.components[c]?.spread?.factor) || 1)
   }
 
   /** The workers drawn over the workers running: the busy share of the running ones is that much higher. */
@@ -370,7 +379,7 @@ export class Sim {
       const cap = this.#capacity.get(s.id) ?? Number.POSITIVE_INFINITY
       const now =
         taken.has(s.id) && Number.isFinite(cap) && cap > 0
-          ? (taken.get(s.id)! / (cap * dt)) * this.#scaled(s.id)
+          ? (taken.get(s.id)! / (cap * dt)) * this.#scaled(s.id) * this.#even(s.id)
           : this.#steadyBusy(s.id)
       this.#busy.set(s.id, ema(this.#busy.get(s.id) ?? now, Math.min(1, now), dt))
     }

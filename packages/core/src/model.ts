@@ -1,6 +1,16 @@
 import type { LinearFit } from './calibrate'
 import { type Bound, boundOf, type Capacity, type CrossingRange } from './capacity'
 import type { Expectation } from './check'
+import {
+  type ConnectionDef,
+  memberShape,
+  poolShape,
+  type Shape,
+  type Spread,
+  spreadOver,
+  spreadText,
+  type Work,
+} from './connections'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
@@ -11,6 +21,7 @@ import {
   type Branch,
   dyn,
   hitOf,
+  podsOf,
   type ResolvedStage,
   rejectShare,
   resolveStage,
@@ -143,6 +154,11 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   derived?: { [K in D]: (ctx: Ctx<P, F, C, D, NoInfer<S>>) => number }
   stages: { [K in S]: StageDef<NoInfer<C>> }
   routes: { [K in NoInfer<F>]: readonly NoInfer<S>[] }
+  /**
+   * How a stage reaches the next one on a route, and through which part of it: a consumer group that reads each
+   * partition with one worker. The component of `to` then runs out when its busiest member does.
+   */
+  connections?: Readonly<Record<string, ConnectionDef<NoInfer<S>, NoInfer<F>>>>
   /** Fits used by the model, listed with the assumptions. */
   calibration?: Readonly<Record<string, LinearFit>>
   /**
@@ -191,7 +207,7 @@ export interface ComponentResult<C extends string = string> {
   name: string
   short: string
   plural: boolean
-  /** demand ÷ capacity at the current values; null when switched off. */
+  /** demand ÷ capacity at the current values, × the spread of a connection; null when switched off. */
   util: number | null
   demand: number | null
   capacity: Capacity | null
@@ -209,6 +225,8 @@ export interface ComponentResult<C extends string = string> {
   held?: Readonly<Record<string, number>>
   /** Why it has no published figure for this configuration: it is then not ranked, like a switched-off one. */
   missing?: string
+  /** How unevenly a connection lands the work on its members, when unevenly or with members left idle. */
+  spread?: Spread
 }
 
 export interface VerdictResult {
@@ -251,6 +269,8 @@ export type Assumption =
   | { kind: 'fit'; name: string; fit: LinearFit }
   /** A measurement of the snapshot; a missing one says why, and the definition's own value is used. */
   | { kind: 'measurement'; name: string; measurement: Measurement }
+  /** A connection: its rule, in a sentence. */
+  | { kind: 'connection'; name: string; text: string }
 
 export interface Evaluation<P = any, F extends string = string, C extends string = string, S extends string = string> {
   values: Values<P>
@@ -410,6 +430,7 @@ export function defineModel<
     if (st.kind === 'workers' && (st.pods == null) === (st.autoscale == null))
       throw new Error(`loadmap: workers "${s}" needs pods or autoscale, one of them`)
   }
+  checkConnections(def as ModelDef<any, string, string, string, string>)
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
   const growth = def.growth && checkGrowth(def.growth)
@@ -594,10 +615,10 @@ export function defineModel<
     return { component: best.component, target: best.target, firstLimit: first }
   }
 
-  const resolveStages = (ctx: LooseValues, shed: (s: string) => number) => {
+  const resolveStages = (ctx: LooseValues, shed: (s: string) => number, plain: (c: string) => number | null) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
-      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
+      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
       stages[s] =
         st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'
           ? { ...st, shed: shed(s) }
@@ -630,6 +651,9 @@ export function defineModel<
       held,
       holders,
       latencies,
+      plain,
+      spread,
+      connectionText,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -654,6 +678,8 @@ export function defineModel<
         describe: describe(c),
       }
       if (missing != null) components[c].missing = missing
+      const sp = off ? null : spread(c)
+      if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
       const h = off ? null : held(c)
       if (h) {
         const on = holders(c)
@@ -688,7 +714,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed)
+    const stages = resolveStages(ctx, shed, plain)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -703,6 +729,8 @@ export function defineModel<
       const cap = components[c].capacity ?? capacity(c)
       assumptions.push({ kind: 'capacity', component: c, name: def.components[c].name, capacity: cap })
     }
+    for (const name of Object.keys(def.connections ?? {}))
+      assumptions.push({ kind: 'connection', name, text: connectionText(name) })
     for (const [name, fit] of Object.entries(def.calibration ?? {})) assumptions.push({ kind: 'fit', name, fit })
     // a reading a capacity or a fit already shows with its origin is not listed twice
     const shown = new Set(
@@ -765,8 +793,8 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed } = context(def as any, values)
-      return { values, ctx, stages: resolveStages(ctx, shed) }
+      const { ctx, shed, plain } = context(def as any, values)
+      return { values, ctx, stages: resolveStages(ctx, shed, plain) }
     },
     utilization: (partial, bound) => {
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
@@ -1355,12 +1383,124 @@ function context(
       return total
     }),
   )
+  const connections = (def.connections ?? {}) as Readonly<Record<string, ConnectionDef>>
+  // the components an exclusive connection spreads over: only these pay for a spread (utilization is the hot path)
+  const spreading = new Set(
+    Object.values(connections)
+      .filter((cn) => cn.assign === 'exclusive')
+      .map((cn) => (stages[cn.to] as { component?: string }).component),
+  )
+  /** demand ÷ capacity, before any connection's spread. */
+  const plainOf = (c: string): number | null => {
+    if (!enabled(c) || capacity(c).missing != null) return null
+    const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
+    const d = ctx.demand[c] as number
+    return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
+  }
+  /** The utilization before any connection's spread: what an autoscaler's average reads. */
+  const plain = (c: string): number | null =>
+    spreading.has(c) ? memo(`plain utilization of ${c}`, () => plainOf(c)) : (ctx.util[c] as number | null)
+  /** A flow goes from one stage straight to the other: next on one of its ways, or a fan-out's copy. */
+  const goesStraight = (f: string, from: string, to: string) =>
+    paths(f).some((p) => p.stages.some((s, i) => s === from && (p.stages[i + 1] === to || copies(s, f, to) > 0)))
+  /**
+   * The flows a connection covers at these values: none while a split sends them another way (the definition was
+   * checked against every way they can go).
+   */
+  const covered = (k: string) =>
+    memo(`flows of connection ${k}`, () => {
+      const cn = connections[k]!
+      return (cn.flows ?? flowIds).filter((f) => goesStraight(f, cn.from, cn.to))
+    })
+  /** A queue's partitions of the flow, or the connection's parts. */
+  const partsOf = (k: string, f: string) => {
+    const cn = connections[k]!
+    const from = stages[cn.from]!
+    if (from.kind === 'queue') {
+      const n = dyn(from.partitions, ctx)[f]
+      if (n == null)
+        throw new Error(
+          `loadmap: connection "${k}" reads "${f}" from queue "${cn.from}", which has no partitions of it`,
+        )
+      return whole(n, `connection "${k}" reads "${f}" from queue "${cn.from}"`, 'partitions')
+    }
+    return whole(dyn(cn.parts!, ctx), `connection "${k}"`, 'parts')
+  }
+  /** How unevenly the exclusive connections into the stage that runs it land the work; null without one. */
+  const spread = (c: string) =>
+    !spreading.has(c)
+      ? null
+      : memo(`spread of ${c}`, () => {
+          const exclusive = Object.entries(connections).filter(
+            ([k, cn]) => cn.assign === 'exclusive' && usedBy(c).includes(cn.to) && covered(k).length > 0,
+          )
+          if (!exclusive.length) return null
+          const [first, cn] = exclusive[0]!
+          const stage = cn.to
+          const st = stages[stage]!
+          // one consumer group reads into a stage: every exclusive connection into it sees the same members
+          const members = exclusive.map(([k, x]) =>
+            st.kind === 'workers'
+              ? `${x.owner ?? 'worker'}/${x.capacityPer ?? x.owner ?? 'worker'}`
+              : whole(dyn(x.members!, ctx), `connection "${k}"`, 'members'),
+          )
+          const other = members.findIndex((m) => m !== members[0])
+          if (other > 0)
+            throw new Error(
+              `loadmap: connections "${first}" and "${exclusive[other]![0]}" read into "${stage}" with different members: give them the same owner, capacityPer and members`,
+            )
+          let shape: Shape
+          if (st.kind === 'workers') {
+            const owner = cn.owner ?? 'worker'
+            const { running } = podsOf(stage, st, ctx, plain(c))
+            if (!(running >= 1)) return null
+            const perPod = whole(dyn(st.perPod, ctx), `workers "${stage}"`, 'perPod')
+            shape = poolShape(whole(running, `workers "${stage}"`, 'pods'), perPod, owner, cn.capacityPer ?? owner)
+          } else shape = memberShape(members[0] as number)
+          // each flow by its share of the demand: for slots, what arrives × how long each unit holds one
+          const h = held(c)
+          const weight = (f: string) => arriving(stage, f) * (h ? (h[f] ?? 0) : 1)
+          const work: Work[] = []
+          for (const [k] of exclusive)
+            for (const f of covered(k)) work.push({ flow: f, weight: weight(f), parts: partsOf(k, f) })
+          for (const f of flowIds)
+            if (
+              !work.some((w) => w.flow === f) &&
+              paths(f).some((p) => p.stages.some((t) => t === stage || copies(t, f, stage) > 0))
+            )
+              work.push({ flow: f, weight: weight(f), parts: null })
+          const s = spreadOver(shape, work)
+          const d = def.components[c]!
+          const part = exclusive.every(([, x]) => stages[x.from]!.kind === 'queue') ? 'partition' : 'part'
+          return {
+            factor: s.factor,
+            text: spreadText(s, shape, work, { short: d.short ?? d.name, plural: d.plural ?? false, part }),
+          }
+        })
+  /** A connection's rule in a sentence, for the assumptions. */
+  const connectionText = (k: string) => {
+    const cn = connections[k]!
+    const which = cn.flows ? ` (${joinAnd(cn.flows.map((f) => def.flows[f]!.label ?? f))})` : ''
+    const from = stages[cn.from]!.label ?? cn.from
+    const to = stages[cn.to]!.label ?? cn.to
+    const pool = stages[cn.to]!.kind === 'workers'
+    const owner = pool ? (cn.owner ?? 'worker') : 'member'
+    if (cn.assign === 'exclusive') {
+      const part = stages[cn.from]!.kind === 'queue' ? 'partition' : 'part'
+      const turn = pool && owner === 'worker' ? 'workers alternating pods' : `${owner}s`
+      return `Each ${part} of ${from}${which} is read by one ${owner} of ${to} (exclusive). The ${part}s are dealt in turn to ${turn}: the most even case.`
+    }
+    return pool
+      ? `Any ${owner} of ${to} takes any unit from ${from}${which} (shared).`
+      : `${capital(to)} takes the units from ${from}${which} evenly (shared).`
+  }
   ctx.util = table(componentIds, (c) =>
     memo(`utilization of ${c}`, () => {
-      if (!enabled(c) || capacity(c).missing != null) return null
-      const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
-      const d = ctx.demand[c] as number
-      return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
+      if (!spreading.has(c)) return plainOf(c)
+      const u = plain(c)
+      if (u == null) return null
+      const s = spread(c)
+      return s ? u * s.factor : u
     }),
   )
   ctx.derived = table(Object.keys(def.derived ?? {}), (k) =>
@@ -1381,6 +1521,9 @@ function context(
     held,
     holders,
     timedOut,
+    plain,
+    spread,
+    connectionText,
     latencies: (only: readonly string[] = flowIds) => {
       const timed = componentIds.some((c) => def.components[c]!.service != null)
       // each flow's on first read: the quantiles cost a bisection each
@@ -1391,7 +1534,82 @@ function context(
   }
 }
 
-/** y + y² + … + yⁿ: the retries per unit when each attempt fails with share y and n retries may follow. */
+/** A count of parts or members: a whole number from 1 up. */
+function whole(n: number, who: string, what: string): number {
+  if (!(Number.isInteger(n) && n >= 1))
+    throw new Error(`loadmap: ${who} needs ${what} as a whole number from 1 up, not ${n}`)
+  return n
+}
+
+/** What a definition's connections must hold whatever the values: the rest is checked where the flows go. */
+function checkConnections(def: ModelDef<any, string, string, string, string>): void {
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  for (const [k, cn] of all) {
+    const at = `loadmap: connection "${k}"`
+    if (Object.hasOwn(def.components, k)) throw new Error(`${at} has the name of a component: give it its own`)
+    for (const end of [cn.from, cn.to])
+      if (!Object.hasOwn(stages, end)) throw new Error(`${at} names unknown stage "${end}"`)
+    for (const f of cn.flows ?? [])
+      if (!Object.hasOwn(def.flows, f)) throw new Error(`${at} covers unknown flow "${f}"`)
+    const from = stages[cn.from]!
+    const to = stages[cn.to]!
+    const pool = to.kind === 'workers'
+    if (!pool && (cn.owner != null || cn.capacityPer != null))
+      throw new Error(`${at} names owner or capacityPer, but "${cn.to}" is not a pool: give it members`)
+    if (cn.owner === 'pod' && cn.capacityPer === 'worker')
+      throw new Error(
+        `${at} divides the capacity per worker, but a pod owns each part: capacityPer is the owner or a pod`,
+      )
+    if (from.kind === 'queue' && cn.parts != null)
+      throw new Error(`${at}: the parts of queue "${cn.from}" are its partitions; leave parts out`)
+    if (pool && cn.members != null)
+      throw new Error(`${at}: the members of pool "${cn.to}" are its workers or pods; leave members out`)
+    if (cn.assign !== 'exclusive') continue
+    if (from.kind !== 'queue' && cn.parts == null)
+      throw new Error(`${at} needs parts: "${cn.from}" is not a queue with partitions`)
+    if (!pool && cn.members == null) throw new Error(`${at} needs members: "${cn.to}" is not a pool`)
+    const c = to.kind === 'sink' ? undefined : to.component
+    if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)
+    const also = Object.keys(stages).find((s) => s !== cn.to && (stages[s] as { component?: string }).component === c)
+    if (also)
+      throw new Error(
+        `${at} spreads parts over "${cn.to}", but its component "${c}" also runs "${also}": give "${cn.to}" a component of its own`,
+      )
+  }
+  // the flows that can go from one stage straight to the other; a split may send a flow any way its branches go, so a
+  // route through one is checked where the values pick a way
+  const routes = def.routes as Readonly<Record<string, readonly string[]>>
+  const flowIds = Object.keys(def.flows)
+  const mayGo = (f: string, from: string, to: string) => {
+    const r = routes[f] ?? []
+    if (r.some((s, i) => s === from && r[i + 1] === to)) return true
+    if (r.some((s) => stages[s]?.kind === 'split')) return true
+    // a fan-out's copies: its branches are worked out from the values
+    return r.at(-1) === from && stages[from]?.kind === 'fanout'
+  }
+  const may = (cn: ConnectionDef) => flowIds.filter((f) => mayGo(f, cn.from, cn.to))
+  for (const [k, cn] of all) {
+    for (const f of cn.flows ?? [])
+      if (!mayGo(f, cn.from, cn.to))
+        throw new Error(
+          `loadmap: connection "${k}" covers "${f}", which does not go from "${cn.from}" straight to "${cn.to}"`,
+        )
+    if (!may(cn).length)
+      throw new Error(
+        `loadmap: connection "${k}" joins "${cn.from}" to "${cn.to}", but no flow goes from one straight to the other`,
+      )
+    for (const [j, other] of all) {
+      if (j <= k || other.from !== cn.from || other.to !== cn.to) continue
+      const both = (cn.flows ?? may(cn)).find((f) => (other.flows ?? may(other)).includes(f))
+      if (both)
+        throw new Error(
+          `loadmap: connections "${k}" and "${j}" both cover "${both}" from "${cn.from}" to "${cn.to}": a flow follows one rule at each hop`,
+        )
+    }
+  }
+}
+
 function excess(y: number, n: number): number {
   return y >= 1 ? n : (y * (1 - y ** n)) / (1 - y)
 }
