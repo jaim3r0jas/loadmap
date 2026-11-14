@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  type ComponentResult,
   type ConnectionDef,
   configured,
   defineModel,
@@ -571,5 +572,103 @@ describe('a connection that cannot be', () => {
       connections: { x: { from: 'in', to: 'db', assign: 'exclusive', parts: 2.5, members: 2 } },
     })
     expect(() => half.evaluate()).toThrow('loadmap: connection "x" needs parts as a whole number from 1 up, not 2.5')
+  })
+})
+
+describe('connections counted against a stage', () => {
+  // the API scales from 2 to 10 pods to hold 70 %; each pod keeps 20 connections to the database, which takes 100
+  const api = (connections: Record<string, Partial<ConnectionDef<'api' | 'db' | 'workers', 'req'>>>) =>
+    defineModel({
+      load: p.load({ max: 100 }),
+      flows: { req: { rate: ({ load }) => 100 * load } },
+      components: {
+        api: { name: 'API', demand: ({ flows }) => flows.req * 0.01, capacity: measured(10, 'cores'), over: 'x' },
+        db: { name: 'DB', capacity: estimated(100_000, 'queries/s'), over: 'x' },
+        workers: { name: 'Workers', capacity: estimated(100_000, 'req/s'), over: 'x' },
+      },
+      stages: {
+        api: workers('api', { autoscale: { min: 2, max: 10, target: 0.7 }, perPod: 4 }),
+        db: store('db'),
+        workers: workers('workers', { pods: 3, perPod: 2 }),
+      },
+      routes: { req: ['api', 'db'] },
+      connections: connections as Record<string, ConnectionDef<'api' | 'db' | 'workers', 'req'>>,
+    })
+  const pool = { from: 'api', to: 'db', owner: 'pod', open: 20 } as const
+  const max = configured(100, 'connections', 'max_connections')
+
+  it('is a limit of its own: the pods running times what each keeps open, growing as the pool scales out', () => {
+    const m = api({ dbPool: { ...pool, max } })
+    const ev = m.evaluate({ load: 1 })
+    // the limit's id is the connection's: not one of the components the definition types
+    const c = (ev.components as Record<string, ComponentResult>).dbPool!
+    expect(c.name).toBe('Connections to db')
+    // 2 pods at 1×: 40 of 100
+    expect(c.demand).toBe(40)
+    expect(c.util).toBeCloseTo(0.4, 12)
+    expect(c.describe).toBe('2 pods × 20 = 40 open')
+    // 3 pods (60 open) past 1.4×, 5 pods (100) past 2.8×: the autoscaler adds a pod above 70 % a pod
+    expect(c.target).toBeCloseTo(1.4, 6)
+    expect(c.full).toBeCloseTo(2.8, 6)
+    expect(ev.assumptions.find((a) => a.kind === 'connection')).toEqual({
+      kind: 'connection',
+      name: 'dbPool',
+      text: 'Each pod of api keeps 20 connections open to db.',
+    })
+    expect(ev.assumptions.find((a) => a.kind === 'capacity' && a.component === 'dbPool')).toBeTruthy()
+  })
+
+  it('adds up every connection into the stage, a pool no flow takes there too', () => {
+    const m = api({
+      dbPool: { ...pool, max },
+      // no flow goes from the workers to the database, yet each of their workers keeps one connection to it
+      batch: { from: 'workers', to: 'db', owner: 'worker', open: 1 },
+    })
+    // 2 pods × 20 + 3 pods × 2 workers × 1
+    const c = (m.evaluate({ load: 1 }).components as Record<string, ComponentResult>).dbPool!
+    expect(c.demand).toBe(46)
+    expect(c.describe).toBe('2 pods × 20 + 6 workers × 1 = 46 open')
+  })
+
+  it('is off with the stage it counts against', () => {
+    const m = defineModel({
+      load: p.load({ max: 100 }),
+      params: { useDb: p.switch({ label: 'Database', default: true }) },
+      flows: { req: { rate: ({ load }) => 100 * load } },
+      components: {
+        api: { name: 'API', capacity: measured(10_000, 'req/s'), over: 'x' },
+        db: { name: 'DB', capacity: estimated(100_000, 'queries/s'), when: ({ useDb }) => useDb as boolean, over: 'x' },
+      },
+      stages: { api: workers('api', { pods: 2, perPod: 4 }), db: store('db') },
+      routes: { req: ['api', 'db'] },
+      connections: { dbPool: { from: 'api', to: 'db', owner: 'pod', open: 20, max } },
+    })
+    const on = (useDb: boolean) => (m.evaluate({ useDb }).components as Record<string, ComponentResult>).dbPool!.util
+    expect(on(true)).toBeCloseTo(0.4, 12)
+    expect(on(false)).toBeNull()
+  })
+
+  it('is refused without a pool, without max or open, or with max twice', () => {
+    expect(() => api({ x: { from: 'api', to: 'db', open: 20 } })).toThrow(
+      'loadmap: connection "x" opens connections to "db", but none into it gives max: the most it accepts',
+    )
+    expect(() => api({ x: { from: 'api', to: 'db', max } })).toThrow(
+      'loadmap: connection "x" gives max, but none into "db" opens any: give open',
+    )
+    expect(() => api({ x: { ...pool, max }, y: { ...pool, max } })).toThrow(
+      'loadmap: connections "x" and "y" both give the most "db" accepts: give max on one',
+    )
+    const plain = () =>
+      defineModel({
+        load: p.load({ max: 10 }),
+        flows: { req: { rate: 10 } },
+        components: { db: { name: 'DB', capacity: estimated(1_000, 'queries/s'), over: 'x' } },
+        stages: { in: sink(), db: store('db') },
+        routes: { req: ['in', 'db'] },
+        connections: { x: { from: 'in', to: 'db', open: 5, max } },
+      })
+    expect(plain).toThrow(
+      'loadmap: connection "x" counts connections, but neither "in" nor "db" is a pool to open them',
+    )
   })
 })

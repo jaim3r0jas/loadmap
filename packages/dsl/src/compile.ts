@@ -265,6 +265,11 @@ export function problems(
   return out.sort((a, b) => a.from - b.from)
 }
 
+/** A capacity and nothing else: what `capacity` and a connection's `max` take. */
+function checkCapacity(v: unknown): void {
+  if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
+}
+
 /** Stops compiling after an error that leaves nothing sensible to check. */
 class Bail {}
 
@@ -387,12 +392,16 @@ class Compiler {
     for (const f of fits) this.fit(f)
     // a published figure is read like a let: a capacity in `derived`
     for (const b of publisheds) if (b.args.id) this.lets.set(b.args.id.name, 'capacity')
+    // a connection that gives max is a limit: expect, focus and formulas read its id as a component's
+    const limits = new Map(componentNames)
+    for (const b of byKind('connection'))
+      if (b.args.id && b.props.has('max') && !componentNames.has(b.args.id.name)) limits.set(b.args.id.name, b.args.id)
     this.names = {
       params: paramTypes,
       lets: this.lets,
       flows: new Set(flowNames.keys()),
       stages: new Set(stageNames.keys()),
-      components: new Set(componentNames.keys()),
+      components: new Set(limits.keys()),
       fits: this.fits,
       functions: this.functions,
     }
@@ -450,14 +459,14 @@ class Compiler {
     }
     const expects: Record<string, unknown>[] = []
     for (const b of byKind('expect')) {
-      const e = this.expectation(b, scenarios, componentNames, flowNames)
+      const e = this.expectation(b, scenarios, limits, flowNames)
       if (!e) continue
       expects.push(e)
       this.expectSpans.push({ from: b.at.from, to: b.args.label?.to ?? b.at.to })
     }
     const story: Record<string, unknown>[] = []
     for (const b of byKind('step')) {
-      const st = this.step(b, scenarios, componentNames, params, load)
+      const st = this.step(b, scenarios, limits, params, load)
       if (st) story.push(st)
     }
     const growths = byKind('growth')
@@ -856,10 +865,12 @@ class Compiler {
       const v = this.constProp<string>(b, k)
       if (v != null) def[k] = v
     }
-    for (const k of ['parts', 'members']) {
+    for (const k of ['parts', 'members', 'open']) {
       const v = this.dynProp<number>(b, k, 'number')
       if (v !== undefined) def[k] = v
     }
+    const max = this.prop(b, 'max')
+    if (max) def.max = this.dyn(max.value, 'capacity', 'ctx', checkCapacity)
     const flows = this.prop(b, 'flows')
     if (flows) {
       if (flows.value.t !== 'array') this.report.error(flows.value, 'a list of flows: [orders, events]')
@@ -1852,9 +1863,7 @@ class Compiler {
       if (!prop) continue
       const check =
         k === 'capacity'
-          ? (v: unknown) => {
-              if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
-            }
+          ? checkCapacity
           : k === 'service'
             ? (v: unknown) => {
                 if (typeof v !== 'number' || !Number.isFinite(v) || v < 0)

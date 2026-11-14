@@ -198,6 +198,14 @@ connection group {
   flows: [events]
 }
 
+# each API pod keeps 10 connections to the cache, which takes 500: a limit of its own
+connection cachePool {
+  hop: api -> cache
+  owner: pod
+  open: 10
+  max: configured(500, "connections", "maxclients")
+}
+
 node push "Push broker" {
   fanout "push broker" { events -> phones: perEvent }
   short: "the push broker"
