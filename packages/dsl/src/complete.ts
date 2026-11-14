@@ -1,6 +1,6 @@
 import type { ConditionValue, Published } from '@loadmap/core'
 import { childrenOf, type Decl, type Edge, type Expr, type Stmt } from './ast'
-import { componentOf, latestEdition, loadedCatalog } from './catalog'
+import { catalogRules, componentOf, latestEdition, loadedCatalog } from './catalog'
 import { type DslSymbol, declarations, templateArgs } from './compile'
 import { type Cursor, callAt, cursorAt } from './cursor'
 import { Reporter } from './diagnostics'
@@ -169,18 +169,29 @@ class Help {
     // a published run's value of a condition, or a parameter that holds it
     if (this.spec === SCHEMA.published && (p === this.spec.open?.spec || key === 'version'))
       return [...this.runValues(key), ...this.formula(cur.part ?? rest, { scope: 'values', key, prop: p })]
+    // a connection's rule: every rule of the catalog
+    if (this.spec === SCHEMA.connection && key === 'rule')
+      return [...catalogRules().values()].map((r) => ({
+        label: r.id,
+        type: 'constant',
+        apply: cur.in === 'text' ? r.id : JSON.stringify(r.id),
+        detail: r.assign,
+        info: r.what,
+      }))
     if (this.spec === SCHEMA.published && key === 'edition' && cur.in === 'code')
       return Object.keys(loadedCatalog() ?? {})
         .reverse()
         .map((label, i) => ({ label, type: 'constant', apply: JSON.stringify(label), boost: i ? 0 : 2 }))
     if (this.spec === SCHEMA.published && key === 'figure' && cur.in === 'code')
-      return (this.publishedComponent()?.figures ?? []).map((f) => ({
-        label: f.id,
-        type: 'constant',
-        apply: JSON.stringify(f.id),
-        detail: `${f.value} ${f.unit}`,
-        info: `${f.what}, ${f.scope}`,
-      }))
+      return [...(this.publishedComponent()?.figures ?? []), ...(this.publishedComponent()?.defaults ?? [])].map(
+        (f) => ({
+          label: f.id,
+          type: 'constant',
+          apply: JSON.stringify(f.id),
+          detail: `${f.value} ${f.unit}`,
+          info: `${f.what}, ${f.scope}`,
+        }),
+      )
     // a value of the load or a parameter, in a preset, a scenario or a step
     if (kind === 'value' && this.spec.open && p === this.spec.open.spec) return this.paramValues(key)
     // a parameter's default: one of its options

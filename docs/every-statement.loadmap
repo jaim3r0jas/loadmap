@@ -192,8 +192,7 @@ pool workers "Event workers" "2 to 6 pods" {
 # a consumer group: each partition read by one worker, the pod's CPU shared by its workers
 connection group {
   hop: topic -> workers
-  assign: exclusive
-  owner: worker
+  rule: "kafka/consumer-group"
   capacityPer: pod
   flows: [events]
 }

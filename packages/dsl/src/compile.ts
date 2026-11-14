@@ -39,7 +39,7 @@ import {
   type View,
 } from '@loadmap/layout'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
-import { catalogComponent, latestEdition, loadedCatalog } from './catalog'
+import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './catalog'
 import { type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
   compileFormula,
@@ -879,6 +879,23 @@ class Compiler {
       const v = this.dynProp<number>(b, k, 'number')
       if (v !== undefined) def[k] = v
     }
+    const ruleProp = this.prop(b, 'rule')
+    if (ruleProp) {
+      const id = this.constant(ruleProp.value, 'string')
+      const rules = catalogRules(this.catalog)
+      if (!this.catalog)
+        this.report.error(
+          ruleProp.value,
+          'the component catalog is not loaded',
+          'a host awaits loadCatalog() before it compiles',
+        )
+      else if (typeof id === 'string') {
+        const r = rules.get(id)
+        if (r) def.rule = r
+        else
+          this.report.error(ruleProp.value, `no connection rule "${id}" in the catalog`, didYouMean(id, rules.keys()))
+      }
+    }
     for (const k of ['max', 'skew']) {
       const p = this.prop(b, k)
       if (p) def[k] = this.dyn(p.value, 'capacity', 'ctx', checkCapacity)
@@ -1131,14 +1148,16 @@ class Compiler {
       else allConstant = false
     }
     const figure = this.constProp<string>(b, 'figure')
-    if (figure != null && !c.figures.some((f) => f.id === figure)) {
+    // a documented default is a figure too, taken by its name only
+    const named = [...c.figures, ...(c.defaults ?? [])]
+    if (figure != null && !named.some((f) => f.id === figure)) {
       this.report.error(
         this.prop(b, 'figure')!.value,
         `${c.name} has no figure "${figure}"`,
         didYouMean(
           figure,
-          c.figures.map((f) => f.id),
-        ) ?? c.figures.map((f) => f.id).join(', '),
+          named.map((f) => f.id),
+        ) ?? named.map((f) => f.id).join(', '),
       )
       return undefined
     }
@@ -1148,7 +1167,10 @@ class Compiler {
       return undefined
     }
     // a documented limit is exact: refused here, not where a parameter happens to reach one
-    if (margin && c.figures.some((f) => f.measure === 'limit' && (figure == null || f.id === figure))) {
+    if (
+      margin &&
+      named.some((f) => f.measure === 'limit' && (figure == null ? c.figures.includes(f) : f.id === figure))
+    ) {
       this.report.error(this.prop(b, 'margin')!.value, `${c.name} has documented limits: exact, so they take no margin`)
       return undefined
     }

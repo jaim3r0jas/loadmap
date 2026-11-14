@@ -12,6 +12,7 @@ import {
   pass,
   published,
   queue,
+  rule,
   type StageDef,
   sink,
   split,
@@ -818,5 +819,21 @@ describe('a key or a leader on the stage it reaches', () => {
     expect(pool.kind === 'workers' && pool.assignment?.weights.map((w) => Math.round(w * 100))).toEqual([
       40, 20, 20, 20,
     ])
+  })
+})
+
+describe("a connection with the catalog's rule", () => {
+  it('takes its assign and owner unless it writes its own, and cites its source', () => {
+    const consumers = rule(kafkaCatalog, 'kafka/consumer-group')
+    const ev = kafka({ connection: { assign: undefined, rule: consumers } }).evaluate({ load: 2 })
+    // the rule's exclusive, per worker: 12 partitions on 16 workers
+    expect(ev.components.consumer.util).toBeCloseTo(0.5 * (16 / 12), 12)
+    expect(ev.assumptions.find((a) => a.kind === 'connection')).toMatchObject({
+      text: 'Each partition of orders topic is read by one worker of order consumer (exclusive). The partitions are dealt in turn to workers alternating pods: the most even case. Each partition is consumed by exactly one consumer in each consumer group; a consumer may own several (Apache Kafka: Design, the Apache Kafka project).',
+    })
+    // what the connection writes wins, and the rule's source is not cited for what it does not do
+    const shared = kafka({ connection: { assign: 'shared', rule: consumers } }).evaluate({ load: 2 })
+    expect(shared.components.consumer.util).toBeCloseTo(0.5, 12)
+    expect((shared.assumptions.find((a) => a.kind === 'connection') as { text: string }).text).not.toContain('Kafka')
   })
 })

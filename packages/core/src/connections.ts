@@ -1,5 +1,6 @@
 import type { Capacity } from './capacity'
 import { pct } from './format'
+import type { ConnectionRule } from './published'
 import type { Dyn, StageDef } from './stages'
 
 /**
@@ -51,6 +52,11 @@ export interface ConnectionDef<S extends string = string, F extends string = str
   max?: Capacity | ((ctx: any) => Capacity)
   /** With key: the share of a flow on its hottest part, measured or estimated: a hot key, a hot tenant. */
   skew?: Capacity | ((ctx: any) => Capacity)
+  /**
+   * A rule from the catalog, `rule(kafka, 'kafka/consumer-group')`: its assign and owner unless the connection writes
+   * its own, and its source in the assumptions.
+   */
+  rule?: ConnectionRule
 }
 
 /** How unevenly the work lands on a component's members. */

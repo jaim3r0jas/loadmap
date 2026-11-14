@@ -369,8 +369,9 @@ export function defineModel<
   C extends string,
   S extends string,
   D extends string = never,
->(given: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
-  // a connection that gives max is a limit of its own: the connections open against it
+>(written: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
+  // a connection's rule from the catalog gives what it does not write; one that gives max is a limit of its own
+  const given = withRules(written)
   const def = withCounts(given)
   const params = (def.params ?? {}) as Readonly<Record<string, ParamDef>>
   for (const id of Object.keys(params))
@@ -791,7 +792,7 @@ export function defineModel<
 
   return {
     // as written: the limits connections make live in the model, not in the definition
-    def: given as ModelDef<any, any, any, any, any>,
+    def: written as ModelDef<any, any, any, any, any>,
     title: def.title,
     load: def.load,
     params: paramList,
@@ -1665,8 +1666,16 @@ function context(
     const total = [...groups.values()].reduce((a, q) => a + q, 0)
     return [...groups].map(([t, share]) => ({ share: total > 0 ? share / total : share, time: t }))
   }
-  /** A connection's rule in a sentence, for the assumptions. */
+  /** A connection's rule in a sentence, for the assumptions; a rule from the catalog adds its own and its source. */
   const connectionText = (k: string) => {
+    const cn = connections[k]!
+    const r = cn.rule
+    const own = ruleSentence(k)
+    // the source backs the rule only where its assign is the one in effect
+    const cites = r != null && (cn.assign ?? 'shared') === r.assign
+    return cites ? `${own} ${r.what.replace(/\.$/, '')} (${r.source.title}, ${r.source.by}).` : own
+  }
+  const ruleSentence = (k: string) => {
     const cn = connections[k]!
     const which = cn.flows ? ` (${joinAnd(cn.flows.map((f) => def.flows[f]!.label ?? f))})` : ''
     const from = stages[cn.from]!.label ?? cn.from
@@ -1783,6 +1792,21 @@ function perWay(
   })
   // a way nothing takes still says how slow it is
   return [...out.values()].map((e) => ({ ...e.tag, timedOut: e.share > 0 ? e.late / e.share : e.first }))
+}
+
+/** The definition with each connection's rule filled in: its assign and owner where the connection writes none. */
+function withRules<T extends ModelDef<any, any, any, any, any>>(def: T): T {
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  if (!all.some(([, cn]) => cn.rule)) return def
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const fill = (cn: ConnectionDef): ConnectionDef => {
+    const r = cn.rule!
+    // shared is what a connection does anyway, and an owner belongs to a pool: a rule fills only what applies
+    const assign = cn.assign ?? (r.assign === 'shared' ? undefined : r.assign)
+    const owner = cn.owner ?? (stages[cn.to]?.kind === 'workers' ? r.owner : undefined)
+    return { ...cn, ...(assign != null && { assign }), ...(owner != null && { owner }) }
+  }
+  return { ...def, connections: Object.fromEntries(all.map(([k, cn]) => [k, cn.rule ? fill(cn) : cn])) }
 }
 
 /** The definition with a component for each connection that gives max: the connections open against it. */

@@ -1,4 +1,4 @@
-import type { Catalog, Published } from '@loadmap/core'
+import type { Catalog, ConnectionRule, Published } from '@loadmap/core'
 import type { Decl } from './ast'
 
 /**
@@ -10,8 +10,25 @@ import type { Decl } from './ast'
 let editions: Readonly<Record<string, Catalog>> | undefined
 let loading: Promise<Readonly<Record<string, Catalog>>> | undefined
 
-/** A `published` statement, at the start of a line or after a `;` or `{`: the text needs the catalog. */
-export const needsCatalog = (source: string): boolean => /(^|[;{])[ \t]*published\b/m.test(source)
+/** A `published` statement or a connection's `rule:`, at the start of a line or after a `;` or `{`: the text needs the catalog. */
+export const needsCatalog = (source: string): boolean => /(^|[;{])[ \t]*(published\b|rule[ \t]*:)/m.test(source)
+
+const rulesOf = new WeakMap<object, ReadonlyMap<string, ConnectionRule>>()
+
+/**
+ * Every connection rule of the latest edition, by its id, worked out once a catalog. A released rule never changes (a
+ * correction takes a new id: catalog.test.ts holds each one alike in every edition), so the latest one stands for all.
+ */
+export function catalogRules(e = editions): ReadonlyMap<string, ConnectionRule> {
+  if (!e) return new Map()
+  let out = rulesOf.get(e)
+  if (!out) {
+    const latest = e[latestEdition(e)]!
+    out = new Map(Object.values(latest.components).flatMap((c) => (c.connections ?? []).map((r) => [r.id, r] as const)))
+    rulesOf.set(e, out)
+  }
+  return out
+}
 
 /** Loads the catalog once: every edition, from loadmap's own data (never from a URL a definition names). */
 export function loadCatalog(): Promise<Readonly<Record<string, Catalog>>> {

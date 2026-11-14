@@ -77,11 +77,13 @@ export {
   type CatalogComponent,
   type Condition,
   type ConditionValue,
+  type ConnectionRule,
   type Figure,
   type Published,
   type PublishedConfig,
   published,
   type Reference,
+  rule,
   type Source,
 } from './published'
 export {
