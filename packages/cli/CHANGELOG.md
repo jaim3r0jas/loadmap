@@ -1,5 +1,21 @@
 # @loadmap/cli
 
+## 0.32.0
+
+### Patch Changes
+
+- 9cc0ccd: Connections in the language: `connection group { hop: topic -> pool; assign: exclusive; capacityPer: pod }`, with
+  `owner`, `parts`, `members` and `flows: [orders]`, as `connections` does in TypeScript. What the model refuses about a
+  connection is shown on its line; autocomplete, hover, rename and the outline know connections and the flows they list.
+  A flow a connection lists twice counts once.
+- 55c4e7f: Connections: `connections` in a model says how a stage reaches the next one on a route. `assign: 'exclusive'` gives each
+  partition of the queue in front (or each of `parts`) one owner among the pool's workers or pods (or `members`): a Kafka
+  consumer group. The component then runs out when its busiest member does: its utilization carries the spread (the
+  busiest member's share of the work × the members), `ev.components[c].spread` says why, and owners left without a
+  partition are named. `owner` and `capacityPer` (worker or pod) say what owns a part and what the capacity divides over;
+  `flows` picks the flows it covers. An autoscaler still reads the plain utilization. `shared` (the default) changes no
+  number. Each connection is listed with the assumptions.
+
 ## 0.31.0
 
 ### Minor Changes

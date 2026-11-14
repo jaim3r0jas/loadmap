@@ -1,5 +1,14 @@
 # @loadmap/providers
 
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [55c4e7f]
+  - @loadmap/core@0.32.0
+
 ## 0.31.0
 
 ### Minor Changes

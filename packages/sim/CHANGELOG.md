@@ -1,5 +1,22 @@
 # @loadmap/sim
 
+## 0.32.0
+
+### Minor Changes
+
+- 53b93be: Connections on the board: behind an exclusive connection each unit goes to the worker that reads its partition, a
+  worker is as busy as its partitions make it, one that reads none stays idle and is drawn dashed, and a partition a
+  quieter worker reads waits less of the queue's lag. `ev.stages[pool].assignment` gives the worker of each partition
+  and each worker's share of the work. The latency times each group of workers at its own utilization, instead of
+  every unit at the busiest one's.
+
+### Patch Changes
+
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [55c4e7f]
+  - @loadmap/core@0.32.0
+
 ## 0.31.0
 
 ### Minor Changes
