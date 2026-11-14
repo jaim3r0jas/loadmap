@@ -695,6 +695,30 @@ different times take a block, `held { orders: 0.02; sessions: 3600 }`, and a flo
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
 
+**A connection** says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
+group each partition is read by one consumer only: `assign: exclusive` deals the partitions of the queue in front to
+the workers of the pool after it, in turn, alternating pods. Workers beyond the partitions read nothing, and the
+component runs out when its busiest member does:
+
+```
+connection group {
+  hop: topic -> pool
+  assign: exclusive
+  capacityPer: pod
+}
+```
+
+`capacityPer` says what the capacity divides over. Per worker, each handles one unit at a time: 12 partitions on 16
+workers leave 4 idle, the pool runs out at 75 % of its capacity, and a fifth pod adds nothing. Per pod, the workers
+of a pod share its CPU, so idle threads cost nothing, but a pod with fewer partitions than another does: 6 partitions
+on 4 pods read 2, 2, 1 and 1. `owner: pod` gives each partition to a pod instead of a worker. A connection changes no
+rate, demand or capacity: the limits list says what it does ("The busiest pod reads 2 of 6 partitions"), and an
+autoscaler still sees the pool's average. Between two stages that are not a queue and a pool, `parts` and `members`
+give the counts: `parts: 16; members: 4` for a sharded store. `flows: [orders]` covers some flows only, so two flows
+on one hop can follow different rules; `shared` (the default) is any member taking any unit. In TypeScript,
+`connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } }`, and `ev.components.pool.spread` gives
+the factor and the line.
+
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
@@ -939,7 +963,7 @@ A loadmap definition.
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
 | `grid` | boolean, constant | The editor's dot grid. Default true. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -1563,6 +1587,26 @@ After the keyword: [id] [label].
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 Holds branches: `flow -> stage: copies per unit`.
+
+### connection
+
+How a stage reaches the next one on a route. exclusive gives each part one owner: a Kafka consumer group. The component runs out when its busiest member does.
+
+```
+connection group { hop: topic -> workers; assign: exclusive }
+```
+
+After the keyword: id.
+
+| Property | Value | |
+| --- | --- | --- |
+| `hop` (required) | route, constant | The two stages it joins: from -> to. |
+| `assign` | `shared` \| `exclusive` | shared (the default), or exclusive: each part is read by one member only. |
+| `owner` | `worker` \| `pod` | What owns a part in a pool. Default worker. |
+| `capacityPer` | `worker` \| `pod` | What the capacity divides over. Default the owner. |
+| `parts` | number, formula | Parts of each flow, when the stage in front is no queue. |
+| `members` | number, formula | Members of the stage after, when it is no pool. |
+| `flows` | flows, constant | The flows it covers. Default every flow on the hop. |
 
 ### thresholds
 

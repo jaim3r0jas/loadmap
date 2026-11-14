@@ -1410,7 +1410,8 @@ function context(
   const covered = (k: string) =>
     memo(`flows of connection ${k}`, () => {
       const cn = connections[k]!
-      return (cn.flows ?? flowIds).filter((f) => goesStraight(f, cn.from, cn.to))
+      // a flow listed twice counts once
+      return [...new Set(cn.flows ?? flowIds)].filter((f) => goesStraight(f, cn.from, cn.to))
     })
   /** A queue's partitions of the flow, or the connection's parts. */
   const partsOf = (k: string, f: string) => {

@@ -165,6 +165,7 @@ export interface DslSymbol {
     | 'component'
     | 'scenario'
     | 'tier'
+    | 'connection'
   id: string
   /** The id where it is written (or the keyword, for an id taken from its box). */
   span: Span
@@ -597,6 +598,23 @@ class Compiler {
         )
     }
 
+    const connections: Record<string, Record<string, unknown>> = {}
+    const connectionNames = new Map<string, Span>()
+    for (const b of byKind('connection')) {
+      const id = b.args.id
+      if (!id) continue
+      const errors = this.report.list.length
+      this.declare('connection', id.name, id, b, connectionNames)
+      if (componentNames.has(id.name))
+        this.report.error(id, `"${id.name}" names a component too: give the connection its own name`)
+      // a name refused above (taken, or one every object has) builds nothing
+      if (this.report.list.length > errors) continue
+      const def = this.connection(b, resolveStage, flowNames)
+      if (!def) continue
+      this.connectionAt.set(id.name, id)
+      connections[id.name] = def
+    }
+
     const calibration: Record<string, LinearFit> = {}
     for (const f of fits) {
       const fit = f.args.id && this.fits.get(f.args.id.name)
@@ -620,6 +638,7 @@ class Compiler {
     if (story.length) model.story = story
     if (Object.keys(derived).length) model.derived = derived
     if (Object.keys(calibration).length) model.calibration = calibration
+    if (Object.keys(connections).length) model.connections = connections
     const snap = this.snapshot?.snapshot
     if (snap) {
       // a number read nowhere else shows that it fell back: listed missing, with why, like a capacity's line does
@@ -806,11 +825,59 @@ class Compiler {
     if (err instanceof FormulaError) return this.report.error(err.span, err.message, err.hint)
     const flow = flowOf(err)
     const { message, hint } = failure(err, flow ? `the flow "${flow}"` : 'the model')
-    this.report.error((onFlow && flow && this.flowAt.get(flow)) || at, message, hint)
+    // a connection the model refuses: at its own line
+    const named = /^loadmap: connections? "([^"]+)"/.exec((err as Error)?.message ?? '')?.[1]
+    const connection = named ? this.connectionAt.get(named) : undefined
+    // a preset or a scenario keeps its place: it is what breaks the flow or the connection
+    this.report.error((onFlow && ((flow && this.flowAt.get(flow)) || connection)) || at, message, hint)
   }
 
   private flowRate = new Map<string, Span>()
   private flowAt = new Map<string, Span>()
+  private connectionAt = new Map<string, Span>()
+
+  /** A connection's definition for core; undefined when its hop names no two stages. */
+  private connection(
+    b: Block,
+    resolveStage: (n: Ident, what: string) => string | undefined,
+    flowNames: Map<string, Span>,
+  ): Record<string, unknown> | undefined {
+    const hop = this.prop(b, 'hop')
+    if (!hop) return undefined
+    const chain = hop.chain ?? (hop.value.t === 'id' ? [hop.value as Ident] : [])
+    if (chain.length !== 2) {
+      this.report.error(hop.value, 'a hop is two stages: from -> to')
+      return undefined
+    }
+    const [from, to] = chain.map((n) => resolveStage(n, 'stage'))
+    if (!from || !to) return undefined
+    const def: Record<string, unknown> = { from, to }
+    for (const k of ['assign', 'owner', 'capacityPer']) {
+      const v = this.constProp<string>(b, k)
+      if (v != null) def[k] = v
+    }
+    for (const k of ['parts', 'members']) {
+      const v = this.dynProp<number>(b, k, 'number')
+      if (v !== undefined) def[k] = v
+    }
+    const flows = this.prop(b, 'flows')
+    if (flows) {
+      if (flows.value.t !== 'array') this.report.error(flows.value, 'a list of flows: [orders, events]')
+      else {
+        const list: string[] = []
+        if (!flows.value.items.length)
+          this.report.error(flows.value, 'an empty list covers no flow', 'leave flows out for every flow on the hop')
+        for (const e of flows.value.items) {
+          const name = e.t === 'id' ? e.name : this.slice(e)
+          if (list.includes(name)) this.report.error(e, `"${name}" is listed twice`)
+          else if (e.t === 'id' && flowNames.has(name)) list.push(name)
+          else this.report.error(e, `unknown flow "${name}"`, didYouMean(name, flowNames.keys()))
+        }
+        def.flows = list
+      }
+    }
+    return def
+  }
   private plainBoxes = new Set<string>()
 
   // -- shape ---------------------------------------------------------------------------------------------------

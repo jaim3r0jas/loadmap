@@ -102,8 +102,21 @@ function placeholder(
       return (key === 'color' ? COLORS : (spec.values ?? []))[0] ?? '""'
     case 'capacity':
       return `estimated(1, ${JSON.stringify(commonUnit(doc().body))}, "source")`
-    case 'route':
-      return doc().ids('stage')[0] ?? 'stage'
+    case 'route': {
+      if (key !== 'hop') return doc().ids('stage')[0] ?? 'stage'
+      // a hop joins two stages next to each other on a route: the first a flow's route has
+      for (const s of doc().body) {
+        const route =
+          s.kind === 'decl' && s.keyword.name === 'flow'
+            ? s.body?.find((p) => p.kind === 'prop' && p.key.name === 'route')
+            : undefined
+        if (route?.kind === 'prop' && route.chain && route.chain.length > 1)
+          return `${route.chain[0]!.name} -> ${route.chain[1]!.name}`
+      }
+      return 'from -> to'
+    }
+    case 'flows':
+      return `[${doc().ids('flow')[0] ?? 'flow'}]`
     case 'node':
       return doc().ids('node')[0] ?? 'node'
     case 'component':

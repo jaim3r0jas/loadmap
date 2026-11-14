@@ -54,6 +54,7 @@ const KIND_WORDS: Partial<Record<PropSpec['value'], string>> = {
   tier: 'a tier',
   measure: 'a measure',
   options: '[…]',
+  flows: '[flow, …]',
   value: 'a value',
 }
 
@@ -175,6 +176,7 @@ class Lookup {
           case 'component':
             return this.component(name, out)
           case 'flow':
+          case 'flows':
             return this.flow(name, out)
           case 'tier':
             return this.tier(name, out)
@@ -212,7 +214,7 @@ class Lookup {
       return out(`${key}: an argument`, [`It fills \`{{ args.${key} }}\` in the query of the metric it measures.`])
     const prop = edgeBody ? own(EDGE_PROPS, key) : own(spec.props, key)
     if (prop) {
-      const values = key === 'color' ? 'a theme colour' : prop.values?.join(' | ')
+      const values = key === 'color' ? 'a theme colour' : key === 'hop' ? 'a -> b' : prop.values?.join(' | ')
       return out(`${key}: ${values ?? KIND_WORDS[prop.value] ?? prop.value}`, [
         prop.doc,
         ...(prop.required ? ['Required.'] : []),
@@ -234,6 +236,7 @@ class Lookup {
     if (keyword === 'flow') return this.flow(id, out)
     if (keyword === 'tier') return this.tier(id, out)
     if (keyword === 'component') return this.component(id, out)
+    if (keyword === 'connection') return this.connection(id, out)
     if ((BOXES as readonly string[]).includes(keyword)) return this.box(id, out)
     if ((STAGES as readonly string[]).includes(keyword) && path.length) return this.stage(id, out)
     return null
@@ -413,6 +416,14 @@ class Lookup {
     }
     if (unit?.t === 'str') body.push(`One unit: ${unit.value}.`)
     return out(this.line(d), body)
+  }
+
+  /** A connection: its rule in a sentence, as the assumptions say it. */
+  connection(id: string, out: Out): Hover | null {
+    const d = findDecl(this.body, 'connection', id)
+    if (!d) return null
+    const rule = this.evaluation()?.assumptions.find((a) => a.kind === 'connection' && a.name === id)
+    return out(this.line(d), [rule?.kind === 'connection' ? rule.text : SCHEMA.connection!.doc])
   }
 
   tier(id: string, out: Out): Hover | null {

@@ -26,6 +26,8 @@ export type ValueKind =
   | 'node'
   | 'component'
   | 'flow'
+  /** A list of flow ids: `flows: [orders, events]`. */
+  | 'flows'
   /** A scenario's label, bare or quoted: `scenario: Proposed`. */
   | 'scenario'
   /** The id of a tier: `tier: data`. */
@@ -247,6 +249,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'node',
       'cluster',
       'pool',
+      'connection',
       'tier',
       'thresholds',
     ],
@@ -850,6 +853,51 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
     edges: 'branches',
     branch: '`flow -> stage: copies per unit`',
+  },
+  connection: {
+    doc: 'How a stage reaches the next one on a route. exclusive gives each part one owner: a Kafka consumer group. The component runs out when its busiest member does.',
+    example: 'connection group { hop: topic -> workers; assign: exclusive }',
+    args: [{ name: 'id', kind: 'id' }],
+    props: {
+      hop: {
+        inspector: 'main',
+        value: 'route',
+        scope: 'const',
+        doc: 'The two stages it joins: from -> to.',
+        required: true,
+      },
+      assign: {
+        inspector: 'main',
+        value: 'enum',
+        scope: 'const',
+        values: ['shared', 'exclusive'],
+        doc: 'shared (the default), or exclusive: each part is read by one member only.',
+      },
+      owner: {
+        value: 'enum',
+        scope: 'const',
+        values: ['worker', 'pod'],
+        doc: 'What owns a part in a pool. Default worker.',
+      },
+      capacityPer: {
+        value: 'enum',
+        scope: 'const',
+        values: ['worker', 'pod'],
+        doc: 'What the capacity divides over. Default the owner.',
+      },
+      parts: {
+        value: 'number',
+        scope: 'ctx',
+        doc: 'Parts of each flow, when the stage in front is no queue.',
+      },
+      members: { value: 'number', scope: 'ctx', doc: 'Members of the stage after, when it is no pool.' },
+      flows: {
+        value: 'flows',
+        scope: 'const',
+        doc: 'The flows it covers. Default every flow on the hop.',
+      },
+    },
+    children: [],
   },
   thresholds: {
     inspector: 'model',
