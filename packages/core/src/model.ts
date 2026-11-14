@@ -624,17 +624,21 @@ export function defineModel<
     shed: (s: string) => number,
     plain: (c: string) => number | null,
     assignment: (s: string) => WorkersAssignment | undefined,
+    hot: (s: string) => Record<string, number> | undefined,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
       const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
       const a = st.kind === 'workers' ? assignment(s) : undefined
+      const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
         st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'
           ? { ...st, shed: shed(s) }
           : a
             ? ({ ...st, assignment: a } as ResolvedStage)
-            : st
+            : skew
+              ? ({ ...st, skew } as ResolvedStage)
+              : st
     }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
@@ -667,6 +671,7 @@ export function defineModel<
       spread,
       connectionText,
       assignment,
+      hot,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -727,7 +732,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -807,8 +812,8 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment } = context(def as any, values)
-      return { values, ctx, stages: resolveStages(ctx, shed, plain, assignment) }
+      const { ctx, shed, plain, assignment, hot } = context(def as any, values)
+      return { values, ctx, stages: resolveStages(ctx, shed, plain, assignment, hot) }
     },
     utilization: (partial, bound) => {
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
@@ -1435,7 +1440,7 @@ function context(
   // the components an exclusive connection spreads over: only these pay for a spread (utilization is the hot path)
   const spreading = new Set(
     Object.values(connections)
-      .filter((cn) => cn.assign === 'exclusive')
+      .filter((cn) => cn.assign != null && cn.assign !== 'shared')
       .map((cn) => (stages[cn.to] as { component?: string }).component),
   )
   /** demand ÷ capacity, before any connection's spread. */
@@ -1475,20 +1480,58 @@ function context(
     }
     return whole(dyn(cn.parts!, ctx), `connection "${k}"`, 'parts')
   }
-  /** How unevenly the exclusive connections into the stage that runs it land the work; null without one. */
+  /** The parts of the stage a key connection reaches: its partitions of the flow when it is a queue, else `parts`. */
+  const keyParts = (k: string, f: string) => {
+    const cn = connections[k]!
+    const to = stages[cn.to]!
+    if (to.kind === 'queue') {
+      const n = dyn(to.partitions, ctx)[f]
+      if (n == null)
+        throw new Error(`loadmap: connection "${k}" sends "${f}" to queue "${cn.to}", which has no partitions of it`)
+      return whole(n, `connection "${k}" sends "${f}" to queue "${cn.to}"`, 'partitions')
+    }
+    return whole(dyn(cn.parts!, ctx), `connection "${k}"`, 'parts')
+  }
+  /**
+   * A key connection's skew: a share from 0 to 1, at the edge of its ± the bound asks for (the pessimistic one, every
+   * capacity low, takes the larger share), and never below an even part (fewer parts than it assumed make it even).
+   */
+  const skewOf = (k: string, parts: number) => {
+    const cn = connections[k]!
+    if (cn.skew == null) return undefined
+    const c = typeof cn.skew === 'function' ? cn.skew(ctx) : cn.skew
+    if (!(c.value >= 0 && c.value <= 1))
+      throw new Error(`loadmap: connection "${k}" puts ${c.value} of a flow on its hottest part: a share from 0 to 1`)
+    const w = c.within ?? 0
+    const edge = bound === 'low' ? c.value * (1 + w) : bound === 'high' ? c.value * (1 - w) : c.value
+    return Math.min(1, Math.max(1 / parts, edge))
+  }
+  /**
+   * How unevenly the connections into the stage that runs it land the work: exclusive readers, or keys and a leader
+   * on its members; null without one.
+   */
   const spread = (c: string) =>
     !spreading.has(c)
       ? null
       : memo(`spread of ${c}`, () => {
-          const exclusive = Object.entries(connections).filter(
-            ([k, cn]) => cn.assign === 'exclusive' && usedBy(c).includes(cn.to) && covered(k).length > 0,
+          const spreaders = Object.entries(connections).filter(
+            ([k, cn]) =>
+              cn.assign != null && cn.assign !== 'shared' && usedBy(c).includes(cn.to) && covered(k).length > 0,
           )
-          if (!exclusive.length) return null
-          const [first, cn] = exclusive[0]!
+          if (!spreaders.length) return null
+          const [first, cn] = spreaders[0]!
+          // a key or a leader may reach several stages of one component (a cluster's topics); readers, one stage
+          const into = [...new Set(spreaders.map(([, x]) => x.to))]
           const stage = cn.to
           const st = stages[stage]!
-          // one consumer group reads into a stage: every exclusive connection into it sees the same members
-          const members = exclusive.map(([k, x]) =>
+          const reads = cn.assign === 'exclusive'
+          const two = spreaders.find(([, x]) => (x.assign === 'exclusive') !== reads)
+          if (two)
+            throw new Error(
+              `loadmap: connections "${first}" and "${two[0]}" spread "${stage}" two ways, by readers and by keys: one way for a stage`,
+            )
+          // the connections into a stage see the same members
+          const members = spreaders.map(([k, x]) =>
             st.kind === 'workers'
               ? `${x.owner ?? 'worker'}/${x.capacityPer ?? x.owner ?? 'worker'}`
               : whole(dyn(x.members!, ctx), `connection "${k}"`, 'members'),
@@ -1496,7 +1539,7 @@ function context(
           const other = members.findIndex((m) => m !== members[0])
           if (other > 0)
             throw new Error(
-              `loadmap: connections "${first}" and "${exclusive[other]![0]}" read into "${stage}" with different members: give them the same owner, capacityPer and members`,
+              `loadmap: connections "${first}" and "${spreaders[other]![0]}" read into "${stage}" with different members: give them the same owner, capacityPer and members`,
             )
           let shape: Shape
           let pool: { running: number; perPod: number; owner: 'worker' | 'pod' } | undefined
@@ -1510,41 +1553,76 @@ function context(
           } else shape = memberShape(members[0] as number)
           // each flow by its share of the demand: for slots, what arrives × how long each unit holds one
           const h = held(c)
-          const weight = (f: string) => arriving(stage, f) * (h ? (h[f] ?? 0) : 1)
-          const work: Work[] = []
-          for (const [k, x] of exclusive)
+          const weight = (f: string, at: readonly string[]) =>
+            at.reduce((a, t) => a + arriving(t, f), 0) * (h ? (h[f] ?? 0) : 1)
+          const work: (Work & { at: readonly string[] })[] = []
+          for (const [k, x] of spreaders)
             for (const f of covered(k)) {
               const twice = work.find((w) => w.flow === f)
               if (twice)
                 throw new Error(
-                  `loadmap: connections "${exclusive.find(([, y]) => y.from === twice.from)![0]}" and "${k}" both bring "${f}" into "${stage}": a flow reaches an exclusive stage through one connection`,
+                  `loadmap: connections "${spreaders.find(([, y]) => y.from === twice.from)![0]}" and "${k}" both bring "${f}" into "${stage}": a flow reaches a spread stage through one connection`,
                 )
-              work.push({ flow: f, weight: weight(f), parts: partsOf(k, f), from: x.from })
+              if (x.assign === 'exclusive') {
+                // a hot key on the queue in front lands on its partition 0, and so on the worker that reads it
+                const skew = hot(x.from)?.[f]
+                work.push({ flow: f, weight: 0, parts: partsOf(k, f), from: x.from, skew, at: [x.to] })
+                continue
+              }
+              // a key's parts sit on the members from member 0 for each flow; a leader is one part on member 0
+              const parts = x.assign === 'leader' ? 1 : keyParts(k, f)
+              work.push({ flow: f, weight: 0, parts, from: x.from, restart: true, skew: skewOf(k, parts), at: [x.to] })
             }
-          for (const f of flowIds)
-            if (
-              !work.some((w) => w.flow === f) &&
-              paths(f).some((p) => p.stages.some((t) => t === stage || copies(t, f, stage) > 0))
-            )
-              work.push({ flow: f, weight: weight(f), parts: null })
+          const on = usedBy(c)
+          for (const f of flowIds) {
+            if (work.some((w) => w.flow === f)) continue
+            const at = on.filter((t) => paths(f).some((p) => p.stages.some((x) => x === t || copies(x, f, t) > 0)))
+            if (at.length) work.push({ flow: f, weight: 0, parts: null, at })
+          }
+          // one flow alone has all the work, whatever its rate: what reaches the stage is read only to weigh several
+          if (work.length > 1) for (const w of work) w.weight = weight(w.flow, w.at)
           const s = spreadOver(shape, work)
           const d = def.components[c]!
-          const part = exclusive.every(([, x]) => stages[x.from]!.kind === 'queue') ? 'partition' : 'part'
-          return {
-            factor: s.factor,
-            text: spreadText(s, shape, work, { short: d.short ?? d.name, plural: d.plural ?? false, part }),
-            stage,
-            shape,
-            work,
-            dealt: s,
-            pool,
+          const short = d.short ?? d.name
+          const plural = d.plural ?? false
+          const queues = spreaders.every(([, x]) => stages[reads ? x.from : x.to]!.kind === 'queue')
+          const mode = reads ? 'read' : spreaders.every(([, x]) => x.assign === 'leader') ? 'leader' : 'key'
+          const text = spreadText(s, shape, work, { short, plural, part: queues ? 'partition' : 'part', mode })
+          const base = { stage, stages: into, shape, work, dealt: s, pool }
+          // a published figure was run with its own way of spreading the work: a key or a leader leaves it as it is
+          if (!reads && capacity(c).provenance === 'published') {
+            const hotKeys = work.flatMap((w) =>
+              w.skew != null ? [`The hottest key carries ${pct(w.skew)} of ${w.flow}.`] : [],
+            )
+            const keeps = `${capital(short)} ${plural ? 'keep their' : 'keeps its'} published figure: its run spread the work its own way.`
+            return {
+              ...base,
+              factor: 1,
+              published: true,
+              text: s.factor > 1 ? [`${text?.split(':')[0]}.`, ...hotKeys, keeps].join(' ') : null,
+            }
           }
+          return { ...base, factor: s.factor, text }
         })
+  /** The share of each flow on partition 0 of a queue a key connection with a skew reaches; undefined without one. */
+  const hot = (stage: string): Record<string, number> | undefined =>
+    memo(`hot partitions of ${stage}`, () => {
+      let out: Record<string, number> | undefined
+      for (const [k, cn] of Object.entries(connections)) {
+        if (cn.assign !== 'key' || cn.to !== stage || cn.skew == null) continue
+        for (const f of covered(k)) {
+          out ??= {}
+          out[f] = skewOf(k, keyParts(k, f))!
+        }
+      }
+      return out
+    })
   /** Which worker reads each partition of an exclusive pool, and each running worker's share of the work. */
   const assignment = (stage: string): WorkersAssignment | undefined => {
     const c = (stages[stage] as { component?: string }).component
     const sp = c ? spread(c) : null
     if (!sp?.pool || sp.stage !== stage) return undefined
+    // a pool is read by exclusive connections only: one stage
     const { running, perPod, owner } = sp.pool
     const cell = sp.shape.cellOf
     const cells: Record<string, number[]> = {}
@@ -1573,17 +1651,17 @@ function context(
     const sp = spread(c)
     const u0 = plain(c)
     const time = service(c)
-    if (!sp || sp.stage !== s || u0 == null || time == null) return [{ share: 1, time: r }]
-    const w = sp.work.find((x) => x.flow === f)
+    if (!sp?.stages.includes(s) || 'published' in sp || u0 == null || time == null) return [{ share: 1, time: r }]
     const units = sp.shape.units
     const groups = new Map<number, number>()
     for (let u = 0; u < units; u++) {
-      const q = w?.parts == null ? 1 / units : (sp.dealt.counts[u]!.get(f) ?? 0) / w.parts
+      const q = sp.dealt.flows[u]!.get(f) ?? 0
       if (q <= 0) continue
       const util = u0 * sp.dealt.share[u]! * units
       const t = util >= 1 ? Number.POSITIVE_INFINITY : time / (1 - util)
       groups.set(t, (groups.get(t) ?? 0) + q)
     }
+    if (!groups.size) return [{ share: 1, time: r }]
     const total = [...groups.values()].reduce((a, q) => a + q, 0)
     return [...groups].map(([t, share]) => ({ share: total > 0 ? share / total : share, time: t }))
   }
@@ -1595,6 +1673,15 @@ function context(
     const to = stages[cn.to]!.label ?? cn.to
     const pool = stages[cn.to]!.kind === 'workers'
     const owner = pool ? (cn.owner ?? 'worker') : 'member'
+    if (cn.assign === 'key' || cn.assign === 'leader') {
+      const n = dyn(cn.members!, ctx)
+      if (cn.assign === 'leader')
+        return `Every unit${which} goes to the leader, one of ${fmt(n)} members of ${to} (leader).`
+      const part = stages[cn.to]!.kind === 'queue' ? 'partition' : 'part'
+      const sk = cn.skew == null ? undefined : (typeof cn.skew === 'function' ? cn.skew(ctx) : cn.skew).value
+      const hot = sk == null ? ' Every key as busy as another.' : ` The hottest key carries ${pct(sk)} of a flow.`
+      return `Each unit${which} goes to the ${part} its key hashes to; ${part} i of each flow sits on member i mod ${fmt(n)} of ${to} (key).${hot}`
+    }
     if (cn.assign === 'exclusive') {
       const part = stages[cn.from]!.kind === 'queue' ? 'partition' : 'part'
       const turn = pool && owner === 'worker' ? 'workers alternating pods' : `${owner}s`
@@ -1662,6 +1749,7 @@ function context(
     spread,
     connectionText,
     assignment,
+    hot,
     latencies: (only: readonly string[] = flowIds) => {
       const timed = componentIds.some((c) => def.components[c]!.service != null)
       // each flow's on first read: the quantiles cost a bisection each
@@ -1749,11 +1837,30 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
       throw new Error(
         `${at} divides the capacity per worker, but a pod owns each part: capacityPer is the owner or a pod`,
       )
-    if (from.kind === 'queue' && cn.parts != null)
+    const target = cn.assign === 'key' || cn.assign === 'leader'
+    if (!target && from.kind === 'queue' && cn.parts != null)
       throw new Error(`${at}: the parts of queue "${cn.from}" are its partitions; leave parts out`)
     if (pool && cn.members != null)
       throw new Error(`${at}: the members of pool "${cn.to}" are its workers or pods; leave members out`)
-    if (cn.assign !== 'exclusive') continue
+    if (cn.skew != null && cn.assign !== 'key') throw new Error(`${at} gives skew, which only a key connection has`)
+    if (target) {
+      if (pool)
+        throw new Error(
+          `${at} spreads by ${cn.assign} over pool "${cn.to}": a key or a leader spreads over the members of a stage that is not a pool`,
+        )
+      if (cn.members == null) throw new Error(`${at} needs members: the members of "${cn.to}" its parts sit on`)
+      if (cn.assign === 'leader' && cn.parts != null)
+        throw new Error(`${at}: a leader takes every unit on one member; leave parts out`)
+      if (to.kind === 'queue' && cn.parts != null)
+        throw new Error(`${at}: the parts of queue "${cn.to}" are its partitions; leave parts out`)
+      if (cn.assign === 'key' && to.kind !== 'queue' && cn.parts == null)
+        throw new Error(`${at} needs parts: "${cn.to}" is not a queue with partitions`)
+    } else if (cn.assign !== 'exclusive') continue
+    if (target) {
+      const c = to.kind === 'sink' ? undefined : to.component
+      if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)
+      continue
+    }
     if (from.kind !== 'queue' && cn.parts == null)
       throw new Error(`${at} needs parts: "${cn.from}" is not a queue with partitions`)
     if (!pool && cn.members == null) throw new Error(`${at} needs members: "${cn.to}" is not a pool`)

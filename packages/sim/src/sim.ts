@@ -575,6 +575,9 @@ export class Sim {
     const s = this.#ev.stages[stage]
     if (s?.kind === 'queue') {
       const n = s.partitions[flow] ?? 0
+      // a hot key's share lands on partition 0, the rest evenly on the others
+      const hot = s.skew?.[flow]
+      if (hot != null && n > 1) return { stage, cell: this.#r() < hot ? 0 : 1 + Math.floor(this.#r() * (n - 1)) }
       return n > 0 ? { stage, cell: Math.floor(this.#r() * n) } : { stage }
     }
     if (s?.kind === 'workers') {

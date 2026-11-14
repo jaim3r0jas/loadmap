@@ -184,7 +184,13 @@ export type ResolvedStage = { id: string; label: string } & (
     }
   | { kind: 'store'; component: string }
   | { kind: 'sink'; component?: undefined }
-  | { kind: 'queue'; component?: string; partitions: Readonly<Record<string, number>> }
+  | {
+      kind: 'queue'
+      component?: string
+      partitions: Readonly<Record<string, number>>
+      /** With a key connection that gives skew: the share of each flow on partition 0, the hottest. */
+      skew?: Readonly<Record<string, number>>
+    }
   | {
       kind: 'workers'
       component: string
