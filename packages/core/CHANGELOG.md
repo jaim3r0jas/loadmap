@@ -1,5 +1,29 @@
 # @loadmap/core
 
+## 0.32.0
+
+### Minor Changes
+
+- 53b93be: Connections on the board: behind an exclusive connection each unit goes to the worker that reads its partition, a
+  worker is as busy as its partitions make it, one that reads none stays idle and is drawn dashed, and a partition a
+  quieter worker reads waits less of the queue's lag. `ev.stages[pool].assignment` gives the worker of each partition
+  and each worker's share of the work. The latency times each group of workers at its own utilization, instead of
+  every unit at the busiest one's.
+- 55c4e7f: Connections: `connections` in a model says how a stage reaches the next one on a route. `assign: 'exclusive'` gives each
+  partition of the queue in front (or each of `parts`) one owner among the pool's workers or pods (or `members`): a Kafka
+  consumer group. The component then runs out when its busiest member does: its utilization carries the spread (the
+  busiest member's share of the work × the members), `ev.components[c].spread` says why, and owners left without a
+  partition are named. `owner` and `capacityPer` (worker or pod) say what owns a part and what the capacity divides over;
+  `flows` picks the flows it covers. An autoscaler still reads the plain utilization. `shared` (the default) changes no
+  number. Each connection is listed with the assumptions.
+
+### Patch Changes
+
+- 9cc0ccd: Connections in the language: `connection group { hop: topic -> pool; assign: exclusive; capacityPer: pod }`, with
+  `owner`, `parts`, `members` and `flows: [orders]`, as `connections` does in TypeScript. What the model refuses about a
+  connection is shown on its line; autocomplete, hover, rename and the outline know connections and the flows they list.
+  A flow a connection lists twice counts once.
+
 ## 0.31.0
 
 ### Minor Changes

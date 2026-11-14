@@ -1,5 +1,32 @@
 # @loadmap/react
 
+## 0.32.0
+
+### Minor Changes
+
+- 53b93be: Connections on the board: behind an exclusive connection each unit goes to the worker that reads its partition, a
+  worker is as busy as its partitions make it, one that reads none stays idle and is drawn dashed, and a partition a
+  quieter worker reads waits less of the queue's lag. `ev.stages[pool].assignment` gives the worker of each partition
+  and each worker's share of the work. The latency times each group of workers at its own utilization, instead of
+  every unit at the busiest one's.
+
+### Patch Changes
+
+- 55c4e7f: Connections: `connections` in a model says how a stage reaches the next one on a route. `assign: 'exclusive'` gives each
+  partition of the queue in front (or each of `parts`) one owner among the pool's workers or pods (or `members`): a Kafka
+  consumer group. The component then runs out when its busiest member does: its utilization carries the spread (the
+  busiest member's share of the work × the members), `ev.components[c].spread` says why, and owners left without a
+  partition are named. `owner` and `capacityPer` (worker or pod) say what owns a part and what the capacity divides over;
+  `flows` picks the flows it covers. An autoscaler still reads the plain utilization. `shared` (the default) changes no
+  number. Each connection is listed with the assumptions.
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [55c4e7f]
+  - @loadmap/dsl@0.32.0
+  - @loadmap/core@0.32.0
+  - @loadmap/sim@0.32.0
+  - @loadmap/layout@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

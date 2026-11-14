@@ -1,5 +1,22 @@
 # @loadmap/dsl
 
+## 0.32.0
+
+### Minor Changes
+
+- 9cc0ccd: Connections in the language: `connection group { hop: topic -> pool; assign: exclusive; capacityPer: pod }`, with
+  `owner`, `parts`, `members` and `flows: [orders]`, as `connections` does in TypeScript. What the model refuses about a
+  connection is shown on its line; autocomplete, hover, rename and the outline know connections and the flows they list.
+  A flow a connection lists twice counts once.
+
+### Patch Changes
+
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [55c4e7f]
+  - @loadmap/core@0.32.0
+  - @loadmap/layout@0.32.0
+
 ## 0.31.0
 
 ### Minor Changes
