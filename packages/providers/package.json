@@ -1,6 +1,6 @@
 {
   "name": "@loadmap/providers",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Data providers for loadmap: read measured data from Prometheus and Elasticsearch into a snapshot a model reads, on an explicit pull, with the address and the credentials from the environment.",
   "keywords": [
     "loadmap",

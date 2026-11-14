@@ -1,5 +1,39 @@
 # @loadmap/dsl
 
+## 0.32.0
+
+### Minor Changes
+
+- f2c3fd3: Catalog edition 2026-12: how callers connect to each component, from its documentation, as connection rules with
+  their sources (`kafka/consumer-group`, `valkey/cluster-slots`, `etcd/raft-leader`, …), and the documented defaults
+  of PostgreSQL's and MySQL's `max_connections` as figures taken by name only. A connection's `rule` takes a rule's
+  assign and owner where it writes none and cites its source; `rule(kafka, 'kafka/consumer-group')` in TypeScript,
+  `rule: "kafka/consumer-group"` in the language, with autocomplete. Edition 2026-11 stays as it was.
+- c302028: Connections count what they hold open: `open` is the connections each member of the pool on the hop keeps to the
+  other side, and `max` the most that side accepts. Together they make a limit named by the connection, "Connections
+  to db": the members running times what each keeps open, added up over every connection into the stage, so an
+  autoscaled pool that opens more as it grows runs out at a load. `open` and `max` in the language too.
+- 9cc0ccd: Connections in the language: `connection group { hop: topic -> pool; assign: exclusive; capacityPer: pod }`, with
+  `owner`, `parts`, `members` and `flows: [orders]`, as `connections` does in TypeScript. What the model refuses about a
+  connection is shown on its line; autocomplete, hover, rename and the outline know connections and the flows they list.
+  A flow a connection lists twice counts once.
+- 7f55166: Connections on the stage they reach: `assign: 'key'` sends each unit to the part its key hashes to, partition i of
+  each flow on member i mod `members`, and the busiest member bounds the stage; `skew` puts a share of a flow on its
+  hottest part, and the sim sends that share of the dots there; `assign: 'leader'` sends every unit to one member. A
+  published capacity keeps its number, and the limits list says why. In the language a cluster's queue takes the
+  cluster's members. A connection's spread reads the flows' rates only when several share a stage.
+
+### Patch Changes
+
+- Updated dependencies [f2c3fd3]
+- Updated dependencies [c302028]
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [7f55166]
+- Updated dependencies [55c4e7f]
+  - @loadmap/core@0.32.0
+  - @loadmap/layout@0.32.0
+
 ## 0.31.0
 
 ### Minor Changes

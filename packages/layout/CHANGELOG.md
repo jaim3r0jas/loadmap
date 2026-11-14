@@ -1,5 +1,17 @@
 # @loadmap/layout
 
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [f2c3fd3]
+- Updated dependencies [c302028]
+- Updated dependencies [9cc0ccd]
+- Updated dependencies [53b93be]
+- Updated dependencies [7f55166]
+- Updated dependencies [55c4e7f]
+  - @loadmap/core@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

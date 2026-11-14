@@ -1,5 +1,43 @@
 # @loadmap/core
 
+## 0.32.0
+
+### Minor Changes
+
+- f2c3fd3: Catalog edition 2026-12: how callers connect to each component, from its documentation, as connection rules with
+  their sources (`kafka/consumer-group`, `valkey/cluster-slots`, `etcd/raft-leader`, …), and the documented defaults
+  of PostgreSQL's and MySQL's `max_connections` as figures taken by name only. A connection's `rule` takes a rule's
+  assign and owner where it writes none and cites its source; `rule(kafka, 'kafka/consumer-group')` in TypeScript,
+  `rule: "kafka/consumer-group"` in the language, with autocomplete. Edition 2026-11 stays as it was.
+- c302028: Connections count what they hold open: `open` is the connections each member of the pool on the hop keeps to the
+  other side, and `max` the most that side accepts. Together they make a limit named by the connection, "Connections
+  to db": the members running times what each keeps open, added up over every connection into the stage, so an
+  autoscaled pool that opens more as it grows runs out at a load. `open` and `max` in the language too.
+- 53b93be: Connections on the board: behind an exclusive connection each unit goes to the worker that reads its partition, a
+  worker is as busy as its partitions make it, one that reads none stays idle and is drawn dashed, and a partition a
+  quieter worker reads waits less of the queue's lag. `ev.stages[pool].assignment` gives the worker of each partition
+  and each worker's share of the work. The latency times each group of workers at its own utilization, instead of
+  every unit at the busiest one's.
+- 7f55166: Connections on the stage they reach: `assign: 'key'` sends each unit to the part its key hashes to, partition i of
+  each flow on member i mod `members`, and the busiest member bounds the stage; `skew` puts a share of a flow on its
+  hottest part, and the sim sends that share of the dots there; `assign: 'leader'` sends every unit to one member. A
+  published capacity keeps its number, and the limits list says why. In the language a cluster's queue takes the
+  cluster's members. A connection's spread reads the flows' rates only when several share a stage.
+- 55c4e7f: Connections: `connections` in a model says how a stage reaches the next one on a route. `assign: 'exclusive'` gives each
+  partition of the queue in front (or each of `parts`) one owner among the pool's workers or pods (or `members`): a Kafka
+  consumer group. The component then runs out when its busiest member does: its utilization carries the spread (the
+  busiest member's share of the work × the members), `ev.components[c].spread` says why, and owners left without a
+  partition are named. `owner` and `capacityPer` (worker or pod) say what owns a part and what the capacity divides over;
+  `flows` picks the flows it covers. An autoscaler still reads the plain utilization. `shared` (the default) changes no
+  number. Each connection is listed with the assumptions.
+
+### Patch Changes
+
+- 9cc0ccd: Connections in the language: `connection group { hop: topic -> pool; assign: exclusive; capacityPer: pod }`, with
+  `owner`, `parts`, `members` and `flows: [orders]`, as `connections` does in TypeScript. What the model refuses about a
+  connection is shown on its line; autocomplete, hover, rename and the outline know connections and the flows they list.
+  A flow a connection lists twice counts once.
+
 ## 0.31.0
 
 ### Minor Changes
