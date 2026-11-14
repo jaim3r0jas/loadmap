@@ -128,8 +128,10 @@ export function Preview({ host, elk }: { host: Host; elk?: LoadmapSourceProps['e
         return
       }
       const e = h.engine
-      while (live && (e.frame !== e.scene || performance.now() - came.current < REST)) await wait(100)
-      // a text with an error draws nothing new: its edits wait for the version that does
+      // until the new version is drawn (a slow layout takes longer than the rest), its move is done and the text rests;
+      // a text with an error draws nothing new: its edits wait for the version that does, which ends this wait
+      while (live && (e.scene === was.scene || e.frame !== e.scene || performance.now() - came.current < REST))
+        await wait(100)
       if (!live || !e.scene || e.scene === was.scene || !tracking.current || before.current !== was) return
       const ids = changedBoxes(
         was,
