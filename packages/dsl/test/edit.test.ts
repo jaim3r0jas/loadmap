@@ -288,8 +288,9 @@ describe('edit', () => {
       expect(n).toBeGreaterThan(10)
       // a compile a field: docs/every-statement.loadmap, with every statement, has the most fields by far
     },
-    // a compile a field: about 35 s for every-statement.loadmap on a laptop, two to three times that on CI
-    180_000,
+    // a compile a field: about 35 s for every-statement.loadmap on a laptop; on CI it took 109 to 153 s for one
+    // commit before its connection, 172 to 183 s after (a connection costs its model a little more to compile)
+    300_000,
   )
 })
 
