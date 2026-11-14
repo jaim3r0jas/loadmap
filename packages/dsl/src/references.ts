@@ -7,7 +7,7 @@ import { parse } from './parser'
 import { type BlockSpec, BOXES, EDGE_PROPS, own, SCHEMA, STAGES } from './schema'
 
 /** Where names live: a name is unique in its space, and a reference finds its declaration there. */
-type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario' | 'metric'
+type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario' | 'metric' | 'connection'
 
 interface Ref extends Span {
   space: Space
@@ -128,7 +128,11 @@ class NameIndex {
   taken(at: Ref): Set<string> {
     const ids = (...kinds: DslSymbol['kind'][]) => this.symbols.filter((s) => kinds.includes(s.kind)).map((s) => s.id)
     const key = this.entity(at)
-    if (key.startsWith('box:') || at.space === 'stage') return new Set(ids('node', 'stage', 'component'))
+    // a connection's id must not be a component's, and the other way round (a box's id is its component's)
+    if (at.space === 'connection') return new Set(ids('connection', 'component'))
+    if (key.startsWith('box:')) return new Set(ids('node', 'stage', 'component', 'connection'))
+    if (at.space === 'stage') return new Set(ids('node', 'stage', 'component'))
+    if (at.space === 'component') return new Set(ids('component', 'connection'))
     if (at.space === 'formula') return new Set([...ids('param', 'let', 'fit', 'published', 'measure'), 'load'])
     return new Set(ids(at.space as DslSymbol['kind']))
   }
@@ -173,6 +177,9 @@ class NameIndex {
           case 'tier':
             if (s.value.t === 'id') this.add(prop.value, s.value, s.value.name)
             break
+          case 'flows':
+            if (s.value.t === 'array') for (const e of s.value.items) if (e.t === 'id') this.add('flow', e, e.name)
+            break
           case 'measure':
             if (s.value.t === 'id') this.add('formula', s.value, s.value.name)
             break
@@ -188,7 +195,8 @@ class NameIndex {
         if (id) {
           if (k === 'param' || k === 'let' || k === 'fit' || k === 'published' || k === 'measure')
             this.add('formula', id, id.name, true)
-          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric') this.add(k, id, id.name, true)
+          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric' || k === 'connection')
+            this.add(k, id, id.name, true)
           else if ((BOXES as readonly string[]).includes(k)) this.add('node', id, id.name, true)
           else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)
         }

@@ -189,6 +189,15 @@ pool workers "Event workers" "2 to 6 pods" {
   over: "events wait in the topic"
 }
 
+# a consumer group: each partition read by one worker, the pod's CPU shared by its workers
+connection group {
+  hop: topic -> workers
+  assign: exclusive
+  owner: worker
+  capacityPer: pod
+  flows: [events]
+}
+
 node push "Push broker" {
   fanout "push broker" { events -> phones: perEvent }
   short: "the push broker"
