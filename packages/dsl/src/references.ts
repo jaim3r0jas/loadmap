@@ -195,8 +195,15 @@ class NameIndex {
         if (id) {
           if (k === 'param' || k === 'let' || k === 'fit' || k === 'published' || k === 'measure')
             this.add('formula', id, id.name, true)
-          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric' || k === 'connection')
-            this.add(k, id, id.name, true)
+          // a connection that gives max is a limit: expect, focus and formulas name it as a component
+          else if (k === 'connection')
+            this.add(
+              s.body?.some((p) => p.kind === 'prop' && p.key.name === 'max') ? 'component' : k,
+              id,
+              id.name,
+              true,
+            )
+          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric') this.add(k, id, id.name, true)
           else if ((BOXES as readonly string[]).includes(k)) this.add('node', id, id.name, true)
           else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)
         }

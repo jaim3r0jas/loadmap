@@ -721,6 +721,23 @@ flows only, so two flows on one hop can follow different rules; `shared` (the de
 In TypeScript, `connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } }`, `ev.components.pool.spread`
 gives the factor and the line, and `ev.stages.pool.assignment` the worker that reads each partition.
 
+A connection also counts what it holds open. `open` is the connections each member of the pool on the hop keeps to
+the other side (per pod with `owner: pod`), and `max` the most that side accepts, a capacity like any other. Together
+they make a limit of their own, named by the connection, "Connections to db": the members running times what each
+keeps open, added up over every connection into the stage:
+
+```
+connection dbPool {
+  hop: api -> db
+  owner: pod
+  open: 20
+  max: configured(100, "connections", "max_connections")
+}
+```
+
+An autoscaled pool opens more as it adds pods, so this limit runs out at a load: 20 a pod reach 100 at the fifth pod.
+One connection into a stage gives `max`; the others into it only `open`.
+
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
@@ -1609,6 +1626,8 @@ After the keyword: id.
 | `parts` | number, formula | Parts of each flow, when the stage in front is no queue. |
 | `members` | number, formula | Members of the stage after, when it is no pool. |
 | `flows` | flows, constant | The flows it covers. Default every flow on the hop. |
+| `open` | number, formula | Connections each member of the pool on the hop keeps open to the other side. |
+| `max` | capacity, formula | The most connections the other side accepts: a limit named by this connection. |
 
 ### thresholds
 
