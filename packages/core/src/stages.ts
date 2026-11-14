@@ -195,6 +195,8 @@ export type ResolvedStage = { id: string; label: string } & (
       /** The pods running at these values: `pods` unless the pool autoscales. */
       running: number
       autoscale?: { min: number; max: number; target: number }
+      /** With an exclusive connection into it: which worker reads each partition. */
+      assignment?: WorkersAssignment
     }
   | {
       kind: 'fanout'
@@ -214,6 +216,18 @@ export type ResolvedStage = { id: string; label: string } & (
       shed: number
     }
 )
+
+/** Which worker of an exclusive pool reads each partition, and how much of the work each running worker has. */
+export interface WorkersAssignment {
+  /** What owns a partition: a worker, or a pod (then `cells` names the pod's first worker). */
+  owner: 'worker' | 'pod'
+  /** Per flow, the worker (its cell: pod × workers per pod + its place in the pod) that reads each partition. */
+  cells: Readonly<Record<string, readonly number[]>>
+  /** Per flow, the queue whose partitions those are. */
+  from: Readonly<Record<string, string>>
+  /** Each running worker's share of the work, adding up to 1; 0 for one that reads no partition. */
+  weights: readonly number[]
+}
 
 /** The share a stage turns away when its component is past `full`: what is above it. */
 export function rejectShare(util: number | null | undefined, full: number): number {

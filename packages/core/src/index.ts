@@ -118,6 +118,7 @@ export {
   sink,
   split,
   store,
+  type WorkersAssignment,
   type WorkersStage,
   workers,
 } from './stages'

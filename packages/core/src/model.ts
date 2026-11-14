@@ -28,6 +28,7 @@ import {
   type SplitBranch,
   type StageDef,
   splitOf,
+  type WorkersAssignment,
 } from './stages'
 
 /** What every model function receives: the parameter values plus the model's own derived numbers. */
@@ -615,14 +616,22 @@ export function defineModel<
     return { component: best.component, target: best.target, firstLimit: first }
   }
 
-  const resolveStages = (ctx: LooseValues, shed: (s: string) => number, plain: (c: string) => number | null) => {
+  const resolveStages = (
+    ctx: LooseValues,
+    shed: (s: string) => number,
+    plain: (c: string) => number | null,
+    assignment: (s: string) => WorkersAssignment | undefined,
+  ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
       const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
+      const a = st.kind === 'workers' ? assignment(s) : undefined
       stages[s] =
         st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'
           ? { ...st, shed: shed(s) }
-          : st
+          : a
+            ? ({ ...st, assignment: a } as ResolvedStage)
+            : st
     }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
@@ -654,6 +663,7 @@ export function defineModel<
       plain,
       spread,
       connectionText,
+      assignment,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -714,7 +724,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain)
+    const stages = resolveStages(ctx, shed, plain, assignment)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -793,8 +803,8 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain } = context(def as any, values)
-      return { values, ctx, stages: resolveStages(ctx, shed, plain) }
+      const { ctx, shed, plain, assignment } = context(def as any, values)
+      return { values, ctx, stages: resolveStages(ctx, shed, plain, assignment) }
     },
     utilization: (partial, bound) => {
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
@@ -1286,26 +1296,29 @@ function context(
       const unknown = new Set<string>()
       let timed = false
       for (const [i, p] of paths(f).entries()) {
-        let left = p.share
-        let mean = 0
-        let variance = 0
+        // one part of the way, or one per group of members a connection's spread sets apart
+        let parts: WayTime[] = [{ share: p.share, mean: 0, variance: 0 }]
         for (const s of p.stages) {
-          const r = response(s)
-          if (r != null) timed = true
-          if (r != null && Number.isNaN(r))
+          const rs = responses(s, f)
+          if (rs) timed = true
+          if (rs?.length === 1 && Number.isNaN(rs[0]!.time))
             unknown.add(def.components[(stages[s] as { component: string }).component]!.name)
-          else if (r != null) {
-            mean += r
-            variance += r * r
-          }
+          else if (rs)
+            parts = parts.flatMap((w) =>
+              rs.map((g) => ({ share: w.share * g.share, mean: w.mean + g.time, variance: w.variance + g.time ** 2 })),
+            )
           if (stages[s]!.kind === 'cache') {
-            ways.push({ share: left * hit(s), mean, variance })
-            tags.push({ path: i, answeredAt: s })
-            left *= 1 - hit(s)
+            for (const w of parts) {
+              ways.push({ ...w, share: w.share * hit(s) })
+              tags.push({ path: i, answeredAt: s })
+            }
+            parts = parts.map((w) => ({ ...w, share: w.share * (1 - hit(s)) }))
           }
         }
-        ways.push({ share: left, mean, variance })
-        tags.push({ path: i })
+        for (const w of parts) {
+          ways.push(w)
+          tags.push({ path: i })
+        }
       }
       return timed ? { ways, tags, unknown: [...unknown] } : null
     })
@@ -1345,7 +1358,7 @@ function context(
         ...(t != null
           ? {
               timedOut: timedOut(f),
-              ways: times.tags.map((tag, i) => ({ ...tag, timedOut: beyond([{ ...times.ways[i]!, share: 1 }], t) })),
+              ways: perWay(times, t),
             }
           : {}),
       }
@@ -1451,19 +1464,28 @@ function context(
               `loadmap: connections "${first}" and "${exclusive[other]![0]}" read into "${stage}" with different members: give them the same owner, capacityPer and members`,
             )
           let shape: Shape
+          let pool: { running: number; perPod: number; owner: 'worker' | 'pod' } | undefined
           if (st.kind === 'workers') {
             const owner = cn.owner ?? 'worker'
             const { running } = podsOf(stage, st, ctx, plain(c))
             if (!(running >= 1)) return null
             const perPod = whole(dyn(st.perPod, ctx), `workers "${stage}"`, 'perPod')
-            shape = poolShape(whole(running, `workers "${stage}"`, 'pods'), perPod, owner, cn.capacityPer ?? owner)
+            pool = { running: whole(running, `workers "${stage}"`, 'pods'), perPod, owner }
+            shape = poolShape(pool.running, perPod, owner, cn.capacityPer ?? owner)
           } else shape = memberShape(members[0] as number)
           // each flow by its share of the demand: for slots, what arrives × how long each unit holds one
           const h = held(c)
           const weight = (f: string) => arriving(stage, f) * (h ? (h[f] ?? 0) : 1)
           const work: Work[] = []
-          for (const [k] of exclusive)
-            for (const f of covered(k)) work.push({ flow: f, weight: weight(f), parts: partsOf(k, f) })
+          for (const [k, x] of exclusive)
+            for (const f of covered(k)) {
+              const twice = work.find((w) => w.flow === f)
+              if (twice)
+                throw new Error(
+                  `loadmap: connections "${exclusive.find(([, y]) => y.from === twice.from)![0]}" and "${k}" both bring "${f}" into "${stage}": a flow reaches an exclusive stage through one connection`,
+                )
+              work.push({ flow: f, weight: weight(f), parts: partsOf(k, f), from: x.from })
+            }
           for (const f of flowIds)
             if (
               !work.some((w) => w.flow === f) &&
@@ -1476,8 +1498,60 @@ function context(
           return {
             factor: s.factor,
             text: spreadText(s, shape, work, { short: d.short ?? d.name, plural: d.plural ?? false, part }),
+            stage,
+            shape,
+            work,
+            dealt: s,
+            pool,
           }
         })
+  /** Which worker reads each partition of an exclusive pool, and each running worker's share of the work. */
+  const assignment = (stage: string): WorkersAssignment | undefined => {
+    const c = (stages[stage] as { component?: string }).component
+    const sp = c ? spread(c) : null
+    if (!sp?.pool || sp.stage !== stage) return undefined
+    const { running, perPod, owner } = sp.pool
+    const cell = sp.shape.cellOf
+    const cells: Record<string, number[]> = {}
+    const from: Record<string, string> = {}
+    for (const [f, list] of sp.dealt.owners) cells[f] = list.map(cell)
+    for (const w of sp.work) if (w.from) from[w.flow] = w.from
+    const weights = new Array<number>(running * perPod).fill(0)
+    let left = 1
+    sp.dealt.owned.forEach((w, o) => {
+      left -= w
+      if (owner === 'worker') weights[cell(o)]! += w
+      else for (let t = 0; t < perPod; t++) weights[cell(o) + t]! += w / perPod
+    })
+    // what no exclusive connection covers lands evenly; a sliver left by rounding is none
+    if (left > 1e-9) for (let i = 0; i < weights.length; i++) weights[i]! += left / weights.length
+    return { owner, cells, from, weights }
+  }
+  /**
+   * The time a unit of a flow spends at a stage, by the share of its units that take it: one time, or one per group of
+   * members whose utilization a connection's spread sets apart.
+   */
+  const responses = (s: string, f: string): { share: number; time: number }[] | null => {
+    const r = response(s)
+    const c = (stages[s] as { component?: string }).component
+    if (r == null || Number.isNaN(r) || !c) return r == null ? null : [{ share: 1, time: r }]
+    const sp = spread(c)
+    const u0 = plain(c)
+    const time = service(c)
+    if (!sp || sp.stage !== s || u0 == null || time == null) return [{ share: 1, time: r }]
+    const w = sp.work.find((x) => x.flow === f)
+    const units = sp.shape.units
+    const groups = new Map<number, number>()
+    for (let u = 0; u < units; u++) {
+      const q = w?.parts == null ? 1 / units : (sp.dealt.counts[u]!.get(f) ?? 0) / w.parts
+      if (q <= 0) continue
+      const util = u0 * sp.dealt.share[u]! * units
+      const t = util >= 1 ? Number.POSITIVE_INFINITY : time / (1 - util)
+      groups.set(t, (groups.get(t) ?? 0) + q)
+    }
+    const total = [...groups.values()].reduce((a, q) => a + q, 0)
+    return [...groups].map(([t, share]) => ({ share: total > 0 ? share / total : share, time: t }))
+  }
   /** A connection's rule in a sentence, for the assumptions. */
   const connectionText = (k: string) => {
     const cn = connections[k]!
@@ -1525,6 +1599,7 @@ function context(
     plain,
     spread,
     connectionText,
+    assignment,
     latencies: (only: readonly string[] = flowIds) => {
       const timed = componentIds.some((c) => def.components[c]!.service != null)
       // each flow's on first read: the quantiles cost a bisection each
@@ -1533,6 +1608,31 @@ function context(
       return out
     },
   }
+}
+
+/**
+ * Each way's share too slow for its timeout: one entry per way, its groups of members (a connection's spread splits a
+ * way by them) weighed by their share.
+ */
+function perWay(
+  times: { ways: readonly WayTime[]; tags: readonly { path: number; answeredAt?: string }[] },
+  t: number,
+): { path: number; answeredAt?: string; timedOut: number }[] {
+  const out = new Map<
+    string,
+    { tag: { path: number; answeredAt?: string }; late: number; share: number; first: number }
+  >()
+  times.tags.forEach((tag, i) => {
+    const w = times.ways[i]!
+    const key = `${tag.path}/${tag.answeredAt ?? ''}`
+    const late = beyond([{ ...w, share: 1 }], t)
+    const e = out.get(key) ?? { tag, late: 0, share: 0, first: late }
+    e.late += w.share * late
+    e.share += w.share
+    out.set(key, e)
+  })
+  // a way nothing takes still says how slow it is
+  return [...out.values()].map((e) => ({ ...e.tag, timedOut: e.share > 0 ? e.late / e.share : e.first }))
 }
 
 /** A count of parts or members: a whole number from 1 up. */

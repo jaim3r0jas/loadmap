@@ -51,6 +51,8 @@ export interface Shape {
   units: number
   /** The unit an owner belongs to. */
   unitOf: (owner: number) => number
+  /** The worker an owner is drawn as (pod × workers per pod + its place); a pod's first worker stands for the pod. */
+  cellOf: (owner: number) => number
   owner: 'worker' | 'pod' | 'member'
   unit: 'worker' | 'pod' | 'member'
 }
@@ -61,12 +63,14 @@ export interface Shape {
  */
 export function poolShape(pods: number, perPod: number, owner: Member, per: Member): Shape {
   const owners = owner === 'pod' ? pods : pods * perPod
-  if (per === owner) return { owners, units: owners, unitOf: (r) => r, owner, unit: per }
-  return { owners, units: pods, unitOf: (r) => r % pods, owner, unit: 'pod' }
+  // owner r of the workers sits in pod r mod pods, place r ÷ pods in it
+  const cellOf = (r: number) => (owner === 'pod' ? r * perPod : (r % pods) * perPod + Math.floor(r / pods))
+  if (per === owner) return { owners, units: owners, unitOf: (r) => r, cellOf, owner, unit: per }
+  return { owners, units: pods, unitOf: (r) => r % pods, cellOf, owner, unit: 'pod' }
 }
 
 export function memberShape(members: number): Shape {
-  return { owners: members, units: members, unitOf: (r) => r, owner: 'member', unit: 'member' }
+  return { owners: members, units: members, unitOf: (r) => r, cellOf: (r) => r, owner: 'member', unit: 'member' }
 }
 
 /** One flow's work at the stage: its share of everything that reaches it, and its parts (null: shared). */
@@ -74,6 +78,8 @@ export interface Work {
   flow: string
   weight: number
   parts: number | null
+  /** The stage whose parts these are: the queue in front, for an exclusive flow. */
+  from?: string
 }
 
 export interface Spreading {
@@ -82,6 +88,14 @@ export interface Spreading {
   busiest: ReadonlyMap<string, number>
   /** Owners dealt no part. */
   idle: number
+  /** Each unit's share of the work, adding up to 1. */
+  share: readonly number[]
+  /** Each unit's parts of each exclusive flow. */
+  counts: readonly ReadonlyMap<string, number>[]
+  /** The owner of each part of each exclusive flow, in the order the parts are numbered. */
+  owners: ReadonlyMap<string, readonly number[]>
+  /** Each owner's share of the work of the exclusive flows, of all the work. */
+  owned: readonly number[]
 }
 
 /**
@@ -91,7 +105,9 @@ export interface Spreading {
 export function spreadOver(shape: Shape, work: readonly Work[]): Spreading {
   const { owners, units, unitOf } = shape
   const share = new Array<number>(units).fill(0)
+  const owned = new Array<number>(owners).fill(0)
   const counts = Array.from({ length: units }, () => new Map<string, number>())
+  const of = new Map<string, number[]>()
   const total = work.reduce((a, w) => a + w.weight, 0)
   let dealt = 0
   for (const w of work) {
@@ -100,11 +116,16 @@ export function spreadOver(shape: Shape, work: readonly Work[]): Spreading {
       for (let u = 0; u < units; u++) share[u]! += weight / units
       continue
     }
+    const list: number[] = []
     for (let p = 0; p < w.parts; p++, dealt++) {
-      const u = unitOf(dealt % owners)
+      const o = dealt % owners
+      const u = unitOf(o)
+      list.push(o)
+      owned[o]! += weight / w.parts
       share[u]! += weight / w.parts
       counts[u]!.set(w.flow, (counts[u]!.get(w.flow) ?? 0) + 1)
     }
+    of.set(w.flow, list)
   }
   let busiest = 0
   for (let u = 1; u < units; u++) if (share[u]! > share[busiest]!) busiest = u
@@ -114,6 +135,10 @@ export function spreadOver(shape: Shape, work: readonly Work[]): Spreading {
     factor: factor < 1 + 1e-9 ? 1 : factor,
     busiest: counts[busiest] ?? new Map(),
     idle: dealt > 0 ? Math.max(0, owners - dealt) : 0,
+    share,
+    counts,
+    owners: of,
+    owned,
   }
 }
 
