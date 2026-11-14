@@ -702,6 +702,9 @@ function Node({
   const running = st?.kind === 'workers' ? st.running : n.members.length
   // a pod past the pool's size is leaving the drawing: it fades out as it was, running
   const idle = (i: number) => i >= running && i < (st?.kind === 'workers' ? st.pods : n.members.length)
+  // behind an exclusive connection, a running worker that reads no partition is dashed too
+  const a = st?.kind === 'workers' ? st.assignment : undefined
+  const unassigned = (i: number) => a != null && i < a.weights.length && a.weights[i] === 0
   const e = 6
   // a box that comes or goes grows from, or shrinks to, a little smaller than itself
   const grow =
@@ -804,7 +807,9 @@ function Node({
             rx="2"
             fill="var(--lm-surface)"
             stroke="currentColor"
-            strokeOpacity=".45"
+            strokeOpacity={unassigned(s.index) ? '.3' : '.45'}
+            strokeDasharray={unassigned(s.index) ? '2 2' : undefined}
+            data-unassigned={unassigned(s.index) || undefined}
           />
           <rect
             data-slot={s.index}

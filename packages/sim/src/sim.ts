@@ -252,6 +252,14 @@ export class Sim {
   slotBusy(stage: string, i: number): number {
     const s = this.#ev.stages[stage]
     if (s?.kind !== 'workers' || i >= s.running * s.perPod) return 0
+    // behind an exclusive connection each worker is as busy as its partitions make it; one without any is idle
+    const a = s.assignment
+    // past full the pool's average is capped at 1, but a quieter worker is not: it is as busy as its share makes it
+    if (a)
+      return Math.min(
+        1,
+        Math.max(this.busy(stage), this.#steadyBusy(stage, false)) * (a.weights[i] ?? 0) * a.weights.length,
+      )
     const key = `${stage}/${s.running}`
     let f = this.#fills.get(key)
     if (!f) {
@@ -276,10 +284,11 @@ export class Sim {
     return this.#ev.components[component]?.util ?? null
   }
 
-  #steadyBusy(stage: string): number {
+  #steadyBusy(stage: string, capped = true): number {
     const s = this.#ev.stages[stage]
     const u = s?.component ? this.#util(s.component) : null
-    return Math.min(1, ((u ?? 0) / this.#model.thresholds.full) * this.#scaled(stage) * this.#even(stage))
+    const busy = ((u ?? 0) / this.#model.thresholds.full) * this.#scaled(stage) * this.#even(stage)
+    return capped ? Math.min(1, busy) : busy
   }
 
   /**
@@ -478,7 +487,7 @@ export class Sim {
       d.t = 0
       d.dur = this.#o.legSeconds
       d.from = d.to
-      d.to = this.#place(route[d.leg]!, d.flow)
+      d.to = this.#place(route[d.leg]!, d.flow, d.from)
     }
 
     const reject = (d: Particle, outcome: Particle['outcome'] = 'rejected') => {
@@ -544,7 +553,7 @@ export class Sim {
           const lag = this.queue(stage.id, d.flow).lag
           d.phase = 'hold'
           d.t = 0
-          d.dur = 0.12 + (Math.min(lag, 120) / 120) * 2.6
+          d.dur = 0.12 + (Math.min(lag, 120) / 120) * 2.6 * this.#heat(d)
         } else if (stage.kind === 'workers') {
           d.phase = 'hold'
           d.t = 0
@@ -562,15 +571,46 @@ export class Sim {
     this.particles = this.particles.filter((d) => !(d.phase === 'fade' && d.t >= d.dur)).concat(born)
   }
 
-  #place(stage: string, flow: string): Place {
+  #place(stage: string, flow: string, from?: Place): Place {
     const s = this.#ev.stages[stage]
     if (s?.kind === 'queue') {
       const n = s.partitions[flow] ?? 0
       return n > 0 ? { stage, cell: Math.floor(this.#r() * n) } : { stage }
     }
-    // only among the running pods: the ones an autoscaler has not started take no work
-    if (s?.kind === 'workers') return { stage, cell: this.#pickWorker(s.id, s.running * s.perPod) }
+    if (s?.kind === 'workers') {
+      // a unit from a partition goes to the worker that reads it (a pod's: any of its workers)
+      const owner = this.#owner(stage, flow, from)
+      if (owner != null)
+        return { stage, cell: s.assignment!.owner === 'pod' ? owner + Math.floor(this.#r() * s.perPod) : owner }
+      // only among the running pods: the ones an autoscaler has not started take no work
+      return { stage, cell: this.#pickWorker(s.id, s.running * s.perPod) }
+    }
     return { stage }
+  }
+
+  /** The worker that reads the partition a unit comes from, behind an exclusive connection; null otherwise. */
+  #owner(stage: string, flow: string, from: Place | undefined): number | null {
+    const s = this.#ev.stages[stage]
+    const a = s?.kind === 'workers' ? s.assignment : undefined
+    // only from the queue the connection reads: a partition of another queue is no part of it
+    if (!a || from?.cell == null || from.stage == null || a.from[flow] !== from.stage) return null
+    return a.cells[flow]?.[from.cell] ?? null
+  }
+
+  /**
+   * How much of a queue's lag a unit waits: more in a partition a busier worker reads, less in one a quieter worker
+   * reads, the lag on average over the partitions. Without an exclusive connection after the queue, the lag.
+   */
+  #heat(d: Particle): number {
+    const route = this.#way(d.flow, d.path)
+    const next = route[d.leg + 1]
+    const s = next == null ? undefined : this.#ev.stages[next]
+    const a = s?.kind === 'workers' ? s.assignment : undefined
+    const owner = next == null ? null : this.#owner(next, d.flow, d.to)
+    if (!a || owner == null) return 1
+    const cells = a.cells[d.flow] ?? []
+    const mean = cells.reduce((sum, c) => sum + (a.weights[c] ?? 0), 0) / (cells.length || 1)
+    return mean > 0 ? (a.weights[owner] ?? 0) / mean : 1
   }
 
   /** A worker chosen in proportion to how busy it is, so dots land where the fill shows work. */

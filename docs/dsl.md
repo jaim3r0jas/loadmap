@@ -713,11 +713,13 @@ workers leave 4 idle, the pool runs out at 75 % of its capacity, and a fifth pod
 of a pod share its CPU, so idle threads cost nothing, but a pod with fewer partitions than another does: 6 partitions
 on 4 pods read 2, 2, 1 and 1. `owner: pod` gives each partition to a pod instead of a worker. A connection changes no
 rate, demand or capacity: the limits list says what it does ("The busiest pod reads 2 of 6 partitions"), and an
-autoscaler still sees the pool's average. Between two stages that are not a queue and a pool, `parts` and `members`
-give the counts: `parts: 16; members: 4` for a sharded store. `flows: [orders]` covers some flows only, so two flows
-on one hop can follow different rules; `shared` (the default) is any member taking any unit. In TypeScript,
-`connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } }`, and `ev.components.pool.spread` gives
-the factor and the line.
+autoscaler still sees the pool's average. On the board each unit goes to the worker that reads its partition, a worker
+that reads none is dashed and stays idle, and a partition a quieter worker reads waits less of the queue's lag; the
+latency times each group of workers at its own utilization. Between two stages that are not a queue and a pool,
+`parts` and `members` give the counts: `parts: 16; members: 4` for a sharded store. `flows: [orders]` covers some
+flows only, so two flows on one hop can follow different rules; `shared` (the default) is any member taking any unit.
+In TypeScript, `connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } }`, `ev.components.pool.spread`
+gives the factor and the line, and `ev.stages.pool.assignment` the worker that reads each partition.
 
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has

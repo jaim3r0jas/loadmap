@@ -77,6 +77,34 @@ describe('queues', () => {
     expect(sim.busy('pool')).toBeCloseTo(0.5, 2)
   })
 
+  it('send each unit to the worker that reads its partition, and leave the others idle', () => {
+    // 4 partitions on 2 pods of 4 workers: owners 0..3 are the cells 0, 4, 1, 5
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load } },
+      components: { pool: { name: 'Pool', capacity: measured(400, 'u/s'), over: '' } },
+      stages: { topic: queue({ partitions: { a: 4 } }), pool: workers('pool', { pods: 2, perPod: 4 }) },
+      routes: { a: ['topic', 'pool'] },
+      connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { seed: 3, speed: 10 })
+    const owner = [0, 4, 1, 5]
+    let seen = 0
+    for (let i = 0; i < 600; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.from.stage === 'topic' && d.to.stage === 'pool') {
+          expect(d.to.cell).toBe(owner[d.from.cell!])
+          seen++
+        }
+    }
+    expect(seen).toBeGreaterThan(0)
+    // the readers carry the pool's 25 % between them: 50 % each; the rest read nothing
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map((i) => Math.round(sim.slotBusy('pool', i) * 100))).toEqual([
+      50, 50, 0, 0, 50, 50, 0, 0,
+    ])
+  })
+
   it('grow over capacity: the oldest unit ages at (λ − μ) / λ', () => {
     // λ = 200, μ = 100: after 120 s, 12,000 units wait and the oldest arrived at 60 s
     const sim = run(pipeline({ a: 0, b: 200, cap: 100 }), 120)

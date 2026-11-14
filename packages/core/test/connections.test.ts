@@ -360,6 +360,103 @@ describe('an exclusive connection', () => {
   })
 })
 
+describe("an exclusive pool's assignment", () => {
+  it('names the worker that reads each partition, alternating pods, and what each worker carries', () => {
+    // 2 pods of 4 workers, 6 partitions: owners 0..5 sit in pods 0, 1, 0, 1, 0, 1
+    const pool = kafka({ partitions: 6, pods: 2 }).evaluate({ load: 1 }).stages.pool
+    if (pool.kind !== 'workers') throw new Error('a workers stage')
+    expect(pool.assignment?.owner).toBe('worker')
+    // owner r: pod r mod 2, place r ÷ 2 in it; cell = pod × 4 + place
+    expect(pool.assignment?.cells).toEqual({ orders: [0, 4, 1, 5, 2, 6] })
+    expect(pool.assignment?.weights.map((w) => Math.round(w * 600) / 100)).toEqual([1, 1, 1, 0, 1, 1, 1, 0])
+    // a worker that reads nothing carries exactly nothing, not a rounding sliver
+    expect(pool.assignment?.weights.filter((w) => w === 0)).toHaveLength(2)
+    // a pod owns: its first worker stands for it, and the pod's work is spread over its workers
+    const pods = kafka({ partitions: 3, pods: 2, connection: { owner: 'pod' } }).evaluate({ load: 1 }).stages.pool
+    if (pods.kind !== 'workers') throw new Error('a workers stage')
+    expect(pods.assignment?.cells).toEqual({ orders: [0, 4, 0] })
+    expect(pods.assignment?.weights.map((w) => Math.round(w * 1200) / 100)).toEqual([2, 2, 2, 2, 1, 1, 1, 1])
+    // without an exclusive connection there is none
+    const plain = kafka({ connection: { assign: 'shared' } }).evaluate().stages.pool
+    expect(plain.kind === 'workers' && plain.assignment).toBeUndefined()
+  })
+
+  it('times each group of workers at its own utilization', () => {
+    const m = defineModel({
+      load: p.load({ max: 100 }),
+      flows: { orders: { rate: ({ load }) => 100 * load } },
+      components: {
+        consumer: {
+          name: 'Consumer',
+          demand: ({ flows }) => flows.orders * 0.01,
+          capacity: measured(4, 'cores'),
+          service: 0.01,
+          over: 'x',
+        },
+      },
+      stages: { topic: queue({ partitions: { orders: 12 } }), pool: workers('consumer', { pods: 2, perPod: 4 }) },
+      routes: { orders: ['topic', 'pool'] },
+      connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } },
+    })
+    // 25 % on average; 4 workers read 2 of 12 partitions (33 %), 4 read 1 (17 %): 2/3 of the orders wait at 33 %
+    const l = m.evaluate({ load: 1 }).latency.orders!
+    expect(l.mean).toBeCloseTo((2 / 3) * (0.01 / (1 - 1 / 3)) + (1 / 3) * (0.01 / (1 - 1 / 6)), 9)
+  })
+})
+
+describe("an exclusive pool's flows", () => {
+  it('reach it through one connection each', () => {
+    const m = defineModel({
+      load: p.load({ max: 100 }),
+      flows: { orders: { rate: 100 } },
+      components: { consumer: { name: 'Consumer', capacity: measured(400, 'orders/s'), over: 'x' } },
+      stages: {
+        router: split({
+          to: [
+            { stages: ['q1', 'pool'], share: 0.5 },
+            { stages: ['q2', 'pool'], share: 0.5 },
+          ],
+        }),
+        q1: queue({ partitions: { orders: 4 } }),
+        q2: queue({ partitions: { orders: 2 } }),
+        pool: workers('consumer', { pods: 1, perPod: 4 }),
+      },
+      routes: { orders: ['router'] },
+      connections: {
+        a: { from: 'q1', to: 'pool', assign: 'exclusive' },
+        b: { from: 'q2', to: 'pool', assign: 'exclusive' },
+      },
+    })
+    expect(() => m.evaluate()).toThrow(
+      'loadmap: connections "a" and "b" both bring "orders" into "pool": a flow reaches an exclusive stage through one connection',
+    )
+  })
+
+  it('keep one latency way per path, its groups of workers weighed together', () => {
+    const m = defineModel({
+      load: p.load({ max: 100 }),
+      flows: { orders: { rate: ({ load }) => 100 * load, timeout: 0.02 } },
+      components: {
+        consumer: {
+          name: 'Consumer',
+          demand: ({ flows }) => flows.orders * 0.01,
+          capacity: measured(4, 'cores'),
+          service: 0.01,
+          over: 'x',
+        },
+      },
+      stages: { topic: queue({ partitions: { orders: 12 } }), pool: workers('consumer', { pods: 2, perPod: 4 }) },
+      routes: { orders: ['topic', 'pool'] },
+      connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } },
+    })
+    const l = m.evaluate({ load: 1 }).latency.orders!
+    expect(l.ways).toHaveLength(1)
+    // the busier workers (2/3 of the orders, 15 ms on average) time out more than the quieter (12 ms)
+    const late = (mean: number) => Math.exp(-0.02 / mean)
+    expect(l.ways![0]!.timedOut).toBeCloseTo((2 / 3) * late(0.015) + (1 / 3) * late(0.012), 6)
+  })
+})
+
 describe('a shared connection', () => {
   it('changes no number, and says its rule', () => {
     const ev = kafka({ connection: { assign: 'shared' } }).evaluate({ load: 2 })
