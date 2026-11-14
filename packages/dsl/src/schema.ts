@@ -896,6 +896,16 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         doc: 'The flows it covers. Default every flow on the hop.',
       },
+      open: {
+        value: 'number',
+        scope: 'ctx',
+        doc: 'Connections each member of the pool on the hop keeps open to the other side.',
+      },
+      max: {
+        value: 'capacity',
+        scope: 'ctx',
+        doc: 'The most connections the other side accepts: a limit named by this connection.',
+      },
     },
     children: [],
   },

@@ -1,5 +1,6 @@
+import type { Capacity } from './capacity'
 import { pct } from './format'
-import type { Dyn } from './stages'
+import type { Dyn, StageDef } from './stages'
 
 /**
  * shared: any member of the stage takes any unit (the default, and what a stage does without a connection).
@@ -35,6 +36,16 @@ export interface ConnectionDef<S extends string = string, F extends string = str
   members?: Dyn<number>
   /** The flows it covers; by default every flow that goes from `from` straight to `to`. */
   flows?: readonly F[]
+  /**
+   * The connections each member of the pool on the hop keeps open to the stage on the other side: a pod's pool of
+   * database connections (`owner: 'pod'`), a consumer's to its brokers.
+   */
+  open?: Dyn<number>
+  /**
+   * The most connections the stage on the other side accepts, from every connection into it: `max_connections`. It
+   * makes a limit of its own, named by this connection's id: the connections open against it.
+   */
+  max?: Capacity | ((ctx: any) => Capacity)
 }
 
 /** How unevenly the work lands on a component's members. */
@@ -169,3 +180,13 @@ export function spreadText(
 }
 
 const plural = (word: string, n: number) => (n === 1 ? word : `${word}s`)
+
+/** The pool on a hop that opens connections (`from` when it is one, else `to`), and the stage they are opened to. */
+export function opener(
+  stages: Readonly<Record<string, StageDef>>,
+  cn: ConnectionDef,
+): { pool: string; target: string } | undefined {
+  if (stages[cn.from]?.kind === 'workers') return { pool: cn.from, target: cn.to }
+  if (stages[cn.to]?.kind === 'workers') return { pool: cn.to, target: cn.from }
+  return undefined
+}

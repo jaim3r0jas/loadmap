@@ -4,6 +4,7 @@ import type { Expectation } from './check'
 import {
   type ConnectionDef,
   memberShape,
+  opener,
   poolShape,
   type Shape,
   type Spread,
@@ -368,7 +369,9 @@ export function defineModel<
   C extends string,
   S extends string,
   D extends string = never,
->(def: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
+>(given: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
+  // a connection that gives max is a limit of its own: the connections open against it
+  const def = withCounts(given)
   const params = (def.params ?? {}) as Readonly<Record<string, ParamDef>>
   for (const id of Object.keys(params))
     if (RESERVED.includes(id)) throw new Error(`loadmap: "${id}" is reserved and cannot name a parameter`)
@@ -431,7 +434,7 @@ export function defineModel<
     if (st.kind === 'workers' && (st.pods == null) === (st.autoscale == null))
       throw new Error(`loadmap: workers "${s}" needs pods or autoscale, one of them`)
   }
-  checkConnections(def as ModelDef<any, string, string, string, string>)
+  checkConnections(given as ModelDef<any, string, string, string, string>)
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
   const growth = def.growth && checkGrowth(def.growth)
@@ -782,7 +785,8 @@ export function defineModel<
   }
 
   return {
-    def: def as ModelDef<any, any, any, any, any>,
+    // as written: the limits connections make live in the model, not in the definition
+    def: given as ModelDef<any, any, any, any, any>,
     title: def.title,
     load: def.load,
     params: paramList,
@@ -878,7 +882,15 @@ function context(
       const cap = def.components[c]!.capacity
       return typeof cap === 'function' ? cap(ctx as any) : cap
     })
-  const enabled = (c: string) => memo(`${c} enabled`, () => def.components[c]!.when?.(ctx as any) ?? true)
+  const enabled = (c: string): boolean =>
+    memo(`${c} enabled`, () => {
+      // a limit a connection's max makes is off with the component of the stage it counts against
+      const head = Object.hasOwn(def.connections ?? {}, c) ? def.connections![c] : undefined
+      const target = head?.max != null ? opener(stages, head)?.target : undefined
+      const of = target == null ? undefined : (stages[target] as { component?: string }).component
+      if (of != null && !enabled(of)) return false
+      return def.components[c]!.when?.(ctx as any) ?? true
+    })
   /** The seconds a unit of each flow holds one of the component's slots; null when it does not count slots. */
   const held = (c: string) =>
     memo(`held of ${c}`, () => {
@@ -1370,6 +1382,8 @@ function context(
   }
   ctx.demand = table(componentIds, (c) =>
     memo(`demand of ${c}`, () => {
+      const opened = counted(c)
+      if (opened) return opened.reduce((a, o) => a + o.members * o.open, 0)
       const h = held(c)
       if (h) {
         // Little's law: the slots in use are what arrives each second times how long each unit holds one
@@ -1397,6 +1411,27 @@ function context(
     }),
   )
   const connections = (def.connections ?? {}) as Readonly<Record<string, ConnectionDef>>
+  /**
+   * For the limit a connection's max makes: what each connection into its stage opens, the members of its pool at
+   * these values (the pods an autoscaler runs, from the plain utilization) times what each keeps open.
+   */
+  const counted = (c: string) => {
+    const head = Object.hasOwn(connections, c) ? connections[c]! : undefined
+    if (head?.max == null) return null
+    return memo(`connections open for ${c}`, () => {
+      const target = opener(stages, head)!.target
+      const out: { id: string; members: number; open: number; owner: 'worker' | 'pod' }[] = []
+      for (const [k, cn] of Object.entries(connections)) {
+        const o = opener(stages, cn)
+        if (cn.open == null || o?.target !== target) continue
+        const st = stages[o.pool] as Extract<StageDef, { kind: 'workers' }>
+        const { running } = podsOf(o.pool, st, ctx, plain(st.component))
+        const owner = cn.owner ?? 'worker'
+        out.push({ id: k, members: owner === 'pod' ? running : running * dyn(st.perPod, ctx), open: openOf(k), owner })
+      }
+      return out
+    })
+  }
   // the components an exclusive connection spreads over: only these pay for a spread (utilization is the hot path)
   const spreading = new Set(
     Object.values(connections)
@@ -1563,11 +1598,32 @@ function context(
     if (cn.assign === 'exclusive') {
       const part = stages[cn.from]!.kind === 'queue' ? 'partition' : 'part'
       const turn = pool && owner === 'worker' ? 'workers alternating pods' : `${owner}s`
-      return `Each ${part} of ${from}${which} is read by one ${owner} of ${to} (exclusive). The ${part}s are dealt in turn to ${turn}: the most even case.`
+      return `Each ${part} of ${from}${which} is read by one ${owner} of ${to} (exclusive). The ${part}s are dealt in turn to ${turn}: the most even case.${opens(k)}`
     }
-    return pool
+    // one written only to count says what it counts, not a rule nobody set
+    if (cn.assign == null && (cn.open != null || cn.max != null)) {
+      const target = opener(stages, cn)?.target
+      const label = target == null ? to : (stages[target]!.label ?? target)
+      return opens(k).trim() || `It gives the most ${label} accepts: the limit on the connections open to it.`
+    }
+    const rule = pool
       ? `Any ${owner} of ${to} takes any unit from ${from}${which} (shared).`
       : `${capital(to)} takes the units from ${from}${which} evenly (shared).`
+    return rule + opens(k)
+  }
+  /** What a connection keeps open per member, checked: a count from 0 up. */
+  const openOf = (k: string) => {
+    const open = dyn(connections[k]!.open!, ctx)
+    if (!(open >= 0)) throw new Error(`loadmap: connection "${k}" keeps ${open} connections open: a count from 0 up`)
+    return open
+  }
+  /** " Each pod keeps 20 connections open to db." */
+  const opens = (k: string) => {
+    const cn = connections[k]!
+    const o = opener(stages, cn)
+    if (cn.open == null || !o) return ''
+    const n = openOf(k)
+    return ` Each ${cn.owner ?? 'worker'} of ${stages[o.pool]!.label ?? o.pool} keeps ${fmt(n)} connection${n === 1 ? '' : 's'} open to ${stages[o.target]!.label ?? o.target}.`
   }
   ctx.util = table(componentIds, (c) =>
     memo(`utilization of ${c}`, () => {
@@ -1592,7 +1648,13 @@ function context(
     paths,
     retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
-    describe: (c: string) => text(def.components[c]!.describe),
+    describe: (c: string) => {
+      const opened = counted(c)
+      if (!opened) return text(def.components[c]!.describe)
+      // "3 pods × 20 = 60 open"
+      const parts = opened.map((o) => `${fmt(o.members)} ${o.owner}${o.members === 1 ? '' : 's'} × ${fmt(o.open)}`)
+      return `${parts.join(' + ')} = ${fmt(opened.reduce((a, o) => a + o.members * o.open, 0))} open`
+    },
     held,
     holders,
     timedOut,
@@ -1635,6 +1697,29 @@ function perWay(
   return [...out.values()].map((e) => ({ ...e.tag, timedOut: e.share > 0 ? e.late / e.share : e.first }))
 }
 
+/** The definition with a component for each connection that gives max: the connections open against it. */
+function withCounts<T extends ModelDef<any, any, any, any, any>>(def: T): T {
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  if (!all.some(([, cn]) => cn.max != null)) return def
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const components: Record<string, ComponentDef<any>> = { ...def.components }
+  for (const [k, cn] of all) {
+    const o = cn.max == null || Object.hasOwn(components, k) ? undefined : opener(stages, cn)
+    if (!o) continue
+    const label = stages[o.target]?.label ?? o.target
+    components[k] = {
+      name: `Connections to ${label}`,
+      short: `the connections to ${label}`,
+      plural: true,
+      // worked out where the pods are known: the members of each pool times what each keeps open
+      demand: () => 0,
+      capacity: cn.max!,
+      over: `new connections to ${label} are refused`,
+    }
+  }
+  return { ...def, components }
+}
+
 /** A count of parts or members: a whole number from 1 up. */
 function whole(n: number, who: string, what: string): number {
   if (!(Number.isInteger(n) && n >= 1))
@@ -1656,7 +1741,9 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
     const from = stages[cn.from]!
     const to = stages[cn.to]!
     const pool = to.kind === 'workers'
-    if (!pool && (cn.owner != null || cn.capacityPer != null))
+    // owner is a member of the pool after (exclusive) or of the pool that opens (counts); capacityPer only the first
+    const opens = cn.open != null && from.kind === 'workers'
+    if (!pool && (cn.capacityPer != null || (cn.owner != null && !opens)))
       throw new Error(`${at} names owner or capacityPer, but "${cn.to}" is not a pool: give it members`)
     if (cn.owner === 'pod' && cn.capacityPer === 'worker')
       throw new Error(
@@ -1678,6 +1765,32 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
         `${at} spreads parts over "${cn.to}", but its component "${c}" also runs "${also}": give "${cn.to}" a component of its own`,
       )
   }
+  // connections counted against a stage: one of those into it gives max, and those that open need it
+  for (const [k, cn] of all) {
+    if (cn.open == null && cn.max == null) continue
+    const o = opener(stages, cn)
+    if (!o)
+      throw new Error(
+        `loadmap: connection "${k}" counts connections, but neither "${cn.from}" nor "${cn.to}" is a pool to open them`,
+      )
+    // between two pools, owner is a member of the pool after: it cannot also be one of the pool that opens
+    if (cn.open != null && cn.owner != null && cn.assign === 'exclusive' && o.pool !== cn.to)
+      throw new Error(
+        `loadmap: connection "${k}" opens from "${o.pool}" and spreads over "${cn.to}": owner cannot name a member of both; give the counting its own connection`,
+      )
+    const into = all.filter(([, x]) => (x.open != null || x.max != null) && opener(stages, x)?.target === o.target)
+    const maxes = into.filter(([, x]) => x.max != null).map(([j]) => j)
+    if (maxes.length > 1)
+      throw new Error(
+        `loadmap: connections "${maxes[0]}" and "${maxes[1]}" both give the most "${o.target}" accepts: give max on one`,
+      )
+    if (!maxes.length)
+      throw new Error(
+        `loadmap: connection "${k}" opens connections to "${o.target}", but none into it gives max: the most it accepts`,
+      )
+    if (!into.some(([, x]) => x.open != null))
+      throw new Error(`loadmap: connection "${k}" gives max, but none into "${o.target}" opens any: give open`)
+  }
   // the flows that can go from one stage straight to the other; a split may send a flow any way its branches go, so a
   // route through one is checked where the values pick a way
   const routes = def.routes as Readonly<Record<string, readonly string[]>>
@@ -1690,18 +1803,22 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
     return r.at(-1) === from && stages[from]?.kind === 'fanout'
   }
   const may = (cn: ConnectionDef) => flowIds.filter((f) => mayGo(f, cn.from, cn.to))
+  // a connection that only counts what it holds open needs no flow on its hop: a pool keeps connections it may not use
+  const countsOnly = (cn: ConnectionDef) =>
+    cn.assign !== 'exclusive' && cn.flows == null && (cn.open != null || cn.max != null)
   for (const [k, cn] of all) {
     for (const f of cn.flows ?? [])
       if (!mayGo(f, cn.from, cn.to))
         throw new Error(
           `loadmap: connection "${k}" covers "${f}", which does not go from "${cn.from}" straight to "${cn.to}"`,
         )
+    if (countsOnly(cn)) continue
     if (!may(cn).length)
       throw new Error(
         `loadmap: connection "${k}" joins "${cn.from}" to "${cn.to}", but no flow goes from one straight to the other`,
       )
     for (const [j, other] of all) {
-      if (j <= k || other.from !== cn.from || other.to !== cn.to) continue
+      if (j <= k || other.from !== cn.from || other.to !== cn.to || countsOnly(other)) continue
       const both = (cn.flows ?? may(cn)).find((f) => (other.flows ?? may(other)).includes(f))
       if (both)
         throw new Error(

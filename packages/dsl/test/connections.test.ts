@@ -1,4 +1,4 @@
-import { defineModel, measured, p, queue, workers } from '@loadmap/core'
+import { type ComponentResult, defineModel, measured, p, queue, workers } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, format, hover, quickFixes, rename } from '../src'
 
@@ -121,6 +121,30 @@ describe('connections in the language', () => {
     const src = SRC.replace('  hop: topic -> pool\n', '')
     const [fix] = quickFixes(src, compile(src).diagnostics)[0]!
     expect(fix?.changes.map((c) => c.insert).join('')).toContain('hop: topic -> pool')
+  })
+
+  it('counts what a connection holds open against the most the other side accepts', () => {
+    const src = SRC.replace(
+      'connection group {',
+      'connection brokerPool {\n  hop: topic -> pool\n  owner: pod\n  open: 3\n  max: configured(100, "connections", "max.connections")\n  flows: [events]\n}\n\nconnection group {',
+    )
+    expect(format(src).text).toBe(src)
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    const c = (r.definition!.model.evaluate({ load: 1 }).components as Record<string, ComponentResult>).brokerPool!
+    // 4 pods × 3 connections to the brokers
+    expect(c.name).toBe('Connections to topic')
+    expect(c.demand).toBe(12)
+    expect(c.describe).toBe('4 pods × 3 = 12 open')
+    // its id is a limit's: expect and formulas read it
+    const held = src.replace(
+      'shop -> kafka',
+      'expect "The brokers take the consumers" { component: brokerPool; full: 100 }\nlet open = demand.brokerPool\n\nshop -> kafka',
+    )
+    expect(errors(held)).toEqual([])
+    // and a rename follows it there
+    const renamed = rename(held, held.indexOf('connection brokerPool') + 'connection '.length, 'brokerLinks')
+    expect('source' in renamed && renamed.source).toBe(held.replaceAll('brokerPool', 'brokerLinks'))
   })
 
   it("puts what the model refuses on the connection's line", () => {
