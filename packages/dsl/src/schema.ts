@@ -870,8 +870,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         inspector: 'main',
         value: 'enum',
         scope: 'const',
-        values: ['shared', 'exclusive'],
-        doc: 'shared (the default), or exclusive: each part is read by one member only.',
+        values: ['shared', 'exclusive', 'key', 'leader'],
+        doc: 'shared (the default); exclusive: each part read by one member; key: each unit to its part, part i on member i mod members; leader: every unit to one member.',
       },
       owner: {
         value: 'enum',
@@ -890,7 +890,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'ctx',
         doc: 'Parts of each flow, when the stage in front is no queue.',
       },
-      members: { value: 'number', scope: 'ctx', doc: 'Members of the stage after, when it is no pool.' },
+      members: {
+        value: 'number',
+        scope: 'ctx',
+        doc: "Members of the stage after, when it is no pool. A cluster's members for its queues.",
+      },
       flows: {
         value: 'flows',
         scope: 'const',
@@ -906,6 +910,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'ctx',
         doc: 'The most connections the other side accepts: a limit named by this connection.',
       },
+      skew: { value: 'capacity', scope: 'ctx', doc: "With key: a flow's share on its hottest part." },
     },
     children: [],
   },

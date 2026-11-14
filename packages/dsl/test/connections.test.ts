@@ -84,7 +84,7 @@ describe('connections in the language', () => {
     expect(errors(swap('hop: topic -> pool', 'hop: topic'))).toEqual(['error: a hop is two stages: from -> to'])
     expect(errors(swap('hop: topic -> pool', 'hop: topic -> nowhere'))).toEqual(['error: unknown stage "nowhere"'])
     expect(errors(swap('assign: exclusive', 'assign: sticky'))).toEqual([
-      'error: "sticky" is not one of shared, exclusive',
+      'error: "sticky" is not one of shared, exclusive, key, leader',
     ])
     expect(errors(swap('flows: [orders]', 'flows: [order]'))).toEqual([
       'error: unknown flow "order" | did you mean "orders"?',
@@ -145,6 +145,44 @@ describe('connections in the language', () => {
     // and a rename follows it there
     const renamed = rename(held, held.indexOf('connection brokerPool') + 'connection '.length, 'brokerLinks')
     expect('source' in renamed && renamed.source).toBe(held.replaceAll('brokerPool', 'brokerLinks'))
+  })
+
+  it("sends by key to a cluster's queue: its members by default, a hot key's share on partition 0", () => {
+    const src = `loadmap 1
+load { max: 100 }
+
+flow orders "orders" { rate: 100 * load; from: shop; route: gateway -> topic }
+
+node shop "Shop"
+node gateway "Gateway" {
+  pass
+  capacity: estimated(100_000, "req/s")
+  over: "x"
+}
+cluster kafka "Kafka" {
+  members: 5
+  queue topic { partitions { orders: 12 } }
+  capacity: estimated(1_000, "orders/s")
+  over: "producers wait"
+}
+
+connection produce {
+  hop: gateway -> topic
+  assign: key
+  skew: estimated(0.25, "share", "busiest customer")
+}
+
+shop -> gateway
+gateway -> kafka
+`
+    expect(format(src).text).toBe(src)
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    const ev = r.definition!.model.evaluate({ load: 1 })
+    // 12 partitions on the cluster's 5 members; member 0 holds 0, 5 and 10, a quarter of the orders on 0
+    expect(ev.components.kafka!.util).toBeCloseTo(0.1 * (0.25 + 2 * (0.75 / 11)) * 5, 12)
+    const topic = ev.stages.topic!
+    expect(topic.kind === 'queue' && topic.skew).toEqual({ orders: 0.25 })
   })
 
   it("puts what the model refuses on the connection's line", () => {

@@ -6,8 +6,11 @@ import type { Dyn, StageDef } from './stages'
  * shared: any member of the stage takes any unit (the default, and what a stage does without a connection).
  * exclusive: each part (a partition of the queue in front, or one of `parts`) is read by one member only: a Kafka
  * consumer group, a single active consumer. Members beyond the parts read nothing.
+ * key: each unit goes to the part its key hashes to (a partition of the queue it reaches, or one of `parts`), and part
+ * i of each flow sits on member i mod `members` of that stage: a producer's key, a cluster's slots or shards.
+ * leader: every unit goes to one member of that stage: a Raft leader, a primary, a queue's one node.
  */
-export type Assign = 'shared' | 'exclusive'
+export type Assign = 'shared' | 'exclusive' | 'key' | 'leader'
 
 /** One member of a pool: a worker, or a pod with its workers. */
 export type Member = 'worker' | 'pod'
@@ -46,6 +49,8 @@ export interface ConnectionDef<S extends string = string, F extends string = str
    * makes a limit of its own, named by this connection's id: the connections open against it.
    */
   max?: Capacity | ((ctx: any) => Capacity)
+  /** With key: the share of a flow on its hottest part, measured or estimated: a hot key, a hot tenant. */
+  skew?: Capacity | ((ctx: any) => Capacity)
 }
 
 /** How unevenly the work lands on a component's members. */
@@ -91,6 +96,10 @@ export interface Work {
   parts: number | null
   /** The stage whose parts these are: the queue in front, for an exclusive flow. */
   from?: string
+  /** The share on part 0, the hottest; the others share the rest evenly. Without one, every part is even. */
+  skew?: number
+  /** Part 0 of this flow goes to owner 0 again (partition i on member i mod n), instead of dealing on in turn. */
+  restart?: boolean
 }
 
 export interface Spreading {
@@ -107,6 +116,8 @@ export interface Spreading {
   owners: ReadonlyMap<string, readonly number[]>
   /** Each owner's share of the work of the exclusive flows, of all the work. */
   owned: readonly number[]
+  /** Each unit's share of each flow: the parts it has of an exclusive one, an even share of a shared one. */
+  flows: readonly ReadonlyMap<string, number>[]
 }
 
 /**
@@ -118,23 +129,30 @@ export function spreadOver(shape: Shape, work: readonly Work[]): Spreading {
   const share = new Array<number>(units).fill(0)
   const owned = new Array<number>(owners).fill(0)
   const counts = Array.from({ length: units }, () => new Map<string, number>())
+  const flows = Array.from({ length: units }, () => new Map<string, number>())
   const of = new Map<string, number[]>()
   const total = work.reduce((a, w) => a + w.weight, 0)
   let dealt = 0
   for (const w of work) {
     const weight = total > 0 ? w.weight / total : 1 / work.length
     if (w.parts == null) {
-      for (let u = 0; u < units; u++) share[u]! += weight / units
+      for (let u = 0; u < units; u++) {
+        share[u]! += weight / units
+        flows[u]!.set(w.flow, 1 / units)
+      }
       continue
     }
     const list: number[] = []
-    for (let p = 0; p < w.parts; p++, dealt++) {
-      const o = dealt % owners
+    for (let p = 0; p < w.parts; p++) {
+      const o = (w.restart ? p : dealt++) % owners
       const u = unitOf(o)
+      // the hottest part takes the skew, the rest share what is left
+      const part = w.skew == null || w.parts === 1 ? 1 / w.parts : p === 0 ? w.skew : (1 - w.skew) / (w.parts - 1)
       list.push(o)
-      owned[o]! += weight / w.parts
-      share[u]! += weight / w.parts
+      owned[o]! += weight * part
+      share[u]! += weight * part
       counts[u]!.set(w.flow, (counts[u]!.get(w.flow) ?? 0) + 1)
+      flows[u]!.set(w.flow, (flows[u]!.get(w.flow) ?? 0) + part)
     }
     of.set(w.flow, list)
   }
@@ -150,6 +168,7 @@ export function spreadOver(shape: Shape, work: readonly Work[]): Spreading {
     counts,
     owners: of,
     owned,
+    flows,
   }
 }
 
@@ -158,7 +177,7 @@ export function spreadText(
   s: Spreading,
   shape: Shape,
   work: readonly Work[],
-  o: { short: string; plural: boolean; part: string },
+  o: { short: string; plural: boolean; part: string; mode?: 'read' | 'key' | 'leader' },
 ): string | null {
   if (s.factor === 1 && s.idle === 0) return null
   const exclusive = work.filter((w) => w.parts != null)
@@ -166,11 +185,15 @@ export function spreadText(
   if (s.factor > 1) {
     const runs = `${o.short} ${o.plural ? 'run' : 'runs'} out at ${pct(1 / s.factor)} of ${o.plural ? 'their' : 'its'} capacity`
     const only = exclusive.length === 1 && exclusive.length === work.length ? exclusive[0]! : null
+    const skewed = only?.skew != null
     out.push(
-      only
-        ? `The busiest ${shape.unit} reads ${s.busiest.get(only.flow) ?? 0} of ${only.parts} ${plural(o.part, only.parts!)}: ${runs}.`
-        : `The busiest ${shape.unit} carries ${Math.round(s.factor * 100) / 100} × its share: ${runs}.`,
+      o.mode === 'leader'
+        ? `Every unit goes to the leader, one of ${shape.units} ${plural(shape.unit, shape.units)}: ${runs}.`
+        : only && !skewed
+          ? `The busiest ${shape.unit} ${o.mode === 'key' ? 'holds' : 'reads'} ${s.busiest.get(only.flow) ?? 0} of ${only.parts} ${plural(o.part, only.parts!)}: ${runs}.`
+          : `The busiest ${shape.unit} carries ${Math.round(s.factor * 100) / 100} × its share: ${runs}.`,
     )
+    for (const w of exclusive) if (w.skew != null) out.push(`The hottest key carries ${pct(w.skew)} of ${w.flow}.`)
   }
   if (s.idle > 0) {
     const none = `${s.idle} of ${shape.owners} ${plural(shape.owner, shape.owners)} read no ${o.part}`

@@ -609,6 +609,7 @@ class Compiler {
 
     const connections: Record<string, Record<string, unknown>> = {}
     const connectionNames = new Map<string, Span>()
+    const clusterMembers = new Map<string, unknown>()
     for (const b of byKind('connection')) {
       const id = b.args.id
       if (!id) continue
@@ -618,7 +619,15 @@ class Compiler {
         this.report.error(id, `"${id.name}" names a component too: give the connection its own name`)
       // a name refused above (taken, or one every object has) builds nothing
       if (this.report.list.length > errors) continue
-      const def = this.connection(b, resolveStage, flowNames)
+      // a key or a leader on a cluster's queue: the cluster's members unless it names its own, compiled once a cluster
+      const membersOf = (stage: string) => {
+        const box = stageOf.get(stage)?.box
+        if (box?.block.keyword !== 'cluster') return undefined
+        if (!clusterMembers.has(box.id))
+          clusterMembers.set(box.id, this.dynProp<number>(box.block, 'members', 'number'))
+        return clusterMembers.get(box.id)
+      }
+      const def = this.connection(b, resolveStage, flowNames, membersOf)
       if (!def) continue
       this.connectionAt.set(id.name, id)
       connections[id.name] = def
@@ -850,6 +859,7 @@ class Compiler {
     b: Block,
     resolveStage: (n: Ident, what: string) => string | undefined,
     flowNames: Map<string, Span>,
+    membersOf: (stage: string) => unknown,
   ): Record<string, unknown> | undefined {
     const hop = this.prop(b, 'hop')
     if (!hop) return undefined
@@ -869,8 +879,14 @@ class Compiler {
       const v = this.dynProp<number>(b, k, 'number')
       if (v !== undefined) def[k] = v
     }
-    const max = this.prop(b, 'max')
-    if (max) def.max = this.dyn(max.value, 'capacity', 'ctx', checkCapacity)
+    for (const k of ['max', 'skew']) {
+      const p = this.prop(b, k)
+      if (p) def[k] = this.dyn(p.value, 'capacity', 'ctx', checkCapacity)
+    }
+    if ((def.assign === 'key' || def.assign === 'leader') && def.members === undefined) {
+      const m = membersOf(to)
+      if (m !== undefined) def.members = m
+    }
     const flows = this.prop(b, 'flows')
     if (flows) {
       if (flows.value.t !== 'array') this.report.error(flows.value, 'a list of flows: [orders, events]')

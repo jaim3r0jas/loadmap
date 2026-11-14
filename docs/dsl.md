@@ -738,6 +738,22 @@ connection dbPool {
 An autoscaled pool opens more as it adds pods, so this limit runs out at a load: 20 a pod reach 100 at the fifth pod.
 One connection into a stage gives `max`; the others into it only `open`.
 
+The stage a connection reaches can be uneven too. `assign: key` sends each unit to the part its key hashes to,
+partition i of each flow on member i mod `members` of that stage (a cluster's queue takes the cluster's members):
+12 partitions on 5 brokers put 3 on the busiest, which runs out at 80 % of the cluster's capacity. `skew` is the share
+of a flow on its hottest key, measured or estimated, and on the board that share of the dots lands on partition 0.
+`assign: leader` sends every unit to one member: a Raft leader, a primary. Both apply to a capacity you measured or
+estimated for the whole stage; a published figure keeps its number, since its run spread the work its own way, and
+the limits list says what the key would have done:
+
+```
+connection produce {
+  hop: gateway -> topic
+  assign: key
+  skew: estimated(0.25, "share", "busiest customer")
+}
+```
+
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
@@ -1620,14 +1636,15 @@ After the keyword: id.
 | Property | Value | |
 | --- | --- | --- |
 | `hop` (required) | route, constant | The two stages it joins: from -> to. |
-| `assign` | `shared` \| `exclusive` | shared (the default), or exclusive: each part is read by one member only. |
+| `assign` | `shared` \| `exclusive` \| `key` \| `leader` | shared (the default); exclusive: each part read by one member; key: each unit to its part, part i on member i mod members; leader: every unit to one member. |
 | `owner` | `worker` \| `pod` | What owns a part in a pool. Default worker. |
 | `capacityPer` | `worker` \| `pod` | What the capacity divides over. Default the owner. |
 | `parts` | number, formula | Parts of each flow, when the stage in front is no queue. |
-| `members` | number, formula | Members of the stage after, when it is no pool. |
+| `members` | number, formula | Members of the stage after, when it is no pool. A cluster's members for its queues. |
 | `flows` | flows, constant | The flows it covers. Default every flow on the hop. |
 | `open` | number, formula | Connections each member of the pool on the hop keeps open to the other side. |
 | `max` | capacity, formula | The most connections the other side accepts: a limit named by this connection. |
+| `skew` | capacity, formula | With key: a flow's share on its hottest part. |
 
 ### thresholds
 

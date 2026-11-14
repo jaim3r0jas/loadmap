@@ -105,6 +105,36 @@ describe('queues', () => {
     ])
   })
 
+  it("put a hot key's share of the units on partition 0", () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load } },
+      components: {
+        gate: { name: 'Gate', capacity: measured(10_000, 'u/s'), over: '' },
+        brokers: { name: 'Brokers', capacity: measured(10_000, 'u/s'), over: '' },
+      },
+      stages: { gate: pass('gate'), topic: queue({ partitions: { a: 4 }, component: 'brokers' }) },
+      routes: { a: ['gate', 'topic'] },
+      connections: { produce: { from: 'gate', to: 'topic', assign: 'key', members: 2, skew: measured(0.5, 'share') } },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { seed: 5, speed: 10 })
+    const seen = new Map<number, number>()
+    const counted = new Set<number>()
+    for (let i = 0; i < 1200; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.to.stage === 'topic' && !counted.has(d.id)) {
+          counted.add(d.id)
+          seen.set(d.to.cell!, (seen.get(d.to.cell!) ?? 0) + 1)
+        }
+    }
+    const total = [...seen.values()].reduce((a, n) => a + n, 0)
+    expect(total).toBeGreaterThan(200)
+    // half on partition 0, a sixth on each of the others
+    expect((seen.get(0) ?? 0) / total).toBeGreaterThan(0.4)
+    expect((seen.get(0) ?? 0) / total).toBeLessThan(0.6)
+  })
+
   it('grow over capacity: the oldest unit ages at (λ − μ) / λ', () => {
     // λ = 200, μ = 100: after 120 s, 12,000 units wait and the oldest arrived at 60 s
     const sim = run(pipeline({ a: 0, b: 200, cap: 100 }), 120)

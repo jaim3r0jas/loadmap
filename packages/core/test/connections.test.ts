@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  type Capacity,
   type ComponentResult,
   type ConnectionDef,
   configured,
@@ -9,6 +10,7 @@ import {
   measured,
   p,
   pass,
+  published,
   queue,
   type StageDef,
   sink,
@@ -16,6 +18,7 @@ import {
   store,
   workers,
 } from '../src'
+import { kafka as kafkaCatalog } from '../src/catalog'
 
 type Shape = {
   partitions?: number
@@ -429,7 +432,7 @@ describe("an exclusive pool's flows", () => {
       },
     })
     expect(() => m.evaluate()).toThrow(
-      'loadmap: connections "a" and "b" both bring "orders" into "pool": a flow reaches an exclusive stage through one connection',
+      'loadmap: connections "a" and "b" both bring "orders" into "pool": a flow reaches a spread stage through one connection',
     )
   })
 
@@ -670,5 +673,150 @@ describe('connections counted against a stage', () => {
     expect(plain).toThrow(
       'loadmap: connection "x" counts connections, but neither "in" nor "db" is a pool to open them',
     )
+  })
+})
+
+describe('a key or a leader on the stage it reaches', () => {
+  // 100 orders/s into a topic of 12 partitions; the brokers take 1,000 at most, their figure for the whole cluster
+  const topic = (
+    cn: Partial<ConnectionDef<'gateway' | 'topic', 'orders'>>,
+    capacity: Capacity = estimated(1_000, 'orders/s'),
+  ) =>
+    defineModel({
+      load: p.load({ max: 100 }),
+      flows: { orders: { rate: ({ load }) => 100 * load } },
+      components: {
+        gateway: { name: 'Gateway', capacity: estimated(100_000, 'req/s'), over: 'x' },
+        brokers: { name: 'Brokers', capacity, over: 'x' },
+      },
+      stages: { gateway: pass('gateway'), topic: queue({ partitions: { orders: 12 }, component: 'brokers' }) },
+      routes: { orders: ['gateway', 'topic'] },
+      connections: { produce: { from: 'gateway', to: 'topic', ...cn } as ConnectionDef<'gateway' | 'topic', 'orders'> },
+    })
+
+  it('puts partition i of a flow on member i mod n: the busiest member bounds the stage', () => {
+    // 12 partitions on 5 brokers: 3, 3, 2, 2, 2
+    const ev = topic({ assign: 'key', members: 5 }).evaluate({ load: 1 })
+    expect(ev.components.brokers.util).toBeCloseTo(0.1 * ((3 / 12) * 5), 12)
+    expect(ev.components.brokers.spread?.text).toBe(
+      'The busiest member holds 3 of 12 partitions: Brokers runs out at 80 % of its capacity.',
+    )
+    expect(ev.assumptions.find((a) => a.kind === 'connection')).toMatchObject({
+      text: 'Each unit goes to the partition its key hashes to; partition i of each flow sits on member i mod 5 of topic (key). Every key as busy as another.',
+    })
+    // 12 on 4 or 6 spread evenly
+    expect(topic({ assign: 'key', members: 4 }).evaluate({ load: 1 }).components.brokers.spread).toBeUndefined()
+  })
+
+  it('puts a hot key on its partition', () => {
+    // a quarter of the orders on partition 0; member 0 also holds 4 and 8
+    const ev = topic({ assign: 'key', members: 4, skew: estimated(0.25, 'share', 'busiest customer') }).evaluate({
+      load: 1,
+    })
+    const busiest = 0.25 + 2 * (0.75 / 11)
+    expect(ev.components.brokers.util).toBeCloseTo(0.1 * busiest * 4, 12)
+    expect(ev.components.brokers.spread?.text).toBe(
+      'The busiest member carries 1.55 × its share: Brokers runs out at 65 % of its capacity. The hottest key carries 25 % of orders.',
+    )
+  })
+
+  it('sends every unit to the leader', () => {
+    const ev = topic({ assign: 'leader', members: 3 }).evaluate({ load: 1 })
+    expect(ev.components.brokers.util).toBeCloseTo(0.1 * 3, 12)
+    expect(ev.components.brokers.spread?.text).toBe(
+      'Every unit goes to the leader, one of 3 members: Brokers runs out at 33 % of its capacity.',
+    )
+  })
+
+  it('leaves a published figure as published, and says so', () => {
+    const fig = published(kafkaCatalog, { brokers: 3, replication: 3, acks: 'all', messageSize: '1 KB', producers: 4 })
+    const ev = topic({ assign: 'key', members: 5 }, fig).evaluate({ load: 1 })
+    expect(ev.components.brokers.spread).toEqual({
+      factor: 1,
+      text: 'The busiest member holds 3 of 12 partitions. Brokers keeps its published figure: its run spread the work its own way.',
+    })
+    expect(ev.components.brokers.util).toBeCloseTo(ev.components.brokers.demand! / fig.value, 12)
+  })
+
+  it('is refused where it cannot be', () => {
+    expect(() => topic({ assign: 'key' })).toThrow(
+      'loadmap: connection "produce" needs members: the members of "topic" its parts sit on',
+    )
+    expect(() => topic({ assign: 'key', members: 3, parts: 4 })).toThrow(
+      'loadmap: connection "produce": the parts of queue "topic" are its partitions; leave parts out',
+    )
+    expect(() => topic({ assign: 'exclusive', skew: estimated(0.5, 'share') } as never)).toThrow(
+      'loadmap: connection "produce" gives skew, which only a key connection has',
+    )
+    expect(() => topic({ assign: 'key', members: 4, skew: estimated(1.5, 'share') }).evaluate()).toThrow(
+      'loadmap: connection "produce" puts 1.5 of a flow on its hottest part: a share from 0 to 1',
+    )
+    expect(() => topic({ assign: 'leader', members: 3, parts: 2 } as never)).toThrow(
+      'loadmap: connection "produce": a leader takes every unit on one member; leave parts out',
+    )
+    // a skew below an even part, as when a control lowers the partitions, is an even spread
+    expect(
+      topic({ assign: 'key', members: 4, skew: estimated(0.05, 'share') }).evaluate().components.brokers.spread,
+    ).toBeUndefined()
+  })
+
+  it('reads a skew at the pessimistic edge of its ±', () => {
+    const m = topic({ assign: 'key', members: 4, skew: estimated(0.25, 'share', { within: 0.2 }) })
+    // every capacity at its low bound: the hottest key at 30 %
+    const pessimistic = 0.3 + 2 * (0.7 / 11)
+    expect(m.utilization({ load: 1 }, 'low').brokers).toBeCloseTo(0.1 * pessimistic * 4, 9)
+  })
+
+  it('weighs each flow at the topic it reaches, on a cluster of several', () => {
+    // two topics of one cluster, fed from one gateway
+    const g = defineModel({
+      load: p.load({ max: 100 }),
+      flows: { a: { rate: 100 }, b: { rate: 300 } },
+      components: {
+        gateway: { name: 'Gateway', capacity: estimated(100_000, 'req/s'), over: 'x' },
+        brokers: { name: 'Brokers', capacity: estimated(1_000, 'u/s'), over: 'x' },
+      },
+      stages: {
+        gw: pass('gateway'),
+        ta: queue({ partitions: { a: 3 }, component: 'brokers' }),
+        tb: queue({ partitions: { b: 4 }, component: 'brokers' }),
+      },
+      routes: { a: ['gw', 'ta'], b: ['gw', 'tb'] },
+      connections: {
+        ka: { from: 'gw', to: 'ta', assign: 'key', members: 4 },
+        kb: { from: 'gw', to: 'tb', assign: 'key', members: 4 },
+      },
+    })
+    // a is a quarter of the work, on 3 of 4 members; b three quarters, even: the busiest has 1/12 + 3/16
+    expect(g.evaluate().components.brokers.util).toBeCloseTo(0.4 * (0.25 / 3 + 0.75 / 4) * 4, 12)
+  })
+
+  it('lands a hot key on the worker that reads its partition', () => {
+    const m = defineModel({
+      load: p.load({ max: 100 }),
+      flows: { orders: { rate: 100 } },
+      components: {
+        gateway: { name: 'Gateway', capacity: estimated(100_000, 'req/s'), over: 'x' },
+        brokers: { name: 'Brokers', capacity: estimated(100_000, 'u/s'), over: 'x' },
+        consumer: { name: 'Consumer', capacity: measured(400, 'u/s'), over: 'x' },
+      },
+      stages: {
+        gw: pass('gateway'),
+        topic: queue({ partitions: { orders: 4 }, component: 'brokers' }),
+        pool: workers('consumer', { pods: 1, perPod: 4 }),
+      },
+      routes: { orders: ['gw', 'topic', 'pool'] },
+      connections: {
+        produce: { from: 'gw', to: 'topic', assign: 'key', members: 2, skew: estimated(0.4, 'share') },
+        consume: { from: 'topic', to: 'pool', assign: 'exclusive' },
+      },
+    })
+    const ev = m.evaluate()
+    // the worker that reads partition 0 has 40 % of the orders: 1.6 × its share
+    expect(ev.components.consumer.util).toBeCloseTo(0.25 * 1.6, 12)
+    const pool = ev.stages.pool
+    expect(pool.kind === 'workers' && pool.assignment?.weights.map((w) => Math.round(w * 100))).toEqual([
+      40, 20, 20, 20,
+    ])
   })
 })
