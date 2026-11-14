@@ -754,6 +754,13 @@ connection produce {
 }
 ```
 
+The catalog says how callers connect to each of its components, from their documentation: `rule:
+"kafka/consumer-group"` gives a connection that rule's `assign` and `owner` (what the connection writes wins), and
+the assumptions cite its source. Autocomplete lists every rule. A setting's documented default is a figure taken by
+its name only, never matched to a configuration: PostgreSQL's 97 connections (its 100, less the 3 kept for
+superusers) are `published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }`, for `max: dbMax`. In TypeScript, `rule(kafka, 'kafka/consumer-group')` and
+`published(postgresql, { figure: 'max-connections' })`.
+
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
@@ -1645,6 +1652,7 @@ After the keyword: id.
 | `open` | number, formula | Connections each member of the pool on the hop keeps open to the other side. |
 | `max` | capacity, formula | The most connections the other side accepts: a limit named by this connection. |
 | `skew` | capacity, formula | With key: a flow's share on its hottest part. |
+| `rule` | string, constant | A rule from the catalog, "kafka/consumer-group": its assign and owner unless written, its source cited. |
 
 ### thresholds
 

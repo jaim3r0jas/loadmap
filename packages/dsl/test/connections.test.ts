@@ -1,6 +1,6 @@
 import { type ComponentResult, defineModel, measured, p, queue, workers } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
-import { compile, format, hover, quickFixes, rename } from '../src'
+import { compile, completions, format, hover, loadCatalog, needsCatalog, quickFixes, rename } from '../src'
 
 const SRC = `loadmap 1
 load { max: 100 }
@@ -183,6 +183,38 @@ gateway -> kafka
     expect(ev.components.kafka!.util).toBeCloseTo(0.1 * (0.25 + 2 * (0.75 / 11)) * 5, 12)
     const topic = ev.stages.topic!
     expect(topic.kind === 'queue' && topic.skew).toEqual({ orders: 0.25 })
+  })
+
+  it('takes a rule from the catalog: its assign and owner, its source cited', async () => {
+    await loadCatalog()
+    expect(needsCatalog('connection g {\n  rule: "kafka/consumer-group"\n}')).toBe(true)
+    const src = SRC.replace('  assign: exclusive\n', '  rule: "kafka/consumer-group"\n')
+    expect(format(src).text).toBe(src)
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    const ev = r.definition!.model.evaluate({ load: 1, parts: 6 })
+    expect(ev.components.pool!.spread?.factor).toBeGreaterThan(1)
+    expect((ev.assumptions.find((a) => a.kind === 'connection') as { text: string }).text).toContain(
+      '(Apache Kafka: Design, the Apache Kafka project).',
+    )
+    expect(errors(src.replace('kafka/consumer-group', 'kafka/consumer-groups'))).toEqual([
+      'error: no connection rule "kafka/consumer-groups" in the catalog | did you mean "kafka/consumer-group"?',
+    ])
+    const at = src.indexOf('kafka/consumer-group')
+    const labels = completions(src.slice(0, at) + src.slice(at + 'kafka/consumer-group'.length), at)!.options.map(
+      (o) => o.label,
+    )
+    expect(labels).toContain('kafka/consumer-group')
+    expect(labels).toContain('valkey/cluster-slots')
+    // a documented default as a connection's max
+    const counted = src.replace(
+      'connection group {',
+      'published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }\n\nconnection brokerPool {\n  hop: topic -> pool\n  owner: pod\n  open: 3\n  max: dbMax\n  flows: [events]\n}\n\nconnection group {',
+    )
+    expect(errors(counted)).toEqual([])
+    const limit = (compile(counted).definition!.model.evaluate().components as Record<string, ComponentResult>)
+      .brokerPool!
+    expect(limit.capacity?.value).toBe(97)
   })
 
   it("puts what the model refuses on the connection's line", () => {

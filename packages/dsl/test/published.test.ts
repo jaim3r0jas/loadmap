@@ -79,7 +79,7 @@ describe('a published statement', () => {
       'error: Apache Kafka has no condition "ack" | did you mean "acks"?',
     )
     expect(errors(swap('edition: "2026-11"', 'edition: "2030-01"'))[0]).toBe(
-      'error: no catalog edition "2030-01" | this loadmap has 2026-11; a later edition needs a later loadmap',
+      'error: no catalog edition "2030-01" | this loadmap has 2026-11, 2026-12; a later edition needs a later loadmap',
     )
     expect(errors(swap('producers: 4', 'producers: 4\n  figure: "x"'))[0]).toMatch(
       /^error: Apache Kafka has no figure "x"/,
@@ -114,7 +114,7 @@ describe('a published statement', () => {
     expect(labels(swap('  brokers: brokers\n', '  |\n'))).toEqual(['figure', 'margin', 'brokers'])
     expect(labels(swap('  acks: "all"', '  acks: |'))).toEqual(expect.arrayContaining(['all', '1']))
     expect(at(swap('  acks: "all"', '  acks: |')).find((o) => o.label === 'all')?.apply).toBe('"all"')
-    expect(labels(swap('edition: "2026-11"', 'edition: |'))).toEqual(['2026-11'])
+    expect(labels(swap('edition: "2026-11"', 'edition: |'))).toEqual(['2026-12', '2026-11'])
     expect(at(swap('  capacity: brokersRef', '  capacity: |')).find((o) => o.label === 'brokersRef')).toMatchObject({
       detail: 'published',
       boost: 3,

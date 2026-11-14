@@ -911,6 +911,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'The most connections the other side accepts: a limit named by this connection.',
       },
       skew: { value: 'capacity', scope: 'ctx', doc: "With key: a flow's share on its hottest part." },
+      rule: {
+        value: 'string',
+        scope: 'const',
+        doc: 'A rule from the catalog, "kafka/consumer-group": its assign and owner unless written, its source cited.',
+      },
     },
     children: [],
   },
