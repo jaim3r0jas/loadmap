@@ -143,7 +143,7 @@ pool alertPods "Alert pipeline" `${alertPods} pods × 8 · high priority` {
 pool posPods "Position consumer" `${posPods} pods × 16` {
   workers "position consumer" { pods: posPods; perPod: 16 }
   short: "the position consumer"
-  demand: flows.positions * 0.0015
+  demand: flows.positions * 1.5ms
   capacity: measured(posPods * 2, "cores", "pod CPU limit")
   over: "positions wait in their topic; under backlog only the newest per user is kept"
   describe: `${posPods} pods × 16 threads, 1.5 ms a position`

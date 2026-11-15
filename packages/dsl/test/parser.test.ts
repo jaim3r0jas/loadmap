@@ -37,6 +37,62 @@ describe('lex', () => {
     expect(src.slice(tpl.parts![0]!.from, tpl.parts![0]!.to)).toBe('compact(flows.a)')
   })
 
+  it('reads a unit glued to a number, in seconds or as a share', () => {
+    const value = (src: string) => {
+      const report = new Reporter(src)
+      const toks = lex(src, report)
+      expect(report.list, src).toEqual([])
+      return toks[0]!.value
+    }
+    // exactly the double of the number written in the base unit
+    expect(value('20ms')).toBe(0.02)
+    expect(value('1.5ms')).toBe(0.0015)
+    expect(value('2_500ms')).toBe(2.5)
+    expect(value('1e3ms')).toBe(1)
+    expect(value('5s')).toBe(5)
+    expect(value('2min')).toBe(120)
+    expect(value('1.5h')).toBe(5400)
+    // worked out in decimal: 4.1 × 60 in floating point is 245.99999999999997
+    expect(value('4.1min')).toBe(246)
+    expect(value('8.3min')).toBe(498)
+    expect(value('1.1h')).toBe(3960)
+    expect(value('80%')).toBe(0.8)
+    expect(value('6%')).toBe(0.06)
+    expect(value('7×')).toBe(7)
+    expect(value('7x')).toBe(7)
+    const toks = lex('20ms', new Reporter('20ms'))
+    expect(toks[0]).toMatchObject({ kind: 'number', text: '20ms', unit: 'ms', written: 20 })
+  })
+
+  it('reads "%" as a share only where no value follows it', () => {
+    const texts = (src: string) => lex(src, new Reporter(src)).map((t) => t.text)
+    expect(texts('x: 80%')).toEqual(['x', ':', '80%', ''])
+    expect(texts('x: 80% * y')).toEqual(['x', ':', '80%', '*', 'y', ''])
+    expect(texts('x: 80% - y')).toEqual(['x', ':', '80%', '-', 'y', ''])
+    expect(texts('f(80%, 2)')).toEqual(['f', '(', '80%', ',', '2', ')', ''])
+    // before a value it stays modulo
+    expect(texts('x: 10 % 3')).toEqual(['x', ':', '10', '%', '3', ''])
+    expect(texts('x: 10%3')).toEqual(['x', ':', '10', '%', '3', ''])
+    expect(texts('x: 10% y')).toEqual(['x', ':', '10', '%', 'y', ''])
+    expect(texts('x: 10% (y)')).toEqual(['x', ':', '10', '%', '(', 'y', ')', ''])
+    // a sign right after it is a value's: 10 mod -3, as before
+    expect(texts('x: 10%-3')).toEqual(['x', ':', '10', '%', '-', '3', ''])
+    expect(texts('x: n%+1')).toEqual(['x', ':', 'n', '%', '+', '1', ''])
+    // after a ± the "%" is the ± form's own, read by the parser as it always was
+    expect(texts('estimated(1 ± 30%, "x")')).toEqual(['estimated', '(', '1', '±', '30', '%', ',', '"x"', ')', ''])
+    expect(texts('estimated(1 +/- 30%)')).toEqual(['estimated', '(', '1', '+/-', '30', '%', ')', ''])
+  })
+
+  it('says which word glued to a number is not a unit', () => {
+    const src = 'timeout: 5sec'
+    const report = new Reporter(src)
+    const toks = lex(src, report)
+    expect(toks.map((t) => t.text)).toEqual(['timeout', ':', '5sec', ''])
+    expect(report.list).toMatchObject([
+      { message: '"sec" is not a unit of a number', hint: 'the units are ms, s, min, h, % and ×' },
+    ])
+  })
+
   it('lets a formula wrap inside parentheses', () => {
     const src = 'rate: (1 +\n  2)\nnext: 1'
     const kinds = lex(src, new Reporter(src)).map((t) => t.kind)
@@ -130,8 +186,12 @@ describe('parse', () => {
 
   it('reads an exponent only with its digits', () => {
     const src = 'x: 1e+'
-    const toks = lex(src, new Reporter(src))
-    expect(toks.map((t) => t.text)).toEqual(['x', ':', '1', 'e', '+', ''])
+    const report = new Reporter(src)
+    const toks = lex(src, report)
+    // the "e" is a word glued to the 1, not its exponent
+    expect(toks.map((t) => t.text)).toEqual(['x', ':', '1e', '+', ''])
+    expect(toks[2]!.value).toBe(1)
+    expect(report.list.map((d) => d.message)).toEqual(['"e" is not a unit of a number'])
     expect(lex('2.5e-3', new Reporter('2.5e-3'))[0]!.value).toBe(0.0025)
   })
 

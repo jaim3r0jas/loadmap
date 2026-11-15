@@ -40,10 +40,12 @@ import {
   type SignatureHelp,
   signatureHelp,
 } from '@loadmap/dsl'
-import { BUILTINS, SCHEMA } from '@loadmap/dsl/internal'
+import { BUILTINS, LEXICON, SCHEMA } from '@loadmap/dsl/internal'
 
 const KEYWORDS = new Set(Object.keys(SCHEMA).filter(Boolean))
 const FUNCTIONS = new Set(Object.keys(BUILTINS))
+// a unit written after a number is part of it: 20ms, 80%
+const NUMBER = new RegExp(`^\\d[\\d_]*(\\.\\d[\\d_]*)?([eE][+-]?\\d+)?${LEXICON.unit}?`)
 
 interface State {
   /** Inside a template that runs past the end of the line. */
@@ -85,7 +87,7 @@ export const loadmapStream = StreamLanguage.define<State>({
       template(stream, state)
       return 'string'
     }
-    if (stream.match(/^\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?/)) return 'number'
+    if (stream.match(NUMBER)) return 'number'
     if (stream.match('->')) return 'operator'
     if (stream.match(/^[A-Za-z_]\w*/)) {
       const w = stream.current()

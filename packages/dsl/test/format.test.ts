@@ -109,6 +109,10 @@ describe('format', () => {
     expect(fmt('x: - 2 * load\ny: a?b:c\nz: a %b\nw: !(a)\nv: estimated(1 +/- 5 %, "x")\nq: Math . min(1,2)')).toBe(
       'x: -2 * load\ny: a ? b : c\nz: a % b\nw: !(a)\nv: estimated(1 +/- 5%, "x")\nq: Math.min(1, 2)\n',
     )
+    // a unit is part of its number; a "%" glued to one before a value is modulo
+    expect(fmt('a: 20ms*b\nc: estimated(1 ± 30%,"x")\nd: 10%3\ne: 80%  -  b\nf: 7×')).toBe(
+      'a: 20ms * b\nc: estimated(1 ± 30%, "x")\nd: 10 % 3\ne: 80% - b\nf: 7×\n',
+    )
     // in a row, "-2" is a second value, never a subtraction
     expect(fmt('fit f {\npoints a b {\n1 -2\n- 3 4\n}\n}')).toBe(
       'fit f {\n  points a b {\n    1 -2\n    -3 4\n  }\n}\n',

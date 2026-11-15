@@ -37,7 +37,7 @@ node limiterRejected "Turned away" { lost { takes: [rejected] } }
 pool service "Service" `${pods} pods` {
   workers { pods: pods; perPod: 8 }
   short: "the service"
-  demand: at.service.requests * 0.002
+  demand: at.service.requests * 2ms
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "requests queue in the service"
 }

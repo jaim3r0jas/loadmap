@@ -1,4 +1,5 @@
 import type { Span } from './diagnostics'
+import type { Suffix } from './lexer'
 
 export interface Ident extends Span {
   name: string
@@ -6,7 +7,7 @@ export interface Ident extends Span {
 
 export type Expr = Span &
   (
-    | { t: 'num'; value: number }
+    | { t: 'num'; value: number; unit?: Suffix; written?: number }
     | { t: 'str'; value: string }
     | { t: 'bool'; value: boolean }
     | { t: 'tpl'; quasis: string[]; parts: Expr[] }

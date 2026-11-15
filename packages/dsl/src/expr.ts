@@ -392,16 +392,18 @@ class Compiler {
     for (const [i, a] of rest.entries()) this.want(e.args[i + 1]!, a, 'string')
     const [v, w] = [value.run, within.run]
     const [unit, source] = rest.map((a) => a.run)
-    const { percent } = pm
+    // `± (30%)` is a share already: never a spread of 0.3 in the value's own unit
+    const percent = pm.percent || (pm.within.t === 'num' && pm.within.unit === '%')
+    const scale = pm.percent ? 100 : 1
     return {
       type: 'capacity',
       constant: [value, within, ...rest].every((a) => a.constant),
       run: (c, l) => {
         const x = v(c, l) as number
         const pmv = w(c, l) as number
-        const share = percent ? pmv / 100 : x ? pmv / x : 0
+        const share = percent ? pmv / scale : x ? pmv / x : 0
         if (!(share >= 0 && share < 1)) {
-          const said = percent ? `${pmv} %` : `${pmv} of ${x}`
+          const said = percent ? `${pmv * (100 / scale)} %` : `${pmv} of ${x}`
           throw new Error(`± ${said} is not a share from 0 to below 100 %`)
         }
         return fn(x, unit?.(c, l) as string, { source: source?.(c, l) as string | undefined, within: share })

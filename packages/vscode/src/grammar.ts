@@ -1,4 +1,4 @@
-import { BUILTINS, SCHEMA } from '@loadmap/dsl/internal'
+import { BUILTINS, LEXICON, SCHEMA } from '@loadmap/dsl/internal'
 
 /**
  * The TextMate grammar of `.loadmap`, made from the schema table so it names every statement the checker knows. It
@@ -36,7 +36,10 @@ export function grammar() {
           { include: '#string-double' },
           { include: '#string-single' },
           { include: '#template' },
-          { name: 'constant.numeric.loadmap', match: '\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?' },
+          {
+            name: 'constant.numeric.loadmap',
+            match: `\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?${LEXICON.unit}?`,
+          },
           { name: 'constant.language.boolean.loadmap', match: '\\b(?:true|false)\\b' },
           { name: 'support.function.builtin.loadmap', match: `\\b(?:${builtins.join('|')})\\b(?=\\s*\\()` },
           // what every formula may read; `load` where a statement starts is the keyword

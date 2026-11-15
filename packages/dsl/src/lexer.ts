@@ -6,8 +6,11 @@ export interface Token extends Span {
   kind: TokenKind
   /** The source text: an identifier's name, a punctuation mark. */
   text: string
-  /** A number's value, a string's cooked text. */
+  /** A number's value (in seconds or as a share for a unit), a string's cooked text. */
   value?: number | string
+  /** A number's unit, written straight after it (`20ms`), and the number as written before it (20). */
+  unit?: Suffix
+  written?: number
   /** A template's cooked text pieces and, between them, the source ranges of its `${…}` parts. */
   quasis?: string[]
   parts?: Span[]
@@ -16,8 +19,61 @@ export interface Token extends Span {
 // "+/-" is "±" for a keyboard without it; "a +/- b" means nothing else
 const PUNCT = ['===', '!==', '+/-', '->', '==', '!=', '<=', '>=', '&&', '||', ...'{}()[],;:.?+-*/%<>!=±']
 
-/** The token kinds and marks an editor needs to highlight the language like the parser reads it. */
-export const LEXICON = { punct: PUNCT, comment: '#' } as const
+/**
+ * A unit written straight after a number. Durations become seconds and `%` a share, the units every property and
+ * formula already counts in; `×` (`x` on a keyboard without it) marks a load multiple and changes nothing.
+ */
+export type Suffix = 'ms' | 's' | 'min' | 'h' | '%' | '×' | 'x'
+const WORDS: readonly Suffix[] = ['ms', 's', 'min', 'h', 'x']
+/** Each unit as a power of ten and a whole factor, so `4.1min` is worked out in decimal: the double nearest 246. */
+const SCALE: Record<Suffix, [exp: number, factor: bigint]> = {
+  ms: [-3, 1n],
+  s: [0, 1n],
+  min: [0, 60n],
+  h: [0, 3600n],
+  '%': [-2, 1n],
+  '×': [0, 1n],
+  x: [0, 1n],
+}
+
+/**
+ * The token kinds and marks an editor needs to highlight the language like the parser reads it. `unit` is a regular
+ * expression for what may follow a number as its unit; the lexer reads units with it too, so the two never differ.
+ * A `%` is a share only when no value follows it on the line (`80%`, `80% * x`, `80% - x`); before a value, or with a
+ * sign right after it (`10%-3`), it stays modulo.
+ */
+export const LEXICON = {
+  punct: PUNCT,
+  comment: '#',
+  unit: `(?:(?:${WORDS.join('|')})(?![A-Za-z0-9_])|×|%(?![-+!]|[ \\t]*(?:[A-Za-z0-9_(\\['"\`]|\\.\\d)))`,
+} as const
+const UNIT = new RegExp(LEXICON.unit, 'y')
+
+/**
+ * The unit glued to the number that ends at `i`: undefined for none, null for a word that is not one. After a `±` a
+ * `%` is the ± form's own mark (`± 30%`), read by the parser as it always was.
+ */
+function suffixAt(src: string, i: number, to: number, afterPm: boolean): Suffix | null | undefined {
+  if (i >= to || (afterPm && src[i] === '%')) return undefined
+  UNIT.lastIndex = i
+  const m = UNIT.exec(src)
+  if (m && i + m[0].length <= to) return m[0] as Suffix
+  return isIdStart(src[i]!) ? null : undefined
+}
+
+/** A number written with a unit, in seconds or as a share: in decimal, then rounded once to a double. */
+function inBase(digits: string, unit: Suffix): number {
+  const [exp, factor] = SCALE[unit]
+  const [mantissa = '', e = '0'] = digits.split(/e/i)
+  const [int = '', frac = ''] = mantissa.split('.')
+  return Number(`${BigInt(int + frac || '0') * factor}e${Number(e) - frac.length + exp}`)
+}
+
+/** How many seconds (or what share) one of a unit is: what turns a value back into the number written with it. */
+export function unitScale(unit: Suffix): number {
+  const [exp, factor] = SCALE[unit]
+  return Number(`${factor}e${exp}`)
+}
 
 /**
  * Splits `source[from, to)` into tokens. Newlines end statements, except inside parentheses and brackets, so a long
@@ -58,9 +114,26 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
         i += 1 + sign
         while (i < to && isDigit(source[i]!)) i++
       }
-      const text = source.slice(s, i)
-      if (text.endsWith('_') || text.includes('__')) report.error({ from: s, to: i }, `"${text}" is not a number`)
-      push({ kind: 'number', text, value: Number(text.replaceAll('_', '')), from: s, to: i })
+      const digits = source.slice(s, i)
+      if (digits.endsWith('_') || digits.includes('__')) report.error({ from: s, to: i }, `"${digits}" is not a number`)
+      const written = Number(digits.replaceAll('_', ''))
+      const prev = out.at(-1)
+      const unit = suffixAt(source, i, to, prev?.kind === 'punct' && (prev.text === '±' || prev.text === '+/-'))
+      if (unit === null) {
+        // a glued word is never a name: "5sec" is one mistake, not a number and a stray name
+        const w = i
+        while (i < to && isIdPart(source[i]!)) i++
+        report.error(
+          { from: s, to: i },
+          `"${source.slice(w, i)}" is not a unit of a number`,
+          'the units are ms, s, min, h, % and ×',
+        )
+        push({ kind: 'number', text: source.slice(s, i), value: written, from: s, to: i })
+        continue
+      }
+      i += unit?.length ?? 0
+      const value = unit ? inBase(digits.replaceAll('_', ''), unit) : written
+      push({ kind: 'number', text: source.slice(s, i), value, from: s, to: i, ...(unit && { unit, written }) })
     } else if (c === '"' || c === "'") {
       const s = i
       const r = readString(source, i + 1, to, c)

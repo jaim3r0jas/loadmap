@@ -44,7 +44,7 @@ pool app "App" `${pods} pods × 4 workers` {
   workers { pods: pods; perPod: 4 }
   short: "the app pods"
   plural: true
-  demand: flows.requests * 0.004
+  demand: flows.requests * 4ms
   capacity: measured(pods * 1, "cores", "pod CPU limit")
   over: "requests queue and time out"
   describe: `${pods} pods, 1 core each, 4 ms of CPU a request`

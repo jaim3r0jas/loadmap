@@ -353,7 +353,9 @@ class Parser {
     this.next()
     switch (t.kind) {
       case 'number':
-        return { t: 'num', value: t.value as number, from: t.from, to: t.to }
+        return t.unit
+          ? { t: 'num', value: t.value as number, unit: t.unit, written: t.written!, from: t.from, to: t.to }
+          : { t: 'num', value: t.value as number, from: t.from, to: t.to }
       case 'string':
         return { t: 'str', value: t.value as string, from: t.from, to: t.to }
       case 'template':

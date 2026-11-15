@@ -47,7 +47,7 @@ pool senders "Senders" `${pods} pods × 8` {
   workers { pods: pods; perPod: 8 }
   short: "the senders"
   plural: true
-  demand: flows.events * (1 + emailShare + 0.05) * 0.003
+  demand: flows.events * (1 + emailShare + 5%) * 3ms
   capacity: measured(pods * 1, "cores", "pod CPU limit")
   over: "notifications wait in the queue and arrive late"
 }
@@ -79,7 +79,7 @@ node email "Email provider" {
 node sms "SMS provider" `${smsPlan}/s plan` {
   sink
   short: "the SMS provider"
-  demand: flows.events * 0.05
+  demand: flows.events * 5%
   capacity: measured(smsPlan, "messages/s", "plan quota")
   over: "texts are rejected with 429s"
 }

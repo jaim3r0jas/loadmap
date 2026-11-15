@@ -232,6 +232,26 @@ describe('formulas', () => {
     expect(value('derived.y', {}, 'let y = 4')).toBe(4)
   })
 
+  it('read a unit after a number: durations in seconds, "%" as a share, × as it is', () => {
+    expect(value('20ms')).toBe(0.02)
+    expect(value('flows.req * 1.5ms')).toBe(0.3)
+    expect(value('2min + 1h')).toBe(3720)
+    expect(value('80% * 10')).toBe(8)
+    expect(value('1 - 80%')).toBeCloseTo(0.2)
+    expect(value('7×')).toBe(7)
+    // modulo, where a value follows the "%"
+    expect(value('10%3 + 10 % 4')).toBe(3)
+    // a ± written with a unit means what it did
+    const within = (api: string) => compile(def({ api })).definition!.model.evaluate().verdict.text
+    expect(within('estimated(400 ± 30%, "req/s")')).toEqual(within('estimated(400 ± 30 %, "req/s")'))
+    expect(within('estimated(400 ± (30%), "req/s")')).toEqual(within('estimated(400 ± 30%, "req/s")'))
+    expect(within('estimated(400 ± 30%, "req/s")')).not.toEqual(within('estimated(400, "req/s")'))
+    // the review's c21 and fable 28: a share in a formula, a timeout in seconds
+    expect(errors(def({ api: 'estimated(1000 * 30%, "req/s")' }))).toEqual([])
+    const timed = def({ flow: 'timeout: 5s', api: 'measured(400, "req/s")\n  service: 10ms' })
+    expect(errors(timed)).toEqual([])
+  })
+
   it('fill templates', () => {
     expect(value('`${pods} pods × ${compact(flows.req * 100)} = ${pct(0.5)}`')).toBe('2 pods × 20k = 50 %')
     expect(value('"plain"')).toBe('plain')
