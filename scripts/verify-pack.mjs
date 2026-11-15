@@ -185,9 +185,9 @@ createRoot(document.getElementById('root')!).render(<LoadmapSource source={text}
       try {
         await until(`http://localhost:${port}/loadmap.html`)
         for (const [page, nodes] of [
-          ['loadmap', 5],
+          ['loadmap', 6],
           ['quickstart', 3],
-          ['source', 5],
+          ['source', 6],
         ]) {
           const r = await open(browser, `http://localhost:${port}/${page}.html`, nodes)
           console.log(`  ${mode} ${page}: ${r.drawn} nodes, ELK ${r.worker ? 'in a worker' : 'on the main thread'}`)
