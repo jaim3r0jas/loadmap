@@ -3,9 +3,9 @@ import {
   cache,
   configured,
   defineModel,
-  drain,
   estimated,
   limit,
+  lost,
   type Model,
   measured,
   p,
@@ -811,7 +811,7 @@ node db "DB" {
   capacity: measured(2_000, "queries/s")
   over: "queries queue"
 }
-node tooMany "Turned away" { drain }
+node tooMany "Turned away" { lost }
 client -> limiter -> db
 limiter -> tooMany
 `)
@@ -822,7 +822,7 @@ limiter -> tooMany
         limiter: { name: 'Limiter', capacity: configured(1000, 'req/s', 'gateway config'), over: 'clients get 429s' },
         db: { name: 'DB', capacity: measured(2000, 'queries/s'), over: 'queries queue' },
       },
-      stages: { limiter: limit('limiter'), db: store('db'), tooMany: drain({ label: 'tooMany', from: ['limiter'] }) },
+      stages: { limiter: limit('limiter'), db: store('db'), tooMany: lost({ label: 'tooMany', from: ['limiter'] }) },
       routes: { req: ['limiter', 'db'] },
     })
     same(ts, dsl, loads)
@@ -1090,7 +1090,7 @@ users -> gw -> api -> db
   })
 })
 
-describe('drains', () => {
+describe('lost boxes', () => {
   const SRC = `loadmap 1
 load { max: 10 }
 flow req "requests" { rate: 1_000 * load; retry { times: 3 }; route: limiter -> api -> db; from: users }
@@ -1098,14 +1098,14 @@ node users "Users"
 node limiter "Limiter" { limit; capacity: configured(1_500, "req/s", "gateway config"); over: "429s" }
 node api "API" { pass; capacity: measured(1_000, "req/s"); over: "503s" }
 node db "Database" { store; capacity: measured(10_000, "req/s"); over: "writes queue" }
-node tooMany "Turned away" { drain { reason: [rejected] } }
-node failed "Failed" { drain }
+node tooMany "Turned away" { lost { takes: [rejected] } }
+node failed "Failed" { lost }
 users -> limiter -> api -> db
 limiter -> tooMany
 api -> failed
 `
 
-  it('take what the boxes with an edge into them lose, as the TypeScript drain does', () => {
+  it('take what the boxes with an edge into them lose, as the TypeScript lost box does', () => {
     const ts = defineModel({
       load: p.load({ max: 10 }),
       flows: { req: { label: 'requests', rate: ({ load }) => 1000 * load, retry: { times: 3 } } },
@@ -1118,8 +1118,8 @@ api -> failed
         limiter: limit('limiter'),
         api: pass('api'),
         db: store('db'),
-        tooMany: drain({ label: 'tooMany', from: ['limiter'], reason: ['rejected'] }),
-        failed: drain({ label: 'failed', from: ['api'] }),
+        tooMany: lost({ label: 'tooMany', from: ['limiter'], takes: ['rejected'] }),
+        failed: lost({ label: 'failed', from: ['api'] }),
       },
       routes: { req: ['limiter', 'api', 'db'] },
     })
@@ -1134,27 +1134,27 @@ api -> failed
     )
   })
 
-  it('refuse a drain nothing feeds, a box that loses nothing, a loss two drains take and an edge out', () => {
+  it('refuse a lost box nothing feeds, a box that loses nothing, a loss two lost boxes take and an edge out', () => {
     expect(errors(SRC.replace('api -> failed\n', ''))).toMatchObject([
       {
-        message: 'nothing feeds the drain "failed"',
+        message: 'nothing feeds the lost box "failed"',
         hint: 'draw an edge into failed from the box whose losses it takes',
-        text: 'drain',
+        text: 'lost',
       },
     ])
     expect(errors(`${SRC}db -> failed\n`)).toMatchObject([
-      { message: 'db loses nothing the drain "failed" takes', text: 'db' },
+      { message: 'db loses nothing the lost box "failed" takes', text: 'db' },
     ])
     expect(errors(`${SRC}limiter -> failed\n`)).toMatchObject([
-      { message: 'what limiter loses as rejected already goes to the drain "tooMany"', text: 'limiter' },
+      { message: 'what limiter loses as rejected already goes to the lost box "tooMany"', text: 'limiter' },
     ])
     expect(errors(`${SRC}failed -> db\n`)).toMatchObject([
-      { message: 'nothing leaves the drain "failed": what reaches it is lost', text: 'db' },
+      { message: 'nothing leaves the lost box "failed": what reaches it is lost', text: 'db' },
     ])
   })
 })
 
-describe('losses no drain counts', () => {
+describe('losses no lost box counts', () => {
   const SRC = `loadmap 1
 load { max: 10 }
 flow req "requests" { rate: 100 * load; route: limiter -> api; from: users }
@@ -1186,12 +1186,15 @@ users -> kafka -> pool
   it('warn at a limiter, a drop rule and a timeout whose losses vanish', () => {
     // in the order of the text
     expect(warnings(SRC)).toEqual([
-      { message: 'units of ev dropped as too old at topic vanish: give them a drain that counts them', text: 'drop' },
       {
-        message: 'units of ev too slow for their client at pool vanish: give them a drain that counts them',
+        message: 'units of ev dropped as too old at topic vanish: give them a lost box that counts them',
+        text: 'drop',
+      },
+      {
+        message: 'units of ev too slow for their client at pool vanish: give them a lost box that counts them',
         text: 'timeout',
       },
-      { message: 'what limiter turns away vanishes: give it a drain that counts it', text: 'limit' },
+      { message: 'what limiter turns away vanishes: give it a lost box that counts it', text: 'limit' },
     ])
   })
 
@@ -1212,12 +1215,12 @@ users -> api
 node sp "Split" { split { req -> a: 0.5; req -> b: 0.5 } }
 node a "A" { pass; capacity: measured(1_000, "req/s"); over: "x" }
 node b "B" { pass; capacity: measured(1_000, "req/s"); over: "x" }
-node late "Late" { drain { reason: [timedout] } }
+node late "Late" { lost { takes: [timedOut] } }
 users -> api -> sp -> a
 sp -> b
 `
     expect(warnings(split).map((w) => w.message)).toEqual([
-      'units of req too slow for their client at a vanish: give them a drain that counts them',
+      'units of req too slow for their client at a vanish: give them a lost box that counts them',
     ])
     expect(warnings(`${split}a -> late\nb -> late\n`)).toEqual([])
     // two flows dropping at one queue: one warning; a flow nothing reads after the queue drops nothing
@@ -1228,16 +1231,16 @@ cluster kafka "Kafka" { members: 1; queue topic { partitions { ev: 1; ev2: 1; ra
 users -> kafka -> api
 `
     expect(warnings(shared).map((w) => w.message)).toEqual([
-      'units of ev dropped as too old at topic vanish: give them a drain that counts them',
+      'units of ev dropped as too old at topic vanish: give them a lost box that counts them',
     ])
   })
 
-  it('say nothing once a drain counts each, and nothing for a pass past capacity', () => {
-    const counted = `${SRC}node lost "Lost" { drain }
-node old "Too old" { drain }
-limiter -> lost
+  it('say nothing once a lost box counts each, and nothing for a pass past capacity', () => {
+    const counted = `${SRC}node gone "Lost" { lost }
+node old "Too old" { lost }
+limiter -> gone
 kafka -> old
-pool -> lost
+pool -> gone
 `
     expect(compile(counted).diagnostics).toEqual([])
   })

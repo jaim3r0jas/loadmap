@@ -132,7 +132,7 @@ node limiter "Rate limiter" "2,000 req/s" {
 }
 
 # what the limiter turns away, after every retry, counted
-node tooMany "Turned away" { drain { reason: [rejected] } }
+node tooMany "Turned away" { lost { takes: [rejected] } }
 
 pool api "API" `${pods} pods` {
   tier: services
@@ -182,7 +182,7 @@ cluster kafka "Kafka" "events" {
   capacity: brokersRef
   over: "producers wait"
 }
-node kafkaDropped "Too old" { drain { reason: [dropped] } }
+node kafkaDropped "Too old" { lost { takes: [dropped] } }
 
 pool workers "Event workers" "2 to 6 pods" {
   workers { perPod: 4; autoscale { min: 2; max: 6; target: 0.7 } }
@@ -208,7 +208,7 @@ node push "Push broker" {
   capacity: estimated(8_000, "packets/s", "vendor figure")
   over: "pushes arrive late"
 }
-node pushTimedOut "Timed out" { drain { reason: [timedout] } }
+node pushTimedOut "Timed out" { lost { takes: [timedOut] } }
 
 node phones "Phones" "notified" { sink "phones" }
 

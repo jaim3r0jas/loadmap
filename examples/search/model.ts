@@ -4,9 +4,9 @@ import {
   cache,
   configured,
   defineModel,
-  drain,
   estimated,
   limit,
+  lost,
   measured,
   p,
   split,
@@ -120,7 +120,7 @@ export const search = defineModel({
   stages: {
     limiter: limit('limiter'),
     // what the limiter turns away, after every retry, counted
-    limiterRejected: drain({ from: ['limiter'], reason: ['rejected'] }),
+    limiterRejected: lost({ from: ['limiter'], takes: ['rejected'] }),
     api: workers('api', { perPod: 4, autoscale: { min: 2, max: ({ maxPods }) => maxPods, target: 0.7 } }),
     cache: cache({ hit: ({ hit }) => hit, component: 'cache' }),
     // each miss goes to one shard: half to each

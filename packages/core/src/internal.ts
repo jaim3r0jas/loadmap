@@ -10,7 +10,7 @@ export function blame(err: unknown, flow: string) {
   if (typeof err === 'object' && err !== null && !blamed.has(err)) blamed.set(err, flow)
 }
 
-/** The losses a stage can have, which a drain may take (`rejected`, `dropped`, `timedout`). */
-export { lossesOf, waysOf } from './drains'
+/** The losses a stage can have, which a lost box may take (`rejected`, `dropped`, `timedOut`). */
+export { lossesOf, waysOf } from './losses'
 /** "3 brokers", "acks all": a catalog condition as the editor and hover show it. */
 export { conditionText } from './published'

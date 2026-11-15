@@ -2,9 +2,9 @@ import {
   cache,
   configured,
   defineModel,
-  drain,
   fanout,
   limit,
+  lost,
   measured,
   p,
   pass,
@@ -226,9 +226,9 @@ describe('dots', () => {
   })
 })
 
-describe('drains', () => {
-  // the same pipeline, with a drain for what the gate turns away and one for what the topic drops
-  const drained = defineModel({
+describe('lost boxes', () => {
+  // the same pipeline, with a lost box for what the gate turns away and one for what the topic drops
+  const counted = defineModel({
     load: p.load({ max: 10 }),
     flows: {
       a: { rate: ({ load }) => 50 * load, priority: 1 },
@@ -242,14 +242,14 @@ describe('drains', () => {
       gate: pass('gate'),
       topic: queue({ partitions: { a: 4, b: 4 } }),
       pool: workers('pool', { pods: 3, perPod: 4 }),
-      turnedAway: drain({ from: ['gate'] }),
-      tooOld: drain({ from: ['topic'] }),
+      turnedAway: lost({ from: ['gate'] }),
+      tooOld: lost({ from: ['topic'] }),
     },
     routes: { a: ['gate', 'topic', 'pool'], b: ['gate', 'topic', 'pool'] },
   })
 
-  it('send what is lost along to the drain that takes it, where it fades', () => {
-    const sim = createSim(drained, drained.evaluate({ load: 1 }), { seed: 1, speed: 10 })
+  it('send what is lost along to the lost box that takes it, where it fades', () => {
+    const sim = createSim(counted, counted.evaluate({ load: 1 }), { seed: 1, speed: 10 })
     const ends = new Map<string, Set<string | undefined>>()
     for (let i = 0; i < 1800; i++) {
       sim.step(1 / 60)
@@ -264,6 +264,25 @@ describe('drains', () => {
     // nothing lost fades anywhere else
     expect(ends.get('gate')).toBeUndefined()
     expect([...(ends.get('topic') ?? [])]).not.toContain('dropped')
+  })
+
+  it('sends what times out to the lost box that takes timedOut, under the outcome a dot has always had', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100, timeout: 0.02 * Math.log(2) } },
+      components: { api: { name: 'API', capacity: measured(200, 'u/s'), service: 0.01, over: '' } },
+      stages: { api: pass('api'), out: sink(), late: lost({ from: ['out'], takes: ['timedOut'] }) },
+      routes: { req: ['api', 'out'] },
+    })
+    const sim = createSim(m, m.evaluate(), { seed: 5, speed: 10, maxDots: 60, dotTarget: 100 })
+    const ends = new Map<string, Set<string | undefined>>()
+    for (let i = 0; i < 60 * 20; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.phase === 'fade') ends.set(d.to.stage ?? '', (ends.get(d.to.stage ?? '') ?? new Set()).add(d.outcome))
+    }
+    expect(ends.get('late')).toEqual(new Set(['timedout']))
+    expect([...(ends.get('out') ?? [])]).not.toContain('timedout')
   })
 })
 

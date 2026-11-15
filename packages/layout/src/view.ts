@@ -1,4 +1,4 @@
-import type { DrainReason, Dyn, LooseValues, Model, ResolvedStage, StageDef } from '@loadmap/core'
+import type { Dyn, LooseValues, Loss, Model, ResolvedStage, StageDef } from '@loadmap/core'
 import { compact } from '@loadmap/core/format'
 
 /** Text, or text computed from the model's context (e.g. a rate). */
@@ -126,21 +126,21 @@ export function defineView<
     throw new Error(
       `loadmap: flow "${gap.flow}" goes from node "${gap.from}" to node "${gap.to}"${gap.edge === 'reversed' ? ', but their edge points the other way' : ' with no edge between them'}: add edge('${gap.from}', '${gap.to}')`,
     )
-  return { model, def: withDrainCounts(model, def) }
+  return { model, def: withLostCounts(model, def) }
 }
 
-const LOST: Record<DrainReason, string> = { rejected: 'rejected', dropped: 'dropped', timedout: 'timed out' }
+const LOST: Record<Loss, string> = { rejected: 'rejected', dropped: 'dropped', timedOut: 'timed out' }
 
-/** A drain's box says what reaches it, per second, on its second line, unless the view gives it one of its own. */
-function withDrainCounts<D extends ViewDef<any, any, any, any>>(model: Model, def: D): D {
+/** A lost box says what reaches it, per second, on its second line, unless the view gives it one of its own. */
+function withLostCounts<D extends ViewDef<any, any, any, any>>(model: Model, def: D): D {
   const stages = model.def.stages as Record<string, StageDef>
   let nodes: Record<string, AnyNodeDef> | undefined
   for (const [id, n] of Object.entries(def.nodes as Record<string, AnyNodeDef>)) {
     const st = n.kind === 'node' && n.stage != null ? stages[n.stage] : undefined
-    if (st?.kind !== 'drain' || n.sub != null) continue
+    if (st?.kind !== 'lost' || n.sub != null) continue
     const stage = n.stage as string
-    const reasons = st.reason ?? []
-    const word = reasons.length === 1 ? LOST[reasons[0]!] : 'lost'
+    const takes = st.takes ?? []
+    const word = takes.length === 1 ? LOST[takes[0]!] : 'lost'
     const sub = (ctx: LooseValues) => {
       const at = (ctx.at as Record<string, Record<string, number>>)[stage] ?? {}
       return `${compact(Object.values(at).reduce((a, x) => a + x, 0))} ${word}/s`
@@ -163,8 +163,8 @@ export interface Hop {
   to: string
   /** Whether an edge joins them in the flow's direction, only the other way, or not at all. */
   edge: 'yes' | 'reversed' | 'none'
-  /** What makes the hop: the start, the route (with a split's ways), a fan-out's copies, a drain's losses. */
-  via: 'start' | 'route' | 'fanout' | 'drain'
+  /** What makes the hop: the start, the route (with a split's ways), a fan-out's copies, a lost box's losses. */
+  via: 'start' | 'route' | 'fanout' | 'lost'
   /** Whether any unit takes it at these values: a split's way of share 0 or a branch of 0 copies takes none. */
   used: boolean
 }
@@ -240,10 +240,10 @@ export function hopsOf<F extends string, S extends string>(
       if (last?.kind === 'fanout')
         for (const b of last.to[f] ?? []) add(f, last.id, b.stage, 'fanout', used && b.share > 0)
     }
-    // what a stage on its ways loses goes to the drain that takes it: a hop of its own
+    // what a stage on its ways loses goes to the lost box that takes it: a hop of its own
     const on = new Set<string>((paths[f] ?? []).flatMap((p) => p.stages))
     for (const d of Object.values(stages) as ResolvedStage[])
-      if (d.kind === 'drain') for (const s of d.from) if (on.has(s)) add(f, s, d.id, 'drain', true)
+      if (d.kind === 'lost') for (const s of d.from) if (on.has(s)) add(f, s, d.id, 'lost', true)
   }
   return out
 }

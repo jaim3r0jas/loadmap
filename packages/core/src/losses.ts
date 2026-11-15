@@ -1,6 +1,6 @@
-import type { DrainReason, SplitBranch, StageDef } from './stages'
+import type { Loss, SplitBranch, StageDef } from './stages'
 
-/** What `lossesOf` and the drain checks read of a model definition: its stages, routes and flows' rules. */
+/** What `lossesOf` and the lost box checks read of a model definition: its stages, routes and flows' rules. */
 interface Shape {
   stages: Readonly<Record<string, StageDef>>
   routes: Readonly<Record<string, readonly string[]>>
@@ -43,14 +43,14 @@ export function waysOf(def: Shape, f: string): { ways: string[][]; open: boolean
 }
 
 /**
- * The losses a stage can have, so a drain may take them: a pass, limit, cache or split turns units away past capacity;
+ * The losses a stage can have, so a lost box may take them: a pass, limit, cache or split turns units away past capacity;
  * a queue drops what is too old for a flow with a drop rule; the last stage of a way times out what is too slow for a
  * flow with a timeout. A rule worked out from the values counts as there.
  */
-export function lossesOf(def: Shape, stage: string): DrainReason[] {
+export function lossesOf(def: Shape, stage: string): Loss[] {
   const st = def.stages[stage]
   if (!st) return []
-  const out: DrainReason[] = []
+  const out: Loss[] = []
   const flows = Object.keys(def.flows)
   const known = new Map(flows.map((f) => [f, waysOf(def, f)]))
   // a stage reached only as a fan-out's copy is on no way: what it turns away is a copy, not a unit
@@ -78,39 +78,39 @@ export function lossesOf(def: Shape, stage: string): DrainReason[] {
     const { ways, open } = known.get(f)!
     // too slow at the end of its way, or answered too slowly by a cache on it
     if (open || ways.some((w) => w.at(-1) === stage || (st.kind === 'cache' && w.includes(stage)))) {
-      out.push('timedout')
+      out.push('timedOut')
       break
     }
   }
   return out
 }
 
-/** Every rule a drain must keep, checked once the stages and routes are known; throws naming the first it breaks. */
-export function checkDrains(def: Shape): void {
+/** Every rule a lost box must keep, checked once the stages and routes are known; throws naming the first it breaks. */
+export function checkLost(def: Shape): void {
   const taken = new Map<string, string>()
   for (const [id, st] of Object.entries(def.stages)) {
-    if (st.kind !== 'drain') continue
-    if (!st.from.length) throw new Error(`loadmap: drain "${id}" takes from no stage: name them with from`)
+    if (st.kind !== 'lost') continue
+    if (!st.from.length) throw new Error(`loadmap: lost "${id}" takes from no stage: name them with from`)
     for (const f of Object.keys(def.flows))
       if (waysOf(def, f).ways.some((w) => w.includes(id)))
-        throw new Error(`loadmap: drain "${id}" is on the way of "${f}": it takes only what other stages lose`)
+        throw new Error(`loadmap: lost "${id}" is on the way of "${f}": it takes only what other stages lose`)
     for (const s of st.from) {
       const src = def.stages[s]
-      if (!src) throw new Error(`loadmap: drain "${id}" takes from unknown stage "${s}"`)
+      if (!src) throw new Error(`loadmap: lost "${id}" takes from unknown stage "${s}"`)
       const can = lossesOf(def, s)
-      const wanted = st.reason ?? can
+      const wanted = st.takes ?? can
       const counted = wanted.filter((r) => can.includes(r))
       if (!counted.length)
         throw new Error(
-          `loadmap: drain "${id}" takes from "${s}", which loses nothing it counts: ${
-            st.reason
-              ? `"${s}" never has ${st.reason.join(' or ')} units`
+          `loadmap: lost "${id}" takes from "${s}", which loses nothing it counts: ${
+            st.takes
+              ? `"${s}" never has ${st.takes.join(' or ')} units`
               : `"${s}" turns nothing away, drops nothing and times nothing out`
           }`,
         )
       for (const r of counted) {
         const other = taken.get(`${s}\u0000${r}`)
-        if (other) throw new Error(`loadmap: what "${s}" loses as ${r} goes to two drains, "${other}" and "${id}"`)
+        if (other) throw new Error(`loadmap: what "${s}" loses as ${r} goes to two lost boxes, "${other}" and "${id}"`)
         taken.set(`${s}\u0000${r}`, id)
       }
     }

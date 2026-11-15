@@ -32,7 +32,7 @@ node limiter "Rate limiter" `${compact(limit)} req/s` {
   capacity: configured(limit, "req/s", "gateway config")
   over: "clients above the limit get 429s"
 }
-node limiterRejected "Turned away" { drain { reason: [rejected] } }
+node limiterRejected "Turned away" { lost { takes: [rejected] } }
 
 pool service "Service" `${pods} pods` {
   workers { pods: pods; perPod: 8 }
