@@ -48,7 +48,9 @@ node vendor "Vendor API" `${quota} req/s plan` {
   capacity: configured(quota, "req/s", "the plan's rate limit")
   over: "calls get 429s and lookups fail"
 }
+node vendorRejected "Turned away" { drain { reason: [rejected] } }
 
 users -> service
 service -> cache
 cache -> vendor: `${compact(at.vendor.lookups)} calls/s`
+vendor -> vendorRejected

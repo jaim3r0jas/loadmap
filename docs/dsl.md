@@ -682,6 +682,10 @@ what its reader cannot drain, in steady state. The box is drawn dashed in the co
 second line ("120 rejected/s") unless it has one of its own; a drain is on no route. In TypeScript,
 `drain({ from: ['limiter'], reason: ['rejected'] })`, with a node for it and `edge('limiter', 'tooMany')`.
 
+A loss the definition plans and no drain counts is a warning: what a limiter turns away, what a `drop` rule drops,
+what a `timeout` fails. The editor's quick fix adds the drain after the box and the edge into it. A pass, cache or
+split past capacity warns nothing: any of them could, and the bars and their `over` line already say so.
+
 A `merge` loses nothing: the newer unit of the key carries it. On the board a merged dot shrinks into a ripple of its
 flow's colour where it waited, so a queue that keeps only the newest shows it.
 

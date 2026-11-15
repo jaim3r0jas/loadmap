@@ -110,6 +110,7 @@ cluster kafka "Kafka" "orders and events" {
   memberLabel: `broker ${i}`
   queue topic { partitions { orders: 12; events: 24 } }
 }
+node kafkaDropped "Too old" { drain { reason: [dropped] } }
 
 pool workers "Workers" `${pods} pods × ${threads} threads` {
   workers { pods: pods; perPod: threads }
@@ -143,4 +144,5 @@ component conns "Postgres connections" {
 phones -> gateway: "POST /checkout"
 gateway -> kafka: `${compact(flows.orders)} orders/s`
 kafka -> workers
+kafka -> kafkaDropped
 workers -> db: batch ? `${rows} rows a commit` : "a commit per order"

@@ -8,23 +8,37 @@ interface Shape {
 }
 
 /**
- * The ways a flow goes, as far as they are known without the values: its route, and each way of a split whose `to` is
- * fixed. `open` is true when a split works its ways out from the values, so they could lead anywhere.
+ * The ways a flow goes, as far as they are known without the values, each from its first stage to its last, as the
+ * model walks them: a split's way that ends in a store, a sink or a fan-out ends there, any other rejoins the route
+ * after the split. A flow with no split has its route as its one way. `open` is true when a split works its ways out
+ * from the values, so they could lead anywhere; its ways are then taken as the route alone.
  */
 export function waysOf(def: Shape, f: string): { ways: string[][]; open: boolean } {
-  const route = def.routes[f] ?? []
-  const ways: string[][] = [[...route]]
+  const ways: string[][] = []
   let open = false
-  for (const s of route) {
-    const st = def.stages[s]
-    if (st?.kind !== 'split') continue
-    if (typeof st.to === 'function') {
-      open = true
-      continue
+  const walk = (done: string[], rest: readonly string[], depth: number) => {
+    for (const [i, s] of rest.entries()) {
+      const st = def.stages[s]
+      if (st?.kind === 'split' && depth < 16) {
+        if (typeof st.to === 'function') open = true
+        else {
+          const branches = Array.isArray(st.to) ? st.to : ((st.to as Record<string, readonly SplitBranch[]>)[f] ?? [])
+          if (branches.length) {
+            const after = rest.slice(i + 1)
+            for (const b of branches as readonly SplitBranch[]) {
+              const end = def.stages[b.stages.at(-1) ?? '']?.kind
+              const ends = end === 'store' || end === 'sink' || end === 'fanout'
+              walk([...done, s], [...b.stages, ...(ends ? [] : after)], depth + 1)
+            }
+            return
+          }
+        }
+      }
+      done.push(s)
     }
-    for (const b of Array.isArray(st.to) ? st.to : ((st.to as Record<string, readonly SplitBranch[]>)[f] ?? []))
-      ways.push([...b.stages])
+    ways.push(done)
   }
+  walk([], def.routes[f] ?? [], 0)
   return { ways, open }
 }
 

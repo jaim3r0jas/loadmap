@@ -11,6 +11,7 @@ export const view = defineView(search, {
       stage: 'limiter',
       tier: 'edge',
     }),
+    limiterRejected: node({ label: 'Turned away', stage: 'limiterRejected' }),
     api: pool({ label: 'Search API', sub: ({ maxPods }) => `2 to ${maxPods} pods`, stage: 'api', tier: 'services' }),
     cache: node({ label: 'Cache', sub: ({ hit }) => `${hit * 100} % hits`, stage: 'cache' }),
     shards: node({ label: 'Coordinator', sub: 'a miss to one shard', stage: 'shards', tier: 'data' }),
@@ -20,6 +21,7 @@ export const view = defineView(search, {
   edges: [
     edge('clients', 'limiter', { label: ({ flows }) => `${compact(flows.searches)} searches/s` }),
     edge('limiter', 'api'),
+    edge('limiter', 'limiterRejected'),
     edge('api', 'cache'),
     edge('cache', 'shards', { label: ({ at }) => `${compact(at.shards.searches)} misses/s` }),
     edge('shards', 'db'),

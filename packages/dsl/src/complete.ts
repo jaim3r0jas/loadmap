@@ -425,10 +425,18 @@ class Help {
           for (let i = 0; i + 1 < s.chain.length; i++) if (s.chain[i]!.name === from) next.add(s.chain[i + 1]!.name)
       for (const [stage, box] of boxOf) if (next.has(box)) next.add(stage)
     }
+    // a drain is on no route: it takes what the stages on one lose
+    const drains = new Set<string>()
+    for (const s of this.body) {
+      if (s.kind !== 'decl') continue
+      const inner = s.body?.find((c) => c.kind === 'decl' && c.keyword.name === 'drain')
+      if (inner?.kind !== 'decl') continue
+      for (const a of [s.args[0], inner.args[0]]) if (a?.t === 'id') drains.add(a.name)
+    }
     const all = [
       ...this.ids('stage').map((label) => ({ label, detail: 'stage' })),
       ...singleStageBoxes(this.symbols).map((label) => ({ label, detail: 'box' })),
-    ]
+    ].filter(({ label }) => !drains.has(label))
     return all.map(({ label, detail }) => ({
       label,
       type: 'variable' as const,

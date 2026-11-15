@@ -4,7 +4,7 @@ import { walk } from './complete'
 import { type Diagnostic, Reporter } from './diagnostics'
 import type { TextChange } from './edit'
 import { parse } from './parser'
-import { COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
+import { BOXES, COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
 
 export interface QuickFix {
   /** What it does, as a menu shows it: `Change to "orders"`. */
@@ -92,7 +92,50 @@ function fixesFor(
       })
     return fixes
   }
+
+  // what limiter turns away vanishes   units of events dropped as too old at topic vanish   … too slow … at push vanish
+  const loss =
+    /^what (\S+) turns away vanishes/.exec(d.message) ??
+    /^units of \S+ (dropped as too old|too slow for their client) at (\S+) vanish:/.exec(d.message)
+  if (loss) {
+    const [reason, stage] =
+      loss.length === 2 ? ['rejected', loss[1]!] : [loss[1]!.startsWith('dropped') ? 'dropped' : 'timedout', loss[2]!]
+    const box = boxOf(doc().body, stage)
+    if (!box) return []
+    const name = (box.args[0] as { name: string }).name
+    const taken = new Set([...doc().ids('node'), ...doc().ids('stage'), ...doc().ids('component')])
+    const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedout: 'TimedOut' }[reason]}`
+    let id = base
+    for (let i = 2; taken.has(id); i++) id = `${base}${i}`
+    const label = { rejected: 'Turned away', dropped: 'Too old', timedout: 'Timed out' }[reason]
+    const nl = source.indexOf('\n', box.to)
+    const lineEnd = nl < 0 ? source.length : nl
+    return [
+      {
+        title: `Add a drain for what ${stage} loses`,
+        changes: [
+          // after the box's line, so a comment at its end stays with it
+          { from: lineEnd, to: lineEnd, insert: `\nnode ${id} "${label}" { drain { reason: [${reason}] } }` },
+          addEdge(source, doc().body, name, id),
+        ],
+      },
+    ]
+  }
   return []
+}
+
+/** The box that runs a stage: its own id, or the id of a stage written inside it. */
+function boxOf(body: readonly Stmt[], stage: string): Decl | undefined {
+  for (const s of body) {
+    if (s.kind !== 'decl' || !(BOXES as readonly string[]).includes(s.keyword.name)) continue
+    const id = s.args[0]
+    const inner = (s.body ?? []).filter(
+      (c): c is Decl => c.kind === 'decl' && (STAGES as readonly string[]).includes(c.keyword.name),
+    )
+    if (inner.some((c) => c.args[0]?.t === 'id' && (c.args[0] as { name: string }).name === stage)) return s
+    if (id?.t === 'id' && id.name === stage && inner.length) return s
+  }
+  return undefined
 }
 
 /** `a -> b` on a line of its own, after the last edge that leaves a (else after the last edge, else at the end). */

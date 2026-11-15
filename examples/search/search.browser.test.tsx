@@ -27,7 +27,7 @@ async function mount(o: { theme?: Theme; width?: number } = {}) {
 it('draws the four blocks, every pod the API may run, and the retries past the limit', async () => {
   const { handle, el } = await mount()
   // and the coordinator in front of the two shards
-  expect(el.querySelectorAll('[data-node]')).toHaveLength(7)
+  expect(el.querySelectorAll('[data-node]')).toHaveLength(8)
   // eight pods of four, drawn whether they run or not
   expect(el.querySelectorAll('rect[data-slot]')).toHaveLength(8 * 4)
   handle.pause()

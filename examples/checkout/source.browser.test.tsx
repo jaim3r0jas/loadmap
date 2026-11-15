@@ -26,7 +26,7 @@ it('draws a .loadmap text with the options it declares', async () => {
   root!.render(<LoadmapSource source={source} name="checkout.loadmap" ref={ref} />)
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
-  expect(el.querySelectorAll('[data-node]').length).toBe(5)
+  expect(el.querySelectorAll('[data-node]').length).toBe(6)
   expect(el.querySelector('.lm-verdict')!.textContent).toContain('API gateway')
   // the definition's own `assume:` line reaches the page, as compile() + <Loadmap {...options}> would put it
   expect(el.textContent).toContain('Load scales linearly with users')
@@ -47,7 +47,7 @@ it('shows the diagnostics as loadmap check prints them, and draws once the text 
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
   expect(el.querySelector('[role="alert"]')).toBeNull()
-  expect(el.querySelectorAll('[data-node]').length).toBe(5)
+  expect(el.querySelectorAll('[data-node]').length).toBe(6)
 })
 
 it('keeps the last version drawn while the text has an error, and the values through a change of layout only', async () => {
@@ -68,7 +68,7 @@ it('keeps the last version drawn while the text has an error, and the values thr
   )
   await expect.poll(() => el.querySelector('[role="alert"]')?.textContent ?? '').toContain('unknown flow "order"')
   expect(el.textContent).toContain('the last version without errors')
-  expect(el.querySelectorAll('[data-node]').length).toBe(5)
+  expect(el.querySelectorAll('[data-node]').length).toBe(6)
   expect(ref.current?.values().load).toBe(30)
 })
 
