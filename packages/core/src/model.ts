@@ -334,10 +334,11 @@ export interface Model<P = any, F extends string = string, C extends string = st
   isEnabled(id: string, values: LooseValues): boolean
   evaluate(values?: Partial<Values<P>>): Evaluation<P, F, C, S>
   /**
-   * The stages at these values and the context they resolve in: what `evaluate` gives a drawing (pods, partitions,
-   * labels), without the components, crossings and verdict, so it is cheap to call for many values.
+   * The stages at these values, each flow's ways through them, and the context they resolve in: what `evaluate` gives
+   * a drawing (pods, partitions, labels, the hops dots take), without the components, crossings and verdict, so it is
+   * cheap to call for many values.
    */
-  stagesAt(values?: Partial<Values<P>>): Pick<Evaluation<P, F, C, S>, 'values' | 'ctx' | 'stages'>
+  stagesAt(values?: Partial<Values<P>>): Pick<Evaluation<P, F, C, S>, 'values' | 'ctx' | 'stages' | 'paths'>
   /**
    * Each component's utilization at these values: what `evaluate` computes first, without the crossings. With a
    * bound, every capacity is read at its low or high bound.
@@ -813,8 +814,18 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot } = context(def as any, values)
-      return { values, ctx, stages: resolveStages(ctx, shed, plain, assignment, hot) }
+      const { ctx, shed, plain, assignment, hot, paths } = context(def as any, values)
+      let ways: Record<F, readonly FlowPath<S>[]> | undefined
+      return {
+        values,
+        ctx,
+        stages: resolveStages(ctx, shed, plain, assignment, hot),
+        // the layout's load sweeps call this for many values and never read the ways: worked out on first read
+        get paths() {
+          ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
+          return ways
+        },
+      }
     },
     utilization: (partial, bound) => {
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>

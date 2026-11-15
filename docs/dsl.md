@@ -64,6 +64,14 @@ A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things
 
 A route lists stages: `route: gateway -> topic -> workers`. It may also name a box that runs exactly one stage.
 
+**Dots move only along edges.** Every hop a flow takes needs an edge drawn the way it goes: from its `from` box to
+its first stage, between the stages next to each other on its route, on each way of a split (and where a way rejoins
+the route), and from a fan-out to each stage it copies to. Two stages in one box are no hop. A hop without its edge is
+an error at the hop ("signups goes from gateway to api, and no edge joins them"); the editor offers to add the edge
+or, when other edges already join the two boxes, to route the flow through them. An edge a flow takes may still have a
+`when`, but where it hides the edge (at the defaults, in a preset or a scenario) and the flow still goes that way, the
+checker warns.
+
 ### Formulas
 
 Every value is a formula: a small subset of TypeScript expressions, so a lambda body from a TypeScript model pastes
@@ -1280,7 +1288,7 @@ After the keyword: id [label].
 | `rate` (required) | number, formula | Units per second. |
 | `priority` | number, constant | 1 is served first. Flows of the same priority share. |
 | `timeout` | number, formula of parameters | Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way. |
-| `route` (required) | route, constant | The stages it passes, in order: a -> b -> c. |
+| `route` (required) | route, constant | The stages it passes, in order: a -> b -> c. An edge draws each hop. |
 | `from` (required) | node, constant | The node its dots start from. |
 | `color` | `accent` \| `alt` \| `ok` \| `warn` \| `drop` \| `muted` | A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes. |
 

@@ -147,7 +147,8 @@ describe('the order along the flow', () => {
         s: node({ label: 'S', stage: 's' }),
       },
       edges: [edge('p', 'x'), edge('y', 'x'), edge('q', 'y'), edge('x', 'b'), edge('b', 's')],
-      flows: { f: { from: 'p', color: 'accent' }, g: { from: 'p', color: 'alt' } },
+      // the dots start at x, the box before the first stage: p only feeds it
+      flows: { f: { from: 'x', color: 'accent' }, g: { from: 'x', color: 'alt' } },
       tiers: { a: { label: 'A' }, b: { label: 'B' } },
     })
     const s = await layout(view, m.evaluate())

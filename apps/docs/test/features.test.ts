@@ -55,6 +55,7 @@ describe('the features a model shows', () => {
         '  over: "requests fail"',
         '}',
         'scenario "Today" {}',
+        'users -> app',
         '',
       ].join('\n'),
     )

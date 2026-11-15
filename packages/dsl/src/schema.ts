@@ -603,7 +603,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'values',
         doc: 'Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way.',
       },
-      route: { value: 'route', scope: 'const', doc: 'The stages it passes, in order: a -> b -> c.', required: true },
+      route: {
+        value: 'route',
+        scope: 'const',
+        doc: 'The stages it passes, in order: a -> b -> c. An edge draws each hop.',
+        required: true,
+      },
       from: { value: 'node', scope: 'const', doc: 'The node its dots start from.', required: true },
       color: {
         value: 'enum',

@@ -220,6 +220,7 @@ node sms "SMS" { sink }
 users -> gateway: "HTTPS"
 gateway -> limiter
 gateway -> kafka
+gateway -> api
 limiter -> api
 api -> cache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
 cache -> db

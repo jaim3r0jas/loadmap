@@ -115,3 +115,39 @@ describe('statement snippets', () => {
       expect(snippet(k)!.replace(/\$\{\d+:([^}]*)\}/g, '$1')).toMatch(new RegExp(`^${k}\\b`))
   })
 })
+
+describe('a hop without an edge', () => {
+  const SRC = `loadmap 1
+load { max: 10 }
+flow req "requests" { rate: 100 * load; route: gw -> db; from: users }
+node users "Users"
+node gw "Gateway" { pass; capacity: measured(1_000, "req/s"); over: "clients wait" }
+node api "API" { pass; capacity: measured(1_000, "req/s"); over: "clients wait" }
+node db "Database" { store; capacity: measured(1_000, "req/s"); over: "writes queue" }
+users -> gw
+gw -> api -> db
+`
+
+  it('adds the edge after the last one leaving its box, or routes the flow through the boxes the edges join', () => {
+    const [add, through] = fixes(SRC)
+    expect(add).toMatchObject({ title: 'Add the edge gw -> db' })
+    expect(add!.text).toContain('gw -> api -> db\ngw -> db\n')
+    expect(compile(add!.text).ok).toBe(true)
+    expect(through).toMatchObject({ title: 'Route it through api' })
+    expect(through!.text).toContain('route: gw -> api -> db;')
+    expect(compile(through!.text).ok).toBe(true)
+  })
+
+  it('routes through no box a flow would end in', () => {
+    const src = SRC.replace('node api "API" { pass;', 'node api "API" { store;')
+    expect(fixes(src).map((f) => f.title)).toEqual(['Add the edge gw -> db'])
+  })
+
+  it('puts back an edge deleted from a file, where it was', () => {
+    const src = checkout.replace(/\nkafka -> workers[^\n]*/, '')
+    const [add, ...rest] = fixes(src)
+    expect(rest).toEqual([])
+    expect(add!.title).toBe('Add the edge kafka -> workers')
+    expect(compile(add!.text).ok).toBe(true)
+  })
+})

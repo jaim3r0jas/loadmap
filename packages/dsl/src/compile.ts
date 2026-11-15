@@ -38,6 +38,7 @@ import {
   type TierDef,
   type View,
 } from '@loadmap/layout'
+import { type Hop, hopsOf, unjoined } from '@loadmap/layout/internal'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './catalog'
 import { type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
@@ -526,9 +527,12 @@ class Compiler {
 
       const route = this.prop(b, 'route')
       const stages: string[] = []
+      const chain: [Ident, string][] = []
+      this.routeAt.set(id.name, chain)
       for (const [i, n] of (route?.chain ?? (route?.value.t === 'id' ? [route.value as Ident] : [])).entries()) {
         const s = resolveStage(n, 'stage')
         if (!s) continue
+        chain.push([n, s])
         if (stageOf.get(s)!.block.keyword === 'fanout' && i < (route?.chain?.length ?? 1) - 1)
           this.report.error(n, `the fan-out "${s}" must be the last stage of the route`)
         stages.push(s)
@@ -540,6 +544,7 @@ class Compiler {
       const from = this.prop(b, 'from')
       const view: FlowView = { from: '', color: 'accent' }
       if (from) {
+        this.fromAt.set(id.name, from.value)
         if (from.value.t === 'id' && boxById.has(from.value.name)) view.from = from.value.name
         else
           this.report.error(
@@ -588,7 +593,7 @@ class Compiler {
     const stageDefs: Record<string, StageDef> = {}
     for (const box of boxes)
       for (const s of box.stages) {
-        const def = this.stage(s.block, box, componentNames, resolveStage, flowNames, reached)
+        const def = this.stage(s.block, box, componentNames, resolveStage, flowNames, reached, s.id)
         if (def) stageDefs[s.id] = def
       }
     for (const [id, s] of stageOf)
@@ -794,23 +799,26 @@ class Compiler {
     let view: View
     try {
       model = defineModel(modelDef as any)
-      view = defineView(model, viewDef as any)
+      // with a hop unjoined the definition fails, but the presets and scenarios still run, to report their errors now
+      view = this.hopsJoined(model, viewDef) ? defineView(model, viewDef as any) : { model, def: viewDef as any }
     } catch (err) {
       this.runError(err, top)
       return undefined
     }
-    const runs: { values: Record<string, unknown>; at: Span }[] = [{ values: {}, at: top }]
+    const runs: { values: Record<string, unknown>; at: Span; where: string }[] = [
+      { values: {}, at: top, where: 'at the defaults' },
+    ]
     for (const b of presets) {
       const label = this.text(b.args.label)
       const v = label != null && (modelDef.presets as Record<string, Record<string, unknown>> | undefined)?.[label]
-      if (v) runs.push({ values: v, at: b.at })
+      if (v) runs.push({ values: v, at: b.at, where: `in the preset "${label}"` })
     }
     for (const b of scenarios) {
       const label = this.text(b.args.label)
       const v = label != null && model.scenarios.find((s) => s.label === label)?.values
-      if (v) runs.push({ values: v, at: b.at })
+      if (v) runs.push({ values: v, at: b.at, where: `in the scenario "${label}"` })
     }
-    for (const [i, { values, at }] of runs.entries()) {
+    for (const [i, { values, at, where }] of runs.entries()) {
       try {
         const ev = model.evaluate(values as any)
         labelsAt(view, ev)
@@ -823,7 +831,8 @@ class Compiler {
           }
           if (n.kind === 'pool') n.podLabel?.(0)
         }
-        for (const e of viewDef.edges) e.when?.(ev.ctx)
+        const hidden = viewDef.edges.filter((e) => e.when && !e.when(ev.ctx))
+        if (hidden.length) this.hiddenHops(model, viewDef, hidden, values, where)
         for (const f of model.flowIds)
           if (!Number.isFinite(ev.flows[f]))
             this.report.warning(this.flowRate.get(f) ?? at, `the rate of "${f}" is ${ev.flows[f]} here`)
@@ -833,6 +842,64 @@ class Compiler {
     }
     if (this.report.failed) return undefined
     return { model, view, options }
+  }
+
+  /**
+   * Whether an edge joins every hop a flow takes, in its direction; each one without is an error at the line that makes
+   * the hop: the route, a split's way, a fan-out's branch or the flow's `from`.
+   */
+  private hopsJoined(
+    model: Model,
+    viewDef: { nodes: Record<string, AnyNodeDef>; edges: EdgeDef[]; flows: Record<string, FlowView> },
+  ): boolean {
+    let ok = true
+    for (const h of unjoined(model, viewDef as never)) {
+      ok = false
+      const how = h.edge === 'reversed' ? 'but their edge points the other way' : 'and no edge joins them'
+      this.report.error(this.hopAt(h), `${h.flow} goes from ${h.from} to ${h.to}, ${how}`, `draw ${h.from} -> ${h.to}`)
+    }
+    return ok
+  }
+
+  /** The text that makes a hop. */
+  private hopAt(h: Hop): Span {
+    const [a, b] = h.stages
+    const flow = this.flowAt.get(h.flow) ?? { from: 0, to: 0 }
+    if (a == null) return this.fromAt.get(h.flow) ?? flow
+    if (h.via === 'fanout') return this.branchAt.get(`${h.flow}\u0000${b}`) ?? flow
+    const chain = this.routeAt.get(h.flow) ?? []
+    const i = chain.findIndex(([, s], j) => j > 0 && s === b && chain[j - 1]![1] === a)
+    if (i > 0) return { from: chain[i - 1]![0].from, to: chain[i]![0].to }
+    const way = this.wayAt.find(
+      (w) =>
+        w.flow === h.flow &&
+        ((w.split === a && w.stages[0] === b) ||
+          w.stages.some((s, j) => s === a && w.stages[j + 1] === b) ||
+          w.stages.at(-1) === a),
+    )
+    return way?.at ?? flow
+  }
+
+  /** A warning at each hidden edge a flow still takes at these values: its dots would cross the diagram without it. */
+  private hiddenHops(
+    model: Model,
+    viewDef: { nodes: Record<string, AnyNodeDef>; edges: EdgeDef[]; flows: Record<string, FlowView> },
+    hidden: EdgeDef[],
+    values: Record<string, unknown>,
+    where: string,
+  ) {
+    const hops = hopsOf(model, viewDef as never, values as never).filter((h) => h.used)
+    const shown = viewDef.edges.filter((e) => !hidden.includes(e))
+    for (const e of hidden) {
+      // another edge between the same boxes, shown here, still carries the dots
+      if (shown.some((x) => x.from === e.from && x.to === e.to)) continue
+      const flows = [...new Set(hops.filter((h) => h.from === e.from && h.to === e.to).map((h) => h.flow))]
+      if (!flows.length) continue
+      const at = this.whenAt.get(e) ?? { from: 0, to: 0 }
+      const who =
+        flows.length === 1 ? `${flows[0]} still goes` : `${flows.slice(0, -1).join(', ')} and ${flows.at(-1)} still go`
+      this.report.warning(at, `${e.from} -> ${e.to} is hidden ${where}, but ${who} that way`)
+    }
   }
 
   /**
@@ -852,6 +919,13 @@ class Compiler {
 
   private flowRate = new Map<string, Span>()
   private flowAt = new Map<string, Span>()
+  /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
+  private routeAt = new Map<string, [Ident, string][]>()
+  private fromAt = new Map<string, Span>()
+  /** A split's ways (flow and stages) and a fan-out's branches (flow and stage), at their lines. */
+  private wayAt: { split: string; flow: string; stages: string[]; at: Span }[] = []
+  private branchAt = new Map<string, Span>()
+  private whenAt = new WeakMap<EdgeDef, Span>()
   private connectionAt = new Map<string, Span>()
 
   /** A connection's definition for core; undefined when its hop names no two stages. */
@@ -1966,6 +2040,7 @@ class Compiler {
     resolve: (n: Ident, what: string) => string | undefined,
     flows: Map<string, Span>,
     reached: Set<string>,
+    id: string,
   ): StageDef | undefined {
     const label = this.text(b.args.label)
     const base = label != null ? { label } : {}
@@ -2053,6 +2128,7 @@ class Compiler {
           if (!flows.has(f.name)) this.report.error(f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
           const stage = resolve(s, 'stage')
           if (stage) reached.add(stage)
+          if (stage) this.branchAt.set(`${f.name}\u0000${stage}`, e)
           if (e.colon) {
             this.report.error(e.colon, 'a branch takes its copies after ":", not a block', `${f.name} -> ${s.name}: 1`)
             continue
@@ -2086,6 +2162,7 @@ class Compiler {
           if (!flows.has(f.name)) this.report.error(f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
           const stages = through.map((n) => resolve(n, 'stage'))
           for (const s of stages) if (s) reached.add(s)
+          if (stages.every((s) => s)) this.wayAt.push({ split: id, flow: f.name, stages: stages as string[], at: e })
           if (e.colon) {
             broken.add(f.name)
             this.report.error(
@@ -2196,7 +2273,10 @@ class Compiler {
     for (let i = 0; i + 1 < e.chain.length; i++) {
       const d: EdgeDef = { from: e.chain[i]!.name, to: e.chain[i + 1]!.name }
       if (label != null) d.label = label
-      if (when) d.when = placed(when.value, this.formula(when.value, 'ctx').run)
+      if (when) {
+        d.when = placed(when.value, this.formula(when.value, 'ctx').run)
+        this.whenAt.set(d, when.key)
+      }
       out.push(d)
     }
     return out

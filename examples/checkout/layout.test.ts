@@ -92,7 +92,7 @@ describe('layout cache', () => {
         q: cluster({ label: 'Queue', members: 3, stage: 'q' }),
         out: { kind: 'node', label: 'Out', stage: 'out', shape: 'box' },
       },
-      edges: [],
+      edges: [{ from: 'q', to: 'out' }],
       flows: { a: { from: 'q', color: 'accent' }, b: { from: 'q', color: 'alt' } },
     })
     const a = await layout(v, m.evaluate())
