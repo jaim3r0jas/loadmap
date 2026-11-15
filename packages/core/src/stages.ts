@@ -76,6 +76,22 @@ export interface SinkStage extends StageBase {
   kind: 'sink'
 }
 
+/** Why a unit leaves without reaching the end of its way: turned away, dropped as too old, or too slow for its client. */
+export type DrainReason = 'rejected' | 'dropped' | 'timedout'
+
+export const DRAIN_REASONS: readonly DrainReason[] = ['rejected', 'dropped', 'timedout']
+
+/**
+ * Where what other stages lose goes: what a pass, limit, cache or split turns away, what a queue drops as too old, what
+ * is too slow for its client at the end of its way. It is on no route: `from` names the stages it takes from, and
+ * `reason` which losses (all three without one). What reaches it (`at`) is what is lost there after every retry.
+ */
+export interface DrainStage extends StageBase {
+  kind: 'drain'
+  from: readonly string[]
+  reason?: readonly DrainReason[]
+}
+
 /** One branch of a fan-out: a copy goes to `stage`; `share` is the expected number of copies per unit (may pass 1). */
 export interface Branch {
   stage: string
@@ -120,6 +136,7 @@ export type StageDef<C extends string = string> =
   | CacheStage<C>
   | LimitStage<C>
   | SplitStage<C>
+  | DrainStage
 
 export function pass<const C extends string>(component: C, o: StageBase = {}): PassStage<C> {
   return { kind: 'pass', component, ...o }
@@ -159,6 +176,10 @@ export function sink(o: StageBase = {}): SinkStage {
   return { kind: 'sink', ...o }
 }
 
+export function drain(o: { from: readonly string[]; reason?: readonly DrainReason[] } & StageBase): DrainStage {
+  return { kind: 'drain', ...o }
+}
+
 // the component only from the argument: from the stages the result goes into, a split beside it reads as any string
 export function fanout<const C extends string = never>(
   o: { to: FanoutStage['to']; component?: C } & StageBase,
@@ -184,6 +205,7 @@ export type ResolvedStage = { id: string; label: string } & (
     }
   | { kind: 'store'; component: string }
   | { kind: 'sink'; component?: undefined }
+  | { kind: 'drain'; component?: undefined; from: readonly string[]; reasons: readonly DrainReason[] }
   | {
       kind: 'queue'
       component?: string
@@ -273,7 +295,7 @@ export function resolveStage(
 ): ResolvedStage {
   const label = s.label ?? id
   const util = (c: string | undefined) => (c ? (ctx.util as Record<string, number | null>)[c] : null)
-  const rejects = rejectShare(util(s.kind === 'sink' ? undefined : s.component), full)
+  const rejects = rejectShare(util(s.kind === 'sink' || s.kind === 'drain' ? undefined : s.component), full)
   switch (s.kind) {
     case 'queue':
       return { id, label, kind: 'queue', component: s.component, partitions: dyn(s.partitions, ctx) }
@@ -302,6 +324,8 @@ export function resolveStage(
       }
     case 'sink':
       return { id, label, kind: 'sink' }
+    case 'drain':
+      return { id, label, kind: 'drain', from: s.from, reasons: s.reason ?? DRAIN_REASONS }
     case 'store':
       return { id, label, kind: 'store', component: s.component }
     default:

@@ -131,6 +131,9 @@ node limiter "Rate limiter" "2,000 req/s" {
   over: "clients above the limit get 429s"
 }
 
+# what the limiter turns away, after every retry, counted
+node tooMany "Turned away" { drain { reason: [rejected] } }
+
 pool api "API" `${pods} pods` {
   tier: services
   workers { pods: pods; perPod: 8 }
@@ -222,6 +225,7 @@ gateway -> limiter
 gateway -> kafka
 gateway -> api
 limiter -> api
+limiter -> tooMany
 api -> cache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
 cache -> db
 kafka -> workers

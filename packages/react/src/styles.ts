@@ -2,12 +2,14 @@ const LIGHT = `
   --lm-bg: #eef2f5; --lm-surface: #ffffff; --lm-fg: #17212b; --lm-muted: #5d6d7c; --lm-line: #c6d0da;
   --lm-accent: #0b6b8f; --lm-accent-soft: #d6e9f0; --lm-alt: #7a4f9a; --lm-alt-soft: #efe5f6;
   --lm-ok: #2a7f5a; --lm-warn: #b86e00; --lm-drop: #b7392e; --lm-lane: #e3e9ee;
+  --lm-drain-fill: #fbefed; --lm-drain-line: #b7392e;
   --lm-tier-base: #f4f7fa; --lm-tier: #e8eef3; --lm-tier-head: #dbe3eb; --lm-tier-fg: #34424f; --lm-tier-line: #c6d0da;
   --lm-s1: #2a78d6; --lm-s2: #eb6834; --lm-s3: #6250d6; --lm-s4: #eda100; color-scheme: light;`
 const DARK = `
   --lm-bg: #0d141b; --lm-surface: #151e27; --lm-fg: #e4ebf1; --lm-muted: #93a3b3; --lm-line: #2a3744;
   --lm-accent: #5fb7d6; --lm-accent-soft: #163442; --lm-alt: #c39be0; --lm-alt-soft: #2b2236;
   --lm-ok: #5fc08f; --lm-warn: #e2a24a; --lm-drop: #e26a5c; --lm-lane: #1b2631;
+  --lm-drain-fill: #2b1c1d; --lm-drain-line: #e26a5c;
   --lm-tier-base: #1b2530; --lm-tier: #24323f; --lm-tier-head: #2c3b4a; --lm-tier-fg: #c3cfda; --lm-tier-line: #33424f;
   --lm-s1: #3987e5; --lm-s2: #d95926; --lm-s3: #9085e9; --lm-s4: #c98500; color-scheme: dark;`
 
@@ -52,6 +54,7 @@ export const LOADMAP_CSS = `
 }
 .lm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .78rem; color: var(--lm-muted); }
 .lm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; }
+.lm-legend i.lm-legend-merge { box-sizing: border-box; border: 1.5px solid var(--lm-muted); }
 
 /* full screen (the browser's, or a fixed overlay): a column that never scrolls. The diagram as wide as the screen on
    top; under it the verdict in a line and the panels, compact, in a dock the screen sizes. The load changes what is

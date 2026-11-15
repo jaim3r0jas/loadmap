@@ -665,6 +665,26 @@ tries) but multiply what everything in front sees: with 3 retries a gateway of 2
 1,000 runs out at 1,067 req/s instead of 2,000. `flows.requests` is the attempts; the meters show the attempts per
 request and the share failing after every retry, and the retries are drawn as rings.
 
+**A drain** is where what other boxes lose goes, counted. A unit a stage turns away (a limiter above its limit, a
+pass, cache or split past capacity), one a queue drops as too old, or one too slow for its client at the end of its
+way leaves the diagram there; with a drain, its dot goes along the edge into the drain's box and fades inside it. An
+edge from a box into a drain sends what that box loses there, and `reason` keeps only some losses (`rejected`,
+`dropped`, `timedout`; all three without one):
+
+```
+node tooMany "Turned away" { drain { reason: [rejected] } }
+limiter -> tooMany
+```
+
+`at.tooMany` is what reaches it, units per second lost for good: with retries, only what fails every attempt (a
+retried unit's attempt fades where it was turned away, and its retry starts again at the source). A queue's drops are
+what its reader cannot drain, in steady state. The box is drawn dashed in the colour of a loss and says its rate on its
+second line ("120 rejected/s") unless it has one of its own; a drain is on no route. In TypeScript,
+`drain({ from: ['limiter'], reason: ['rejected'] })`, with a node for it and `edge('limiter', 'tooMany')`.
+
+A `merge` loses nothing: the newer unit of the key carries it. On the board a merged dot shrinks into a ripple of its
+flow's colour where it waited, so a queue that keeps only the newest shows it.
+
 **A split** sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
 failover. One line per way, the flow, the stages it goes through and its share; a flow's shares add up to 1, and a
 flow the split names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any
@@ -1389,7 +1409,7 @@ After the keyword: id [label].
 
 ### node
 
-A box. It may run a stage (pass, store, sink, fanout) and own a component (demand and capacity lines).
+A box. It may run a stage (pass, store, sink, drain, fanout) and own a component (demand and capacity lines).
 
 ```
 node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }
@@ -1414,7 +1434,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `fanout`, `split`, `cache`, `limit`, `component`, `held`.
+Holds: `pass`, `store`, `sink`, `drain`, `fanout`, `split`, `cache`, `limit`, `component`, `held`.
 
 ### cluster
 
@@ -1541,6 +1561,20 @@ sink "contacts"
 ```
 
 After the keyword: [id] [label].
+
+### drain
+
+Where what other boxes lose goes, counted: an edge from a box into this one sends what that box turns away, drops as too old or times out here, after every retry. It is on no route.
+
+```
+drain { reason: [rejected] }
+```
+
+After the keyword: [id] [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `reason` | a list of `rejected`, `dropped`, `timedout` | Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedout (too slow for the client). Default all three. |
 
 ### queue
 

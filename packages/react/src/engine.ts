@@ -24,6 +24,7 @@ import type { Viewer } from './viewer'
 const TOKENS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted', 'fg', 'surface', 'line'] as const
 /** The stroke of a hollow dot, in scene units. */
 const RING = 1.4
+const MERGE_RING = 1
 
 /** A dot as it is drawn now, in scene units. */
 export interface Dot {
@@ -669,13 +670,23 @@ export class Engine {
       live.add(d.id)
       const [x, y] = this.#position(scene, d)
       const inCell = d.to.cell != null && d.phase !== 'move'
+      const r = inCell ? 3 : 3.4
+      const k = d.phase === 'fade' ? Math.min(1, d.t / d.dur) : 0
+      if (d.phase === 'fade' && d.outcome === 'superseded') {
+        // merged into a newer unit of its key, not lost: it shrinks into a ripple of its flow's colour
+        const color = this.flowColor(d.flow)
+        out.push({ x, y, r: r * (1 - k), color, alpha: 1 - k * 0.5 })
+        out.push({ x, y, r: r + 1 + 7 * k, color, alpha: 1 - k, ring: MERGE_RING })
+        continue
+      }
       const done = d.outcome === 'delivered' || d.outcome === 'answered'
       out.push({
         x,
-        y: y - (d.phase === 'fade' && !done ? (d.t / d.dur) * 8 : 0),
-        r: inCell ? 3 : 3.4,
-        color: d.phase === 'fade' ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
-        alpha: d.phase === 'fade' ? Math.max(0, 1 - d.t / d.dur) : 1,
+        y: y - (d.phase === 'fade' && !done ? k * 8 : 0),
+        r,
+        // a unit lost for good shows it on its way into the drain too
+        color: d.phase === 'fade' || d.drained ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
+        alpha: d.phase === 'fade' ? Math.max(0, 1 - k) : 1,
         ...(d.attempt ? { ring: RING } : {}),
       })
     }
