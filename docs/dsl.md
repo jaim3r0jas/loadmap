@@ -695,6 +695,72 @@ different times take a block, `held { orders: 0.02; sessions: 3600 }`, and a flo
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
 
+**A connection** says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
+group each partition is read by one consumer only: `assign: exclusive` deals the partitions of the queue in front to
+the workers of the pool after it, in turn, alternating pods. Workers beyond the partitions read nothing, and the
+component runs out when its busiest member does:
+
+```
+connection group {
+  hop: topic -> pool
+  assign: exclusive
+  capacityPer: pod
+}
+```
+
+`capacityPer` says what the capacity divides over. Per worker, each handles one unit at a time: 12 partitions on 16
+workers leave 4 idle, the pool runs out at 75 % of its capacity, and a fifth pod adds nothing. Per pod, the workers
+of a pod share its CPU, so idle threads cost nothing, but a pod with fewer partitions than another does: 6 partitions
+on 4 pods read 2, 2, 1 and 1. `owner: pod` gives each partition to a pod instead of a worker. A connection changes no
+rate, demand or capacity: the limits list says what it does ("The busiest pod reads 2 of 6 partitions"), and an
+autoscaler still sees the pool's average. On the board each unit goes to the worker that reads its partition, a worker
+that reads none is dashed and stays idle, and a partition a quieter worker reads waits less of the queue's lag; the
+latency times each group of workers at its own utilization. Between two stages that are not a queue and a pool,
+`parts` and `members` give the counts: `parts: 16; members: 4` for a sharded store. `flows: [orders]` covers some
+flows only, so two flows on one hop can follow different rules; `shared` (the default) is any member taking any unit.
+In TypeScript, `connections: { group: { from: 'topic', to: 'pool', assign: 'exclusive' } }`, `ev.components.pool.spread`
+gives the factor and the line, and `ev.stages.pool.assignment` the worker that reads each partition.
+
+A connection also counts what it holds open. `open` is the connections each member of the pool on the hop keeps to
+the other side (per pod with `owner: pod`), and `max` the most that side accepts, a capacity like any other. Together
+they make a limit of their own, named by the connection, "Connections to db": the members running times what each
+keeps open, added up over every connection into the stage:
+
+```
+connection dbPool {
+  hop: api -> db
+  owner: pod
+  open: 20
+  max: configured(100, "connections", "max_connections")
+}
+```
+
+An autoscaled pool opens more as it adds pods, so this limit runs out at a load: 20 a pod reach 100 at the fifth pod.
+One connection into a stage gives `max`; the others into it only `open`.
+
+The stage a connection reaches can be uneven too. `assign: key` sends each unit to the part its key hashes to,
+partition i of each flow on member i mod `members` of that stage (a cluster's queue takes the cluster's members):
+12 partitions on 5 brokers put 3 on the busiest, which runs out at 80 % of the cluster's capacity. `skew` is the share
+of a flow on its hottest key, measured or estimated, and on the board that share of the dots lands on partition 0.
+`assign: leader` sends every unit to one member: a Raft leader, a primary. Both apply to a capacity you measured or
+estimated for the whole stage; a published figure keeps its number, since its run spread the work its own way, and
+the limits list says what the key would have done:
+
+```
+connection produce {
+  hop: gateway -> topic
+  assign: key
+  skew: estimated(0.25, "share", "busiest customer")
+}
+```
+
+The catalog says how callers connect to each of its components, from their documentation: `rule:
+"kafka/consumer-group"` gives a connection that rule's `assign` and `owner` (what the connection writes wins), and
+the assumptions cite its source. Autocomplete lists every rule. A setting's documented default is a figure taken by
+its name only, never matched to a configuration: PostgreSQL's 97 connections (its 100, less the 3 kept for
+superusers) are `published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }`, for `max: dbMax`. In TypeScript, `rule(kafka, 'kafka/consumer-group')` and
+`published(postgresql, { figure: 'max-connections' })`.
+
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
@@ -939,7 +1005,7 @@ A loadmap definition.
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
 | `grid` | boolean, constant | The editor's dot grid. Default true. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `tier`, `thresholds`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -1563,6 +1629,30 @@ After the keyword: [id] [label].
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 Holds branches: `flow -> stage: copies per unit`.
+
+### connection
+
+How a stage reaches the next one on a route. exclusive gives each part one owner: a Kafka consumer group. The component runs out when its busiest member does.
+
+```
+connection group { hop: topic -> workers; assign: exclusive }
+```
+
+After the keyword: id.
+
+| Property | Value | |
+| --- | --- | --- |
+| `hop` (required) | route, constant | The two stages it joins: from -> to. |
+| `assign` | `shared` \| `exclusive` \| `key` \| `leader` | shared (the default); exclusive: each part read by one member; key: each unit to its part, part i on member i mod members; leader: every unit to one member. |
+| `owner` | `worker` \| `pod` | What owns a part in a pool. Default worker. |
+| `capacityPer` | `worker` \| `pod` | What the capacity divides over. Default the owner. |
+| `parts` | number, formula | Parts of each flow, when the stage in front is no queue. |
+| `members` | number, formula | Members of the stage after, when it is no pool. A cluster's members for its queues. |
+| `flows` | flows, constant | The flows it covers. Default every flow on the hop. |
+| `open` | number, formula | Connections each member of the pool on the hop keeps open to the other side. |
+| `max` | capacity, formula | The most connections the other side accepts: a limit named by this connection. |
+| `skew` | capacity, formula | With key: a flow's share on its hottest part. |
+| `rule` | string, constant | A rule from the catalog, "kafka/consumer-group": its assign and owner unless written, its source cited. |
 
 ### thresholds
 

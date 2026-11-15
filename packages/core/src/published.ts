@@ -1,4 +1,5 @@
 import { type Capacity, sourceText } from './capacity'
+import type { Assign, Member } from './connections'
 import { fmt, joinAnd } from './format'
 
 /** A value a run was made under: a count, a word or a switch. */
@@ -80,6 +81,34 @@ export interface CatalogComponent {
   conditions: Readonly<Record<string, Condition>>
   /** Empty when nothing is published with its conditions. */
   figures: readonly Figure[]
+  /**
+   * Documented defaults of its settings (`max_connections`), each a limit an operator may change: taken only by name
+   * (`figure`), never matched to a configuration.
+   */
+  defaults?: readonly Figure[]
+  /** How callers connect to it, as its documentation says: what a connection's `rule` takes. */
+  connections?: readonly ConnectionRule[]
+}
+
+/** How a caller connects to a component, as its documentation says it. */
+export interface ConnectionRule {
+  /** `kafka/consumer-group`: unique in the catalog, the same in every edition. */
+  id: string
+  assign: Assign
+  owner?: Member
+  /** The rule in a sentence, as the source says it. */
+  what: string
+  source: Source
+}
+
+/** A component's connection rule by its id, `rule(kafka, 'kafka/consumer-group')`: what a connection's `rule` takes. */
+export function rule(c: CatalogComponent, id: string): ConnectionRule {
+  const r = c.connections?.find((x) => x.id === id)
+  if (!r)
+    throw new Error(
+      `loadmap: ${c.name} has no connection rule "${id}"${c.connections?.length ? `: ${c.connections.map((x) => x.id).join(', ')}` : ''}`,
+    )
+  return r
 }
 
 export interface Catalog {
@@ -141,8 +170,19 @@ export function match(c: CatalogComponent, config: PublishedConfig): { figure: F
       throw new Error(
         `loadmap: ${c.name} has no condition "${k}"${Object.keys(c.conditions).length ? `: ${Object.keys(c.conditions).join(', ')}` : ''}`,
       )
+  // a documented default is taken by its name only: it matches no configuration
+  const byDefault = config.figure == null ? undefined : c.defaults?.find((f) => f.id === config.figure)
+  if (byDefault) {
+    if (config.version != null && !coversVersion(byDefault.versions, String(config.version)))
+      return {
+        missing: `for version ${config.version}: the default is documented for ${byDefault.versions.join(', ')}`,
+      }
+    return { figure: byDefault }
+  }
   if (config.figure != null && !c.figures.some((f) => f.id === config.figure))
-    throw new Error(`loadmap: ${c.name} has no figure "${config.figure}": ${c.figures.map((f) => f.id).join(', ')}`)
+    throw new Error(
+      `loadmap: ${c.name} has no figure "${config.figure}": ${[...c.figures, ...(c.defaults ?? [])].map((f) => f.id).join(', ')}`,
+    )
   const usable = c.figures.filter(
     (f) => (f.measure === 'capacity' || f.measure === 'limit') && (config.figure == null || f.id === config.figure),
   )

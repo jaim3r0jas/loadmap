@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundOf, check, defineModel, estimated, p, pass, published } from '../src'
+import { boundOf, check, defineModel, estimated, p, pass, published, rule } from '../src'
 import { CATALOG, EDITIONS, kafka, kubernetes, nginx, opensearch, postgresql, rabbitmq } from '../src/catalog'
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -26,6 +26,40 @@ describe('the catalog', () => {
     }
   })
 
+  it('says how callers connect to every component, each rule with its source', () => {
+    const ids = new Set<string>()
+    for (const [id, c] of Object.entries(CATALOG.components)) {
+      expect(c.connections?.length, id).toBeGreaterThan(0)
+      for (const r of c.connections ?? []) {
+        expect(r.id.startsWith(`${id}/`), r.id).toBe(true)
+        expect(ids.has(r.id), r.id).toBe(false)
+        ids.add(r.id)
+        expect(['shared', 'exclusive', 'key', 'leader']).toContain(r.assign)
+        expect(r.what, r.id).toMatch(/\.$/)
+        expect(r.source.url, r.id).toMatch(/^https:\/\//)
+        expect(r.source.checked, r.id).toMatch(DAY)
+      }
+      for (const f of c.defaults ?? []) {
+        expect(f.measure, `${id}/${f.id}`).toBe('limit')
+        expect(f.when, `${id}/${f.id}`).toEqual({})
+        expect(f.source.url, `${id}/${f.id}`).toMatch(/^https:\/\//)
+      }
+    }
+    // the edition before keeps what it had
+    expect(EDITIONS['2026-11']!.components.kafka!.connections).toBeUndefined()
+  })
+
+  it('never changes a released rule: one id is the same rule in every edition that has it', () => {
+    const seen = new Map<string, string>()
+    for (const e of Object.values(EDITIONS))
+      for (const c of Object.values(e.components))
+        for (const r of c.connections ?? []) {
+          const json = JSON.stringify(r)
+          expect(seen.get(r.id) ?? json, r.id).toBe(json)
+          seen.set(r.id, json)
+        }
+  })
+
   it('never changes a released edition', async () => {
     for (const [name, e] of Object.entries(EDITIONS))
       await expect(`${JSON.stringify(e, null, 2)}\n`).toMatchFileSnapshot(`./__snapshots__/catalog-${name}.json.snap`)
@@ -39,7 +73,7 @@ describe('published', () => {
     const c = published(kafka, { ...config, version: '4.4' })
     expect(c).toMatchObject({ value: 605, unit: 'MB/s', provenance: 'published', ceiling: true })
     expect(c.source).toBe('Apache Kafka, run by Confluent, 2020-08-21')
-    expect(c.ref).toMatchObject({ component: 'kafka', figure: 'omb-2020', edition: '2026-11', version: '4.4' })
+    expect(c.ref).toMatchObject({ component: 'kafka', figure: 'omb-2020', edition: '2026-12', version: '4.4' })
     expect(c.ref?.conditions.slice(0, 5)).toEqual([
       '3 brokers',
       'replication factor 3',
@@ -80,6 +114,26 @@ describe('published', () => {
     expect(published(postgresql).missing).toBe('(nothing is published for PostgreSQL with its conditions)')
     expect(published(opensearch, { nodes: 1, workload: 'Big5', version: '3.3' }).missing).toBe(
       '(OpenSearch has a published latency, not a capacity)',
+    )
+  })
+
+  it("takes a setting's documented default by its name only", () => {
+    const c = published(postgresql, { figure: 'max-connections' })
+    // 100, less the 3 kept for superusers
+    expect(c).toMatchObject({ value: 97, unit: 'connections', provenance: 'published' })
+    expect(published(postgresql, { figure: 'max-connections', version: '12' }).missing).toBe(
+      'for version 12: the default is documented for 18',
+    )
+    expect(c.ref).toMatchObject({ measure: 'limit', figure: 'max-connections', edition: '2026-12' })
+    expect(c.ceiling).toBeUndefined()
+    // never matched to a configuration: PostgreSQL still publishes no benchmark
+    expect(published(postgresql).missing).toBe('(nothing is published for PostgreSQL with its conditions)')
+  })
+
+  it("names a component's connection rule, and refuses one it does not have", () => {
+    expect(rule(kafka, 'kafka/consumer-group')).toMatchObject({ assign: 'exclusive', owner: 'worker' })
+    expect(() => rule(kafka, 'kafka/nope')).toThrow(
+      'loadmap: Apache Kafka has no connection rule "kafka/nope": kafka/consumer-group, kafka/producer-key, kafka/share-group',
     )
   })
 

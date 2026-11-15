@@ -1,6 +1,17 @@
 import type { LinearFit } from './calibrate'
 import { type Bound, boundOf, type Capacity, type CrossingRange } from './capacity'
 import type { Expectation } from './check'
+import {
+  type ConnectionDef,
+  memberShape,
+  opener,
+  poolShape,
+  type Shape,
+  type Spread,
+  spreadOver,
+  spreadText,
+  type Work,
+} from './connections'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
@@ -11,12 +22,14 @@ import {
   type Branch,
   dyn,
   hitOf,
+  podsOf,
   type ResolvedStage,
   rejectShare,
   resolveStage,
   type SplitBranch,
   type StageDef,
   splitOf,
+  type WorkersAssignment,
 } from './stages'
 
 /** What every model function receives: the parameter values plus the model's own derived numbers. */
@@ -143,6 +156,11 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   derived?: { [K in D]: (ctx: Ctx<P, F, C, D, NoInfer<S>>) => number }
   stages: { [K in S]: StageDef<NoInfer<C>> }
   routes: { [K in NoInfer<F>]: readonly NoInfer<S>[] }
+  /**
+   * How a stage reaches the next one on a route, and through which part of it: a consumer group that reads each
+   * partition with one worker. The component of `to` then runs out when its busiest member does.
+   */
+  connections?: Readonly<Record<string, ConnectionDef<NoInfer<S>, NoInfer<F>>>>
   /** Fits used by the model, listed with the assumptions. */
   calibration?: Readonly<Record<string, LinearFit>>
   /**
@@ -191,7 +209,7 @@ export interface ComponentResult<C extends string = string> {
   name: string
   short: string
   plural: boolean
-  /** demand ÷ capacity at the current values; null when switched off. */
+  /** demand ÷ capacity at the current values, × the spread of a connection; null when switched off. */
   util: number | null
   demand: number | null
   capacity: Capacity | null
@@ -209,6 +227,8 @@ export interface ComponentResult<C extends string = string> {
   held?: Readonly<Record<string, number>>
   /** Why it has no published figure for this configuration: it is then not ranked, like a switched-off one. */
   missing?: string
+  /** How unevenly a connection lands the work on its members, when unevenly or with members left idle. */
+  spread?: Spread
 }
 
 export interface VerdictResult {
@@ -251,6 +271,8 @@ export type Assumption =
   | { kind: 'fit'; name: string; fit: LinearFit }
   /** A measurement of the snapshot; a missing one says why, and the definition's own value is used. */
   | { kind: 'measurement'; name: string; measurement: Measurement }
+  /** A connection: its rule, in a sentence. */
+  | { kind: 'connection'; name: string; text: string }
 
 export interface Evaluation<P = any, F extends string = string, C extends string = string, S extends string = string> {
   values: Values<P>
@@ -347,7 +369,10 @@ export function defineModel<
   C extends string,
   S extends string,
   D extends string = never,
->(def: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
+>(written: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
+  // a connection's rule from the catalog gives what it does not write; one that gives max is a limit of its own
+  const given = withRules(written)
+  const def = withCounts(given)
   const params = (def.params ?? {}) as Readonly<Record<string, ParamDef>>
   for (const id of Object.keys(params))
     if (RESERVED.includes(id)) throw new Error(`loadmap: "${id}" is reserved and cannot name a parameter`)
@@ -410,6 +435,7 @@ export function defineModel<
     if (st.kind === 'workers' && (st.pods == null) === (st.autoscale == null))
       throw new Error(`loadmap: workers "${s}" needs pods or autoscale, one of them`)
   }
+  checkConnections(given as ModelDef<any, string, string, string, string>)
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
   const growth = def.growth && checkGrowth(def.growth)
@@ -594,14 +620,26 @@ export function defineModel<
     return { component: best.component, target: best.target, firstLimit: first }
   }
 
-  const resolveStages = (ctx: LooseValues, shed: (s: string) => number) => {
+  const resolveStages = (
+    ctx: LooseValues,
+    shed: (s: string) => number,
+    plain: (c: string) => number | null,
+    assignment: (s: string) => WorkersAssignment | undefined,
+    hot: (s: string) => Record<string, number> | undefined,
+  ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
-      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full)
+      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
+      const a = st.kind === 'workers' ? assignment(s) : undefined
+      const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
         st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'
           ? { ...st, shed: shed(s) }
-          : st
+          : a
+            ? ({ ...st, assignment: a } as ResolvedStage)
+            : skew
+              ? ({ ...st, skew } as ResolvedStage)
+              : st
     }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
@@ -630,6 +668,11 @@ export function defineModel<
       held,
       holders,
       latencies,
+      plain,
+      spread,
+      connectionText,
+      assignment,
+      hot,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -654,6 +697,8 @@ export function defineModel<
         describe: describe(c),
       }
       if (missing != null) components[c].missing = missing
+      const sp = off ? null : spread(c)
+      if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
       const h = off ? null : held(c)
       if (h) {
         const on = holders(c)
@@ -688,7 +733,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -703,6 +748,8 @@ export function defineModel<
       const cap = components[c].capacity ?? capacity(c)
       assumptions.push({ kind: 'capacity', component: c, name: def.components[c].name, capacity: cap })
     }
+    for (const name of Object.keys(def.connections ?? {}))
+      assumptions.push({ kind: 'connection', name, text: connectionText(name) })
     for (const [name, fit] of Object.entries(def.calibration ?? {})) assumptions.push({ kind: 'fit', name, fit })
     // a reading a capacity or a fit already shows with its origin is not listed twice
     const shown = new Set(
@@ -744,7 +791,8 @@ export function defineModel<
   }
 
   return {
-    def: def as ModelDef<any, any, any, any, any>,
+    // as written: the limits connections make live in the model, not in the definition
+    def: written as ModelDef<any, any, any, any, any>,
     title: def.title,
     load: def.load,
     params: paramList,
@@ -765,8 +813,8 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed } = context(def as any, values)
-      return { values, ctx, stages: resolveStages(ctx, shed) }
+      const { ctx, shed, plain, assignment, hot } = context(def as any, values)
+      return { values, ctx, stages: resolveStages(ctx, shed, plain, assignment, hot) }
     },
     utilization: (partial, bound) => {
       const util = context(def as any, { ...defaults(), ...partial }, bound).ctx.util as Record<C, number | null>
@@ -840,7 +888,15 @@ function context(
       const cap = def.components[c]!.capacity
       return typeof cap === 'function' ? cap(ctx as any) : cap
     })
-  const enabled = (c: string) => memo(`${c} enabled`, () => def.components[c]!.when?.(ctx as any) ?? true)
+  const enabled = (c: string): boolean =>
+    memo(`${c} enabled`, () => {
+      // a limit a connection's max makes is off with the component of the stage it counts against
+      const head = Object.hasOwn(def.connections ?? {}, c) ? def.connections![c] : undefined
+      const target = head?.max != null ? opener(stages, head)?.target : undefined
+      const of = target == null ? undefined : (stages[target] as { component?: string }).component
+      if (of != null && !enabled(of)) return false
+      return def.components[c]!.when?.(ctx as any) ?? true
+    })
   /** The seconds a unit of each flow holds one of the component's slots; null when it does not count slots. */
   const held = (c: string) =>
     memo(`held of ${c}`, () => {
@@ -1258,26 +1314,29 @@ function context(
       const unknown = new Set<string>()
       let timed = false
       for (const [i, p] of paths(f).entries()) {
-        let left = p.share
-        let mean = 0
-        let variance = 0
+        // one part of the way, or one per group of members a connection's spread sets apart
+        let parts: WayTime[] = [{ share: p.share, mean: 0, variance: 0 }]
         for (const s of p.stages) {
-          const r = response(s)
-          if (r != null) timed = true
-          if (r != null && Number.isNaN(r))
+          const rs = responses(s, f)
+          if (rs) timed = true
+          if (rs?.length === 1 && Number.isNaN(rs[0]!.time))
             unknown.add(def.components[(stages[s] as { component: string }).component]!.name)
-          else if (r != null) {
-            mean += r
-            variance += r * r
-          }
+          else if (rs)
+            parts = parts.flatMap((w) =>
+              rs.map((g) => ({ share: w.share * g.share, mean: w.mean + g.time, variance: w.variance + g.time ** 2 })),
+            )
           if (stages[s]!.kind === 'cache') {
-            ways.push({ share: left * hit(s), mean, variance })
-            tags.push({ path: i, answeredAt: s })
-            left *= 1 - hit(s)
+            for (const w of parts) {
+              ways.push({ ...w, share: w.share * hit(s) })
+              tags.push({ path: i, answeredAt: s })
+            }
+            parts = parts.map((w) => ({ ...w, share: w.share * (1 - hit(s)) }))
           }
         }
-        ways.push({ share: left, mean, variance })
-        tags.push({ path: i })
+        for (const w of parts) {
+          ways.push(w)
+          tags.push({ path: i })
+        }
       }
       return timed ? { ways, tags, unknown: [...unknown] } : null
     })
@@ -1317,7 +1376,7 @@ function context(
         ...(t != null
           ? {
               timedOut: timedOut(f),
-              ways: times.tags.map((tag, i) => ({ ...tag, timedOut: beyond([{ ...times.ways[i]!, share: 1 }], t) })),
+              ways: perWay(times, t),
             }
           : {}),
       }
@@ -1329,6 +1388,8 @@ function context(
   }
   ctx.demand = table(componentIds, (c) =>
     memo(`demand of ${c}`, () => {
+      const opened = counted(c)
+      if (opened) return opened.reduce((a, o) => a + o.members * o.open, 0)
       const h = held(c)
       if (h) {
         // Little's law: the slots in use are what arrives each second times how long each unit holds one
@@ -1355,12 +1416,318 @@ function context(
       return total
     }),
   )
+  const connections = (def.connections ?? {}) as Readonly<Record<string, ConnectionDef>>
+  /**
+   * For the limit a connection's max makes: what each connection into its stage opens, the members of its pool at
+   * these values (the pods an autoscaler runs, from the plain utilization) times what each keeps open.
+   */
+  const counted = (c: string) => {
+    const head = Object.hasOwn(connections, c) ? connections[c]! : undefined
+    if (head?.max == null) return null
+    return memo(`connections open for ${c}`, () => {
+      const target = opener(stages, head)!.target
+      const out: { id: string; members: number; open: number; owner: 'worker' | 'pod' }[] = []
+      for (const [k, cn] of Object.entries(connections)) {
+        const o = opener(stages, cn)
+        if (cn.open == null || o?.target !== target) continue
+        const st = stages[o.pool] as Extract<StageDef, { kind: 'workers' }>
+        const { running } = podsOf(o.pool, st, ctx, plain(st.component))
+        const owner = cn.owner ?? 'worker'
+        out.push({ id: k, members: owner === 'pod' ? running : running * dyn(st.perPod, ctx), open: openOf(k), owner })
+      }
+      return out
+    })
+  }
+  // the components an exclusive connection spreads over: only these pay for a spread (utilization is the hot path)
+  const spreading = new Set(
+    Object.values(connections)
+      .filter((cn) => cn.assign != null && cn.assign !== 'shared')
+      .map((cn) => (stages[cn.to] as { component?: string }).component),
+  )
+  /** demand ÷ capacity, before any connection's spread. */
+  const plainOf = (c: string): number | null => {
+    if (!enabled(c) || capacity(c).missing != null) return null
+    const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
+    const d = ctx.demand[c] as number
+    return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
+  }
+  /** The utilization before any connection's spread: what an autoscaler's average reads. */
+  const plain = (c: string): number | null =>
+    spreading.has(c) ? memo(`plain utilization of ${c}`, () => plainOf(c)) : (ctx.util[c] as number | null)
+  /** A flow goes from one stage straight to the other: next on one of its ways, or a fan-out's copy. */
+  const goesStraight = (f: string, from: string, to: string) =>
+    paths(f).some((p) => p.stages.some((s, i) => s === from && (p.stages[i + 1] === to || copies(s, f, to) > 0)))
+  /**
+   * The flows a connection covers at these values: none while a split sends them another way (the definition was
+   * checked against every way they can go).
+   */
+  const covered = (k: string) =>
+    memo(`flows of connection ${k}`, () => {
+      const cn = connections[k]!
+      // a flow listed twice counts once
+      return [...new Set(cn.flows ?? flowIds)].filter((f) => goesStraight(f, cn.from, cn.to))
+    })
+  /** A queue's partitions of the flow, or the connection's parts. */
+  const partsOf = (k: string, f: string) => {
+    const cn = connections[k]!
+    const from = stages[cn.from]!
+    if (from.kind === 'queue') {
+      const n = dyn(from.partitions, ctx)[f]
+      if (n == null)
+        throw new Error(
+          `loadmap: connection "${k}" reads "${f}" from queue "${cn.from}", which has no partitions of it`,
+        )
+      return whole(n, `connection "${k}" reads "${f}" from queue "${cn.from}"`, 'partitions')
+    }
+    return whole(dyn(cn.parts!, ctx), `connection "${k}"`, 'parts')
+  }
+  /** The parts of the stage a key connection reaches: its partitions of the flow when it is a queue, else `parts`. */
+  const keyParts = (k: string, f: string) => {
+    const cn = connections[k]!
+    const to = stages[cn.to]!
+    if (to.kind === 'queue') {
+      const n = dyn(to.partitions, ctx)[f]
+      if (n == null)
+        throw new Error(`loadmap: connection "${k}" sends "${f}" to queue "${cn.to}", which has no partitions of it`)
+      return whole(n, `connection "${k}" sends "${f}" to queue "${cn.to}"`, 'partitions')
+    }
+    return whole(dyn(cn.parts!, ctx), `connection "${k}"`, 'parts')
+  }
+  /**
+   * A key connection's skew: a share from 0 to 1, at the edge of its ± the bound asks for (the pessimistic one, every
+   * capacity low, takes the larger share), and never below an even part (fewer parts than it assumed make it even).
+   */
+  const skewOf = (k: string, parts: number) => {
+    const cn = connections[k]!
+    if (cn.skew == null) return undefined
+    const c = typeof cn.skew === 'function' ? cn.skew(ctx) : cn.skew
+    if (!(c.value >= 0 && c.value <= 1))
+      throw new Error(`loadmap: connection "${k}" puts ${c.value} of a flow on its hottest part: a share from 0 to 1`)
+    const w = c.within ?? 0
+    const edge = bound === 'low' ? c.value * (1 + w) : bound === 'high' ? c.value * (1 - w) : c.value
+    return Math.min(1, Math.max(1 / parts, edge))
+  }
+  /**
+   * How unevenly the connections into the stage that runs it land the work: exclusive readers, or keys and a leader
+   * on its members; null without one.
+   */
+  const spread = (c: string) =>
+    !spreading.has(c)
+      ? null
+      : memo(`spread of ${c}`, () => {
+          const spreaders = Object.entries(connections).filter(
+            ([k, cn]) =>
+              cn.assign != null && cn.assign !== 'shared' && usedBy(c).includes(cn.to) && covered(k).length > 0,
+          )
+          if (!spreaders.length) return null
+          const [first, cn] = spreaders[0]!
+          // a key or a leader may reach several stages of one component (a cluster's topics); readers, one stage
+          const into = [...new Set(spreaders.map(([, x]) => x.to))]
+          const stage = cn.to
+          const st = stages[stage]!
+          const reads = cn.assign === 'exclusive'
+          const two = spreaders.find(([, x]) => (x.assign === 'exclusive') !== reads)
+          if (two)
+            throw new Error(
+              `loadmap: connections "${first}" and "${two[0]}" spread "${stage}" two ways, by readers and by keys: one way for a stage`,
+            )
+          // the connections into a stage see the same members
+          const members = spreaders.map(([k, x]) =>
+            st.kind === 'workers'
+              ? `${x.owner ?? 'worker'}/${x.capacityPer ?? x.owner ?? 'worker'}`
+              : whole(dyn(x.members!, ctx), `connection "${k}"`, 'members'),
+          )
+          const other = members.findIndex((m) => m !== members[0])
+          if (other > 0)
+            throw new Error(
+              `loadmap: connections "${first}" and "${spreaders[other]![0]}" read into "${stage}" with different members: give them the same owner, capacityPer and members`,
+            )
+          let shape: Shape
+          let pool: { running: number; perPod: number; owner: 'worker' | 'pod' } | undefined
+          if (st.kind === 'workers') {
+            const owner = cn.owner ?? 'worker'
+            const { running } = podsOf(stage, st, ctx, plain(c))
+            if (!(running >= 1)) return null
+            const perPod = whole(dyn(st.perPod, ctx), `workers "${stage}"`, 'perPod')
+            pool = { running: whole(running, `workers "${stage}"`, 'pods'), perPod, owner }
+            shape = poolShape(pool.running, perPod, owner, cn.capacityPer ?? owner)
+          } else shape = memberShape(members[0] as number)
+          // each flow by its share of the demand: for slots, what arrives × how long each unit holds one
+          const h = held(c)
+          const weight = (f: string, at: readonly string[]) =>
+            at.reduce((a, t) => a + arriving(t, f), 0) * (h ? (h[f] ?? 0) : 1)
+          const work: (Work & { at: readonly string[] })[] = []
+          for (const [k, x] of spreaders)
+            for (const f of covered(k)) {
+              const twice = work.find((w) => w.flow === f)
+              if (twice)
+                throw new Error(
+                  `loadmap: connections "${spreaders.find(([, y]) => y.from === twice.from)![0]}" and "${k}" both bring "${f}" into "${stage}": a flow reaches a spread stage through one connection`,
+                )
+              if (x.assign === 'exclusive') {
+                // a hot key on the queue in front lands on its partition 0, and so on the worker that reads it
+                const skew = hot(x.from)?.[f]
+                work.push({ flow: f, weight: 0, parts: partsOf(k, f), from: x.from, skew, at: [x.to] })
+                continue
+              }
+              // a key's parts sit on the members from member 0 for each flow; a leader is one part on member 0
+              const parts = x.assign === 'leader' ? 1 : keyParts(k, f)
+              work.push({ flow: f, weight: 0, parts, from: x.from, restart: true, skew: skewOf(k, parts), at: [x.to] })
+            }
+          const on = usedBy(c)
+          for (const f of flowIds) {
+            if (work.some((w) => w.flow === f)) continue
+            const at = on.filter((t) => paths(f).some((p) => p.stages.some((x) => x === t || copies(x, f, t) > 0)))
+            if (at.length) work.push({ flow: f, weight: 0, parts: null, at })
+          }
+          // one flow alone has all the work, whatever its rate: what reaches the stage is read only to weigh several
+          if (work.length > 1) for (const w of work) w.weight = weight(w.flow, w.at)
+          const s = spreadOver(shape, work)
+          const d = def.components[c]!
+          const short = d.short ?? d.name
+          const plural = d.plural ?? false
+          const queues = spreaders.every(([, x]) => stages[reads ? x.from : x.to]!.kind === 'queue')
+          const mode = reads ? 'read' : spreaders.every(([, x]) => x.assign === 'leader') ? 'leader' : 'key'
+          const text = spreadText(s, shape, work, { short, plural, part: queues ? 'partition' : 'part', mode })
+          const base = { stage, stages: into, shape, work, dealt: s, pool }
+          // a published figure was run with its own way of spreading the work: a key or a leader leaves it as it is
+          if (!reads && capacity(c).provenance === 'published') {
+            const hotKeys = work.flatMap((w) =>
+              w.skew != null ? [`The hottest key carries ${pct(w.skew)} of ${w.flow}.`] : [],
+            )
+            const keeps = `${capital(short)} ${plural ? 'keep their' : 'keeps its'} published figure: its run spread the work its own way.`
+            return {
+              ...base,
+              factor: 1,
+              published: true,
+              text: s.factor > 1 ? [`${text?.split(':')[0]}.`, ...hotKeys, keeps].join(' ') : null,
+            }
+          }
+          return { ...base, factor: s.factor, text }
+        })
+  /** The share of each flow on partition 0 of a queue a key connection with a skew reaches; undefined without one. */
+  const hot = (stage: string): Record<string, number> | undefined =>
+    memo(`hot partitions of ${stage}`, () => {
+      let out: Record<string, number> | undefined
+      for (const [k, cn] of Object.entries(connections)) {
+        if (cn.assign !== 'key' || cn.to !== stage || cn.skew == null) continue
+        for (const f of covered(k)) {
+          out ??= {}
+          out[f] = skewOf(k, keyParts(k, f))!
+        }
+      }
+      return out
+    })
+  /** Which worker reads each partition of an exclusive pool, and each running worker's share of the work. */
+  const assignment = (stage: string): WorkersAssignment | undefined => {
+    const c = (stages[stage] as { component?: string }).component
+    const sp = c ? spread(c) : null
+    if (!sp?.pool || sp.stage !== stage) return undefined
+    // a pool is read by exclusive connections only: one stage
+    const { running, perPod, owner } = sp.pool
+    const cell = sp.shape.cellOf
+    const cells: Record<string, number[]> = {}
+    const from: Record<string, string> = {}
+    for (const [f, list] of sp.dealt.owners) cells[f] = list.map(cell)
+    for (const w of sp.work) if (w.from) from[w.flow] = w.from
+    const weights = new Array<number>(running * perPod).fill(0)
+    let left = 1
+    sp.dealt.owned.forEach((w, o) => {
+      left -= w
+      if (owner === 'worker') weights[cell(o)]! += w
+      else for (let t = 0; t < perPod; t++) weights[cell(o) + t]! += w / perPod
+    })
+    // what no exclusive connection covers lands evenly; a sliver left by rounding is none
+    if (left > 1e-9) for (let i = 0; i < weights.length; i++) weights[i]! += left / weights.length
+    return { owner, cells, from, weights }
+  }
+  /**
+   * The time a unit of a flow spends at a stage, by the share of its units that take it: one time, or one per group of
+   * members whose utilization a connection's spread sets apart.
+   */
+  const responses = (s: string, f: string): { share: number; time: number }[] | null => {
+    const r = response(s)
+    const c = (stages[s] as { component?: string }).component
+    if (r == null || Number.isNaN(r) || !c) return r == null ? null : [{ share: 1, time: r }]
+    const sp = spread(c)
+    const u0 = plain(c)
+    const time = service(c)
+    if (!sp?.stages.includes(s) || 'published' in sp || u0 == null || time == null) return [{ share: 1, time: r }]
+    const units = sp.shape.units
+    const groups = new Map<number, number>()
+    for (let u = 0; u < units; u++) {
+      const q = sp.dealt.flows[u]!.get(f) ?? 0
+      if (q <= 0) continue
+      const util = u0 * sp.dealt.share[u]! * units
+      const t = util >= 1 ? Number.POSITIVE_INFINITY : time / (1 - util)
+      groups.set(t, (groups.get(t) ?? 0) + q)
+    }
+    if (!groups.size) return [{ share: 1, time: r }]
+    const total = [...groups.values()].reduce((a, q) => a + q, 0)
+    return [...groups].map(([t, share]) => ({ share: total > 0 ? share / total : share, time: t }))
+  }
+  /** A connection's rule in a sentence, for the assumptions; a rule from the catalog adds its own and its source. */
+  const connectionText = (k: string) => {
+    const cn = connections[k]!
+    const r = cn.rule
+    const own = ruleSentence(k)
+    // the source backs the rule only where its assign is the one in effect
+    const cites = r != null && (cn.assign ?? 'shared') === r.assign
+    return cites ? `${own} ${r.what.replace(/\.$/, '')} (${r.source.title}, ${r.source.by}).` : own
+  }
+  const ruleSentence = (k: string) => {
+    const cn = connections[k]!
+    const which = cn.flows ? ` (${joinAnd(cn.flows.map((f) => def.flows[f]!.label ?? f))})` : ''
+    const from = stages[cn.from]!.label ?? cn.from
+    const to = stages[cn.to]!.label ?? cn.to
+    const pool = stages[cn.to]!.kind === 'workers'
+    const owner = pool ? (cn.owner ?? 'worker') : 'member'
+    if (cn.assign === 'key' || cn.assign === 'leader') {
+      const n = dyn(cn.members!, ctx)
+      if (cn.assign === 'leader')
+        return `Every unit${which} goes to the leader, one of ${fmt(n)} members of ${to} (leader).`
+      const part = stages[cn.to]!.kind === 'queue' ? 'partition' : 'part'
+      const sk = cn.skew == null ? undefined : (typeof cn.skew === 'function' ? cn.skew(ctx) : cn.skew).value
+      const hot = sk == null ? ' Every key as busy as another.' : ` The hottest key carries ${pct(sk)} of a flow.`
+      return `Each unit${which} goes to the ${part} its key hashes to; ${part} i of each flow sits on member i mod ${fmt(n)} of ${to} (key).${hot}`
+    }
+    if (cn.assign === 'exclusive') {
+      const part = stages[cn.from]!.kind === 'queue' ? 'partition' : 'part'
+      const turn = pool && owner === 'worker' ? 'workers alternating pods' : `${owner}s`
+      return `Each ${part} of ${from}${which} is read by one ${owner} of ${to} (exclusive). The ${part}s are dealt in turn to ${turn}: the most even case.${opens(k)}`
+    }
+    // one written only to count says what it counts, not a rule nobody set
+    if (cn.assign == null && (cn.open != null || cn.max != null)) {
+      const target = opener(stages, cn)?.target
+      const label = target == null ? to : (stages[target]!.label ?? target)
+      return opens(k).trim() || `It gives the most ${label} accepts: the limit on the connections open to it.`
+    }
+    const rule = pool
+      ? `Any ${owner} of ${to} takes any unit from ${from}${which} (shared).`
+      : `${capital(to)} takes the units from ${from}${which} evenly (shared).`
+    return rule + opens(k)
+  }
+  /** What a connection keeps open per member, checked: a count from 0 up. */
+  const openOf = (k: string) => {
+    const open = dyn(connections[k]!.open!, ctx)
+    if (!(open >= 0)) throw new Error(`loadmap: connection "${k}" keeps ${open} connections open: a count from 0 up`)
+    return open
+  }
+  /** " Each pod keeps 20 connections open to db." */
+  const opens = (k: string) => {
+    const cn = connections[k]!
+    const o = opener(stages, cn)
+    if (cn.open == null || !o) return ''
+    const n = openOf(k)
+    return ` Each ${cn.owner ?? 'worker'} of ${stages[o.pool]!.label ?? o.pool} keeps ${fmt(n)} connection${n === 1 ? '' : 's'} open to ${stages[o.target]!.label ?? o.target}.`
+  }
   ctx.util = table(componentIds, (c) =>
     memo(`utilization of ${c}`, () => {
-      if (!enabled(c) || capacity(c).missing != null) return null
-      const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
-      const d = ctx.demand[c] as number
-      return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
+      if (!spreading.has(c)) return plainOf(c)
+      const u = plain(c)
+      if (u == null) return null
+      const s = spread(c)
+      return s ? u * s.factor : u
     }),
   )
   ctx.derived = table(Object.keys(def.derived ?? {}), (k) =>
@@ -1377,10 +1744,21 @@ function context(
     paths,
     retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
-    describe: (c: string) => text(def.components[c]!.describe),
+    describe: (c: string) => {
+      const opened = counted(c)
+      if (!opened) return text(def.components[c]!.describe)
+      // "3 pods × 20 = 60 open"
+      const parts = opened.map((o) => `${fmt(o.members)} ${o.owner}${o.members === 1 ? '' : 's'} × ${fmt(o.open)}`)
+      return `${parts.join(' + ')} = ${fmt(opened.reduce((a, o) => a + o.members * o.open, 0))} open`
+    },
     held,
     holders,
     timedOut,
+    plain,
+    spread,
+    connectionText,
+    assignment,
+    hot,
     latencies: (only: readonly string[] = flowIds) => {
       const timed = componentIds.some((c) => def.components[c]!.service != null)
       // each flow's on first read: the quantiles cost a bisection each
@@ -1391,7 +1769,196 @@ function context(
   }
 }
 
-/** y + y² + … + yⁿ: the retries per unit when each attempt fails with share y and n retries may follow. */
+/**
+ * Each way's share too slow for its timeout: one entry per way, its groups of members (a connection's spread splits a
+ * way by them) weighed by their share.
+ */
+function perWay(
+  times: { ways: readonly WayTime[]; tags: readonly { path: number; answeredAt?: string }[] },
+  t: number,
+): { path: number; answeredAt?: string; timedOut: number }[] {
+  const out = new Map<
+    string,
+    { tag: { path: number; answeredAt?: string }; late: number; share: number; first: number }
+  >()
+  times.tags.forEach((tag, i) => {
+    const w = times.ways[i]!
+    const key = `${tag.path}/${tag.answeredAt ?? ''}`
+    const late = beyond([{ ...w, share: 1 }], t)
+    const e = out.get(key) ?? { tag, late: 0, share: 0, first: late }
+    e.late += w.share * late
+    e.share += w.share
+    out.set(key, e)
+  })
+  // a way nothing takes still says how slow it is
+  return [...out.values()].map((e) => ({ ...e.tag, timedOut: e.share > 0 ? e.late / e.share : e.first }))
+}
+
+/** The definition with each connection's rule filled in: its assign and owner where the connection writes none. */
+function withRules<T extends ModelDef<any, any, any, any, any>>(def: T): T {
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  if (!all.some(([, cn]) => cn.rule)) return def
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const fill = (cn: ConnectionDef): ConnectionDef => {
+    const r = cn.rule!
+    // shared is what a connection does anyway, and an owner belongs to a pool: a rule fills only what applies
+    const assign = cn.assign ?? (r.assign === 'shared' ? undefined : r.assign)
+    const owner = cn.owner ?? (stages[cn.to]?.kind === 'workers' ? r.owner : undefined)
+    return { ...cn, ...(assign != null && { assign }), ...(owner != null && { owner }) }
+  }
+  return { ...def, connections: Object.fromEntries(all.map(([k, cn]) => [k, cn.rule ? fill(cn) : cn])) }
+}
+
+/** The definition with a component for each connection that gives max: the connections open against it. */
+function withCounts<T extends ModelDef<any, any, any, any, any>>(def: T): T {
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  if (!all.some(([, cn]) => cn.max != null)) return def
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const components: Record<string, ComponentDef<any>> = { ...def.components }
+  for (const [k, cn] of all) {
+    const o = cn.max == null || Object.hasOwn(components, k) ? undefined : opener(stages, cn)
+    if (!o) continue
+    const label = stages[o.target]?.label ?? o.target
+    components[k] = {
+      name: `Connections to ${label}`,
+      short: `the connections to ${label}`,
+      plural: true,
+      // worked out where the pods are known: the members of each pool times what each keeps open
+      demand: () => 0,
+      capacity: cn.max!,
+      over: `new connections to ${label} are refused`,
+    }
+  }
+  return { ...def, components }
+}
+
+/** A count of parts or members: a whole number from 1 up. */
+function whole(n: number, who: string, what: string): number {
+  if (!(Number.isInteger(n) && n >= 1))
+    throw new Error(`loadmap: ${who} needs ${what} as a whole number from 1 up, not ${n}`)
+  return n
+}
+
+/** What a definition's connections must hold whatever the values: the rest is checked where the flows go. */
+function checkConnections(def: ModelDef<any, string, string, string, string>): void {
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  for (const [k, cn] of all) {
+    const at = `loadmap: connection "${k}"`
+    if (Object.hasOwn(def.components, k)) throw new Error(`${at} has the name of a component: give it its own`)
+    for (const end of [cn.from, cn.to])
+      if (!Object.hasOwn(stages, end)) throw new Error(`${at} names unknown stage "${end}"`)
+    for (const f of cn.flows ?? [])
+      if (!Object.hasOwn(def.flows, f)) throw new Error(`${at} covers unknown flow "${f}"`)
+    const from = stages[cn.from]!
+    const to = stages[cn.to]!
+    const pool = to.kind === 'workers'
+    // owner is a member of the pool after (exclusive) or of the pool that opens (counts); capacityPer only the first
+    const opens = cn.open != null && from.kind === 'workers'
+    if (!pool && (cn.capacityPer != null || (cn.owner != null && !opens)))
+      throw new Error(`${at} names owner or capacityPer, but "${cn.to}" is not a pool: give it members`)
+    if (cn.owner === 'pod' && cn.capacityPer === 'worker')
+      throw new Error(
+        `${at} divides the capacity per worker, but a pod owns each part: capacityPer is the owner or a pod`,
+      )
+    const target = cn.assign === 'key' || cn.assign === 'leader'
+    if (!target && from.kind === 'queue' && cn.parts != null)
+      throw new Error(`${at}: the parts of queue "${cn.from}" are its partitions; leave parts out`)
+    if (pool && cn.members != null)
+      throw new Error(`${at}: the members of pool "${cn.to}" are its workers or pods; leave members out`)
+    if (cn.skew != null && cn.assign !== 'key') throw new Error(`${at} gives skew, which only a key connection has`)
+    if (target) {
+      if (pool)
+        throw new Error(
+          `${at} spreads by ${cn.assign} over pool "${cn.to}": a key or a leader spreads over the members of a stage that is not a pool`,
+        )
+      if (cn.members == null) throw new Error(`${at} needs members: the members of "${cn.to}" its parts sit on`)
+      if (cn.assign === 'leader' && cn.parts != null)
+        throw new Error(`${at}: a leader takes every unit on one member; leave parts out`)
+      if (to.kind === 'queue' && cn.parts != null)
+        throw new Error(`${at}: the parts of queue "${cn.to}" are its partitions; leave parts out`)
+      if (cn.assign === 'key' && to.kind !== 'queue' && cn.parts == null)
+        throw new Error(`${at} needs parts: "${cn.to}" is not a queue with partitions`)
+    } else if (cn.assign !== 'exclusive') continue
+    if (target) {
+      const c = to.kind === 'sink' ? undefined : to.component
+      if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)
+      continue
+    }
+    if (from.kind !== 'queue' && cn.parts == null)
+      throw new Error(`${at} needs parts: "${cn.from}" is not a queue with partitions`)
+    if (!pool && cn.members == null) throw new Error(`${at} needs members: "${cn.to}" is not a pool`)
+    const c = to.kind === 'sink' ? undefined : to.component
+    if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)
+    const also = Object.keys(stages).find((s) => s !== cn.to && (stages[s] as { component?: string }).component === c)
+    if (also)
+      throw new Error(
+        `${at} spreads parts over "${cn.to}", but its component "${c}" also runs "${also}": give "${cn.to}" a component of its own`,
+      )
+  }
+  // connections counted against a stage: one of those into it gives max, and those that open need it
+  for (const [k, cn] of all) {
+    if (cn.open == null && cn.max == null) continue
+    const o = opener(stages, cn)
+    if (!o)
+      throw new Error(
+        `loadmap: connection "${k}" counts connections, but neither "${cn.from}" nor "${cn.to}" is a pool to open them`,
+      )
+    // between two pools, owner is a member of the pool after: it cannot also be one of the pool that opens
+    if (cn.open != null && cn.owner != null && cn.assign === 'exclusive' && o.pool !== cn.to)
+      throw new Error(
+        `loadmap: connection "${k}" opens from "${o.pool}" and spreads over "${cn.to}": owner cannot name a member of both; give the counting its own connection`,
+      )
+    const into = all.filter(([, x]) => (x.open != null || x.max != null) && opener(stages, x)?.target === o.target)
+    const maxes = into.filter(([, x]) => x.max != null).map(([j]) => j)
+    if (maxes.length > 1)
+      throw new Error(
+        `loadmap: connections "${maxes[0]}" and "${maxes[1]}" both give the most "${o.target}" accepts: give max on one`,
+      )
+    if (!maxes.length)
+      throw new Error(
+        `loadmap: connection "${k}" opens connections to "${o.target}", but none into it gives max: the most it accepts`,
+      )
+    if (!into.some(([, x]) => x.open != null))
+      throw new Error(`loadmap: connection "${k}" gives max, but none into "${o.target}" opens any: give open`)
+  }
+  // the flows that can go from one stage straight to the other; a split may send a flow any way its branches go, so a
+  // route through one is checked where the values pick a way
+  const routes = def.routes as Readonly<Record<string, readonly string[]>>
+  const flowIds = Object.keys(def.flows)
+  const mayGo = (f: string, from: string, to: string) => {
+    const r = routes[f] ?? []
+    if (r.some((s, i) => s === from && r[i + 1] === to)) return true
+    if (r.some((s) => stages[s]?.kind === 'split')) return true
+    // a fan-out's copies: its branches are worked out from the values
+    return r.at(-1) === from && stages[from]?.kind === 'fanout'
+  }
+  const may = (cn: ConnectionDef) => flowIds.filter((f) => mayGo(f, cn.from, cn.to))
+  // a connection that only counts what it holds open needs no flow on its hop: a pool keeps connections it may not use
+  const countsOnly = (cn: ConnectionDef) =>
+    cn.assign !== 'exclusive' && cn.flows == null && (cn.open != null || cn.max != null)
+  for (const [k, cn] of all) {
+    for (const f of cn.flows ?? [])
+      if (!mayGo(f, cn.from, cn.to))
+        throw new Error(
+          `loadmap: connection "${k}" covers "${f}", which does not go from "${cn.from}" straight to "${cn.to}"`,
+        )
+    if (countsOnly(cn)) continue
+    if (!may(cn).length)
+      throw new Error(
+        `loadmap: connection "${k}" joins "${cn.from}" to "${cn.to}", but no flow goes from one straight to the other`,
+      )
+    for (const [j, other] of all) {
+      if (j <= k || other.from !== cn.from || other.to !== cn.to || countsOnly(other)) continue
+      const both = (cn.flows ?? may(cn)).find((f) => (other.flows ?? may(other)).includes(f))
+      if (both)
+        throw new Error(
+          `loadmap: connections "${k}" and "${j}" both cover "${both}" from "${cn.from}" to "${cn.to}": a flow follows one rule at each hop`,
+        )
+    }
+  }
+}
+
 function excess(y: number, n: number): number {
   return y >= 1 ? n : (y * (1 - y ** n)) / (1 - y)
 }

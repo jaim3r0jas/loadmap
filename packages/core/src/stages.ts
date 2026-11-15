@@ -184,7 +184,13 @@ export type ResolvedStage = { id: string; label: string } & (
     }
   | { kind: 'store'; component: string }
   | { kind: 'sink'; component?: undefined }
-  | { kind: 'queue'; component?: string; partitions: Readonly<Record<string, number>> }
+  | {
+      kind: 'queue'
+      component?: string
+      partitions: Readonly<Record<string, number>>
+      /** With a key connection that gives skew: the share of each flow on partition 0, the hottest. */
+      skew?: Readonly<Record<string, number>>
+    }
   | {
       kind: 'workers'
       component: string
@@ -195,6 +201,8 @@ export type ResolvedStage = { id: string; label: string } & (
       /** The pods running at these values: `pods` unless the pool autoscales. */
       running: number
       autoscale?: { min: number; max: number; target: number }
+      /** With an exclusive connection into it: which worker reads each partition. */
+      assignment?: WorkersAssignment
     }
   | {
       kind: 'fanout'
@@ -215,6 +223,18 @@ export type ResolvedStage = { id: string; label: string } & (
     }
 )
 
+/** Which worker of an exclusive pool reads each partition, and how much of the work each running worker has. */
+export interface WorkersAssignment {
+  /** What owns a partition: a worker, or a pod (then `cells` names the pod's first worker). */
+  owner: 'worker' | 'pod'
+  /** Per flow, the worker (its cell: pod × workers per pod + its place in the pod) that reads each partition. */
+  cells: Readonly<Record<string, readonly number[]>>
+  /** Per flow, the queue whose partitions those are. */
+  from: Readonly<Record<string, string>>
+  /** Each running worker's share of the work, adding up to 1; 0 for one that reads no partition. */
+  weights: readonly number[]
+}
+
 /** The share a stage turns away when its component is past `full`: what is above it. */
 export function rejectShare(util: number | null | undefined, full: number): number {
   return util != null && util > full ? 1 - full / util : 0
@@ -224,12 +244,32 @@ export function dyn<T>(v: Dyn<T>, ctx: LooseValues): T {
   return typeof v === 'function' ? (v as (ctx: LooseValues) => T)(ctx) : v
 }
 
+/**
+ * The pods a workers stage draws and runs. An autoscaler reads `util`: the plain utilization, the average its metric
+ * sees, never one a connection's spread raised (the spread itself depends on the pods running).
+ */
+export function podsOf(
+  id: string,
+  s: WorkersStage,
+  ctx: LooseValues,
+  util: number | null | undefined,
+): { pods: number; running: number; autoscale?: { min: number; max: number; target: number } } {
+  if (!s.autoscale) {
+    const pods = dyn(s.pods ?? 0, ctx)
+    return { pods, running: pods }
+  }
+  const a = autoscaleOf(id, s.autoscale, ctx)
+  return { pods: a.max, running: running(a, util), autoscale: a }
+}
+
 export function resolveStage(
   id: string,
   s: StageDef,
   ctx: LooseValues,
   flowIds: readonly string[],
   full: number,
+  /** The utilization before any connection's spread, for an autoscaler; `ctx.util` without one. */
+  plain?: (c: string) => number | null,
 ): ResolvedStage {
   const label = s.label ?? id
   const util = (c: string | undefined) => (c ? (ctx.util as Record<string, number | null>)[c] : null)
@@ -240,12 +280,7 @@ export function resolveStage(
     case 'workers': {
       const perPod = dyn(s.perPod, ctx)
       const base = { id, label, kind: 'workers' as const, component: s.component, perPod, fill: s.fill }
-      if (!s.autoscale) {
-        const pods = dyn(s.pods ?? 0, ctx)
-        return { ...base, pods, running: pods }
-      }
-      const a = autoscaleOf(id, s.autoscale, ctx)
-      return { ...base, pods: a.max, running: running(a, util(s.component)), autoscale: a }
+      return { ...base, ...podsOf(id, s, ctx, plain ? plain(s.component) : util(s.component)) }
     }
     case 'fanout': {
       const to = dyn(s.to, ctx)

@@ -12,6 +12,7 @@ export {
   sourceText,
 } from './capacity'
 export { assertHolds, type CheckResult, check, type Expectation, type Outcome } from './check'
+export type { Assign, ConnectionDef, Member, Spread } from './connections'
 export {
   type ComponentDiff,
   type ComponentSide,
@@ -76,11 +77,13 @@ export {
   type CatalogComponent,
   type Condition,
   type ConditionValue,
+  type ConnectionRule,
   type Figure,
   type Published,
   type PublishedConfig,
   published,
   type Reference,
+  rule,
   type Source,
 } from './published'
 export {
@@ -117,6 +120,7 @@ export {
   sink,
   split,
   store,
+  type WorkersAssignment,
   type WorkersStage,
   workers,
 } from './stages'

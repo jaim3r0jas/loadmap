@@ -1,4 +1,5 @@
-import type { Catalog, CatalogComponent, ConditionValue, Figure, Published, Source } from './published'
+import type { Member } from './connections'
+import type { Catalog, CatalogComponent, ConditionValue, ConnectionRule, Figure, Published, Source } from './published'
 
 /**
  * The component catalog: one entry per component, whoever runs it, with the figures published for it under their
@@ -681,6 +682,342 @@ const COMPONENTS: readonly CatalogComponent[] = [
   unpublished('envoy', 'Envoy', 'A proxy for services and the edge.', 'proxy', 'node', ['proxy', 'load balancer']),
 ]
 
+// edition 2026-12: how callers connect to each component, and the documented defaults of its connection settings
+
+const RULES_CHECKED = '2026-11-14'
+const doc = (title: string, url: string, by: string): Source => ({ title, url, by, checked: RULES_CHECKED })
+const on = (
+  id: string,
+  assign: ConnectionRule['assign'],
+  what: string,
+  source: Source,
+  owner?: Member,
+): ConnectionRule => ({
+  id,
+  assign,
+  ...(owner && { owner }),
+  what,
+  source,
+})
+
+const kafkaProject = 'the Apache Kafka project'
+const rabbitTeam = 'the RabbitMQ team'
+const RULES: Readonly<Record<string, readonly ConnectionRule[]>> = {
+  kafka: [
+    on(
+      'kafka/consumer-group',
+      'exclusive',
+      'Each partition is consumed by exactly one consumer in each consumer group; a consumer may own several.',
+      doc('Apache Kafka: Design', 'https://kafka.apache.org/44/design/design/', kafkaProject),
+      'worker',
+    ),
+    on(
+      'kafka/producer-key',
+      'key',
+      'A record with a key goes to the partition its key hashes to.',
+      doc(
+        'Apache Kafka: Producer Configs',
+        'https://kafka.apache.org/44/configuration/producer-configs/',
+        kafkaProject,
+      ),
+    ),
+    on(
+      'kafka/share-group',
+      'shared',
+      'A share group lets several consumers read the same partitions, at the expense of record ordering.',
+      doc(
+        'KIP-932: Queues for Kafka',
+        'https://cwiki.apache.org/confluence/display/KAFKA/KIP-932%3A+Queues+for+Kafka',
+        kafkaProject,
+      ),
+    ),
+  ],
+  rabbitmq: [
+    on(
+      'rabbitmq/competing-consumers',
+      'shared',
+      'Active consumers of a queue receive its messages round-robin.',
+      doc('RabbitMQ: Consumers', 'https://www.rabbitmq.com/docs/consumers', rabbitTeam),
+    ),
+    on(
+      'rabbitmq/single-active-consumer',
+      'exclusive',
+      'With single active consumer, one consumer at a time consumes from a queue.',
+      doc('RabbitMQ: Consumers', 'https://www.rabbitmq.com/docs/consumers', rabbitTeam),
+    ),
+    on(
+      'rabbitmq/quorum-leader',
+      'leader',
+      'All operations on a quorum queue are sent to its leader.',
+      doc('RabbitMQ: Quorum Queues', 'https://www.rabbitmq.com/docs/quorum-queues', rabbitTeam),
+    ),
+    on(
+      'rabbitmq/super-stream',
+      'key',
+      "A super stream's producer picks the partition by hashing the routing key.",
+      doc(
+        'RabbitMQ 3.11 feature preview: super streams',
+        'https://www.rabbitmq.com/blog/2022/07/13/rabbitmq-3-11-feature-preview-super-streams',
+        rabbitTeam,
+      ),
+    ),
+  ],
+  valkey: [
+    on(
+      'valkey/cluster-slots',
+      'key',
+      "A key's slot is CRC16(key) mod 16384, and one primary serves a slot.",
+      doc('Valkey cluster specification', 'https://valkey.io/topics/cluster-spec/', 'the Valkey project'),
+    ),
+    on(
+      'valkey/replica-reads',
+      'shared',
+      'Replicas serve reads after READONLY, possibly stale.',
+      doc('Valkey: READONLY', 'https://valkey.io/commands/readonly/', 'the Valkey project'),
+    ),
+  ],
+  etcd: [
+    on(
+      'etcd/raft-leader',
+      'leader',
+      'The leader handles every request that needs consensus; followers forward such requests to it.',
+      doc('etcd: Frequently Asked Questions', 'https://etcd.io/docs/v3.6/faq/', 'the etcd project'),
+    ),
+    on(
+      'etcd/serializable-reads',
+      'shared',
+      'Requests that need no consensus, serializable reads, can be served by any member.',
+      doc('etcd: Frequently Asked Questions', 'https://etcd.io/docs/v3.6/faq/', 'the etcd project'),
+    ),
+  ],
+  cockroachdb: [
+    on(
+      'cockroachdb/range-leaseholder',
+      'key',
+      "Every key is in one range, and the range's leaseholder receives and coordinates its reads and writes.",
+      doc(
+        'CockroachDB: Reads and Writes Overview',
+        'https://docs.cockroachlabs.com/docs/stable/architecture/reads-and-writes-overview',
+        'Cockroach Labs',
+      ),
+    ),
+  ],
+  clickhouse: [
+    on(
+      'clickhouse/insert-sharding',
+      'key',
+      "An insert into a Distributed table goes to the shard its sharding key picks, by the shards' weights.",
+      doc(
+        'ClickHouse: Distributed table engine',
+        'https://clickhouse.com/docs/engines/table-engines/special/distributed',
+        'ClickHouse',
+      ),
+    ),
+  ],
+  opensearch: [
+    on(
+      'opensearch/document-routing',
+      'key',
+      'A document goes to shard hash(_routing) % primary shards; _routing defaults to its _id.',
+      doc(
+        'OpenSearch: _routing',
+        'https://docs.opensearch.org/latest/mappings/metadata-fields/routing/',
+        'the OpenSearch project',
+      ),
+    ),
+  ],
+  mongodb: [
+    on(
+      'mongodb/shard-key',
+      'key',
+      'mongos sends a query with the shard key to the shard whose chunk holds it.',
+      doc('MongoDB: mongos', 'https://www.mongodb.com/docs/manual/core/sharded-cluster-query-router/', 'MongoDB'),
+    ),
+    on(
+      'mongodb/primary-writes',
+      'leader',
+      'The primary is the only member of a replica set that receives writes.',
+      doc('MongoDB: Replica Set Primary', 'https://www.mongodb.com/docs/manual/core/replica-set-primary/', 'MongoDB'),
+    ),
+  ],
+  nginx: [
+    on(
+      'nginx/round-robin',
+      'shared',
+      'Requests are spread over the upstream servers by weighted round-robin by default.',
+      doc('NGINX: ngx_http_upstream_module', 'https://nginx.org/en/docs/http/ngx_http_upstream_module.html', 'NGINX'),
+    ),
+    on(
+      'nginx/hash',
+      'key',
+      'With hash or ip_hash, requests with the same key go to the same upstream server.',
+      doc('NGINX: ngx_http_upstream_module', 'https://nginx.org/en/docs/http/ngx_http_upstream_module.html', 'NGINX'),
+    ),
+  ],
+  haproxy: [
+    on(
+      'haproxy/roundrobin',
+      'shared',
+      'roundrobin, the default balance, uses each server in turn, by its weight.',
+      doc('HAProxy 3.2: balance', 'https://docs.haproxy.org/3.2/configuration.html#4-balance', 'HAProxy Technologies'),
+    ),
+    on(
+      'haproxy/hash',
+      'key',
+      'balance source, uri or hash sends the same key to the same server.',
+      doc('HAProxy 3.2: balance', 'https://docs.haproxy.org/3.2/configuration.html#4-balance', 'HAProxy Technologies'),
+    ),
+  ],
+  envoy: [
+    on(
+      'envoy/round-robin',
+      'shared',
+      'Round robin is the default load balancer.',
+      doc(
+        'Envoy: Supported load balancers',
+        'https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/load_balancers',
+        'the Envoy project',
+      ),
+    ),
+    on(
+      'envoy/ring-hash',
+      'key',
+      "Ring hash and Maglev hash a request's key to an upstream host.",
+      doc(
+        'Envoy: Supported load balancers',
+        'https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/load_balancers',
+        'the Envoy project',
+      ),
+    ),
+  ],
+  istio: [
+    on(
+      'istio/least-request',
+      'shared',
+      'Istio balances by least requests by default.',
+      doc(
+        'Istio: Traffic Management',
+        'https://istio.io/latest/docs/concepts/traffic-management/',
+        'the Istio project',
+      ),
+    ),
+    on(
+      'istio/consistent-hash',
+      'key',
+      'consistentHash gives soft affinity by a header, a cookie or the source IP.',
+      doc(
+        'Istio: Destination Rule',
+        'https://istio.io/latest/docs/reference/config/networking/destination-rule/',
+        'the Istio project',
+      ),
+    ),
+  ],
+  coredns: [
+    on(
+      'coredns/forward-random',
+      'shared',
+      'forward picks an upstream at random by default.',
+      doc('CoreDNS: forward', 'https://coredns.io/plugins/forward/', 'the CoreDNS project'),
+    ),
+  ],
+  kubernetes: [
+    on(
+      'kubernetes/service-proxy',
+      'shared',
+      'kube-proxy picks a backend pod at random for each connection; a long-lived connection keeps its pod.',
+      doc(
+        'Kubernetes: Virtual IPs and Service Proxies',
+        'https://kubernetes.io/docs/reference/networking/virtual-ips/',
+        'the Kubernetes project',
+      ),
+    ),
+  ],
+  postgresql: [
+    on(
+      'postgresql/process-per-connection',
+      'shared',
+      'Every client connection gets a backend process of its own.',
+      doc(
+        'PostgreSQL: How Connections Are Established',
+        'https://www.postgresql.org/docs/current/connect-estab.html',
+        'the PostgreSQL Global Development Group',
+      ),
+    ),
+  ],
+  mysql: [
+    on(
+      'mysql/thread-per-connection',
+      'shared',
+      'By default the server handles each client connection with a thread of its own.',
+      doc(
+        'MySQL 8.4: Server System Variables',
+        'https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html',
+        'Oracle',
+      ),
+    ),
+  ],
+}
+
+/** A setting's default: exact as documented, a limit an operator may change, taken only by name. */
+const setting = (
+  id: string,
+  value: number,
+  unit: string,
+  what: string,
+  scope: string,
+  versions: string[],
+  source: Source,
+): Figure => ({
+  id,
+  measure: 'limit',
+  value,
+  unit,
+  what,
+  scope,
+  when: {},
+  conditions: ["the setting's default as its documentation states it; a deployment that sets it states its own value"],
+  versions,
+  source,
+})
+const DEFAULTS: Readonly<Record<string, readonly Figure[]>> = {
+  postgresql: [
+    setting(
+      'max-connections',
+      97,
+      'connections',
+      'max_connections (100) less the superuser_reserved_connections (3): what ordinary users may open',
+      'per server',
+      ['18'],
+      doc(
+        'PostgreSQL: Connections and Authentication',
+        'https://www.postgresql.org/docs/current/runtime-config-connection.html',
+        'the PostgreSQL Global Development Group',
+      ),
+    ),
+  ],
+  mysql: [
+    setting(
+      'max-connections',
+      151,
+      'connections',
+      'max_connections, the most simultaneous client connections, one more for an admin',
+      'per server',
+      ['8.4'],
+      doc(
+        'MySQL 8.4: Server System Variables',
+        'https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html',
+        'Oracle',
+      ),
+    ),
+  ],
+}
+
+const WITH_CONNECTIONS: readonly CatalogComponent[] = COMPONENTS.map((c) => ({
+  ...c,
+  ...(RULES[c.id] && { connections: RULES[c.id] }),
+  ...(DEFAULTS[c.id] && { defaults: DEFAULTS[c.id] }),
+}))
+
 /** Frozen all the way down: a released edition cannot change under a page that uses it. */
 const frozen = <T>(o: T): T => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -697,10 +1034,13 @@ const edition = (name: string, list: readonly CatalogComponent[]): Catalog =>
   })
 
 /** Every edition, oldest first: a definition names the one it was written against. */
-export const EDITIONS: Readonly<Record<string, Catalog>> = Object.freeze({ '2026-11': edition('2026-11', COMPONENTS) })
+export const EDITIONS: Readonly<Record<string, Catalog>> = Object.freeze({
+  '2026-11': edition('2026-11', COMPONENTS),
+  '2026-12': edition('2026-12', WITH_CONNECTIONS),
+})
 
 /** The latest edition. */
-export const CATALOG: Catalog = EDITIONS['2026-11']!
+export const CATALOG: Catalog = EDITIONS['2026-12']!
 
 const latest = (id: string) => CATALOG.components[id]!
 

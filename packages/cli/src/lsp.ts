@@ -72,6 +72,7 @@ const SYMBOL: Readonly<Record<string, number>> = {
   cluster: 5,
   pool: 5,
   component: 7,
+  connection: 11,
   tier: 3,
   scenario: 10,
   preset: 10,
