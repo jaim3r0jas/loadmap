@@ -1,5 +1,5 @@
 // The checkout pipeline: pure TypeScript, tested in Vitest without a browser.
-import { configured, defineModel, drain, estimated, measured, p, pass, queue, store, workers } from '@loadmap/core'
+import { configured, defineModel, estimated, lost, measured, p, pass, queue, store, workers } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
 import cpu from './worker-cpu.json'
 
@@ -88,7 +88,7 @@ export const checkout = defineModel({
     gateway: pass('gateway'),
     topic: queue({ partitions: { orders: 12, events: 24 } }),
     // what the topic drops as too old, counted
-    kafkaDropped: drain({ from: ['topic'], reason: ['dropped'] }),
+    kafkaDropped: lost({ from: ['topic'], takes: ['dropped'] }),
     workers: workers('workers', { pods: ({ pods }) => pods, perPod: ({ threads }) => threads }),
     db: store('db'),
   },

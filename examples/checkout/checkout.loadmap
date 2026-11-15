@@ -110,7 +110,7 @@ cluster kafka "Kafka" "orders and events" {
   memberLabel: `broker ${i}`
   queue topic { partitions { orders: 12; events: 24 } }
 }
-node kafkaDropped "Too old" { drain { reason: [dropped] } }
+node kafkaDropped "Too old" { lost { takes: [dropped] } }
 
 pool workers "Workers" `${pods} pods × ${threads} threads` {
   workers { pods: pods; perPod: threads }

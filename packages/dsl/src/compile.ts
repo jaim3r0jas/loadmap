@@ -4,12 +4,12 @@ import {
   type CheckResult,
   cache,
   check,
-  type DrainReason,
   defineModel,
-  drain,
   fanout,
   type LinearFit,
+  type Loss,
   limit,
+  lost,
   type Model,
   type Overload,
   type PublishedConfig,
@@ -599,17 +599,17 @@ class Compiler {
         if (def) stageDefs[s.id] = def
       }
     for (const [id, s] of stageOf)
-      if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'drain')
+      if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
     const shape = { stages: stageDefs, routes, flows: flowDefs as never }
-    // what each stage can lose, worked out once: the drains and the warnings both read it
-    const known = new Map<string, readonly DrainReason[]>()
+    // what each stage can lose, worked out once: the lost boxes and the warnings both read it
+    const known = new Map<string, readonly Loss[]>()
     const losses = (stage: string) => {
       if (!known.has(stage)) known.set(stage, lossesOf(shape, stage))
       return known.get(stage)!
     }
-    const drained = this.drainsFed(boxes, boxById, root.edges, stageDefs, losses)
-    this.unseenLosses(flows, stageOf, drained, shape, losses)
+    const counted = this.lostFed(boxes, boxById, root.edges, stageDefs, losses)
+    this.unseenLosses(flows, stageOf, counted, shape, losses)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs)) {
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
@@ -856,47 +856,47 @@ class Compiler {
   }
 
   /**
-   * Each drain takes what the boxes with an edge into it lose, for its reasons: their stages that lose so. Nothing
-   * feeding it, a box that loses nothing it takes, a loss two drains take and an edge out of it are errors at their line.
+   * Each lost box takes what the boxes with an edge into it lose, of what it takes: their stages that lose so. Nothing
+   * feeding it, a box that loses nothing it takes, a loss two lost boxes take and an edge out of it are errors at their line.
    */
-  private drainsFed(
+  private lostFed(
     boxes: readonly Box[],
     boxById: Map<string, Box>,
     edges: readonly Edge[],
     stageDefs: Record<string, StageDef>,
-    losses: (stage: string) => readonly DrainReason[],
+    losses: (stage: string) => readonly Loss[],
   ): Map<string, string> {
     const taken = new Map<string, string>()
     for (const box of boxes)
       for (const s of box.stages) {
         const def = stageDefs[s.id]
-        if (def?.kind !== 'drain') continue
-        const reasons = def.reason ?? (SCHEMA.drain!.props.reason!.values as readonly DrainReason[])
+        if (def?.kind !== 'lost') continue
+        const takes = def.takes ?? (SCHEMA.lost!.props.takes!.values as readonly Loss[])
         const from: string[] = []
         let fed = false
         for (const e of edges)
           e.chain.forEach((n, i) => {
             const next = e.chain[i + 1]
             if (n.name === box.id && next)
-              this.report.error(next, `nothing leaves the drain "${s.id}": what reaches it is lost`)
+              this.report.error(next, `nothing leaves the lost box "${s.id}": what reaches it is lost`)
             if (next?.name !== box.id) return
             fed = true
             const src = boxById.get(n.name)
             if (!src) return
-            const losing = src.stages.map((x) => x.id).filter((x) => losses(x).some((r) => reasons.includes(r)))
+            const losing = src.stages.map((x) => x.id).filter((x) => losses(x).some((r) => takes.includes(r)))
             if (!losing.length) {
               this.report.error(
                 n,
-                `${n.name} loses nothing the drain "${s.id}" takes`,
+                `${n.name} loses nothing the lost box "${s.id}" takes`,
                 'a pass, limit, cache or split turns units away, a queue with a drop rule drops them, the last stage of a flow with a timeout times them out',
               )
               return
             }
             for (const x of losing)
-              for (const r of losses(x).filter((r) => reasons.includes(r))) {
+              for (const r of losses(x).filter((r) => takes.includes(r))) {
                 const other = taken.get(`${x}\u0000${r}`)
                 if (other && other !== s.id)
-                  this.report.error(n, `what ${x} loses as ${r} already goes to the drain "${other}"`)
+                  this.report.error(n, `what ${x} loses as ${r} already goes to the lost box "${other}"`)
                 taken.set(`${x}\u0000${r}`, s.id)
               }
             from.push(...losing)
@@ -904,7 +904,7 @@ class Compiler {
         if (!fed)
           this.report.error(
             s.block.args.id ?? s.block.at,
-            `nothing feeds the drain "${s.id}"`,
+            `nothing feeds the lost box "${s.id}"`,
             `draw an edge into ${box.id} from the box whose losses it takes`,
           )
         ;(def as { from: readonly string[] }).from = [...new Set(from)]
@@ -913,29 +913,29 @@ class Compiler {
   }
 
   /**
-   * A warning at each loss the definition plans that no drain counts: a limiter's rejections, a flow's drops (at each
+   * A warning at each loss the definition plans that no lost box counts: a limiter's rejections, a flow's drops (at each
    * queue it can drop in) and its timeouts (at each end of its ways). A pass, cache or split past capacity loses too,
    * but every one of them could: the bars and the `over` line already say so.
    */
   private unseenLosses(
     flows: readonly Block[],
     stageOf: Map<string, { block: Block; box: Box }>,
-    drained: Map<string, string>,
+    counted: Map<string, string>,
     shape: Parameters<typeof lossesOf>[0],
-    losses: (stage: string) => readonly DrainReason[],
+    losses: (stage: string) => readonly Loss[],
   ) {
-    const counted = (stage: string, reason: DrainReason) => drained.has(`${stage}\u0000${reason}`)
-    // one warning for a stage and a reason, however many flows lose there: one drain counts them all
+    const seen = (stage: string, loss: Loss) => counted.has(`${stage}\u0000${loss}`)
+    // one warning for a stage and a loss, however many flows lose there: one lost box counts them all
     const warned = new Set<string>()
-    const first = (stage: string, reason: DrainReason) => {
-      const key = `${stage}\u0000${reason}`
-      if (warned.has(key) || counted(stage, reason)) return false
+    const first = (stage: string, loss: Loss) => {
+      const key = `${stage}\u0000${loss}`
+      if (warned.has(key) || seen(stage, loss)) return false
       warned.add(key)
       return true
     }
     for (const [id, s] of stageOf)
       if (s.block.keyword === 'limit' && losses(id).includes('rejected') && first(id, 'rejected'))
-        this.report.warning(s.block.at, `what ${id} turns away vanishes: give it a drain that counts it`)
+        this.report.warning(s.block.at, `what ${id} turns away vanishes: give it a lost box that counts it`)
     for (const b of flows) {
       const f = b.args.id?.name
       if (!f) continue
@@ -954,7 +954,7 @@ class Compiler {
       if (drop && queue)
         this.report.warning(
           drop.at,
-          `units of ${f} dropped as too old at ${queue} vanish: give them a drain that counts them`,
+          `units of ${f} dropped as too old at ${queue} vanish: give them a lost box that counts them`,
         )
       // a timeout refused has its error instead
       const timeout = this.prop(b, 'timeout')
@@ -964,11 +964,11 @@ class Compiler {
       const late = [
         ...new Set([...ways.map((w) => w.at(-1)!), ...ways.flat().filter((s) => shape.stages[s]?.kind === 'cache')]),
       ]
-      const at = late.find((s) => s && first(s, 'timedout'))
+      const at = late.find((s) => s && first(s, 'timedOut'))
       if (at)
         this.report.warning(
           timeout.key,
-          `units of ${f} too slow for their client at ${at} vanish: give them a drain that counts them`,
+          `units of ${f} too slow for their client at ${at} vanish: give them a lost box that counts them`,
         )
     }
   }
@@ -2201,11 +2201,11 @@ class Compiler {
         return component ? store(component, base) : needs()
       case 'sink':
         return sink(base)
-      case 'drain': {
-        const p = this.prop(b, 'reason')
-        const reason = p && this.words(p, SCHEMA.drain!.props.reason!)
+      case 'lost': {
+        const p = this.prop(b, 'takes')
+        const takes = p && this.words(p, SCHEMA.lost!.props.takes!)
         // what feeds it comes from the edges into its box, once every stage is known
-        return drain({ ...base, from: [], ...(reason ? { reason: reason as DrainReason[] } : {}) })
+        return lost({ ...base, from: [], ...(takes ? { takes: takes as Loss[] } : {}) })
       }
       case 'workers': {
         if (!component) return needs()

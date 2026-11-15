@@ -33,7 +33,7 @@ cluster broker "Broker" "3 nodes" {
   memberLabel: `node ${i}`
   queue uploads { partitions { photos: 12 } }
 }
-node brokerDropped "Too old" { drain { reason: [dropped] } }
+node brokerDropped "Too old" { lost { takes: [dropped] } }
 
 pool resizers "Resizers" `${pods} pods × 4 threads` {
   workers { pods: pods; perPod: 4 }

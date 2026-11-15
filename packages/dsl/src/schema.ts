@@ -707,7 +707,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   node: {
-    doc: 'A box. It may run a stage (pass, store, sink, drain, fanout) and own a component (demand and capacity lines).',
+    doc: 'A box. It may run a stage (pass, store, sink, lost, fanout) and own a component (demand and capacity lines).',
     example: 'node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }',
     args: BOX_ARGS,
     props: {
@@ -716,7 +716,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       tier: TIER,
       ...COMPONENT_PROPS,
     },
-    children: ['pass', 'store', 'sink', 'drain', 'fanout', 'split', 'cache', 'limit', 'component', 'held'],
+    children: ['pass', 'store', 'sink', 'lost', 'fanout', 'split', 'cache', 'limit', 'component', 'held'],
   },
   cluster: {
     doc: 'Members (brokers) holding the partitions of one or more queues (topics).',
@@ -787,16 +787,16 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: {},
     children: [],
   },
-  drain: {
+  lost: {
     doc: 'Where what other boxes lose goes, counted: an edge from a box into this one sends what that box turns away, drops as too old or times out here, after every retry. It is on no route.',
-    example: 'drain { reason: [rejected] }',
+    example: 'lost { takes: [rejected] }',
     args: STAGE_LABEL,
     props: {
-      reason: {
+      takes: {
         value: 'names',
         scope: 'const',
-        values: ['rejected', 'dropped', 'timedout'],
-        doc: 'Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedout (too slow for the client). Default all three.',
+        values: ['rejected', 'dropped', 'timedOut'],
+        doc: 'Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedOut (too slow for the client). Default all three.',
       },
     },
     children: [],
@@ -962,7 +962,7 @@ export const STAGES = [
   'pass',
   'store',
   'sink',
-  'drain',
+  'lost',
   'queue',
   'workers',
   'fanout',

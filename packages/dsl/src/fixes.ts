@@ -13,7 +13,7 @@ export interface QuickFix {
 }
 
 const CAPACITY = new Set(['measured', 'estimated', 'configured'])
-const ENDS = new Set(['store', 'sink', 'drain', 'fanout'])
+const ENDS = new Set(['store', 'sink', 'lost', 'fanout'])
 const NAME = /^[A-Za-z_]\w*$/
 
 /**
@@ -98,24 +98,24 @@ function fixesFor(
     /^what (\S+) turns away vanishes/.exec(d.message) ??
     /^units of \S+ (dropped as too old|too slow for their client) at (\S+) vanish:/.exec(d.message)
   if (loss) {
-    const [reason, stage] =
-      loss.length === 2 ? ['rejected', loss[1]!] : [loss[1]!.startsWith('dropped') ? 'dropped' : 'timedout', loss[2]!]
+    const [kind, stage] =
+      loss.length === 2 ? ['rejected', loss[1]!] : [loss[1]!.startsWith('dropped') ? 'dropped' : 'timedOut', loss[2]!]
     const box = boxOf(doc().body, stage)
     if (!box) return []
     const name = (box.args[0] as { name: string }).name
     const taken = new Set([...doc().ids('node'), ...doc().ids('stage'), ...doc().ids('component')])
-    const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedout: 'TimedOut' }[reason]}`
+    const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedOut: 'TimedOut' }[kind]}`
     let id = base
     for (let i = 2; taken.has(id); i++) id = `${base}${i}`
-    const label = { rejected: 'Turned away', dropped: 'Too old', timedout: 'Timed out' }[reason]
+    const label = { rejected: 'Turned away', dropped: 'Too old', timedOut: 'Timed out' }[kind]
     const nl = source.indexOf('\n', box.to)
     const lineEnd = nl < 0 ? source.length : nl
     return [
       {
-        title: `Add a drain for what ${stage} loses`,
+        title: `Add a lost box for what ${stage} loses`,
         changes: [
           // after the box's line, so a comment at its end stays with it
-          { from: lineEnd, to: lineEnd, insert: `\nnode ${id} "${label}" { drain { reason: [${reason}] } }` },
+          { from: lineEnd, to: lineEnd, insert: `\nnode ${id} "${label}" { lost { takes: [${kind}] } }` },
           addEdge(source, doc().body, name, id),
         ],
       },

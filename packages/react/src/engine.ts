@@ -684,8 +684,8 @@ export class Engine {
         x,
         y: y - (d.phase === 'fade' && !done ? k * 8 : 0),
         r,
-        // a unit lost for good shows it on its way into the drain too
-        color: d.phase === 'fade' || d.drained ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
+        // a unit lost for good shows it on its way into the lost box too
+        color: d.phase === 'fade' || d.counted ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
         alpha: d.phase === 'fade' ? Math.max(0, 1 - k) : 1,
         ...(d.attempt ? { ring: RING } : {}),
       })

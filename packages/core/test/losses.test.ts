@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { cache, configured, defineModel, drain, fanout, limit, measured, p, pass, queue, store, workers } from '../src'
+import { cache, configured, defineModel, fanout, limit, lost, measured, p, pass, queue, store, workers } from '../src'
 import { lossesOf } from '../src/internal'
 
-// clients → a rate limiter of 1,500 req/s → a service of 1,000 → a database; what is lost goes to drains
-const shop = (o: { retry?: { times: number }; reason?: readonly ('rejected' | 'dropped' | 'timedout')[] } = {}) =>
+// clients → a rate limiter of 1,500 req/s → a service of 1,000 → a database; what is lost goes to lost boxes
+const shop = (o: { retry?: { times: number }; takes?: readonly ('rejected' | 'dropped' | 'timedOut')[] } = {}) =>
   defineModel({
     load: p.load({ max: 10, step: 0.1 }),
     flows: { req: { rate: ({ load }) => 1000 * load, ...(o.retry ? { retry: o.retry } : {}) } },
@@ -16,21 +16,21 @@ const shop = (o: { retry?: { times: number }; reason?: readonly ('rejected' | 'd
       limiter: limit('limiter'),
       service: pass('service'),
       db: store('db'),
-      tooMany: drain({ from: ['limiter'], ...(o.reason ? { reason: o.reason } : {}) }),
-      failed: drain({ from: ['service'] }),
+      tooMany: lost({ from: ['limiter'], ...(o.takes ? { takes: o.takes } : {}) }),
+      failed: lost({ from: ['service'] }),
     },
     routes: { req: ['limiter', 'service', 'db'] },
   })
 
-describe('a drain', () => {
+describe('a lost box', () => {
   it('takes what its stages turn away: at 2×, the limiter turns away 500 and the service 500 of the 1,500 let in', () => {
     const ev = shop().evaluate({ load: 2 })
     expect(ev.ctx.at.tooMany.req).toBeCloseTo(500, 6)
     expect(ev.ctx.at.failed.req).toBeCloseTo(500, 6)
     expect(ev.stages.tooMany).toMatchObject({
-      kind: 'drain',
+      kind: 'lost',
       from: ['limiter'],
-      reasons: ['rejected', 'dropped', 'timedout'],
+      takes: ['rejected', 'dropped', 'timedOut'],
     })
     // nothing is lost below capacity
     expect(shop().evaluate({ load: 0.5 }).ctx.at.failed.req).toBe(0)
@@ -39,16 +39,16 @@ describe('a drain', () => {
   it('counts only what fails every retry: the attempts multiply, the units lost do not', () => {
     const ev = shop({ retry: { times: 3 } }).evaluate({ load: 2 })
     const r = ev.retry.req!
-    // every unit that fails for good is in one drain or the other
+    // every unit that fails for good is in one lost box or the other
     expect(ev.ctx.at.tooMany.req + ev.ctx.at.failed.req).toBeCloseTo(r.rate * r.failed, 6)
     expect(ev.ctx.at.tooMany.req + ev.ctx.at.failed.req).toBeLessThan(r.attempts * r.rejected)
   })
 
-  it('takes only the reasons it names', () => {
-    expect(() => shop({ reason: ['dropped'] })).toThrow(
-      'drain "tooMany" takes from "limiter", which loses nothing it counts: "limiter" never has dropped units',
+  it('takes only the losses it names', () => {
+    expect(() => shop({ takes: ['dropped'] })).toThrow(
+      'lost "tooMany" takes from "limiter", which loses nothing it counts: "limiter" never has dropped units',
     )
-    expect(shop({ reason: ['rejected'] }).evaluate({ load: 2 }).ctx.at.tooMany.req).toBeCloseTo(500, 6)
+    expect(shop({ takes: ['rejected'] }).evaluate({ load: 2 }).ctx.at.tooMany.req).toBeCloseTo(500, 6)
   })
 
   it('takes what a queue drops, in steady state what its reader cannot drain', () => {
@@ -61,7 +61,7 @@ describe('a drain', () => {
       stages: {
         topic: queue({ partitions: { ev: 6 } }),
         pool: workers('pool', { pods: 2, perPod: 2 }),
-        old: drain({ from: ['topic'] }),
+        old: lost({ from: ['topic'] }),
       },
       routes: { ev: ['topic', 'pool'] },
     })
@@ -75,7 +75,7 @@ describe('a drain', () => {
       load: p.load({ max: 10 }),
       flows: { req: { rate: ({ load }) => 100 * load, timeout: 0.05 } },
       components: { api: { name: 'API', capacity: measured(1000, 'req/s'), service: 0.01, over: 'slow' } },
-      stages: { api: pass('api'), slow: drain({ from: ['api'], reason: ['timedout'] }) },
+      stages: { api: pass('api'), slow: lost({ from: ['api'], takes: ['timedOut'] }) },
       routes: { req: ['api'] },
     })
     const ev = m.evaluate({ load: 8 })
@@ -98,15 +98,15 @@ describe('a drain', () => {
         } as never)
     const api = pass('api')
     const db = store('api')
-    expect(build({ api, db, d: drain({ from: ['db'] }) })).toThrow(
-      'drain "d" takes from "db", which loses nothing it counts: "db" turns nothing away, drops nothing and times nothing out',
+    expect(build({ api, db, d: lost({ from: ['db'] }) })).toThrow(
+      'lost "d" takes from "db", which loses nothing it counts: "db" turns nothing away, drops nothing and times nothing out',
     )
-    expect(build({ api, db, d: drain({ from: ['nope'] }) })).toThrow('drain "d" takes from unknown stage "nope"')
-    expect(build({ api, db, d: drain({ from: ['api'] }), e: drain({ from: ['api'] }) })).toThrow(
-      'what "api" loses as rejected goes to two drains, "d" and "e"',
+    expect(build({ api, db, d: lost({ from: ['nope'] }) })).toThrow('lost "d" takes from unknown stage "nope"')
+    expect(build({ api, db, d: lost({ from: ['api'] }), e: lost({ from: ['api'] }) })).toThrow(
+      'what "api" loses as rejected goes to two lost boxes, "d" and "e"',
     )
-    expect(build({ api, d: drain({ from: ['api'] }) }, { req: ['api', 'd'] })).toThrow(
-      'drain "d" is on the way of "req": it takes only what other stages lose',
+    expect(build({ api, d: lost({ from: ['api'] }) }, { req: ['api', 'd'] })).toThrow(
+      'lost "d" is on the way of "req": it takes only what other stages lose',
     )
   })
 
@@ -121,7 +121,7 @@ describe('a drain', () => {
       stages: {
         limiter: limit('limiter'),
         api: pass('api'),
-        lost: drain({ from: ['limiter', 'api'] }),
+        lost: lost({ from: ['limiter', 'api'] }),
       },
       routes: { req: ['limiter', 'api'] },
     })
@@ -131,7 +131,7 @@ describe('a drain', () => {
     expect(ev.ctx.at.lost.req).toBeLessThan(800)
   })
 
-  it('refuses a drain fed by a copy, by a queue nothing reads, and a formula that reads a drain under retries', () => {
+  it('refuses a lost box fed by a copy, by a queue nothing reads, and a formula that reads a lost box under retries', () => {
     const build = (o: Record<string, unknown>) => () =>
       defineModel({
         load: p.load({ max: 10 }),
@@ -144,22 +144,22 @@ describe('a drain', () => {
         stages: {
           push: fanout({ to: [{ stage: 'phone', share: 1 }] }),
           phone: pass('api'),
-          d: drain({ from: ['phone'] }),
+          d: lost({ from: ['phone'] }),
         },
         routes: { req: ['push'] },
       }),
-    ).toThrow('drain "d" takes from "phone", which loses nothing it counts')
+    ).toThrow('lost "d" takes from "phone", which loses nothing it counts')
     expect(
       build({
         flows: { req: { rate: () => 1, overload: { drop: { olderThan: 9 } } } },
         stages: {
           api: pass('api'),
           q: queue({ partitions: { req: 1 } }),
-          d: drain({ from: ['q'], reason: ['dropped'] }),
+          d: lost({ from: ['q'], takes: ['dropped'] }),
         },
         routes: { req: ['api', 'q'] },
       }),
-    ).toThrow('drain "d" takes from "q", which loses nothing it counts')
+    ).toThrow('lost "d" takes from "q", which loses nothing it counts')
     // the API's own demand reads what it loses: the retries depend on that demand
     const reads = defineModel({
       load: p.load({ max: 10 }),
@@ -172,7 +172,7 @@ describe('a drain', () => {
           over: '503s',
         },
       },
-      stages: { api: pass('api'), failed: drain({ from: ['api'] }) },
+      stages: { api: pass('api'), failed: lost({ from: ['api'] }) },
       routes: { req: ['api'] },
     })
     expect(() => reads.evaluate({ load: 2 })).toThrow('a formula reads at.failed, what the retries leave lost')
@@ -186,7 +186,7 @@ describe('a drain', () => {
       stages: { c: cache({ hit: 0.5, component: 'api' }), api: pass('api') },
       routes: { req: ['c', 'api'] },
     }).def as never
-    expect(lossesOf(def, 'c')).toEqual(['rejected', 'timedout'])
+    expect(lossesOf(def, 'c')).toEqual(['rejected', 'timedOut'])
   })
 
   it('knows what each stage can lose', () => {

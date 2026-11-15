@@ -152,13 +152,13 @@ gw -> api -> db
   })
 })
 
-describe('a loss no drain counts', () => {
-  it('adds a drain after the box that loses it, and the edge into it', () => {
+describe('a loss no lost box counts', () => {
+  it('adds a lost box after the box that loses it, and the edge into it', () => {
     const search = read('../../../examples/search/search.loadmap')
     const src = search.replace(/\nnode limiterRejected[^\n]*/, '').replace(/\nlimiter -> limiterRejected/, '')
     const [fix, ...rest] = fixes(src)
     expect(rest).toEqual([])
-    expect(fix!.title).toBe('Add a drain for what limiter loses')
+    expect(fix!.title).toBe('Add a lost box for what limiter loses')
     // the fix puts back what the example has, line for line
     expect(fix!.text).toBe(search)
   })
