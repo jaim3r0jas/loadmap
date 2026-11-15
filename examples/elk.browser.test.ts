@@ -76,6 +76,6 @@ describe('ELK in a worker', () => {
       throw new Error('blocked by the page')
     })
     const scene = await layout(fresh(checkoutView), checkout.evaluate(), { elk })
-    expect(scene.nodes).toHaveLength(5)
+    expect(scene.nodes).toHaveLength(6)
   })
 })

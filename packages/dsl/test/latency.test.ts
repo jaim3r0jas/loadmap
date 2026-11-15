@@ -63,7 +63,10 @@ describe('latency in the language', () => {
 
   it('times a flow out', () => {
     const r = compile(SRC.replace('route: a -> b }', 'route: a -> b; timeout: 0.2 }'))
-    expect(r.diagnostics).toEqual([])
+    // what times out vanishes until a drain counts it
+    expect(r.diagnostics.map((d) => d.message)).toEqual([
+      'units of req too slow for their client at b vanish: give them a drain that counts them',
+    ])
     const l = r.definition!.model.evaluate({ load: 1 }).latency.req!
     // a gamma of shape 1.6 and scale 50 ms (mean 80 ms): its share past 200 ms, scipy.special.gammaincc(1.6, 4)
     expect(l.timedOut).toBeCloseTo(0.05361299815678208, 10)

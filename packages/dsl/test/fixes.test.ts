@@ -151,3 +151,28 @@ gw -> api -> db
     expect(compile(add!.text).ok).toBe(true)
   })
 })
+
+describe('a loss no drain counts', () => {
+  it('adds a drain after the box that loses it, and the edge into it', () => {
+    const search = read('../../../examples/search/search.loadmap')
+    const src = search.replace(/\nnode limiterRejected[^\n]*/, '').replace(/\nlimiter -> limiterRejected/, '')
+    const [fix, ...rest] = fixes(src)
+    expect(rest).toEqual([])
+    expect(fix!.title).toBe('Add a drain for what limiter loses')
+    // the fix puts back what the example has, line for line
+    expect(fix!.text).toBe(search)
+  })
+
+  it('leaves a comment at the end of the box on the box', () => {
+    const src = `loadmap 1
+load { max: 10 }
+flow req "requests" { rate: 100 * load; route: limiter; from: users }
+node users "Users"
+node limiter "Limiter" { limit; capacity: configured(1_500, "req/s", "gateway config"); over: "429s" } # the gateway
+users -> limiter
+`
+    const [fix] = fixes(src)
+    expect(fix!.text).toContain('over: "429s" } # the gateway\nnode limiterRejected "Turned away"')
+    expect(compile(fix!.text).diagnostics).toEqual([])
+  })
+})

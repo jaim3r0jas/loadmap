@@ -29,7 +29,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
-import { flowOf, lossesOf } from '@loadmap/core/internal'
+import { flowOf, lossesOf, waysOf } from '@loadmap/core/internal'
 import {
   type AnyNodeDef,
   type Direction,
@@ -601,7 +601,15 @@ class Compiler {
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'drain')
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
-    this.drainsFed(boxes, boxById, root.edges, stageDefs, { stages: stageDefs, routes, flows: flowDefs as never })
+    const shape = { stages: stageDefs, routes, flows: flowDefs as never }
+    // what each stage can lose, worked out once: the drains and the warnings both read it
+    const known = new Map<string, readonly DrainReason[]>()
+    const losses = (stage: string) => {
+      if (!known.has(stage)) known.set(stage, lossesOf(shape, stage))
+      return known.get(stage)!
+    }
+    const drained = this.drainsFed(boxes, boxById, root.edges, stageDefs, losses)
+    this.unseenLosses(flows, stageOf, drained, shape, losses)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs)) {
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
@@ -856,8 +864,8 @@ class Compiler {
     boxById: Map<string, Box>,
     edges: readonly Edge[],
     stageDefs: Record<string, StageDef>,
-    shape: Parameters<typeof lossesOf>[0],
-  ) {
+    losses: (stage: string) => readonly DrainReason[],
+  ): Map<string, string> {
     const taken = new Map<string, string>()
     for (const box of boxes)
       for (const s of box.stages) {
@@ -875,9 +883,7 @@ class Compiler {
             fed = true
             const src = boxById.get(n.name)
             if (!src) return
-            const losing = src.stages
-              .map((x) => x.id)
-              .filter((x) => lossesOf(shape, x).some((r) => reasons.includes(r)))
+            const losing = src.stages.map((x) => x.id).filter((x) => losses(x).some((r) => reasons.includes(r)))
             if (!losing.length) {
               this.report.error(
                 n,
@@ -887,7 +893,7 @@ class Compiler {
               return
             }
             for (const x of losing)
-              for (const r of lossesOf(shape, x).filter((r) => reasons.includes(r))) {
+              for (const r of losses(x).filter((r) => reasons.includes(r))) {
                 const other = taken.get(`${x}\u0000${r}`)
                 if (other && other !== s.id)
                   this.report.error(n, `what ${x} loses as ${r} already goes to the drain "${other}"`)
@@ -903,6 +909,68 @@ class Compiler {
           )
         ;(def as { from: readonly string[] }).from = [...new Set(from)]
       }
+    return taken
+  }
+
+  /**
+   * A warning at each loss the definition plans that no drain counts: a limiter's rejections, a flow's drops (at each
+   * queue it can drop in) and its timeouts (at each end of its ways). A pass, cache or split past capacity loses too,
+   * but every one of them could: the bars and the `over` line already say so.
+   */
+  private unseenLosses(
+    flows: readonly Block[],
+    stageOf: Map<string, { block: Block; box: Box }>,
+    drained: Map<string, string>,
+    shape: Parameters<typeof lossesOf>[0],
+    losses: (stage: string) => readonly DrainReason[],
+  ) {
+    const counted = (stage: string, reason: DrainReason) => drained.has(`${stage}\u0000${reason}`)
+    // one warning for a stage and a reason, however many flows lose there: one drain counts them all
+    const warned = new Set<string>()
+    const first = (stage: string, reason: DrainReason) => {
+      const key = `${stage}\u0000${reason}`
+      if (warned.has(key) || counted(stage, reason)) return false
+      warned.add(key)
+      return true
+    }
+    for (const [id, s] of stageOf)
+      if (s.block.keyword === 'limit' && losses(id).includes('rejected') && first(id, 'rejected'))
+        this.report.warning(s.block.at, `what ${id} turns away vanishes: give it a drain that counts it`)
+    for (const b of flows) {
+      const f = b.args.id?.name
+      if (!f) continue
+      const { ways } = waysOf(shape, f)
+      // this flow's drops: at a queue on its ways that a stage with a component reads after it
+      const drop = b.children.find((c) => c.keyword === 'drop')
+      const read = (w: readonly string[], i: number) => {
+        const next = shape.stages[w[i + 1] ?? '']
+        return next != null && 'component' in next && next.component != null
+      }
+      const queue =
+        drop &&
+        ways
+          .flatMap((w) => w.filter((s, i) => shape.stages[s]?.kind === 'queue' && read(w, i)))
+          .find((s) => first(s, 'dropped'))
+      if (drop && queue)
+        this.report.warning(
+          drop.at,
+          `units of ${f} dropped as too old at ${queue} vanish: give them a drain that counts them`,
+        )
+      // a timeout refused has its error instead
+      const timeout = this.prop(b, 'timeout')
+      const t = (shape.flows[f] as { timeout?: unknown } | undefined)?.timeout
+      if (!timeout || t === undefined || (typeof t === 'number' && !(t > 0))) continue
+      // too slow at the end of each way, or answered too slowly by a cache on it
+      const late = [
+        ...new Set([...ways.map((w) => w.at(-1)!), ...ways.flat().filter((s) => shape.stages[s]?.kind === 'cache')]),
+      ]
+      const at = late.find((s) => s && first(s, 'timedout'))
+      if (at)
+        this.report.warning(
+          timeout.key,
+          `units of ${f} too slow for their client at ${at} vanish: give them a drain that counts them`,
+        )
+    }
   }
 
   /**

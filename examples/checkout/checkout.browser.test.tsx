@@ -58,7 +58,7 @@ const along = (load: number) => String(Math.log(load) / Math.log(100))
 describe('checkout in the browser', () => {
   it('draws the diagram and answers with a verdict', async () => {
     const { el } = await mount()
-    expect(el.querySelectorAll('[data-node]')).toHaveLength(5)
+    expect(el.querySelectorAll('[data-node]')).toHaveLength(6)
     expect(el.querySelectorAll('rect[data-slot]')).toHaveLength(24)
     expect(verdict(el)).toContain('At 10×, every component is under the 50 % target')
     // the gateway's ±30 % puts it first on the pessimistic edge, and the hint says to measure it

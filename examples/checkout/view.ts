@@ -14,6 +14,7 @@ export const view = defineView(checkout, {
       memberLabel: (i) => `broker ${i}`,
       tier: 'services',
     }),
+    kafkaDropped: node({ label: 'Too old', stage: 'kafkaDropped' }),
     workers: pool({
       label: 'Workers',
       sub: ({ pods, threads }) => `${pods} pods × ${threads} threads`,
@@ -25,6 +26,7 @@ export const view = defineView(checkout, {
     edge('phones', 'gateway', { label: 'POST /checkout' }),
     edge('gateway', 'kafka', { label: ({ flows }) => `${compact(flows.orders)} orders/s` }),
     edge('kafka', 'workers'),
+    edge('kafka', 'kafkaDropped'),
     edge('workers', 'db', { label: ({ batch, rows }) => (batch ? `${rows} rows a commit` : 'a commit per order') }),
   ],
   flows: {

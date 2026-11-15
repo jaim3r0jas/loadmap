@@ -20,7 +20,13 @@ describe('completions', () => {
   it('offers the entries of a table after its dot', () => {
     expect(at(inside('flow orders "orders" {', 'rate: flows.ev|')).labels).toEqual(['orders', 'events'])
     expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual(['gateway', 'workers', 'db', 'conns'])
-    expect(at(inside('flow orders "orders" {', 'rate: at.|')).labels).toEqual(['gateway', 'topic', 'workers', 'db'])
+    expect(at(inside('flow orders "orders" {', 'rate: at.|')).labels).toEqual([
+      'gateway',
+      'topic',
+      'kafkaDropped',
+      'workers',
+      'db',
+    ])
     // at.<stage>.: only the flows that reach that stage (events ends at the workers)
     expect(at(inside('flow orders "orders" {', 'rate: at.db.o|')).labels).toEqual(['orders'])
     expect(at(inside('flow orders "orders" {', 'rate: at.workers.|')).labels).toEqual(['orders', 'events'])
@@ -39,7 +45,7 @@ describe('completions', () => {
   it('offers stages in a route, nodes in an edge and after from', () => {
     const route = at(inside('flow orders "orders" {', 'route: gateway -> |')).labels
     expect(route).toEqual(['gateway', 'topic', 'workers', 'db', 'kafka'])
-    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['gateway', 'kafka', 'workers', 'db'])
+    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['gateway', 'kafka', 'kafkaDropped', 'workers', 'db'])
     expect(at(inside('flow orders "orders" {', 'from: |')).labels).toContain('phones')
   })
 

@@ -203,14 +203,14 @@ describe('the built site', () => {
     const browser = await chromium.launch()
     try {
       for (const [route, nodes] of [
-        ['', 5],
-        ['examples/checkout/', 5],
+        ['', 6],
+        ['examples/checkout/', 6],
         ['examples/alerts/', 10],
-        ['examples/search/', 7],
+        ['examples/search/', 8],
         ['examples/', 4],
         ['getting-started/', 3],
         ['concepts/', 3 + 8],
-        ['editor/', 5],
+        ['editor/', 6],
       ] as const) {
         const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
         const errors: string[] = []
@@ -262,7 +262,7 @@ describe('the built site', () => {
       page.on('pageerror', (e) => errors.push(e.message))
       await page.goto(`${url}embedding/`)
       const frame = (await (await page.waitForSelector('.island iframe')).contentFrame())!
-      await frame.waitForFunction(() => document.querySelectorAll('[data-node]').length === 5, null, {
+      await frame.waitForFunction(() => document.querySelectorAll('[data-node]').length === 6, null, {
         timeout: 30_000,
       })
       // the HTML shown is the frame's own link
@@ -410,7 +410,7 @@ describe('the built site', () => {
       ]
       const { page, frames, errors } = await framed(sizes.map((s) => ({ ...s, hash })))
       for (const [i, frame] of frames.entries()) {
-        await frame.waitForFunction(() => document.querySelectorAll('[data-node]').length === 5)
+        await frame.waitForFunction(() => document.querySelectorAll('[data-node]').length === 6)
         const m = await frame.evaluate(() => {
           const root = document.querySelector<HTMLElement>('.lm')!
           const r = root.getBoundingClientRect()
@@ -479,7 +479,7 @@ describe('the built site', () => {
       await page.close()
       // never by itself with reduced motion
       const still = await framed([{ query: '?play=1', hash, w: 860, h: 440 }], { reducedMotion: 'reduce' })
-      await still.frames[0]!.waitForFunction(() => document.querySelectorAll('[data-node]').length === 5)
+      await still.frames[0]!.waitForFunction(() => document.querySelectorAll('[data-node]').length === 6)
       await still.page.waitForTimeout(1500)
       expect(await still.frames[0]!.locator('.lm-story[data-playing]').count()).toBe(0)
       await still.page.close()

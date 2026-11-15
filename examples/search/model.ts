@@ -1,6 +1,18 @@
 // Product search: a rate limiter, an autoscaled API, a cache and clients that retry, the four building blocks in one
 // system, and an index of two shards behind a coordinator that sends each miss to one. Made-up names and numbers.
-import { cache, configured, defineModel, estimated, limit, measured, p, split, store, workers } from '@loadmap/core'
+import {
+  cache,
+  configured,
+  defineModel,
+  drain,
+  estimated,
+  limit,
+  measured,
+  p,
+  split,
+  store,
+  workers,
+} from '@loadmap/core'
 
 export const search = defineModel({
   title: 'Product search',
@@ -107,6 +119,8 @@ export const search = defineModel({
   },
   stages: {
     limiter: limit('limiter'),
+    // what the limiter turns away, after every retry, counted
+    limiterRejected: drain({ from: ['limiter'], reason: ['rejected'] }),
     api: workers('api', { perPod: 4, autoscale: { min: 2, max: ({ maxPods }) => maxPods, target: 0.7 } }),
     cache: cache({ hit: ({ hit }) => hit, component: 'cache' }),
     // each miss goes to one shard: half to each

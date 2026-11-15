@@ -811,7 +811,9 @@ node db "DB" {
   capacity: measured(2_000, "queries/s")
   over: "queries queue"
 }
+node tooMany "Turned away" { drain }
 client -> limiter -> db
+limiter -> tooMany
 `)
     const ts = defineModel({
       load: p.load({ label: 'Load', max: 10, default: 1 }),
@@ -820,7 +822,7 @@ client -> limiter -> db
         limiter: { name: 'Limiter', capacity: configured(1000, 'req/s', 'gateway config'), over: 'clients get 429s' },
         db: { name: 'DB', capacity: measured(2000, 'queries/s'), over: 'queries queue' },
       },
-      stages: { limiter: limit('limiter'), db: store('db') },
+      stages: { limiter: limit('limiter'), db: store('db'), tooMany: drain({ label: 'tooMany', from: ['limiter'] }) },
       routes: { req: ['limiter', 'db'] },
     })
     same(ts, dsl, loads)
@@ -1149,5 +1151,94 @@ api -> failed
     expect(errors(`${SRC}failed -> db\n`)).toMatchObject([
       { message: 'nothing leaves the drain "failed": what reaches it is lost', text: 'db' },
     ])
+  })
+})
+
+describe('losses no drain counts', () => {
+  const SRC = `loadmap 1
+load { max: 10 }
+flow req "requests" { rate: 100 * load; route: limiter -> api; from: users }
+flow ev "events" {
+  rate: 50 * load
+  drop { olderThan: 60 }
+  timeout: 5
+  route: topic -> pool
+  from: users
+}
+node users "Users"
+node limiter "Limiter" { limit; capacity: configured(1_500, "req/s", "gateway config"); over: "429s" }
+node api "API" { pass; capacity: measured(1_000, "req/s"); over: "503s" }
+cluster kafka "Kafka" { members: 3; queue topic { partitions { ev: 3 } } }
+pool pool "Pool" {
+  workers { pods: 2; perPod: 2 }
+  capacity: measured(100, "ev/s")
+  service: 0.01
+  over: "lag"
+}
+users -> limiter -> api
+users -> kafka -> pool
+`
+  const warnings = (src: string) =>
+    compile(src)
+      .diagnostics.filter((d) => d.severity === 'warning')
+      .map((d) => ({ message: d.message, text: src.slice(d.from, d.to) }))
+
+  it('warn at a limiter, a drop rule and a timeout whose losses vanish', () => {
+    // in the order of the text
+    expect(warnings(SRC)).toEqual([
+      { message: 'units of ev dropped as too old at topic vanish: give them a drain that counts them', text: 'drop' },
+      {
+        message: 'units of ev too slow for their client at pool vanish: give them a drain that counts them',
+        text: 'timeout',
+      },
+      { message: 'what limiter turns away vanishes: give it a drain that counts it', text: 'limit' },
+    ])
+  })
+
+  it('warn once for a stage, only for losses that happen, and where a way really ends', () => {
+    const MINI = `loadmap 1
+load { max: 10 }
+node users "Users"
+node api "API" { pass; capacity: measured(1_000, "req/s"); service: 0.01; over: "503s" }
+`
+    // a limiter no flow passes turns nothing away
+    const idle = `${MINI}flow req "r" { rate: 1; route: api; from: users }
+node limiter "Limiter" { limit; capacity: configured(1, "req/s", "x"); over: "429s" }
+users -> api
+`
+    expect(warnings(idle).map((w) => w.message)).toEqual(['no flow passes the stage "limiter"'])
+    // a split last on the route: its ways end the flow at a and at b, not at the split
+    const split = `${MINI}flow req "r" { rate: 1; timeout: 5; route: api -> sp; from: users }
+node sp "Split" { split { req -> a: 0.5; req -> b: 0.5 } }
+node a "A" { pass; capacity: measured(1_000, "req/s"); over: "x" }
+node b "B" { pass; capacity: measured(1_000, "req/s"); over: "x" }
+node late "Late" { drain { reason: [timedout] } }
+users -> api -> sp -> a
+sp -> b
+`
+    expect(warnings(split).map((w) => w.message)).toEqual([
+      'units of req too slow for their client at a vanish: give them a drain that counts them',
+    ])
+    expect(warnings(`${split}a -> late\nb -> late\n`)).toEqual([])
+    // two flows dropping at one queue: one warning; a flow nothing reads after the queue drops nothing
+    const shared = `${MINI}flow ev "e" { rate: 1; drop { olderThan: 9 }; route: topic -> api; from: users }
+flow ev2 "e2" { rate: 1; drop { olderThan: 9 }; route: topic -> api; from: users }
+flow raw "raw" { rate: 1; drop { olderThan: 9 }; route: topic; from: users }
+cluster kafka "Kafka" { members: 1; queue topic { partitions { ev: 1; ev2: 1; raw: 1 } } }
+users -> kafka -> api
+`
+    expect(warnings(shared).map((w) => w.message)).toEqual([
+      'units of ev dropped as too old at topic vanish: give them a drain that counts them',
+    ])
+  })
+
+  it('say nothing once a drain counts each, and nothing for a pass past capacity', () => {
+    const counted = `${SRC}node lost "Lost" { drain }
+node old "Too old" { drain }
+limiter -> lost
+kafka -> old
+pool -> lost
+`
+    expect(compile(counted).diagnostics).toEqual([])
   })
 })

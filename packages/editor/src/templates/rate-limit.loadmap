@@ -32,6 +32,7 @@ node limiter "Rate limiter" `${compact(limit)} req/s` {
   capacity: configured(limit, "req/s", "gateway config")
   over: "clients above the limit get 429s"
 }
+node limiterRejected "Turned away" { drain { reason: [rejected] } }
 
 pool service "Service" `${pods} pods` {
   workers { pods: pods; perPod: 8 }
@@ -51,4 +52,5 @@ node db "Database" {
 
 clients -> limiter
 limiter -> service: `${compact(at.service.requests)} req/s let through`
+limiter -> limiterRejected
 service -> db
