@@ -37,6 +37,7 @@ node out "Response" {
 users -> gw -> router
 router -> primary
 router -> replica -> out
+router -> out
 `
 
 const errors = (src: string) =>

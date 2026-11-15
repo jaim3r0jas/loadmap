@@ -117,10 +117,108 @@ export function defineView<
       throw new Error(`loadmap: node "${id}" stands in unknown tier "${n.tier}"`)
   if (def.layout != null && def.layout !== 'compact' && def.layout !== 'stable')
     throw new Error(`loadmap: layout "${def.layout}" is not compact or stable`)
-  const shows = (n: AnyNodeDef, s: string) => (Array.isArray(n.stage) ? n.stage.includes(s) : n.stage === s)
   for (const s of model.stageIds)
     if (!Object.values(nodes).some((n) => shows(n, s))) throw new Error(`loadmap: no node shows stage "${s}"`)
+  // a dot moves only along an edge: one it would cross the diagram without is a mistake, not a shortcut
+  const gap = unjoined(model, def as ViewDef<string, string, string>)[0]
+  if (gap)
+    throw new Error(
+      `loadmap: flow "${gap.flow}" goes from node "${gap.from}" to node "${gap.to}"${gap.edge === 'reversed' ? ', but their edge points the other way' : ' with no edge between them'}: add edge('${gap.from}', '${gap.to}')`,
+    )
   return { model, def }
+}
+
+const shows = (n: AnyNodeDef, s: string) => (Array.isArray(n.stage) ? n.stage.includes(s) : n.stage === s)
+
+/** One step a flow's dots take from one box to the next. */
+export interface Hop {
+  flow: string
+  /** The stages it joins, in the flow's direction; the first is null for the start (the flow's `from` node). */
+  stages: readonly [string | null, string]
+  /** The node each end is drawn in. */
+  from: string
+  to: string
+  /** Whether an edge joins them in the flow's direction, only the other way, or not at all. */
+  edge: 'yes' | 'reversed' | 'none'
+  /** What makes the hop: the start, the route (with a split's ways), a fan-out's copies. */
+  via: 'start' | 'route' | 'fanout'
+  /** Whether any unit takes it at these values: a split's way of share 0 or a branch of 0 copies takes none. */
+  used: boolean
+}
+
+/**
+ * The hops no edge joins in the flow's direction, at the defaults and in each scenario and story step: a split's or a
+ * fan-out's `to` may change its stages with the values. A phase whose values fail to resolve is left to whatever runs
+ * it, which reports the failure where it belongs.
+ */
+export function unjoined<F extends string, S extends string>(
+  model: Model<any, F, any, S>,
+  def: ViewDef<F, S, string>,
+): Hop[] {
+  const out: Hop[] = []
+  const phases = [...model.scenarios, ...model.story].map((s) => s.values as LooseValues)
+  for (const [i, v] of [undefined, ...phases].entries()) {
+    let hops: Hop[]
+    try {
+      hops = hopsOf(model, def, v)
+    } catch (err) {
+      if (i === 0) throw err
+      continue
+    }
+    for (const h of hops)
+      if (
+        h.edge !== 'yes' &&
+        !out.some((o) => o.flow === h.flow && o.stages[0] === h.stages[0] && o.stages[1] === h.stages[1])
+      )
+        out.push(h)
+  }
+  return out
+}
+
+/**
+ * Every hop of every flow at these values, once: from its `from` node to its first stage, between the stages next to
+ * each other on each of its ways (a split's ways included, and where one rejoins the route), and from a fan-out to each
+ * stage it copies to. Two stages drawn in one box are no hop. A stage drawn by several nodes is in the last, as the
+ * layout draws it.
+ */
+export function hopsOf<F extends string, S extends string>(
+  model: Model<any, F, any, S>,
+  def: ViewDef<F, S, string>,
+  values?: LooseValues,
+): Hop[] {
+  const owner = new Map<string, string>()
+  for (const [id, n] of Object.entries(def.nodes as Record<string, AnyNodeDef>))
+    for (const st of n.stage == null ? [] : Array.isArray(n.stage) ? n.stage : [n.stage]) owner.set(st, id)
+  const nodeOf = (s: string) => owner.get(s)
+  const edges = new Set(def.edges.map((e) => `${e.from}\u0000${e.to}`))
+  const { stages, paths } = model.stagesAt(values as never)
+  const out: Hop[] = []
+  const add = (flow: string, a: string | null, b: string, via: Hop['via'], used: boolean) => {
+    const from = a == null ? (def.flows as Record<string, FlowView>)[flow]?.from : nodeOf(a)
+    const to = nodeOf(b)
+    const key = `${flow}\u0000${a}\u0000${b}`
+    if (from == null || to == null || from === to) return
+    const known = out.find((h) => `${h.flow}\u0000${h.stages[0]}\u0000${h.stages[1]}` === key)
+    if (known) {
+      known.used ||= used
+      return
+    }
+    const edge = edges.has(`${from}\u0000${to}`) ? 'yes' : edges.has(`${to}\u0000${from}`) ? 'reversed' : 'none'
+    out.push({ flow, stages: [a, b], from, to, edge, via, used })
+  }
+  for (const f of model.flowIds) {
+    for (const p of paths[f] ?? []) {
+      const [first, ...rest] = p.stages
+      if (first == null) continue
+      const used = p.share > 0
+      add(f, null, first, 'start', used)
+      for (const [i, s] of rest.entries()) add(f, p.stages[i]!, s, 'route', used)
+      const last = stages[p.stages.at(-1)!]
+      if (last?.kind === 'fanout')
+        for (const b of last.to[f] ?? []) add(f, last.id, b.stage, 'fanout', used && b.share > 0)
+    }
+  }
+  return out
 }
 
 export function node<const S extends string = never, const T extends string = never>(o: {

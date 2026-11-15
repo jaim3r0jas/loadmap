@@ -4,7 +4,7 @@ import { walk } from './complete'
 import { type Diagnostic, Reporter } from './diagnostics'
 import type { TextChange } from './edit'
 import { parse } from './parser'
-import { COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA } from './schema'
+import { COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
 
 export interface QuickFix {
   /** What it does, as a menu shows it: `Change to "orders"`. */
@@ -13,6 +13,7 @@ export interface QuickFix {
 }
 
 const CAPACITY = new Set(['measured', 'estimated', 'configured'])
+const ENDS = new Set(['store', 'sink', 'fanout'])
 const NAME = /^[A-Za-z_]\w*$/
 
 /**
@@ -73,7 +74,77 @@ function fixesFor(
 
   // a -> b: { … }
   if (d.message === 'drop the ":" before a { … } block') return [{ title: 'Drop the ":"', changes: replace('') }]
+
+  // signups goes from gateway to api, and no edge joins them
+  const hop = /^\S+ goes from (\S+) to (\S+), (?:and no edge joins them|but their edge points the other way)$/.exec(
+    d.message,
+  )
+  if (hop) {
+    const [, a, b] = hop as unknown as [string, string, string]
+    const fixes: QuickFix[] = [{ title: `Add the edge ${a} -> ${b}`, changes: [addEdge(source, doc().body, a, b)] }]
+    // a hop on a route: through the boxes the edges already join them by, which those boxes then handle too
+    const ends = /^(\w+)(\s*->\s*)(\w+)$/.exec(text)
+    const via = ends && boxesBetween(doc().body, a, b)
+    if (ends && via?.length)
+      fixes.push({
+        title: `Route it through ${via.join(', ')}`,
+        changes: replace([ends[1], ...via, ends[3]].join(ends[2])),
+      })
+    return fixes
+  }
   return []
+}
+
+/** `a -> b` on a line of its own, after the last edge that leaves a (else after the last edge, else at the end). */
+function addEdge(source: string, body: readonly Stmt[], a: string, b: string): TextChange {
+  const edges = body.filter((s) => s.kind === 'edge')
+  const after = edges.findLast((e) => e.chain.slice(0, -1).some((n) => n.name === a)) ?? edges.at(-1)
+  if (after) return { from: after.to, to: after.to, insert: `\n${a} -> ${b}` }
+  const end = source.trimEnd().length
+  return { from: end, to: end, insert: `\n\n${a} -> ${b}` }
+}
+
+/**
+ * The boxes between a and b on the shortest way the edges already join them, each running one stage a unit passes
+ * (so a route can name it); none when there is no such way, or it is longer than four boxes.
+ */
+function boxesBetween(body: readonly Stmt[], a: string, b: string): string[] | undefined {
+  const next = new Map<string, string[]>()
+  for (const s of body)
+    if (s.kind === 'edge')
+      s.chain.forEach((n, i) => {
+        const to = s.chain[i + 1]
+        if (to) next.set(n.name, [...(next.get(n.name) ?? []), to.name])
+      })
+  const oneStage = new Set(
+    body
+      .filter(
+        (s): s is Decl =>
+          s.kind === 'decl' &&
+          (s.body ?? []).filter((c) => c.kind === 'decl' && (STAGES as readonly string[]).includes(c.keyword.name))
+            .length === 1 &&
+          // a flow ends at a store, a sink or a fan-out: none can stand in the middle of a route
+          !(s.body ?? []).some((c) => c.kind === 'decl' && ENDS.has(c.keyword.name)),
+      )
+      .map((s) => {
+        const id = s.args[0]
+        return id?.t === 'id' ? id.name : ''
+      }),
+  )
+  let ways: string[][] = [[a]]
+  const seen = new Set([a])
+  for (let depth = 0; depth < 5 && ways.length; depth++) {
+    const longer: string[][] = []
+    for (const w of ways)
+      for (const n of next.get(w.at(-1)!) ?? []) {
+        if (n === b && w.length > 1) return w.slice(1)
+        if (seen.has(n) || !oneStage.has(n)) continue
+        seen.add(n)
+        longer.push([...w, n])
+      }
+    ways = longer
+  }
+  return undefined
 }
 
 /** The statement whose keyword or id starts at `from`, at any depth: a box's component is reported at the box's id. */

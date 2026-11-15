@@ -611,7 +611,7 @@ describe('the checker', () => {
 
   it('refuses a drawing too large to lay out', () => {
     const src = def({
-      extra: 'cluster k "K" { members: pods * 100; queue q { partitions { req: 3 } } }',
+      extra: 'cluster k "K" { members: pods * 100; queue q { partitions { req: 3 } } }\nclient -> k\nk -> api',
     }).replace('route: api', 'route: q -> api')
     expect(errors(src)).toMatchObject([{ message: 'members is 200; at most 64', text: 'pods * 100' }])
   })
@@ -911,5 +911,178 @@ client -> x
     expect(
       errors(def({ extra: 'component spare "Spare" { capacity: measured(1, "x"); over: "" }' })).map((e) => e.message),
     ).toContain('the component "spare" needs "demand: …": no stage uses it')
+  })
+})
+
+describe('hops', () => {
+  const SRC = `loadmap 1
+load { max: 10 }
+param fast "Fast path" { default: false }
+preset "Fast" { fast: true }
+flow req "requests" { rate: 100 * load; route: gw -> api -> db; from: users }
+node users "Users"
+node gw "Gateway" { pass; capacity: measured(1_000, "req/s"); over: "clients wait" }
+node api "API" { pass; capacity: measured(1_000, "req/s"); over: "clients wait" }
+node db "Database" { store; capacity: measured(1_000, "req/s"); over: "writes queue" }
+users -> gw -> api -> db
+`
+  const all = (src: string) =>
+    compile(src).diagnostics.map((d) => ({ severity: d.severity, message: d.message, text: src.slice(d.from, d.to) }))
+
+  it('refuse a route hop no edge draws, at the hop', () => {
+    expect(errors(SRC.replace('users -> gw -> api -> db', 'users -> gw\napi -> db'))).toEqual([
+      { message: 'req goes from gw to api, and no edge joins them', hint: 'draw gw -> api', text: 'gw -> api' },
+    ])
+  })
+
+  it('refuse an edge that points against the flow', () => {
+    expect(errors(SRC.replace('users -> gw -> api -> db', 'users -> gw\napi -> gw\napi -> db'))).toMatchObject([
+      { message: 'req goes from gw to api, but their edge points the other way', text: 'gw -> api' },
+    ])
+  })
+
+  it("refuse a start no edge joins to the first stage, at the flow's from", () => {
+    expect(errors(SRC.replace('users -> gw -> api -> db', 'gw -> api -> db'))).toMatchObject([
+      { message: 'req goes from users to gw, and no edge joins them', text: 'users' },
+    ])
+  })
+
+  it('refuse a fan-out branch and a split way no edge draws, at their lines', () => {
+    const fan = SRC.replace('route: gw -> api -> db', 'route: gw -> api -> push')
+      .replace('users -> gw -> api -> db', 'users -> gw -> api -> push')
+      .concat('node push "Push" { fanout { req -> phone: 2 } }\nnode phone "Phone" { sink }\n')
+    expect(errors(fan)).toMatchObject([
+      { message: 'req goes from push to phone, and no edge joins them', text: 'req -> phone: 2' },
+    ])
+    expect(errors(`${fan}push -> phone\n`)).toEqual([])
+
+    const way = SRC.replace('route: gw -> api -> db', 'route: gw -> router -> api')
+      .replace('users -> gw -> api -> db', 'users -> gw -> router -> db\nrouter -> api')
+      .concat('node router "Router" { split { req -> db: 0.5; req -> cache: 0.5 } }\n')
+      .concat('node cache "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\nrouter -> cache\n')
+    // the cache's way rejoins the route at api: that hop needs its edge too
+    expect(errors(way)).toMatchObject([
+      { message: 'req goes from cache to api, and no edge joins them', text: 'req -> cache: 0.5' },
+    ])
+    expect(errors(`${way}cache -> api\n`)).toEqual([])
+  })
+
+  it('take two stages in one box as no hop', () => {
+    // a cluster's two queues: a unit moves from one to the other inside the box
+    const src = SRC.replace('route: gw -> api -> db', 'route: gw -> raw -> clean -> db')
+      .replace('users -> gw -> api -> db', 'users -> gw -> api -> db\ngw -> k -> db')
+      .concat(
+        'cluster k "K" { members: 3; capacity: measured(1_000, "msg/s"); over: "lag"; queue raw { partitions { req: 3 } }; queue clean { partitions { req: 3 } } }\n',
+      )
+    expect(errors(src)).toEqual([])
+  })
+
+  it('warn where an edge a flow takes is hidden', () => {
+    expect(all(SRC.replace('users -> gw -> api -> db', 'users -> gw -> api\napi -> db { when: fast }'))).toEqual([
+      {
+        severity: 'warning',
+        message: 'api -> db is hidden at the defaults, but req still goes that way',
+        text: 'when',
+      },
+    ])
+    expect(all(SRC.replace('users -> gw -> api -> db', 'users -> gw -> api\napi -> db { when: !fast }'))).toEqual([
+      {
+        severity: 'warning',
+        message: 'api -> db is hidden in the preset "Fast", but req still goes that way',
+        text: 'when',
+      },
+    ])
+  })
+
+  it('warn only where nothing else carries the dots: a twin edge shown, or a way no unit takes', () => {
+    const twin = SRC.replace(
+      'users -> gw -> api -> db',
+      'users -> gw -> api\napi -> db { label: "sync"; when: fast }\napi -> db { label: "async"; when: !fast }',
+    )
+    expect(all(twin)).toEqual([])
+    const way = SRC.replace('route: gw -> api -> db', 'route: gw -> router -> db')
+      .replace(
+        'users -> gw -> api -> db',
+        'users -> gw -> router -> api -> db\nrouter -> cache { when: fast }\ncache -> db',
+      )
+      .concat('node router "Router" { split { req -> cache: fast ? 0.5 : 0; req -> api: fast ? 0.5 : 1 } }\n')
+      .concat('node cache "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\n')
+    // at the defaults no unit goes by the cache, so its hidden edge carries nothing
+    expect(all(way)).toEqual([])
+  })
+
+  it('still runs the presets with a hop unjoined, so their errors show at once', () => {
+    const src = SRC.replace('users -> gw -> api -> db', 'users -> gw\napi -> db').replace(
+      'preset "Fast" { fast: true }',
+      'preset "Fast" { fast: true }\nlet slow = fast ? 1 / 0 : 1',
+    )
+    expect(errors(src).map((e) => e.message)).toContain('req goes from gw to api, and no edge joins them')
+  })
+
+  it('check a TypeScript fan-out whose branches change with the values in each scenario', async () => {
+    const { defineView } = await import('@loadmap/layout')
+    const { fanout, sink } = await import('@loadmap/core')
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      params: { email: p.switch({ label: 'Email', default: false }) },
+      flows: { req: { rate: ({ load }) => 100 * load } },
+      components: { api: { name: 'API', capacity: measured(1_000, 'req/s'), over: 'clients wait' } },
+      stages: {
+        api: pass('api'),
+        push: fanout({ to: ({ email }) => ({ req: [{ stage: email ? 'mail' : 'phone', share: 1 }] }) }),
+        phone: sink(),
+        mail: sink(),
+      },
+      routes: { req: ['api', 'push'] },
+      scenarios: { Today: {}, Mail: { email: true } },
+    })
+    const node = <S extends string>(stage: S) => ({ kind: 'node' as const, label: stage, stage, shape: 'box' as const })
+    expect(() =>
+      defineView(m, {
+        nodes: {
+          users: { kind: 'node', label: 'Users', shape: 'box' },
+          api: node('api'),
+          push: node('push'),
+          phone: node('phone'),
+          mail: node('mail'),
+        },
+        edges: [
+          { from: 'users', to: 'api' },
+          { from: 'api', to: 'push' },
+          { from: 'push', to: 'phone' },
+        ],
+        flows: { req: { from: 'users', color: 'accent' } },
+      }),
+    ).toThrow(`goes from node "push" to node "mail" with no edge between them`)
+  })
+
+  it('refuse a hop without an edge in TypeScript too', async () => {
+    const { defineView } = await import('@loadmap/layout')
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: ({ load }) => 100 * load } },
+      components: { api: { name: 'API', capacity: measured(1_000, 'req/s'), over: 'clients wait' } },
+      stages: { api: pass('api'), db: store('api') },
+      routes: { req: ['api', 'db'] },
+    })
+    const nodes = {
+      users: { kind: 'node', label: 'Users', shape: 'box' },
+      api: { kind: 'node', label: 'API', stage: 'api', shape: 'box' },
+      db: { kind: 'node', label: 'DB', stage: 'db', shape: 'box' },
+    } as const
+    const flows = { req: { from: 'users', color: 'accent' } } as const
+    expect(() => defineView(m, { nodes, edges: [{ from: 'users', to: 'api' }], flows })).toThrow(
+      `loadmap: flow "req" goes from node "api" to node "db" with no edge between them: add edge('api', 'db')`,
+    )
+    expect(() =>
+      defineView(m, {
+        nodes,
+        edges: [
+          { from: 'users', to: 'api' },
+          { from: 'api', to: 'db' },
+        ],
+        flows,
+      }),
+    ).not.toThrow()
   })
 })
