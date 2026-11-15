@@ -11,6 +11,6 @@ export function blame(err: unknown, flow: string) {
 }
 
 /** The losses a stage can have, which a lost box may take (`rejected`, `dropped`, `timedOut`). */
-export { lossesOf, waysOf } from './losses'
+export { lossesIn, waysOf } from './losses'
 /** "3 brokers", "acks all": a catalog condition as the editor and hover show it. */
 export { conditionText } from './published'

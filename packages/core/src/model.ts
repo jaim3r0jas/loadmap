@@ -1077,6 +1077,16 @@ function context(
   })
 
   /**
+   * The share of what reaches a queue that it drops, on the way that goes on to `after`: in steady state what its
+   * reader there cannot drain (the rate the sim drains it at). 0 without a drop rule, or a reader with a component.
+   */
+  const drops = (f: string, s: string, after: string | undefined) => {
+    const next = stages[after ?? '']
+    if (stages[s]!.kind !== 'queue' || !next || !('component' in next) || !next.component || !overload(f).drop) return 0
+    return rejectShare(ctx.util[next.component] as number | null, full)
+  }
+
+  /**
    * The share of a flow's attempts turned away somewhere on its route; a cache hit is an answer, not a failure. A
    * stage's rejections are counted against what is offered to it, so behind another stage that turns work away it
    * passes at most what it can take (offered × (1 − rejects)), not a share of a share: the bottleneck decides.
@@ -1084,30 +1094,42 @@ function context(
   const failure = (f: string) =>
     memo(`failures of ${f}`, () => {
       let failed = 0
+      let dropped = 0
       for (const { stages: route, share } of paths(f)) {
         let offered = 1
         let actual = 1
         let answered = 0
-        for (const s of route) {
+        let gone = 0
+        for (const [i, s] of route.entries()) {
           // a fan-out turns away copies, not the unit
           const r = stages[s]!.kind === 'fanout' ? 0 : rejects(s)
           if (r > 0) actual = Math.min(actual, offered * (1 - r))
+          const d = drops(f, s, route[i + 1])
+          if (d > 0) {
+            gone += actual * d
+            actual *= 1 - d
+          }
           if (stages[s]!.kind === 'cache') {
             answered += actual * hit(s)
             actual *= 1 - hit(s)
           }
           offered *= onward(s)
         }
-        failed += share * Math.max(0, 1 - answered - actual)
+        failed += share * Math.max(0, 1 - answered - actual - gone)
+        dropped += share * gone
       }
-      // a unit that got through can still be too slow for its client
+      // a unit that got through can still be too slow for its client; a dropped one is lost at its queue, never
+      // sent again: it neither failed nor got through
       const late = slow?.[f] ?? timedOut(f)
-      return late > 0 ? 1 - (1 - failed) * (1 - late) : failed
+      if (!(late > 0)) return failed
+      // without a drop both say the same: the second keeps every digit a flow with no drop rule had
+      return dropped > 0 ? failed + Math.max(0, 1 - failed - dropped) * late : 1 - (1 - failed) * (1 - late)
     })
 
   /**
-   * What actually reaches a stage, per second: like `at`, less what stages before it turned away. A stage takes up to
-   * what is offered to it × (1 − rejects), so behind another stage that turns work away the bottleneck decides.
+   * What actually reaches a stage, per second: like `at`, less what stages before it turned away or dropped. A stage
+   * takes up to what is offered to it × (1 − rejects), so behind another stage that turns work away the bottleneck
+   * decides; a reader behind a queue that drops is reached only by what it can drain, and turns none of it away.
    */
   const actual = (s: string, f: string) =>
     memo(`${f} reaching ${s}`, () => {
@@ -1119,13 +1141,17 @@ function context(
         let r = (ctx.flows[f] as number) * share
         // what is offered at each stage on this way: on a route with one way, what reaches it
         let offered = r
+        // the share the queue in front of this stage dropped: its reader then turns nothing away
+        let fed = 0
         for (const [i, t] of route.entries()) {
           if (t === s) total += r
-          // a fan-out's copies, less the share it turns away
-          total += r * copies(t, f, s) * (1 - rejects(t))
+          // a fan-out's copies, less the share it turns away (none of what a dropping queue let it read)
+          total += r * copies(t, f, s) * (fed > 0 ? 1 : 1 - rejects(t))
           if (i >= last) break
           const cut = rejects(t)
           if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
+          fed = drops(f, t, route[i + 1])
+          r *= 1 - fed
           if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
           offered *= onward(t)
         }
@@ -1149,42 +1175,57 @@ function context(
   /**
    * What each stage loses of a flow, per second, by loss, before any retry: what it turns away of what reaches it,
    * what a queue drops (in steady state, what its reader cannot drain: the rate the sim drains it at), and what is too
-   * slow for the client at the end of each way (a cache's answers at the cache).
+   * slow for the client at the end of each way (a cache's answers at the cache). Each way is walked as a unit goes
+   * it, so a unit is lost once: only what a stage let through reaches the next, and only what got to the end of its
+   * way (or was answered by a cache) can be too slow.
    */
   const causes = (f: string) =>
     memo(`losses of ${f}`, () => {
       const out: { stage: string; loss: Loss; rate: number }[] = []
-      const ways = paths(f)
-      const seen = new Set<string>()
-      for (const way of ways)
-        for (const [i, s] of way.stages.entries()) {
-          if (seen.has(s)) continue
-          seen.add(s)
-          const st = stages[s]!
-          if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
-            const r = actual(s, f) * shed(s)
-            if (r > 0) out.push({ stage: s, loss: 'rejected', rate: r })
-          }
-          const next = stages[way.stages[i + 1] ?? '']
-          if (st.kind === 'queue' && overload(f).drop && next && 'component' in next && next.component) {
-            const r = actual(s, f) * rejectShare(ctx.util[next.component] as number | null, full)
-            if (r > 0) out.push({ stage: s, loss: 'dropped', rate: r })
-          }
-        }
+      const add = (stage: string, loss: Loss, rate: number) => {
+        if (!(rate > 0)) return
+        // a stage on several ways loses on each
+        const known = out.find((c) => c.stage === stage && c.loss === loss)
+        if (known) known.rate += rate
+        else out.push({ stage, loss, rate })
+      }
+      // the share too slow of each timed part of a way: `${path}` at its end, `${path}/${cache}` answered there
+      const slowOf = new Map<string, { share: number; late: number }>()
       const t = timeoutOf(f)
       const times = t == null ? undefined : timesOf(f)
-      if (t != null && times) {
-        // only a unit that got through can be too slow: what was turned away is counted there, not twice
-        const sent = ctx.flows[f] as number
-        const turned = out.filter((c) => c.loss === 'rejected').reduce((a, c) => a + c.rate, 0)
-        const through = sent > 0 ? Math.max(0, 1 - turned / sent) : 0
+      if (t != null && times)
         times.tags.forEach((tag, i) => {
           const w = times.ways[i]!
-          const r = sent * through * w.share * beyond([{ ...w, share: 1 }], t)
-          // a cache's answer is too slow at the cache; any other unit at the end of its way
-          const at = tag.answeredAt ?? ways[tag.path]?.stages.at(-1)
-          if (r > 0 && at) out.push({ stage: at, loss: 'timedOut', rate: r })
+          const key = tag.answeredAt == null ? `${tag.path}` : `${tag.path}/${tag.answeredAt}`
+          const part = slowOf.get(key) ?? { share: 0, late: 0 }
+          part.share += w.share
+          part.late += w.share * beyond([{ ...w, share: 1 }], t)
+          slowOf.set(key, part)
         })
+      const late = (key: string) => {
+        const part = slowOf.get(key)
+        return part && part.share > 0 ? part.late / part.share : 0
+      }
+      for (const [i, way] of paths(f).entries()) {
+        let r = (ctx.flows[f] as number) * way.share
+        for (const [j, s] of way.stages.entries()) {
+          const st = stages[s]!
+          if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
+            const turned = r * shed(s)
+            add(s, 'rejected', turned)
+            r -= turned
+          }
+          const dropped = r * drops(f, s, way.stages[j + 1])
+          add(s, 'dropped', dropped)
+          r -= dropped
+          if (st.kind === 'cache') {
+            // a cache's answer is too slow at the cache; any other unit at the end of its way
+            add(s, 'timedOut', r * hit(s) * late(`${i}/${s}`))
+            r *= 1 - hit(s)
+          }
+        }
+        const end = way.stages.at(-1)
+        if (end) add(end, 'timedOut', r * late(`${i}`))
       }
       return out
     })
@@ -1245,6 +1286,11 @@ function context(
       // From below, never past the answer: where the excess calls for more, step along that call as far as it still
       // holds. Flows that share a bottleneck settle on that line in one search; the call rises with the attempts when
       // formulas rise with the load, so the steps climb to the least fixed point.
+      // read off the definition: a rule worked out from the values may read what the retries decide
+      const falls = ids.some((f) => {
+        const o = def.flows[f]!.overload
+        return typeof o === 'function' || o?.drop != null
+      })
       const solve = (from: Record<string, number>, late: Readonly<Record<string, number>>) => {
         let e = from
         for (let step = 0; step < 100; step++) {
@@ -1266,11 +1312,13 @@ function context(
             return Math.min(...live.map((f) => (wy[f]! - y[f]!) / d[f]!))
           }
           const far = Math.min(...live.map((f) => (most(f) - e[f]!) / d[f]!))
-          // t = 1 is the plain step, which always holds: the call rises with the attempts
-          if (far <= 1) e = along(far)
+          // t = 1 is the plain step, which holds where the call rises with the attempts. A queue that drops takes more
+          // units out of the failures as they rise, so there the call can fall: the step stops where it is met
+          const back = (t: number, ht = holds(t)) => (ht < -1e-9 ? settle(holds, 0, t, 1) : t)
+          if (far <= 1) e = along(falls ? back(far) : far)
           else {
             const h1 = holds(1)
-            e = along(h1 > 0 ? settle(holds, 1, far, h1) : 1)
+            e = along(h1 > 0 ? settle(holds, 1, far, h1) : falls ? back(1, h1) : 1)
           }
         }
         throw new Error(`loadmap: the retries of ${joinAnd(ids.map((f) => `"${f}"`))} do not settle`)

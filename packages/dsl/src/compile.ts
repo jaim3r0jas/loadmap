@@ -29,7 +29,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
-import { flowOf, lossesOf, waysOf } from '@loadmap/core/internal'
+import { flowOf, lossesIn, waysOf } from '@loadmap/core/internal'
 import {
   type AnyNodeDef,
   type Direction,
@@ -602,10 +602,11 @@ class Compiler {
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
     const shape = { stages: stageDefs, routes, flows: flowDefs as never }
-    // what each stage can lose, worked out once: the lost boxes and the warnings both read it
+    // what each stage can lose, worked out once, over ways walked once: the lost boxes and the warnings both read it
     const known = new Map<string, readonly Loss[]>()
+    const walked = lossesIn(shape)
     const losses = (stage: string) => {
-      if (!known.has(stage)) known.set(stage, lossesOf(shape, stage))
+      if (!known.has(stage)) known.set(stage, walked(stage))
       return known.get(stage)!
     }
     const counted = this.lostFed(boxes, boxById, root.edges, stageDefs, losses)
@@ -921,7 +922,7 @@ class Compiler {
     flows: readonly Block[],
     stageOf: Map<string, { block: Block; box: Box }>,
     counted: Map<string, string>,
-    shape: Parameters<typeof lossesOf>[0],
+    shape: Parameters<typeof lossesIn>[0],
     losses: (stage: string) => readonly Loss[],
   ) {
     const seen = (stage: string, loss: Loss) => counted.has(`${stage}\u0000${loss}`)

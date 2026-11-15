@@ -189,13 +189,17 @@ export class Sim {
       const ways = ev.paths[f] ?? []
       for (const way of ways) {
         let rate = (ev.flows[f] ?? 0) * way.share
-        for (const st of way.stages) {
+        for (const [i, st] of way.stages.entries()) {
           const key = `${st}/${f}`
           // past a split, the ways that meet again add up
           this.#inflow.set(key, ways.length > 1 ? (this.#inflow.get(key) ?? 0) + rate : rate)
           const s = ev.stages[st] as ResolvedStage
           // a fan-out turns away copies, not arrivals
           if (s.kind !== 'fanout') rate *= 1 - (this.#shed.get(st) ?? 0)
+          // a queue that drops lets on what its reader drains: the model's share, so what is behind it agrees
+          const reader = (ev.stages[way.stages[i + 1] ?? ''] as ResolvedStage | undefined)?.component
+          const u = reader == null ? null : ev.components[reader]?.util
+          if (s.kind === 'queue' && ev.overload[f]?.drop && u != null && u > full) rate *= full / u
           if (s.kind === 'cache') rate *= 1 - s.hit
         }
       }

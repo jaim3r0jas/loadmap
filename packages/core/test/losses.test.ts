@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { cache, configured, defineModel, fanout, limit, lost, measured, p, pass, queue, store, workers } from '../src'
-import { lossesOf } from '../src/internal'
+import {
+  cache,
+  configured,
+  defineModel,
+  fanout,
+  limit,
+  lost,
+  measured,
+  p,
+  pass,
+  queue,
+  split,
+  store,
+  workers,
+} from '../src'
+import { lossesIn } from '../src/internal'
 
 // clients → a rate limiter of 1,500 req/s → a service of 1,000 → a database; what is lost goes to lost boxes
 const shop = (o: { retry?: { times: number }; takes?: readonly ('rejected' | 'dropped' | 'timedOut')[] } = {}) =>
@@ -131,6 +145,123 @@ describe('a lost box', () => {
     expect(ev.ctx.at.lost.req).toBeLessThan(800)
   })
 
+  // a topic whose reader takes 200 ev/s, for a flow with a drop rule and a timeout
+  const queued = (o: { retry?: { times: number } } = {}) =>
+    defineModel({
+      load: p.load({ max: 10 }),
+      flows: {
+        ev: {
+          rate: ({ load }) => 100 * load,
+          overload: { drop: { olderThan: 60 } },
+          timeout: 1,
+          ...(o.retry ? { retry: o.retry } : {}),
+        },
+      },
+      components: {
+        pool: {
+          name: 'Pool',
+          demand: ({ flows }) => flows.ev,
+          capacity: measured(200, 'ev/s'),
+          service: 0.01,
+          over: 'lag',
+        },
+      },
+      stages: {
+        topic: queue({ partitions: { ev: 6 } }),
+        pool: workers('pool', { pods: 2, perPod: 2 }),
+        old: lost({ from: ['topic'] }),
+        slow: lost({ from: ['pool'] }),
+      },
+      routes: { ev: ['topic', 'pool'] },
+    })
+
+  it('counts a unit once: what a queue drops is never also too slow', () => {
+    const ev = queued().evaluate({ load: 4 })
+    // 400 sent, the pool drains 200: the other 200 grow too old, and only the 200 read can be too slow
+    expect(ev.ctx.at.old.ev).toBeCloseTo(200, 6)
+    expect(ev.ctx.at.slow.ev).toBeCloseTo(200 * ev.latency.ev!.timedOut!, 6)
+    expect(ev.ctx.at.old.ev + ev.ctx.at.slow.ev).toBeLessThanOrEqual(400 + 1e-6)
+  })
+
+  it('never sends a dropped unit again: only what the reader took and was too slow is retried', () => {
+    const ev = queued({ retry: { times: 2 } }).evaluate({ load: 4 })
+    const r = ev.retry.ev!
+    // every attempt the pool reads (200 a second) is too slow, so an attempt fails with p = 200 / attempts, and the
+    // attempts are 400 (1 + p + p²): 2p³ + 2p² + 2p = 1
+    expect(r.attempts * r.rejected).toBeCloseTo(200, 4)
+    expect(2 * r.rejected ** 3 + 2 * r.rejected ** 2 + 2 * r.rejected).toBeCloseTo(1, 6)
+    // each of the 400 units is dropped once or fails every attempt
+    expect(ev.ctx.at.old.ev).toBeCloseTo(r.attempts - 200, 4)
+    expect(ev.ctx.at.old.ev + ev.ctx.at.slow.ev).toBeCloseTo(400, 4)
+  })
+
+  it('counts each way on its own: a drop on one way of a split takes nothing from the other', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { ev: { rate: ({ load }) => 100 * load, overload: { drop: { olderThan: 60 } }, timeout: 1 } },
+      components: {
+        pool: { name: 'Pool', capacity: measured(100, 'ev/s'), service: 0.01, over: 'lag' },
+        db: { name: 'DB', capacity: measured(10_000, 'ev/s'), service: 0.001, over: 'writes queue' },
+      },
+      stages: {
+        router: split({
+          to: [
+            { stages: ['topic', 'pool'], share: 0.5 },
+            { stages: ['db'], share: 0.5 },
+          ],
+        }),
+        topic: queue({ partitions: { ev: 6 } }),
+        pool: pass('pool'),
+        db: store('db'),
+        all: lost({ from: ['topic', 'pool', 'db'] }),
+      },
+      routes: { ev: ['router'] },
+    })
+    const ev = m.evaluate({ load: 4 })
+    // 200 a way: the topic drops 100 and the pool takes the other 100, too slowly, turning none away; the DB's
+    // 200 are fine
+    expect(ev.ctx.at.all.ev).toBeCloseTo(200, 6)
+    expect((ev.stages.pool as { shed: number }).shed).toBeCloseTo(0, 9)
+  })
+
+  it('counts what a cache answers apart: only the misses a stage let through can be too slow there', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: ({ load }) => 100 * load, timeout: 0.011 } },
+      components: { api: { name: 'API', capacity: measured(100, 'req/s'), service: 0.01, over: 'slow' } },
+      stages: { c: cache({ hit: 0.5 }), api: pass('api'), all: lost({ from: ['c', 'api'] }) },
+      routes: { req: ['c', 'api'] },
+    })
+    // 400 sent, 200 answered by the cache in time; of the 200 misses the API turns 100 away and is too slow for 100
+    expect(m.evaluate({ load: 4 }).ctx.at.all.req).toBeCloseTo(200, 6)
+  })
+
+  it('checks a queue on every way: it drops where its reader on that way is past capacity', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { ev: { rate: ({ load }) => 100 * load, overload: { drop: { olderThan: 60 } } } },
+      components: {
+        fast: { name: 'Fast', capacity: measured(1000, 'ev/s'), over: 'lag' },
+        slow: { name: 'Slow', capacity: measured(100, 'ev/s'), over: 'lag' },
+      },
+      stages: {
+        router: split({
+          to: [
+            { stages: ['topic', 'fast'], share: 0.5 },
+            { stages: ['topic', 'slow'], share: 0.5 },
+          ],
+        }),
+        topic: queue({ partitions: { ev: 6 } }),
+        fast: pass('fast'),
+        slow: pass('slow'),
+        old: lost({ from: ['topic'] }),
+      },
+      routes: { ev: ['router'] },
+    })
+    // 200 a way: the fast reader keeps up, the slow one drains 100 of its 200
+    expect(m.evaluate({ load: 4 }).ctx.at.old.ev).toBeCloseTo(100, 6)
+  })
+
   it('refuses a lost box fed by a copy, by a queue nothing reads, and a formula that reads a lost box under retries', () => {
     const build = (o: Record<string, unknown>) => () =>
       defineModel({
@@ -186,12 +317,13 @@ describe('a lost box', () => {
       stages: { c: cache({ hit: 0.5, component: 'api' }), api: pass('api') },
       routes: { req: ['c', 'api'] },
     }).def as never
-    expect(lossesOf(def, 'c')).toEqual(['rejected', 'timedOut'])
+    expect(lossesIn(def)('c')).toEqual(['rejected', 'timedOut'])
   })
 
   it('knows what each stage can lose', () => {
     const def = shop().def as never
-    expect(lossesOf(def, 'limiter')).toEqual(['rejected'])
-    expect(lossesOf(def, 'db')).toEqual([])
+    const losses = lossesIn(def)
+    expect(losses('limiter')).toEqual(['rejected'])
+    expect(losses('db')).toEqual([])
   })
 })
