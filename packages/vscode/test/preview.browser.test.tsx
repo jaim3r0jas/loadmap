@@ -55,7 +55,7 @@ describe('the preview', () => {
     p.send({ type: 'source', uri, source: checkout, name: 'checkout.loadmap', version: 1, edits: null })
     await expect.poll(() => p.box('gateway'), { timeout: 5000 }).toBeTruthy()
     expect(p.box('workers')).toBeTruthy()
-    expect((await p.shown()).boxes.sort()).toEqual(['db', 'gateway', 'kafka', 'phones', 'workers'])
+    expect((await p.shown()).boxes.sort()).toEqual(['db', 'gateway', 'kafka', 'kafkaDropped', 'phones', 'workers'])
   })
 
   it('asks for the declaration of a box clicked, and marks the box the cursor is in', async () => {
