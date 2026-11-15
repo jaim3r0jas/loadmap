@@ -3,6 +3,7 @@ import {
   cache,
   configured,
   defineModel,
+  drain,
   estimated,
   limit,
   type Model,
@@ -1084,5 +1085,69 @@ users -> gw -> api -> db
         flows,
       }),
     ).not.toThrow()
+  })
+})
+
+describe('drains', () => {
+  const SRC = `loadmap 1
+load { max: 10 }
+flow req "requests" { rate: 1_000 * load; retry { times: 3 }; route: limiter -> api -> db; from: users }
+node users "Users"
+node limiter "Limiter" { limit; capacity: configured(1_500, "req/s", "gateway config"); over: "429s" }
+node api "API" { pass; capacity: measured(1_000, "req/s"); over: "503s" }
+node db "Database" { store; capacity: measured(10_000, "req/s"); over: "writes queue" }
+node tooMany "Turned away" { drain { reason: [rejected] } }
+node failed "Failed" { drain }
+users -> limiter -> api -> db
+limiter -> tooMany
+api -> failed
+`
+
+  it('take what the boxes with an edge into them lose, as the TypeScript drain does', () => {
+    const ts = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { label: 'requests', rate: ({ load }) => 1000 * load, retry: { times: 3 } } },
+      components: {
+        limiter: { name: 'Limiter', capacity: configured(1500, 'req/s', 'gateway config'), over: '429s' },
+        api: { name: 'API', capacity: measured(1000, 'req/s'), over: '503s' },
+        db: { name: 'Database', capacity: measured(10_000, 'req/s'), over: 'writes queue' },
+      },
+      stages: {
+        limiter: limit('limiter'),
+        api: pass('api'),
+        db: store('db'),
+        tooMany: drain({ label: 'tooMany', from: ['limiter'], reason: ['rejected'] }),
+        failed: drain({ label: 'failed', from: ['api'] }),
+      },
+      routes: { req: ['limiter', 'api', 'db'] },
+    })
+    same(ts, model(SRC), loads)
+    const r = compile(SRC).definition!
+    expect(r.model.evaluate({ load: 2 }).ctx.at.tooMany.req).toBeGreaterThan(0)
+    // its box says what reaches it, unless it has a line of its own
+    const sub = r.view.def.nodes.tooMany!.sub as (ctx: unknown) => string
+    expect(sub(r.model.evaluate({ load: 1 }).ctx)).toBe('0 rejected/s')
+    expect((r.view.def.nodes.failed!.sub as (ctx: unknown) => string)(r.model.evaluate({ load: 1 }).ctx)).toBe(
+      '0 lost/s',
+    )
+  })
+
+  it('refuse a drain nothing feeds, a box that loses nothing, a loss two drains take and an edge out', () => {
+    expect(errors(SRC.replace('api -> failed\n', ''))).toMatchObject([
+      {
+        message: 'nothing feeds the drain "failed"',
+        hint: 'draw an edge into failed from the box whose losses it takes',
+        text: 'drain',
+      },
+    ])
+    expect(errors(`${SRC}db -> failed\n`)).toMatchObject([
+      { message: 'db loses nothing the drain "failed" takes', text: 'db' },
+    ])
+    expect(errors(`${SRC}limiter -> failed\n`)).toMatchObject([
+      { message: 'what limiter loses as rejected already goes to the drain "tooMany"', text: 'limiter' },
+    ])
+    expect(errors(`${SRC}failed -> db\n`)).toMatchObject([
+      { message: 'nothing leaves the drain "failed": what reaches it is lost', text: 'db' },
+    ])
   })
 })

@@ -4,7 +4,9 @@ import {
   type CheckResult,
   cache,
   check,
+  type DrainReason,
   defineModel,
+  drain,
   fanout,
   type LinearFit,
   limit,
@@ -27,7 +29,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
-import { flowOf } from '@loadmap/core/internal'
+import { flowOf, lossesOf } from '@loadmap/core/internal'
 import {
   type AnyNodeDef,
   type Direction,
@@ -597,8 +599,9 @@ class Compiler {
         if (def) stageDefs[s.id] = def
       }
     for (const [id, s] of stageOf)
-      if (!reached.has(id) && s.block.keyword !== 'fanout')
+      if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'drain')
         this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
+    this.drainsFed(boxes, boxById, root.edges, stageDefs, { stages: stageDefs, routes, flows: flowDefs as never })
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs)) {
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
@@ -842,6 +845,64 @@ class Compiler {
     }
     if (this.report.failed) return undefined
     return { model, view, options }
+  }
+
+  /**
+   * Each drain takes what the boxes with an edge into it lose, for its reasons: their stages that lose so. Nothing
+   * feeding it, a box that loses nothing it takes, a loss two drains take and an edge out of it are errors at their line.
+   */
+  private drainsFed(
+    boxes: readonly Box[],
+    boxById: Map<string, Box>,
+    edges: readonly Edge[],
+    stageDefs: Record<string, StageDef>,
+    shape: Parameters<typeof lossesOf>[0],
+  ) {
+    const taken = new Map<string, string>()
+    for (const box of boxes)
+      for (const s of box.stages) {
+        const def = stageDefs[s.id]
+        if (def?.kind !== 'drain') continue
+        const reasons = def.reason ?? (SCHEMA.drain!.props.reason!.values as readonly DrainReason[])
+        const from: string[] = []
+        let fed = false
+        for (const e of edges)
+          e.chain.forEach((n, i) => {
+            const next = e.chain[i + 1]
+            if (n.name === box.id && next)
+              this.report.error(next, `nothing leaves the drain "${s.id}": what reaches it is lost`)
+            if (next?.name !== box.id) return
+            fed = true
+            const src = boxById.get(n.name)
+            if (!src) return
+            const losing = src.stages
+              .map((x) => x.id)
+              .filter((x) => lossesOf(shape, x).some((r) => reasons.includes(r)))
+            if (!losing.length) {
+              this.report.error(
+                n,
+                `${n.name} loses nothing the drain "${s.id}" takes`,
+                'a pass, limit, cache or split turns units away, a queue with a drop rule drops them, the last stage of a flow with a timeout times them out',
+              )
+              return
+            }
+            for (const x of losing)
+              for (const r of lossesOf(shape, x).filter((r) => reasons.includes(r))) {
+                const other = taken.get(`${x}\u0000${r}`)
+                if (other && other !== s.id)
+                  this.report.error(n, `what ${x} loses as ${r} already goes to the drain "${other}"`)
+                taken.set(`${x}\u0000${r}`, s.id)
+              }
+            from.push(...losing)
+          })
+        if (!fed)
+          this.report.error(
+            s.block.args.id ?? s.block.at,
+            `nothing feeds the drain "${s.id}"`,
+            `draw an edge into ${box.id} from the box whose losses it takes`,
+          )
+        ;(def as { from: readonly string[] }).from = [...new Set(from)]
+      }
   }
 
   /**
@@ -2072,6 +2133,12 @@ class Compiler {
         return component ? store(component, base) : needs()
       case 'sink':
         return sink(base)
+      case 'drain': {
+        const p = this.prop(b, 'reason')
+        const reason = p && this.words(p, SCHEMA.drain!.props.reason!)
+        // what feeds it comes from the edges into its box, once every stage is known
+        return drain({ ...base, from: [], ...(reason ? { reason: reason as DrainReason[] } : {}) })
+      }
       case 'workers': {
         if (!component) return needs()
         const perPod = this.dynProp<number>(b, 'perPod', 'number', this.count('perPod'))

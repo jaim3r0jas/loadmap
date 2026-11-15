@@ -2,6 +2,7 @@ import {
   cache,
   configured,
   defineModel,
+  drain,
   fanout,
   limit,
   measured,
@@ -222,6 +223,47 @@ describe('dots', () => {
       for (const d of sim.particles) if (d.phase === 'fade') outcomes.add(d.outcome)
     }
     expect(outcomes).toEqual(new Set(['delivered', 'dropped', 'rejected']))
+  })
+})
+
+describe('drains', () => {
+  // the same pipeline, with a drain for what the gate turns away and one for what the topic drops
+  const drained = defineModel({
+    load: p.load({ max: 10 }),
+    flows: {
+      a: { rate: ({ load }) => 50 * load, priority: 1 },
+      b: { rate: ({ load }) => 150 * load, priority: 2, overload: { drop: { olderThan: 10 } } },
+    },
+    components: {
+      gate: { name: 'Gate', demand: ({ flows }) => flows.a + flows.b, capacity: measured(150, 'u/s'), over: '' },
+      pool: { name: 'Pool', demand: ({ flows }) => flows.a + flows.b, capacity: measured(100, 'u/s'), over: '' },
+    },
+    stages: {
+      gate: pass('gate'),
+      topic: queue({ partitions: { a: 4, b: 4 } }),
+      pool: workers('pool', { pods: 3, perPod: 4 }),
+      turnedAway: drain({ from: ['gate'] }),
+      tooOld: drain({ from: ['topic'] }),
+    },
+    routes: { a: ['gate', 'topic', 'pool'], b: ['gate', 'topic', 'pool'] },
+  })
+
+  it('send what is lost along to the drain that takes it, where it fades', () => {
+    const sim = createSim(drained, drained.evaluate({ load: 1 }), { seed: 1, speed: 10 })
+    const ends = new Map<string, Set<string | undefined>>()
+    for (let i = 0; i < 1800; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) {
+        if (d.phase !== 'fade') continue
+        const at = d.to.stage ?? ''
+        ends.set(at, (ends.get(at) ?? new Set()).add(d.outcome))
+      }
+    }
+    expect(ends.get('turnedAway')).toEqual(new Set(['rejected']))
+    expect(ends.get('tooOld')).toEqual(new Set(['dropped']))
+    // nothing lost fades anywhere else
+    expect(ends.get('gate')).toBeUndefined()
+    expect([...(ends.get('topic') ?? [])]).not.toContain('dropped')
   })
 })
 

@@ -12,6 +12,7 @@ import {
   spreadText,
   type Work,
 } from './connections'
+import { checkDrains, waysOf } from './drains'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { blame } from './internal'
@@ -20,6 +21,8 @@ import type { Measurement, Snapshot } from './measure'
 import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
 import {
   type Branch,
+  DRAIN_REASONS,
+  type DrainReason,
   dyn,
   hitOf,
   podsOf,
@@ -397,17 +400,9 @@ export function defineModel<
     if (timeout == null) continue
     if (typeof timeout === 'number' && !(timeout > 0))
       throw new Error(`loadmap: flow "${f}" times out after ${timeout} s: a time above 0`)
-    const way = new Set<string>(def.routes[f] ?? [])
-    let open = false
-    for (const s of way) {
-      const st = (def.stages as Record<string, StageDef>)[s]
-      if (st?.kind !== 'split') continue
-      const to = st.to
-      if (typeof to === 'function') open = true
-      else
-        for (const b of Array.isArray(to) ? to : ((to as Record<string, SplitBranch[]>)[f] ?? []))
-          for (const x of b.stages) way.add(x)
-    }
+    const known = waysOf(def as never, f)
+    const way = new Set<string>(known.ways.flat())
+    const open = known.open
     const timedStage = (s: string) => {
       const c = ((def.stages as Record<string, StageDef>)[s] as { component?: string } | undefined)?.component
       return c != null && (def.components as Record<string, ComponentDef<unknown>>)[c]?.service != null
@@ -436,6 +431,7 @@ export function defineModel<
     if (st.kind === 'workers' && (st.pods == null) === (st.autoscale == null))
       throw new Error(`loadmap: workers "${s}" needs pods or autoscale, one of them`)
   }
+  checkDrains(def as never)
   checkConnections(given as ModelDef<any, string, string, string, string>)
   const thresholds = { target: def.thresholds?.target ?? 0.5, full: def.thresholds?.full ?? 1 }
   const searchMax = def.searchMax ?? 2000
@@ -1054,6 +1050,7 @@ function context(
   }
   const arriving = (s: string, f: string) =>
     memo(`${f} at ${s}`, () => {
+      if (stages[s]!.kind === 'drain') return lost(s, f)
       let total = 0
       // each way the flow goes, for the share of its units that go that way
       for (const { stages: route, share } of paths(f)) {
@@ -1114,6 +1111,7 @@ function context(
    */
   const actual = (s: string, f: string) =>
     memo(`${f} reaching ${s}`, () => {
+      if (stages[s]!.kind === 'drain') return lost(s, f)
       const ways = paths(f)
       let total = 0
       for (const { stages: route, share } of ways) {
@@ -1146,6 +1144,74 @@ function context(
         reaching += actual(s, f)
       }
       return reaching > 0 ? Math.max(0, 1 - (offered * (1 - r)) / reaching) : 0
+    })
+
+  /**
+   * What each stage loses of a flow, per second, by reason, before any retry: what it turns away of what reaches it,
+   * what a queue drops (in steady state, what its reader cannot drain: the rate the sim drains it at), and what is too
+   * slow for the client at the end of each way (a cache's answers at the cache).
+   */
+  const causes = (f: string) =>
+    memo(`losses of ${f}`, () => {
+      const out: { stage: string; reason: DrainReason; rate: number }[] = []
+      const ways = paths(f)
+      const seen = new Set<string>()
+      for (const way of ways)
+        for (const [i, s] of way.stages.entries()) {
+          if (seen.has(s)) continue
+          seen.add(s)
+          const st = stages[s]!
+          if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
+            const r = actual(s, f) * shed(s)
+            if (r > 0) out.push({ stage: s, reason: 'rejected', rate: r })
+          }
+          const next = stages[way.stages[i + 1] ?? '']
+          if (st.kind === 'queue' && overload(f).drop && next && 'component' in next && next.component) {
+            const r = actual(s, f) * rejectShare(ctx.util[next.component] as number | null, full)
+            if (r > 0) out.push({ stage: s, reason: 'dropped', rate: r })
+          }
+        }
+      const t = timeoutOf(f)
+      const times = t == null ? undefined : timesOf(f)
+      if (t != null && times) {
+        // only a unit that got through can be too slow: what was turned away is counted there, not twice
+        const sent = ctx.flows[f] as number
+        const turned = out.filter((c) => c.reason === 'rejected').reduce((a, c) => a + c.rate, 0)
+        const through = sent > 0 ? Math.max(0, 1 - turned / sent) : 0
+        times.tags.forEach((tag, i) => {
+          const w = times.ways[i]!
+          const r = sent * through * w.share * beyond([{ ...w, share: 1 }], t)
+          // a cache's answer is too slow at the cache; any other unit at the end of its way
+          const at = tag.answeredAt ?? ways[tag.path]?.stages.at(-1)
+          if (r > 0 && at) out.push({ stage: at, reason: 'timedout', rate: r })
+        })
+      }
+      return out
+    })
+  /**
+   * What reaches a drain of a flow: what its stages lose for its reasons, after every retry. The units a flow fails for
+   * good (the model's failed share; without retries, every failure) are shared out over the rejections and timeouts in
+   * proportion; a drop is never sent again.
+   */
+  const lost = (d: string, f: string) =>
+    memo(`${f} lost at ${d}`, () => {
+      // the retries decide what is lost for good, and they are solved over every other number: none may read it
+      if (fixed)
+        throw new Error(
+          `loadmap: a formula reads at.${d}, what the retries leave lost: the retries cannot depend on it`,
+        )
+      const st = stages[d] as Extract<StageDef, { kind: 'drain' }>
+      const reasons = st.reason ?? DRAIN_REASONS
+      const all = causes(f)
+      const failing = all.filter((c) => c.reason !== 'dropped').reduce((a, c) => a + c.rate, 0)
+      const r = retryOf(f) ? retries()[f] : undefined
+      const final = r ? r.rate * r.failed : failing
+      const k = failing > 0 ? Math.min(1, final / failing) : 0
+      let total = 0
+      for (const c of all)
+        if (st.from.includes(c.stage) && reasons.includes(c.reason))
+          total += c.reason === 'dropped' ? c.rate : c.rate * k
+      return total
     })
 
   const retries = (): Record<string, Retry> =>
@@ -1892,14 +1958,14 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
         throw new Error(`${at} needs parts: "${cn.to}" is not a queue with partitions`)
     } else if (cn.assign !== 'exclusive') continue
     if (target) {
-      const c = to.kind === 'sink' ? undefined : to.component
+      const c = to.kind === 'sink' || to.kind === 'drain' ? undefined : to.component
       if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)
       continue
     }
     if (from.kind !== 'queue' && cn.parts == null)
       throw new Error(`${at} needs parts: "${cn.from}" is not a queue with partitions`)
     if (!pool && cn.members == null) throw new Error(`${at} needs members: "${cn.to}" is not a pool`)
-    const c = to.kind === 'sink' ? undefined : to.component
+    const c = to.kind === 'sink' || to.kind === 'drain' ? undefined : to.component
     if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)
     const also = Object.keys(stages).find((s) => s !== cn.to && (stages[s] as { component?: string }).component === c)
     if (also)

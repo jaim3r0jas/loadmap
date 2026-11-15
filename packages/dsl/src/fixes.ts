@@ -13,7 +13,7 @@ export interface QuickFix {
 }
 
 const CAPACITY = new Set(['measured', 'estimated', 'configured'])
-const ENDS = new Set(['store', 'sink', 'fanout'])
+const ENDS = new Set(['store', 'sink', 'drain', 'fanout'])
 const NAME = /^[A-Za-z_]\w*$/
 
 /**

@@ -44,6 +44,8 @@ export interface Particle {
   back?: boolean
   /** Which attempt this is: 0 for the first, 1 for the first retry, and so on. */
   attempt?: number
+  /** Set on a unit lost for good, heading along the edge into the drain that takes it, where it fades. */
+  drained?: boolean
   /**
    * superseded: merged into a newer unit of its key; unread: a fan-out that made no copy; answered: a cache hit back
    * where it came from.
@@ -108,6 +110,7 @@ export class Sim {
   #busy = new Map<string, number>()
   #fills = new Map<string, Fill>() // `${stage}/${running pods}` → fill order over the running pods
   #shed = new Map<string, number>()
+  #drains = new Map<string, string>() // `${stage}/${reason}` → the drain that takes what the stage loses so
   #late = new Map<string, number>() // `${flow}/${path}` or `${flow}/${path}/${cache}` → the share of those too slow
   #inflow = new Map<string, number>() // `${stage}/${flow}` → units per second reaching that stage
   #capacity = new Map<string, number>() // stage → units per second it can drain
@@ -170,6 +173,10 @@ export class Sim {
     this.#shed.clear()
     for (const s of stages) this.#shed.set(s.id, 'shed' in s ? s.shed : 0)
     // the latency is worked out only for a flow with a timeout, per way: no other recording reads it
+    this.#drains.clear()
+    for (const s of stages)
+      if (s.kind === 'drain')
+        for (const from of s.from) for (const r of s.reasons) this.#drains.set(`${from}/${r}`, s.id)
     this.#late.clear()
     for (const f of this.#model.flowIds)
       if (this.#model.def.flows[f]?.timeout != null)
@@ -490,18 +497,39 @@ export class Sim {
       d.to = this.#place(route[d.leg]!, d.flow, d.from)
     }
 
-    const reject = (d: Particle, outcome: Particle['outcome'] = 'rejected') => {
-      fade(d, outcome, 0.6)
+    /** A unit lost for good: into the drain that takes what its stage loses so, else it fades where it is. */
+    const lose = (d: Particle, outcome: 'rejected' | 'dropped' | 'timedout', at: string | null) => {
+      const drain = at == null ? undefined : this.#drains.get(`${at}/${outcome}`)
+      if (!drain) return fade(d, outcome, 0.6)
+      d.outcome = outcome
+      d.drained = true
+      d.back = undefined
+      d.phase = 'move'
+      d.t = 0
+      d.dur = this.#o.legSeconds
+      // from the stage that lost it, along its edge: a cache's answer too slow on its way back starts at the cache
+      d.from = d.to.stage === at ? d.to : { stage: at }
+      d.to = { stage: drain }
+    }
+    const reject = (d: Particle, outcome: 'rejected' | 'timedout' = 'rejected', at = d.to.stage) => {
       const again = this.particles.length + born.length < this.#o.maxParticles ? this.#retry(d) : null
-      if (again) born.push(again)
+      // a unit sent again is no loss: its attempt fades where it was turned away, and the retry starts at the source
+      if (again) {
+        fade(d, outcome, 0.6)
+        born.push(again)
+      } else lose(d, outcome, at)
     }
     for (const d of this.particles) {
       d.t += dtReal
       if (d.t < d.dur) continue
+      if (d.phase === 'move' && d.drained) {
+        fade(d, d.outcome, 0.35)
+        continue
+      }
       if (d.phase === 'move' && d.back) {
         // answered by a cache, still too slow: its share of the way answered there
         const late = this.#late.get(`${d.flow}/${d.path ?? 0}/${d.from.stage ?? ''}`)
-        if (late && this.#r() < late) reject(d, 'timedout')
+        if (late && this.#r() < late) reject(d, 'timedout', d.from.stage)
         else fade(d, 'answered', 0.35)
         continue
       }
@@ -564,7 +592,7 @@ export class Sim {
         const dropShare = q && q.arriving > 0 ? Math.min(1, q.dropped / q.arriving) : 0
         const mergeShare = q?.merging ? (ev.overload[d.flow]?.merge?.share ?? 0) : 0
         if (this.#r() < mergeShare) fade(d, 'superseded', 0.6)
-        else if (this.#r() < dropShare) fade(d, 'dropped', 0.6)
+        else if (this.#r() < dropShare) lose(d, 'dropped', stage.id)
         else advance(d)
       }
     }

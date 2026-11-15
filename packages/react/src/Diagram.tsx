@@ -365,8 +365,8 @@ function typing(t: EventTarget | null): boolean {
 
 function Legend({ lm }: { lm: LoadmapController }) {
   const flows = lm.view.def.flows as Record<string, { color: string; label?: string }>
-  const grey =
-    Object.values(lm.ev.overload).some((o) => o.merge) || Object.values(lm.ev.stages).some((s) => s.kind === 'fanout')
+  const merges = Object.values(lm.ev.overload).some((o) => o.merge)
+  const grey = Object.values(lm.ev.stages).some((s) => s.kind === 'fanout')
   return (
     <div className="lm-legend">
       {Object.entries(flows).map(([f, v]) => (
@@ -383,10 +383,16 @@ function Legend({ lm }: { lm: LoadmapController }) {
         <i style={{ background: 'var(--lm-drop)' }} />
         dropped or rejected
       </span>
+      {merges && (
+        <span>
+          <i className="lm-legend-merge" />
+          merged, newest kept
+        </span>
+      )}
       {grey && (
         <span>
           <i style={{ background: 'var(--lm-muted)' }} />
-          superseded or unread
+          unread
         </span>
       )}
       <span>
@@ -488,6 +494,7 @@ const Structure = memo(function Structure({
   // the old limit's badge if it is next in line, else a note of where it is now
   const wasRank = was && ranks.get(was.id)
   const note = was && (wasRank ? wasRank.text : `now ${multiple(edge(was), lm.model.searchMax)}`)
+  const drained = drains(lm, scene)
   return (
     // biome-ignore lint/a11y/useSemanticElements: an <svg> cannot be a <fieldset>
     <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="group" aria-label={`Diagram: ${summary}`}>
@@ -509,7 +516,7 @@ const Structure = memo(function Structure({
       ))}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
-        <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} />
+        <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} drain={drained.has(e.to)} />
       ))}
       {scene.nodes.map((n) => (
         <Node
@@ -585,18 +592,27 @@ function Tier({ t, i, striped }: { t: SceneTier; i: number; striped: boolean }) 
 
 const pathOf = (pts: readonly [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ')
 
-function Edge({ e, text, marker }: { e: SceneEdge; text?: string; marker: string }) {
+/** The boxes that show a drain: their look, and the edges into them, say that what goes there is lost. */
+function drains(lm: LoadmapController, scene: { nodes: readonly SceneNode[] }): Set<string> {
+  return new Set(scene.nodes.filter((n) => n.stages.some((s) => lm.ev.stages[s]?.kind === 'drain')).map((n) => n.id))
+}
+
+function Edge({ e, text, marker, drain }: { e: SceneEdge; text?: string; marker: string; drain?: boolean }) {
   // a new edge draws in from its start; its arrow comes once it is whole
   const drawing = e.draw != null && e.draw < 1
   return (
-    <g opacity={e.fade}>
+    <g opacity={e.fade} data-drain={drain || undefined}>
       <path
         d={pathOf(e.points)}
         fill="none"
-        stroke="var(--lm-muted)"
+        stroke={drain ? 'var(--lm-drain-line)' : 'var(--lm-muted)'}
         strokeOpacity=".7"
         markerEnd={drawing ? undefined : `url(#${marker})`}
-        {...(drawing ? { pathLength: 1, strokeDasharray: 1, strokeDashoffset: 1 - e.draw! } : {})}
+        {...(drawing
+          ? { pathLength: 1, strokeDasharray: 1, strokeDashoffset: 1 - e.draw! }
+          : drain
+            ? { strokeDasharray: '4 3' }
+            : {})}
       />
       {e.label && text && (
         <text
@@ -695,7 +711,9 @@ function Node({
   selected: boolean
   handlers: React.SVGProps<SVGGElement>
 }) {
-  const stroke = state ? STATE_STROKE[state] : 'var(--lm-line)'
+  // a drain: what other boxes lose ends here, so it is drawn dashed in the colour of a loss
+  const drain = n.stages.some((s) => lm.ev.stages[s]?.kind === 'drain')
+  const stroke = state ? STATE_STROKE[state] : drain ? 'var(--lm-drain-line)' : 'var(--lm-line)'
   const flows = lm.view.def.flows as Record<string, { color: string }>
   // an autoscaled pool draws every pod it may run; the ones it does not run now are dashed and faint
   const st = n.kind === 'pool' ? lm.ev.stages[n.stages[0] ?? ''] : undefined
@@ -717,6 +735,7 @@ function Node({
       opacity={n.fade}
       transform={grow}
       data-node={n.id}
+      data-drain={drain || undefined}
       data-focus={focused || undefined}
       data-selected={selected || undefined}
       {...handlers}
@@ -743,14 +762,15 @@ function Node({
           width={n.w}
           height={n.h}
           rx="6"
-          fill="var(--lm-surface)"
+          fill={drain ? 'var(--lm-drain-fill)' : 'var(--lm-surface)'}
           stroke={stroke}
           strokeWidth="1.5"
+          strokeDasharray={drain ? '5 3' : undefined}
         />
       )}
       <Txt s={n.title}>{title}</Txt>
       {n.sub && sub && (
-        <Txt s={n.sub} fill="var(--lm-muted)">
+        <Txt s={n.sub} fill={drain ? 'var(--lm-drop)' : 'var(--lm-muted)'}>
           {sub}
         </Txt>
       )}
