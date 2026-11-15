@@ -115,6 +115,16 @@ describe('the grammar', () => {
     expect(at('phones', 12)).toBe('variable.other')
   })
 
+  it('reads a unit after a number as part of it, and a "%" before a value as modulo', () => {
+    const t = tokens('node a "A" { held: 20ms; hit: 80%; demand: flows.x * 1.5min + 7× + n % 2 }')
+    const at = (word: string) => t.find((x) => x.text === word)?.scope
+    expect(at('20ms')).toBe('constant.numeric')
+    expect(at('80%')).toBe('constant.numeric')
+    expect(at('1.5min')).toBe('constant.numeric')
+    expect(at('7×')).toBe('constant.numeric')
+    expect(at('%')).toBe('keyword.operator')
+  })
+
   it('reads a template over lines, its formulas as formulas', () => {
     const t = tokens('pool workers "Workers" `${pods} pods ×\n${max(pods, 2) * 8} threads` {}')
     expect(t.find((x) => x.text === 'pods' && x.line === 0)?.scope).toBe('variable.other')

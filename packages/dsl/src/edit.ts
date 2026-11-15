@@ -2,6 +2,7 @@ import type { Published } from '@loadmap/core'
 import { childrenOf, type Decl, type Expr, type Property, type Stmt } from './ast'
 import { componentOf } from './catalog'
 import { type CompileOptions, compile } from './compile'
+import { type Suffix, unitScale } from './lexer'
 import { parse } from './parser'
 import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, SCHEMA } from './schema'
 
@@ -418,7 +419,10 @@ function walk(source: string) {
         return add(o, { ...base, kind: 'choice', value, choices }, (_, v) => {
           if (typeof v !== 'number' && typeof v !== 'string') return 'one of the options'
           if (!choices.includes(v)) return 'one of the options'
-          return [replace(e, typeof v === 'string' ? quote(v, e.t === 'str' ? e : undefined) : number(v, e))]
+          if (typeof v === 'string') return [replace(e, quote(v, e.t === 'str' ? e : undefined))]
+          // the option as it is written: `2min`, not 120 in the old default's unit
+          const option = options.items.find((i) => i.t !== 'str' && literal(i) === v)
+          return [replace(e, option ? source.slice(option.from, option.to) : number(v, e))]
         })
       }
     }
@@ -426,7 +430,8 @@ function walk(source: string) {
       return add(o, { ...base, kind: 'boolean', value: e.value }, (_, v) =>
         typeof v === 'boolean' ? [replace(e, String(v))] : 'true or false',
       )
-    if ((p.value === 'number' || p.value === 'value') && n != null)
+    // `20ms` is a formula, its one number changed as written (20, then "ms"), never a bare 0.02 to type over
+    if ((p.value === 'number' || p.value === 'value') && n != null && !unitOf(e))
       return add(o, { ...base, kind: 'number', value: n }, (_, v) => {
         return typeof v === 'number' && Number.isFinite(v) ? [replace(e, number(v, e))] : 'a number'
       })
@@ -458,7 +463,7 @@ function walk(source: string) {
     if (!first || unit?.t !== 'str' || (src && src.t !== 'str') || rest.length) return false
     const pm = first.t === 'pm' ? first : undefined
     const value = pm ? pm.value : first
-    const within = pm ? (literal(pm.within) ?? 'formula') : null
+    const within = pm ? (unitOf(pm.within) ? 'formula' : (literal(pm.within) ?? 'formula')) : null
     add(
       o,
       {
@@ -513,6 +518,11 @@ function literal(e: Expr): number | undefined {
   return undefined
 }
 
+/** The unit a number literal is written with (`20ms`), signed or not. */
+function unitOf(e: Expr): Suffix | undefined {
+  return e.t === 'num' ? e.unit : e.t === 'unary' && e.arg.t === 'num' ? e.arg.unit : undefined
+}
+
 /** The number literals of a formula, in the order they are written (template parts included). */
 function numbers(e: Expr, out: Extract<Expr, { t: 'num' }>[] = []) {
   if (e.t === 'num') out.push(e)
@@ -536,21 +546,27 @@ function writer(source: string) {
     let at = e.from
     numbers(e).forEach((n, slot) => {
       if (n.from > at) out.push(source.slice(at, n.from))
-      out.push({ slot, value: n.value })
+      out.push({ slot, value: n.written ?? n.value })
+      if (n.unit) out.push(n.unit)
       at = n.to
     })
     if (at < e.to) out.push(source.slice(at, e.to))
     return out
   }
 
-  /** A number as the language writes it, grouped with "_" when the one it replaces was. */
-  const number = (n: number, like?: Expr): string => {
-    if (like && literal(like) === n) return text(like)
+  /**
+   * A number as the language writes it, grouped with "_" when the one it replaces was. One that replaces a number
+   * with a unit keeps the unit: `n` is then in seconds or a share, or with `written` already in that unit.
+   */
+  const number = (n: number, like?: Expr, written = false): string => {
+    const unit = like && unitOf(like)
+    if (like && (written && unit ? like.t === 'num' && like.written === n : literal(like) === n)) return text(like)
+    if (unit && !written) n = Number((n / unitScale(unit)).toPrecision(15))
     const s = String(n)
-    if (!like || !text(like).includes('_') || /e/i.test(s)) return s
+    if (!like || !text(like).includes('_') || /e/i.test(s)) return s + (unit ?? '')
     const [int, frac] = s.replace('-', '').split('.')
     const grouped = int!.replace(/\B(?=(\d{3})+(?!\d))/g, '_')
-    return `${n < 0 ? '-' : ''}${grouped}${frac ? `.${frac}` : ''}`
+    return `${n < 0 ? '-' : ''}${grouped}${frac ? `.${frac}` : ''}${unit ?? ''}`
   }
 
   /** A text in the quotes of the one it replaces (double quotes for a new one). */
@@ -566,7 +582,8 @@ function writer(source: string) {
     const n = numbers(e)[Number(part.slice(1))]
     if (!n) return `the formula has no number ${part}`
     if (typeof v !== 'number' || !Number.isFinite(v)) return 'a number'
-    const t = number(v, n)
+    // a slot shows a number with a unit as written: 20 of "20ms"
+    const t = number(v, n, true)
     return [replace(n, v < 0 ? `(${t})` : t)]
   }
 

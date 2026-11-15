@@ -78,6 +78,11 @@ Every value is a formula: a small subset of TypeScript expressions, so a lambda 
 as it is.
 
 - **Literals:** numbers (`20_000`), `"texts"`, `true`, `false`, and templates (`` `${pods} pods` ``).
+- **Units:** a number may carry its unit straight after it, with no space. `ms`, `s`, `min` and `h` count in seconds,
+  as every time in the language does (`held: 20ms` is `held: 0.02`); `%` makes a share (`hit: 80%` is `hit: 0.8`);
+  `×` (or `x`) marks a load multiple and changes nothing. So `demand: flows.events * 2ms` reads as what it is, events
+  a second times the CPU seconds each takes. A `%` is a share only where no value follows it: `80% * x` is 0.8 × x,
+  while `10 % 3`, `10%-3` and `n % 2` are the remainder.
 - **Operators:** `+ - * / %`, `< <= > >= == != === !==`, `&& || !`, `? :` and parentheses.
 - **Names:**
   - `load` and the parameters by their id;
@@ -635,7 +640,7 @@ the ones it does not run now, and a meter counts them:
 ```
 pool api "API" {
   workers { perPod: 4; autoscale { min: 2; max: maxPods; target: 0.7 } }
-  demand: flows.requests * 0.005
+  demand: flows.requests * 5ms
   capacity: measured(maxPods * 1, "cores", "1 core a pod, at most pods")
   over: "the pool is at its maximum and requests queue"
 }
@@ -716,14 +721,14 @@ with `on`:
 ```
 component conns "Postgres connections" {
   on: db
-  held: 0.02
+  held: 20ms
   capacity: configured(100, "connections", "pool size")
   over: "orders wait for a connection"
 }
 ```
 
 At 40 orders a second, 0.8 connections are in use; the pool reaches half at 62.5×. Flows that hold a slot for
-different times take a block, `held { orders: 0.02; sessions: 3600 }`, and a flow it does not name holds none. A
+different times take a block, `held { orders: 20ms; sessions: 1h }`, and a flow it does not name holds none. A
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
 
@@ -803,11 +808,11 @@ latency says how slow it gets on the way, and the Live panel shows each flow's p
 node api "API" {
   pass
   capacity: measured(2_000, "req/s")
-  service: 0.01
+  service: 10ms
   over: "clients wait"
 }
 
-expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 0.15; target: 10 }
+expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 150ms; target: 10 }
 ```
 
 The expect holds when the p99 stays under 150 ms up to 10× on the pessimistic edge (every capacity at its low
@@ -816,7 +821,7 @@ the shape, not a measurement. To set a service time from data, take a measured p
 queue's p99 is `service × ln 100 ÷ (1 − utilization)`, so `service: latencyP99 / 1_000 * (1 - 0.4) / 4.6` for a p99
 in ms at 40 %.
 
-A **timeout** on a flow (`timeout: 2`, in seconds) turns its latency into failures: the units slower than it fail, as
+A **timeout** on a flow (`timeout: 2s`) turns its latency into failures: the units slower than it fail, as
 if the client gave up, though the work they set off still uses its capacity. With `retry` they come back as attempts,
 which load every stage again and make it slower still: a timeout storm. The retries settle where the share too slow
 gives back the same attempts, the least such point, and past the knee there is none below what the retries allow.

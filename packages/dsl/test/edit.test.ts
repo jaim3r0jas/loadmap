@@ -144,6 +144,29 @@ describe('edit', () => {
     )
   })
 
+  it('changes a number with a unit as written, keeping its unit', () => {
+    const src = mini('node b { pass; demand: flows.f * 2_500ms; capacity: measured(9, "cores"); over: "y" }')
+    expect(fieldsOf(src, { node: 'b' }).get('node:b/demand')).toMatchObject({
+      kind: 'formula',
+      parts: ['flows.f * ', { slot: 0, value: 2500 }, 'ms'],
+    })
+    expect(diff(src, 'node:b/demand#0', 3000)[1]).toBe(
+      '+node b { pass; demand: flows.f * 3_000ms; capacity: measured(9, "cores"); over: "y" }',
+    )
+    // a property that is only a number with a unit is a formula too: its number never loses the unit
+    const service = mini('node b { pass; capacity: measured(9, "x"); service: 20ms; over: "y" }')
+    expect(fieldsOf(service, { node: 'b' }).get('node:b/service')).toMatchObject({ kind: 'formula' })
+    expect(diff(service, 'node:b/service#0', 25)[1]).toBe(
+      '+node b { pass; capacity: measured(9, "x"); service: 25ms; over: "y" }',
+    )
+    // options with units stay a choice; a default picked among them is written in its option's unit
+    const wait = mini('param wait "Wait" { options: [500ms, 1s, 2min]; default: 1s }', 'node b { pass }')
+    expect(fieldsOf(wait, 'model').get('param:wait/default')).toMatchObject({ kind: 'choice', choices: [0.5, 1, 120] })
+    expect(diff(wait, 'param:wait/default', 120)[1]).toBe(
+      '+param wait "Wait" { options: [500ms, 1s, 2min]; default: 2min }',
+    )
+  })
+
   it('changes a label in its own quotes, escaped', () => {
     expect(diff(checkout, 'node:gateway/@label', 'Edge "v2" \\ west')).toEqual([
       '-node gateway "API gateway" {',

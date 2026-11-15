@@ -36,7 +36,7 @@ node lb "Load balancer" {
 pool api "API" `2 to ${maxPods} pods` {
   workers { perPod: 4; autoscale { min: 2; max: maxPods; target: scaleAt } }
   short: "the API"
-  demand: flows.requests * 0.005
+  demand: flows.requests * 5ms
   capacity: measured(maxPods * 1, "cores", "1 core a pod, at most pods")
   over: "the pool is at its maximum and requests queue"
   describe: `2 to ${maxPods} pods, held near ${scaleAt * 100} % each`

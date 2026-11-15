@@ -29,7 +29,7 @@ node clients "Clients" "web and mobile"
 pool api "API" `${pods} pods` {
   workers { pods: pods; perPod: 8 }
   short: "the API"
-  demand: flows.reads * 0.0001
+  demand: flows.reads * 0.1ms
   capacity: measured(pods * 1, "cores", "pod CPU limit")
   over: "requests queue in the API"
 }

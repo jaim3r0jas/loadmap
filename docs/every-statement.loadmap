@@ -99,7 +99,7 @@ flow events "events" {
   drop { olderThan: 60; reason: "too old" }
   merge { when: newest; share: 0.5; reason: "newest kept" }
   # a client that waits at most 5 s: slower events fail
-  timeout: 5
+  timeout: 5s
   route: gateway -> topic -> workers -> push
   from: users
   color: alt
@@ -120,7 +120,7 @@ node gateway "Gateway" {
   pass "the gateway"
   short: "the gateway"
   capacity: estimated(30_000, "req/s", "vendor figure")
-  service: 0.002
+  service: 2ms
   over: "every client gets errors"
 }
 
@@ -167,7 +167,7 @@ node db "Database" "primary" {
   store
   short: "the database"
   capacity: estimated(1_500 ± 30%, "commits/s", "load test of a replica")
-  service: 0.005
+  service: 5ms
   over: "commits queue on the primary"
 }
 
@@ -188,7 +188,7 @@ pool workers "Event workers" "2 to 6 pods" {
   workers { perPod: 4; autoscale { min: 2; max: 6; target: 0.7 } }
   short: "the event workers"
   plural: true
-  demand: flows.events * 0.002
+  demand: flows.events * 2ms
   capacity: measured(6 * 1, "cores", "1 core a pod, at most 6")
   over: "events wait in the topic"
 }

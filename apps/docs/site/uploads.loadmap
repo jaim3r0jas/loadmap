@@ -39,7 +39,7 @@ pool resizers "Resizers" `${pods} pods × 4 threads` {
   workers { pods: pods; perPod: 4 }
   short: "the resizers"
   plural: true
-  demand: flows.photos * files * 0.005 # 5 ms of CPU per file
+  demand: flows.photos * files * 5ms # CPU per file
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "photos wait in the queue and the lag grows"
 }

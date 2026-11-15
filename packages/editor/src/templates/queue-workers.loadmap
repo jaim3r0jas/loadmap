@@ -49,7 +49,7 @@ pool workers "Workers" `${pods} pods × ${threads} threads` {
   workers { pods: pods; perPod: threads }
   short: "the workers"
   plural: true
-  demand: flows.jobs * 0.01
+  demand: flows.jobs * 10ms
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "jobs wait in the queue and the lag keeps growing"
   describe: `${pods} pods, 2 cores each, 10 ms of CPU a job`

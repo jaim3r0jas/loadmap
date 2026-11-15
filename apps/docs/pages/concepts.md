@@ -144,7 +144,7 @@ pool workers "Workers" `${pods} pods × 8 threads` {
   workers { pods: pods; perPod: 8 }
   short: "the workers"
   plural: true
-  demand: flows.orders * 0.004
+  demand: flows.orders * 4ms
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "messages wait and the lag keeps growing"
 }
