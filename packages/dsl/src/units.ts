@@ -10,6 +10,8 @@ export interface Unit {
   /** Unknown for a fit's y: its word says what it counts, not whether that is a rate. */
   time?: number
   word?: string
+  /** A plain number written as a share (`80%`) or as a load multiple (`7×`): the one thing its suffix says. */
+  mark?: 'share' | 'multiple'
 }
 
 /** What the units of a formula's names come from. */
@@ -24,6 +26,8 @@ const CAPACITIES = new Set(['measured', 'estimated', 'configured'])
 const SECONDS: Unit = { time: 1 }
 const PLAIN: Unit = { time: 0 }
 const RATE: Unit = { time: -1 }
+const SHARE: Unit = { time: 0, mark: 'share' }
+const MULTIPLE: Unit = { time: 0, mark: 'multiple' }
 
 /** The rates written as one word; never any word in "ps", which takes in "groups" and "apps". */
 const RATE_WORDS = 'rps|qps|tps|pps|fps|iops|[kmg]?bps'
@@ -59,7 +63,7 @@ export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = ne
   switch (e.t) {
     case 'num':
       if (!e.unit) return null
-      return e.unit === '%' || e.unit === '×' || e.unit === 'x' ? PLAIN : SECONDS
+      return e.unit === '%' ? SHARE : e.unit === '×' || e.unit === 'x' ? MULTIPLE : SECONDS
     case 'id': {
       // `load` is a multiple, but `rate: load` means one a second at 1×: any unit, like a bare number
       const init = names.let(e.name)
@@ -115,6 +119,8 @@ export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = ne
 /** The unit two values share, or null when they differ or either is unknown. */
 function same(a: Unit | null, b: Unit | null): Unit | null {
   if (!a || !b || a.time !== b.time) return null
+  // 20% + 30% is a share still; a share and a multiple together are neither
+  if (a.mark && a.mark === b.mark) return a
   if (a.word === undefined || b.word === undefined) return a.time === undefined ? null : { time: a.time }
   return wordsMatch(a.word, b.word) ? a : a.time === undefined ? null : { time: a.time }
 }
@@ -140,6 +146,7 @@ export function disagree(d: Unit, c: Unit): boolean {
 
 /** A unit in words, after "is": `per second`, `in "cores"`, `in seconds`. */
 export function describe(u: Unit): string {
+  if (u.mark) return u.mark === 'share' ? 'a share' : 'a load multiple'
   if (u.word !== undefined) return `in "${u.word}"`
   if (u.time === -1) return 'per second'
   if (u.time === 1) return 'in seconds'
@@ -159,9 +166,18 @@ export function capacityCall(
   return init && capacityCall(init, names, new Set([...seen, e.name]))
 }
 
+/**
+ * Whether a number written as a share stands where a load multiple goes, or the other way round. Nothing is inferred:
+ * the property's unit is in the schema and the suffix in the text, so this one is an error, not a warning.
+ */
+export function wrongMark(u: Unit, want: Unit): boolean {
+  return !!u.mark && !!want.mark && u.mark !== want.mark
+}
+
 /** The unit a property of the schema is in, how a warning and the reference say it, and what to write instead. */
 export const PROPERTY_UNITS = {
   seconds: { unit: SECONDS, words: 'in seconds', hint: 'write a time: 20ms, 5s' },
-  share: { unit: PLAIN, words: 'a share', hint: 'write a share: 0.8 or 80%' },
+  share: { unit: SHARE, words: 'a share', hint: 'write a share: 0.8 or 80%' },
+  multiple: { unit: MULTIPLE, words: 'a load multiple', hint: "write a multiple of today's load: 7×" },
   'per second': { unit: RATE, words: 'per second', hint: 'write units a second: 40 * load' },
 } as const satisfies Record<string, { unit: Unit; words: string; hint: string }>

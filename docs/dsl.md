@@ -83,8 +83,10 @@ as it is.
 - **Literals:** numbers (`20_000`), `"texts"`, `true`, `false`, and templates (`` `${pods} pods` ``).
 - **Units:** a number may carry its unit straight after it, with no space. `ms`, `s`, `min` and `h` count in seconds,
   as every time in the language does (`held: 20ms` is `held: 0.02`); `%` makes a share (`hit: 80%` is `hit: 0.8`);
-  `×` (or `x`) marks a load multiple and changes nothing. So `demand: flows.events * 2ms` reads as what it is, events
-  a second times the CPU seconds each takes. A `%` is a share only where no value follows it: `80% * x` is 0.8 × x,
+  `×` (or `x`) marks a load multiple and leaves the number as it is. So `demand: flows.events * 2ms` reads as what it
+  is, events a second times the CPU seconds each takes. The two are checked where a property says which it takes:
+  `underTarget: 70%` (a load multiple goes there) and `thresholds { target: 7× }` (a share) are errors from
+  `loadmap 1.2`, and a warning in a file stamped before it. A `%` is a share only where no value follows it: `80% * x` is 0.8 × x,
   while `10 % 3`, `10%-3` and `n % 2` are the remainder.
 - **Operators:** `+ - * / %`, `< <= > >= == != === !==`, `&& || !`, `? :` and parentheses.
 - **Names:**
@@ -1063,6 +1065,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
+| 1.2 | | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`) |
 
 ## In code
 
@@ -1186,10 +1189,10 @@ After the keyword: [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `min` | number, constant | The lowest multiple. Default 1. |
-| `max` (required) | number, constant | The highest multiple on the slider. |
+| `min` | load multiple, constant | The lowest multiple. Default 1. |
+| `max` (required) | load multiple, constant | The highest multiple on the slider. |
 | `step` | number, constant | The slider step. Default 1. |
-| `default` | number, constant | Where the slider starts. Default the minimum. |
+| `default` | load multiple, constant | Where the slider starts. Default the minimum. |
 
 ### param
 
@@ -1269,8 +1272,8 @@ After the keyword: [label].
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
 | `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
 | `p99` | number in seconds, constant | The flow's 99th percentile stays under this many seconds. |
-| `underTarget` | number, constant | Every component (or this one) stays under the target utilization up to at least this load multiple. From loadmap 1.1; `target` before. |
-| `notFull` | number, constant | Nothing (or this component) runs out before this load multiple. From loadmap 1.1; `full` before. |
+| `underTarget` | load multiple, constant | Every component (or this one) stays under the target utilization up to at least this load multiple. From loadmap 1.1; `target` before. |
+| `notFull` | load multiple, constant | Nothing (or this component) runs out before this load multiple. From loadmap 1.1; `full` before. |
 | `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
 
 ### step

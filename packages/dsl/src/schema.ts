@@ -52,7 +52,7 @@ export interface PropSpec {
   /** The editor's inspector shows it first; every other property waits under "More". */
   inspector?: 'main'
   /** What the value counts: a formula whose text says otherwise (`held: 80%`) is warned about. */
-  unit?: 'seconds' | 'share' | 'per second'
+  unit?: 'seconds' | 'share' | 'per second' | 'multiple'
   /** The language version that added it (`'1.1'`); none for 1.0. A definition stamped before cannot use it. */
   since?: string
   /**
@@ -302,11 +302,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'load "Users, × today" { max: 100; default: 10 }',
     args: [{ name: 'label', kind: 'text', optional: true }],
     props: {
-      min: { value: 'number', scope: 'const', doc: 'The lowest multiple. Default 1.' },
+      min: { value: 'number', scope: 'const', unit: 'multiple', doc: 'The lowest multiple. Default 1.' },
       max: {
         inspector: 'main',
         value: 'number',
         scope: 'const',
+        unit: 'multiple',
         doc: 'The highest multiple on the slider.',
         required: true,
       },
@@ -315,6 +316,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         inspector: 'main',
         value: 'number',
         scope: 'const',
+        unit: 'multiple',
         doc: 'Where the slider starts. Default the minimum.',
       },
     },
@@ -422,6 +424,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       underTarget: {
         value: 'number',
         scope: 'const',
+        unit: 'multiple',
         since: '1.1',
         was: 'target',
         doc: 'Every component (or this one) stays under the target utilization up to at least this load multiple.',
@@ -429,6 +432,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       notFull: {
         value: 'number',
         scope: 'const',
+        unit: 'multiple',
         since: '1.1',
         was: 'full',
         doc: 'Nothing (or this component) runs out before this load multiple.',

@@ -34,7 +34,7 @@ export function reference(): string {
     for (const [k, p] of Object.entries(props)) {
       const words = p.values?.map((v) => `\`${v}\``)
       const value = !words
-        ? `${p.unit === 'share' ? 'share' : p.unit ? `number ${PROPERTY_UNITS[p.unit].words}` : p.value}, ${SCOPE[p.scope]}`
+        ? `${p.unit === 'share' ? 'share' : p.unit === 'multiple' ? 'load multiple' : p.unit ? `number ${PROPERTY_UNITS[p.unit].words}` : p.value}, ${SCOPE[p.scope]}`
         : p.value === 'names'
           ? `a list of ${words.join(', ')}`
           : words.join(' \\| ')
