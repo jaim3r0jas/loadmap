@@ -11,6 +11,8 @@ export interface Token extends Span {
   /** A number's unit, written straight after it (`20ms`), and the number as written before it (20). */
   unit?: Suffix
   written?: number
+  /** A text continued on the lines after it (`"a "` and under it `"b"`): one text, written in these pieces. */
+  pieces?: Span[]
   /** A template's cooked text pieces and, between them, the source ranges of its `${…}` parts. */
   quasis?: string[]
   parts?: Span[]
@@ -187,6 +189,40 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
     }
   }
   push({ kind: 'eof', text: '', from: to, to })
+  return trivia ? out : continued(source, out)
+}
+
+/**
+ * A line that starts with a text continues the text that ends the line before it: no statement starts with one, so
+ * nothing else can be meant. The pieces become one token, whose text is what the one text would have been (the
+ * fingerprint of a definition does not change with where its prose is broken).
+ */
+function continued(source: string, toks: Token[]): Token[] {
+  const out: Token[] = []
+  for (let i = 0; i < toks.length; i++) {
+    const [nl, next] = [toks[i]!, toks[i + 1]]
+    const prev = out.at(-1)
+    const joins =
+      nl.kind === 'newline' &&
+      prev?.kind === 'string' &&
+      next?.kind === 'string' &&
+      source[prev.from] === source[next.from] &&
+      // the very next line: a blank line between them ends the statement
+      source.slice(prev.to, next.from).split('\n').length === 2
+    if (!joins) {
+      out.push(nl)
+      continue
+    }
+    const pieces = prev.pieces ?? [{ from: prev.from, to: prev.to }]
+    out[out.length - 1] = {
+      ...prev,
+      text: prev.text.slice(0, -1) + next!.text.slice(1),
+      value: `${prev.value}${next!.value}`,
+      to: next!.to,
+      pieces: [...pieces, { from: next!.from, to: next!.to }],
+    }
+    i++
+  }
   return out
 }
 

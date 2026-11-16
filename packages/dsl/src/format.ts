@@ -65,9 +65,104 @@ export function format(source: string): FormatResult {
     const text = out.map((l) => (l.toks.length ? '  '.repeat(l.depth) + join(l.toks, marks) : ''))
     // the first line too long that still holds a one-line block: split its outermost one
     const long = out.find((l, n) => [...text[n]!].length > FORMAT_WIDTH && l.toks.some(oneLine))
-    if (!long) return { ok: true, text: text.length ? `${text.join('\n')}\n` : '', diagnostics: [] }
+    if (!long) {
+      // a text continued over lines is from 1.2: an older stamp keeps its long lines
+      const lines = version && !before(version, CONTINUED) ? wrapped(out, marks) : text
+      return { ok: true, text: lines.length ? `${lines.join('\n')}\n` : '', diagnostics: [] }
+    }
     split.add(index.get(long.toks.find(oneLine)!)!)
   }
+}
+
+/** The version that reads a text continued on the next line. */
+const CONTINUED: Version = [1, 2]
+
+const isText = (t: Token | undefined): t is Token =>
+  t?.kind === 'string' && (t.text[0] === '"' || t.text[0] === "'") && t.text.length >= 2 && t.text.at(-1) === t.text[0]
+
+/**
+ * The lines as text, each text too long for its line broken at a space into pieces, one under the other, and a text
+ * written in pieces that now fits put back on one line: where prose breaks is the formatter's, like every other line
+ * break. Only a text that stands outside parentheses and one-line blocks is touched, the one place a line that starts
+ * with a text continues the one above.
+ */
+function wrapped(lines: Line[], m: Marks): string[] {
+  const out: string[] = []
+  const plain = (l: Line) => (l.toks.length ? '  '.repeat(l.depth) + join(l.toks, m) : '')
+  for (let i = 0; i < lines.length; i++) {
+    const head = lines[i]!
+    // the pieces: the text that ends this line, and each line after it that starts with one
+    let last = i
+    while (
+      isText(lines[last]!.toks.at(-1)) &&
+      isText(lines[last + 1]?.toks[0]) &&
+      lines[last + 1]!.toks[0]!.text[0] === head.toks.at(-1)!.text[0]
+    ) {
+      last++
+      if (lines[last]!.toks.length > 1) break
+    }
+    const pieces = last > i ? [head.toks.at(-1)!, ...lines.slice(i + 1, last + 1).map((l) => l.toks[0]!)] : []
+    const prefix = last > i ? head.toks.slice(0, -1) : head.toks
+    const suffix = last > i ? lines[last]!.toks.slice(1) : []
+    if (last === i) {
+      // one line: its longest text, when the line is too long and the text stands at the top of it
+      const text = plain(head)
+      const at = [...text].length > FORMAT_WIDTH ? longest(head.toks) : -1
+      if (at < 0) {
+        out.push(text)
+        continue
+      }
+      pieces.push(head.toks[at]!)
+      suffix.push(...prefix.splice(at).slice(1))
+    }
+    const quote = pieces[0]!.text[0]!
+    const inner = pieces.map((p) => p.text.slice(1, -1)).join('')
+    const one: Token = { ...pieces[0]!, text: quote + inner + quote }
+    const before = prefix.length ? join([...prefix, one], m).slice(0, -one.text.length) : ''
+    const column = head.depth * 2 + before.length
+    const after = suffix.length ? join([one, ...suffix], m).slice(one.text.length) : ''
+    const whole = '  '.repeat(head.depth) + before + one.text + after
+    const parts = [...whole].length > FORMAT_WIDTH ? broken(inner, FORMAT_WIDTH - column - 2 - after.length) : [inner]
+    if (parts.length === 1) out.push(whole)
+    else
+      for (const [k, part] of parts.entries())
+        out.push(
+          (k === 0 ? '  '.repeat(head.depth) + before : ' '.repeat(column)) +
+            quote +
+            part +
+            quote +
+            (k === parts.length - 1 ? after : ''),
+        )
+    i = last
+  }
+  return out
+}
+
+/** The longest plain text of a line that no parenthesis, bracket or brace of the line holds, or -1. */
+function longest(toks: Token[]): number {
+  let depth = 0
+  let best = -1
+  for (const [i, t] of toks.entries()) {
+    if (t.kind === 'punct' && (t.text === '(' || t.text === '[' || t.text === '{')) depth++
+    else if (t.kind === 'punct' && (t.text === ')' || t.text === ']' || t.text === '}')) depth--
+    else if (depth === 0 && isText(t) && (best < 0 || t.text.length > toks[best]!.text.length)) best = i
+  }
+  return best
+}
+
+/** A text in pieces of at most `width`, each broken after a space; the text whole when a piece finds none. */
+function broken(text: string, width: number): string[] {
+  const out: string[] = []
+  let rest = text
+  while (rest.length > width) {
+    let at = rest.lastIndexOf(' ', width - 1)
+    // a space after a backslash is an escape's: not a place to break
+    while (at > 0 && rest[at - 1] === '\\') at = rest.lastIndexOf(' ', at - 1)
+    if (at <= 0 || width < 20) return [text]
+    out.push(rest.slice(0, at + 1))
+    rest = rest.slice(at + 1)
+  }
+  return [...out, rest]
 }
 
 /** The `loadmap` line's version raised to what the definition uses, when it says less. */
