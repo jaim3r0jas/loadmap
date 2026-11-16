@@ -9,5 +9,10 @@ describe('alerts layout', () => {
       expectSteady(view, alerts, direction))
     it(`never moves with the load, and lays out each phase the same whatever came before (${direction})`, () =>
       expectCompact(view, alerts, direction))
+    it(`keeps both promises folded into two rows and three (${direction})`, async () => {
+      await expectSteady(view, alerts, direction, 2)
+      await expectSteady(view, alerts, direction, 3)
+      await expectCompact(view, alerts, direction, 2)
+    })
   }
 })

@@ -47,7 +47,7 @@ A `defineModel` definition takes, besides the required parts: `title`, `presets`
 | `pool({ label, stage, podLabel? })`                | A workers stage drawn as pods holding workers          |
 | `edge(from, to, { label?, when? })`                | An edge; its label may be computed from the values     |
 
-Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layout(view, evaluation, { direction })`returns the scene;`collisions(scene)` lists labels that overlap, for a test.
+Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layout(view, evaluation, { direction, rows })`returns the scene (`rows` folds a long diagram into that many rows, or columns running down);`collisions(scene)` lists labels that overlap, for a test.
 
 ## The page (`@loadmap/react`)
 

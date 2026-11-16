@@ -105,6 +105,11 @@ export interface LayoutOptions {
   measure?: TextMeasure
   /** Where ELK runs. Default: on this thread, loaded on first use. */
   elk?: ElkEngine
+  /**
+   * Folds a long diagram: its layers in this many rows one under the other (columns side by side, running down), fewer
+   * where it has fewer layers. An edge from one row to the next goes round the end of its row. Default 1: one row.
+   */
+  rows?: number
 }
 
 /**
@@ -187,7 +192,7 @@ type Drawn = Pick<Evaluation, 'values' | 'ctx' | 'stages'>
 type Widest = (l: Label | undefined, size: number, weight: number) => number
 
 /** The room each box and each edge label gets: the largest it takes anywhere the model reaches. */
-interface Frame {
+export interface Frame {
   key: string
   direction: Direction
   nodes: { id: string; w: number; h: number }[]
@@ -199,7 +204,7 @@ interface Frame {
 }
 
 /** A frame laid out: each box's slot and each edge's route, whatever the values. */
-interface Laid {
+export interface Laid {
   width: number
   height: number
   slots: Map<string, Box>
@@ -233,7 +238,8 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   const measure = o.measure ?? estimateText
   const prep = prepare(view, ev, direction, measure)
   const base = baseFrame(view, ev, direction, measure)
-  const key = sceneKey(prep, base)
+  const rows = rowsOf(o)
+  const key = sceneKey(prep, base, rows)
   const byView = scenes.get(measure) ?? new WeakMap<View, Map<string, Promise<Scene>>>()
   scenes.set(measure, byView)
   const cache = byView.get(view) ?? new Map<string, Promise<Scene>>()
@@ -241,9 +247,21 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   return kept(cache, key, 32, () => {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
     const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep))
-    return laidOut(view, frame, o.elk).then((l) => place(prep, l, key, frame, view, measure))
+    return laidOut(view, frame, o.elk).then(async (l) =>
+      // the fold comes with the first diagram that asks for one: never in a page's first load
+      place(
+        prep,
+        rows > 1
+          ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, foldKit)
+          : lanes(l, frame, view, measure),
+        key,
+      ),
+    )
   })
 }
+
+/** The rows a layout is folded into: a whole number, one at least. */
+const rowsOf = (o: LayoutOptions) => Math.max(1, Math.floor(o.rows ?? 1))
 
 /** A frame laid out by ELK, once per view and frame. */
 function laidOut(view: View, frame: Frame, elk?: ElkEngine): Promise<Laid> {
@@ -281,8 +299,9 @@ function baseFrame(view: View, ev: Drawn, direction: Direction, measure: TextMea
 }
 
 /** Two phases with the same shapes can stand in different compact frames: each frame is a structure of its own. */
-function sceneKey(prep: Prepared, base: Frame | null): string {
-  return base ? JSON.stringify([prep.key, base.key]) : prep.key
+function sceneKey(prep: Prepared, base: Frame | null, rows: number): string {
+  const key = base ? JSON.stringify([prep.key, base.key]) : prep.key
+  return rows > 1 ? JSON.stringify([key, rows]) : key
 }
 
 /** A promise kept by key, the oldest let go past `limit`; one that fails is let go, so the next call tries again. */
@@ -305,7 +324,7 @@ function kept<T>(cache: Map<string, Promise<T>>, key: string, limit: number, mak
 export function structureKey(view: View, ev: Evaluation, o: LayoutOptions = {}): string {
   const direction = o.direction ?? directionOf(view)
   const measure = o.measure ?? estimateText
-  return sceneKey(prepare(view, ev, direction, measure), baseFrame(view, ev, direction, measure))
+  return sceneKey(prepare(view, ev, direction, measure), baseFrame(view, ev, direction, measure), rowsOf(o))
 }
 
 /**
@@ -773,12 +792,11 @@ function layerOf(o: number | 'FIRST' | 'LAST' | undefined): Record<string, strin
 }
 
 /**
- * The scene at these values on a laid-out frame: each box at its own size in the middle of its slot, each edge drawn
+ * The scene at these values on a laid-out frame with its lanes: each box at its own size in the middle of its slot, each edge drawn
  * at these values, its ends moved along their last straight run to the sides of the boxes as drawn.
  */
-function place(prep: Prepared, laid: Laid, key: string, frame: Frame, view: View, measure: TextMeasure): Scene {
+function place(prep: Prepared, { l, tiers }: { l: Laid; tiers: SceneTier[] }, key: string): Scene {
   const down = prep.direction === 'DOWN'
-  const { l, tiers } = lanes(laid, frame, view, measure)
   const across = (p: [number, number]) => (down ? p[0] : p[1])
   const ends = new Map<string, number[]>()
   const end = (id: string, p: [number, number] | undefined) => {
@@ -855,56 +873,106 @@ function place(prep: Prepared, laid: Laid, key: string, frame: Frame, view: View
  * name needs two lines, every header takes them: the frame moves that much across the flow, the board grows with it.
  */
 function lanes(laid: Laid, frame: Frame, view: View, measure: TextMeasure): { l: Laid; tiers: SceneTier[] } {
-  const ids = frame.tiers ?? []
-  if (!ids.length) return { l: laid, tiers: [] }
   const down = frame.direction === 'DOWN'
-  const along = (b: Box): [number, number] => (down ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
+  const named = tierParts(
+    view,
+    frame,
+    (id) => {
+      const b = laid.slots.get(id)!
+      return down ? [b.y, b.y + b.h] : [b.x, b.x + b.w]
+    },
+    0,
+    down ? laid.height : laid.width,
+    measure,
+  )
+  if (!named.length) return { l: laid, tiers: [] }
+  const head = headOf(named)
+  const l = moved(laid, head - HEAD, down)
+  const across: [number, number] = [0, down ? l.width : l.height]
+  return {
+    l,
+    tiers: named.map(({ id, a, b, lines }) => lane(view, { tier: id, id, along: [a, b], across, lines, head, down })),
+  }
+}
+
+/**
+ * The tiers with a box in a stretch of the flow from `from` to `to`, in their order: each one's band from halfway to
+ * the tier before it to halfway to the tier after, the first and last to the stretch's ends, and its name as it fits
+ * there. `span` is where a box stands along the flow, null for one outside the stretch.
+ */
+function tierParts(
+  view: View,
+  frame: Frame,
+  span: (id: string) => readonly [number, number] | null,
+  from: number,
+  to: number,
+  measure: TextMeasure,
+): TierPart[] {
+  const ids = frame.tiers ?? []
   const spans = ids.map((_, i) => {
-    const mine = frame.nodes.filter((n) => frame.order?.[n.id] === i).map((n) => along(laid.slots.get(n.id)!))
+    const mine = frame.nodes.flatMap((n) => (frame.order?.[n.id] === i ? [span(n.id)].filter((x) => x != null) : []))
     return mine.length ? ([Math.min(...mine.map((s) => s[0])), Math.max(...mine.map((s) => s[1]))] as const) : null
   })
-  const length = down ? laid.height : laid.width
-  const named = ids.flatMap((id, i) => {
+  return ids.flatMap((id, i) => {
     const span = spans[i]
     if (!span) return []
     const before = spans.slice(0, i).findLast((x) => x != null)
     const after = spans.slice(i + 1).find((x) => x != null)
-    const a = before ? (before[1] + span[0]) / 2 : 0
-    const b = after ? (span[1] + after[0]) / 2 : length
-    const def = view.def.tiers?.[id]
-    const lines = wrap((def?.label ?? id).toUpperCase(), b - a - 2 * TIER_PAD, measure)
-    return [
-      {
-        id,
-        a,
-        b,
-        lines,
-        paint: { ...(def?.fill && { fill: def.fill }), ...(def?.fillDark && { fillDark: def.fillDark }) },
-      },
-    ]
+    const a = before ? (before[1] + span[0]) / 2 : from
+    const b = after ? (span[1] + after[0]) / 2 : to
+    return [{ id, a, b, lines: wrap((view.def.tiers?.[id]?.label ?? id).toUpperCase(), b - a - 2 * TIER_PAD, measure) }]
   })
-  if (!named.length) return { l: laid, tiers: [] }
-  const count = Math.max(...named.map((t) => t.lines.length))
-  const head = HEAD + (count - 1) * HEAD_LINE
-  const l = moved(laid, head - HEAD, down)
-  const tiers = named.map(({ id, a, b, lines, paint }): SceneTier => {
-    const box = down ? { x: 0, y: a, w: l.width, h: b - a } : { x: a, y: 0, w: b - a, h: l.height }
-    return {
-      id,
-      ...box,
-      head: down ? { x: 0, y: a, w: head, h: b - a } : { x: a, y: 0, w: b - a, h: head },
-      // centred across the header, a capital's middle 0.35em above its baseline; at the board's outer edge, clear
-      // of a limit's tag above a box and of its glow beside one
-      lines: lines.map((text, k) => {
-        const across = head / 2 + (k - (lines.length - 1) / 2) * HEAD_LINE + 0.35 * T_TIER.size
-        return { text, ...T_TIER, ...(down ? { x: across, y: a + TIER_PAD } : { x: a + TIER_PAD, y: across }) }
-      }),
-      spacing: TIER_SPACING,
-      vertical: down,
-      ...paint,
-    }
-  })
-  return { l, tiers }
+}
+
+/** A tier's part of a stretch of the flow: its band along it and its name, on as many lines as it takes there. */
+export interface TierPart {
+  id: string
+  a: number
+  b: number
+  lines: string[]
+}
+
+/** How deep the headers are: where a name needs two lines, every header takes them. */
+const headOf = (parts: TierPart[]) => HEAD + (Math.max(...parts.map((t) => t.lines.length)) - 1) * HEAD_LINE
+
+/** What the fold (fold.ts) needs of the layout: it imports nothing from here but types. */
+export const foldKit = { PADDING, tierParts, headOf, lane }
+
+/**
+ * A tier's lane, named `id` on the board: its band `along` the flow and `across` it, its header `head` deep at the
+ * band's start across the flow.
+ */
+function lane(
+  view: View,
+  o: {
+    tier: string
+    id: string
+    along: readonly [number, number]
+    across: readonly [number, number]
+    lines: string[]
+    head: number
+    down: boolean
+  },
+): SceneTier {
+  const def = view.def.tiers?.[o.tier]
+  const { head, down } = o
+  const [a, b] = o.along
+  const [top, bottom] = o.across
+  return {
+    id: o.id,
+    ...(down ? { x: top, y: a, w: bottom - top, h: b - a } : { x: a, y: top, w: b - a, h: bottom - top }),
+    head: down ? { x: top, y: a, w: head, h: b - a } : { x: a, y: top, w: b - a, h: head },
+    // centred across the header, a capital's middle 0.35em above its baseline; at the board's outer edge, clear
+    // of a limit's tag above a box and of its glow beside one
+    lines: o.lines.map((text, k) => {
+      const across = top + head / 2 + (k - (o.lines.length - 1) / 2) * HEAD_LINE + 0.35 * T_TIER.size
+      return { text, ...T_TIER, ...(down ? { x: across, y: a + TIER_PAD } : { x: a + TIER_PAD, y: across }) }
+    }),
+    spacing: TIER_SPACING,
+    vertical: down,
+    ...(def?.fill && { fill: def.fill }),
+    ...(def?.fillDark && { fillDark: def.fillDark }),
+  }
 }
 
 /** The laid-out frame moved `d` across the flow, the board that much larger. */
