@@ -201,7 +201,7 @@ describe('loadmap check', () => {
     expect(code).toBe(1)
     const line = (await readFile(failing, 'utf8')).split('\n').findIndex((l) => l.startsWith('expect "Today')) + 1
     expect(out).toContain(
-      `${failing}:${line}:1 error: "Today keeps 7×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×`,
+      `${failing}:${line}:1 error[expect-failed]: "Today keeps 7×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×`,
     )
     expect(out).toContain(`${line} | expect "Today keeps 7×" { target: 12 }`)
     expect(out).toContain('checkout.loadmap: 1 of 2 expectations failed')
@@ -212,7 +212,7 @@ describe('loadmap check', () => {
   it('annotates the line for GitHub, by flag or under GitHub Actions', async () => {
     const line = (await readFile(failing, 'utf8')).split('\n').findIndex((l) => l.startsWith('expect "Today')) + 1
     const file = failing.replaceAll(':', '%3A').replaceAll(',', '%2C')
-    const annotation = `::error file=${file},line=${line},col=1,endLine=${line},endColumn=24,title=loadmap check::"Today keeps 7×" fails: expected at least 12×, but the 50 %25 target holds up to`
+    const annotation = `::error file=${file},line=${line},col=1,endLine=${line},endColumn=24,title=loadmap expect-failed::"Today keeps 7×" fails: expected at least 12×, but the 50 %25 target holds up to`
     expect((await run(['--format', 'github', failing])).out).toContain(annotation)
     expect((await run([failing], { GITHUB_ACTIONS: 'true' })).out).toContain(annotation)
     expect((await run([failing])).out).not.toContain('::error')
@@ -223,7 +223,7 @@ describe('loadmap check', () => {
     await writeFile(broken, 'loadmap 1\nload { max: 3 }\n')
     const b = await run([broken, checkout])
     expect(b.code).toBe(1)
-    expect(b.out).toContain(`${broken}:1:1 error: a definition needs at least one flow`)
+    expect(b.out).toContain(`${broken}:1:1 error[missing-part]: a definition needs at least one flow`)
     expect(b.out).toContain('broken.loadmap: does not compile (1 error)')
     expect(b.out).toContain('checkout.loadmap: 2 expectations hold')
     expect((await run([join(dir, 'nope.loadmap')])).out).toMatch(/nope\.loadmap: cannot read it \(ENOENT\)/)
@@ -279,7 +279,7 @@ describe('loadmap fmt', () => {
     await writeFile(a, src)
     const r = await run([a])
     expect(r.code).toBe(1)
-    expect(r.out).toContain(`${a}:2:13 error: "max" has no value`)
+    expect(r.out).toContain(`${a}:2:13 error[syntax]: "max" has no value`)
     expect(r.out).toContain(`${a}: left as it is, it has a syntax error`)
     expect(r.out).toContain('0 of 1 file formatted; 1 left out (unreadable or a syntax error)')
     expect((await run(['--check', a, checkout])).out).toContain(
@@ -366,7 +366,7 @@ describe('recording a .loadmap', () => {
     const broken = join(dir, 'broken.loadmap')
     await writeFile(broken, 'loadmap 1\nload { max: 3 }\n')
     await expect(record(await parseRecord([broken, '--out', join(dir, 'x.gif')]), { viewer })).rejects.toThrow(
-      `${broken}:1:1 error: a definition needs at least one flow`,
+      `${broken}:1:1 error[missing-part]: a definition needs at least one flow`,
     )
     await expect(record(await args('y.gif'), { viewer: join(dir, 'none') })).rejects.toThrow(/no viewer in/)
   })

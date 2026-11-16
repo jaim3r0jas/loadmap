@@ -1092,19 +1092,19 @@ users -> gw -> api -> db
 
   it('refuse a route hop no edge draws, at the hop', () => {
     expect(errors(SRC.replace('users -> gw -> api -> db', 'users -> gw\napi -> db'))).toEqual([
-      { message: 'req goes from gw to api, and no edge joins them', hint: 'draw gw -> api', text: 'gw -> api' },
+      { message: '"req" goes from "gw" to "api", and no edge joins them', hint: 'draw gw -> api', text: 'gw -> api' },
     ])
   })
 
   it('refuse an edge that points against the flow', () => {
     expect(errors(SRC.replace('users -> gw -> api -> db', 'users -> gw\napi -> gw\napi -> db'))).toMatchObject([
-      { message: 'req goes from gw to api, but their edge points the other way', text: 'gw -> api' },
+      { message: '"req" goes from "gw" to "api", but their edge points the other way', text: 'gw -> api' },
     ])
   })
 
   it("refuse a start no edge joins to the first stage, at the flow's from", () => {
     expect(errors(SRC.replace('users -> gw -> api -> db', 'gw -> api -> db'))).toMatchObject([
-      { message: 'req goes from users to gw, and no edge joins them', text: 'users' },
+      { message: '"req" goes from "users" to "gw", and no edge joins them', text: 'users' },
     ])
   })
 
@@ -1113,7 +1113,7 @@ users -> gw -> api -> db
       .replace('users -> gw -> api -> db', 'users -> gw -> api -> push')
       .concat('node push "Push" { fanout { req -> phone: 2 } }\nnode phone "Phone" { sink }\n')
     expect(errors(fan)).toMatchObject([
-      { message: 'req goes from push to phone, and no edge joins them', text: 'req -> phone: 2' },
+      { message: '"req" goes from "push" to "phone", and no edge joins them', text: 'req -> phone: 2' },
     ])
     expect(errors(`${fan}push -> phone\n`)).toEqual([])
 
@@ -1123,7 +1123,7 @@ users -> gw -> api -> db
       .concat('node cache "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\nrouter -> cache\n')
     // the cache's way rejoins the route at api: that hop needs its edge too
     expect(errors(way)).toMatchObject([
-      { message: 'req goes from cache to api, and no edge joins them', text: 'req -> cache: 0.5' },
+      { message: '"req" goes from "cache" to "api", and no edge joins them', text: 'req -> cache: 0.5' },
     ])
     expect(errors(`${way}cache -> api\n`)).toEqual([])
   })
@@ -1177,7 +1177,7 @@ users -> gw -> api -> db
       'preset "Fast" { fast: true }',
       'preset "Fast" { fast: true }\nlet slow = fast ? 1 / 0 : 1',
     )
-    expect(errors(src).map((e) => e.message)).toContain('req goes from gw to api, and no edge joins them')
+    expect(errors(src).map((e) => e.message)).toContain('"req" goes from "gw" to "api", and no edge joins them')
   })
 
   it('check a TypeScript fan-out whose branches change with the values in each scenario', async () => {
@@ -1301,10 +1301,10 @@ api -> failed
       },
     ])
     expect(errors(`${SRC}db -> failed\n`)).toMatchObject([
-      { message: 'db loses nothing the lost box "failed" takes', text: 'db' },
+      { message: '"db" loses nothing the lost box "failed" takes', text: 'db' },
     ])
     expect(errors(`${SRC}limiter -> failed\n`)).toMatchObject([
-      { message: 'what limiter loses as rejected already goes to the lost box "tooMany"', text: 'limiter' },
+      { message: 'what "limiter" loses as rejected already goes to the lost box "tooMany"', text: 'limiter' },
     ])
     expect(errors(`${SRC}failed -> db\n`)).toMatchObject([
       { message: 'nothing leaves the lost box "failed": what reaches it is lost', text: 'db' },
@@ -1345,14 +1345,14 @@ users -> kafka -> pool
     // in the order of the text
     expect(warnings(SRC)).toEqual([
       {
-        message: 'units of ev dropped as too old at topic vanish: give them a lost box that counts them',
+        message: 'units of "ev" dropped as too old at "topic" vanish: give them a lost box that counts them',
         text: 'drop',
       },
       {
-        message: 'units of ev too slow for their client at pool vanish: give them a lost box that counts them',
+        message: 'units of "ev" too slow for their client at "pool" vanish: give them a lost box that counts them',
         text: 'timeout',
       },
-      { message: 'what limiter turns away vanishes: give it a lost box that counts it', text: 'limit' },
+      { message: 'what "limiter" turns away vanishes: give it a lost box that counts it', text: 'limit' },
     ])
   })
 
@@ -1378,7 +1378,7 @@ users -> api -> sp -> a
 sp -> b
 `
     expect(warnings(split).map((w) => w.message)).toEqual([
-      'units of req too slow for their client at a vanish: give them a lost box that counts them',
+      'units of "req" too slow for their client at "a" vanish: give them a lost box that counts them',
     ])
     expect(warnings(`${split}a -> late\nb -> late\n`)).toEqual([])
     // two flows dropping at one queue: one warning; a flow nothing reads after the queue drops nothing
@@ -1389,7 +1389,7 @@ cluster kafka "Kafka" { members: 1; queue topic { partitions { ev: 1; ev2: 1; ra
 users -> kafka -> api
 `
     expect(warnings(shared).map((w) => w.message)).toEqual([
-      'units of ev dropped as too old at topic vanish: give them a lost box that counts them',
+      'units of "ev" dropped as too old at "topic" vanish: give them a lost box that counts them',
     ])
   })
 

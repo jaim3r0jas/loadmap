@@ -1,3 +1,4 @@
+import { CODES } from './diagnostics'
 import { BUILTINS } from './expr'
 import { type BlockSpec, EDGE_PROPS, type PropSpec, SCHEMA } from './schema'
 import { PROPERTY_UNITS } from './units'
@@ -17,6 +18,12 @@ const OPEN: Record<NonNullable<BlockSpec['open']>['names'], string> = {
   flows: 'flows',
   conditions: "the catalog component's conditions (its runs' brokers, message size, …)",
   arguments: "the arguments its metric's query names (`{{ args.job }}`: `job`)",
+}
+
+/** The list of diagnostic codes in docs/dsl.md, written from CODES. */
+export function codeReference(): string {
+  const rows = Object.entries(CODES).map(([code, doc]) => `| \`${code}\` | ${doc.replaceAll('|', '\\|')} |`)
+  return ['| Code | |', '| --- | --- |', ...rows, ''].join('\n')
 }
 
 export function reference(): string {

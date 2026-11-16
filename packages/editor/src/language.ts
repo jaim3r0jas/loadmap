@@ -28,6 +28,7 @@ import {
   compile,
   completions,
   type Definition,
+  type DiagnosticCode,
   definition,
   type Hover,
   hover,
@@ -245,10 +246,10 @@ const signature = StateField.define<SignatureTip | null>({
   provide: (f) => showTooltip.from(f),
 })
 
-/** The fix titled `title` of the diagnostic `message` at `from`, made again for `source`; null when it has gone. */
-function fixAgain(source: string, r: CompileResult, message: string, from: number, title: string) {
+/** The fix titled `title` of the diagnostic `code` at `from`, made again for `source`; null when it has gone. */
+function fixAgain(source: string, r: CompileResult, code: DiagnosticCode, from: number, title: string) {
   const list = problems(r)
-  const i = list.findIndex((d) => d.from === from && d.message === message)
+  const i = list.findIndex((d) => d.from === from && d.code === code)
   return i < 0 ? null : (quickFixes(source, [list[i]!])[0]!.find((f) => f.title === title)?.changes ?? null)
 }
 
@@ -414,7 +415,7 @@ export function loadmapLanguage(
         name: f.title,
         apply: (v: EditorView, from: number) => {
           const now = v.state.doc.toString()
-          const changes = now === source ? f.changes : fixAgain(now, result(now), d.message, from, f.title)
+          const changes = now === source ? f.changes : fixAgain(now, result(now), d.code, from, f.title)
           if (changes) v.dispatch({ changes, userEvent: 'input.fix' })
         },
       })),

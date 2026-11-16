@@ -2,7 +2,15 @@ import { appendFile, readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import type { Snapshot } from '@loadmap/core'
 import { fromSnapshot, parseSnapshot } from '@loadmap/core/measure'
-import { type CompileResult, compile, type Diagnostic, formatDiagnostic, loadCatalogFor, problems } from '@loadmap/dsl'
+import {
+  type DiagnosticCode as Code,
+  type CompileResult,
+  compile,
+  type Diagnostic,
+  formatDiagnostic,
+  loadCatalogFor,
+  problems,
+} from '@loadmap/dsl'
 import {
   baseSource,
   type CheckedBase,
@@ -41,7 +49,17 @@ export interface CheckedFile {
   /** fail and error fail the run; inconclusive does with `--inconclusive fail`. */
   outcome: 'pass' | 'fail' | 'inconclusive' | 'error'
   snapshot: { fetched: string; from: string; to: string } | null
-  diagnostics: { severity: Diagnostic['severity']; line: number; column: number; message: string }[]
+  /** Lines and columns are 1-based; the end is the column after the span's last character. */
+  diagnostics: {
+    severity: Diagnostic['severity']
+    code: Code
+    line: number
+    column: number
+    endLine: number
+    endColumn: number
+    message: string
+    hint: string | null
+  }[]
   expectations: CheckedExpectation[]
   /** The component that reaches the target first at the defaults, on the pessimistic edge. */
   firstLimit: string | null
@@ -160,7 +178,7 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
     if (a.format === 'github') for (const d of list) log(github(d, file, source))
     if (text) for (const d of list) log(formatDiagnostic(d, source, file))
     const errors = r.diagnostics.filter((d) => d.severity === 'error').length
-    const checked = checkedFile(file, r, list, snapshot)
+    const checked = checkedFile(file, source, r, list, snapshot)
     if (compared && 'checked' in compared) {
       checked.base = compared.checked
       // a loss nobody accepted fails the change, whatever its expect lines say
@@ -198,7 +216,9 @@ function errorFile(file: string, message: string): CheckedFile {
     file,
     outcome: 'error',
     snapshot: null,
-    diagnostics: [{ severity: 'error', line: 0, column: 0, message }],
+    diagnostics: [
+      { severity: 'error', code: 'unreadable', line: 0, column: 0, endLine: 0, endColumn: 0, message, hint: null },
+    ],
     expectations: [],
     base: null,
     note: message,
@@ -207,7 +227,13 @@ function errorFile(file: string, message: string): CheckedFile {
   }
 }
 
-function checkedFile(file: string, r: CompileResult, list: Diagnostic[], snapshot: Snapshot | undefined): CheckedFile {
+function checkedFile(
+  file: string,
+  source: string,
+  r: CompileResult,
+  list: Diagnostic[],
+  snapshot: Snapshot | undefined,
+): CheckedFile {
   const expectations: CheckedExpectation[] = r.expectations.map((e) => ({
     label: e.result.expectation.label ?? null,
     line: e.line,
@@ -237,7 +263,15 @@ function checkedFile(file: string, r: CompileResult, list: Diagnostic[], snapsho
     file,
     outcome,
     snapshot: snapshot ? { fetched: snapshot.fetched, from: snapshot.from, to: snapshot.to } : null,
-    diagnostics: list.map((d) => ({ severity: d.severity, line: d.line, column: d.column, message: d.message })),
+    diagnostics: list.map((d) => ({
+      severity: d.severity,
+      code: d.code,
+      line: d.line,
+      column: d.column,
+      ...end(d, source),
+      message: d.message,
+      hint: d.hint ?? null,
+    })),
     expectations,
     base: null,
     note: null,
@@ -367,20 +401,23 @@ function parse(argv: string[], env: Readonly<Record<string, string | undefined>>
  * https://docs.github.com/actions/reference/workflow-commands-for-github-actions
  */
 export function github(d: Diagnostic, file: string, source: string): string {
-  const span = source.slice(d.from, Math.max(d.from, d.to))
-  const breaks = span.split('\n')
-  const endLine = d.line + breaks.length - 1
-  const endColumn = (breaks.length > 1 ? 1 : d.column) + breaks.at(-1)!.length
+  const { endLine, endColumn } = end(d, source)
   const props = [
     `file=${prop(file)}`,
     `line=${d.line}`,
     `col=${d.column}`,
     `endLine=${endLine}`,
     `endColumn=${endColumn}`,
-    `title=${prop('loadmap check')}`,
+    `title=${prop(`loadmap ${d.code}`)}`,
   ]
   const message = d.hint ? `${d.message} (${d.hint})` : d.message
   return `::${d.severity === 'error' ? 'error' : 'warning'} ${props.join(',')}::${data(message)}`
+}
+
+/** Where a diagnostic's span ends: its line, and the column after its last character. */
+function end(d: Diagnostic, source: string): { endLine: number; endColumn: number } {
+  const breaks = source.slice(d.from, Math.max(d.from, d.to)).split('\n')
+  return { endLine: d.line + breaks.length - 1, endColumn: (breaks.length > 1 ? 1 : d.column) + breaks.at(-1)!.length }
 }
 
 const data = (s: string) => s.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')

@@ -115,7 +115,8 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
         while (i < to && isDigit(source[i]!)) i++
       }
       const digits = source.slice(s, i)
-      if (digits.endsWith('_') || digits.includes('__')) report.error({ from: s, to: i }, `"${digits}" is not a number`)
+      if (digits.endsWith('_') || digits.includes('__'))
+        report.error('syntax', { from: s, to: i }, `"${digits}" is not a number`)
       const written = Number(digits.replaceAll('_', ''))
       const prev = out.at(-1)
       const unit = suffixAt(source, i, to, prev?.kind === 'punct' && (prev.text === '±' || prev.text === '+/-'))
@@ -124,6 +125,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
         const w = i
         while (i < to && isIdPart(source[i]!)) i++
         report.error(
+          'unknown-unit',
           { from: s, to: i },
           `"${source.slice(w, i)}" is not a unit of a number`,
           'the units are ms, s, min, h, % and ×',
@@ -137,19 +139,21 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
     } else if (c === '"' || c === "'") {
       const s = i
       const r = readString(source, i + 1, to, c)
-      if (!r.closed) report.error({ from: s, to: r.end }, 'this text has no closing quote', `end it with ${c}`)
+      if (!r.closed)
+        report.error('syntax', { from: s, to: r.end }, 'this text has no closing quote', `end it with ${c}`)
       i = r.end
       push({ kind: 'string', text: source.slice(s, i), value: r.value, from: s, to: i })
     } else if (c === '`') {
       const s = i
       const t = readTemplate(source, i + 1, to, report)
-      if (!t.closed) report.error({ from: s, to: t.end }, 'this template has no closing backtick', 'end it with `')
+      if (!t.closed)
+        report.error('syntax', { from: s, to: t.end }, 'this template has no closing backtick', 'end it with `')
       i = t.end
       push({ kind: 'template', text: source.slice(s, i), quasis: t.quasis, parts: t.parts, from: s, to: i })
     } else {
       const p = PUNCT.find((m) => source.startsWith(m, i))
       if (!p) {
-        report.error({ from: i, to: i + 1 }, `unexpected character "${c}"`)
+        report.error('syntax', { from: i, to: i + 1 }, `unexpected character "${c}"`)
         i++
         continue
       }
@@ -202,7 +206,7 @@ function readTemplate(src: string, i: number, to: number, report: Reporter, dept
       parts.push({ from: start, to: end })
       if (src[end] === '}') i = end + 1
       else {
-        report.error({ from: i, to: end }, 'this "${" has no closing "}"')
+        report.error('syntax', { from: i, to: end }, 'this "${" has no closing "}"')
         i = end
       }
     } else cur += src[i++]
@@ -225,7 +229,7 @@ function skipExpression(src: string, i: number, to: number, report: Reporter, de
       continue
     } else if (c === '`') {
       if (depth + 1 >= MAX_TEMPLATE_DEPTH) {
-        report.error({ from: i, to: i + 1 }, `templates are nested more than ${MAX_TEMPLATE_DEPTH} deep`)
+        report.error('too-large', { from: i, to: i + 1 }, `templates are nested more than ${MAX_TEMPLATE_DEPTH} deep`)
         return to
       }
       i = readTemplate(src, i + 1, to, report, depth + 1).end

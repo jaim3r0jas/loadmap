@@ -90,6 +90,7 @@ describe('loadmap lsp', () => {
         range: { start: pos(broken, 'flows.read', 6), end: pos(broken, 'flows.read', 10) },
         severity: 1,
         source: 'loadmap',
+        code: 'unknown-name',
         message: 'unknown flow "read": did you mean "reads"?',
       },
     ])

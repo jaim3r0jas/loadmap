@@ -229,7 +229,7 @@ describe('formatDiagnostic', () => {
     expect(d).toMatchObject(at(src, 'b; route'))
     expect(formatDiagnostic(d, src, 'a.loadmap')).toBe(
       [
-        'a.loadmap:3:22 error: unknown flow "b"',
+        'a.loadmap:3:22 error[unknown-name]: unknown flow "b"',
         '  3 | flow a { rate: flows.b; route: x; from: y }',
         '    |                      ^ did you mean "a"?',
       ].join('\n'),
