@@ -560,7 +560,6 @@ class Compiler {
     return this.report.source
   }
 
-  /** The version of the file a place is in. */
   /**
    * An input set with a formula against its default: one type (a number for a number), and where both say a unit, the
    * same one. The value is the model's formula, so this waits for the model's names; the default is the library's,
@@ -570,7 +569,10 @@ class Compiler {
     const quiet = new Reporter(this.source)
     for (const c of this.linked?.checks ?? []) {
       const [want, got] = [c.default, c.value].map((e) => compileFormula(e, this.names, 'ctx', quiet).type)
+      // said once: where a line that reads the input already refused the value's type, that is the mistake's message
+      const told = this.report.list.some((d) => d.code === 'wrong-type' && d.from === c.value.from)
       if (want && got && want !== 'any' && got !== 'any' && want !== got) {
+        if (told) continue
         this.report.error(
           'wrong-type',
           c.value,
@@ -588,6 +590,7 @@ class Compiler {
     }
   }
 
+  /** The version of the file a place is in. */
   private versionOf(at: Span): Version {
     return this.linked?.versionAt(at.from) ?? this.version
   }

@@ -294,8 +294,12 @@ export class Expander {
       if (value) {
         this.fits(i, value)
         // a formula of the model against the default: said once the model's names are known
-        if (i.init && !here.library && !(LITERAL.has(i.init.t) && LITERAL.has(value.value.t)))
-          this.checks.push({ input: id, default: i.init, value: value.value })
+        if (i.init && !here.library && !(LITERAL.has(i.init.t) && LITERAL.has(value.value.t))) {
+          // the default as the library means it: its own names by their ids in the model
+          const init = clone(i.init)
+          this.settleFormula(init, theirs)
+          this.checks.push({ input: id, default: init, value: value.value })
+        }
         out.set(id, { kind: 'value', value: value.value })
       } else if (i.init) {
         // the default is the library's own formula: its names are settled there

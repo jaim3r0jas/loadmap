@@ -456,7 +456,7 @@ export function LoadmapEditor({
         functions: latest.current.functions,
         around: () => aroundRef.current(),
         onOpen: (at) => openRef.current(at),
-        onElsewhere: (changes) => elsewhereRef.current(changes),
+        onElsewhere: (changes, alone) => elsewhereRef.current(changes, alone),
         onResult: (source, result) => acceptRef.current(source, result),
       }),
       EditorView.updateListener.of((u) => {
@@ -573,7 +573,10 @@ export function LoadmapEditor({
   const openRef = useRef(openAt)
   openRef.current = openAt
   /** Changes to files that are not in the editor (a rename reaches every file of the model): each in its own state. */
-  const changeElsewhere = (changes: readonly { file: string; from: number; to: number; insert: string }[]) => {
+  const changeElsewhere = (
+    changes: readonly { file: string; from: number; to: number; insert: string }[],
+    alone: boolean,
+  ) => {
     const others = { ...set.current.others }
     for (const file of new Set(changes.map((c) => c.file))) {
       if (!Object.hasOwn(others, file)) continue
@@ -590,7 +593,11 @@ export function LoadmapEditor({
           .reduce((t, c) => t.slice(0, c.from) + c.insert + t.slice(c.to), others[file]!)
     }
     set.current = { ...set.current, others, version: set.current.version + 1 }
-    latest.current.onFiles?.(filesNow())
+    // with a change to the open text, the page hears of all the files once, after it: never half a rename
+    if (alone) {
+      latest.current.onFiles?.(filesNow())
+      if (view.current) forceLinting(view.current)
+    }
   }
   const elsewhereRef = useRef(changeElsewhere)
   elsewhereRef.current = changeElsewhere
