@@ -20,6 +20,8 @@ describe('checkout layout', () => {
       expectSteady(view, checkout, direction))
     it(`never moves with the load, and lays out each phase the same whatever came before (${direction})`, () =>
       expectCompact(view, checkout, direction))
+    it(`moves no box in any phase folded into two rows (${direction})`, () =>
+      expectSteady(view, checkout, direction, 2))
   }
 
   it('runs right by its shape: a chain', () => {

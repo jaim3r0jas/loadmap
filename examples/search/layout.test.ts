@@ -10,5 +10,9 @@ describe('search layout', () => {
     // the view is stable; laid out compact instead, it keeps the compact promises too
     it(`laid out compact, never moves with the load, and lays out each phase on its own (${direction})`, () =>
       expectCompact(laidOut(view, 'compact'), search, direction))
+    it(`keeps both promises folded into two rows (${direction})`, async () => {
+      await expectSteady(view, search, direction, 2)
+      await expectCompact(laidOut(view, 'compact'), search, direction, 2)
+    })
   }
 })

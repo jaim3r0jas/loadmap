@@ -57,12 +57,12 @@ export function laidOut<V extends View>(view: V, layout: 'compact' | 'stable'): 
   return { ...view, def: { ...view.def, layout } }
 }
 
-/** In a stable layout, no phase moves a box, resizes the board or lets a label overlap anything. */
-export async function expectSteady(compact: View, model: Model, direction: Direction) {
+/** In a stable layout, no phase moves a box, resizes the board or lets a label overlap anything, folded or not. */
+export async function expectSteady(compact: View, model: Model, direction: Direction, rows = 1) {
   const view = laidOut(compact, 'stable')
-  const first = await layout(view, model.evaluate(), { direction })
+  const first = await layout(view, model.evaluate(), { direction, rows })
   for (const [label, values] of phases(model)) {
-    const scene = await layout(view, model.evaluate(values), { direction })
+    const scene = await layout(view, model.evaluate(values), { direction, rows })
     expect([scene.width, scene.height], label).toEqual([first.width, first.height])
     for (const n of scene.nodes)
       expect(centre(n), `${label}: ${n.id}`).toEqual(centre(first.nodes.find((m) => m.id === n.id)!))
@@ -86,23 +86,23 @@ const placed = (s: Scene) => ({
 /**
  * In a compact layout, no load moves a box or resizes the board in any phase, no label overlaps anything, and each
  * phase is laid out the same whatever came before it: laid out again in the other order, on a fresh copy of the view,
- * every scene is the same.
+ * every scene is the same. Folded into `rows` rows too.
  */
-export async function expectCompact(view: View, model: Model, direction: Direction) {
+export async function expectCompact(view: View, model: Model, direction: Direction, rows = 1) {
   const all = phases(model)
   const scenes = new Map<string, Scene>()
   for (const [label, values] of all) {
-    const scene = await layout(view, model.evaluate(values), { direction })
+    const scene = await layout(view, model.evaluate(values), { direction, rows })
     scenes.set(label, scene)
     expect(collisions(scene), label).toEqual([])
     expectEdgesOnBoxes(scene)
     for (const load of someLoads(model)) {
-      const at = await layout(view, model.evaluate({ ...values, load }), { direction })
+      const at = await layout(view, model.evaluate({ ...values, load }), { direction, rows })
       expect(placed(at), `${label} at ${load}×`).toEqual(placed(scene))
       expect(collisions(at), `${label} at ${load}×`).toEqual([])
     }
   }
   const fresh = laidOut(view, 'compact')
   for (const [label, values] of [...all].reverse())
-    expect(await layout(fresh, model.evaluate(values), { direction }), label).toEqual(scenes.get(label))
+    expect(await layout(fresh, model.evaluate(values), { direction, rows }), label).toEqual(scenes.get(label))
 }
