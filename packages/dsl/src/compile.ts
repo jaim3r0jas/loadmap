@@ -47,13 +47,13 @@ import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './
 import { type Code, closest, type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
   compileFormula,
-  conditionHint,
   type Formula,
   FormulaError,
   failure,
   type HostFunctions,
   isCapacity,
   type Names,
+  notCondition,
   placed,
   RESERVED,
   type Type,
@@ -412,10 +412,9 @@ class Compiler {
     // a select's options as written: a formula compares a literal with them (one computed leaves it unchecked)
     const paramOptions = new Map<string, (number | string)[]>()
     for (const b of params) {
-      const items = this.prop(b, 'options')?.value
-      if (!b.args.id || items?.t !== 'array') continue
-      const list = items.items.map((e) => (e.t === 'num' || e.t === 'str' ? e.value : undefined))
-      if (list.every((v) => v !== undefined)) paramOptions.set(b.args.id.name, list as (number | string)[])
+      const list = optionLiterals(b)
+      if (b.args.id && list?.every((v) => v !== undefined))
+        paramOptions.set(b.args.id.name, list as (number | string)[])
     }
     for (const f of fits) this.fit(f)
     // a published figure is read like a let: a capacity in `derived`
@@ -922,17 +921,12 @@ class Compiler {
           const rate = ev.flows[f] as number
           if (!(rate >= 0 && Number.isFinite(rate))) ratesFine = false
           const rateAt = this.flowRate.get(f) ?? at
-          if (!Number.isFinite(rate)) this.report.warning('bad-rate', rateAt, `the rate of "${f}" is ${rate} here`)
+          const message = `the rate of "${f}" is ${rate} ${where}`
+          if (!Number.isFinite(rate)) this.report.warning('bad-rate', rateAt, message)
           else if (rate < 0)
-            this.strict(
-              STRICT_FORMULAS,
-              'bad-rate',
-              rateAt,
-              `the rate of "${f}" is ${rate} here`,
-              'a rate is units per second, from 0 up',
-            )
+            this.strict(STRICT_FORMULAS, 'bad-rate', rateAt, message, 'a rate is units per second, from 0 up')
         }
-        this.ranges(ev, ratesFine)
+        this.ranges(ev, ratesFine, where)
       } catch (err) {
         this.runError(err, at, i === 0)
       }
@@ -942,28 +936,28 @@ class Compiler {
   }
 
   /**
-   * A component's demand and capacity where the definition was evaluated: a demand that is not finite says so, as a
-   * rate does (a verdict "holds up to 0×" would hide it), and one below 0 or a capacity below 0 is refused. With a
-   * rate already wrong, the demands it feeds are not blamed for it.
+   * A component's demand and capacity where the definition was evaluated (`where`: at the defaults, in a preset or a
+   * scenario): a demand that is not finite says so, as a rate does (a verdict "holds up to 0×" would hide it), and
+   * one below 0 or a capacity of 0 or less is refused. With a rate already wrong, the demands it feeds are not blamed.
    */
-  private ranges(ev: Evaluation, ratesFine: boolean) {
+  private ranges(ev: Evaluation, ratesFine: boolean, where: string) {
     for (const [id, b] of this.componentBlocks) {
       const c = ev.components[id]
       if (!c) continue
       const demand = c.demand
       if (ratesFine && demand != null && !(demand >= 0 && Number.isFinite(demand))) {
         const at = this.prop(b, 'demand')?.value ?? b.at
-        const message = `the demand of "${id}" is ${demand} here`
+        const message = `the demand of "${id}" is ${demand} ${where}`
         if (!Number.isFinite(demand)) this.report.warning('bad-demand', at, message)
         else this.strict(STRICT_FORMULAS, 'bad-demand', at, message, 'a demand is from 0 up')
       }
       const capacity = this.prop(b, 'capacity')
-      if (capacity && c.capacity && c.capacity.value < 0)
+      if (capacity && c.capacity && !(c.capacity.value > 0))
         this.strict(
           STRICT_FORMULAS,
           'out-of-range',
           capacity.value,
-          `the capacity of "${id}" is ${c.capacity.value} here`,
+          `the capacity of "${id}" is ${c.capacity.value} ${where}`,
           'a capacity is above 0',
         )
     }
@@ -1207,6 +1201,8 @@ class Compiler {
   private flowRate = new Map<string, Span>()
   /** Each component's block: where its demand and capacity are written. */
   private componentBlocks = new Map<string, Block>()
+  /** Each slider's range, which a preset, a scenario or a step stays in. */
+  private sliders = new Map<string, { min: number; max: number }>()
   private flowAt = new Map<string, Span>()
   private flowBlock = new Map<string, Block>()
   /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
@@ -2022,16 +2018,10 @@ class Compiler {
   }
 
   /** A condition (`when`, `enabled`): true or false; a number or a text read as one is refused from loadmap 1.1. */
-  private condition(e: Expr, scope: Scope): Formula {
+  private condition(key: string, e: Expr, scope: Scope): Formula {
     const f = this.formula(e, scope)
-    if (f.type !== 'boolean' && f.type !== 'any')
-      this.strict(
-        STRICT_FORMULAS,
-        'wrong-type',
-        e,
-        `expected true or false, this is ${typeWord(f.type)}`,
-        conditionHint(e, f.type, this.slice(e)),
-      )
+    const issue = notCondition(e, f.type, this.source, `"${key}" takes`)
+    if (issue) this.strict(STRICT_FORMULAS, 'wrong-type', e, issue.message, issue.hint)
     return f
   }
 
@@ -2195,7 +2185,7 @@ class Compiler {
       if (v != null) o[k] = v
     }
     const enabled = this.prop(b, 'enabled')
-    if (enabled) o.enabled = placed(enabled.value, this.condition(enabled.value, 'values').run)
+    if (enabled) o.enabled = placed(enabled.value, this.condition('enabled', enabled.value, 'values').run)
     const format = this.prop(b, 'format')
     if (format) {
       const run = placed<string>(format.value, this.formula(format.value, 'value', 'string').run)
@@ -2231,6 +2221,8 @@ class Compiler {
         const v = this.constProp<number>(b, k)
         if (v != null) r[k] = v
       }
+      if (typeof r.min === 'number' && typeof r.max === 'number')
+        this.sliders.set(b.args.id!.name, { min: r.min, max: r.max })
       if (typeof value !== 'number') this.report.error('wrong-type', dflt.value, 'the default of a slider is a number')
       return p.range({ ...r, default: value } as any)
     }
@@ -2286,18 +2278,13 @@ class Compiler {
         this.report.error('wrong-type', prop.value, `"${k}" takes ${typeWord(type)}`)
         continue
       }
-      const opts = known.get(k) && this.prop(known.get(k)!, 'options')
-      if (opts?.value.t === 'array') {
-        const list = opts.value.items.map((e) => (e.t === 'num' || e.t === 'str' ? e.value : undefined))
-        if (!list.includes(v as never))
-          this.report.error('bad-value', prop.value, `${String(v)} is not an option of "${k}"`, list.join(', '))
-      }
-      const slider = known.get(k)
-      if (slider && typeof v === 'number' && slider.props.has('min') && slider.props.has('max')) {
-        const [min, max] = [this.constProp<number>(slider, 'min'), this.constProp<number>(slider, 'max')]
-        if (typeof min === 'number' && typeof max === 'number' && !(v >= min && v <= max))
-          this.strict(STRICT_FORMULAS, 'out-of-range', prop.value, `"${k}" goes from ${min} to ${max}`)
-      }
+      const block = known.get(k)
+      const list = block && optionLiterals(block)
+      if (list && !list.includes(v as never))
+        this.report.error('bad-value', prop.value, `${String(v)} is not an option of "${k}"`, list.join(', '))
+      const range = this.sliders.get(k)
+      if (range && typeof v === 'number' && !(v >= range.min && v <= range.max))
+        this.strict(STRICT_FORMULAS, 'out-of-range', prop.value, `"${k}" goes from ${range.min} to ${range.max}`)
       out[k] = v
     }
     return out
@@ -2529,7 +2516,7 @@ class Compiler {
         if (v !== undefined) fields.push([k, v])
       }
       const when = this.prop(r, 'when')
-      parts.push({ key, fields, when: when && placed(when.value, this.condition(when.value, 'ctx').run) })
+      parts.push({ key, fields, when: when && placed(when.value, this.condition('when', when.value, 'ctx').run) })
     }
     const fixed = parts.every((x) => !x.when && x.fields.every(([, v]) => typeof v !== 'function'))
     const at = (ctx: any): Overload => {
@@ -2554,7 +2541,7 @@ class Compiler {
     const times = this.dynProp<number>(rule, 'times', 'number')
     const budget = this.dynProp<number>(rule, 'budget', 'number')
     const w = this.prop(rule, 'when')
-    const when = w && placed(w.value, this.condition(w.value, 'values').run)
+    const when = w && placed(w.value, this.condition('when', w.value, 'values').run)
     const at = (v: any): RetryRule | undefined => {
       if (when && !when(v)) return undefined
       const out: RetryRule = { times: (typeof times === 'function' ? times(v) : times) ?? 0 }
@@ -2586,7 +2573,10 @@ class Compiler {
     ] as const) {
       const prop = this.prop(b, k)
       if (!prop) continue
-      if (k === 'when') this.condition(prop.value, 'ctx')
+      if (k === 'when') {
+        o.when = placed(prop.value, this.condition('when', prop.value, 'ctx').run)
+        continue
+      }
       const check =
         k === 'capacity'
           ? checkCapacity
@@ -2597,8 +2587,8 @@ class Compiler {
               }
             : undefined
       const v = this.dyn(prop.value, want, 'ctx', check)
-      // the model takes demand and when as functions only: a constant (demand: 0) becomes one
-      o[k] = (k === 'demand' || k === 'when') && v !== undefined && typeof v !== 'function' ? () => v : v
+      // the model takes demand as a function only: a constant (demand: 0) becomes one
+      o[k] = k === 'demand' && v !== undefined && typeof v !== 'function' ? () => v : v
     }
     const held = this.held(b, flows)
     if (held !== undefined) {
@@ -2939,13 +2929,21 @@ class Compiler {
       const d: EdgeDef = { from: e.chain[i]!.name, to: e.chain[i + 1]!.name }
       if (label != null) d.label = label
       if (when) {
-        d.when = placed(when.value, this.condition(when.value, 'ctx').run)
+        d.when = placed(when.value, this.condition('when', when.value, 'ctx').run)
         this.whenAt.set(d, when.key)
       }
       out.push(d)
     }
     return out
   }
+}
+
+/** A select's options as written, a computed one undefined; undefined for a parameter without a list of options. */
+function optionLiterals(b: Block): (number | string | undefined)[] | undefined {
+  const items = b.props.get('options')?.[0]?.value
+  return items?.t === 'array'
+    ? items.items.map((e) => (e.t === 'num' || e.t === 'str' ? e.value : undefined))
+    : undefined
 }
 
 const FORBIDDEN = new Set([...Object.getOwnPropertyNames(Object.prototype), 'prototype'])

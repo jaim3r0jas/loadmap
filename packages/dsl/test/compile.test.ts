@@ -1591,8 +1591,8 @@ describe('strict formulas', () => {
       extra: 'param slow "Slow" { default: false; enabled: pods }',
     })
     expect(marks(src)).toEqual([
-      ['error', 'wrong-type', 'expected true or false, this is a number', 'write true or false', '1'],
-      ['error', 'wrong-type', 'expected true or false, this is a number', 'write pods != 0', 'pods'],
+      ['error', 'wrong-type', '"when" takes true or false, this is a number', 'write true or false', '1'],
+      ['error', 'wrong-type', '"enabled" takes true or false, this is a number', 'write pods != 0', 'pods'],
     ])
     expect(compile(v10(src)).ok).toBe(true)
   })
@@ -1614,7 +1614,7 @@ describe('strict formulas', () => {
       [
         'error',
         'out-of-range',
-        'the capacity of "api" is -800 here',
+        'the capacity of "api" is -800 at the defaults',
         'a capacity is above 0',
         'measured(pods * -400, "req/s", "load test")',
       ],
@@ -1623,15 +1623,59 @@ describe('strict formulas', () => {
     // the rate is the mistake: the demand it feeds is not blamed again
     const rate = def().replace('rate: 100 * load', 'rate: -100 * load')
     expect(marks(rate)).toEqual([
-      ['error', 'bad-rate', 'the rate of "req" is -200 here', 'a rate is units per second, from 0 up', '-100 * load'],
+      [
+        'error',
+        'bad-rate',
+        'the rate of "req" is -200 at the defaults',
+        'a rate is units per second, from 0 up',
+        '-100 * load',
+      ],
     ])
     expect(compile(v10(rate)).ok).toBe(true)
+    // a capacity of 0, here only in a preset: the run is named
+    const zero = def({ api: 'measured((pods - 1) * 400, "req/s", "load test")', extra: 'preset "one" { pods: 1 }' })
+    expect(marks(zero)).toEqual([
+      [
+        'error',
+        'out-of-range',
+        'the capacity of "api" is 0 in the preset "one"',
+        'a capacity is above 0',
+        'measured((pods - 1) * 400, "req/s", "load test")',
+      ],
+    ])
+  })
+
+  it('writes a fix that means what it says', () => {
+    const top = 'let x = fast ? 1 : 0'
+    // a condition of lower precedence than != goes in parentheses
+    expect(marks(def({ top, extra: 'param slow "Slow" { default: false; enabled: pods > 1 ? 1 : 0 }' }))).toEqual([
+      [
+        'error',
+        'wrong-type',
+        '"enabled" takes true or false, this is a number',
+        'write (pods > 1 ? 1 : 0) != 0',
+        'pods > 1 ? 1 : 0',
+      ],
+    ])
+    // one mark for one mistake: the "!" around it is not blamed again
+    expect(marks(def({ top: 'let x = !(pods || 2)' }))).toEqual([
+      [
+        'error',
+        'wrong-type',
+        '"||" takes true or false on both sides, these are numbers',
+        'for a fallback, write pods != 0 ? pods : 2',
+        '(pods || 2)',
+      ],
+    ])
+    expect(marks(def({ top: 'let x = !(pods + 2)' }))).toEqual([
+      ['error', 'wrong-type', '"!" takes true or false, this is a number', 'write (pods + 2) == 0', '!(pods + 2)'],
+    ])
   })
 
   it('says when a demand is not a number, as a rate does: c19 held up to 0×', () => {
     const src = def().replace('demand: flows.req', 'demand: flows.req / (pods - 2)')
     expect(marks(src)).toEqual([
-      ['warning', 'bad-demand', 'the demand of "api" is Infinity here', undefined, 'flows.req / (pods - 2)'],
+      ['warning', 'bad-demand', 'the demand of "api" is Infinity at the defaults', undefined, 'flows.req / (pods - 2)'],
     ])
   })
 
@@ -1641,6 +1685,9 @@ describe('strict formulas', () => {
       'let x = 1 < load && load < 3',
       'let x = (load < 2) == fast',
       'let x = pods == 2 || !fast',
+      // two answers compared on purpose: no chain
+      'let x = (pods == 2) != (load == 1)',
+      'let x = (pods == 2) == fast',
       'let x = `${pods}` == "2"',
     ])
       expect(marks(def({ top })), top).toEqual([])

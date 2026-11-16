@@ -144,7 +144,9 @@ describe('edit', () => {
     expect(diff(offset, 'node:b/demand#1', -1)[1]).toBe(
       '+node b { pass; demand: flows.f * 2 + (-1); capacity: measured(9, "req/s"); over: "y" }',
     )
-    expect(edit(checkout, 'pool:workers/capacity#0', -1)).toEqual({ error: 'the capacity of "workers" is -3 here' })
+    expect(edit(checkout, 'pool:workers/capacity#0', -1)).toEqual({
+      error: 'the capacity of "workers" is -3 at the defaults',
+    })
   })
 
   it('changes a number with a unit as written, keeping its unit', () => {
