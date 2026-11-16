@@ -10,7 +10,7 @@ import {
   type TextMeasure,
   type View,
 } from '@loadmap/layout'
-import { type Arrangement, arrangementFor, extent, shapesOf } from '@loadmap/layout/internal'
+import { type Arrangement, arrange, shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { pageElk } from './elk'
@@ -203,14 +203,11 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
       stands.current = a
       setPicked((p) => (p?.view === view && p.direction === a.direction && p.rows === a.rows ? p : { view, ...a }))
     }
-    Promise.all(ways.map(async (w) => ({ ...w, ...(await extent(view, w.direction, { ...at, rows: w.rows })) }))).then(
-      (sizes) => take(arrangementFor(sizes, room, keep)),
-      (err) => {
-        console.error('loadmap: layout failed', err)
-        // the sizes are not to be had: as it stands, or as its shape runs, so the diagram is still drawn
-        take({ direction: held ?? keep.direction, rows: fixed ?? 1 })
-      },
-    )
+    arrange(view, ways, room, keep, at).then(take, (err) => {
+      console.error('loadmap: layout failed', err)
+      // the sizes are not to be had: as it stands, or as its shape runs, so the diagram is still drawn
+      take({ direction: held ?? keep.direction, rows: fixed ?? 1 })
+    })
     return () => {
       live = false
     }
@@ -220,8 +217,10 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   // out before its first pick, so it never shows one arrangement and then another; without a board the shape decides
   const pending = chooses && picked?.view !== view
   const waits = chooses && !picked
-  const direction: Direction = held ?? picked?.direction ?? shape
-  const rows = fixed ?? (picked && picked.direction === direction ? picked.rows : 1)
+  // a board that has no room to tell (a small screen it fills) runs as its shape says, in one row
+  const chosen = chooses ? picked : null
+  const direction: Direction = held ?? chosen?.direction ?? shape
+  const rows = fixed ?? (chosen && chosen.direction === direction ? chosen.rows : 1)
 
   const key = useMemo(
     () => (measure ? structureKey(view, ev, { direction, rows, measure }) : ''),

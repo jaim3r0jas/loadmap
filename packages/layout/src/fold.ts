@@ -1,4 +1,5 @@
-import type { Box, Frame, foldKit, Laid, SceneTier } from './layout'
+import type { Arrangement, Room, Sized } from './direction'
+import type { Box, Direction, Frame, foldKit, Laid, LayoutOptions, SceneTier } from './layout'
 import type { TextMeasure } from './text'
 import type { View } from './view'
 
@@ -320,4 +321,78 @@ export function foldLanes(
     })
   })
   return { l: down ? turned(out.l) : out.l, tiers }
+}
+
+type Size = { width: number; height: number }
+const extents = new WeakMap<TextMeasure, WeakMap<View, Map<string, Promise<Size>>>>()
+
+/** `extent` in layout.ts: once per view and arrangement (a resize asks again at every pixel), ELK once per direction. */
+export function extent(kit: Kit, view: View, direction: Direction, o: Omit<LayoutOptions, 'direction'>): Promise<Size> {
+  const measure = o.measure ?? kit.estimateText
+  const rows = kit.rowsOf(o)
+  const byView = extents.get(measure) ?? new WeakMap<View, Map<string, Promise<Size>>>()
+  extents.set(measure, byView)
+  const sizes = byView.get(view) ?? new Map<string, Promise<Size>>()
+  byView.set(view, sizes)
+  const key = `${direction} ${rows}`
+  let size = sizes.get(key)
+  if (!size) {
+    size = (async () => {
+      const frame = kit.ordered(view, kit.reserve(view, direction, measure))
+      const laid = await kit.laidOut(view, frame, o.elk)
+      const { l } = rows > 1 ? foldLanes(laid, frame, view, measure, rows, kit) : kit.lanes(laid, frame, view, measure)
+      return { width: l.width, height: l.height }
+    })()
+    // one that fails is let go, so the next call tries again
+    size.catch(() => sizes.delete(key))
+    sizes.set(key, size)
+  }
+  return size
+}
+
+/** `arrange` in layout.ts. */
+export async function arrange(
+  kit: Kit,
+  view: View,
+  ways: readonly Arrangement[],
+  room: Room,
+  keep: Arrangement,
+  o: Omit<LayoutOptions, 'direction' | 'rows'>,
+): Promise<Arrangement> {
+  const sizes = await Promise.all(
+    ways.map(async (w) => ({ ...w, ...(await extent(kit, view, w.direction, { ...o, rows: w.rows })) })),
+  )
+  return arrangementFor(sizes, room, keep)
+}
+
+/** How much better another arrangement must fit before the diagram changes: a drag near the edge changes nothing. */
+const TURN = 1.15
+/** The scale under which a box's title is no longer read with ease: 10 px of its 13. Only then is a diagram folded. */
+const LEGIBLE = 10 / 13
+
+/**
+ * How a diagram is arranged in a room, among the arrangements it may take (`sizes`: one direction or both, one row
+ * count or several). It stays as it stands (`keep`: as it is now, or as its shape runs) unless another fits the room
+ * clearly larger, and no scale past full size counts: a diagram that reads well does not change to be drawn larger
+ * still. It is folded only where its titles would be hard to read in one row, and then into the fewest rows that fit
+ * about as large as the best.
+ */
+export function arrangementFor(sizes: readonly Sized[], room: Room, keep: Arrangement): Arrangement {
+  const fit = (s: Sized) => Math.min(room.w / s.width, room.h / s.height, 1)
+  const out = ({ direction, rows }: Arrangement): Arrangement => ({ direction, rows })
+  const fewest = Math.min(...sizes.map((s) => s.rows))
+  const flat = sizes.filter((s) => s.rows === fewest)
+  const first = flat.find((s) => s.direction === keep.direction) ?? flat[0]
+  if (!first) return out(keep)
+  // in one row: the way it runs unless the other fits clearly larger
+  const plain = flat.reduce((b, s) => (fit(s) > fit(b) * TURN ? s : b), first)
+  const kept = sizes.find((s) => s.direction === keep.direction && s.rows === keep.rows)
+  // a folded diagram unfolds only once one row reads with ease by the same margin
+  if (fit(plain) >= LEGIBLE * (kept && kept.rows > plain.rows ? TURN : 1)) return out(plain)
+  const stands = kept ?? plain
+  const best = sizes.reduce((b, s) => (fit(s) > fit(b) ? s : b), stands)
+  if (fit(best) <= fit(stands) * TURN) return out(stands)
+  const near = sizes.filter((s) => fit(s) * TURN >= fit(best))
+  const turned = (s: Sized) => (s.direction === stands.direction ? 0 : 1)
+  return out(near.reduce((b, s) => ((s.rows - b.rows || turned(s) - turned(b) || fit(b) - fit(s)) < 0 ? s : b)))
 }

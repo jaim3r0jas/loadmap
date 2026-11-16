@@ -1,7 +1,8 @@
 import { defineModel, measured, p, pass, sink } from '@loadmap/core'
 import { defineView, directionOf, edge, layout, node, type ViewDef } from '@loadmap/layout'
-import { arrangementFor, extent } from '@loadmap/layout/internal'
+import { extent } from '@loadmap/layout/internal'
 import { describe, expect, it } from 'vitest'
+import { arrangementFor } from '../src/fold'
 
 const sinks = ['s1', 's2', 's3', 's4', 's5'] as const
 const m = defineModel({

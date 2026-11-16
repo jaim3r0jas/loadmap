@@ -70,13 +70,13 @@ function heightUnder(root: HTMLElement, wrap: HTMLElement, bar: HTMLElement): nu
 }
 
 /**
- * Tells the engine the room of a board that fills the screen or its frame: what the rows around the wrap leave (`h`);
- * on a small screen the wrap's own box, which the board scrolls in.
+ * Tells the engine the room of a board that fills the screen or its frame: what the rows around the wrap leave (`h`).
+ * None on a small screen: there the board is as wide as the screen whatever its height and pans in a box of its own,
+ * so no room says how large it is drawn, and the diagram runs as its shape says, in one row.
  */
 function tellRoom(engine: LoadmapController['engine'], wrap: HTMLElement, h: number): void {
   const small = wrap.ownerDocument.defaultView?.matchMedia('(max-width: 760px)').matches
-  const tall = small ? wrap.clientHeight : h
-  if (wrap.clientWidth > 0 && tall > 0) engine.setRoom({ w: wrap.clientWidth, h: tall })
+  engine.setRoom(!small && wrap.clientWidth > 0 && h > 0 ? { w: wrap.clientWidth, h } : null)
 }
 
 export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
