@@ -2,7 +2,7 @@ loadmap 1.2
 # Requests are accepted fast and done later: an API puts jobs on a queue, a pool of workers drains it, and each job
 # ends in the database. Past capacity the queue grows instead of requests failing.
 title: "Queue and workers"
-speed: 10
+view { speed: 10 }
 assume: "1× is the peak hour of an ordinary day."
 
 load "Jobs, × today" { max: 100; default: 5 }

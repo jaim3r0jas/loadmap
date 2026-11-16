@@ -4,6 +4,7 @@ import { lex, type Token } from './lexer'
 import { parse } from './parser'
 import { DIRECTIONS, own, propNamed, SCHEMA } from './schema'
 import { before, CURRENT, lowest, needs, parseVersion, stampOf, type Version, versionText } from './versions'
+import { applied, intoView } from './viewblock'
 
 /** A line longer than this has its one-line blocks split, a statement a line. */
 export const FORMAT_WIDTH = 120
@@ -35,6 +36,11 @@ export function format(source: string): FormatResult {
   // without a loadmap line a definition is read at the newest version; a text that is no version is the compiler's
   const said = stampOf(source, doc.body)
   const version = stamp ? parseVersion(stamp.text) : said ? said.version : CURRENT
+  // the view settings written at the top go into view { … }, where the stamp has it
+  if (version && !before(version, VIEW_BLOCK)) {
+    const moves = intoView(source, doc.body)
+    if (moves.length) return format(applied(source, moves))
+  }
   if (version) for (const [from, name] of renames(doc.body, version)) retext.set(from, name)
   const toks = lex(source, new Reporter(source), 0, source.length, true)
     .filter((t) => t.kind !== 'eof')
@@ -73,6 +79,9 @@ export function format(source: string): FormatResult {
     split.add(index.get(long.toks.find(oneLine)!)!)
   }
 }
+
+/** The version from which the view settings live in `view { … }`. */
+const VIEW_BLOCK: Version = [1, 2]
 
 /** The version that reads a text continued on the next line. */
 const CONTINUED: Version = [1, 2]

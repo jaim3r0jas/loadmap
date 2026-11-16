@@ -2,7 +2,7 @@ loadmap 1.2
 # A rate limiter in front of a service that cannot take every request: above the limit clients get 429s, and what
 # gets through never exceeds what the service and its database can take.
 title: "Rate limiter"
-speed: 10
+view { speed: 10 }
 assume: "1× is today's busiest minute; one global limit, not per client."
 
 load "Traffic, × today" { max: 20; default: 1 }

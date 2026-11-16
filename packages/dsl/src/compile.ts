@@ -101,6 +101,7 @@ import {
   wrongMark,
 } from './units'
 import { before, CURRENT, LANGUAGE_VERSION, needs, parseVersion, stampOf, type Version, versionText } from './versions'
+import { VIEW_KEYS } from './viewblock'
 
 export { LANGUAGE_VERSION }
 
@@ -111,6 +112,8 @@ export { LANGUAGE_VERSION }
 const STRICT_FORMULAS: Version = [1, 1]
 /** A `%` where a load multiple goes, a `×` where a share goes: refused from 1.2. */
 const STRICT_SUFFIXES: Version = [1, 2]
+/** The version from which the view settings live in `view { … }`. */
+const VIEW_BLOCK: Version = [1, 2]
 /** `30%+1`, the remainder where a share was likely meant: refused from 1.2. */
 const STRICT_PERCENT: Version = [1, 2]
 
@@ -885,14 +888,26 @@ class Compiler {
     if (!flows.length) this.report.error('missing-part', { from: 0, to: 0 }, 'a definition needs at least one flow')
 
     const options: DefinitionOptions = { assumptions: [] }
-    const speed = this.constProp<number>(root, 'speed')
+    // how the page looks and plays: in view { … } from 1.2, at the top before it
+    const views = byKind('view')
+    for (const extra of views.slice(1)) this.report.error('duplicate', extra.at, 'only one view block is allowed')
+    for (const k of VIEW_KEYS) {
+      const top = this.prop(root, k)
+      if (!top) continue
+      if (views[0]?.props.has(k))
+        this.report.error('duplicate', top.key, `"${k}" is set here and in view`, 'remove one of them')
+      else if (!before(this.version, VIEW_BLOCK))
+        this.report.warning('deprecated', top.key, `${k} is now in view { … }`, 'loadmap fmt moves it', { view: k })
+    }
+    const look = (k: string) => (views[0]?.props.has(k) ? views[0] : root)
+    const speed = this.constProp<number>(look('speed'), 'speed')
     if (speed != null) options.speed = speed
-    const transition = this.constProp<number>(root, 'transition')
+    const transition = this.constProp<number>(look('transition'), 'transition')
     // a shared link could ask for a move that never ends
     if (transition != null && (transition < 0 || transition > MAX_TRANSITION))
       this.report.error(
         'out-of-range',
-        this.prop(root, 'transition')!.value,
+        this.prop(look('transition'), 'transition')!.value,
         `transition is ${transition} seconds; 0 to ${MAX_TRANSITION}`,
       )
     else if (transition != null) options.transition = transition
@@ -917,18 +932,18 @@ class Compiler {
         options.direction = way === 'down' ? 'DOWN' : 'RIGHT'
       }
     } else if (layout) arrange = this.enumValue(layout, SCHEMA['']!.props.layout!) as typeof arrange
-    const panels = this.prop(root, 'fullScreen')
+    const panels = this.prop(look('fullScreen'), 'fullScreen')
     if (panels)
       options.fullScreen = this.words(panels, SCHEMA['']!.props.fullScreen!) as DefinitionOptions['fullScreen']
-    const mode = this.prop(root, 'fullScreenMode')
+    const mode = this.prop(look('fullScreenMode'), 'fullScreenMode')
     if (mode)
       options.fullScreenMode = this.enumValue(
         mode,
         SCHEMA['']!.props.fullScreenMode!,
       ) as DefinitionOptions['fullScreenMode']
-    const grid = this.constProp<boolean>(root, 'grid')
+    const grid = this.constProp<boolean>(look('grid'), 'grid')
     if (grid != null) options.grid = grid
-    const lanes = this.constProp<'filled' | 'striped'>(root, 'lanes')
+    const lanes = this.constProp<'filled' | 'striped'>(look('lanes'), 'lanes')
     for (const a of root.props.get('assume') ?? []) {
       const v = this.constant(a.value, 'string')
       if (typeof v === 'string') options.assumptions.push(v)

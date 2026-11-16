@@ -96,8 +96,18 @@ describe('quick fixes', () => {
     expect(mod!.text).toBe(cache.replace('2_000 * load', '2_000 * load * (mod(30, +1))'))
     for (const f of [share, mod]) expect(compile(f!.text).diagnostics).toEqual([])
     // in a file from before mod(), the fix brings the version it needs
-    const old = glued.replace('loadmap 1.2', 'loadmap 1.1')
-    expect(fixes(old)[1]!.text).toBe(mod!.text)
+    const top = (src: string) => src.replace('view { speed: 10 }', 'speed: 10')
+    const old = top(glued).replace('loadmap 1.2', 'loadmap 1.1')
+    expect(fixes(old)[1]!.text).toBe(top(mod!.text))
+  })
+
+  it('move the view settings at the top into view { … }', () => {
+    const top = cache.replace('view { speed: 10 }', 'speed: 10\ngrid: false')
+    expect(top).not.toBe(cache)
+    const [fix] = fixes(top)
+    expect(fix!.title).toBe('Move the view settings into view { … }')
+    expect(fix!.text).toBe(cache.replace('view { speed: 10 }', 'view { speed: 10; grid: false }'))
+    expect(compile(fix!.text).diagnostics).toEqual([])
   })
 
   it('offer nothing where there is no sure fix', () => {

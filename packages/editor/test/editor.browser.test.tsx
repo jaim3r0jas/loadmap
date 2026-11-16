@@ -402,11 +402,11 @@ describe('the editor filling its container', () => {
     // each switch writes a line of the text, and switched back takes it out
     const before = handle.source()
     await view('Dot grid')
-    expect(handle.source()).toContain('\ngrid: false\n')
+    expect(handle.source()).toContain('\n  grid: false\n')
     await expect.poll(() => host.querySelector('.lme-canvas')!.getAttribute('data-grid')).toBe('off')
     expect(getComputedStyle(lanes()[0]!).fillOpacity).toBe('1')
     await view('Lane fills')
-    expect(handle.source()).toContain('\nlanes: striped\n')
+    expect(handle.source()).toContain('\n  lanes: striped\n')
     await expect.poll(() => lanes().map((r) => !!r)).toEqual([false, true, false])
     await view('Lane fills')
     await view('Dot grid')

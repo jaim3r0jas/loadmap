@@ -6,6 +6,7 @@ import type { TextChange } from './edit'
 import { parse } from './parser'
 import { BOXES, COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
 import { CURRENT, lowest, needs, before as older, stampOf, versionText } from './versions'
+import { intoView } from './viewblock'
 
 export interface QuickFix {
   /** What it does, as a menu shows it: `Change to "orders"`. */
@@ -77,7 +78,13 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
   },
 
   // target is now underTarget   layout: right is now direction: right
-  deprecated: ({ data, replace }) => (data.to ? [{ title: `Rename to "${data.to}"`, changes: replace(data.to) }] : []),
+  // speed is now in view { … }
+  deprecated: ({ source, data, replace, doc }) =>
+    data.to
+      ? [{ title: `Rename to "${data.to}"`, changes: replace(data.to) }]
+      : data.view
+        ? [{ title: 'Move the view settings into view { … }', changes: intoView(source, doc().body) }]
+        : [],
 
   // "30%+1" is the remainder of 30 divided by +1, not a share
   'glued-percent': ({ data, replace }) => [

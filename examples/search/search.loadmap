@@ -3,8 +3,7 @@ loadmap 1.2
 # cache and clients that retry: the four building blocks in one system, and an index of two shards behind a
 # coordinator that sends each miss to one.
 title: "Product search"
-speed: 10
-transition: 0.8
+view { speed: 10; transition: 0.8 }
 # no box moves between phases: the pool already draws every pod it may run
 layout: stable
 assume: "1× is the busiest hour of an ordinary week."

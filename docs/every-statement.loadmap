@@ -5,13 +5,15 @@ loadmap 1.2
 title: "A shop, every statement once"
 direction: right
 layout: compact
-speed: 10
-transition: 0.8
-fullScreen: [verdict, live, limits, controls]
-fullScreenMode: focus
+view {
+  speed: 10
+  transition: 0.8
+  fullScreen: [verdict, live, limits, controls]
+  fullScreenMode: focus
+  lanes: filled
+  grid: true
+}
 searchMax: 120
-lanes: filled
-grid: true
 assume: "1× is today's busiest hour; the numbers are made up."
 
 thresholds { target: 0.7; full: 1 }

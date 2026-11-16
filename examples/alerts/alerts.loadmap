@@ -1,10 +1,7 @@
 loadmap 1.2
 # Alerts and positions, made up: the same model and view as model.ts and view.ts.
 title: "Alerts and live positions"
-speed: 10
-transition: 1
-fullScreen: [verdict, live, limits, controls, headroom]
-fullScreenMode: panels
+view { speed: 10; transition: 1; fullScreen: [verdict, live, limits, controls, headroom]; fullScreenMode: panels }
 assume: "Load scales linearly with users; 1× is the busiest five minutes of an ordinary week."
 assume: "Alerts come first at every hop: their own topic, their own pods, served before positions."
 
