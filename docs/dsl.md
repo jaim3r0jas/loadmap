@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```
-loadmap 1.3
+loadmap 1.4
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -43,7 +43,7 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.3`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.4`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -933,7 +933,8 @@ narrow screens always run down.
 
 A long diagram is folded where its titles would be hard to read in one row: into two or three rows one under the
 other (columns side by side, running down), cut between two tiers where it can, each row with its own lanes, an edge
-to the next row going round the end of its row. `rows: 1` never folds, and `rows: 2` always draws two.
+to the next row going round the end of its row. `rows: 1` never folds, and `rows: 2` draws two wherever there is
+room: a narrow screen never folds, and a diagram with one layer has one row.
 
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
 bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
@@ -1030,7 +1031,7 @@ straight under `loadmap`, before any other statement:
 
 ```
 # shop.loadmap
-loadmap 1.3
+loadmap 1.4
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
@@ -1200,7 +1201,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.3`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.4`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1226,7 +1227,8 @@ with no warning first; none is planned.
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
-| 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`); `direction: auto` and `rows` | |
+| 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
+| 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
 
 ## In code
 
@@ -1327,7 +1329,7 @@ A loadmap definition.
 | --- | --- | --- |
 | `title` | string, constant | The heading above the diagram. |
 | `direction` | `right` \| `down` \| `auto` | Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down. |
-| `rows` | number, constant | The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds. From loadmap 1.3. |
+| `rows` | number, constant | The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds. From loadmap 1.4. |
 | `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. From loadmap 1.2 in `view { … }`. |
 | `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. From loadmap 1.2 in `view { … }`. |
@@ -1456,7 +1458,7 @@ view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```
-loadmap 1.3
+loadmap 1.4
 ```
 
 After the keyword: version.

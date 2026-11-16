@@ -120,6 +120,14 @@ describe('a long diagram folds to fill its room', () => {
     expect([runs(handle), rows(handle)]).toEqual(['RIGHT', 2])
   })
 
+  it('never folds on a narrow screen, whatever rows the page sets: it runs down in one column', async () => {
+    // under narrowBelow (640): columns side by side would each be narrower still
+    const handle = await frame(600, 1100, 'RIGHT', 2)
+    await expect.poll(() => runs(handle), { timeout: 5000 }).toBe('DOWN')
+    await handle.ready()
+    expect(rows(handle)).toBe(1)
+  })
+
   it('unfolds when the frame grows wide enough for one row to read with ease', async () => {
     const handle = await frame(760, 1100, 'RIGHT')
     await expect.poll(() => rows(handle), { timeout: 5000 }).toBeGreaterThan(1)

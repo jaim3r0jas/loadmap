@@ -272,8 +272,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       rows: {
         value: 'number',
         scope: 'const',
-        since: '1.3',
-        doc: 'The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds.',
+        since: '1.4',
+        doc: 'The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds.',
       },
       layout: {
         value: 'enum',
@@ -426,7 +426,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
-    example: 'loadmap 1.3',
+    example: 'loadmap 1.4',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],

@@ -260,7 +260,7 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
 }
 
 /** The rows a layout is folded into: a whole number, one at least. */
-const rowsOf = (o: LayoutOptions) => Math.max(1, Math.floor(o.rows ?? 1))
+const rowsOf = (o: LayoutOptions) => (o.rows != null && o.rows >= 1 ? Math.floor(o.rows) : 1)
 
 /** A frame laid out by ELK, once per view and frame. */
 function laidOut(view: View, frame: Frame, elk?: ElkEngine): Promise<Laid> {

@@ -97,8 +97,8 @@ describe('quick fixes', () => {
     for (const f of [share, mod]) expect(compile(f!.text).diagnostics).toEqual([])
     // in a file from before mod(), the fix brings the version it needs
     const top = (src: string) => src.replace('view { speed: 10 }', 'speed: 10')
-    const old = top(glued).replace('loadmap 1.3', 'loadmap 1.1')
-    expect(fixes(old)[1]!.text).toBe(top(mod!.text).replace('loadmap 1.3', 'loadmap 1.2'))
+    const old = top(glued).replace('loadmap 1.4', 'loadmap 1.1')
+    expect(fixes(old)[1]!.text).toBe(top(mod!.text).replace('loadmap 1.4', 'loadmap 1.2'))
   })
 
   it('move the view settings at the top into view { … }', () => {

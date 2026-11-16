@@ -1,0 +1,242 @@
+loadmap 1.3
+# Every statement of the language at least once, in one model: the complete example of the docs' llms-full.txt. A
+# made-up shop: orders go through a gateway, a rate limiter, an API and a cache to the database; events go through a
+# topic to an autoscaled pool and a push broker. docs.test.ts fails when a statement of the schema is missing here.
+title: "A shop, every statement once"
+direction: right
+layout: compact
+view {
+  speed: 10
+  transition: 0.8
+  fullScreen: [verdict, live, limits, controls]
+  fullScreenMode: focus
+  lanes: filled
+  grid: true
+}
+searchMax: 120
+assume: "1× is today's busiest hour; the numbers are made up."
+
+thresholds { target: 0.7; full: 1 }
+
+load "Users, × today" { max: 50; default: 2 }
+
+param pods "API pods" { options: [2, 4, 8]; default: 4 }
+# retries cost a solve on every evaluation: off by default, so the editor stays quick
+param tries "Retries per order" { options: [0, 2]; default: 0 }
+param newest "Keep only the newest event" { default: true }
+param hit "Cache hit ratio" { options: [0.5, 0.8]; default: 0.8 }
+
+preset "Sale day" { load: 20; pods: 8 }
+
+scenario "Bigger API" { pods: 8 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2×" { underTarget: 2; severity: warn }
+expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; notFull: 10 }
+# a flow's latency, from the service times on its way: here the database's
+expect "Orders answer in a second" { flow: orders; p99: 1 }
+
+step "An ordinary hour: every box is under half its capacity." { load: 1 }
+step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: eventWorkers }
+
+# push packets per event: fewer when only the newest is kept
+let perEvent = newest ? 1 : 2
+
+# cost = a + b × rate, fitted from a series
+fit apiCores "API CPU per order" {
+  source: "made-up series"
+  # with a snapshot, fitted from these two measures' series; the points are what it falls back to
+  x: orderRate
+  y: apiCoresNow
+  points rate cores {
+    100 0.31
+    200 0.52
+    300 0.69
+    400 0.92
+  }
+}
+
+# a figure from the component catalog: it applies only under its run's conditions
+published brokersRef kafka {
+  edition: "2026-11"
+  version: "4.4"
+  brokers: 3
+  replication: 3
+  acks: "all"
+  messageSize: "1 KB"
+  producers: 4
+}
+
+# a query written once; each measure fills its arguments, and `loadmap pull` reads it into a snapshot
+metric ordersPlaced "Orders placed" {
+  prometheus { query: 'sum(rate(orders_total{shop="{{ args.shop }}"}[5m]))' }
+  stat: p95
+  minSamples: 30
+}
+metric apiCpu "API CPU" {
+  prometheus { query: 'sum(rate(container_cpu_usage_seconds_total{pod=~"api-.*"}[5m]))' }
+}
+metric signupsLogged "Signups logged" {
+  elasticsearch { index: "events-*"; query: '{"term": {"event": "signup"}}'; agg: rate }
+}
+# without a snapshot, each is its fallback
+measure orderRate ordersPlaced { shop: "main"; fallback: 50; unit: "orders/s" }
+measure apiCoresNow apiCpu { fallback: 0.5; unit: "cores" }
+measure signupRate signupsLogged { fallback: 0.0002; unit: "signups/s" }
+
+flow orders "orders" {
+  unit: "order"
+  rate: orderRate * load
+  priority: 1
+  retry { times: tries; budget: 0.1 }
+  route: gateway -> limiter -> api -> resultCache -> db
+  from: users
+  color: accent
+}
+
+flow events "events" {
+  unit: "event"
+  rate: 400 * load
+  priority: 2
+  drop { olderThan: 60; reason: "too old" }
+  merge { when: newest; share: 0.5; reason: "newest kept" }
+  # a client that waits at most 5 s: slower events fail
+  timeout: 5s
+  route: gateway -> topic -> eventWorkers -> push
+  from: users
+  color: alt
+}
+
+# a constant rate: the same at any load
+flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> api -> mailer; from: users }
+
+# bands across the flow, in the order the flow meets them; a box without a tier stands in the tier of what feeds it
+tier edge "Edge"
+tier services "Services"
+tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }
+
+node users "Users" "web and app"
+
+node gateway "Gateway" {
+  tier: edge
+  pass
+  short: "the gateway"
+  capacity: estimated(30_000, "req/s", "vendor figure")
+  service: 2ms
+  over: "every client gets errors"
+}
+
+node limiter "Rate limiter" "2,000 req/s" {
+  limit
+  short: "the rate limiter"
+  capacity: configured(2_000, "req/s", "gateway config")
+  over: "clients above the limit get 429s"
+}
+
+# what the limiter turns away, after every retry, counted
+node tooMany "Turned away" { lost { takes: [rejected] } }
+
+pool api "API" `${pods} pods` {
+  tier: services
+  workers { pods: pods; perPod: 8 }
+  short: "the API"
+  demand: apiCores(at.api.orders + flows.signups)
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "orders queue in the API"
+  describe: `${pods} pods, 1 core each`
+}
+
+# a component without a box of its own: the cache stage uses it
+component lookups "Cache lookups" {
+  short: "the cache"
+  capacity: estimated(50_000, "ops/s", "vendor sizing")
+  over: "lookups time out and fall through"
+}
+
+node resultCache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
+
+# a pool of slots: each unit holds a connection for a while, so it counts slots in use, not a rate
+component conns "DB connections" {
+  on: db
+  held { orders: 0.05 }
+  capacity: configured(200, "connections", "pool size")
+  over: "requests wait for a connection"
+}
+
+node db "Database" "primary" {
+  tier: data
+  shape: cylinder
+  store
+  short: "the database"
+  capacity: estimated(1_500 ± 30%, "commits/s", "load test of a replica")
+  service: 5ms
+  over: "commits queue on the primary"
+}
+
+cluster kafka "Kafka" "events" {
+  tier: services
+  members: 3
+  memberLabel: `broker ${i}`
+  queue topic "events topic" { partitions { events: 12 } }
+  short: "the brokers"
+  plural: true
+  demand: flows.events / 1_000
+  capacity: brokersRef
+  over: "producers wait"
+}
+node kafkaDropped "Too old" { lost { takes: [dropped] } }
+
+pool eventWorkers "Event workers" "2 to 6 pods" {
+  workers { perPod: 4; autoscale { min: 2; max: 6; target: 0.7 } }
+  short: "the event workers"
+  plural: true
+  demand: flows.events * 2ms
+  capacity: measured(6 * 1, "cores", "1 core a pod, at most 6")
+  over: "events wait in the topic"
+}
+
+# a consumer group: each partition read by one worker, the pod's CPU shared by its workers
+connection group {
+  hop: topic -> eventWorkers
+  rule: "kafka/consumer-group"
+  capacityPer: pod
+  flows: [events]
+}
+
+node push "Push broker" {
+  fanout "push broker" { events -> phones: perEvent }
+  short: "the push broker"
+  demand: flows.events * perEvent as "packets/s"
+  capacity: estimated(8_000, "packets/s", "vendor figure")
+  over: "pushes arrive late"
+}
+node pushTimedOut "Timed out" { lost { takes: [timedOut] } }
+
+node phones "Phones" "notified" { sink "phones" }
+
+# each signup is welcomed one way: by email, or by text where there is no email
+node mailer "Mailer" {
+  split {
+    signups -> email: 0.7
+    signups -> sms: 0.3
+  }
+}
+node email "Email" { sink }
+node sms "SMS" { sink }
+
+users -> gateway: "HTTPS"
+gateway -> limiter
+gateway -> kafka
+gateway -> api
+limiter -> api
+limiter -> tooMany
+api -> resultCache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
+resultCache -> db
+kafka -> eventWorkers
+kafka -> kafkaDropped
+eventWorkers -> push
+push -> phones
+push -> pushTimedOut
+api -> mailer
+mailer -> email
+mailer -> sms

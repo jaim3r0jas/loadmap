@@ -1139,11 +1139,16 @@ class Compiler {
     const runs = direction && this.enumValue(direction, SCHEMA['']!.props.direction!)
     if (runs) options.direction = runs === 'auto' ? 'auto' : runs === 'down' ? 'DOWN' : 'RIGHT'
     const rows = this.constProp<number>(root, 'rows')
-    if (rows != null && !(Number.isInteger(rows) && rows >= 1 && rows <= MAX_ROWS))
+    const written = this.prop(root, 'rows')?.value
+    // a count: not a share or a multiple that happens to come out whole (200%)
+    const unit = written?.t === 'num' && written.unit
+    if (rows != null && (unit || !(Number.isInteger(rows) && rows >= 1 && rows <= MAX_ROWS)))
       this.report.error(
         'out-of-range',
-        this.prop(root, 'rows')!.value,
-        `rows is ${rows}; a whole number, 1 to ${MAX_ROWS}`,
+        written!,
+        unit
+          ? `rows takes no unit; a whole number, 1 to ${MAX_ROWS}`
+          : `rows is ${rows}; a whole number, 1 to ${MAX_ROWS}`,
       )
     else if (rows != null) options.rows = rows
     const layout = this.prop(root, 'layout')

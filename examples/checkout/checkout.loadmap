@@ -1,4 +1,4 @@
-loadmap 1.3
+loadmap 1.4
 # The checkout pipeline, as a definition: the same model and view as model.ts and view.ts.
 title: "Checkout pipeline"
 view {

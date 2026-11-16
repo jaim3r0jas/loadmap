@@ -572,6 +572,233 @@ exports[`released definitions > 0.33.0/template-web-app.loadmap still compiles, 
 ]
 `;
 
+exports[`released definitions > 0.34.0/alerts.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 15.384615384615385,
+      "low": 15.384615384615385,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 59.08205043147552,
+      "low": 59.08205043147552,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/checkout.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 20.733313617705974,
+      "low": 14.893617021276597,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 42.18442795202155,
+      "low": 29.787234042553195,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/docs-site-uploads.loadmap still compiles, and its expectations come out the same 1`] = `[]`;
+
+exports[`released definitions > 0.34.0/every-statement.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 7.5,
+      "low": 7.5,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 66.66666615226337,
+      "low": 66.66666615226337,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": null,
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/search.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 20,
+      "low": 20,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 40,
+      "low": 40,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": null,
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-autoscale.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 6,
+      "low": 6,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-batch-import.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 10,
+      "low": 7,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-cache.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 9.750000000000002,
+      "low": 5.250000000000001,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-notifications.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 3.333333333333333,
+      "low": 3.333333333333333,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-queue-workers.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 30,
+      "low": 30,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 60,
+      "low": 58.333333333333336,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-rate-limit.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 2.5,
+      "low": 2.5,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-read-replicas.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 6.201550387596899,
+      "low": 4.666666666666667,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-retry-storm.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 3,
+      "low": 3,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 3.54019014693172,
+      "low": 3.54019014693172,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-third-party-api.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 3.3333333333333335,
+      "low": 3.3333333333333335,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
+exports[`released definitions > 0.34.0/template-web-app.loadmap still compiles, and its expectations come out the same 1`] = `
+[
+  {
+    "full": {
+      "high": 5,
+      "low": 5,
+    },
+    "outcome": "pass",
+  },
+  {
+    "full": {
+      "high": 10,
+      "low": 10,
+    },
+    "outcome": "pass",
+  },
+]
+`;
+
 exports[`released definitions > unreleased-1.2/alerts.loadmap still compiles, and its expectations come out the same 1`] = `
 [
   {
