@@ -158,6 +158,8 @@ describe('the arrangement for a room', () => {
     expect(arrangementFor(rows, { w: 1800, h: 900 }, two)).toEqual(right)
     // three rows fit a tenth larger than two: it stays in two
     expect(arrangementFor(rows, { w: 800, h: 640 }, two)).toEqual(two)
+    // in a room that grew, three rows come back to two once two fit as large
+    expect(arrangementFor(rows, { w: 1100, h: 800 }, { direction: 'RIGHT', rows: 3 })).toEqual(two)
   })
 
   it('chooses only among the arrangements it is given', () => {

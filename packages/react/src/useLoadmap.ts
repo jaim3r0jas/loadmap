@@ -112,10 +112,10 @@ export interface LoadmapController<P = any> {
   root: HTMLElement | null
 }
 
-/** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 /** The rows `auto` may fold a diagram into. */
 const FOLDS = [1, 2, 3]
 
+/** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
@@ -184,12 +184,19 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     () => engine.room,
     () => null,
   )
-  const [picked, setPicked] = useState<({ view: View } & Arrangement) | null>(null)
+  // a board that will tell its room but has not yet (a canvas before its zoom is there)
+  const due = useSyncExternalStore(
+    engine.subscribe,
+    () => engine.roomDue && !engine.room,
+    () => false,
+  )
+  const [picked, setPicked] = useState<({ view: View; among: string } & Arrangement) | null>(null)
   const stands = useRef<Arrangement | null>(null)
   // the ways it may run and the rows it may take: a narrow screen and the page's own direction leave one way
   const held: Direction | null = narrow ? 'DOWN' : auto ? null : (o.direction as Direction)
   const fixed = typeof o.rows === 'number' ? Math.max(1, Math.floor(o.rows)) : null
   const chooses = !!room && !(held && fixed)
+  const among = `${held} ${fixed}`
   useEffect(() => {
     if (!chooses || !room || !measure) return
     let live = true
@@ -201,7 +208,11 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     const take = (a: Arrangement) => {
       if (!live) return
       stands.current = a
-      setPicked((p) => (p?.view === view && p.direction === a.direction && p.rows === a.rows ? p : { view, ...a }))
+      setPicked((p) =>
+        p?.view === view && p.among === among && p.direction === a.direction && p.rows === a.rows
+          ? p
+          : { view, among, ...a },
+      )
     }
     arrange(view, ways, room, keep, at).then(take, (err) => {
       console.error('loadmap: layout failed', err)
@@ -211,12 +222,13 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => {
       live = false
     }
-  }, [chooses, held, fixed, room, measure, view, elk])
+  }, [chooses, held, fixed, among, room, measure, view, elk])
   // a new view is arranged as the last was until its own sizes are known, so an edit is drawn at once; it is not ready
   // until then (`pending`), so nothing records it a moment before it changes. A board that told its room is not laid
   // out before its first pick, so it never shows one arrangement and then another; without a board the shape decides
-  const pending = chooses && picked?.view !== view
-  const waits = chooses && !picked
+  // The same after its room narrows past `narrowBelow` or the page holds another direction or row count
+  const pending = due || (chooses && (picked?.view !== view || picked.among !== among))
+  const waits = due || (chooses && !picked)
   // a board that has no room to tell (a small screen it fills) runs as its shape says, in one row
   const chosen = chooses ? picked : null
   const direction: Direction = held ?? chosen?.direction ?? shape

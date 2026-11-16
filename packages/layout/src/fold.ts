@@ -202,6 +202,15 @@ function folded(
     ...[...pieces.values()].flatMap((ps) => ps.flatMap((p) => p.points.map(([x]) => bounds[p.row]! - x))),
   )
   const lead = Math.max(TRACK * most, Math.ceil(stray))
+  // and one that strays past its row's end has room there, before the edges that go round
+  const past = Array.from({ length: count }, (_, k) =>
+    Math.max(
+      0,
+      ...[...pieces.values()].flatMap((ps) =>
+        ps.flatMap((p) => (p.row === k && k < count - 1 ? p.points.map(([x]) => x - bounds[k + 1]!) : [])),
+      ),
+    ),
+  )
   const rows: Row[] = []
   let top = 0
   for (let k = 0; k < count; k++) {
@@ -232,7 +241,7 @@ function folded(
       const t = round.findIndex((x) => x.id === id && x.i === i)
       const out = move(upper.row, down ? piece.points.at(-1)! : next.points[0]!)
       const into = move(lower.row, down ? next.points[0]! : piece.points.at(-1)!)
-      const right = out[0] + TRACK * (t + 1)
+      const right = out[0] + past[upper.row]! + TRACK * (t + 1)
       const left = into[0] - TRACK * (round.length - t)
       const under = rows[upper.row]!.bottom + GUTTER + t * TRACK
       const way: P[] = [
@@ -259,7 +268,7 @@ function folded(
   )
   // a row that ends at a cut ends with the room its edges turn in and the board's edge; the last ends as the frame did
   const width = Math.max(
-    ...rows.map((r, k) => r.dx + r.to + (k < count - 1 ? TRACK * (rounds[k]?.length ?? 0) + after : 0)),
+    ...rows.map((r, k) => r.dx + r.to + (k < count - 1 ? past[k]! + TRACK * (rounds[k]?.length ?? 0) + after : 0)),
   )
   return { l: { width: Math.ceil(width), height: Math.ceil(rows.at(-1)!.bottom), slots, routes }, rows, rowOf, lead }
 }
@@ -288,7 +297,11 @@ export function foldLanes(
   const flat = down ? turned(laid) : laid
   const tierOf = (id: string) => frame.order?.[id]
   const tiered = !!frame.tiers?.length
-  const cuts = cutsFor(flat, rows, (a, b) => tiered && a.some((x) => b.some((y) => tierOf(x) === tierOf(y))))
+  const cuts = cutsFor(
+    flat,
+    rows,
+    (a, b) => tiered && a.some((x) => tierOf(x) != null && b.some((y) => tierOf(x) === tierOf(y))),
+  )
   const rowAt = (x: number) => cuts.filter((c) => x >= c).length
   const bounds = [0, ...cuts, flat.width]
 
@@ -359,10 +372,14 @@ export async function arrange(
   keep: Arrangement,
   o: Omit<LayoutOptions, 'direction' | 'rows'>,
 ): Promise<Arrangement> {
-  const sizes = await Promise.all(
-    ways.map(async (w) => ({ ...w, ...(await extent(kit, view, w.direction, { ...o, rows: w.rows })) })),
-  )
-  return arrangementFor(sizes, room, keep)
+  const sized = (among: readonly Arrangement[]) =>
+    Promise.all(among.map(async (w) => ({ ...w, ...(await extent(kit, view, w.direction, { ...o, rows: w.rows })) })))
+  const rows = Math.min(...ways.map((w) => w.rows))
+  const flat = await sized(ways.filter((w) => w.rows === rows))
+  const plain = plainOf(flat, room, keep)
+  // the folds are sized only where one row is hard to read: most diagrams never lay one out
+  const more = plain && !reads(plain, room, keep) ? await sized(ways.filter((w) => w.rows !== rows)) : []
+  return arrangementFor([...flat, ...more], room, keep)
 }
 
 /** How much better another arrangement must fit before the diagram changes: a drag near the edge changes nothing. */
@@ -378,21 +395,33 @@ const LEGIBLE = 10 / 13
  * about as large as the best.
  */
 export function arrangementFor(sizes: readonly Sized[], room: Room, keep: Arrangement): Arrangement {
-  const fit = (s: Sized) => Math.min(room.w / s.width, room.h / s.height, 1)
+  const fit = (s: Sized) => fitIn(room, s)
   const out = ({ direction, rows }: Arrangement): Arrangement => ({ direction, rows })
-  const fewest = Math.min(...sizes.map((s) => s.rows))
-  const flat = sizes.filter((s) => s.rows === fewest)
-  const first = flat.find((s) => s.direction === keep.direction) ?? flat[0]
-  if (!first) return out(keep)
-  // in one row: the way it runs unless the other fits clearly larger
-  const plain = flat.reduce((b, s) => (fit(s) > fit(b) * TURN ? s : b), first)
-  const kept = sizes.find((s) => s.direction === keep.direction && s.rows === keep.rows)
-  // a folded diagram unfolds only once one row reads with ease by the same margin
-  if (fit(plain) >= LEGIBLE * (kept && kept.rows > plain.rows ? TURN : 1)) return out(plain)
-  const stands = kept ?? plain
-  const best = sizes.reduce((b, s) => (fit(s) > fit(b) ? s : b), stands)
-  if (fit(best) <= fit(stands) * TURN) return out(stands)
-  const near = sizes.filter((s) => fit(s) * TURN >= fit(best))
+  const plain = plainOf(sizes, room, keep)
+  if (!plain) return out(keep)
+  if (reads(plain, room, keep)) return out(plain)
+  const stands = sizes.find((s) => s.direction === keep.direction && s.rows === keep.rows) ?? plain
+  // the fewest rows first, then the way it runs, then the larger
   const turned = (s: Sized) => (s.direction === stands.direction ? 0 : 1)
-  return out(near.reduce((b, s) => ((s.rows - b.rows || turned(s) - turned(b) || fit(b) - fit(s)) < 0 ? s : b)))
+  const fewest = (among: Sized[]) =>
+    among.reduce((b, s) => ((s.rows - b.rows || turned(s) - turned(b) || fit(b) - fit(s)) < 0 ? s : b))
+  const best = sizes.reduce((b, s) => (fit(s) > fit(b) ? s : b), stands)
+  // as it stands unless another fits clearly larger; in fewer rows where those fit as large (a room that grew)
+  if (fit(best) <= fit(stands) * TURN)
+    return out(fewest(sizes.filter((s) => s.rows <= stands.rows && fit(s) >= fit(stands))))
+  return out(fewest(sizes.filter((s) => fit(s) * TURN >= fit(best))))
 }
+
+const fitIn = (room: Room, s: Sized) => Math.min(room.w / s.width, room.h / s.height, 1)
+
+/** The arrangement in the fewest rows given: the way the diagram runs unless the other fits clearly larger. */
+function plainOf(sizes: readonly Sized[], room: Room, keep: Arrangement): Sized | undefined {
+  const rows = Math.min(...sizes.map((s) => s.rows))
+  const flat = sizes.filter((s) => s.rows === rows)
+  const first = flat.find((s) => s.direction === keep.direction) ?? flat[0]
+  return first && flat.reduce((b, s) => (fitIn(room, s) > fitIn(room, b) * TURN ? s : b), first)
+}
+
+/** Whether the diagram's titles read with ease in `plain`; one that is folded unfolds only past that by a margin. */
+const reads = (plain: Sized, room: Room, keep: Arrangement) =>
+  fitIn(room, plain) >= LEGIBLE * (keep.rows > plain.rows ? TURN : 1)

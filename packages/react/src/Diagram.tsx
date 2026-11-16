@@ -79,11 +79,15 @@ function tellRoom(engine: LoadmapController['engine'], wrap: HTMLElement, h: num
   engine.setRoom(!small && wrap.clientWidth > 0 && h > 0 ? { w: wrap.clientWidth, h } : null)
 }
 
+/** What a filling board's room is told for: the root's size and its mode. */
+const roomKey = (root: HTMLElement) => `${root.clientWidth} ${root.clientHeight} ${root.dataset.mode}`
+
 export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
   const { scene, engine, reducedMotion } = lm
   const zoom = lm.zoom || !!canvas
   // a canvas has a box of its own: the room is what Fit has in it
   const boxed = !!canvas
+  const roomAt = useRef('')
   const inset = { top: 0, right: 0, bottom: 0, left: 0, ...(typeof canvas === 'object' ? canvas : {}) }
   const insetKey = `${inset.top} ${inset.right} ${inset.bottom} ${inset.left}`
   // read when a box is pressed, so a new function each render does not redraw every box
@@ -175,16 +179,21 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     const board = boardRef.current
     if (!zoom || !board) return
     let gone = false
+    // a canvas tells its room once its zoom is there: the diagram is not laid out one way before, another after
+    if (canvas) engine.expectRoom(true)
     import('./zoom')
       .then(({ mountZoom }) => {
         if (!gone) zoomed.current = mountZoom(board, engine, () => shape.current)
       })
-      .catch(() => {})
+      .catch(() => engine.expectRoom(false))
     return () => {
       gone = true
       zoomed.current?.off()
       zoomed.current = null
-      if (canvas) engine.setRoom(null)
+      if (canvas) {
+        engine.expectRoom(false)
+        engine.setRoom(null)
+      }
     }
   }, [engine, zoom, !!canvas])
   // new insets (a panel pinned, an editor resized) keep the reader's view: only what Fit frames changes
@@ -249,7 +258,13 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     if (!full || !scene || !wrap || !bar || !root) return
     const fit = () => {
       const h = heightUnder(root, wrap, bar)
-      if (!boxed) tellRoom(engine, wrap, h)
+      // the room is told again for a new size of the root or another mode, not when a row around the wrap grows: a
+      // story step with a longer text must not move every box
+      const at = roomKey(root)
+      if (!boxed && at !== roomAt.current) {
+        roomAt.current = at
+        tellRoom(engine, wrap, h)
+      }
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
       wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
     }
@@ -283,8 +298,14 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     const bar = barRef.current
     if (!wrap || boxed) return
     if (full) {
-      if (bar && lm.root) tellRoom(engine, wrap, heightUnder(lm.root, wrap, bar))
-      return () => engine.setRoom(null)
+      if (bar && lm.root) {
+        roomAt.current = roomKey(lm.root)
+        tellRoom(engine, wrap, heightUnder(lm.root, wrap, bar))
+      }
+      return () => {
+        roomAt.current = ''
+        engine.setRoom(null)
+      }
     }
     let told = { w: 0, h: 0 }
     const tell = () => {
