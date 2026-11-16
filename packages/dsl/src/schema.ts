@@ -367,9 +367,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
   },
   scenario: {
-    doc: 'A named design to compare: the defaults plus these values, never the load. The first is the baseline.',
-    example: 'scenario "Proposed" { pods: 6; gateways: 2 }',
-    args: [{ name: 'label', kind: 'text' }],
+    doc: 'A named design to compare: the defaults plus these values, never the load. The first is the baseline. An id before the label (from loadmap 1.2) is what a step or an expect names it by, so the button can be reworded.',
+    example: 'scenario proposed "Proposed" { pods: 6; gateways: 2 }',
+    args: [
+      { name: 'id', kind: 'id', optional: true },
+      { name: 'label', kind: 'text' },
+    ],
     props: {},
     children: [],
     open: { names: 'params', spec: { value: 'value', scope: 'const', doc: 'A value of a parameter.' } },

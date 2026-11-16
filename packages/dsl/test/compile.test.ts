@@ -615,6 +615,35 @@ push -> desks
     ])
   })
 
+  it("name a scenario by its id, so its button's text can change", () => {
+    const at = (extra: string, version = '1.2') => compile(def({ extra }).replace('loadmap 1.1', `loadmap ${version}`))
+    const r = at(
+      'scenario today "Today" {}\nscenario bigger "Bigger API" { pods: 3 }\n' +
+        'expect "holds" { scenario: bigger; underTarget: 2 }\nstep "more pods" { scenario: bigger; load: 2 }\n' +
+        'step "by its label still" { scenario: "Bigger API"; load: 2 }',
+    )
+    expect(r.diagnostics).toEqual([])
+    // the model knows a scenario by its label, as every page does
+    const model = r.definition!.model
+    expect(model.scenarios.map((s) => s.label)).toEqual(['Today', 'Bigger API'])
+    expect(model.expectations[0]!.scenario).toBe('Bigger API')
+    expect(model.story.map((s) => s.scenario)).toEqual(['Bigger API', 'Bigger API'])
+    const messages = (extra: string, version?: string) => at(extra, version).diagnostics.map((d) => d.message)
+    expect(messages('scenario big "Big" {}\nexpect { scenario: bigg; underTarget: 2 }')).toEqual([
+      'unknown scenario "bigg"',
+    ])
+    expect(at('scenario big "Big" {}\nexpect { scenario: bigg; underTarget: 2 }').diagnostics[0]!.hint).toBe(
+      'did you mean "big"?',
+    )
+    expect(messages('scenario a "A" {}\nscenario a "B" {}')).toEqual(['scenario "a" is declared twice'])
+    expect(messages('scenario A "First" {}\nscenario b "A" {}')).toEqual([
+      '"A" is also the label of another scenario: a step naming it could mean either',
+    ])
+    expect(messages('scenario big "Big" {}', '1.1')).toEqual([
+      "a scenario's id is from loadmap 1.2; this definition says loadmap 1.1",
+    ])
+  })
+
   it('take "as" on a demand only, with the unit in quotes', () => {
     const messages = (src: string) => errors(src).map((e) => e.message)
     expect(messages(api('flows.req', 'measured(400, "req/s") as "req/s"'))).toContain(

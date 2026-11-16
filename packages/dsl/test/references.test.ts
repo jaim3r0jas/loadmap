@@ -49,6 +49,23 @@ describe('references and definition', () => {
 })
 
 describe('rename', () => {
+  it("renames a scenario's id where a step and an expect name it, and keeps the id a name", () => {
+    const src = cache
+      .replace(/^scenario "([^"]+)"/m, 'scenario first "$1"')
+      .concat(
+        '\nstep "At the first" { scenario: first; load: 2 }\nexpect "holds" { scenario: first; underTarget: 1 }\n',
+      )
+    expect(compile(src).diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    const r = rename(src, at(src, 'scenario first', 10), 'baseline')
+    expect('source' in r && r.changes).toHaveLength(3)
+    if (!('source' in r)) return
+    expect(r.source).toContain('step "At the first" { scenario: baseline; load: 2 }')
+    expect(compile(r.source).diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(rename(src, at(src, 'scenario first', 10), 'the first')).toEqual({
+      error: '"the first" is not a name: a scenario\'s id is letters, digits and _, not starting with a digit',
+    })
+  })
+
   it('renames a box with its stage and component, and the result compiles', () => {
     const r = rename(cache, at(cache, 'node db', 6), 'primary')
     expect('source' in r && r.changes).toHaveLength(4)

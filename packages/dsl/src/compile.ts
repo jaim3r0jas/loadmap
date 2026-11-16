@@ -354,6 +354,8 @@ class Compiler {
   /** Where each expectation of the model is written, in order. */
   readonly expectSpans: Span[] = []
   names!: Names
+  /** Each scenario's id and the label it stands for. */
+  private scenarioIds = new Map<string, string>()
   /** Each fan-out and the copies a second it sends: what `out.<stage>` reads. */
   private sent = new Map<string, { run: (ctx: any) => number }>()
   /** What the units of a formula's names come from: each let's formula, each fit's y, each parameter's default. */
@@ -508,6 +510,25 @@ class Compiler {
       if (label != null) this.symbols.push({ kind: 'scenario', id: label, span: b.args.label!, decl: b.decl ?? b.at })
       return label
     })
+    // a scenario's id is the language's own name for it: the model, and every page, knows it by its label
+    for (const [i, b] of byKind('scenario').entries()) {
+      const [id, label] = [b.args.id, scenarioLabels[i]]
+      if (!id || label == null) continue
+      const other = scenarioLabels.findIndex((l, k) => k !== i && l === id.name)
+      if (this.scenarioIds.has(id.name))
+        this.report.error('duplicate', id, `scenario "${id.name}" is declared twice`, 'rename one of them')
+      else if (other >= 0)
+        this.report.error(
+          'duplicate',
+          id,
+          `"${id.name}" is also the label of another scenario: a step naming it could mean either`,
+          'give the id another name',
+        )
+      else {
+        this.scenarioIds.set(id.name, label)
+        this.symbols.push({ kind: 'scenario', id: id.name, span: id, decl: b.decl ?? b.at })
+      }
+    }
     const tierNames = new Map<string, Span>()
     for (const b of byKind('tier')) if (b.args.id) this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
     if (!namesOnly) this.shadowed(boxes, loose)
@@ -2646,9 +2667,13 @@ class Compiler {
     const p = this.prop(b, key)
     if (!p) return undefined
     const v = p.value.t === 'id' ? p.value.name : p.value.t === 'str' ? p.value.value : undefined
+    // a scenario by its id, written bare: the label it stands for
+    const byId = what === 'scenario' && p.value.t === 'id' ? this.scenarioIds.get(p.value.name) : undefined
+    if (byId != null) return byId
+    const ids = what === 'scenario' ? [...this.scenarioIds.keys()] : []
     if (v == null) this.report.error('wrong-type', p.value, `${key} is the name of a ${what}`)
     else if (!known.includes(v))
-      this.report.error('unknown-name', p.value, `unknown ${what} "${v}"`, didYouMean(v, known))
+      this.report.error('unknown-name', p.value, `unknown ${what} "${v}"`, didYouMean(v, [...ids, ...known]))
     else return v
     return null
   }
