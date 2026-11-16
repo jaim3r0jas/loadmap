@@ -128,9 +128,14 @@ class Lookup {
     // a scenario's label: where it is declared, and where a step or an expect names it
     if (t.kind === 'string') {
       const key = cur.head[0]
-      const named = key?.text === 'scenario' && (cur.head.length === 1 || punct(cur.head[1], ':'))
+      // after the keyword, after its id, or after "scenario:"
+      const after = cur.head.length === 1 || (cur.head.length === 2 && cur.head[1]?.kind === 'ident')
+      const named = key?.text === 'scenario' && (after || punct(cur.head[1], ':'))
       return named ? this.scenario(String(t.value), out) : null
     }
+    // a scenario's id, where it is declared
+    if (t.kind === 'ident' && cur.head.length === 1 && cur.head[0]?.text === 'scenario' && prev === cur.head[0])
+      return this.scenario(name, out)
     // flows.x  at.s  at.s.f  demand.c  util.c  derived.x
     if (punct(prev, '.')) {
       const table = toks[i - 2]
@@ -139,6 +144,7 @@ class Lookup {
         case 'flows':
           return this.flow(name, out)
         case 'at':
+        case 'out':
           return this.stage(name, out)
         case 'demand':
         case 'util':

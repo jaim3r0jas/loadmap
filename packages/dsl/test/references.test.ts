@@ -49,6 +49,14 @@ describe('references and definition', () => {
 })
 
 describe('rename', () => {
+  it('renames a fan-out where out. reads what it sends', () => {
+    const alerts = readFileSync(new URL('../../../examples/alerts/alerts.loadmap', import.meta.url), 'utf8')
+    const r = rename(alerts, at(alerts, 'node push', 6), 'pushBroker')
+    if (!('source' in r)) throw new Error(r.error)
+    expect(r.source).toContain('demand: out.pushBroker')
+    expect(compile(r.source).diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+  })
+
   it("renames a scenario's id where a step and an expect name it, and keeps the id a name", () => {
     const src = cache
       .replace(/^scenario "([^"]+)"/m, 'scenario first "$1"')

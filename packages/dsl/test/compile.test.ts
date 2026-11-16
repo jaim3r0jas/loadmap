@@ -439,6 +439,11 @@ describe('units', () => {
     expect(
       demand({ ...broker('flows.req * size'), top: 'param size "Size" { options: [1.5KB, 3KB]; default: 1.5KB }' }),
     ).toBeCloseTo(0.3, 12)
+    // a capacity in bytes takes them as they are, and a 0 stands for no bytes
+    expect(demand(broker('flows.req * 1.5KB', 'bytes/s'))).toBe(300_000)
+    expect(demand(broker('flows.req * 1.5KB', 'B/s'))).toBe(300_000)
+    expect(demand(broker('max(0, flows.req * 1.5KB - 1MB)'))).toBe(0)
+    expect(demand(broker('fast ? 0 : flows.req * 1.5KB'))).toBeCloseTo(0.3, 12)
     // a size divided out is a plain number again, and a formula without one computes as it always did
     expect(demand(broker('flows.req * (3KB / 1.5KB)', 'req/s'))).toBe(400)
     expect(demand(broker('flows.req * 1.5 / 1000'))).toBeCloseTo(0.3, 12)
@@ -478,6 +483,10 @@ describe('units', () => {
     expect(errors(def({ top: 'let x = mod(7, 3)' }))).toMatchObject([
       { message: 'mod(a, b) is from loadmap 1.2; this definition says loadmap 1.1', text: 'mod' },
     ])
+    // a host page's own mod is the page's: its function, under any stamp, and no need of 1.2
+    const hosted = compile(def({ top: 'let x = mod(7, 3)' }), { functions: { mod: () => 42 } })
+    expect(hosted.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(hosted.definition!.model.evaluate({}).ctx.derived.x).toBe(42)
     // the name was free before 1.2: a file that took it keeps it, and is told
     const old = compile(def({ top: 'let mod = 3\nlet x = mod + 1' }))
     expect(old.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
@@ -545,6 +554,15 @@ describe('units', () => {
     const sink = twin('node end "End" { like: api; sink }\nclient -> end')
     expect(sink.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
     expect(sink.definition!.model.evaluate({}).stages.end).toMatchObject({ kind: 'sink' })
+    // a line there that reads the box by its own name reads this box here: nothing reaches api2, so it handles 0
+    const own = compile(
+      def({ extra: 'node api2 "API 2" { like: api }\nclient -> api2' })
+        .replace('loadmap 1.1', 'loadmap 1.2')
+        .replace('demand: flows.req', 'demand: at.api.req * 2'),
+    )
+    expect(own.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(own.definition!.model.evaluate({}).components.api!.demand).toBe(400)
+    expect(own.definition!.model.evaluate({}).components.api2!.demand).toBe(0)
     const messages = (extra: string, version?: string) =>
       twin(extra, version)
         .diagnostics.filter((d) => d.severity === 'error')
@@ -1810,6 +1828,14 @@ api -> db
     expect(compile(`${BASE}step "a long\n text { load: 2 }\n`).diagnostics[0]!.message).toBe(
       'this text has no closing quote',
     )
+  })
+
+  it('a stray quote among others on its line, without taking the lines after it', () => {
+    const src = `${BASE}node a "A "b" { sink "a" }\nnode c "C" { sink }\nnode d "D" { sink }\n`
+    const found = compile(src).diagnostics
+    expect(found.map((d) => d.message)).not.toContain('a "…" text ends on its line')
+    // the boxes on the lines after it are still read
+    expect(compile(src).symbols.map((s) => s.id)).toEqual(expect.arrayContaining(['c', 'd']))
   })
 
   it('a formula wrapped without parentheses, once for all its lines', () => {

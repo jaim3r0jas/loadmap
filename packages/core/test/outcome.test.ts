@@ -63,6 +63,30 @@ describe('check outcomes', () => {
     expect(check(m, [{ scenario: 'More', underTarget: 2 }])[0]).toMatchObject({ outcome: 'pass', reasons: [] })
   })
 
+  it('keeps a certain failure a failure beside a demand that is no number', () => {
+    // the API's demand divides by zero; the DB, whose demand is a number, runs out at 1.5×
+    const m = defineModel({
+      load: p.load({ max: 100 }),
+      params: { pods: p.select({ label: 'Pods', options: [2, 4], default: 2 }) },
+      flows: { req: { rate: ({ load }) => 100 * load } },
+      components: {
+        api: {
+          name: 'API',
+          demand: ({ flows, pods }) => flows.req / (pods - 2),
+          capacity: measured(1000, 'req/s'),
+          over: 'x',
+        },
+        db: { name: 'DB', capacity: measured(150, 'req/s'), over: 'y' },
+      },
+      stages: { api: pass('api'), db: pass('db') },
+      routes: { req: ['api', 'db'] },
+    })
+    expect(check(m, [{ notFull: 5 }])[0]!.outcome).toBe('fail')
+    // what only the API could decide stays open
+    expect(check(m, [{ notFull: 1.2 }])[0]!.outcome).toBe('inconclusive')
+    expect(check(m, [{ component: 'db', notFull: 5 }])[0]!.outcome).toBe('fail')
+  })
+
   it('keeps a certain failure a failure beside a component with no published benchmark', () => {
     const m = defineModel({
       load: p.load({ max: 100 }),

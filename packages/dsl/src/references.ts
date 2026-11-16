@@ -243,7 +243,8 @@ class NameIndex {
       else if (table === 'at') {
         this.add('stage', e.prop, e.prop.name)
         if (e.flow) this.add('flow', e.flow, e.flow.name)
-      } else if (table === 'demand' || table === 'util') this.add('component', e.prop, e.prop.name)
+      } else if (table === 'out') this.add('stage', e.prop, e.prop.name)
+      else if (table === 'demand' || table === 'util') this.add('component', e.prop, e.prop.name)
       else if (table === 'derived') this.add('formula', e.prop, e.prop.name)
     }
     for (const c of childrenOf(e, true)) this.expr(c)

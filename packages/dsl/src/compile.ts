@@ -314,6 +314,25 @@ function checkCapacity(v: unknown): void {
   if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
 }
 
+/** The tables a box's own lines read it through: its stage (`at`, `out`) and its component (`demand`, `util`). */
+const SELF_TABLES = new Set(['at', 'out', 'demand', 'util'])
+
+/**
+ * A statement with every `at.<from>`, `out.<from>`, `demand.<from>` and `util.<from>` in its formulas naming `to`: a
+ * copy, the statement itself is left as the text has it.
+ */
+function renamed<T>(node: T, from: string, to: string): T {
+  if (Array.isArray(node)) return node.map((x) => renamed(x, from, to)) as T
+  if (node === null || typeof node !== 'object') return node
+  const o = node as Record<string, unknown>
+  const table = o.t === 'member' ? (o.object as Ident).name : undefined
+  if (table && SELF_TABLES.has(table) && (o.prop as Ident).name === from)
+    return { ...o, prop: { ...(o.prop as Ident), name: to } } as T
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(o)) out[k] = renamed(v, from, to)
+  return out as T
+}
+
 /** Stops compiling after an error that leaves nothing sensible to check. */
 class Bail {}
 
@@ -1695,7 +1714,7 @@ class Compiler {
     this.version = version
     if (!before(version, CURRENT)) return
     // what a later version added, used under an earlier stamp: a reader of that stamp would not know it
-    for (const n of needs(body))
+    for (const n of needs(body, new Set(Object.keys(this.functions))))
       if (before(version, n.since))
         this.report.error(
           'language-version',
@@ -1769,7 +1788,8 @@ class Compiler {
         )
         return d
       }
-      const out: Decl = { ...d, body: [...taken, ...mine] }
+      // a line taken that reads the other box by its name (at.db.orders, out.push) reads this one here
+      const out: Decl = { ...d, body: [...taken.map((st) => renamed(st, name, self)), ...mine] }
       done.set(d, out)
       return out
     }

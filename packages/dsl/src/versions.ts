@@ -68,15 +68,17 @@ export interface Need extends Span {
  * `since` in the schema, a number with a unit, `as`. A definition stamped before one of them fails on a reader of that
  * stamp with "unknown statement" instead of "update", so the stamp must say it.
  */
-export function needs(body: readonly Stmt[]): Need[] {
+export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new Set()): Need[] {
   const out = new Map<string, Need>()
   const add = (key: string, since: string | undefined, what: string, at: Span) => {
     if (since && !out.has(key)) out.set(key, { since: parseVersion(since)!, what, from: at.from, to: at.to })
   }
-  // a fit of that name is the definition's own, called the same way
-  const ownMod = body.some(
-    (s) => s.kind === 'decl' && s.keyword.name === 'fit' && s.args.some((a) => a.t === 'id' && a.name === 'mod'),
-  )
+  // a fit of that name is the definition's own, called the same way; so is a function the host page gave it
+  const ownMod =
+    hosted.has('mod') ||
+    body.some(
+      (s) => s.kind === 'decl' && s.keyword.name === 'fit' && s.args.some((a) => a.t === 'id' && a.name === 'mod'),
+    )
   const expr = (e: Expr) => {
     if (e.t === 'num' && isSize(e.unit)) add('sizes', SYNTAX.sizes.since, SYNTAX.sizes.what, e)
     else if (e.t === 'num' && e.unit) add('units', SYNTAX.units.since, SYNTAX.units.what, e)

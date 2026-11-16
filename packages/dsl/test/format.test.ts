@@ -200,6 +200,12 @@ describe('format', () => {
       `loadmap 1.2\nstep "${'w'.repeat(150)}" {\n  load: 2\n}\n`,
     ])
       expect(fmt(kept)).toBe(kept)
+    // nor one on a line of its own inside parentheses or brackets opened above it: no line break is a token there
+    for (const kept of [
+      `loadmap 1.2\nnode a {\n  capacity: estimated(\n    1,\n    "x/s",\n    "${words(30)}"\n  )\n}\n`,
+      `loadmap 1.2\nparam p {\n  options: [\n    "${words(30)}",\n    "b"\n  ]\n}\n`,
+    ])
+      expect(fmt(kept)).toBe(kept)
     // a text continued over lines is from 1.2: an older stamp keeps its long line
     const old = long.replace('loadmap 1.2', 'loadmap 1.1')
     expect(fmt(old)).toBe(old)
@@ -216,6 +222,13 @@ describe('format', () => {
     // the comment under the loadmap line is the file's
     expect(fmt('loadmap 1.2\n# A model.\nspeed: 5\ntitle: "x"\n')).toBe(
       'loadmap 1.2\n# A model.\nview { speed: 5 }\ntitle: "x"\n',
+    )
+    // two settings on one line, and the statement after them whole
+    expect(fmt('loadmap 1.2\nspeed: 10; grid: false\nflow orders { rate: 1 }\n')).toBe(
+      'loadmap 1.2\nview { speed: 10; grid: false }\nflow orders { rate: 1 }\n',
+    )
+    expect(fmt('loadmap 1.2\ntitle: "x"; speed: 10; grid: false; layout: stable\n')).toBe(
+      'loadmap 1.2\nview { speed: 10; grid: false }\ntitle: "x"\nlayout: stable\n',
     )
     // set in both: the checker's to say, nothing moves
     const twice = 'loadmap 1.2\nview { speed: 5 }\nspeed: 6\n'
