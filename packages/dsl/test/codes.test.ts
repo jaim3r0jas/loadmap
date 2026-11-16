@@ -20,8 +20,8 @@ const BROKEN: Record<string, string> = {
   'glued-percent': cache.replace('2_000 * load', '2_000 * load * (30%+1)'),
   // an old name under a stamp that has the new one
   deprecated: checkout.replace('{ underTarget: 7 }', '{ target: 7 }'),
-  'missing-edge': checkout.replace('\nkafka -> workers\n', '\n'),
-  'reversed-edge': checkout.replace('\nkafka -> workers\n', '\nworkers -> kafka\n'),
+  'missing-edge': checkout.replace('\nkafka -> workerPool\n', '\n'),
+  'reversed-edge': checkout.replace('\nkafka -> workerPool\n', '\nworkerPool -> kafka\n'),
   // a lost box under a stamp from before them
   'language-version': search.replace(/^loadmap [\d.]+/, 'loadmap 1'),
   'unseen-loss': search.replace(/\nnode limiterRejected[^\n]*/, '').replace(/\nlimiter -> limiterRejected/, ''),

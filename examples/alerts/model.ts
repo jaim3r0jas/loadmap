@@ -17,7 +17,7 @@ export const alerts = defineModel({
     alertPods: p.select({ label: 'Alert pipeline pods (8 threads each)', options: [2, 3, 4, 6, 8], default: 3 }),
     posPods: p.select({ label: 'Position consumer pods (16 threads each)', options: [2, 3, 4, 6, 8], default: 3 }),
     pushNodes: p.select({ label: 'Push broker nodes', options: [2, 3, 4, 6], default: 3 }),
-    merge: p.switch({
+    mergeNewest: p.switch({
       label: 'Keep only the newest position per user',
       hint: 'under backlog a batch saves only the newest fix of each user',
       default: true,
@@ -34,7 +34,7 @@ export const alerts = defineModel({
   growth: { rate: 0.04, per: 'month', asOf: '2026-11-01' },
   expect: [
     { label: 'Today keeps 7×', underTarget: 7 },
-    { label: 'Alerts never wait before 50×', component: 'alertPods', notFull: 50 },
+    { label: 'Alerts never wait before 50×', component: 'alertPipeline', notFull: 50 },
   ],
   // the walk Play takes: the whole diagram, a close-up on what each step changes, the change, the whole again
   story: [
@@ -45,7 +45,7 @@ export const alerts = defineModel({
     {
       text: 'At 25×, the position consumer is past 100 %: positions wait in their topic, and only the newest per user is kept.',
       set: { load: 25 },
-      focus: 'posPods',
+      focus: 'positionConsumer',
     },
     {
       text: 'Launch week runs eight position pods and four alert pods: the consumer is back under 100 %.',
@@ -66,7 +66,7 @@ export const alerts = defineModel({
       unit: 'position',
       rate: ({ load }) => 260 * load,
       priority: 2,
-      overload: ({ merge }) => (merge ? { merge: { share: 0.37, reason: 'newest kept' } } : {}),
+      overload: ({ mergeNewest }) => (mergeNewest ? { merge: { share: 0.37, reason: 'newest kept' } } : {}),
     },
   },
   components: {
@@ -87,7 +87,7 @@ export const alerts = defineModel({
       over: 'produce latency grows on both topics',
       describe: '3 brokers, both topics',
     },
-    alertPods: {
+    alertPipeline: {
       name: 'Alert pipeline',
       short: 'the alert pipeline',
       demand: ({ flows }) => alertCores(flows.alerts),
@@ -95,7 +95,7 @@ export const alerts = defineModel({
       over: 'alerts wait in their topic: the one lag that pages',
       describe: ({ alertPods }) => `${alertPods} pods × 8 threads, 1 core each`,
     },
-    posPods: {
+    positionConsumer: {
       name: 'Position consumer',
       short: 'the position consumer',
       demand: ({ flows }) => flows.positions * 0.0015,
@@ -130,8 +130,12 @@ export const alerts = defineModel({
       component: 'brokers',
       partitions: ({ posPods }) => ({ positions: posPods * 16 }),
     }),
-    alertPods: workers('alertPods', { label: 'alert pipeline', pods: ({ alertPods }) => alertPods, perPod: 8 }),
-    posPods: workers('posPods', { label: 'position consumer', pods: ({ posPods }) => posPods, perPod: 16 }),
+    alertPipeline: workers('alertPipeline', { label: 'alert pipeline', pods: ({ alertPods }) => alertPods, perPod: 8 }),
+    positionConsumer: workers('positionConsumer', {
+      label: 'position consumer',
+      pods: ({ posPods }) => posPods,
+      perPod: 16,
+    }),
     push: fanout({
       label: 'push broker',
       component: 'push',
@@ -148,8 +152,8 @@ export const alerts = defineModel({
     watchers: sink({ label: 'watchers' }),
   },
   routes: {
-    alerts: ['gateway', 'alertTopic', 'alertPods', 'push'],
-    positions: ['gateway', 'posTopic', 'posPods', 'push'],
+    alerts: ['gateway', 'alertTopic', 'alertPipeline', 'push'],
+    positions: ['gateway', 'posTopic', 'positionConsumer', 'push'],
   },
   calibration: { 'Alert pipeline CPU per alert': alertCores },
 })

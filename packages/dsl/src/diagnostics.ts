@@ -19,6 +19,7 @@ export const CODES = {
   misplaced: 'a statement or property in a place it does not belong',
   duplicate: 'something set, declared or listed twice',
   'reserved-name': 'an id that loadmap keeps for itself',
+  'shadowed-name': 'an id that names two kinds of thing, or is also a keyword of the language',
   'missing-property': 'a required property is missing',
   'missing-part': 'a required statement, argument or block is missing',
   'unknown-unit': 'a number with a suffix that is not a unit: 5sec',

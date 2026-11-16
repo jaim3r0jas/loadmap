@@ -15,7 +15,7 @@ describe('checkout model', () => {
     expect(s.components.gateway.fullRange?.low).toBeCloseTo(14_000 / 940, 6)
     expect(s.components.gateway.fullRange?.high).toBeCloseTo(26_000 / 940, 6)
     // the workers carry a + b × 940 × load cores against 3 pods × 2 cores
-    expect(s.components.workers.full).toBeCloseTo((6 - workerCores.a) / (workerCores.b * 940), 6)
+    expect(s.components.workerPool.full).toBeCloseTo((6 - workerCores.a) / (workerCores.b * 940), 6)
     // batched, the database needs 40 / 50 commits per 1×: 5,000×, past the search
     expect(s.components.db.full).toBe(Number.POSITIVE_INFINITY)
     expect(checkout.evaluate({ batch: false }).components.db.full).toBeCloseTo(100, 6)
@@ -24,22 +24,22 @@ describe('checkout model', () => {
   it('ranks the components by when they may reach the target', () => {
     const s = checkout.evaluate()
     // the gateway's pessimistic 7.4× comes before the workers' exact 10×, though its stated 10.6× does not
-    expect(s.ranked.map((c) => c.id)).toEqual(['gateway', 'workers', 'conns', 'db'])
+    expect(s.ranked.map((c) => c.id)).toEqual(['gateway', 'workerPool', 'conns', 'db'])
     // 40 orders/s a load, each holding a connection 20 ms: 0.8 of 200 a load, half of them at 125×
     expect(s.components.conns.demand).toBeCloseTo(8, 9)
     expect(s.components.conns.target).toBeCloseTo(125, 6)
     expect(s.firstLimit?.id).toBe('gateway')
     expect(s.firstFull?.id).toBe('gateway')
     expect(s.target?.low).toBeCloseTo(7_000 / 940, 6)
-    expect(s.target?.high).toBe(s.components.workers.target)
+    expect(s.target?.high).toBe(s.components.workerPool.target)
     // fewer pods put the workers first at either bound
-    expect(checkout.evaluate({ pods: 2 }).firstLimit?.id).toBe('workers')
+    expect(checkout.evaluate({ pods: 2 }).firstLimit?.id).toBe('workerPool')
   })
 
   it('names the gateway as the capacity to measure', () => {
     expect(checkout.evaluate().measure).toMatchObject({
       component: 'gateway',
-      firstLimit: 'workers',
+      firstLimit: 'workerPool',
       text: 'Measuring the API gateway would change the answer: at its stated capacity, the worker pool is the first limit and the 50 % target holds up to 10×.',
     })
     // with 4 pods the gateway is first either way: measuring it only narrows the range
@@ -121,7 +121,7 @@ describe('checkout model', () => {
     ).toEqual(['around September 2029', 'around September 2030', 'around September 2030', 'around September 2031'])
     const change = Object.fromEntries(proposed!.components.map((x) => [x.id, x.change]))
     expect(change.gateway).toBeCloseTo(2, 9)
-    expect(change.workers).toBeCloseTo(cores(6) / cores(3), 9)
+    expect(change.workerPool).toBeCloseTo(cores(6) / cores(3), 9)
     // batched, the database never reaches the target in either
     expect(change.db).toBe(1)
     expect(c.text).toBe(
@@ -147,7 +147,7 @@ describe('checkout model', () => {
       a.map((x) => (x.kind === 'capacity' ? `${x.component}: ${x.capacity.provenance}` : `fit: ${x.name}`)),
     ).toEqual([
       'gateway: estimated',
-      'workers: measured',
+      'workerPool: measured',
       'db: estimated',
       'conns: configured',
       'fit: Worker CPU per request',
@@ -156,7 +156,7 @@ describe('checkout model', () => {
 
   it('resolves the stages for the current values', () => {
     const s = checkout.evaluate({ pods: 4, threads: 16 })
-    expect(s.stages.workers).toMatchObject({ kind: 'workers', pods: 4, perPod: 16, placement: 'round-robin' })
+    expect(s.stages.workerPool).toMatchObject({ kind: 'workers', pods: 4, perPod: 16, placement: 'round-robin' })
     expect(s.stages.topic).toMatchObject({ kind: 'queue', partitions: { orders: 12, events: 24 } })
   })
 })

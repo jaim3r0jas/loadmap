@@ -9,19 +9,19 @@ describe('alerts model', () => {
   it('finds each crossing where the arithmetic puts it', () => {
     const c = alerts.evaluate().components
     // 260 positions/s per 1× at 1.5 ms against 3 pods × 2 cores
-    expect(c.posPods.full).toBeCloseTo(6 / (260 * 0.0015), 6)
+    expect(c.positionConsumer.full).toBeCloseTo(6 / (260 * 0.0015), 6)
     expect(c.gateway.full).toBeCloseTo(30_000 / 272, 6)
     expect(c.brokers.full).toBeCloseTo(20 / (0.018 + 0.26), 6)
     // 1.4 packets per alert, 0.3 per position, against 3 nodes × 4,000
     expect(c.push.full).toBeCloseTo(12_000 / (12 * 1.4 + 260 * 0.3), 6)
-    expect(c.alertPods.full).toBeCloseTo((3 - alertCores.a) / (alertCores.b * 12), 6)
+    expect(c.alertPipeline.full).toBeCloseTo((3 - alertCores.a) / (alertCores.b * 12), 6)
     // pushing every position to every receiver makes the push broker the second limit
     expect(alerts.evaluate({ watchOnly: false }).components.push.full).toBeCloseTo(12_000 / (12 * 1.4 + 260 * 1.2), 6)
   })
 
   it('names the position consumer as the first limit and says so', () => {
     const s = alerts.evaluate()
-    expect(s.firstLimit?.id).toBe('posPods')
+    expect(s.firstLimit?.id).toBe('positionConsumer')
     expect(s.verdict.text).toBe(
       'At 10×, everything still fits, but the position consumer runs above the 50 % target. The 50 % target holds up to 7.6× (around March 2031), limited by the position consumer.',
     )
@@ -32,8 +32,8 @@ describe('alerts model', () => {
     expect(alerts.scenarios.map((s) => s.label)).toEqual(['Today', 'Proposed'])
     // twice the position pods: the consumer's 50 % target moves from 7.7× to 15.4×, and it is still the first limit
     const proposed = alerts.evaluate(alerts.scenarios[1]!.values)
-    expect(proposed.firstLimit?.id).toBe('posPods')
-    expect(proposed.components.posPods.full).toBeCloseTo(12 / (260 * 0.0015), 6)
+    expect(proposed.firstLimit?.id).toBe('positionConsumer')
+    expect(proposed.components.positionConsumer.full).toBeCloseTo(12 / (260 * 0.0015), 6)
     expect(check(alerts).every((r) => r.ok)).toBe(true)
     // the gateway's load test is pending: ± 30 %, and even at its low edge it stays out of the top three
     const g = alerts.evaluate().assumptions.find((a) => a.kind === 'capacity' && a.component === 'gateway')
@@ -48,7 +48,7 @@ describe('alerts model', () => {
 
   it('resolves the fan-out and the merge rule from the switches', () => {
     const on = alerts.evaluate()
-    const off = alerts.evaluate({ merge: false, watchOnly: false })
+    const off = alerts.evaluate({ mergeNewest: false, watchOnly: false })
     expect(on.overload.positions).toEqual({ merge: { share: 0.37, reason: 'newest kept' } })
     expect(off.overload.positions).toEqual({})
     const fan = (e: typeof on) => (e.stages.push.kind === 'fanout' ? e.stages.push.to : {})
@@ -64,7 +64,7 @@ describe('alerts layout', () => {
       for (const v of [
         {},
         { alertPods: 8, posPods: 8 },
-        { alertPods: 2, posPods: 2, merge: false, watchOnly: false },
+        { alertPods: 2, posPods: 2, mergeNewest: false, watchOnly: false },
       ] as const)
         expect(collisions(await layout(view, alerts.evaluate(v), { direction }))).toEqual([])
     })
@@ -103,6 +103,6 @@ describe('alerts sim', () => {
   })
 
   it('backs positions up further without the merge', () => {
-    expect(lagAt({ load: 20, merge: false }).pos.lag).toBeGreaterThan(lagAt({ load: 20 }).pos.lag)
+    expect(lagAt({ load: 20, mergeNewest: false }).pos.lag).toBeGreaterThan(lagAt({ load: 20 }).pos.lag)
   })
 })

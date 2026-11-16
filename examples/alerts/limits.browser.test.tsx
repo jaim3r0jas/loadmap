@@ -87,7 +87,7 @@ it('hands the limit over in the story: one tag at a time, and the title says whe
   const order = seen.map((s) => s.shot).filter((x, i, a) => x !== a[i - 1])
   expect(order.slice(-6)).toEqual(['close', 'change', 'hand', 'out', 'wide', 'end'])
   const was = seen.filter((s) => s.rings.some((r) => r.kind === 'was'))
-  expect(was[0]!.rings.find((r) => r.kind === 'was')).toMatchObject({ component: 'posPods', shows: 1 })
+  expect(was[0]!.rings.find((r) => r.kind === 'was')).toMatchObject({ component: 'positionConsumer', shows: 1 })
   expect(was.at(-1)!.rings.find((r) => r.kind === 'limit')).toMatchObject({ component: 'push', shows: 1 })
   expect(seen.map((s) => s.title)).toContain('The push broker overtakes the position consumer: the limit is 18× now')
   // after the story the push broker is the limit, and the consumer is next in line
@@ -109,7 +109,7 @@ it('hands it over in 0.6 s when the reader changes the values, the old limit kee
   expect(mid.find((r) => r.kind === 'limit')!.shows).toBe(0)
   await advance(handle, 0.6)
   expect(rings(el)).toEqual([
-    { kind: 'was', component: 'posPods', shows: 0 },
+    { kind: 'was', component: 'positionConsumer', shows: 0 },
     { kind: 'limit', component: 'push', shows: 1 },
   ])
   expect(badges(el)).toEqual(['2nd · 20×', '3rd · 35×'])
@@ -155,7 +155,7 @@ it('cuts the handover with reduced motion', async () => {
     handle.setValues(step('Push to every receiver'))
     await advance(handle, 0.05)
     expect(rings(el)).toEqual([
-      { kind: 'was', component: 'posPods', shows: 0 },
+      { kind: 'was', component: 'positionConsumer', shows: 0 },
       { kind: 'limit', component: 'push', shows: 1 },
     ])
     expect(el.querySelector('g[data-halo="limit"] [data-ring]')!.getAttribute('transform') ?? '').toBe('')

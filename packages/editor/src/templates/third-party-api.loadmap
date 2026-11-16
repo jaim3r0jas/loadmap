@@ -21,7 +21,7 @@ expect "Today keeps 1.5×" { underTarget: 1.5 }
 flow lookups "lookups" {
   unit: "lookup"
   rate: 15 * load
-  route: service -> cache -> vendor
+  route: service -> responseCache -> vendor
   from: users
   color: accent
 }
@@ -36,7 +36,7 @@ pool service "Your service" `${pods} pods` {
   over: "requests queue in your service"
 }
 
-node cache "Cache" {
+node responseCache "Cache" {
   sub: hit > 0 ? `${hit * 100} % hits` : "off"
   cache { hit: hit }
 }
@@ -51,6 +51,6 @@ node vendor "Vendor API" `${quota} req/s plan` {
 node vendorRejected "Turned away" { lost { takes: [rejected] } }
 
 users -> service
-service -> cache
-cache -> vendor: `${compact(at.vendor.lookups)} calls/s`
+service -> responseCache
+responseCache -> vendor: `${compact(at.vendor.lookups)} calls/s`
 vendor -> vendorRejected

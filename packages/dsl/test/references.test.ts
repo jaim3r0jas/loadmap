@@ -23,9 +23,9 @@ describe('references and definition', () => {
     const i = at(cache, 'at.db.reads', 3)
     const spans = references(cache, i)!
     expect(spans.map((s) => s.from)).toEqual([
-      at(cache, 'api -> cache -> db', 16),
+      at(cache, 'api -> readCache -> db', 20),
       at(cache, 'node db', 5),
-      at(cache, 'cache -> db:', 9),
+      at(cache, 'readCache -> db:', 13),
       at(cache, 'at.db.reads', 3),
     ])
     expect(definition(cache, i)).toEqual({ from: at(cache, 'node db', 5), to: at(cache, 'node db', 7) })
@@ -54,7 +54,7 @@ describe('rename', () => {
     expect('source' in r && r.changes).toHaveLength(4)
     if (!('source' in r)) return
     expect(compile(r.source).ok).toBe(true)
-    expect(r.source).toContain('route: api -> cache -> primary')
+    expect(r.source).toContain('route: api -> readCache -> primary')
     expect(r.source).toContain('compact(at.primary.reads)')
   })
 

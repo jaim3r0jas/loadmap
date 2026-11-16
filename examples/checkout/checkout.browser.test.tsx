@@ -208,7 +208,7 @@ describe('checkout in the browser', () => {
 
   it('tells what a box stands for on hover and on focus', async () => {
     const { el } = await mount()
-    const workers = el.querySelector<SVGGElement>('[data-node="workers"]')!
+    const workers = el.querySelector<SVGGElement>('[data-node="workerPool"]')!
     await userEvent.hover(workers)
     const detail = () => el.querySelector('.lm-detail')?.textContent ?? ''
     await expect.poll(detail).toContain('Worker pool')
@@ -345,7 +345,7 @@ describe('checkout in the browser', () => {
     await userEvent.keyboard('{ArrowRight}')
     expect(handle.values()).toMatchObject({ load: 20, pods: 6, gateways: 2 })
     expect(el.querySelector('.lm-scenarios [aria-pressed="true"]')!.textContent).toBe('Proposed')
-    expect(focused()).toEqual(['workers'])
+    expect(focused()).toEqual(['workerPool'])
     expect(button('Next')!.getAttribute('aria-disabled')).toBe('true')
     expect(handle.storyStep()).toBe(2)
     // a value of the reader's own: the step says so and stops pointing; Next at the end leaves it alone
@@ -357,7 +357,7 @@ describe('checkout in the browser', () => {
     expect(handle.values().pods).toBe(4)
     await userEvent.click(button('Show again')!)
     expect(handle.values().pods).toBe(6)
-    expect(focused()).toEqual(['workers'])
+    expect(focused()).toEqual(['workerPool'])
     await userEvent.keyboard('{ArrowLeft}')
     expect(focused()).toEqual(['gateway'])
     await userEvent.click(button('Done')!)
@@ -498,15 +498,15 @@ describe('a new structure', () => {
     const proposed = handle.engine.scene!
     expect(proposed.key).not.toBe(today.key)
     // nothing moves until the clock does; the new pods are there, not showing yet
-    expect(drawn(el, 'workers')).toEqual(laid(today, 'workers'))
+    expect(drawn(el, 'workerPool')).toEqual(laid(today, 'workerPool'))
     expect(el.querySelectorAll('rect[data-slot]')).toHaveLength(48)
-    expect(el.querySelector('[data-node="workers"] g[opacity="0"]')).not.toBeNull()
+    expect(el.querySelector('[data-node="workerPool"] g[opacity="0"]')).not.toBeNull()
     // half the move: 0.38 s of 0.8 is the middle of the boxes' part of it
     handle.step(0.38)
     await handle.ready()
-    const [x, , w] = drawn(el, 'workers')
-    expect(x).toBeCloseTo((laid(today, 'workers')[0]! + laid(proposed, 'workers')[0]!) / 2, 1)
-    expect(w).toBeCloseTo((laid(today, 'workers')[2]! + laid(proposed, 'workers')[2]!) / 2, 1)
+    const [x, , w] = drawn(el, 'workerPool')
+    expect(x).toBeCloseTo((laid(today, 'workerPool')[0]! + laid(proposed, 'workerPool')[0]!) / 2, 1)
+    expect(w).toBeCloseTo((laid(today, 'workerPool')[2]! + laid(proposed, 'workerPool')[2]!) / 2, 1)
     expect(handle.board()!.scene).not.toBe(proposed)
     handle.step(0.5)
     await handle.ready()
@@ -524,7 +524,7 @@ describe('a new structure', () => {
     await handle.ready()
     handle.step(0.1)
     await handle.ready()
-    const pods = [...el.querySelectorAll('[data-node="workers"] > g')].filter((g) => g.querySelector('rect + text'))
+    const pods = [...el.querySelectorAll('[data-node="workerPool"] > g')].filter((g) => g.querySelector('rect + text'))
     expect(pods).toHaveLength(3)
     expect(pods.map((g) => g.hasAttribute('data-idle'))).toEqual([false, false, false])
     expect(Number(pods[2]!.getAttribute('opacity'))).toBeCloseTo(1 - 0.1 / 0.8 / 0.3, 3)
@@ -561,7 +561,7 @@ describe('a new structure', () => {
       handle.setValues({ pods: 6 })
       await handle.ready()
       expect(handle.board()!.scene).toBe(handle.engine.scene)
-      expect(drawn(el, 'workers')).toEqual(laid(handle.engine.scene!, 'workers'))
+      expect(drawn(el, 'workerPool')).toEqual(laid(handle.engine.scene!, 'workerPool'))
     } finally {
       window.matchMedia = real
     }
@@ -1030,9 +1030,9 @@ describe('full screen', () => {
     const scene = handle.board()!.scene
     handle.setValues({ gateways: 2 })
     await handle.ready()
-    expect(handle.engine.ev.firstLimit?.id).toBe('workers')
+    expect(handle.engine.ev.firstLimit?.id).toBe('workerPool')
     expect(handle.board()!.scene).toBe(scene)
-    const workers = scene.nodes.find((n) => n.id === 'workers')!
+    const workers = scene.nodes.find((n) => n.id === 'workerPool')!
     await expect.poll(() => Number(halo()!.dataset.cx), { timeout: 5000 }).toBe(workers.x + workers.w / 2)
     expect(el.querySelectorAll('[data-halo="limit"]')).toHaveLength(1)
     expect(await breathes()).toBe(true)

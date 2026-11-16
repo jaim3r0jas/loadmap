@@ -35,7 +35,7 @@ expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; c
 expect "Orders answer in a second" { flow: orders; p99: 1 }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }
-step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: workers }
+step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: eventWorkers }
 
 # push packets per event: fewer when only the newest is kept
 let perEvent = newest ? 1 : 2
@@ -87,7 +87,7 @@ flow orders "orders" {
   rate: orderRate * load
   priority: 1
   retry { times: tries; budget: 0.1 }
-  route: gateway -> limiter -> api -> cache -> db
+  route: gateway -> limiter -> api -> resultCache -> db
   from: users
   color: accent
 }
@@ -100,7 +100,7 @@ flow events "events" {
   merge { when: newest; share: 0.5; reason: "newest kept" }
   # a client that waits at most 5 s: slower events fail
   timeout: 5s
-  route: gateway -> topic -> workers -> push
+  route: gateway -> topic -> eventWorkers -> push
   from: users
   color: alt
 }
@@ -151,7 +151,7 @@ component lookups "Cache lookups" {
   over: "lookups time out and fall through"
 }
 
-node cache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
+node resultCache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
 
 # a pool of slots: each unit holds a connection for a while, so it counts slots in use, not a rate
 component conns "DB connections" {
@@ -184,7 +184,7 @@ cluster kafka "Kafka" "events" {
 }
 node kafkaDropped "Too old" { lost { takes: [dropped] } }
 
-pool workers "Event workers" "2 to 6 pods" {
+pool eventWorkers "Event workers" "2 to 6 pods" {
   workers { perPod: 4; autoscale { min: 2; max: 6; target: 0.7 } }
   short: "the event workers"
   plural: true
@@ -195,7 +195,7 @@ pool workers "Event workers" "2 to 6 pods" {
 
 # a consumer group: each partition read by one worker, the pod's CPU shared by its workers
 connection group {
-  hop: topic -> workers
+  hop: topic -> eventWorkers
   rule: "kafka/consumer-group"
   capacityPer: pod
   flows: [events]
@@ -228,11 +228,11 @@ gateway -> kafka
 gateway -> api
 limiter -> api
 limiter -> tooMany
-api -> cache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
-cache -> db
-kafka -> workers
+api -> resultCache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
+resultCache -> db
+kafka -> eventWorkers
 kafka -> kafkaDropped
-workers -> push
+eventWorkers -> push
 push -> phones
 push -> pushTimedOut
 api -> mailer

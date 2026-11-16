@@ -129,7 +129,7 @@ describe('loadmap lsp', () => {
     const { c } = await started()
     const h = await c.request('textDocument/hover', { textDocument: { uri }, position: pos(cache, 'flows.reads', 7) })
     expect(h.result.contents.value).toBe(
-      '```loadmap\nflow reads "reads"\n```\n\n2,000 a second at the defaults (load 1×).\n\nRoute: api → cache → db.\n\nOne unit: read.',
+      '```loadmap\nflow reads "reads"\n```\n\n2,000 a second at the defaults (load 1×).\n\nRoute: api → readCache → db.\n\nOne unit: read.',
     )
     expect(h.result.range).toEqual({ start: pos(cache, 'flows.reads', 6), end: pos(cache, 'flows.reads', 11) })
     const s = await c.request('textDocument/signatureHelp', {
@@ -174,7 +174,7 @@ describe('loadmap lsp', () => {
     expect(f.result[0].newText).toBe(cache)
     const symbols = (await c.request('textDocument/documentSymbol', { textDocument: { uri } })).result
     expect(symbols.map((s: any) => s.name)).toEqual(
-      expect.arrayContaining(['pods', 'hit', 'Today', 'reads', 'clients', 'api', 'cache', 'db']),
+      expect.arrayContaining(['pods', 'hit', 'Today', 'reads', 'clients', 'api', 'readCache', 'db']),
     )
     expect(symbols.find((s: any) => s.name === 'db').children.map((s: any) => s.name)).toEqual(['store'])
   })

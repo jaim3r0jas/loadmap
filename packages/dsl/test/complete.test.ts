@@ -19,17 +19,22 @@ const inside = (opener: string, line: string) => checkout.replace(opener, `${ope
 describe('completions', () => {
   it('offers the entries of a table after its dot', () => {
     expect(at(inside('flow orders "orders" {', 'rate: flows.ev|')).labels).toEqual(['orders', 'events'])
-    expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual(['gateway', 'workers', 'db', 'conns'])
+    expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual([
+      'gateway',
+      'workerPool',
+      'db',
+      'conns',
+    ])
     expect(at(inside('flow orders "orders" {', 'rate: at.|')).labels).toEqual([
       'gateway',
       'topic',
       'kafkaDropped',
-      'workers',
+      'workerPool',
       'db',
     ])
     // at.<stage>.: only the flows that reach that stage (events ends at the workers)
     expect(at(inside('flow orders "orders" {', 'rate: at.db.o|')).labels).toEqual(['orders'])
-    expect(at(inside('flow orders "orders" {', 'rate: at.workers.|')).labels).toEqual(['orders', 'events'])
+    expect(at(inside('flow orders "orders" {', 'rate: at.workerPool.|')).labels).toEqual(['orders', 'events'])
   })
 
   it("offers a block's properties and statements at the start of a line", () => {
@@ -44,8 +49,8 @@ describe('completions', () => {
 
   it('offers stages in a route, nodes in an edge and after from', () => {
     const route = at(inside('flow orders "orders" {', 'route: gateway -> |')).labels
-    expect(route).toEqual(['gateway', 'topic', 'workers', 'db', 'kafka'])
-    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['gateway', 'kafka', 'kafkaDropped', 'workers', 'db'])
+    expect(route).toEqual(['gateway', 'topic', 'workerPool', 'db', 'kafka'])
+    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['gateway', 'kafka', 'kafkaDropped', 'workerPool', 'db'])
     expect(at(inside('flow orders "orders" {', 'from: |')).labels).toContain('phones')
   })
 
@@ -82,19 +87,19 @@ describe('completions', () => {
 
 describe('share links', () => {
   it('give back the definition and the values', async () => {
-    const link = await encodeShare(alerts, { load: 25, merge: false, posPods: 8 })
+    const link = await encodeShare(alerts, { load: 25, mergeNewest: false, posPods: 8 })
     expect(link.startsWith('v1.')).toBe(true)
-    expect(link.endsWith('&load=25&merge=false&posPods=8')).toBe(true)
+    expect(link.endsWith('&load=25&mergeNewest=false&posPods=8')).toBe(true)
     // values come back as written; the editor reads them by each parameter's kind
     expect(await decodeShare(`#${link}`)).toEqual({
       source: alerts,
-      values: { load: '25', merge: 'false', posPods: '8' },
+      values: { load: '25', mergeNewest: 'false', posPods: '8' },
     })
   })
 
   it('stay short enough to paste', async () => {
-    expect((await encodeShare(alerts)).length).toBeLessThan(3000)
-    expect((await encodeShare(checkout)).length).toBeLessThan(3000)
+    expect((await encodeShare(alerts)).length).toBeLessThan(3100)
+    expect((await encodeShare(checkout)).length).toBeLessThan(3100)
   })
 
   it('say what is wrong with a broken link instead of throwing', async () => {
@@ -113,7 +118,7 @@ describe('completions for expect', () => {
     const { labels, c } = at(`${src}\nexpect { scenario: | }`)
     expect(labels).toEqual(['Today', 'Two gateways', 'Proposed'])
     expect(c.options.map((o) => o.apply)).toEqual(['Today', '"Two gateways"', 'Proposed'])
-    expect(at(`${checkout}\nexpect { component: | }`).labels).toEqual(['gateway', 'workers', 'db', 'conns'])
+    expect(at(`${checkout}\nexpect { component: | }`).labels).toEqual(['gateway', 'workerPool', 'db', 'conns'])
   })
 })
 
@@ -213,8 +218,8 @@ describe('completions that know where they are', () => {
   it('leave out what would read itself', () => {
     expect(at(`${checkout}\nlet x = |`).labels).not.toContain('x')
     expect(at(`${checkout}\nlet y = 1\nlet x = derived.|`).labels).toEqual(['y'])
-    expect(at(inside(PG, 'demand: util.|')).labels).toEqual(['gateway', 'workers', 'conns'])
-    expect(at(inside(PG, 'demand: demand.|')).labels).toEqual(['gateway', 'workers', 'conns'])
+    expect(at(inside(PG, 'demand: util.|')).labels).toEqual(['gateway', 'workerPool', 'conns'])
+    expect(at(inside(PG, 'demand: demand.|')).labels).toEqual(['gateway', 'workerPool', 'conns'])
     expect(at(inside(PG, 'capacity: estimated(demand.|)')).labels).toContain('db')
     expect(at(inside(PG, 'capacity: estimated(util.|)')).labels).not.toContain('db')
     // its texts may show its own utilization
@@ -251,16 +256,16 @@ describe('completions that know where they are', () => {
 describe('completions on a box with one stage of another name', () => {
   // a route naming the box goes through its stage, as the compiler reads it
   const src = cache.replace(
-    'node cache "Cache" `${hit * 100} % hits` {\n  cache { hit: hit }',
-    'node cache "Cache" `${hit * 100} % hits` {\n  cache lookup { hit: hit }',
+    'node readCache "Cache" `${hit * 100} % hits` {\n  cache { hit: hit }',
+    'node readCache "Cache" `${hit * 100} % hits` {\n  cache lookup { hit: hit }',
   )
 
   it('count the flows that go through it by the box', () => {
     expect(at(src.replace('compact(at.db.reads)', 'compact(at.lookup.|)')).labels).toEqual(['reads'])
     const { c } = at(
       src.replace(
-        'node cache "Cache" `${hit * 100} % hits` {',
-        'node cache "Cache" `${hit * 100} % hits` {\n  demand: |',
+        'node readCache "Cache" `${hit * 100} % hits` {',
+        'node readCache "Cache" `${hit * 100} % hits` {\n  demand: |',
       ),
     )
     expect(c.options.find((o) => o.label === 'flows.reads')).toMatchObject({ boost: 3 })
@@ -270,7 +275,7 @@ describe('completions on a box with one stage of another name', () => {
 describe('completions while typing', () => {
   it('keep the rest of the file after a block left open', () => {
     const src = cache.replace('node clients', 'flow q {\n  rate: \n  route: api -> |\n\nnode clients')
-    expect(at(src).labels).toEqual(['api', 'cache', 'db'])
+    expect(at(src).labels).toEqual(['api', 'readCache', 'db'])
     expect(at(`${cache}\nnode x "X" {\n  capacity: |`).labels).toContain('estimated')
     expect(at(`${cache}\nnode x "X" {\n  |`).labels).toContain('capacity')
   })

@@ -39,7 +39,7 @@ step "At 20×, the gateway and the workers are near full, and the gateway is onl
 step "The proposal doubles the gateways and the worker pods: at 20× both are back under half." {
   scenario: Proposed
   load: 20
-  focus: workers
+  focus: workerPool
 }
 
 # cost = a + b × rate, fitted from the measured series
@@ -74,7 +74,7 @@ flow orders "orders" {
   unit: "order"
   rate: 40 * load
   priority: 1
-  route: gateway -> topic -> workers -> db
+  route: gateway -> topic -> workerPool -> db
   from: phones
   color: accent
 }
@@ -84,7 +84,7 @@ flow events "events" {
   rate: 900 * load
   priority: 2
   drop { olderThan: 60; reason: "too_old" }
-  route: gateway -> topic -> workers
+  route: gateway -> topic -> workerPool
   from: phones
   color: alt
 }
@@ -112,7 +112,7 @@ cluster kafka "Kafka" "orders and events" {
 }
 node kafkaDropped "Too old" { lost { takes: [dropped] } }
 
-pool workers "Workers" `${pods} pods × ${threads} threads` {
+pool workerPool "Workers" `${pods} pods × ${threads} threads` {
   workers { pods: pods; perPod: threads }
   name: "Worker pool"
   short: "the worker pool"
@@ -143,6 +143,6 @@ component conns "Postgres connections" {
 
 phones -> gateway: "POST /checkout"
 gateway -> kafka: `${compact(flows.orders)} orders/s`
-kafka -> workers
+kafka -> workerPool
 kafka -> kafkaDropped
-workers -> db: batch ? `${rows} rows a commit` : "a commit per order"
+workerPool -> db: batch ? `${rows} rows a commit` : "a commit per order"

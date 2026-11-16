@@ -7,11 +7,11 @@ assume: "1× is today's busiest minute; one global limit, not per client."
 
 load "Traffic, × today" { max: 20; default: 1 }
 
-param limit "Limit (req/s)" { options: [1_500, 2_500, 4_000]; default: 1_500 }
+param rateLimit "Limit (req/s)" { options: [1_500, 2_500, 4_000]; default: 1_500 }
 param pods "Service pods" { options: [2, 4]; default: 2 }
 
 scenario "Today" {}
-scenario "Raise the limit" { limit: 2_500; pods: 4 }
+scenario "Raise the limit" { rateLimit: 2_500; pods: 4 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "No 429s below 2×" { component: limiter; notFull: 2 }
@@ -26,10 +26,10 @@ flow requests "requests" {
 
 node clients "Clients"
 
-node limiter "Rate limiter" `${compact(limit)} req/s` {
+node limiter "Rate limiter" `${compact(rateLimit)} req/s` {
   limit
   short: "the rate limiter"
-  capacity: configured(limit, "req/s", "gateway config")
+  capacity: configured(rateLimit, "req/s", "gateway config")
   over: "clients above the limit get 429s"
 }
 node limiterRejected "Turned away" { lost { takes: [rejected] } }

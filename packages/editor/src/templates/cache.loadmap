@@ -19,7 +19,7 @@ expect "Today keeps 2×" { underTarget: 2 }
 flow reads "reads" {
   unit: "read"
   rate: 2_000 * load
-  route: api -> cache -> db
+  route: api -> readCache -> db
   from: clients
   color: accent
 }
@@ -34,7 +34,7 @@ pool api "API" `${pods} pods` {
   over: "requests queue in the API"
 }
 
-node cache "Cache" `${hit * 100} % hits` {
+node readCache "Cache" `${hit * 100} % hits` {
   cache { hit: hit }
   short: "the cache"
   capacity: estimated(50_000, "ops/s", "vendor sizing for this node")
@@ -51,5 +51,5 @@ node db "Database" "primary" {
 }
 
 clients -> api
-api -> cache: "every read"
-cache -> db: `${compact(at.db.reads)} misses/s`
+api -> readCache: "every read"
+readCache -> db: `${compact(at.db.reads)} misses/s`

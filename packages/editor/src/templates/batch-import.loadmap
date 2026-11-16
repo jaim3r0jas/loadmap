@@ -19,7 +19,7 @@ expect "Today keeps 2×" { underTarget: 2 }
 flow files "files" {
   unit: "file"
   rate: 4 * load
-  route: upload -> bucket -> parsers -> warehouse
+  route: upload -> bucket -> parserPool -> warehouse
   from: partners
   color: accent
 }
@@ -42,7 +42,7 @@ node bucket "Object store" {
   over: "writes get 503 slow-downs"
 }
 
-pool parsers "Parsers" `${parsers} pods` {
+pool parserPool "Parsers" `${parsers} pods` {
   workers { pods: parsers; perPod: 2 }
   short: "the parsers"
   plural: true
@@ -63,5 +63,5 @@ node warehouse "Warehouse" {
 
 partners -> upload
 upload -> bucket
-bucket -> parsers
-parsers -> warehouse: `${compact(rows)} rows an insert`
+bucket -> parserPool
+parserPool -> warehouse: `${compact(rows)} rows an insert`

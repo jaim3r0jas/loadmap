@@ -6,15 +6,15 @@ const SRC = `loadmap 1
 load { max: 100 }
 param parts "Partitions" { options: [6, 12, 16]; default: 12 }
 
-flow orders "orders" { rate: 100 * load; from: shop; route: topic -> pool }
-flow events "events" { rate: 50 * load; from: shop; route: topic -> pool }
+flow orders "orders" { rate: 100 * load; from: shop; route: topic -> consumers }
+flow events "events" { rate: 50 * load; from: shop; route: topic -> consumers }
 
 node shop "Shop"
 cluster kafka "Kafka" {
   members: 3
   queue topic { partitions { orders: parts; events: 4 } }
 }
-pool pool "Consumers" {
+pool consumers "Consumers" {
   workers { pods: 4; perPod: 4 }
   demand: (flows.orders + flows.events) * 0.01
   capacity: measured(4, "cores", "pod CPU limit")
@@ -22,14 +22,14 @@ pool pool "Consumers" {
 }
 
 connection group {
-  hop: topic -> pool
+  hop: topic -> consumers
   assign: exclusive
   capacityPer: pod
   flows: [orders]
 }
 
 shop -> kafka
-kafka -> pool
+kafka -> consumers
 `
 
 const errors = (src: string) =>
@@ -46,7 +46,7 @@ describe('connections in the language', () => {
       params: { parts: p.select({ label: 'Partitions', options: [6, 12, 16], default: 12 }) },
       flows: { orders: { rate: ({ load }) => 100 * load }, events: { rate: ({ load }) => 50 * load } },
       components: {
-        pool: {
+        consumers: {
           name: 'Consumers',
           demand: ({ flows }) => (flows.orders + flows.events) * 0.01,
           capacity: measured(4, 'cores', 'pod CPU limit'),
@@ -55,45 +55,45 @@ describe('connections in the language', () => {
       },
       stages: {
         topic: queue({ partitions: ({ parts }) => ({ orders: parts as number, events: 4 }) }),
-        pool: workers('pool', { pods: 4, perPod: 4 }),
+        consumers: workers('consumers', { pods: 4, perPod: 4 }),
       },
-      routes: { orders: ['topic', 'pool'], events: ['topic', 'pool'] },
+      routes: { orders: ['topic', 'consumers'], events: ['topic', 'consumers'] },
       connections: {
-        group: { from: 'topic', to: 'pool', assign: 'exclusive', capacityPer: 'pod', flows: ['orders'] },
+        group: { from: 'topic', to: 'consumers', assign: 'exclusive', capacityPer: 'pod', flows: ['orders'] },
       },
     })
     const runs: { load: number; parts?: 6 | 12 | 16 }[] = [{ load: 1 }, { load: 2, parts: 6 }, { load: 3, parts: 16 }]
     for (const values of runs) {
       const a = r.definition!.model.evaluate(values)
       const b = ts.evaluate(values)
-      expect(a.components.pool!.util).toBeCloseTo(b.components.pool!.util!, 12)
-      expect(a.components.pool!.spread).toEqual(b.components.pool!.spread)
+      expect(a.components.consumers!.util).toBeCloseTo(b.components.consumers!.util!, 12)
+      expect(a.components.consumers!.spread).toEqual(b.components.consumers!.spread)
     }
     // 6 partitions on 4 pods read 2, 2, 1, 1: orders are 2/3 of the work, events spread evenly
     const six = r.definition!.model.evaluate({ load: 1, parts: 6 })
-    expect(six.components.pool!.util).toBeCloseTo(0.375 * ((2 / 3) * (2 / 6) + 1 / 3 / 4) * 4, 12)
+    expect(six.components.consumers!.util).toBeCloseTo(0.375 * ((2 / 3) * (2 / 6) + 1 / 3 / 4) * 4, 12)
     expect(six.assumptions.find((a) => a.kind === 'connection')).toEqual({
       kind: 'connection',
       name: 'group',
-      text: 'Each partition of topic (orders) is read by one worker of pool (exclusive). The partitions are dealt in turn to workers alternating pods: the most even case.',
+      text: 'Each partition of topic (orders) is read by one worker of consumers (exclusive). The partitions are dealt in turn to workers alternating pods: the most even case.',
     })
   })
 
   it('takes a hop of two stages, its words and flows the definition declares', () => {
     const swap = (from: string, to: string) => SRC.replace(from, to)
-    expect(errors(swap('hop: topic -> pool', 'hop: topic'))).toEqual(['error: a hop is two stages: from -> to'])
-    expect(errors(swap('hop: topic -> pool', 'hop: topic -> nowhere'))).toEqual(['error: unknown stage "nowhere"'])
+    expect(errors(swap('hop: topic -> consumers', 'hop: topic'))).toEqual(['error: a hop is two stages: from -> to'])
+    expect(errors(swap('hop: topic -> consumers', 'hop: topic -> nowhere'))).toEqual(['error: unknown stage "nowhere"'])
     expect(errors(swap('assign: exclusive', 'assign: sticky'))).toEqual([
       'error: "sticky" is not one of shared, exclusive, key, leader',
     ])
     expect(errors(swap('flows: [orders]', 'flows: [order]'))).toEqual([
       'error: unknown flow "order" | did you mean "orders"?',
     ])
-    expect(errors(swap('  hop: topic -> pool\n', ''))).toEqual([
+    expect(errors(swap('  hop: topic -> consumers\n', ''))).toEqual([
       'error: "connection" needs "hop: …" | The two stages it joins: from -> to.',
     ])
-    expect(errors(swap('connection group', 'connection pool'))).toEqual([
-      'error: "pool" names a component too: give the connection its own name',
+    expect(errors(swap('connection group', 'connection consumers'))).toEqual([
+      'error: "consumers" names a component too: give the connection its own name',
     ])
   })
 
@@ -111,16 +111,16 @@ describe('connections in the language', () => {
   it('is hovered, renamed and fixed like any statement', () => {
     const i = SRC.indexOf('connection group') + 'connection '.length
     expect(hover(SRC, i + 1, compile(SRC).definition)?.body).toEqual([
-      'Each partition of topic (orders) is read by one worker of pool (exclusive). The partitions are dealt in turn to workers alternating pods: the most even case.',
+      'Each partition of topic (orders) is read by one worker of consumers (exclusive). The partitions are dealt in turn to workers alternating pods: the most even case.',
     ])
     expect(hover(SRC, SRC.indexOf('hop:') + 1)?.head).toBe('hop: a -> b')
-    const renamed = rename(SRC, i, 'consumers')
-    expect('source' in renamed && renamed.source).toBe(SRC.replace('connection group', 'connection consumers'))
-    expect(rename(SRC, i, 'pool')).toEqual({ error: '"pool" is taken' })
+    const renamed = rename(SRC, i, 'readers')
+    expect('source' in renamed && renamed.source).toBe(SRC.replace('connection group', 'connection readers'))
+    expect(rename(SRC, i, 'consumers')).toEqual({ error: '"consumers" is taken' })
     // a missing hop: the first two stages a route joins
-    const src = SRC.replace('  hop: topic -> pool\n', '')
+    const src = SRC.replace('  hop: topic -> consumers\n', '')
     const [fix] = quickFixes(src, compile(src).diagnostics)[0]!
-    expect(fix?.changes.map((c) => c.insert).join('')).toContain('hop: topic -> pool')
+    expect(fix?.changes.map((c) => c.insert).join('')).toContain('hop: topic -> consumers')
   })
 
   it("reads a pool's fill and a connection's max under their new names from 1.1, which fmt writes", () => {
@@ -135,7 +135,7 @@ describe('connections in the language', () => {
       'warning: max is now accepts | loadmap fmt rewrites it',
     ])
     const ev = compile(v11).definition!.model.evaluate({ load: 1 })
-    expect(ev.stages.pool).toMatchObject({ placement: 'in-order' })
+    expect(ev.stages.consumers).toMatchObject({ placement: 'in-order' })
     // 16 workers × 2 open
     expect((ev.components as Record<string, ComponentResult>).group!.demand).toBe(32)
     const text = format(v11).text
@@ -151,7 +151,7 @@ describe('connections in the language', () => {
   it('counts what a connection holds open against the most the other side accepts', () => {
     const src = SRC.replace(
       'connection group {',
-      'connection brokerPool {\n  hop: topic -> pool\n  owner: pod\n  open: 3\n  max: configured(100, "connections", "max.connections")\n  flows: [events]\n}\n\nconnection group {',
+      'connection brokerPool {\n  hop: topic -> consumers\n  owner: pod\n  open: 3\n  max: configured(100, "connections", "max.connections")\n  flows: [events]\n}\n\nconnection group {',
     )
     expect(format(src).text).toBe(src)
     const r = compile(src)
@@ -218,7 +218,7 @@ gateway -> kafka
     const r = compile(src)
     expect(r.diagnostics).toEqual([])
     const ev = r.definition!.model.evaluate({ load: 1, parts: 6 })
-    expect(ev.components.pool!.spread?.factor).toBeGreaterThan(1)
+    expect(ev.components.consumers!.spread?.factor).toBeGreaterThan(1)
     expect((ev.assumptions.find((a) => a.kind === 'connection') as { text: string }).text).toContain(
       '(Apache Kafka: Design, the Apache Kafka project).',
     )
@@ -234,7 +234,7 @@ gateway -> kafka
     // a documented default as a connection's max
     const counted = src.replace(
       'connection group {',
-      'published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }\n\nconnection brokerPool {\n  hop: topic -> pool\n  owner: pod\n  open: 3\n  max: dbMax\n  flows: [events]\n}\n\nconnection group {',
+      'published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }\n\nconnection brokerPool {\n  hop: topic -> consumers\n  owner: pod\n  open: 3\n  max: dbMax\n  flows: [events]\n}\n\nconnection group {',
     )
     expect(errors(counted)).toEqual([])
     const limit = (compile(counted).definition!.model.evaluate().components as Record<string, ComponentResult>)

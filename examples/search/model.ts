@@ -18,7 +18,7 @@ export const search = defineModel({
   title: 'Product search',
   load: p.load({ label: 'Searches, × today', max: 50, default: 4 }),
   params: {
-    limit: p.select({
+    rateLimit: p.select({
       label: 'Rate limit',
       options: [6_000, 12_000],
       default: 6_000,
@@ -39,7 +39,7 @@ export const search = defineModel({
     }),
   },
   presets: { 'Cold cache': { hit: 0.3 } },
-  scenarios: { Today: {}, Proposed: { limit: 12_000, maxPods: 16, budget: true } },
+  scenarios: { Today: {}, Proposed: { rateLimit: 12_000, maxPods: 16, budget: true } },
   growth: { rate: 0.05, per: 'month', asOf: '2026-11-01' },
   expect: [
     { label: 'Today keeps 10×', underTarget: 10 },
@@ -83,7 +83,7 @@ export const search = defineModel({
     limiter: {
       name: 'Rate limiter',
       short: 'the rate limiter',
-      capacity: ({ limit }) => configured(limit, 'req/s', 'gateway config'),
+      capacity: ({ rateLimit }) => configured(rateLimit, 'req/s', 'gateway config'),
       over: 'searches above the limit get 429s, and come back as retries',
     },
     api: {
@@ -95,7 +95,7 @@ export const search = defineModel({
       service: 0.01,
       over: 'the pool is at its most pods, and searches queue',
     },
-    cache: {
+    resultCache: {
       name: 'Cache',
       short: 'the cache',
       capacity: estimated(40_000, 'ops/s', 'vendor sizing'),
@@ -122,7 +122,7 @@ export const search = defineModel({
     // what the limiter turns away, after every retry, counted
     limiterRejected: lost({ from: ['limiter'], takes: ['rejected'] }),
     api: workers('api', { perPod: 4, autoscale: { min: 2, max: ({ maxPods }) => maxPods, target: 0.7 } }),
-    cache: cache({ hit: ({ hit }) => hit, component: 'cache' }),
+    resultCache: cache({ hit: ({ hit }) => hit, component: 'resultCache' }),
     // each miss goes to one shard: half to each
     shards: split({
       to: [
@@ -133,5 +133,5 @@ export const search = defineModel({
     db: store('db'),
     db2: store('db2'),
   },
-  routes: { searches: ['limiter', 'api', 'cache', 'shards'] },
+  routes: { searches: ['limiter', 'api', 'resultCache', 'shards'] },
 })

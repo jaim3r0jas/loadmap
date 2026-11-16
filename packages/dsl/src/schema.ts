@@ -448,7 +448,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   step: {
     doc: 'A step of the story the page walks through, in order: its text, and the values to show it at. Play (and `loadmap record --story`) shows the whole diagram, closes in on what the step changes, changes it, and steps back.',
-    example: 'step "At 30×, the workers run out first." { load: 30; focus: workers; title: "Users to 30×" }',
+    example: 'step "At 30×, the workers run out first." { load: 30; focus: workerPool; title: "Users to 30×" }',
     args: [{ name: 'label', kind: 'text' }],
     props: {
       scenario: {
@@ -658,7 +658,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   flow: {
     inspector: 'model',
     doc: 'Something that moves through the system, with its rate and its route.',
-    example: 'flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workers }',
+    example: 'flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workerPool }',
     args: [
       { name: 'id', kind: 'id' },
       { name: 'label', kind: 'text', optional: true },
@@ -814,7 +814,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   pool: {
     doc: 'A workers stage drawn as pods holding a grid of workers.',
-    example: 'pool workers "Workers" { workers { pods: pods; perPod: 8 } }',
+    example: 'pool workerPool "Workers" { workers { pods: pods; perPod: 8 } }',
     args: BOX_ARGS,
     props: {
       sub: SUB,
@@ -961,7 +961,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   connection: {
     doc: 'How a stage reaches the next one on a route. exclusive gives each part one owner: a Kafka consumer group. The component runs out when its busiest member does.',
-    example: 'connection group { hop: topic -> workers; assign: exclusive }',
+    example: 'connection group { hop: topic -> workerPool; assign: exclusive }',
     args: [{ name: 'id', kind: 'id' }],
     props: {
       hop: {

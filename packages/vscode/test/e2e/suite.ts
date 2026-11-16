@@ -191,7 +191,7 @@ test('the preview draws the file beside it, under its content security policy', 
     'boxes drawn',
     30_000,
   )
-  assert.deepEqual([...s.boxes].sort(), ['db', 'gateway', 'kafka', 'kafkaDropped', 'phones', 'workers'])
+  assert.deepEqual([...s.boxes].sort(), ['db', 'gateway', 'kafka', 'kafkaDropped', 'phones', 'workerPool'])
 })
 
 test('the cursor in a declaration picks its box; an edit is drawn', async () => {

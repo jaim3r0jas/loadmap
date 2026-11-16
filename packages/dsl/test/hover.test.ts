@@ -44,7 +44,7 @@ describe('hover', () => {
       to: expect.any(Number),
       word: 'reads',
       head: 'flow reads "reads"',
-      body: ['2,000 a second at the defaults (load 1×).', 'Route: api → cache → db.', 'One unit: read.'],
+      body: ['2,000 a second at the defaults (load 1×).', 'Route: api → readCache → db.', 'One unit: read.'],
     })
     expect(at(put(cache, 'at.db.reads', 7))?.body[0]).toBe('400 a second of reads reach db at the defaults (load 1×).')
     expect(at(put(cache, 'flows.reads', 1))).toMatchObject({
@@ -65,7 +65,7 @@ describe('hover', () => {
     })
     expect(at(put(cache, 'at.db.reads', 3))).toMatchObject({ word: 'db', body: expect.arrayContaining(db) })
     // a route names the stage, util. the component
-    expect(at(put(cache, 'api -> cache -> db', 16))?.body).toEqual(expect.arrayContaining(db))
+    expect(at(put(cache, 'api -> readCache -> db', 20))?.body).toEqual(expect.arrayContaining(db))
     const util = put(
       cache.replace('over: "queries queue', 'describe: `${pct(util.db)} busy`\n  over: "queries queue'),
       'util.db',
@@ -139,7 +139,7 @@ describe('hover', () => {
     const broken = put(cache.replace('rate: 2_000 * load', 'rate: 2_000 *'), 'flows.reads', 7)
     expect(at(broken)).toMatchObject({
       head: 'flow reads "reads"',
-      body: ['Route: api → cache → db.', 'One unit: read.'],
+      body: ['Route: api → readCache → db.', 'One unit: read.'],
     })
   })
 

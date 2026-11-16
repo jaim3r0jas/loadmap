@@ -46,7 +46,10 @@ tests check that each draws exactly what its TypeScript draws.
 - **The first line is the version:** `loadmap 1.2`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
-  are its id and its label (and for a box, the line under it).
+  are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
+  component share one, and any other pair that does (`param pods` beside `pool pods`), or an id that is also a keyword
+  (`param merge`, `pool workers`), compiles with a `shadowed-name` warning, since `${pods}` and `focus: pods` would
+  then read two different things.
 - **A property is `key: value`**, one per line or separated by `;`.
 - **An edge is `a -> b`**, with an optional label after `:`.
 - **`#` starts a comment.**
@@ -64,7 +67,7 @@ A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things
   the box uses this component unless it names another one with `component: …`. A component without a box is a
   top-level `component id "Name" { … }`.
 
-A route lists stages: `route: gateway -> topic -> workers`. It may also name a box that runs exactly one stage.
+A route lists stages: `route: gateway -> topic -> workerPool`. It may also name a box that runs exactly one stage.
 
 **Dots move only along edges.** Every hop a flow takes needs an edge drawn the way it goes: from its `from` box to
 its first stage, between the stages next to each other on its route, on each way of a split (and where a way rejoins
@@ -660,7 +663,7 @@ node db "Database" {
 lines it is a component too, and past capacity it rejects like a `pass`:
 
 ```
-node cache "Cache" {
+node sessionCache "Cache" {
   cache { hit: hit }
   capacity: estimated(50_000, "ops/s")
   over: "lookups time out and fall through"
@@ -871,7 +874,7 @@ from the defaults (or from its `scenario`), then takes its own values, so it loo
 ```
 step "An ordinary peak: every box is under half its capacity." { load: 1; title: "An ordinary peak" }
 step "At 20×, the gateway and the workers are near full." { load: 20; focus: gateway }
-step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workers }
+step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workerPool }
 ```
 
 The page shows a bar above the diagram with the step's text, play, back and next (← and → while the bar has the
@@ -999,6 +1002,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `misplaced` | a statement or property in a place it does not belong |
 | `duplicate` | something set, declared or listed twice |
 | `reserved-name` | an id that loadmap keeps for itself |
+| `shadowed-name` | an id that names two kinds of thing, or is also a keyword of the language |
 | `missing-property` | a required property is missing |
 | `missing-part` | a required statement, argument or block is missing |
 | `unknown-unit` | a number with a suffix that is not a unit: 5sec |
@@ -1290,7 +1294,7 @@ After the keyword: [label].
 A step of the story the page walks through, in order: its text, and the values to show it at. Play (and `loadmap record --story`) shows the whole diagram, closes in on what the step changes, changes it, and steps back.
 
 ```
-step "At 30×, the workers run out first." { load: 30; focus: workers; title: "Users to 30×" }
+step "At 30×, the workers run out first." { load: 30; focus: workerPool; title: "Users to 30×" }
 ```
 
 After the keyword: label.
@@ -1436,7 +1440,7 @@ After the keyword: x y.
 Something that moves through the system, with its rate and its route.
 
 ```
-flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workers }
+flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workerPool }
 ```
 
 After the keyword: id [label].
@@ -1610,7 +1614,7 @@ Holds: `queue`, `component`, `held`.
 A workers stage drawn as pods holding a grid of workers.
 
 ```
-pool workers "Workers" { workers { pods: pods; perPod: 8 } }
+pool workerPool "Workers" { workers { pods: pods; perPod: 8 } }
 ```
 
 After the keyword: id [label] [sub].
@@ -1816,7 +1820,7 @@ Holds branches: `flow -> stage: copies per unit`.
 How a stage reaches the next one on a route. exclusive gives each part one owner: a Kafka consumer group. The component runs out when its busiest member does.
 
 ```
-connection group { hop: topic -> workers; assign: exclusive }
+connection group { hop: topic -> workerPool; assign: exclusive }
 ```
 
 After the keyword: id.

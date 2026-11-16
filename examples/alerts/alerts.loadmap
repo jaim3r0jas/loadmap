@@ -13,7 +13,7 @@ load "Users, × today" { max: 100; default: 10 }
 param alertPods "Alert pipeline pods (8 threads each)" { options: [2, 3, 4, 6, 8]; default: 3 }
 param posPods "Position consumer pods (16 threads each)" { options: [2, 3, 4, 6, 8]; default: 3 }
 param pushNodes "Push broker nodes" { options: [2, 3, 4, 6]; default: 3 }
-param merge "Keep only the newest position per user" {
+param mergeNewest "Keep only the newest position per user" {
   hint: "under backlog a batch saves only the newest fix of each user"
   default: true
 }
@@ -29,14 +29,14 @@ scenario "Proposed" { posPods: 6; pushNodes: 4 }
 growth { rate: 0.04; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 7×" { underTarget: 7 }
-expect "Alerts never wait before 50×" { component: alertPods; notFull: 50 }
+expect "Alerts never wait before 50×" { component: alertPipeline; notFull: 50 }
 
 step "An ordinary peak: the position consumer is already past the 50 % target, and runs out first." {
   title: "Today at 10×"
 }
 step "At 25×, the position consumer is past 100 %: positions wait in their topic, and only the newest per user is kept." {
   load: 25
-  focus: posPods
+  focus: positionConsumer
 }
 step "Launch week runs eight position pods and four alert pods: the consumer is back under 100 %." {
   load: 25
@@ -87,7 +87,7 @@ flow alerts "alerts" {
   unit: "alert"
   rate: 12 * load
   priority: 1
-  route: gateway -> alertTopic -> alertPods -> push
+  route: gateway -> alertTopic -> alertPipeline -> push
   from: phones
   color: alt
 }
@@ -96,8 +96,8 @@ flow positions "positions" {
   unit: "position"
   rate: 260 * load
   priority: 2
-  merge { when: merge; share: 0.37; reason: "newest kept" }
-  route: gateway -> posTopic -> posPods -> push
+  merge { when: mergeNewest; share: 0.37; reason: "newest kept" }
+  route: gateway -> posTopic -> positionConsumer -> push
   from: phones
   color: accent
 }
@@ -131,7 +131,7 @@ cluster brokers "Brokers" "two topics, three brokers" {
   describe: "3 brokers, both topics"
 }
 
-pool alertPods "Alert pipeline" `${alertPods} pods × 8 · high priority` {
+pool alertPipeline "Alert pipeline" `${alertPods} pods × 8 · high priority` {
   workers "alert pipeline" { pods: alertPods; perPod: 8 }
   short: "the alert pipeline"
   demand: alertCores(flows.alerts)
@@ -140,7 +140,7 @@ pool alertPods "Alert pipeline" `${alertPods} pods × 8 · high priority` {
   describe: `${alertPods} pods × 8 threads, 1 core each`
 }
 
-pool posPods "Position consumer" `${posPods} pods × 16` {
+pool positionConsumer "Position consumer" `${posPods} pods × 16` {
   workers "position consumer" { pods: posPods; perPod: 16 }
   short: "the position consumer"
   demand: flows.positions * 1.5ms
@@ -176,11 +176,11 @@ node watchers "Watchers" "following live" { sink "watchers" }
 
 phones -> gateway: "POST /events"
 gateway -> brokers: `${compact(flows.positions)} positions/s`
-brokers -> alertPods
-brokers -> posPods
-alertPods -> db: "state writes"
-alertPods -> push
-posPods -> push: merge ? "newest per user" : "every fix"
+brokers -> alertPipeline
+brokers -> positionConsumer
+alertPipeline -> db: "state writes"
+alertPipeline -> push
+positionConsumer -> push: mergeNewest ? "newest per user" : "every fix"
 push -> contacts
 push -> responders
 push -> watchers: watchOnly ? "watchers only" : "every receiver"

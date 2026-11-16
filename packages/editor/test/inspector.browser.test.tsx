@@ -121,7 +121,7 @@ describe('the editor for readers', () => {
     const { host, handle } = await mount({ layout: 'reader' })
     const undo = page.getByRole('button', { name: 'Undo' })
     expect(undo.element().getAttribute('aria-disabled')).toBe('true')
-    await userEvent.click(box(host, 'workers'))
+    await userEvent.click(box(host, 'workerPool'))
     await type(input(host, 'param:pods/options'), '2, 4, 8')
     // a scenario and a preset still use 6 pods
     await expect
