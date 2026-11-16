@@ -91,9 +91,9 @@ describe('compile', () => {
     ])
   })
 
-  it('reads direction: auto and the rows a diagram is folded into, from loadmap 1.3', () => {
-    const at13 = (top: string) => def({ top }).replace('loadmap 1.1', 'loadmap 1.3')
-    const r = compile(at13('direction: auto\nrows: 2'))
+  it('reads direction: auto and the rows a diagram is folded into, from loadmap 1.4', () => {
+    const at14 = (top: string) => def({ top }).replace('loadmap 1.1', 'loadmap 1.4')
+    const r = compile(at14('direction: auto\nrows: 2'))
     expect(r.diagnostics).toEqual([])
     expect(r.definition!.options).toMatchObject({ direction: 'auto', rows: 2 })
     expect(pageOptions(r.definition!.options)).toMatchObject({ direction: 'auto', rows: 2 })
@@ -101,16 +101,20 @@ describe('compile', () => {
     const plain = compile(def({})).definition!.options
     expect([plain.direction, plain.rows]).toEqual([undefined, undefined])
     for (const rows of ['0', '2.5', '7'])
-      expect(compile(at13(`rows: ${rows}`)).diagnostics.map((d) => d.message)).toEqual([
+      expect(compile(at14(`rows: ${rows}`)).diagnostics.map((d) => d.message)).toEqual([
         `rows is ${rows}; a whole number, 1 to 6`,
       ])
-    // a file stamped before 1.3 has to say 1.3 to use either
+    // a count, not a share that comes out whole
+    expect(compile(at14('rows: 200%')).diagnostics.map((d) => d.message)).toContain(
+      'rows takes no unit; a whole number, 1 to 6',
+    )
+    // a file stamped before 1.4 has to say 1.4 to use either
     for (const top of ['direction: auto', 'rows: 2'])
       expect(
         compile(def({ top }))
           .diagnostics.map((d) => d.message)
           .join(),
-      ).toContain('1.3')
+      ).toContain('1.4')
     expect(compile(def({ top: 'direction: sideways' })).diagnostics.map((d) => d.message)).toEqual([
       '"sideways" is not one of right, down, auto',
     ])
@@ -1141,11 +1145,11 @@ describe('the checker', () => {
 
   it('needs the version line, and refuses a newer language', () => {
     expect(errors(def().replace('loadmap 1.1\n', ''))).toMatchObject([
-      { message: 'a definition starts with "loadmap 1.3"', hint: 'add "loadmap 1.3" as the first line' },
+      { message: 'a definition starts with "loadmap 1.4"', hint: 'add "loadmap 1.4" as the first line' },
     ])
     expect(errors(def().replace('loadmap 1.1', 'loadmap 2'))).toMatchObject([
       {
-        message: 'this definition is written in language version 2; this loadmap reads version 1.3',
+        message: 'this definition is written in language version 2; this loadmap reads version 1.4',
         hint: 'update @loadmap/dsl',
       },
     ])

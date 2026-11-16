@@ -34,7 +34,7 @@ export interface LoadmapOptions<P> extends SimOptions {
   /**
    * The rows a long diagram is folded into (columns, running down). Default `auto`: one row where its titles read
    * with ease in the room it is given, else the fewest rows, three at most, that draw it clearly larger. A number
-   * holds it: 1 never folds.
+   * holds it: 1 never folds. A narrow screen (`narrowBelow`) never folds.
    */
   rows?: number | 'auto'
   /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
@@ -193,7 +193,8 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const stands = useRef<Arrangement | null>(null)
   // the ways it may run and the rows it may take: a narrow screen and the page's own direction leave one way
   const held: Direction | null = narrow ? 'DOWN' : auto ? null : (o.direction as Direction)
-  const fixed = typeof o.rows === 'number' ? Math.max(1, Math.floor(o.rows)) : null
+  // a narrow screen runs down in one column: columns side by side would each be narrower still
+  const fixed = narrow ? 1 : typeof o.rows === 'number' ? Math.max(1, Math.floor(o.rows)) : null
   const chooses = !!room && !(held && fixed)
   const among = `${held} ${fixed}`
   useEffect(() => {
