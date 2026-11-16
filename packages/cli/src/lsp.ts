@@ -391,6 +391,7 @@ function toLsp(d: Doc, x: Diagnostic) {
     range: range(d, x.from, x.to),
     severity: x.severity === 'error' ? 1 : 2,
     source: 'loadmap',
+    code: x.code,
     message: x.hint ? `${x.message}: ${x.hint}` : x.message,
   }
 }

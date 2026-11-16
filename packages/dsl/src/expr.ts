@@ -171,7 +171,7 @@ class Compiler {
         : this.scope === 'values'
           ? 'this formula reads only parameters'
           : `this formula reads only "${this.scope}"`
-    this.report.error(e, `${here}; it cannot read ${what}`)
+    this.report.error('wrong-scope', e, `${here}; it cannot read ${what}`)
     return false
   }
 
@@ -226,10 +226,10 @@ class Compiler {
         }
       }
       case 'array':
-        this.report.error(e, 'a list is only allowed as the options of a parameter')
+        this.report.error('bad-formula', e, 'a list is only allowed as the options of a parameter')
         return bad
       case 'pm':
-        this.report.error(e, '"±" only goes in the first value of measured(…) or estimated(…)')
+        this.report.error('bad-formula', e, '"±" only goes in the first value of measured(…) or estimated(…)')
         return bad
     }
   }
@@ -237,7 +237,11 @@ class Compiler {
   name(e: Span, name: string): Formula {
     if (name === 'i' || name === 'value') {
       if (this.scope !== name) {
-        this.report.error(e, `"${name}" is only known in ${name === 'i' ? 'memberLabel and podLabel' : 'format'}`)
+        this.report.error(
+          'wrong-scope',
+          e,
+          `"${name}" is only known in ${name === 'i' ? 'memberLabel and podLabel' : 'format'}`,
+        )
         return bad
       }
       return { type: name === 'i' ? 'number' : 'any', constant: false, run: (_, l) => l }
@@ -253,15 +257,19 @@ class Compiler {
       return { type: let_, constant: false, run: (c) => c.derived[name] }
     }
     if ((TABLES as readonly string[]).includes(name)) {
-      this.report.error(e, `"${name}" is a table: name one of its entries, like ${name}.${this.example(name)}`)
+      this.report.error(
+        'bad-formula',
+        e,
+        `"${name}" is a table: name one of its entries, like ${name}.${this.example(name)}`,
+      )
       return bad
     }
     if (this.names.fits.has(name) || own(BUILTINS, name) || own(this.names.functions, name)) {
-      this.report.error(e, `"${name}" is a function: call it, ${name}(…)`)
+      this.report.error('bad-formula', e, `"${name}" is a function: call it, ${name}(…)`)
       return bad
     }
     const known = [...this.names.params.keys(), ...this.names.lets.keys()]
-    this.report.error(e, `unknown name "${name}"`, didYouMean(name, known))
+    this.report.error('unknown-name', e, `unknown name "${name}"`, didYouMean(name, known))
     return bad
   }
 
@@ -290,13 +298,17 @@ class Compiler {
             ? this.names.lets.keys()
             : undefined
     if (!pool) {
-      this.report.error(e.object, `"${table}" has no entries: only flows., at., demand., util. and derived. do`)
+      this.report.error(
+        'bad-formula',
+        e.object,
+        `"${table}" has no entries: only flows., at., demand., util. and derived. do`,
+      )
       return bad
     }
     const has = table === 'derived' ? this.names.lets.has(key) : (pool as ReadonlySet<string>).has(key)
     if (!has) {
       const what = table === 'flows' ? 'flow' : table === 'derived' ? 'let' : 'component'
-      this.report.error(e.prop, `unknown ${what} "${key}"`, didYouMean(key, pool))
+      this.report.error('unknown-name', e.prop, `unknown ${what} "${key}"`, didYouMean(key, pool))
       return bad
     }
     if (!this.canRead(e, `${table}.${key}`)) return bad
@@ -308,12 +320,12 @@ class Compiler {
   at(e: Extract<Expr, { t: 'member' }>): Formula {
     const stage = e.prop.name
     if (!this.names.stages.has(stage)) {
-      this.report.error(e.prop, `unknown stage "${stage}"`, didYouMean(stage, this.names.stages))
+      this.report.error('unknown-name', e.prop, `unknown stage "${stage}"`, didYouMean(stage, this.names.stages))
       return bad
     }
     const flow = e.flow?.name
     if (flow != null && !this.names.flows.has(flow)) {
-      this.report.error(e.flow!, `unknown flow "${flow}"`, didYouMean(flow, this.names.flows))
+      this.report.error('unknown-name', e.flow!, `unknown flow "${flow}"`, didYouMean(flow, this.names.flows))
       return bad
     }
     if (!this.canRead(e, flow == null ? `at.${stage}` : `at.${stage}.${flow}`)) return bad
@@ -336,7 +348,7 @@ class Compiler {
     const runs = args.map((a) => a.run)
     const fit = this.names.fits.get(name)
     if (this.names.fits.has(name)) {
-      if (args.length !== 1) this.report.error(e, `the fit "${name}" takes one number`)
+      if (args.length !== 1) this.report.error('wrong-arguments', e, `the fit "${name}" takes one number`)
       else this.want(e.args[0]!, args[0]!, 'number')
       const a = runs[0] ?? (() => undefined)
       // the fit is filled in once its points are read; until then (or with no points) it returns undefined
@@ -347,7 +359,11 @@ class Compiler {
       const max = b.variadic ? Number.POSITIVE_INFINITY : b.args.length
       const min = b.min ?? b.args.length
       if (args.length < min || args.length > max)
-        this.report.error(e, `${name}() takes ${min === max ? min : `${min} to ${max}`} values, not ${args.length}`)
+        this.report.error(
+          'wrong-arguments',
+          e,
+          `${name}() takes ${min === max ? min : `${min} to ${max}`} values, not ${args.length}`,
+        )
       for (const [i, a] of args.entries()) this.want(e.args[i]!, a, b.args[Math.min(i, b.args.length - 1)]!)
       const fn = b.fn
       return {
@@ -371,6 +387,7 @@ class Compiler {
     }
     const known = [...Object.keys(BUILTINS), ...this.names.fits.keys(), ...Object.keys(this.names.functions)]
     this.report.error(
+      'unknown-name',
       e.callee,
       `unknown function "${name}"`,
       (own(RENAMED, name) ? `renamed to ${own(RENAMED, name)}()` : undefined) ??
@@ -388,7 +405,7 @@ class Compiler {
     this.want(pm.value, value, 'number')
     this.want(pm.within, within, 'number')
     if (rest.length < 1 || rest.length > 2)
-      this.report.error(e, `${e.callee.name}() takes 2 to 3 values, not ${rest.length + 1}`)
+      this.report.error('wrong-arguments', e, `${e.callee.name}() takes 2 to 3 values, not ${rest.length + 1}`)
     for (const [i, a] of rest.entries()) this.want(e.args[i + 1]!, a, 'string')
     const [v, w] = [value.run, within.run]
     const [unit, source] = rest.map((a) => a.run)
@@ -462,7 +479,7 @@ class Compiler {
 
   want(at: Span, f: Formula, type: Type) {
     if (f.type !== type && f.type !== 'any' && type !== 'any')
-      this.report.error(at, `expected ${typeWord(type)}, this is ${typeWord(f.type)}`)
+      this.report.error('wrong-type', at, `expected ${typeWord(type)}, this is ${typeWord(f.type)}`)
   }
 }
 

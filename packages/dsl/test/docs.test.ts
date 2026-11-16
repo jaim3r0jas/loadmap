@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { beforeAll, expect, it } from 'vitest'
 import { compile, formatDiagnostic, loadCatalog } from '../src'
-import { parse, reference, SCHEMA, type Stmt } from '../src/internal'
+import { codeReference, parse, reference, SCHEMA, type Stmt } from '../src/internal'
 
 const file = new URL('../../../docs/dsl.md', import.meta.url)
 const START = '<!-- reference: written by reference() in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->'
@@ -15,6 +15,17 @@ it('docs/dsl.md holds the reference the schema writes', () => {
   const tail = rest?.split(END)[1]
   expect(head != null && tail != null, 'docs/dsl.md lost its reference markers').toBe(true)
   const fresh = `${head}${START}\n\n${reference()}\n${END}${tail}`
+  if (process.env.UPDATE_DOCS) writeFileSync(file, fresh)
+  expect(doc, 'run UPDATE_DOCS=1 pnpm test:node to rewrite it').toBe(fresh)
+})
+
+it('docs/dsl.md lists every diagnostic code', () => {
+  const start = '<!-- codes: written from CODES in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->'
+  const doc = readFileSync(file, 'utf8')
+  const [head, rest] = doc.split(start)
+  const tail = rest?.split('<!-- end of codes -->')[1]
+  expect(head != null && tail != null, 'docs/dsl.md lost its codes markers').toBe(true)
+  const fresh = `${head}${start}\n\n${codeReference()}\n<!-- end of codes -->${tail}`
   if (process.env.UPDATE_DOCS) writeFileSync(file, fresh)
   expect(doc, 'run UPDATE_DOCS=1 pnpm test:node to rewrite it').toBe(fresh)
 })

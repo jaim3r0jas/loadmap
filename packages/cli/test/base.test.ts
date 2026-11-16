@@ -77,7 +77,7 @@ describe('loadmap check --base', () => {
     const accepted = await run([path, '--base', 'main', '--accept', 'A smaller API, agreed with ops'])
     expect(accepted.code).toBe(0)
     expect(accepted.out).toMatch(
-      /warning: against main, the 50 % target holds up to 4× .* \(accepted: A smaller API, agreed with ops\)/,
+      /warning\[against-base\]: against main, the 50 % target holds up to 4× .* \(accepted: A smaller API, agreed with ops\)/,
     )
   })
 

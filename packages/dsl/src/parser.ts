@@ -1,5 +1,5 @@
 import type { BinOp, Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
-import { Reporter, type Span } from './diagnostics'
+import { type Code, Reporter, type Span } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { SCHEMA } from './schema'
 
@@ -34,7 +34,11 @@ class Bail {}
 /** Parses a definition into statements. Never throws: errors go to the reporter, and parsing goes on at the next line. */
 export function parse(source: string, report = new Reporter(source)): { doc: Document; report: Reporter } {
   if (source.length > MAX_SOURCE) {
-    report.error({ from: 0, to: 0 }, `the definition is ${source.length} characters long; at most ${MAX_SOURCE}`)
+    report.error(
+      'too-large',
+      { from: 0, to: 0 },
+      `the definition is ${source.length} characters long; at most ${MAX_SOURCE}`,
+    )
     return { doc: { body: [] }, report }
   }
   const p = new Parser(lex(source, report), source, report)
@@ -118,8 +122,8 @@ class Parser {
     return this.next()
   }
 
-  fail(at: Span, message: string, hint?: string): never {
-    this.report.error(at, message, hint)
+  fail(at: Span, message: string, hint?: string, code: Code = 'syntax'): never {
+    this.report.error(code, at, message, hint)
     throw new Bail()
   }
 
@@ -133,7 +137,7 @@ class Parser {
       if (inBraces && this.endsOpenBlock()) break
       if (this.is('}')) {
         if (inBraces) break
-        this.report.error(t, 'this "}" closes no block')
+        this.report.error('syntax', t, 'this "}" closes no block')
         this.next()
         continue
       }
@@ -253,7 +257,7 @@ class Parser {
     if (this.blocks >= MAX_DEPTH) {
       // skip the block whole, without recursing: a shared definition must not exhaust the stack
       const open = this.next()
-      this.report.error(open, `blocks are nested more than ${MAX_DEPTH} deep`)
+      this.report.error('too-large', open, `blocks are nested more than ${MAX_DEPTH} deep`)
       for (let depth = 1; depth > 0 && this.peek().kind !== 'eof'; ) {
         const t = this.next()
         if (t.kind === 'punct' && t.text === '{') depth++
@@ -275,7 +279,7 @@ class Parser {
     d.body = this.block(true)
     const close = this.peek()
     if (!this.is('}')) {
-      this.report.error(open, `this "{" of "${'keyword' in d ? d.keyword.name : 'edge'}" is never closed`)
+      this.report.error('syntax', open, `this "{" of "${'keyword' in d ? d.keyword.name : 'edge'}" is never closed`)
       // at the end of the file, open to the end: a cursor typing there is still inside
       d.bodySpan = { from: open.from, to: close.kind === 'eof' ? close.from + 1 : close.from }
       this.leftOpen = true
@@ -305,7 +309,8 @@ class Parser {
   }
 
   expr(): Expr {
-    if (++this.depth > MAX_DEPTH) this.fail(this.peek(), `the formula is nested more than ${MAX_DEPTH} deep`)
+    if (++this.depth > MAX_DEPTH)
+      this.fail(this.peek(), `the formula is nested more than ${MAX_DEPTH} deep`, undefined, 'too-large')
     try {
       const test = this.binary(1)
       if (this.is('±') || this.is('+/-')) return this.pm(test)
@@ -344,7 +349,8 @@ class Parser {
     const t = this.peek()
     if (this.is('-') || this.is('+') || this.is('!')) {
       this.next()
-      if (++this.depth > MAX_DEPTH) this.fail(t, `the formula is nested more than ${MAX_DEPTH} deep`)
+      if (++this.depth > MAX_DEPTH)
+        this.fail(t, `the formula is nested more than ${MAX_DEPTH} deep`, undefined, 'too-large')
       try {
         const arg = this.unary()
         return { t: 'unary', op: t.text as '-' | '+' | '!', arg, from: t.from, to: arg.to }
@@ -433,7 +439,7 @@ class Parser {
   /** One `${…}` of a template, parsed from its place in the source so errors point into it. */
   part(s: Span): Expr {
     if (s.to > s.from) return parseExpression(this.source, s.from, s.to, this.report, this.depth)
-    this.report.error({ from: s.from - 2, to: s.to + 1 }, 'an empty part in a template')
+    this.report.error('syntax', { from: s.from - 2, to: s.to + 1 }, 'an empty part in a template')
     return { t: 'error', from: s.from, to: s.to }
   }
 }

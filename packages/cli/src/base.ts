@@ -105,6 +105,7 @@ export function compareFile(
     const { line, column } = where.position(at.from)
     return {
       severity: o.accept ? 'warning' : 'error',
+      code: 'against-base',
       message: `against ${ref}, ${t.text}${o.accept ? ` (accepted: ${o.accept})` : ''}`,
       from: at.from,
       to: at.to,

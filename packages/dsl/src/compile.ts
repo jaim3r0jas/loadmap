@@ -222,7 +222,7 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
       c.runError(err, { from: 0, to: 0 })
     // a bug must not take the editor down with it: say so where the user looks
     else if (!(err instanceof Bail))
-      report.error({ from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
+      report.error('internal', { from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
   }
   const diagnostics = [...report.list].sort((a, b) => a.from - b.from)
   const ok = !report.failed && !!definition
@@ -264,7 +264,8 @@ export function problems(
         : `${label ? `${label}is inconclusive` : 'inconclusive'}: ${reasons.join('; ')}${reasons.length ? '; ' : ''}${message}`
     // a warning-level expect is never more than a warning
     const severity = expectation.severity === 'warn' ? 'warning' : outcome === 'fail' ? failed : inconclusive
-    out.push({ severity, message: text, ...e.at, line: e.line, column: e.column })
+    const code = outcome === 'fail' ? 'expect-failed' : 'expect-inconclusive'
+    out.push({ severity, code, message: text, ...e.at, line: e.line, column: e.column })
   }
   return out.sort((a, b) => a.from - b.from)
 }
@@ -338,8 +339,9 @@ class Compiler {
     // names first: formulas and routes may refer to anything declared further down
     const byKind = (k: string) => root.children.filter((b) => b.keyword === k)
     const loads = byKind('load')
-    if (!loads.length) this.report.error({ from: 0, to: 0 }, 'a definition needs a load line', 'load { max: 100 }')
-    for (const extra of loads.slice(1)) this.report.error(extra.at, 'only one load line is allowed')
+    if (!loads.length)
+      this.report.error('missing-part', { from: 0, to: 0 }, 'a definition needs a load line', 'load { max: 100 }')
+    for (const extra of loads.slice(1)) this.report.error('duplicate', extra.at, 'only one load line is allowed')
     const params = byKind('param')
     const lets = byKind('let')
     const fits = byKind('fit')
@@ -361,7 +363,7 @@ class Compiler {
     for (const b of [...params, ...lets, ...fits, ...publisheds, ...measures]) {
       own(b.keyword as 'param' | 'let' | 'fit' | 'published' | 'measure', b, formulaNames)
       if (b.args.id && RESERVED.has(b.args.id.name))
-        this.report.error(b.args.id, `"${b.args.id.name}" is a reserved name; pick another`)
+        this.report.error('reserved-name', b.args.id, `"${b.args.id.name}" is a reserved name; pick another`)
     }
     for (const b of measures) if (b.args.id) this.measureIds.add(b.args.id.name)
     const metricNames = new Map<string, Span>()
@@ -387,7 +389,8 @@ class Compiler {
       }
     }
     for (const b of loose) {
-      if (!b.args.id) this.report.error(b.at, 'a component outside a box needs an id: component cache "Cache"')
+      if (!b.args.id)
+        this.report.error('missing-part', b.at, 'a component outside a box needs an id: component cache "Cache"')
       else own('component', b, componentNames)
     }
 
@@ -458,7 +461,8 @@ class Compiler {
     for (const [i, b] of byKind('scenario').entries()) {
       const label = scenarioLabels[i]
       if (label == null) continue
-      if (Object.hasOwn(scenarios, label)) this.report.error(b.args.label!, `scenario "${label}" is declared twice`)
+      if (Object.hasOwn(scenarios, label))
+        this.report.error('duplicate', b.args.label!, `scenario "${label}" is declared twice`)
       else scenarios[label] = this.preset(b, params, 'scenario')
     }
     const expects: Record<string, unknown>[] = []
@@ -474,7 +478,7 @@ class Compiler {
       if (st) story.push(st)
     }
     const growths = byKind('growth')
-    for (const extra of growths.slice(1)) this.report.error(extra.at, 'only one growth line is allowed')
+    for (const extra of growths.slice(1)) this.report.error('duplicate', extra.at, 'only one growth line is allowed')
     const growth = growths[0] && this.growth(growths[0])
     const derived: Record<string, unknown> = {}
     for (const b of lets)
@@ -492,13 +496,19 @@ class Compiler {
       if (box?.stages.length === 1) return box.stages[0]!.id
       if (box)
         this.report.error(
+          'bad-route',
           n,
           box.stages.length
             ? `"${n.name}" holds ${box.stages.length} stages; name one: ${box.stages.map((s) => s.id).join(', ')}`
             : `the box "${n.name}" runs no stage`,
         )
       else
-        this.report.error(n, `unknown ${what} "${n.name}"`, didYouMean(n.name, [...stageOf.keys(), ...boxById.keys()]))
+        this.report.error(
+          'unknown-name',
+          n,
+          `unknown ${what} "${n.name}"`,
+          didYouMean(n.name, [...stageOf.keys(), ...boxById.keys()]),
+        )
       return undefined
     }
 
@@ -537,11 +547,12 @@ class Compiler {
         if (!s) continue
         chain.push([n, s])
         if (stageOf.get(s)!.block.keyword === 'fanout' && i < (route?.chain?.length ?? 1) - 1)
-          this.report.error(n, `the fan-out "${s}" must be the last stage of the route`)
+          this.report.error('bad-route', n, `the fan-out "${s}" must be the last stage of the route`)
         stages.push(s)
         reached.add(s)
       }
-      if (route && route.value.t !== 'id') this.report.error(route.value, 'a route is a list of stages: a -> b -> c')
+      if (route && route.value.t !== 'id')
+        this.report.error('bad-route', route.value, 'a route is a list of stages: a -> b -> c')
       routes[id.name] = stages
 
       const from = this.prop(b, 'from')
@@ -551,6 +562,7 @@ class Compiler {
         if (from.value.t === 'id' && boxById.has(from.value.name)) view.from = from.value.name
         else
           this.report.error(
+            'unknown-name',
             from.value,
             `unknown node "${this.slice(from.value)}"`,
             didYouMean(this.slice(from.value), boxById.keys()),
@@ -568,6 +580,7 @@ class Compiler {
       const stray = box.component?.own ? undefined : box.block.children.find((c) => c.keyword === 'held')
       if (stray)
         this.report.error(
+          'misplaced',
           stray.at,
           'held belongs to a component',
           box.component ? `move it into component ${box.component.id}` : 'give the box capacity and over lines',
@@ -586,11 +599,16 @@ class Compiler {
     for (const [id, b] of componentBlocks) {
       const on = this.prop(b, 'on')
       if (!on) continue
-      if (on.value.t !== 'id') this.report.error(on.value, 'on is a list of stages: a -> b')
+      if (on.value.t !== 'id') this.report.error('bad-box', on.value, 'on is a list of stages: a -> b')
       const stages = (on.chain ?? (on.value.t === 'id' ? [on.value as Ident] : [])).map((n) => resolveStage(n, 'stage'))
       if (stages.every((s) => s)) componentDefs[id]!.on = stages
       if (!this.prop(b, 'held') && !b.children.some((c) => c.keyword === 'held'))
-        this.report.error(on.key, 'on names the stages that hold its slots: give it held too', 'held: 0.02')
+        this.report.error(
+          'missing-property',
+          on.key,
+          'on names the stages that hold its slots: give it held too',
+          'held: 0.02',
+        )
     }
 
     const stageDefs: Record<string, StageDef> = {}
@@ -601,7 +619,7 @@ class Compiler {
       }
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
-        this.report.warning(s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
+        this.report.warning('unused-stage', s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
     const shape = { stages: stageDefs, routes, flows: flowDefs as never }
     // what each stage can lose, worked out once, over ways walked once: the lost boxes and the warnings both read it
     const known = new Map<string, readonly Loss[]>()
@@ -616,9 +634,15 @@ class Compiler {
     for (const [id, c] of Object.entries(componentDefs)) {
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
       if (c.held != null)
-        this.report.error(componentNames.get(id)!, `the component "${id}" is held on no stage`, 'on: stage')
+        this.report.error(
+          'unused-component',
+          componentNames.get(id)!,
+          `the component "${id}" is held on no stage`,
+          'on: stage',
+        )
       else if (c.demand == null)
         this.report.error(
+          'unused-component',
           componentNames.get(id)!,
           `the component "${id}" needs "demand: …": no stage uses it`,
           COMPONENT_PROPS.demand!.doc,
@@ -635,7 +659,7 @@ class Compiler {
       const errors = this.report.list.length
       this.declare('connection', id.name, id, b, connectionNames)
       if (componentNames.has(id.name))
-        this.report.error(id, `"${id.name}" names a component too: give the connection its own name`)
+        this.report.error('duplicate', id, `"${id.name}" names a component too: give the connection its own name`)
       // a name refused above (taken, or one every object has) builds nothing
       if (this.report.list.length > errors) continue
       // a key or a leader on a cluster's queue: the cluster's members unless it names its own, compiled once a cluster
@@ -733,11 +757,12 @@ class Compiler {
         const [a, b] = from ? [tierOf(from.name), tierOf(to.name)] : []
         if (from && a != null && b != null && a > b)
           this.report.warning(
+            'tier-order',
             to,
             `${from.name} -> ${to.name} runs back from the tier "${nodes[from.name]!.tier}" to "${nodes[to.name]!.tier}"`,
           )
       })
-    if (!flows.length) this.report.error({ from: 0, to: 0 }, 'a definition needs at least one flow')
+    if (!flows.length) this.report.error('missing-part', { from: 0, to: 0 }, 'a definition needs at least one flow')
 
     const options: DefinitionOptions = { assumptions: [] }
     const speed = this.constProp<number>(root, 'speed')
@@ -746,6 +771,7 @@ class Compiler {
     // a shared link could ask for a move that never ends
     if (transition != null && (transition < 0 || transition > MAX_TRANSITION))
       this.report.error(
+        'out-of-range',
         this.prop(root, 'transition')!.value,
         `transition is ${transition} seconds; 0 to ${MAX_TRANSITION}`,
       )
@@ -758,9 +784,15 @@ class Compiler {
     let arrange: 'compact' | 'stable' | undefined
     // the direction's old name: a definition written before keeps its direction, and `loadmap fmt` renames it
     if (layout && (DIRECTIONS as readonly string[]).includes(way!)) {
-      if (direction) this.report.warning(layout.key, `layout: ${way} is ignored: direction sets the direction`)
+      if (direction)
+        this.report.warning('deprecated', layout.key, `layout: ${way} is ignored: direction sets the direction`)
       else {
-        this.report.warning(layout.key, `layout: ${way} is now direction: ${way}`, 'loadmap fmt rewrites it')
+        this.report.warning(
+          'deprecated',
+          layout.key,
+          `layout: ${way} is now direction: ${way}`,
+          'loadmap fmt rewrites it',
+        )
         options.direction = way === 'down' ? 'DOWN' : 'RIGHT'
       }
     } else if (layout) arrange = this.enumValue(layout, SCHEMA['']!.props.layout!) as typeof arrange
@@ -849,7 +881,7 @@ class Compiler {
         if (hidden.length) this.hiddenHops(model, viewDef, hidden, values, where)
         for (const f of model.flowIds)
           if (!Number.isFinite(ev.flows[f]))
-            this.report.warning(this.flowRate.get(f) ?? at, `the rate of "${f}" is ${ev.flows[f]} here`)
+            this.report.warning('bad-rate', this.flowRate.get(f) ?? at, `the rate of "${f}" is ${ev.flows[f]} here`)
       } catch (err) {
         this.runError(err, at, i === 0)
       }
@@ -881,7 +913,7 @@ class Compiler {
           e.chain.forEach((n, i) => {
             const next = e.chain[i + 1]
             if (n.name === box.id && next)
-              this.report.error(next, `nothing leaves the lost box "${s.id}": what reaches it is lost`)
+              this.report.error('bad-lost', next, `nothing leaves the lost box "${s.id}": what reaches it is lost`)
             if (next?.name !== box.id) return
             fed = true
             const src = boxById.get(n.name)
@@ -889,8 +921,9 @@ class Compiler {
             const losing = src.stages.map((x) => x.id).filter((x) => losses(x).some((r) => takes.includes(r)))
             if (!losing.length) {
               this.report.error(
+                'bad-lost',
                 n,
-                `${n.name} loses nothing the lost box "${s.id}" takes`,
+                `"${n.name}" loses nothing the lost box "${s.id}" takes`,
                 'a pass, limit, cache or split turns units away, a queue with a drop rule drops them, the last stage of a flow with a timeout times them out',
               )
               return
@@ -899,13 +932,14 @@ class Compiler {
               for (const r of losses(x).filter((r) => takes.includes(r))) {
                 const other = taken.get(`${x}\u0000${r}`)
                 if (other && other !== s.id)
-                  this.report.error(n, `what ${x} loses as ${r} already goes to the lost box "${other}"`)
+                  this.report.error('bad-lost', n, `what "${x}" loses as ${r} already goes to the lost box "${other}"`)
                 taken.set(`${x}\u0000${r}`, s.id)
               }
             from.push(...losing)
           })
         if (!fed)
           this.report.error(
+            'bad-lost',
             s.block.args.id ?? s.block.at,
             `nothing feeds the lost box "${s.id}"`,
             `draw an edge into ${box.id} from the box whose losses it takes`,
@@ -938,7 +972,13 @@ class Compiler {
     }
     for (const [id, s] of stageOf)
       if (s.block.keyword === 'limit' && losses(id).includes('rejected') && first(id, 'rejected'))
-        this.report.warning(s.block.at, `what ${id} turns away vanishes: give it a lost box that counts it`)
+        this.report.warning(
+          'unseen-loss',
+          s.block.at,
+          `what "${id}" turns away vanishes: give it a lost box that counts it`,
+          undefined,
+          { stage: id, reason: 'rejected' },
+        )
     for (const b of flows) {
       const f = b.args.id?.name
       if (!f) continue
@@ -956,8 +996,11 @@ class Compiler {
           .find((s) => first(s, 'dropped'))
       if (drop && queue)
         this.report.warning(
+          'unseen-loss',
           drop.at,
-          `units of ${f} dropped as too old at ${queue} vanish: give them a lost box that counts them`,
+          `units of "${f}" dropped as too old at "${queue}" vanish: give them a lost box that counts them`,
+          undefined,
+          { stage: queue, reason: 'dropped' },
         )
       // a timeout refused has its error instead
       const timeout = this.prop(b, 'timeout')
@@ -970,8 +1013,11 @@ class Compiler {
       const at = late.find((s) => s && first(s, 'timedOut'))
       if (at)
         this.report.warning(
+          'unseen-loss',
           timeout.key,
-          `units of ${f} too slow for their client at ${at} vanish: give them a lost box that counts them`,
+          `units of "${f}" too slow for their client at "${at}" vanish: give them a lost box that counts them`,
+          undefined,
+          { stage: at, reason: 'timedOut' },
         )
     }
   }
@@ -987,8 +1033,15 @@ class Compiler {
     let ok = true
     for (const h of unjoined(model, viewDef as never)) {
       ok = false
-      const how = h.edge === 'reversed' ? 'but their edge points the other way' : 'and no edge joins them'
-      this.report.error(this.hopAt(h), `${h.flow} goes from ${h.from} to ${h.to}, ${how}`, `draw ${h.from} -> ${h.to}`)
+      const reversed = h.edge === 'reversed'
+      const how = reversed ? 'but their edge points the other way' : 'and no edge joins them'
+      this.report.error(
+        reversed ? 'reversed-edge' : 'missing-edge',
+        this.hopAt(h),
+        `"${h.flow}" goes from "${h.from}" to "${h.to}", ${how}`,
+        `draw ${h.from} -> ${h.to}`,
+        { from: h.from, to: h.to },
+      )
     }
     return ok
   }
@@ -1030,7 +1083,7 @@ class Compiler {
       const at = this.whenAt.get(e) ?? { from: 0, to: 0 }
       const who =
         flows.length === 1 ? `${flows[0]} still goes` : `${flows.slice(0, -1).join(', ')} and ${flows.at(-1)} still go`
-      this.report.warning(at, `${e.from} -> ${e.to} is hidden ${where}, but ${who} that way`)
+      this.report.warning('hidden-edge', at, `${e.from} -> ${e.to} is hidden ${where}, but ${who} that way`)
     }
   }
 
@@ -1039,14 +1092,14 @@ class Compiler {
    * keeps `at` (`onFlow` false): the flow is fine at the defaults, the preset is what breaks it.
    */
   runError(err: unknown, at: Span, onFlow = true) {
-    if (err instanceof FormulaError) return this.report.error(err.span, err.message, err.hint)
+    if (err instanceof FormulaError) return this.report.error('runtime', err.span, err.message, err.hint)
     const flow = flowOf(err)
     const { message, hint } = failure(err, flow ? `the flow "${flow}"` : 'the model')
     // a connection the model refuses: at its own line
     const named = /^loadmap: connections? "([^"]+)"/.exec((err as Error)?.message ?? '')?.[1]
     const connection = named ? this.connectionAt.get(named) : undefined
     // a preset or a scenario keeps its place: it is what breaks the flow or the connection
-    this.report.error((onFlow && ((flow && this.flowAt.get(flow)) || connection)) || at, message, hint)
+    this.report.error('model', (onFlow && ((flow && this.flowAt.get(flow)) || connection)) || at, message, hint)
   }
 
   private flowRate = new Map<string, Span>()
@@ -1071,7 +1124,7 @@ class Compiler {
     if (!hop) return undefined
     const chain = hop.chain ?? (hop.value.t === 'id' ? [hop.value as Ident] : [])
     if (chain.length !== 2) {
-      this.report.error(hop.value, 'a hop is two stages: from -> to')
+      this.report.error('bad-route', hop.value, 'a hop is two stages: from -> to')
       return undefined
     }
     const [from, to] = chain.map((n) => resolveStage(n, 'stage'))
@@ -1091,6 +1144,7 @@ class Compiler {
       const rules = catalogRules(this.catalog)
       if (!this.catalog)
         this.report.error(
+          'catalog-not-loaded',
           ruleProp.value,
           'the component catalog is not loaded',
           'a host awaits loadCatalog() before it compiles',
@@ -1099,7 +1153,12 @@ class Compiler {
         const r = rules.get(id)
         if (r) def.rule = r
         else
-          this.report.error(ruleProp.value, `no connection rule "${id}" in the catalog`, didYouMean(id, rules.keys()))
+          this.report.error(
+            'unknown-name',
+            ruleProp.value,
+            `no connection rule "${id}" in the catalog`,
+            didYouMean(id, rules.keys()),
+          )
       }
     }
     for (const k of ['max', 'skew']) {
@@ -1112,16 +1171,21 @@ class Compiler {
     }
     const flows = this.prop(b, 'flows')
     if (flows) {
-      if (flows.value.t !== 'array') this.report.error(flows.value, 'a list of flows: [orders, events]')
+      if (flows.value.t !== 'array') this.report.error('wrong-type', flows.value, 'a list of flows: [orders, events]')
       else {
         const list: string[] = []
         if (!flows.value.items.length)
-          this.report.error(flows.value, 'an empty list covers no flow', 'leave flows out for every flow on the hop')
+          this.report.error(
+            'bad-value',
+            flows.value,
+            'an empty list covers no flow',
+            'leave flows out for every flow on the hop',
+          )
         for (const e of flows.value.items) {
           const name = e.t === 'id' ? e.name : this.slice(e)
-          if (list.includes(name)) this.report.error(e, `"${name}" is listed twice`)
+          if (list.includes(name)) this.report.error('duplicate', e, `"${name}" is listed twice`)
           else if (e.t === 'id' && flowNames.has(name)) list.push(name)
-          else this.report.error(e, `unknown flow "${name}"`, didYouMean(name, flowNames.keys()))
+          else this.report.error('unknown-name', e, `unknown flow "${name}"`, didYouMean(name, flowNames.keys()))
         }
         def.flows = list
       }
@@ -1160,13 +1224,22 @@ class Compiler {
       if (!capacity) continue
       const literal = capacityCall(capacity.value, names)?.args[1]
       if (literal?.t === 'str' && !literal.value.trim())
-        this.report.warning(literal, "a capacity's unit is empty", 'name what it counts: "req/s", "cores"')
+        this.report.warning(
+          'empty-unit',
+          literal,
+          "a capacity's unit is empty",
+          'name what it counts: "req/s", "cores"',
+        )
       const cap = unitOf(capacity.value, names)
       const demand = this.prop(b, 'demand')
       const said = demand?.as && parseUnit(demand.as.unit)
       const found = demand && unitOf(demand.value, names)
       if (said && found && disagree(found, said))
-        this.report.warning(demand.as!, `"as" says "${said.word}", but the formula is ${describe(found)}`)
+        this.report.warning(
+          'unit-mismatch',
+          demand.as!,
+          `"as" says "${said.word}", but the formula is ${describe(found)}`,
+        )
       if (!cap?.word || cap.time === undefined) continue
       if (demand) {
         const d = said ?? found
@@ -1182,6 +1255,7 @@ class Compiler {
               ? 'a capacity a second takes the units a second: leave out what makes the demand a count'
               : 'count both in one unit'
         this.report.warning(
+          'unit-mismatch',
           demand.as ?? demand.value,
           `the demand is ${describe(d)}, the capacity ${describe(cap)}`,
           hint,
@@ -1189,12 +1263,14 @@ class Compiler {
       } else if (this.prop(b, 'held') || b.children.some((c) => c.keyword === 'held')) {
         if (cap.time !== 0)
           this.report.warning(
+            'unit-mismatch',
             capacity.value,
             `a held component's demand is the slots in use, a count; the capacity is ${describe(cap)}`,
             'count the slots: configured(200, "connections", "pool size")',
           )
       } else if (used.has(id) && cap.time !== -1)
         this.report.warning(
+          'unit-mismatch',
           capacity.value,
           `without a demand line the demand is what reaches its stages, per second; the capacity is ${describe(cap)}`,
           'add demand: …, such as flows.orders * 2ms for the CPU seconds each order takes',
@@ -1209,7 +1285,12 @@ class Compiler {
         for (const p of props) {
           const u = unitOf(p.value, names)
           if (u && disagree(u, want.unit))
-            this.report.warning(p.value, `${k} is ${want.words}, and this is ${describe(u)}`, want.hint)
+            this.report.warning(
+              'unit-mismatch',
+              p.value,
+              `${k} is ${want.words}, and this is ${describe(u)}`,
+              want.hint,
+            )
         }
       }
       b.children.forEach(walk)
@@ -1230,22 +1311,23 @@ class Compiler {
           const hint = spec.children.includes(k)
             ? `write it as a block: ${k} { … }`
             : didYouMean(k, [...Object.keys(spec.props), ...spec.children])
-          this.report.error(s.key, `unknown property "${k}" ${here}`, hint)
+          this.report.error('unknown-property', s.key, `unknown property "${k}" ${here}`, hint)
           continue
         }
         const list = b.props.get(k) ?? []
         if (list.length && !(own(spec.props, k)?.repeat ?? false))
-          this.report.error(s.key, `"${k}" is set twice ${here}`, 'remove one of them')
+          this.report.error('duplicate', s.key, `"${k}" is set twice ${here}`, 'remove one of them')
         list.push(s)
         b.props.set(k, list)
       } else if (s.kind === 'decl') {
         const k = s.keyword.name
         const childSpec = own(SCHEMA, k)
         if (!spec.children.includes(k) || !childSpec || k === '') {
-          if (own(spec.props, k)) this.report.error(s.keyword, `"${k}" is a property: write "${k}: …"`)
-          else if (childSpec) this.report.error(s.keyword, `"${k}" cannot go ${here}`, where(k))
+          if (own(spec.props, k)) this.report.error('misplaced', s.keyword, `"${k}" is a property: write "${k}: …"`)
+          else if (childSpec) this.report.error('misplaced', s.keyword, `"${k}" cannot go ${here}`, where(k))
           else
             this.report.error(
+              'unknown-statement',
               s.keyword,
               `unknown statement "${k}" ${here}`,
               didYouMean(k, [...spec.children, ...Object.keys(spec.props)]),
@@ -1254,33 +1336,36 @@ class Compiler {
         }
         b.children.push(this.shape(k, childSpec, s.body ?? [], s.keyword, s))
       } else if (s.kind === 'edge') {
-        if (!spec.edges) this.report.error(s.chain[0]!, `an "a -> b" line cannot go ${here}`)
+        if (!spec.edges) this.report.error('misplaced', s.chain[0]!, `an "a -> b" line cannot go ${here}`)
         else b.edges.push(s)
-      } else if (!spec.rows) this.report.error(s, `a row of numbers can only go in "points"`)
+      } else if (!spec.rows) this.report.error('misplaced', s, `a row of numbers can only go in "points"`)
       else b.rows.push(s)
     }
     if (decl)
       for (const [k, p] of Object.entries(spec.props))
-        if (p.required && !b.props.has(k)) this.report.error(at, `"${keyword}" needs "${k}: …"`, p.doc)
+        if (p.required && !b.props.has(k))
+          this.report.error('missing-property', at, `"${keyword}" needs "${k}: …"`, p.doc, { key: k })
     return b
   }
 
   private args(b: Block, d: Decl) {
     const { filled, bad, missing } = matchArgs(b.spec.args, d.args)
-    for (const a of bad) this.report.error(a, `unexpected ${this.slice(a)} after "${b.keyword}"`, usage(b.keyword))
+    for (const a of bad)
+      this.report.error('syntax', a, `unexpected ${this.slice(a)} after "${b.keyword}"`, usage(b.keyword))
     for (const [slot, a] of filled) {
       if (a.t === 'tpl' && !slot.dynamic && !a.parts.length) {
         ;(b.args as Record<string, Expr>)[slot.name] = { t: 'str', value: a.quasis[0]!, from: a.from, to: a.to }
         continue
       }
       if (a.t === 'tpl' && !slot.dynamic)
-        this.report.error(a, `the ${slot.name} of "${b.keyword}" must be a plain text`)
+        this.report.error('wrong-type', a, `the ${slot.name} of "${b.keyword}" must be a plain text`)
       if (a.t === 'id') b.args[slot.name as 'id' | 'x' | 'y' | 'component'] = { name: a.name, from: a.from, to: a.to }
       else (b.args as Record<string, Expr>)[slot.name] = a
     }
-    if (missing) this.report.error(b.at, `"${b.keyword}" needs its ${missing.name}`, usage(b.keyword))
-    if (b.spec.init && !d.init) this.report.error(b.at, `"${b.keyword}" needs "= formula"`, usage(b.keyword))
-    if (!b.spec.init && d.init) this.report.error(d.init, `"${b.keyword}" takes no "="`)
+    if (missing) this.report.error('missing-part', b.at, `"${b.keyword}" needs its ${missing.name}`, usage(b.keyword))
+    if (b.spec.init && !d.init)
+      this.report.error('missing-part', b.at, `"${b.keyword}" needs "= formula"`, usage(b.keyword))
+    if (!b.spec.init && d.init) this.report.error('misplaced', d.init, `"${b.keyword}" takes no "="`)
   }
 
   private header(body: readonly Stmt[]) {
@@ -1288,6 +1373,7 @@ class Compiler {
     const isHeader = (s: Stmt | undefined): s is Decl => s?.kind === 'decl' && s.keyword.name === 'loadmap'
     if (!isHeader(first)) {
       this.report.error(
+        'language-version',
         first ?? { from: 0, to: 0 },
         `a definition starts with "loadmap ${LANGUAGE_VERSION}"`,
         `add "loadmap ${LANGUAGE_VERSION}" as the first line`,
@@ -1295,10 +1381,12 @@ class Compiler {
       throw new Bail()
     }
     for (const s of body.slice(1))
-      if (isHeader(s)) this.report.error(s.keyword, 'the "loadmap" line must be the first and only one')
+      if (isHeader(s))
+        this.report.error('language-version', s.keyword, 'the "loadmap" line must be the first and only one')
     const v = first.args[0]
     if (v?.t === 'num' && v.value !== LANGUAGE_VERSION) {
       this.report.error(
+        'language-version',
         v,
         v.value > LANGUAGE_VERSION
           ? `this definition is written in language version ${v.value}; this loadmap reads version ${LANGUAGE_VERSION}`
@@ -1317,8 +1405,8 @@ class Compiler {
     taken: Map<string, Span>,
     detail?: string,
   ) {
-    if (FORBIDDEN.has(id)) this.report.error(span, `"${id}" cannot be used as a name`)
-    if (taken.has(id)) this.report.error(span, `"${id}" is declared twice`, 'rename one of them')
+    if (FORBIDDEN.has(id)) this.report.error('reserved-name', span, `"${id}" cannot be used as a name`)
+    if (taken.has(id)) this.report.error('duplicate', span, `"${id}" is declared twice`, 'rename one of them')
     else taken.set(id, span)
     this.symbols.push({ kind, id, span, decl: b.decl ?? b.at, detail })
   }
@@ -1333,18 +1421,28 @@ class Compiler {
     if (ownLines) component = { block: b, id, own: true }
     for (const n of nested) {
       if (component)
-        this.report.error(n.at, `"${id}" already has a component`, 'one component per box; put others at the top')
+        this.report.error(
+          'duplicate',
+          n.at,
+          `"${id}" already has a component`,
+          'one component per box; put others at the top',
+        )
       else component = { block: n, id: n.args.id?.name ?? id, own: false }
     }
     if (b.keyword === 'node' && stages.length > 1)
-      this.report.error(stageBlocks[1]!.at, 'a node runs at most one stage; a cluster can hold several queues')
+      this.report.error(
+        'bad-box',
+        stageBlocks[1]!.at,
+        'a node runs at most one stage; a cluster can hold several queues',
+      )
     if (b.keyword === 'cluster' && !stages.length)
-      this.report.error(b.at, 'a cluster needs a queue', 'queue topic { partitions { orders: 12 } }')
+      this.report.error('missing-part', b.at, 'a cluster needs a queue', 'queue topic { partitions { orders: 12 } }')
     if (b.keyword === 'pool' && stages.length !== 1)
-      this.report.error(b.at, 'a pool needs exactly one workers stage', 'workers { pods: 3; perPod: 8 }')
+      this.report.error('bad-box', b.at, 'a pool needs exactly one workers stage', 'workers { pods: 3; perPod: 8 }')
     const ids = new Set<string>()
     for (const s of stages) {
-      if (ids.has(s.id)) this.report.error(s.block.at, `"${id}" has two stages called "${s.id}"`, 'give each an id')
+      if (ids.has(s.id))
+        this.report.error('duplicate', s.block.at, `"${id}" has two stages called "${s.id}"`, 'give each an id')
       ids.add(s.id)
     }
     return { block: b, id, stages, component }
@@ -1362,7 +1460,7 @@ class Compiler {
       hint = b.args.label
         ? `for a line under a plain box, put it on the first line: ${b.keyword} ${b.args.id!.name} ${this.slice(b.args.label)} ${this.slice(p.value)}`
         : `for a line under a plain box, write sub: ${this.slice(p.value)}`
-    this.report.error(p.key, `"${k}" belongs to a component, and this box has no capacity`, hint)
+    this.report.error('misplaced', p.key, `"${k}" belongs to a component, and this box has no capacity`, hint)
   }
 
   // -- values --------------------------------------------------------------------------------------------------
@@ -1380,7 +1478,12 @@ class Compiler {
     if (!b.args.id || !comp) return undefined
     const editions = this.catalog
     if (!editions) {
-      this.report.error(comp, 'the component catalog is not loaded', 'a host awaits loadCatalog() before it compiles')
+      this.report.error(
+        'catalog-not-loaded',
+        comp,
+        'the component catalog is not loaded',
+        'a host awaits loadCatalog() before it compiles',
+      )
       return undefined
     }
     const at = this.prop(b, 'edition')
@@ -1389,6 +1492,7 @@ class Compiler {
     if (!Object.hasOwn(editions, edition)) {
       const known = Object.keys(editions)
       this.report.error(
+        'unknown-name',
         at.value,
         `no catalog edition "${edition}"`,
         `this loadmap has ${known.join(', ')}; a later edition needs a later loadmap`,
@@ -1400,6 +1504,7 @@ class Compiler {
       const all = Object.values(editions[edition]!.components)
       const tagged = all.find((x) => x.tags.some((t) => t.toLowerCase() === comp.name.toLowerCase()))
       this.report.error(
+        'unknown-name',
         comp,
         `no component "${comp.name}" in the catalog`,
         tagged
@@ -1414,6 +1519,7 @@ class Compiler {
     const latest = latestEdition(editions)
     if (latest !== edition && JSON.stringify(c.figures) !== JSON.stringify(editions[latest]!.components[c.id]?.figures))
       this.report.warning(
+        'newer-edition',
         at.value,
         `edition ${latest} of the catalog has other figures for ${c.name}`,
         `edition: "${latest}"`,
@@ -1428,6 +1534,7 @@ class Compiler {
       if (k !== 'version' && !Object.hasOwn(c.conditions, k)) {
         const names = Object.keys(c.conditions)
         this.report.error(
+          'unknown-name',
           p.key,
           `${c.name} has no condition "${k}"`,
           didYouMean(k, names) ??
@@ -1445,6 +1552,7 @@ class Compiler {
     const named = [...c.figures, ...(c.defaults ?? [])]
     if (figure != null && !named.some((f) => f.id === figure)) {
       this.report.error(
+        'unknown-name',
         this.prop(b, 'figure')!.value,
         `${c.name} has no figure "${figure}"`,
         didYouMean(
@@ -1456,7 +1564,11 @@ class Compiler {
     }
     const margin = this.constProp<number>(b, 'margin')
     if (margin != null && !(margin >= 0 && margin < 1)) {
-      this.report.error(this.prop(b, 'margin')!.value, 'margin is a share from 0 to below 1: 0.3 is 30 %')
+      this.report.error(
+        'out-of-range',
+        this.prop(b, 'margin')!.value,
+        'margin is a share from 0 to below 1: 0.3 is 30 %',
+      )
       return undefined
     }
     // a documented limit is exact: refused here, not where a parameter happens to reach one
@@ -1464,7 +1576,11 @@ class Compiler {
       margin &&
       named.some((f) => f.measure === 'limit' && (figure == null ? c.figures.includes(f) : f.id === figure))
     ) {
-      this.report.error(this.prop(b, 'margin')!.value, `${c.name} has documented limits: exact, so they take no margin`)
+      this.report.error(
+        'bad-value',
+        this.prop(b, 'margin')!.value,
+        `${c.name} has documented limits: exact, so they take no margin`,
+      )
       return undefined
     }
     const fixed: PublishedConfig = {
@@ -1476,7 +1592,12 @@ class Compiler {
       try {
         const cap = published(c, { ...(constants as PublishedConfig), ...fixed })
         if (cap.missing != null)
-          this.report.warning(comp, `no published benchmark ${cap.missing}`, 'the component is not ranked')
+          this.report.warning(
+            'no-benchmark',
+            comp,
+            `no published benchmark ${cap.missing}`,
+            'the component is not ranked',
+          )
         // the same for every load and every value: matched once
         return () => cap
       } catch (err) {
@@ -1502,6 +1623,7 @@ class Compiler {
     const metric = metrics.get(name.name)
     if (!metric) {
       this.report.error(
+        'unknown-name',
         name,
         `no metric "${name.name}"`,
         didYouMean(name.name, [...metrics.keys()]) ?? `metric ${name.name} { prometheus { query: "…" } }`,
@@ -1514,18 +1636,24 @@ class Compiler {
     if (fallback === undefined) return undefined
     const capacity = isCapacity(fallback)
     if (!capacity && typeof fallback !== 'number') {
-      this.report.error(fb.value, 'a fallback is a capacity or a number', 'fallback: estimated(1_000, "req/s", "…")')
+      this.report.error(
+        'wrong-type',
+        fb.value,
+        'a fallback is a capacity or a number',
+        'fallback: estimated(1_000, "req/s", "…")',
+      )
       return undefined
     }
     const unitAt = this.prop(b, 'unit')
-    if (capacity && unitAt) this.report.error(unitAt.key, 'a capacity has its own unit', `"${fallback.unit}"`)
+    if (capacity && unitAt)
+      this.report.error('bad-metric', unitAt.key, 'a capacity has its own unit', `"${fallback.unit}"`)
 
     const args = new Map<string, { value: string; at: Span }>()
     for (const [k, props] of b.props) {
       if (own(b.spec.props, k)) continue
       const v = this.constant(props[0]!.value, 'any')
       if (typeof v !== 'string' && typeof v !== 'number') {
-        if (v !== undefined) this.report.error(props[0]!.value, 'an argument is a word or a number')
+        if (v !== undefined) this.report.error('wrong-type', props[0]!.value, 'an argument is a word or a number')
         continue
       }
       args.set(k, { value: String(v), at: props[0]!.key })
@@ -1536,13 +1664,19 @@ class Compiler {
     const missing = [...used].filter((a) => !args.has(a))
     if (missing.length)
       this.report.error(
+        'bad-metric',
         id,
         `the query of "${name.name}" needs ${missing.map((a) => `{{ args.${a} }}`).join(' and ')}`,
         missing.map((a) => `${a}: "…"`).join('; '),
       )
     for (const [k, a] of args)
       if (!used.has(k))
-        this.report.error(a.at, `the query of "${name.name}" has no {{ args.${k} }}`, didYouMean(k, [...used]))
+        this.report.error(
+          'bad-metric',
+          a.at,
+          `the query of "${name.name}" has no {{ args.${k} }}`,
+          didYouMean(k, [...used]),
+        )
     if (missing.length) return undefined
     const query = q.fill(new Map([...args].map(([k, a]) => [k, a.value])))
 
@@ -1580,6 +1714,7 @@ class Compiler {
     const providers = b.children.filter((c) => SCHEMA.metric!.children.includes(c.keyword))
     if (providers.length !== 1) {
       this.report.error(
+        'bad-metric',
         b.args.id ?? b.at,
         providers.length ? 'a metric reads from one provider' : 'a metric needs a provider to read from',
         usage('prometheus'),
@@ -1596,11 +1731,16 @@ class Compiler {
       texts.set(k, { text, at })
       for (const m of text.matchAll(/\{\{(.*?)\}\}/g))
         if (!new RegExp(`^${TEMPLATE.source}$`).test(m[0]))
-          this.report.error(at.value, `"${m[0]}" is not an argument`, 'write {{ args.name }}: each measure gives name')
+          this.report.error(
+            'bad-metric',
+            at.value,
+            `"${m[0]}" is not an argument`,
+            'write {{ args.name }}: each measure gives name',
+          )
     }
     const min = this.constProp<number>(b, 'min')
     if (min != null && !(Number.isInteger(min) && min >= 0)) {
-      this.report.error(this.prop(b, 'min')!.value, 'min is a whole number of samples from 0')
+      this.report.error('out-of-range', this.prop(b, 'min')!.value, 'min is a whole number of samples from 0')
       return undefined
     }
     const read = { prometheus: () => this.prometheus(texts), elasticsearch: () => this.elasticsearch(p, texts) }
@@ -1633,18 +1773,23 @@ class Compiler {
     // the provider's rule, on the text without its arguments: "logs-{{ args.env }}" is a pattern
     const parts = index.text.replace(TEMPLATE, 'x').split(',')
     if (parts.some((s) => !s || s === '.' || s === '..' || /[\s/?#]/.test(s))) {
-      this.report.error(index.at.value, 'an index is a name or a pattern', '"logs-*", or names joined by commas')
+      this.report.error(
+        'bad-metric',
+        index.at.value,
+        'an index is a name or a pattern',
+        '"logs-*", or names joined by commas',
+      )
       return undefined
     }
     const agg = this.constProp<string>(p, 'agg') ?? 'rate'
     const field = texts.get('field')
     const counts = agg === 'rate' || agg === 'count'
     if (!counts && !field) {
-      this.report.error(this.prop(p, 'agg')!.value, `${agg} reads a field`, 'field: "duration_ms"')
+      this.report.error('bad-metric', this.prop(p, 'agg')!.value, `${agg} reads a field`, 'field: "duration_ms"')
       return undefined
     }
     if (counts && field) {
-      this.report.error(field.at.key, `${agg} counts documents: it takes no field`)
+      this.report.error('bad-metric', field.at.key, `${agg} counts documents: it takes no field`)
       return undefined
     }
     const filter = texts.get('query')
@@ -1657,6 +1802,7 @@ class Compiler {
       }
       if (typeof v !== 'object' || v === null || Array.isArray(v)) {
         this.report.error(
+          'bad-metric',
           filter.at.value,
           'the query is Elasticsearch query JSON, an argument inside its texts',
           `'{"term": {"service": "{{ args.service }}"}}'`,
@@ -1693,11 +1839,12 @@ class Compiler {
       }
       if (want === 'capacity' && f.type === 'number')
         this.report.error(
+          'bare-capacity',
           e,
           'a capacity says where it came from',
           `write measured(${this.slice(e)}, "unit", "source") or estimated(…)`,
         )
-      else this.report.error(e, `expected ${typeWord(want)}, this is ${typeWord(f.type)}`)
+      else this.report.error('wrong-type', e, `expected ${typeWord(want)}, this is ${typeWord(f.type)}`)
     }
     return f
   }
@@ -1709,7 +1856,7 @@ class Compiler {
       return f.run(undefined)
     } catch (err) {
       const { message, hint } = failure(err)
-      this.report.error(e, message, hint)
+      this.report.error('runtime', e, message, hint)
       return undefined
     }
   }
@@ -1733,7 +1880,7 @@ class Compiler {
       try {
         if (v !== undefined) check?.(v)
       } catch (err) {
-        this.report.error(e, (err as Error).message)
+        this.report.error('bad-value', e, (err as Error).message)
       }
       return v as T
     }
@@ -1773,21 +1920,26 @@ class Compiler {
   private enumValue(p: Property, spec: PropSpec): string | undefined {
     const raw = this.word(p)
     if (spec.values?.includes(raw)) return raw
-    this.report.error(p.value, `"${raw}" is not one of ${spec.values!.join(', ')}`, didYouMean(raw, spec.values ?? []))
+    this.report.error(
+      'bad-value',
+      p.value,
+      `"${raw}" is not one of ${spec.values!.join(', ')}`,
+      didYouMean(raw, spec.values ?? []),
+    )
     return undefined
   }
 
   private words(p: Property, spec: PropSpec): string[] | undefined {
     const values = spec.values ?? []
     if (p.value.t !== 'array') {
-      this.report.error(p.value, `a list: [${values.slice(0, 2).join(', ')}]`)
+      this.report.error('wrong-type', p.value, `a list: [${values.slice(0, 2).join(', ')}]`)
       return undefined
     }
     const out: string[] = []
     for (const e of p.value.items) {
       const word = e.t === 'str' ? e.value : e.t === 'id' ? e.name : this.slice(e)
       if (values.includes(word)) out.push(word)
-      else this.report.error(e, `"${word}" is not one of ${values.join(', ')}`, didYouMean(word, values))
+      else this.report.error('bad-value', e, `"${word}" is not one of ${values.join(', ')}`, didYouMean(word, values))
     }
     return out
   }
@@ -1797,11 +1949,16 @@ class Compiler {
     const or = themes ? ' or a theme colour' : ''
     if (e.t === 'id' && themes) {
       if ((COLORS as readonly string[]).includes(e.name)) return e.name
-      this.report.error(e, `"${e.name}" is not a theme colour`, didYouMean(e.name, COLORS) ?? 'or quote a CSS colour')
+      this.report.error(
+        'bad-value',
+        e,
+        `"${e.name}" is not a theme colour`,
+        didYouMean(e.name, COLORS) ?? 'or quote a CSS colour',
+      )
     } else if (e.t === 'str') {
       if (CSS_COLOR.test(e.value.trim())) return e.value.trim()
-      this.report.error(e, `"${e.value}" is not a colour`, `use #rrggbb, rgb(…), hsl(…)${or}`)
-    } else this.report.error(e, `a colour is a CSS colour in quotes${or}`)
+      this.report.error('bad-value', e, `"${e.value}" is not a colour`, `use #rrggbb, rgb(…), hsl(…)${or}`)
+    } else this.report.error('wrong-type', e, `a colour is a CSS colour in quotes${or}`)
     return undefined
   }
 
@@ -1859,11 +2016,13 @@ class Compiler {
     const options = this.prop(b, 'options')
     if (options) {
       for (const k of ['min', 'max', 'step'])
-        if (b.props.has(k)) this.report.error(this.prop(b, k)!.key, `"${k}" is for a slider; this param has options`)
+        if (b.props.has(k))
+          this.report.error('bad-param', this.prop(b, k)!.key, `"${k}" is for a slider; this param has options`)
       const list = this.options(options)
       if (!list) return undefined
       if (!list.includes(value as never)) {
         this.report.error(
+          'bad-param',
           dflt.value,
           `the default ${this.slice(dflt.value)} is not one of the options`,
           list.join(', '),
@@ -1873,17 +2032,20 @@ class Compiler {
       return p.select({ ...o, options: list, default: value } as any)
     }
     if (b.props.has('min') || b.props.has('max')) {
-      for (const k of ['min', 'max']) if (!b.props.has(k)) this.report.error(b.at, `a slider needs "${k}: …"`)
+      for (const k of ['min', 'max'])
+        if (!b.props.has(k))
+          this.report.error('missing-property', b.at, `a slider needs "${k}: …"`, undefined, { key: k })
       const r: Record<string, unknown> = { ...o }
       for (const k of ['min', 'max', 'step']) {
         const v = this.constProp<number>(b, k)
         if (v != null) r[k] = v
       }
-      if (typeof value !== 'number') this.report.error(dflt.value, 'the default of a slider is a number')
+      if (typeof value !== 'number') this.report.error('wrong-type', dflt.value, 'the default of a slider is a number')
       return p.range({ ...r, default: value } as any)
     }
     if (typeof value === 'boolean') return p.switch({ ...o, default: value } as any)
     this.report.error(
+      'bad-param',
       b.at,
       `"${b.args.id!.name}" is neither a select, a slider nor a switch`,
       'give it options: [...], min and max, or a default of true or false',
@@ -1893,13 +2055,13 @@ class Compiler {
 
   private options(prop: Property): (number | string)[] | undefined {
     if (prop.value.t !== 'array' || !prop.value.items.length) {
-      this.report.error(prop.value, 'options are a list: [2, 3, 4] or ["a", "b"]')
+      this.report.error('wrong-type', prop.value, 'options are a list: [2, 3, 4] or ["a", "b"]')
       return undefined
     }
     const list = prop.value.items.map((e) => this.constant(e, 'any'))
     const kind = typeof list[0]
     if (!list.every((v) => (typeof v === 'number' || typeof v === 'string') && typeof v === kind)) {
-      this.report.error(prop.value, 'options are all numbers or all texts')
+      this.report.error('wrong-type', prop.value, 'options are all numbers or all texts')
       return undefined
     }
     return list as (number | string)[]
@@ -1915,24 +2077,29 @@ class Compiler {
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
       if (k === 'load' && kind === 'scenario') {
-        this.report.error(prop.key, 'a scenario leaves the load to the slider', 'use a preset for a load')
+        this.report.error(
+          'bad-scenario',
+          prop.key,
+          'a scenario leaves the load to the slider',
+          'use a preset for a load',
+        )
         continue
       }
       if (k !== 'load' && !known.has(k)) {
         const names = [...(kind === 'preset' ? ['load'] : []), ...known.keys()]
-        this.report.error(prop.key, `unknown parameter "${k}"`, didYouMean(k, names))
+        this.report.error('unknown-name', prop.key, `unknown parameter "${k}"`, didYouMean(k, names))
         continue
       }
       const type = this.names.params.get(k)
       if (type && type !== 'any' && typeof v !== type) {
-        this.report.error(prop.value, `"${k}" takes ${typeWord(type)}`)
+        this.report.error('wrong-type', prop.value, `"${k}" takes ${typeWord(type)}`)
         continue
       }
       const opts = known.get(k) && this.prop(known.get(k)!, 'options')
       if (opts?.value.t === 'array') {
         const list = opts.value.items.map((e) => (e.t === 'num' || e.t === 'str' ? e.value : undefined))
         if (!list.includes(v as never))
-          this.report.error(prop.value, `${String(v)} is not an option of "${k}"`, list.join(', '))
+          this.report.error('bad-value', prop.value, `${String(v)} is not an option of "${k}"`, list.join(', '))
       }
       out[k] = v
     }
@@ -1959,19 +2126,24 @@ class Compiler {
     const qs = ['p50', 'p95', 'p99'].filter((q) => b.props.has(q))
     if (flow != null || qs.length) {
       if (flow == null) {
-        this.report.error(this.prop(b, qs[0]!)!.key, `${qs[0]} is the latency of a flow: name it`, 'flow: orders')
+        this.report.error(
+          'bad-expect',
+          this.prop(b, qs[0]!)!.key,
+          `${qs[0]} is the latency of a flow: name it`,
+          'flow: orders',
+        )
         return undefined
       }
       if (qs.length !== 1) {
-        this.report.error(b.at, `the latency of "${flow}" takes one of p50, p95 or p99`, `p99: 0.5`)
+        this.report.error('bad-expect', b.at, `the latency of "${flow}" takes one of p50, p95 or p99`, `p99: 0.5`)
         return undefined
       }
       for (const k of ['component', 'full'])
         if (b.props.has(k))
-          this.report.error(this.prop(b, k)!.key, `an expect on the latency of "${flow}" takes no ${k}`)
+          this.report.error('bad-expect', this.prop(b, k)!.key, `an expect on the latency of "${flow}" takes no ${k}`)
       const v = this.constProp<number>(b, qs[0]!)
       if (!(v != null && v > 0 && Number.isFinite(v))) {
-        this.report.error(this.prop(b, qs[0]!)!.value, `${qs[0]} is a time in seconds above 0`)
+        this.report.error('out-of-range', this.prop(b, qs[0]!)!.value, `${qs[0]} is a time in seconds above 0`)
         return undefined
       }
       e.flow = flow
@@ -1980,14 +2152,15 @@ class Compiler {
     for (const k of ['target', 'full']) {
       const v = this.constProp<number>(b, k)
       if (v == null) continue
-      if (!(v > 0 && Number.isFinite(v))) this.report.error(this.prop(b, k)!.value, `${k} is a load multiple above 0`)
+      if (!(v > 0 && Number.isFinite(v)))
+        this.report.error('out-of-range', this.prop(b, k)!.value, `${k} is a load multiple above 0`)
       else e[k] = v
     }
     const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
     if (severity) e.severity = severity
     if (e.flow != null) return e
     if (!b.props.has('target') && !b.props.has('full')) {
-      this.report.error(b.at, 'an expect needs a target or a full multiple', 'expect { target: 8 }')
+      this.report.error('bad-expect', b.at, 'an expect needs a target or a full multiple', 'expect { target: 8 }')
       return undefined
     }
     return e.target != null || e.full != null ? e : undefined
@@ -1998,8 +2171,9 @@ class Compiler {
     const p = this.prop(b, key)
     if (!p) return undefined
     const v = p.value.t === 'id' ? p.value.name : p.value.t === 'str' ? p.value.value : undefined
-    if (v == null) this.report.error(p.value, `${key} is the name of a ${what}`)
-    else if (!known.includes(v)) this.report.error(p.value, `unknown ${what} "${v}"`, didYouMean(v, known))
+    if (v == null) this.report.error('wrong-type', p.value, `${key} is the name of a ${what}`)
+    else if (!known.includes(v))
+      this.report.error('unknown-name', p.value, `unknown ${what} "${v}"`, didYouMean(v, known))
     else return v
     return null
   }
@@ -2018,6 +2192,7 @@ class Compiler {
       const at = b.props.get(k)?.[0]
       if (at && params.some((x) => x.args.id?.name === k))
         this.report.error(
+          'bad-step',
           at.key,
           `"${k}" in a step is the step's own ${k}, not the parameter "${k}"`,
           'rename the parameter to set it in a step',
@@ -2026,14 +2201,15 @@ class Compiler {
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const focus = this.named(b, 'focus', [...components.keys()], 'component')
     const title = this.constProp<string>(b, 'title')
-    if (title != null && !title.trim()) this.report.error(this.prop(b, 'title')!.value, 'a title needs a few words')
+    if (title != null && !title.trim())
+      this.report.error('bad-value', this.prop(b, 'title')!.value, 'a title needs a few words')
     const seconds = this.constProp<number>(b, 'seconds')
     if (seconds != null && !(seconds > 0 && Number.isFinite(seconds)))
-      this.report.error(this.prop(b, 'seconds')!.value, 'seconds is a duration above 0')
+      this.report.error('out-of-range', this.prop(b, 'seconds')!.value, 'seconds is a duration above 0')
     const set = this.preset(b, params)
     const l = this.prop(b, 'load')
     if (l && load && typeof set.load === 'number' && !(set.load >= load.min && set.load <= load.max))
-      this.report.error(l.value, `the load goes from ${load.min} to ${load.max}`)
+      this.report.error('out-of-range', l.value, `the load goes from ${load.min} to ${load.max}`)
     if (text == null || scenario === null || focus === null) return undefined
     return {
       text,
@@ -2049,9 +2225,10 @@ class Compiler {
     const rate = this.constProp<number>(b, 'rate')
     const per = this.constProp<string>(b, 'per')
     const asOf = this.constProp<string>(b, 'asOf')
-    if (rate != null && !(rate > 0)) this.report.error(this.prop(b, 'rate')!.value, 'growth needs a rate above 0')
+    if (rate != null && !(rate > 0))
+      this.report.error('out-of-range', this.prop(b, 'rate')!.value, 'growth needs a rate above 0')
     if (asOf != null && !parseAsOf(asOf))
-      this.report.error(this.prop(b, 'asOf')!.value, `"${asOf}" is not a date`, 'a day like "2026-11-01"')
+      this.report.error('bad-value', this.prop(b, 'asOf')!.value, `"${asOf}" is not a date`, 'a day like "2026-11-01"')
     if (rate == null || per == null || asOf == null) return undefined
     return { rate, per, asOf }
   }
@@ -2062,17 +2239,22 @@ class Compiler {
     this.fits.set(id.name, null)
     const pts = b.children.filter((c) => c.keyword === 'points')
     if (pts.length !== 1) {
-      this.report.error(b.at, pts.length ? 'a fit has one points block' : 'a fit needs its points', usage('points'))
+      this.report.error(
+        'bad-fit',
+        b.at,
+        pts.length ? 'a fit has one points block' : 'a fit needs its points',
+        usage('points'),
+      )
       return
     }
     const block = pts[0]!
     const { x, y } = block.args
     if (!x || !y) return
-    if (x.name === y.name) this.report.error(y, 'x and y need different names')
+    if (x.name === y.name) this.report.error('bad-fit', y, 'x and y need different names')
     const points: Record<string, number>[] = []
     for (const r of block.rows) {
       if (r.values.length !== 2) {
-        this.report.error(r, `a row is two numbers: ${x.name} and ${y.name}`)
+        this.report.error('bad-fit', r, `a row is two numbers: ${x.name} and ${y.name}`)
         continue
       }
       const [a, c] = r.values.map((v) => this.constant(v, 'number')) as [number, number]
@@ -2090,7 +2272,7 @@ class Compiler {
       if (series && this.snapshot)
         this.fits.set(id.name, this.snapshot.fit(series.x, series.y, fit, through ? { through } : {}))
     } catch (err) {
-      this.report.error(block.at, (err as Error).message.replace(/^loadmap: /, ''))
+      this.report.error('bad-fit', block.at, (err as Error).message.replace(/^loadmap: /, ''))
     }
   }
 
@@ -2102,6 +2284,7 @@ class Compiler {
       if (p.value.t !== 'id' || !this.measureIds.has(p.value.name)) {
         const word = p.value.t === 'id' ? `"${p.value.name}"` : 'this'
         this.report.error(
+          'unknown-name',
           p.value,
           `${word} is not a measure`,
           didYouMean(p.value.t === 'id' ? p.value.name : '', [...this.measureIds]),
@@ -2114,7 +2297,12 @@ class Compiler {
     const y = name('y')
     if (x === undefined && y === undefined) return undefined
     if (x === undefined || y === undefined)
-      this.report.error(b.args.id ?? b.at, 'a fit reads its series from two measures: x and y', 'x: rate; y: cores')
+      this.report.error(
+        'bad-fit',
+        b.args.id ?? b.at,
+        'a fit reads its series from two measures: x and y',
+        'x: rate; y: cores',
+      )
     return x && y ? { x, y } : undefined
   }
 
@@ -2127,7 +2315,7 @@ class Compiler {
     const props: Record<Key, readonly string[]> = { drop: ['olderThan', 'reason'], merge: ['share', 'reason'] }
     for (const r of rules) {
       const key = r.keyword as Key
-      if (seen.has(key)) this.report.error(r.at, `"${key}" is set twice in this flow`)
+      if (seen.has(key)) this.report.error('duplicate', r.at, `"${key}" is set twice in this flow`)
       seen.add(key)
       const fields: [string, unknown][] = []
       for (const k of props[key]) {
@@ -2155,7 +2343,7 @@ class Compiler {
   private retry(b: Block): RetryRule | ((values: any) => RetryRule | undefined) | undefined {
     const r = b.children.filter((c) => c.keyword === 'retry')
     if (!r.length) return undefined
-    if (r.length > 1) this.report.error(r[1]!.at, '"retry" is set twice in this flow')
+    if (r.length > 1) this.report.error('duplicate', r[1]!.at, '"retry" is set twice in this flow')
     const rule = r[0]!
     const times = this.dynProp<number>(rule, 'times', 'number')
     const budget = this.dynProp<number>(rule, 'budget', 'number')
@@ -2175,7 +2363,7 @@ class Compiler {
     const name = this.constProp<string>(b, 'name') ?? this.text(b.args.label) ?? this.text(box?.args.label)
     if (name == null) {
       const label = box?.args.label ?? b.args.label
-      if (label) this.report.error(label, 'a computed label cannot name the component', 'add name: "…"')
+      if (label) this.report.error('bad-box', label, 'a computed label cannot name the component', 'add name: "…"')
     }
     o.name = name ?? (b.args.id ?? box?.args.id)?.name
     for (const k of ['short', 'plural']) {
@@ -2209,7 +2397,8 @@ class Compiler {
     if (held !== undefined) {
       o.held = held
       const demand = this.prop(b, 'demand')
-      if (demand) this.report.error(demand.key, 'a component that is held works out its demand: drop one of them')
+      if (demand)
+        this.report.error('bad-box', demand.key, 'a component that is held works out its demand: drop one of them')
     }
     const at = box ? (box.args.id ?? box.at) : b.at
     const missing = ['capacity', 'over'].filter((k) => !(k in o))
@@ -2222,7 +2411,10 @@ class Compiler {
       return o
     }
     // without a demand line the component handles what reaches its stages: checked once the stages are known
-    for (const k of missing) this.report.error(at, `the component needs "${k}: …"`, COMPONENT_PROPS[k]!.doc)
+    for (const k of missing)
+      this.report.error('missing-property', at, `the component needs "${k}: …"`, COMPONENT_PROPS[k]!.doc, {
+        key: k,
+      })
     return o
   }
 
@@ -2231,7 +2423,12 @@ class Compiler {
     const prop = this.prop(b, 'held')
     const block = b.children.find((c) => c.keyword === 'held')
     if (prop && block)
-      this.report.error(block.at, 'held is set twice', 'held: 0.02 for every flow, or a held block per flow')
+      this.report.error(
+        'duplicate',
+        block.at,
+        'held is set twice',
+        'held: 0.02 for every flow, or a held block per flow',
+      )
     const time = (v: unknown) => {
       if (typeof v !== 'number' || !Number.isFinite(v) || v < 0)
         throw new Error(`a time held is seconds from 0 up, not ${String(v)}`)
@@ -2242,7 +2439,7 @@ class Compiler {
     for (const [f, props] of block.props) {
       const p = props[0]!
       if (!flows.has(f)) {
-        this.report.error(p.key, `unknown flow "${f}"`, didYouMean(f, flows.keys()))
+        this.report.error('unknown-name', p.key, `unknown flow "${f}"`, didYouMean(f, flows.keys()))
         continue
       }
       entries.push([f, this.dyn<number>(p.value, 'number', 'ctx', time)])
@@ -2268,10 +2465,17 @@ class Compiler {
     if (named) {
       const n = named.value
       if (n.t === 'id' && components.has(n.name)) component = n.name
-      else this.report.error(n, `unknown component "${this.slice(n)}"`, didYouMean(this.slice(n), components.keys()))
+      else
+        this.report.error(
+          'unknown-name',
+          n,
+          `unknown component "${this.slice(n)}"`,
+          didYouMean(this.slice(n), components.keys()),
+        )
     }
     const needs = () => {
       this.report.error(
+        'missing-part',
         b.at,
         `a ${b.keyword} stage needs a component`,
         'give the box demand and capacity lines, or name one: component: db',
@@ -2305,7 +2509,12 @@ class Compiler {
         const scale = b.children.find((c) => c.keyword === 'autoscale')
         if (scale) {
           if (this.prop(b, 'pods'))
-            this.report.error(this.prop(b, 'pods')!.key, 'an autoscaled pool has no fixed pods', 'leave out pods')
+            this.report.error(
+              'bad-box',
+              this.prop(b, 'pods')!.key,
+              'an autoscaled pool has no fixed pods',
+              'leave out pods',
+            )
           const min = this.dynProp<number>(scale, 'min', 'number') ?? 1
           // max is the pods drawn: the same bound as pods
           const max = this.dynProp<number>(scale, 'max', 'number', this.count('pods')) ?? 1
@@ -2315,6 +2524,7 @@ class Compiler {
         const pods = this.dynProp<number>(b, 'pods', 'number', this.count('pods'))
         if (!this.prop(b, 'pods'))
           this.report.error(
+            'missing-part',
             b.at,
             'a workers stage needs pods, or autoscale',
             'pods: 3, or autoscale { min: 2; max: 10; target: 0.7 }',
@@ -2324,14 +2534,14 @@ class Compiler {
       case 'queue': {
         const block = b.children.find((c) => c.keyword === 'partitions')
         if (!block) {
-          this.report.error(b.at, 'a queue needs its partitions', 'partitions { orders: 12 }')
+          this.report.error('missing-part', b.at, 'a queue needs its partitions', 'partitions { orders: 12 }')
           return undefined
         }
         const entries: [string, number | ((c: any) => number)][] = []
         for (const [f, props] of block.props) {
           const prop = props[0]!
           if (!flows.has(f)) {
-            this.report.error(prop.key, `unknown flow "${f}"`, didYouMean(f, flows.keys()))
+            this.report.error('unknown-name', prop.key, `unknown flow "${f}"`, didYouMean(f, flows.keys()))
             continue
           }
           entries.push([f, this.dyn<number>(prop.value, 'number', 'ctx', this.count('partitions'))])
@@ -2346,20 +2556,26 @@ class Compiler {
         const branches: [string, string, number | ((c: any) => number)][] = []
         for (const e of b.edges) {
           if (e.chain.length !== 2) {
-            this.report.error(e, 'a branch is one "flow -> stage: copies" line')
+            this.report.error('bad-route', e, 'a branch is one "flow -> stage: copies" line')
             continue
           }
           const [f, s] = e.chain as [Ident, Ident]
-          if (!flows.has(f.name)) this.report.error(f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
+          if (!flows.has(f.name))
+            this.report.error('unknown-name', f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
           const stage = resolve(s, 'stage')
           if (stage) reached.add(stage)
           if (stage) this.branchAt.set(`${f.name}\u0000${stage}`, e)
           if (e.colon) {
-            this.report.error(e.colon, 'a branch takes its copies after ":", not a block', `${f.name} -> ${s.name}: 1`)
+            this.report.error(
+              'bad-route',
+              e.colon,
+              'a branch takes its copies after ":", not a block',
+              `${f.name} -> ${s.name}: 1`,
+            )
             continue
           }
-          if (!e.value) this.report.error(e, 'how many copies per unit?', `${f.name} -> ${s.name}: 1`)
-          if (e.body) this.report.error(e.bodySpan ?? e, 'a branch has no block')
+          if (!e.value) this.report.error('bad-route', e, 'how many copies per unit?', `${f.name} -> ${s.name}: 1`)
+          if (e.body) this.report.error('bad-route', e.bodySpan ?? e, 'a branch has no block')
           if (stage && e.value && flows.has(f.name)) branches.push([f.name, stage, this.dyn<number>(e.value, 'number')])
         }
         const build = (ctx: any) => {
@@ -2380,17 +2596,19 @@ class Compiler {
         const broken = new Set<string>()
         for (const e of b.edges) {
           if (e.chain.length < 2) {
-            this.report.error(e, 'a way is one "flow -> stage -> …: share" line')
+            this.report.error('bad-route', e, 'a way is one "flow -> stage -> …: share" line')
             continue
           }
           const [f, ...through] = e.chain as [Ident, ...Ident[]]
-          if (!flows.has(f.name)) this.report.error(f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
+          if (!flows.has(f.name))
+            this.report.error('unknown-name', f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
           const stages = through.map((n) => resolve(n, 'stage'))
           for (const s of stages) if (s) reached.add(s)
           if (stages.every((s) => s)) this.wayAt.push({ split: id, flow: f.name, stages: stages as string[], at: e })
           if (e.colon) {
             broken.add(f.name)
             this.report.error(
+              'bad-route',
               e.colon,
               'a way takes its share after ":", not a block',
               `${f.name} -> ${through[0]!.name}: 0.5`,
@@ -2398,8 +2616,13 @@ class Compiler {
             continue
           }
           if (!e.value)
-            this.report.error(e, 'what share of the flow goes this way?', `${f.name} -> ${through[0]!.name}: 0.5`)
-          if (e.body) this.report.error(e.bodySpan ?? e, 'a way has no block')
+            this.report.error(
+              'bad-route',
+              e,
+              'what share of the flow goes this way?',
+              `${f.name} -> ${through[0]!.name}: 0.5`,
+            )
+          if (e.body) this.report.error('bad-route', e.bodySpan ?? e, 'a way has no block')
           if (e.value && flows.has(f.name) && stages.every((s) => s))
             ways.push([f.name, stages as string[], this.dyn<number>(e.value, 'number'), e])
           else broken.add(f.name)
@@ -2421,6 +2644,7 @@ class Compiler {
             if (!broken.has(f) && Math.abs(sum - 1) > 1e-9) {
               const first = ways.find(([g]) => g === f)![3]
               this.report.error(
+                'bad-route',
                 first,
                 `the shares of "${f}" add up to ${Math.round(sum * 1000) / 1000}, not 1`,
                 'every unit goes one way',
@@ -2439,7 +2663,8 @@ class Compiler {
     const b = box.block
     const label = this.label(b.args.label) ?? box.id
     const subProp = this.prop(b, 'sub')
-    if (subProp && b.args.sub) this.report.error(subProp.key, 'the sub-line is set twice: on the first line and here')
+    if (subProp && b.args.sub)
+      this.report.error('duplicate', subProp.key, 'the sub-line is set twice: on the first line and here')
     const sub = this.label(b.args.sub ?? subProp?.value)
     const o: Record<string, unknown> = { label }
     if (sub != null) o.sub = sub
@@ -2473,25 +2698,33 @@ class Compiler {
   private edges(e: Edge, boxes: Map<string, Box>): EdgeDef[] {
     if (e.colon)
       this.report.error(
+        'colon-before-block',
         e.colon,
         'drop the ":" before a { … } block',
         `${e.chain.map((c) => c.name).join(' -> ')} { ${e.chain.length > 2 ? '' : 'label: …; '}when: … }`,
       )
     for (const n of e.chain)
-      if (!boxes.has(n.name)) this.report.error(n, `unknown node "${n.name}"`, didYouMean(n.name, boxes.keys()))
+      if (!boxes.has(n.name))
+        this.report.error('unknown-name', n, `unknown node "${n.name}"`, didYouMean(n.name, boxes.keys()))
     const props = new Map<string, Property>()
     for (const s of e.body ?? []) {
       if (s.kind !== 'prop' || !own(EDGE_PROPS, s.key.name)) {
         const at = s.kind === 'prop' ? s.key : s.kind === 'decl' ? s.keyword : s
-        this.report.error(at, 'an edge holds only label and when', didYouMean(this.slice(at), Object.keys(EDGE_PROPS)))
+        this.report.error(
+          'unknown-property',
+          at,
+          'an edge holds only label and when',
+          didYouMean(this.slice(at), Object.keys(EDGE_PROPS)),
+        )
         continue
       }
-      if (props.has(s.key.name)) this.report.error(s.key, `"${s.key.name}" is set twice on this edge`)
+      if (props.has(s.key.name)) this.report.error('duplicate', s.key, `"${s.key.name}" is set twice on this edge`)
       props.set(s.key.name, s)
     }
     const labelExpr = e.value ?? props.get('label')?.value
-    if (e.value && props.has('label')) this.report.error(props.get('label')!.key, 'the label is set twice')
-    if (labelExpr && e.chain.length > 2) this.report.error(labelExpr, 'a label goes on a single edge: a -> b: "…"')
+    if (e.value && props.has('label')) this.report.error('duplicate', props.get('label')!.key, 'the label is set twice')
+    if (labelExpr && e.chain.length > 2)
+      this.report.error('bad-edge', labelExpr, 'a label goes on a single edge: a -> b: "…"')
     const label = this.label(labelExpr)
     const when = props.get('when')
     const out: EdgeDef[] = []

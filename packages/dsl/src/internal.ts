@@ -22,6 +22,6 @@ export {
 export { BUILTINS } from './expr'
 export { fingerprint, LEXICON, lex, type Token } from './lexer'
 export { MAX_DEPTH, MAX_SOURCE, parse, parseExpression } from './parser'
-export { reference } from './reference'
+export { codeReference, reference } from './reference'
 export { BOXES, COLORS, COMPONENT_PROPS, EDGE_PROPS, PANELS, type PropSpec, SCHEMA, STAGES } from './schema'
 export { changedBoxes, type Drawn, type Range } from './track'

@@ -11,7 +11,13 @@ export {
   type MeasureQuery,
   problems,
 } from './compile'
-export { type Diagnostic, formatDiagnostic, type Span } from './diagnostics'
+export {
+  CODES as DIAGNOSTIC_CODES,
+  type Code as DiagnosticCode,
+  type Diagnostic,
+  formatDiagnostic,
+  type Span,
+} from './diagnostics'
 export { FormulaError, type HostFunctions } from './expr'
 export { FORMAT_WIDTH, type FormatResult, format } from './format'
 export {

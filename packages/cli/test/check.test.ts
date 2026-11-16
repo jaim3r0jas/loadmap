@@ -93,18 +93,22 @@ describe('loadmap check --pull', () => {
     const thin = { env: ENV, fetch: prometheus(1) }
     const warn = await run([path, '--pull'], thin)
     expect(warn.code).toBe(0)
-    expect(warn.out).toMatch(/warning: "Keeps 10×" is inconclusive: requests: 1 of at least 3 samples; /)
+    expect(warn.out).toMatch(
+      /warning\[expect-inconclusive\]: "Keeps 10×" is inconclusive: requests: 1 of at least 3 samples; /,
+    )
     expect(warn.out).toContain('shop.loadmap: of 1 expectation, 1 inconclusive')
     const fail = await run([path, '--pull', '--inconclusive', 'fail'], thin)
     expect(fail.code).toBe(1)
-    expect(fail.out).toMatch(/error: "Keeps 10×" is inconclusive/)
+    expect(fail.out).toMatch(/error\[expect-inconclusive\]: "Keeps 10×" is inconclusive/)
   })
 
   it('fails on a fresh number that loses headroom, unless the expectation is a warning', async () => {
     const strict = await file(SRC.replace('{ target: 10 }', '{ target: 20 }'))
     const r = await run([strict.path, '--pull'], { env: ENV, fetch: prometheus() })
     expect(r.code).toBe(1)
-    expect(r.out).toMatch(/error: "Keeps 10×" fails: expected at least 20×, but the 50 % target holds up to 15×/)
+    expect(r.out).toMatch(
+      /error\[expect-failed\]: "Keeps 10×" fails: expected at least 20×, but the 50 % target holds up to 15×/,
+    )
     const soft = await file(SRC.replace('{ target: 10 }', '{ target: 20; severity: warn }'))
     const w = await run([soft.path, '--pull', '--format', 'github'], { env: ENV, fetch: prometheus() })
     expect(w.code).toBe(0)
@@ -120,7 +124,7 @@ describe('loadmap check --pull', () => {
       fetch: prometheus(),
     })
     expect(r.code).toBe(0)
-    expect(r.out).toMatch(/error: "Keeps 10×" fails/)
+    expect(r.out).toMatch(/error\[expect-failed\]: "Keeps 10×" fails/)
     expect(r.out).toContain('dry run: this would fail; it exits 0')
     const md = await readFile(summary, 'utf8')
     expect(md).toContain('### loadmap check')
@@ -167,6 +171,22 @@ describe('loadmap check --pull', () => {
     const p = JSON.parse(printed.out)
     expect(p.files[0].expectations).toEqual(f.expectations)
     expect(p.commit).toBe('abc123')
+  })
+
+  it('gives each diagnostic in JSON its code, hint and end, and its code in the text', async () => {
+    const { path } = await file(SRC.replace('demand: flows.req', 'demand: flows.reqs'))
+    const p = JSON.parse((await run([path, '--format', 'json'])).out)
+    expect(p.files[0].diagnostics).toContainEqual({
+      severity: 'error',
+      code: 'unknown-name',
+      line: 20,
+      column: 17,
+      endLine: 20,
+      endColumn: 21,
+      message: 'unknown flow "reqs"',
+      hint: 'did you mean "req"?',
+    })
+    expect((await run([path])).out).toContain(`${path}:20:17 error[unknown-name]: unknown flow "reqs"`)
   })
 
   it('refuses what cannot be meant, and a pull without its provider', async () => {

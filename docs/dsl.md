@@ -67,7 +67,7 @@ A route lists stages: `route: gateway -> topic -> workers`. It may also name a b
 **Dots move only along edges.** Every hop a flow takes needs an edge drawn the way it goes: from its `from` box to
 its first stage, between the stages next to each other on its route, on each way of a split (and where a way rejoins
 the route), and from a fan-out to each stage it copies to. Two stages in one box are no hop. A hop without its edge is
-an error at the hop ("signups goes from gateway to api, and no edge joins them"); the editor offers to add the edge
+an error at the hop (`"signups" goes from "gateway" to "api", and no edge joins them`); the editor offers to add the edge
 or, when other edges already join the two boxes, to route the flow through them. An edge a flow takes may still have a
 `when`, but where it hides the edge (at the defaults, in a preset or a scenario) and the flow still goes that way, the
 checker warns.
@@ -163,7 +163,7 @@ loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectat
 ```
 
 ```
-checkout.loadmap:26:1 error: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
+checkout.loadmap:26:1 error[expect-failed]: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
   26 | expect "Today keeps 12×" { target: 12 }
      | ^^^^^^^^^^^^^^^^^^^^^^^^
 checkout.loadmap: 1 of 2 expectations failed
@@ -948,13 +948,75 @@ Every error has a line and a column, and parsing goes on after one, so a file sh
 that are almost right get a suggestion:
 
 ```
-checkout.loadmap:102:17 error: unknown flow "order"
+checkout.loadmap:102:17 error[unknown-name]: unknown flow "order"
   102 |   demand: flows.order + flows.events
       |                 ^^^^^ did you mean "orders"?
 ```
 
 `compile` also runs the model at its defaults, at every preset and in every scenario. A formula that fails there,
 such as a loop between two `let`s, is marked where it is written.
+
+Each diagnostic has a code in brackets: the kind of problem, which stays when its message is reworded. Quick fixes
+key on it, and so can a script: `loadmap check --format json` gives every diagnostic its `code`, `hint`, and where its
+span ends (`endLine`, `endColumn`, the column after its last character).
+
+<!-- codes: written from CODES in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->
+
+| Code | |
+| --- | --- |
+| `syntax` | the text does not parse: a character, a token or a line out of place |
+| `too-large` | the definition, a block, a formula or a template is larger or deeper than loadmap reads |
+| `language-version` | the "loadmap" line is missing, misplaced, or names a version this loadmap does not read |
+| `unknown-name` | a name that nothing declares: a flow, stage, node, component, parameter, function, … |
+| `unknown-property` | a property the statement does not have |
+| `unknown-statement` | a statement the place does not have |
+| `misplaced` | a statement or property in a place it does not belong |
+| `duplicate` | something set, declared or listed twice |
+| `reserved-name` | an id that loadmap keeps for itself |
+| `missing-property` | a required property is missing |
+| `missing-part` | a required statement, argument or block is missing |
+| `unknown-unit` | a number with a suffix that is not a unit: 5sec |
+| `wrong-type` | a value of the wrong type |
+| `bad-value` | a value of the right type that the property does not take |
+| `out-of-range` | a number outside the range the property takes |
+| `wrong-scope` | a formula reads what its place may not read |
+| `wrong-arguments` | a function called with the wrong number of values |
+| `bad-formula` | a formula that uses a table, a function, a list or "±" where they do not go |
+| `unit-mismatch` | a demand, capacity or property whose unit differs from the one it should have |
+| `empty-unit` | a capacity whose unit is empty |
+| `bare-capacity` | a capacity without measured(…), estimated(…) or configured(…) |
+| `colon-before-block` | an edge written "a -> b: { … }" |
+| `missing-edge` | a flow goes from one box to another that no edge joins |
+| `reversed-edge` | a flow goes from one box to another against their edge |
+| `hidden-edge` | an edge hidden by its when while a flow still goes that way |
+| `unseen-loss` | what a stage loses reaches no lost box |
+| `bad-lost` | a lost box that takes nothing, feeds on, or takes what another lost box takes |
+| `bad-box` | a box whose stages and component do not fit together |
+| `bad-route` | a flow's route, hops, ways or branches that do not fit its stages |
+| `bad-edge` | an edge with a property or label it cannot have |
+| `bad-param` | a parameter whose options, range or default do not fit |
+| `bad-scenario` | a scenario or preset that sets what it cannot |
+| `bad-expect` | an expectation without a target, or with one that does not fit |
+| `bad-step` | a story step that sets what it cannot |
+| `bad-fit` | a fit whose points or measures do not fit |
+| `bad-metric` | a metric, measure or query that cannot be read |
+| `bad-rate` | a flow whose rate is not a finite number at some values |
+| `unused-stage` | a stage no flow passes |
+| `unused-component` | a component no stage uses or holds |
+| `tier-order` | an edge that runs back against the tiers |
+| `deprecated` | an old spelling: loadmap fmt rewrites it |
+| `catalog-not-loaded` | the definition names the component catalog, and the host did not load it |
+| `no-benchmark` | no published run matches the configuration: the component is not ranked |
+| `newer-edition` | a later edition of the catalog has other figures for the component |
+| `runtime` | a formula that fails when it is computed |
+| `model` | the model refuses the definition |
+| `expect-failed` | an expectation that does not hold |
+| `expect-inconclusive` | an expectation that holds only at the high edge of a ±, or rests on missing data |
+| `against-base` | a component's verdict changed against the base the check compares with |
+| `unreadable` | loadmap check cannot read the file, its snapshot, or a provider it needs |
+| `internal` | a bug in loadmap |
+
+<!-- end of codes -->
 
 ## In code
 
