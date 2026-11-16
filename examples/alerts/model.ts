@@ -113,7 +113,8 @@ export const alerts = defineModel({
     push: {
       name: 'Push broker',
       short: 'the push broker',
-      demand: ({ flows, watchOnly }) => flows.alerts * 1.4 + flows.positions * perPosition(watchOnly),
+      // what the fan-out below sends: each branch's copies of what reaches it (alerts.loadmap: out.push)
+      demand: ({ at, watchOnly }) => at.push.alerts + at.push.alerts * 0.4 + at.push.positions * perPosition(watchOnly),
       capacity: ({ pushNodes }) => estimated(pushNodes * 4000, 'packets/s', 'about 4,000 packets/s per node'),
       over: 'pushes queue on the broker, so positions and alert updates arrive late',
     },

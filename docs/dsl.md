@@ -78,6 +78,22 @@ or, when other edges already join the two boxes, to route the flow through them.
 `when`, but where it hides the edge (at the defaults, in a preset or a scenario) and the flow still goes that way, the
 checker warns.
 
+**A box like another** (from `loadmap 1.2`) says `like:` and the other box's id, and writes only what differs:
+
+```
+node db "Index shard 1" {
+  store
+  capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
+  over: "queries queue"
+}
+node db2 "Index shard 2" { like: db; short: "the second shard" }
+```
+
+It takes every line and stage of that box it does not write itself; a line written here replaces the same line there,
+and a stage written here replaces its stages. The id, the label and the edges are each box's own. The other box is of
+the same kind (a pool is like a pool), may itself be like a third, and gives its stage and its component no id of
+their own, since each would then be declared twice.
+
 ### Formulas
 
 Every value is a formula: a small subset of TypeScript expressions, so a lambda body from a TypeScript model pastes
@@ -104,6 +120,8 @@ as it is.
   - `let` names;
   - `flows.x`, `at.stage.x`, `demand.x`, `util.x` and `derived.x` for the model's tables (`at.stage` alone is every
     flow reaching that stage);
+  - `out.stage` for what a fan-out sends, a second: what reaches it of each flow times that branch's copies. A box that
+    runs a fan-out says `demand: out.push` instead of repeating the copies (from `loadmap 1.2`);
   - `i` inside `memberLabel` and `podLabel`, and `value` inside `format`.
 - **Calls:** the built-in functions (listed at the end), the fits by their id, and the functions a host page provides.
 - **Capacities** come only from `measured(value, unit, source)`, `estimated(value, unit, source)` or, for a limit
@@ -1078,7 +1096,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
-| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` as a name |
+| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>` | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 
 ## In code
 
@@ -1565,6 +1583,7 @@ After the keyword: id [label] [sub].
 | `sub` | string, formula | The second line of the box. |
 | `shape` | `box` \| `cylinder` | box (the default) or cylinder. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
@@ -1595,6 +1614,7 @@ After the keyword: id [label] [sub].
 | `members` (required) | number, formula | How many members. |
 | `memberLabel` | string, formula of `i` | Each member's label, from its index i: `broker ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
@@ -1624,6 +1644,7 @@ After the keyword: id [label] [sub].
 | `sub` | string, formula | The second line of the box. |
 | `podLabel` | string, formula of `i` | Each pod's label, from its index i: `pod ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |

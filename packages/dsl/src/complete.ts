@@ -37,7 +37,7 @@ export interface Completions {
 const CAPACITY = new Set(['measured', 'estimated', 'configured'])
 /** Units to start from in a file that names none yet. */
 const UNITS = ['req/s', 'cores', 'ops/s', 'msg/s', 'MB/s', 'connections']
-const TABLES = ['flows', 'at', 'demand', 'util', 'derived'] as const
+const TABLES = ['flows', 'at', 'out', 'demand', 'util', 'derived'] as const
 
 /**
  * What may be typed at `offset`: the properties and statements of the block the cursor is in, the ids a route or an
@@ -326,6 +326,8 @@ class Help {
       }
       case 'at':
         return this.ids('stage').map((s) => entry(s, 'at'))
+      case 'out':
+        return this.ids('stage').map((s) => entry(s, 'out'))
       // a component's own demand or utilization in its own lines would need itself
       case 'demand':
         return this.ids('component').flatMap((c) =>

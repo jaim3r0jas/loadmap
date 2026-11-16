@@ -352,6 +352,8 @@ class Compiler {
   /** Where each expectation of the model is written, in order. */
   readonly expectSpans: Span[] = []
   names!: Names
+  /** Each fan-out and the copies a second it sends: what `out.<stage>` reads. */
+  private sent = new Map<string, { run: (ctx: any) => number }>()
   /** What the units of a formula's names come from: each let's formula, each fit's y, each parameter's default. */
   private unitNames: UnitNames = { let: () => undefined, fit: () => undefined }
   readonly measures: MeasureQuery[] = []
@@ -376,7 +378,7 @@ class Compiler {
     // first: a definition for a later version says "update", not "unknown statement" for what that version added
     this.header(doc.body)
     this.gluedPercents(doc.body)
-    const root = this.shape('', SCHEMA['']!, doc.body, { from: 0, to: 0 })
+    const root = this.shape('', SCHEMA['']!, this.likes(doc.body), { from: 0, to: 0 })
 
     // names first: formulas and routes may refer to anything declared further down
     const byKind = (k: string) => root.children.filter((b) => b.keyword === k)
@@ -472,7 +474,16 @@ class Compiler {
       components: new Set(limits.keys()),
       fits: this.fits,
       functions: this.functions,
+      out: this.sent,
     }
+    for (const box of boxes)
+      for (const s of box.stages)
+        if (s.block.keyword === 'fanout')
+          this.sent.set(s.id, {
+            run: () => {
+              throw new Error(`"${s.id}" has no branches to send by`)
+            },
+          })
     const inits = new Map(
       lets.flatMap((b) => (b.args.id && b.decl?.init ? [[b.args.id.name, b.decl.init] as const] : [])),
     )
@@ -1641,6 +1652,76 @@ class Compiler {
           `write "loadmap ${versionText(n.since)}" on the first line`,
           { version: versionText(n.since) },
         )
+  }
+
+  /**
+   * `like: db`: the box takes every line and stage of `db` it does not write itself. Worked out on the statements,
+   * before anything reads them, so the rest of the compiler sees a box written in full; the text stays as it is. A
+   * line here replaces the same line there, and a stage here replaces its stages.
+   */
+  private likes(body: readonly Stmt[]): readonly Stmt[] {
+    const isBox = (s: Stmt): s is Decl => s.kind === 'decl' && (BOXES as readonly string[]).includes(s.keyword.name)
+    const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0].name : undefined)
+    const likeOf = (d: Decl) => d.body?.find((st): st is Property => st.kind === 'prop' && st.key.name === 'like')
+    if (!body.some((s) => isBox(s) && likeOf(s))) return body
+    const boxes = new Map<string, Decl>()
+    for (const s of body) if (isBox(s) && idOf(s) != null && !boxes.has(idOf(s)!)) boxes.set(idOf(s)!, s)
+    const done = new Map<Decl, Decl>()
+    const stages: readonly string[] = STAGES
+    const full = (d: Decl, trail: readonly string[]): Decl => {
+      const like = likeOf(d)
+      if (!like) return d
+      const known = done.get(d)
+      if (known) return known
+      done.set(d, d)
+      const name = like.value.t === 'id' ? like.value.name : undefined
+      const proto = name == null ? undefined : boxes.get(name)
+      const self = idOf(d) ?? ''
+      if (name == null || !proto) {
+        const text = this.source.slice(like.value.from, like.value.to)
+        this.report.error('unknown-name', like.value, `unknown box "${text}"`, didYouMean(text, boxes.keys()))
+        return d
+      }
+      if (proto === d || trail.includes(name)) {
+        const loop = [...trail, self, name].join(' → ')
+        this.report.error('bad-box', like.value, `a box cannot be like itself: ${loop}`)
+        return d
+      }
+      if (proto.keyword.name !== d.keyword.name) {
+        this.report.error(
+          'bad-box',
+          like.value,
+          `a ${d.keyword.name} is like another ${d.keyword.name}: "${name}" is a ${proto.keyword.name}`,
+        )
+        return d
+      }
+      const base = full(proto, [...trail, self])
+      const mine = d.body ?? []
+      const props = new Set(mine.flatMap((st) => (st.kind === 'prop' ? [st.key.name] : [])))
+      const kinds = new Set(mine.flatMap((st) => (st.kind === 'decl' ? [st.keyword.name] : [])))
+      const ownStage = [...kinds].some((k) => stages.includes(k))
+      const taken = (base.body ?? []).filter((st) =>
+        st.kind === 'prop'
+          ? st.key.name !== 'like' && !props.has(st.key.name)
+          : st.kind !== 'decl' || !(kinds.has(st.keyword.name) || (ownStage && stages.includes(st.keyword.name))),
+      )
+      // an id of its own on a stage or a component there would be declared again here
+      const named = taken.find((st): st is Decl => st.kind === 'decl' && st.args[0]?.t === 'id')
+      if (named) {
+        const id = (named.args[0] as Ident).name
+        this.report.error(
+          'bad-box',
+          like.value,
+          `"${name}" names its ${named.keyword.name} "${id}": a box like it would declare "${id}" again`,
+          `write the ${named.keyword.name} here too, with an id of its own`,
+        )
+        return d
+      }
+      const out: Decl = { ...d, body: [...taken, ...mine] }
+      done.set(d, out)
+      return out
+    }
+    return body.map((s) => (isBox(s) && likeOf(s) ? full(s, []) : s))
   }
 
   /**
@@ -2970,6 +3051,14 @@ class Compiler {
           }
           return to
         }
+        // out.<stage>: what reaches it of each flow, times that branch's copies
+        const sent = this.sent.get(id)
+        if (sent)
+          sent.run = (ctx) =>
+            branches.reduce(
+              (sum, [f, , share]) => sum + ctx.at[id][f] * (typeof share === 'function' ? share(ctx) : share),
+              0,
+            )
         const fixed = branches.every(([, , v]) => typeof v === 'number')
         return fanout({ ...base, to: fixed ? build(undefined) : build, ...(component ? { component } : {}) })
       }

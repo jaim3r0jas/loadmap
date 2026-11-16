@@ -37,6 +37,7 @@ export interface SignatureHelp {
 const TABLES: Readonly<Record<string, string>> = {
   flows: '`flows.<flow>`: the units per second a flow brings, before anything on its route.',
   at: '`at.<stage>.<flow>`: what of a flow reaches a stage, per second: cache hits and what a limiter turns away are gone after them. `at.<stage>` alone: every flow.',
+  out: '`out.<stage>`: what a fan-out sends, per second: what reaches it of each flow times the copies of each branch.',
   demand: "`demand.<component>`: what a component must handle, in its capacity's unit.",
   util: '`util.<component>`: demand ÷ capacity, a share: 0.5 is 50 %.',
   derived: '`derived.<let>`: the value of a `let`.',

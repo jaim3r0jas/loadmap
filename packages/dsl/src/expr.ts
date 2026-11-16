@@ -32,6 +32,8 @@ export interface Names {
   functions: HostFunctions
   /** The options of each select parameter: a literal compared with one must be one of them. */
   options?: ReadonlyMap<string, readonly (number | string)[]>
+  /** Each fan-out stage and what it sends, copies a second: `out.push`. Filled in once the stage is compiled. */
+  out?: ReadonlyMap<string, { run: (ctx: any) => number }>
 }
 
 /**
@@ -149,10 +151,10 @@ export const RESERVED = new Set<string>([
 ])
 
 /**
- * Functions a version added: a definition stamped before may still give the name to a parameter, a let or a fit, so
- * taking it is refused only from that version on.
+ * Functions and tables a version added (`mod(a, b)`, `out.<stage>`): a definition stamped before may still give the
+ * name to a parameter, a let or a fit, so taking it is refused only from that version on.
  */
-export const BUILTIN_SINCE: Readonly<Record<string, string>> = { mod: '1.2' }
+export const BUILTIN_SINCE: Readonly<Record<string, string>> = { mod: '1.2', out: '1.2' }
 
 const WORD: Record<Type, string> = {
   number: 'a number',
@@ -326,6 +328,18 @@ class Compiler {
     const table = e.object.name
     const key = e.prop.name
     if (table === 'at') return this.at(e)
+    if (table === 'out' && this.names.out && !this.names.params.has('out') && !this.names.lets.has('out')) {
+      const sent = this.names.out.get(key)
+      if (!sent) {
+        const what = this.names.stages.has(key)
+          ? `"${key}" is no fan-out: out. is what a fan-out sends`
+          : `unknown fan-out "${key}"`
+        this.report.error('unknown-name', e.prop, what, didYouMean(key, this.names.out.keys()))
+        return bad
+      }
+      if (!this.canRead(e, `out.${key}`)) return bad
+      return { type: 'number', constant: false, run: (c) => sent.run(c) }
+    }
     const pool: Iterable<string> | undefined =
       table === 'flows'
         ? this.names.flows
@@ -338,7 +352,7 @@ class Compiler {
       this.report.error(
         'bad-formula',
         e.object,
-        `"${table}" has no entries: only flows., at., demand., util. and derived. do`,
+        `"${table}" has no entries: only flows., at., out., demand., util. and derived. do`,
       )
       return bad
     }
