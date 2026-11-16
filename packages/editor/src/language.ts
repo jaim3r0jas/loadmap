@@ -6,6 +6,7 @@ import {
   closeBracketsKeymap,
   snippetCompletion,
 } from '@codemirror/autocomplete'
+import { isolateHistory } from '@codemirror/commands'
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror/lint'
 import { type EditorState, type Extension, StateEffect, StateField } from '@codemirror/state'
@@ -398,7 +399,9 @@ function renameDom(view: EditorView, r: Renaming, o: RenameOptions): HTMLElement
       // the other files first: the text's next check reads them as they are after the rename
       const here = all.filter((c) => c.file == null).map(({ from, to, insert }) => ({ from, to, insert }))
       if (elsewhere.length) o.onElsewhere?.(elsewhere, !here.length)
-      if (here.length) view.dispatch({ changes: here, userEvent: 'input.rename' })
+      // a step of its own in the history: undoing it undoes the rename, in every file it reached
+      if (here.length)
+        view.dispatch({ changes: here, userEvent: 'input.rename', annotations: isolateHistory.of('full') })
       else close()
       view.focus()
     }

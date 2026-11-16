@@ -1,4 +1,4 @@
-import { undo } from '@codemirror/commands'
+import { redo, undo } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { decodeShare } from '@loadmap/dsl'
@@ -122,6 +122,29 @@ describe('the editor', () => {
     await expect.poll(() => view.state.doc.toString()).toContain('node frontDoor')
     expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
     await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // undo takes the rename back in every file it reached, redo makes it again: the model compiles all the way
+    undo(view)
+    await expect.poll(() => view.state.doc.toString()).toBe(shop)
+    expect(handle.files().files['shop.story.loadmap']).toBe(withStep)
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    redo(view)
+    await expect.poll(() => view.state.doc.toString()).toContain('node frontDoor')
+    expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // from the part's own tab too: undone there, it is undone in the model
+    await userEvent.click(page.getByRole('tab', { name: 'shop.story.loadmap' }))
+    undo(view)
+    await expect.poll(() => view.state.doc.toString()).toBe(withStep)
+    expect(handle.files().files['shop.loadmap']).toBe(shop)
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // a file edited after the rename keeps its name, and the editor says so
+    redo(view)
+    await expect.poll(() => handle.files().files['shop.loadmap']).toContain('node frontDoor')
+    edit('{ load: 30; focus: orderLine.consumers }', '{ load: 31; focus: orderLine.consumers }')
+    await userEvent.click(page.getByRole('tab', { name: 'shop.loadmap' }))
+    undo(view)
+    await expect.poll(() => view.state.doc.toString()).toBe(shop)
+    expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
     handle.setFiles(files)
     await expect.poll(() => view.state.doc.toString()).toBe(shop)
     await expect.poll(status, { timeout: 5000 }).toBe('No problems')

@@ -6,6 +6,7 @@ import {
   indentMore,
   indentWithTab,
   isolateHistory,
+  redo,
   undo,
   undoDepth,
 } from '@codemirror/commands'
@@ -460,6 +461,14 @@ export function LoadmapEditor({
         onResult: (source, result) => acceptRef.current(source, result),
       }),
       EditorView.updateListener.of((u) => {
+        for (const tr of u.transactions) {
+          if (tr.isUserEvent('input.rename') && pendingRename.current) {
+            pendingRename.current.set(set.current.active, undoDepth(u.state))
+            renames.current = [...renames.current.slice(-19), { members: pendingRename.current, done: true }]
+            pendingRename.current = null
+          } else if (tr.isUserEvent('undo') || tr.isUserEvent('redo'))
+            followRef.current(tr.isUserEvent('undo'), undoDepth(u.state))
+        }
         if (u.docChanged) {
           typed.current = performance.now()
           // what tracking follows: an edit's own lines, never what Format re-indents
@@ -572,33 +581,78 @@ export function LoadmapEditor({
   }
   const openRef = useRef(openAt)
   openRef.current = openAt
+  // the renames that changed several files, each file with the depth of its history right after: what an undo in one
+  // of them takes back in the others. `pendingRename` waits for the open file's own change, which comes last
+  const renames = useRef<{ members: Map<string, number>; done: boolean }[]>([])
+  const pendingRename = useRef<Map<string, number> | null>(null)
   /** Changes to files that are not in the editor (a rename reaches every file of the model): each in its own state. */
   const changeElsewhere = (
     changes: readonly { file: string; from: number; to: number; insert: string }[],
     alone: boolean,
   ) => {
     const others = { ...set.current.others }
+    // where the rename sits in each file's own history: undone in one, it is undone in all
+    const members = new Map<string, number>()
     for (const file of new Set(changes.map((c) => c.file))) {
       if (!Object.hasOwn(others, file)) continue
       const mine = changes.filter((c) => c.file === file).map(({ from, to, insert }) => ({ from, to, insert }))
-      const kept = states.current.get(file)
-      if (kept) {
-        // with its own undo step, as a change made in it
-        const next = kept.update({ changes: mine, annotations: isolateHistory.of('full') }).state
-        states.current.set(file, next)
-        others[file] = next.doc.toString()
-      } else
-        others[file] = [...mine]
-          .sort((a, b) => b.from - a.from)
-          .reduce((t, c) => t.slice(0, c.from) + c.insert + t.slice(c.to), others[file]!)
+      // a file never opened gets its state now: the rename is then a step of its history, as in any other
+      const kept = states.current.get(file) ?? EditorState.create({ doc: others[file]!, extensions: exts.current })
+      const next = kept.update({
+        changes: mine,
+        annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.rename')],
+      }).state
+      states.current.set(file, next)
+      others[file] = next.doc.toString()
+      members.set(file, undoDepth(next))
     }
     set.current = { ...set.current, others, version: set.current.version + 1 }
     // with a change to the open text, the page hears of all the files once, after it: never half a rename
     if (alone) {
+      renames.current.push({ members, done: true })
       latest.current.onFiles?.(filesNow())
       if (view.current) forceLinting(view.current)
-    }
+    } else pendingRename.current = members
   }
+  /**
+   * An undo or a redo in the open file that crossed a rename made in several: the same in every other file the rename
+   * reached, where the rename is still the last thing that happened there. `depth` is the open file's history after it.
+   */
+  const followRename = (isUndo: boolean, depth: number) => {
+    const active = set.current.active
+    let g: { members: Map<string, number>; done: boolean } | undefined
+    for (let i = renames.current.length - 1; i >= 0 && !g; i--) {
+      const r = renames.current[i]!
+      const at = r.members.get(active)
+      if (at != null && (isUndo ? r.done && depth === at - 1 : !r.done && depth === at)) g = r
+    }
+    if (!g) return
+    const others = { ...set.current.others }
+    let left = false
+    for (const [path, at] of g.members) {
+      if (path === active) continue
+      const was = states.current.get(path)
+      // edited since (or gone): its history has moved on, and the rename there is not ours to take back
+      if (!was || !Object.hasOwn(others, path) || undoDepth(was) !== (isUndo ? at : at - 1)) {
+        left = true
+        continue
+      }
+      let now: EditorState = was
+      ;(isUndo ? undo : redo)({
+        state: was,
+        dispatch: (tr) => {
+          now = tr.state
+        },
+      })
+      states.current.set(path, now)
+      others[path] = now.doc.toString()
+    }
+    g.done = !isUndo
+    set.current = { ...set.current, others, version: set.current.version + 1 }
+    if (left) setNote('A file changed since the rename: it keeps the name it has')
+  }
+  const followRef = useRef(followRename)
+  followRef.current = followRename
   const elsewhereRef = useRef(changeElsewhere)
   elsewhereRef.current = changeElsewhere
   /** The files changed as a whole (one added, removed, all replaced): the tabs, the next compile, the page's draft. */
@@ -689,6 +743,8 @@ export function LoadmapEditor({
     const entry = files?.path ?? ONE
     const others = Object.fromEntries(Object.entries(files?.files ?? {}).filter(([p]) => p !== entry))
     states.current.clear()
+    renames.current = []
+    pendingRename.current = null
     set.current = { entry, active: entry, others, version: set.current.version + 1 }
     setTabs([entry, ...Object.keys(others).sort()])
     setActive(entry)
