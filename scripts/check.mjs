@@ -20,6 +20,8 @@ export const PARTS = {
   static: [
     ['pnpm', ['typecheck']],
     ['pnpm', ['lint']],
+    // a changeset the release would refuse fails here, on its pull request, not after the merge
+    ['node', ['scripts/changesets.mjs']],
     ['pnpm', ['build']],
     ['pnpm', ['budget']],
   ],
@@ -128,6 +130,8 @@ function changed(args) {
       ['pnpm', ['exec', 'biome', 'check', '--no-errors-on-unmatched', ...lintable]],
     ])
   if (files.some((f) => f.startsWith('.github/'))) steps.push(['workflows: zizmor', ['uvx', ['zizmor', '.github/']]])
+  if (files.some((f) => f.startsWith('.changeset/') || /(^|\/)package\.json$/.test(f)))
+    steps.push(['static: changesets', ['node', ['scripts/changesets.mjs']]])
   if (node.length) steps.push(['node', ['pnpm', ['vitest', 'run', '--project', 'node', ...node]]])
   if (chromium.length)
     steps.push([
