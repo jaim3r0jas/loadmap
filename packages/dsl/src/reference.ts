@@ -18,6 +18,8 @@ const OPEN: Record<NonNullable<BlockSpec['open']>['names'], string> = {
   flows: 'flows',
   conditions: "the catalog component's conditions (its runs' brokers, message size, …)",
   arguments: "the arguments its metric's query names (`{{ args.job }}`: `job`)",
+  inputs: 'the inputs of the prototype or the subsystem it is like',
+  imports: 'this file: each a name of the library, `local: theirs` to give it another',
 }
 
 /** The list of diagnostic codes in docs/dsl.md, written from CODES. */
@@ -54,7 +56,7 @@ export function reference(): string {
     if (spec.example) out.push('```', spec.example, '```', '')
     if (spec.args.length)
       out.push(
-        `After the keyword: ${spec.args.map((a) => (a.optional ? `[${a.name}]` : a.name)).join(' ')}${spec.init ? ' = formula' : ''}.`,
+        `After the keyword: ${spec.args.map((a) => (a.optional ? `[${a.name}]` : a.name)).join(' ')}${spec.init === 'optional' ? ' [= formula]' : spec.init ? ' = formula' : ''}.`,
         '',
       )
     table(spec.props)
