@@ -32,6 +32,6 @@ describe('alerts.loadmap', () => {
   })
 
   it('moves the same dots', () => {
-    sameDots(alerts, def.model, { load: 20, merge: true })
+    sameDots(alerts, def.model, { load: 20, mergeNewest: true })
   })
 })

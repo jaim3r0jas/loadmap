@@ -52,7 +52,7 @@ describe('the building blocks in the browser', () => {
     // on their way back; once there they fade where they came from
     const back = handle.engine.sim.particles.filter((d) => d.back && d.phase === 'move')
     expect(back.length).toBeGreaterThan(0)
-    expect(back.every((d) => d.from.stage === 'cache' && d.to.stage === 'api')).toBe(true)
+    expect(back.every((d) => d.from.stage === 'readCache' && d.to.stage === 'api')).toBe(true)
     await expect.poll(() => meter(host, 'answered at the cache')).toBe('1.6k')
   })
 

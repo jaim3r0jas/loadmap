@@ -46,7 +46,7 @@ describe('the camera of a story played', () => {
     const steps = await played(checkout, checkoutView)
     // 1: the load falls and the gateway, the one past the target, drops below it; 2: the step points at the gateway;
     // 3: it points at the workers, whose pods double (the gateway's instances change no box)
-    expect(steps.map((s) => s.ids)).toEqual([['gateway'], ['gateway'], ['workers']])
+    expect(steps.map((s) => s.ids)).toEqual([['gateway'], ['gateway'], ['workerPool']])
     for (const s of steps) {
       expect(s.close).not.toEqual(whole(s.scene))
       frames(s)
@@ -60,9 +60,9 @@ describe('the camera of a story played', () => {
 
   it("frames several boxes together, and the box a step points at, in alerts' steps", async () => {
     const steps = await played(alerts, alertsView)
-    expect(steps[1]!.ids).toEqual(['posPods'])
+    expect(steps[1]!.ids).toEqual(['positionConsumer'])
     // launch week reshapes both pools, and the brokers that show a partition per pod: one framing holds the three
-    expect([...steps[2]!.ids].sort()).toEqual(['alertPods', 'brokers', 'posPods'])
+    expect([...steps[2]!.ids].sort()).toEqual(['alertPipeline', 'brokers', 'positionConsumer'])
     expect(steps[3]!.ids).toContain('push')
     for (const s of steps.slice(1)) frames(s)
     expect(steps.map((s) => s.title)).toEqual([

@@ -35,8 +35,8 @@ describe('checkout layout', () => {
 
   it('runs a leg backwards along the edge the other way, for a cache hit heading back', async () => {
     const scene = await layout(view, checkout.evaluate())
-    const forth = legPath(scene, { stage: 'workers' }, { stage: 'db' }, 'orders')
-    const back = legPath(scene, { stage: 'db' }, { stage: 'workers' }, 'orders')
+    const forth = legPath(scene, { stage: 'workerPool' }, { stage: 'db' }, 'orders')
+    const back = legPath(scene, { stage: 'db' }, { stage: 'workerPool' }, 'orders')
     expect(forth.length).toBeGreaterThan(2)
     expect(back).toEqual([...forth].reverse())
   })
@@ -50,7 +50,7 @@ describe('checkout layout', () => {
   it('packs partitions across brokers and workers into pods', async () => {
     const scene = await layout(view, checkout.evaluate({ pods: 4, threads: 8 }))
     const kafka = scene.nodes.find((n) => n.id === 'kafka')!
-    const workers = scene.nodes.find((n) => n.id === 'workers')!
+    const workers = scene.nodes.find((n) => n.id === 'workerPool')!
     expect(kafka.members.map((m) => m.label)).toEqual(['broker 0', 'broker 1', 'broker 2'])
     expect(kafka.cells.filter((c) => c.flow === 'orders')).toHaveLength(12)
     expect(kafka.cells.filter((c) => c.flow === 'events')).toHaveLength(24)
@@ -66,8 +66,8 @@ describe('checkout layout', () => {
 
   it('routes a dot along the edge between two stages', async () => {
     const scene = await layout(view, checkout.evaluate())
-    const path = legPath(scene, { stage: 'topic', cell: 3 }, { stage: 'workers', cell: 5 }, 'orders')
-    const edge = scene.edges.find((e) => e.from === 'kafka' && e.to === 'workers')!
+    const path = legPath(scene, { stage: 'topic', cell: 3 }, { stage: 'workerPool', cell: 5 }, 'orders')
+    const edge = scene.edges.find((e) => e.from === 'kafka' && e.to === 'workerPool')!
     expect(path.slice(1, -1)).toEqual(edge.points)
   })
 })

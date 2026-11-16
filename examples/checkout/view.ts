@@ -15,19 +15,19 @@ export const view = defineView(checkout, {
       tier: 'services',
     }),
     kafkaDropped: node({ label: 'Too old', stage: 'kafkaDropped' }),
-    workers: pool({
+    workerPool: pool({
       label: 'Workers',
       sub: ({ pods, threads }) => `${pods} pods × ${threads} threads`,
-      stage: 'workers',
+      stage: 'workerPool',
     }),
     db: node({ label: 'Postgres', sub: 'primary', stage: 'db', shape: 'cylinder', tier: 'data' }),
   },
   edges: [
     edge('phones', 'gateway', { label: 'POST /checkout' }),
     edge('gateway', 'kafka', { label: ({ flows }) => `${compact(flows.orders)} orders/s` }),
-    edge('kafka', 'workers'),
+    edge('kafka', 'workerPool'),
     edge('kafka', 'kafkaDropped'),
-    edge('workers', 'db', { label: ({ batch, rows }) => (batch ? `${rows} rows a commit` : 'a commit per order') }),
+    edge('workerPool', 'db', { label: ({ batch, rows }) => (batch ? `${rows} rows a commit` : 'a commit per order') }),
   ],
   flows: {
     orders: { from: 'phones', color: 'accent', label: 'orders' },

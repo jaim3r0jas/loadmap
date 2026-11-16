@@ -73,7 +73,7 @@ async function playStory(handle: LoadmapHandle) {
       ].join(),
       shot: handle.engine.story?.shot ?? 'end',
     })
-    pods.add(nodes.find((n) => n.id === 'posPods')!.members.length)
+    pods.add(nodes.find((n) => n.id === 'positionConsumer')!.members.length)
   }
   expect(pods).toEqual(new Set([3, 8]))
   return seen

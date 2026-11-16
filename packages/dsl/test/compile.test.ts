@@ -488,6 +488,43 @@ describe('units', () => {
     expect(v12('let mod = 3').diagnostics.map((d) => d.severity)).toEqual(['error'])
   })
 
+  it('warn about an id that names two kinds of thing, or is also a keyword', () => {
+    const found = (o: Parameters<typeof def>[0]) =>
+      compile(def(o))
+        .diagnostics.filter((d) => d.code === 'shadowed-name')
+        .map((d) => ({ severity: d.severity, message: d.message, hint: d.hint, line: d.line }))
+    // a parameter beside a box: ${api} reads one, focus: api the other
+    expect(found({ top: 'param api "Pods" { options: [1, 2]; default: 1 }' })).toEqual([
+      {
+        severity: 'warning',
+        message: '"api" is already a parameter (line 2)',
+        hint: 'give the box its own id, or rename the parameter',
+        line: 14,
+      },
+    ])
+    expect(found({ top: 'let req = 2' }).map((d) => d.message)).toEqual(['"req" is already a let (line 2)'])
+    expect(found({ extra: 'tier api "Tier"' }).map((d) => d.message)).toEqual(['"api" is already a box (line 14)'])
+    // a keyword as an id: a parameter, and a box
+    expect(found({ top: 'param store "Keep" { default: true }' })).toEqual([
+      {
+        severity: 'warning',
+        message: '"store" is also a keyword of the language',
+        hint: 'pick an id that is no statement: storeTier, mainStore',
+        line: 2,
+      },
+    ])
+    expect(
+      found({ extra: 'node cache "Cache" { cache { hit: 0.5 }; capacity: estimated(9, "ops/s"); over: "x" }' }),
+    ).toHaveLength(1)
+    // a box, its stage and its component are one thing; so are two parameters' labels
+    expect(found({})).toEqual([])
+    expect(found({ extra: 'node q "Q" { queue q "topic" }\nclient -> q' })).toEqual([])
+    // a stage named after another box is two things
+    expect(found({ extra: 'node other "Other" { pass client }' }).map((d) => d.message)).toEqual([
+      '"client" is already a box (line 13)',
+    ])
+  })
+
   it('take "as" on a demand only, with the unit in quotes', () => {
     const messages = (src: string) => errors(src).map((e) => e.message)
     expect(messages(api('flows.req', 'measured(400, "req/s") as "req/s"'))).toContain(
@@ -1062,9 +1099,9 @@ describe('building blocks', () => {
     const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }
 param hit "Hit ratio" { options: [0.5, 0.8]; default: 0.8 }
-flow reads "reads" { rate: 1000 * load; route: cache -> db; from: client }
+flow reads "reads" { rate: 1000 * load; route: hits -> db; from: client }
 node client "Client"
-node cache "Cache" {
+node hits "Cache" {
   cache { hit: hit }
   capacity: measured(20_000, "ops/s")
   over: "lookups time out"
@@ -1074,19 +1111,19 @@ node db "DB" {
   capacity: measured(500, "queries/s")
   over: "queries queue"
 }
-client -> cache
-cache -> db: \`\${compact(at.db.reads)} misses/s\`
+client -> hits
+hits -> db: \`\${compact(at.db.reads)} misses/s\`
 `)
     const ts = defineModel({
       load: p.load({ label: 'Load', max: 10, default: 1 }),
       params: { hit: p.select({ label: 'Hit ratio', options: [0.5, 0.8], default: 0.8 }) },
       flows: { reads: { label: 'reads', rate: ({ load }) => 1000 * load } },
       components: {
-        cache: { name: 'Cache', capacity: measured(20_000, 'ops/s'), over: 'lookups time out' },
+        hits: { name: 'Cache', capacity: measured(20_000, 'ops/s'), over: 'lookups time out' },
         db: { name: 'DB', capacity: measured(500, 'queries/s'), over: 'queries queue' },
       },
-      stages: { cache: cache({ hit: ({ hit }) => hit, component: 'cache' }), db: store('db') },
-      routes: { reads: ['cache', 'db'] },
+      stages: { hits: cache({ hit: ({ hit }) => hit, component: 'hits' }), db: store('db') },
+      routes: { reads: ['hits', 'db'] },
     })
     same(ts, dsl, [...loads, { hit: 0.5 }])
     expect(dsl.evaluate().at.db!.reads).toBeCloseTo(200)
@@ -1173,7 +1210,7 @@ limiter -> tooMany
     const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }
 param tries "Retries" { options: [0, 3]; default: 3 }
-param capped "Retry budget" { default: false }
+param budgeted "Retry budget" { default: false }
 flow req "requests" {
   rate: 1000 * load
   retry { times: tries }
@@ -1182,7 +1219,7 @@ flow req "requests" {
 }
 flow capped "capped requests" {
   rate: 100 * load
-  retry { times: 3; budget: 0.1; when: capped }
+  retry { times: 3; budget: 0.1; when: budgeted }
   route: gateway -> service
   from: client
 }
@@ -1203,7 +1240,7 @@ client -> gateway -> service
       load: p.load({ label: 'Load', max: 10, default: 1 }),
       params: {
         tries: p.select({ label: 'Retries', options: [0, 3], default: 3 }),
-        capped: p.switch({ label: 'Retry budget', default: false }),
+        budgeted: p.switch({ label: 'Retry budget', default: false }),
       },
       flows: {
         req: {
@@ -1214,7 +1251,7 @@ client -> gateway -> service
         capped: {
           label: 'capped requests',
           rate: ({ load }) => 100 * load,
-          retry: ({ capped }) => (capped ? { times: 3, budget: 0.1 } : undefined),
+          retry: ({ budgeted }) => (budgeted ? { times: 3, budget: 0.1 } : undefined),
         },
       },
       components: {
@@ -1224,7 +1261,7 @@ client -> gateway -> service
       stages: { gateway: pass('gateway'), service: pass('service') },
       routes: { req: ['gateway', 'service'], capped: ['gateway', 'service'] },
     })
-    same(ts, dsl, [...loads, { tries: 0 }, { capped: true, load: 2 }])
+    same(ts, dsl, [...loads, { tries: 0 }, { budgeted: true, load: 2 }])
     expect(dsl.evaluate({ load: 2 }).retry.req!.attempts).toBeGreaterThan(2000)
   })
 
@@ -1301,13 +1338,13 @@ users -> gw -> api -> db
 
     const way = SRC.replace('route: gw -> api -> db', 'route: gw -> router -> api')
       .replace('users -> gw -> api -> db', 'users -> gw -> router -> db\nrouter -> api')
-      .concat('node router "Router" { split { req -> db: 0.5; req -> cache: 0.5 } }\n')
-      .concat('node cache "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\nrouter -> cache\n')
-    // the cache's way rejoins the route at api: that hop needs its edge too
+      .concat('node router "Router" { split { req -> db: 0.5; req -> side: 0.5 } }\n')
+      .concat('node side "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\nrouter -> side\n')
+    // the side's way rejoins the route at api: that hop needs its edge too
     expect(errors(way)).toMatchObject([
-      { message: '"req" goes from "cache" to "api", and no edge joins them', text: 'req -> cache: 0.5' },
+      { message: '"req" goes from "side" to "api", and no edge joins them', text: 'req -> side: 0.5' },
     ])
-    expect(errors(`${way}cache -> api\n`)).toEqual([])
+    expect(errors(`${way}side -> api\n`)).toEqual([])
   })
 
   it('take two stages in one box as no hop', () => {
@@ -1346,11 +1383,11 @@ users -> gw -> api -> db
     const way = SRC.replace('route: gw -> api -> db', 'route: gw -> router -> db')
       .replace(
         'users -> gw -> api -> db',
-        'users -> gw -> router -> api -> db\nrouter -> cache { when: fast }\ncache -> db',
+        'users -> gw -> router -> api -> db\nrouter -> side { when: fast }\nside -> db',
       )
-      .concat('node router "Router" { split { req -> cache: fast ? 0.5 : 0; req -> api: fast ? 0.5 : 1 } }\n')
-      .concat('node cache "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\n')
-    // at the defaults no unit goes by the cache, so its hidden edge carries nothing
+      .concat('node router "Router" { split { req -> side: fast ? 0.5 : 0; req -> api: fast ? 0.5 : 1 } }\n')
+      .concat('node side "Cache" { pass; capacity: measured(1_000, "req/s"); over: "misses" }\n')
+    // at the defaults no unit goes by the side, so its hidden edge carries nothing
     expect(all(way)).toEqual([])
   })
 
@@ -1502,21 +1539,21 @@ flow ev "events" {
   rate: 50 * load
   drop { olderThan: 60 }
   timeout: 5
-  route: topic -> pool
+  route: topic -> crew
   from: users
 }
 node users "Users"
 node limiter "Limiter" { limit; capacity: configured(1_500, "req/s", "gateway config"); over: "429s" }
 node api "API" { pass; capacity: measured(1_000, "req/s"); over: "503s" }
 cluster kafka "Kafka" { members: 3; queue topic { partitions { ev: 3 } } }
-pool pool "Pool" {
+pool crew "Pool" {
   workers { pods: 2; perPod: 2 }
   capacity: measured(100, "ev/s")
   service: 0.01
   over: "lag"
 }
 users -> limiter -> api
-users -> kafka -> pool
+users -> kafka -> crew
 `
   const warnings = (src: string) =>
     compile(src)
@@ -1531,7 +1568,7 @@ users -> kafka -> pool
         text: 'drop',
       },
       {
-        message: 'units of "ev" too slow for their client at "pool" vanish: give them a lost box that counts them',
+        message: 'units of "ev" too slow for their client at "crew" vanish: give them a lost box that counts them',
         text: 'timeout',
       },
       { message: 'what "limiter" turns away vanishes: give it a lost box that counts it', text: 'limit' },
@@ -1580,7 +1617,7 @@ users -> kafka -> api
 node old "Too old" { lost }
 limiter -> gone
 kafka -> old
-pool -> gone
+crew -> gone
 `
     expect(compile(counted).diagnostics).toEqual([])
   })
@@ -1638,8 +1675,8 @@ api -> db
 
   it('a list with a wrong word, not what the rest of the list would leave out', () => {
     const src = `${BASE.replace('api -> db; from', 'lim -> db; from').replace('users -> api\napi -> db', 'users -> lim\nlim -> db')}node lim "Limiter" { limit; capacity: configured(1000, "req/s", "config"); over: "429s" }
-node lost "Turned away" { lost { takes: [rejectd] } }
-lim -> lost
+node gone "Turned away" { lost { takes: [rejectd] } }
+lim -> gone
 `
     expect(marks(src).filter((m) => m.severity === 'error')).toEqual([error('bad-value', 'rejectd')])
     expect(marks(src).filter((m) => m.code === 'unseen-loss')).toEqual([])
@@ -1658,10 +1695,10 @@ u -> a
   })
 
   it('a lost box on a route at its name there', () => {
-    const src = `${BASE.replace('route: api -> db', 'route: api -> lost')}node lost "Turned away" { lost }
-api -> lost
+    const src = `${BASE.replace('route: api -> db', 'route: api -> gone')}node gone "Turned away" { lost }
+api -> gone
 `
-    expect(marks(src).filter((m) => m.severity === 'error')).toEqual([error('model', 'lost')])
+    expect(marks(src).filter((m) => m.severity === 'error')).toEqual([error('model', 'gone')])
     const d = compile(src).diagnostics.find((x) => x.code === 'model')!
     expect(d.line).toBe(3)
   })

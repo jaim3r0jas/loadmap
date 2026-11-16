@@ -60,12 +60,12 @@ describe('inspect', () => {
   })
 
   it('shows a stage, a template label read-only, and parameters read through a let', () => {
-    const f = fieldsOf(checkout, { node: 'workers' })
-    expect(f.get('pool:workers/@sub')).toMatchObject({
+    const f = fieldsOf(checkout, { node: 'workerPool' })
+    expect(f.get('pool:workerPool/@sub')).toMatchObject({
       kind: 'formula',
       parts: ['`${pods} pods × ${threads} threads`'],
     })
-    expect(f.get('pool:workers/workers/perPod')).toMatchObject({ kind: 'formula', parts: ['threads'] })
+    expect(f.get('pool:workerPool/workers/perPod')).toMatchObject({ kind: 'formula', parts: ['threads'] })
     expect([...f.keys()].filter((k) => k.endsWith('/options'))).toEqual(['param:pods/options', 'param:threads/options'])
     const uploads = fieldsOf(read('apps/docs/site/uploads.loadmap'), { node: 'resizers' })
     // demand: flows.photos * files * 0.005, and files = webp ? 6 : 3
@@ -96,8 +96,8 @@ describe('inspect', () => {
   })
 
   it('covers the building blocks', () => {
-    const cache = fieldsOf(read('packages/editor/src/templates/cache.loadmap'), { node: 'cache' })
-    expect(cache.get('node:cache/cache/hit')).toMatchObject({ kind: 'formula', parts: ['hit'], more: false })
+    const cache = fieldsOf(read('packages/editor/src/templates/cache.loadmap'), { node: 'readCache' })
+    expect(cache.get('node:readCache/cache/hit')).toMatchObject({ kind: 'formula', parts: ['hit'], more: false })
     expect(cache.get('param:hit/options')).toMatchObject({ kind: 'options' })
     const api = fieldsOf(read('packages/editor/src/templates/autoscale.loadmap'), { node: 'api' })
     expect(api.get('pool:api/workers/perPod')).toMatchObject({ kind: 'number', value: 4, more: false })
@@ -144,8 +144,8 @@ describe('edit', () => {
     expect(diff(offset, 'node:b/demand#1', -1)[1]).toBe(
       '+node b { pass; demand: flows.f * 2 + (-1); capacity: measured(9, "req/s"); over: "y" }',
     )
-    expect(edit(checkout, 'pool:workers/capacity#0', -1)).toEqual({
-      error: 'the capacity of "workers" is -3 at the defaults',
+    expect(edit(checkout, 'pool:workerPool/capacity#0', -1)).toEqual({
+      error: 'the capacity of "workerPool" is -3 at the defaults',
     })
   })
 
@@ -197,7 +197,7 @@ describe('edit', () => {
     expect(diff(checkout, 'node:gateway/capacity.within', 50)[1]).toBe(
       '+  capacity: estimated(20_000 * gateways ± 50%, "req/s", "vendor benchmark, not load-tested")',
     )
-    expect(diff(checkout, 'pool:workers/capacity.within', 10)).toEqual([
+    expect(diff(checkout, 'pool:workerPool/capacity.within', 10)).toEqual([
       '-  capacity: measured(pods * 2, "cores", "pod CPU limit")',
       '+  capacity: measured(pods * 2 ± 10%, "cores", "pod CPU limit")',
     ])
@@ -254,7 +254,7 @@ describe('edit', () => {
     ])
     const limit = read('packages/editor/src/templates/rate-limit.loadmap')
     expect(diff(limit, 'node:limiter/capacity.unit', 'calls/s')[1]).toBe(
-      '+  capacity: configured(limit, "calls/s", "gateway config")',
+      '+  capacity: configured(rateLimit, "calls/s", "gateway config")',
     )
   })
 

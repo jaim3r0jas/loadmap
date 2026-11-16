@@ -97,16 +97,16 @@ describe('the editor', () => {
 
   it('shares a link that opens the same definition at the same values', async () => {
     const first = await mount({ source: alerts })
-    first.handle.loadmap()!.setValues({ load: 25, merge: false })
+    first.handle.loadmap()!.setValues({ load: 25, mergeNewest: false })
     const hash = await first.handle.shareHash()
-    expect(hash).toMatch(/^v1\.[\w-]+&load=25&merge=false$/)
+    expect(hash).toMatch(/^v1\.[\w-]+&load=25&mergeNewest=false$/)
     const shared = await decodeShare(`#${hash}`)
     if ('error' in shared) throw new Error(shared.error)
     expect(shared.source).toBe(alerts)
     root?.unmount()
     document.body.replaceChildren()
     const again = await mount(shared)
-    expect(again.handle.loadmap()!.values()).toMatchObject({ load: 25, merge: false })
+    expect(again.handle.loadmap()!.values()).toMatchObject({ load: 25, mergeNewest: false })
     expect(verdict(again.host)).toContain('At 25×')
   })
 
@@ -881,7 +881,7 @@ describe('the editor filling its container', () => {
     grab.focus()
     await userEvent.keyboard('{Enter}')
     await expect.poll(() => sheet.dataset.detent).toBe('peek')
-    await tapBox('workers')
+    await tapBox('workerPool')
     await expect.poll(() => sheet.dataset.detent).toBe('half')
     expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Box')
     // a cancelled touch is no tap

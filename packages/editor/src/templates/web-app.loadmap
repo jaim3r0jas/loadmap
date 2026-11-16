@@ -8,19 +8,19 @@ assume: "1× is today's busiest hour."
 load "Traffic, × today" { max: 50; default: 1 }
 
 param pods "App pods" { options: [2, 3, 4, 6, 8]; default: 3 }
-param cache "Cache sessions in memory" {
+param cacheSessions "Cache sessions in memory" {
   hint: "two queries a request instead of five"
   default: false
 }
 
 scenario "Today" {}
-scenario "Proposed" { pods: 6; cache: true }
+scenario "Proposed" { pods: 6; cacheSessions: true }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 2×" { underTarget: 2 }
 expect "Proposed keeps 4×" { scenario: Proposed; underTarget: 4 }
 
-let queries = cache ? 2 : 5
+let queries = cacheSessions ? 2 : 5
 
 flow requests "requests" {
   unit: "request"

@@ -168,10 +168,10 @@ gw -> api -> db
   })
 
   it('puts back an edge deleted from a file, where it was', () => {
-    const src = checkout.replace(/\nkafka -> workers[^\n]*/, '')
+    const src = checkout.replace(/\nkafka -> workerPool[^\n]*/, '')
     const [add, ...rest] = fixes(src)
     expect(rest).toEqual([])
-    expect(add!.title).toBe('Add the edge kafka -> workers')
+    expect(add!.title).toBe('Add the edge kafka -> workerPool')
     expect(compile(add!.text).ok).toBe(true)
   })
 })

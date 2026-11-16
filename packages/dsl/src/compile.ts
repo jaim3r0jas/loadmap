@@ -497,6 +497,7 @@ class Compiler {
     })
     const tierNames = new Map<string, Span>()
     for (const b of byKind('tier')) if (b.args.id) this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
+    if (!namesOnly) this.shadowed(boxes, loose)
     if (namesOnly) return undefined
     // a measure is read like a let, of its fallback's type: a capacity or a number
     const metricOf = new Map(metrics.flatMap((b) => (b.args.id ? [[b.args.id.name, b] as const] : [])))
@@ -1640,6 +1641,66 @@ class Compiler {
           `write "loadmap ${versionText(n.since)}" on the first line`,
           { version: versionText(n.since) },
         )
+  }
+
+  /**
+   * One id for two kinds of thing reads two ways: `${alertPods}` is the parameter and `focus: alertPods` the box. So
+   * does an id that is also a keyword (`param merge` beside `merge { when: merge }`). A box, its stage and its
+   * component share an id by design; every other pair is told, on the later of the two.
+   */
+  private shadowed(boxes: readonly Box[], loose: readonly Block[]) {
+    const WORDS: Partial<Record<DslSymbol['kind'], string>> = {
+      param: 'a parameter',
+      let: 'a let',
+      fit: 'a fit',
+      published: 'a published figure',
+      measure: 'a measure',
+      metric: 'a metric',
+      flow: 'a flow',
+      node: 'a box',
+      stage: 'a stage',
+      component: 'a component',
+      tier: 'a tier',
+    }
+    // the box each stage and component belongs to: its own names are one thing said three ways
+    const family = new Map<number, string>()
+    for (const box of boxes) {
+      family.set(box.block.args.id!.from, box.id)
+      for (const s of box.stages) family.set((s.block.args.id ?? s.block.at).from, box.id)
+      const c = box.component
+      if (c) family.set((c.own ? box.block.args.id! : (c.block.args.id ?? c.block.at)).from, box.id)
+    }
+    for (const b of loose) if (b.args.id) family.set(b.args.id.from, `component ${b.args.id.name}`)
+    const seen = new Map<string, DslSymbol[]>()
+    const marked = new Set<number>()
+    for (const s of [...this.symbols].sort((a, b) => a.span.from - b.span.from)) {
+      const word = WORDS[s.kind]
+      if (!word) continue
+      const text = this.source.slice(s.span.from, s.span.to)
+      // a stage or a component without an id of its own has its box's: the box is where it is said
+      if (text !== s.id || marked.has(s.span.from)) continue
+      const earlier = seen.get(s.id) ?? []
+      seen.set(s.id, [...earlier, s])
+      const first = earlier.find(
+        (e) =>
+          e.kind !== s.kind && (family.get(e.span.from) ?? e.span.from) !== (family.get(s.span.from) ?? s.span.from),
+      )
+      if (first) {
+        marked.add(s.span.from)
+        this.report.warning(
+          'shadowed-name',
+          s.span,
+          `"${s.id}" is already ${WORDS[first.kind]} (line ${this.report.position(first.span.from).line})`,
+          `give ${word.replace(/^an? /, 'the ')} its own id, or rename ${WORDS[first.kind]!.replace(/^an? /, 'the ')}`,
+        )
+      } else if (!earlier.length && s.id !== '' && Object.hasOwn(SCHEMA, s.id))
+        this.report.warning(
+          'shadowed-name',
+          s.span,
+          `"${s.id}" is also a keyword of the language`,
+          `pick an id that is no statement: ${s.id}Tier, main${s.id[0]!.toUpperCase()}${s.id.slice(1)}`,
+        )
+    }
   }
 
   /**

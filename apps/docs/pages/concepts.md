@@ -130,7 +130,7 @@ param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
 scenario "Today" {}
 scenario "Proposed" { pods: 6 }
 
-flow orders "orders" { rate: 40 * load; route: gateway -> workers; from: phones }
+flow orders "orders" { rate: 40 * load; route: gateway -> workerPool; from: phones }
 
 node phones "Phones"
 node gateway "API gateway" {
@@ -140,7 +140,7 @@ node gateway "API gateway" {
   capacity: estimated(6_000 ± 30%, "req/s", "vendor benchmark")
   over: "clients get 429s"
 }
-pool workers "Workers" `${pods} pods × 8 threads` {
+pool workerPool "Workers" `${pods} pods × 8 threads` {
   workers { pods: pods; perPod: 8 }
   short: "the workers"
   plural: true
@@ -149,7 +149,7 @@ pool workers "Workers" `${pods} pods × 8 threads` {
   over: "messages wait and the lag keeps growing"
 }
 
-phones -> gateway -> workers
+phones -> gateway -> workerPool
 ```
 
 [The language](/language/) describes every statement.

@@ -20,7 +20,7 @@ expect "Proposed keeps 20×" { scenario: Proposed; underTarget: 20 }
 flow jobs "jobs" {
   unit: "job"
   rate: 20 * load
-  route: api -> topic -> workers -> db
+  route: api -> topic -> workerPool -> db
   from: clients
   color: accent
 }
@@ -45,7 +45,7 @@ cluster broker "Queue" "jobs topic" {
   over: "producing slows down and the API backs up"
 }
 
-pool workers "Workers" `${pods} pods × ${threads} threads` {
+pool workerPool "Workers" `${pods} pods × ${threads} threads` {
   workers { pods: pods; perPod: threads }
   short: "the workers"
   plural: true
@@ -66,5 +66,5 @@ node db "Database" {
 
 clients -> api: "POST /jobs"
 api -> broker: `${compact(flows.jobs)} jobs/s`
-broker -> workers
-workers -> db
+broker -> workerPool
+workerPool -> db

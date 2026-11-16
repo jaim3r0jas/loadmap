@@ -19,7 +19,7 @@ expect "Today keeps 2×" { underTarget: 2 }
 flow reads "reads" {
   unit: "read"
   rate: 1_200 * load
-  route: api -> replicas
+  route: api -> replicaPool
   from: clients
   color: accent
 }
@@ -43,7 +43,7 @@ pool api "API" `${pods} pods` {
   over: "requests queue in the API"
 }
 
-node replicas "Read replicas" `${replicas} replicas` {
+node replicaPool "Read replicas" `${replicas} replicas` {
   shape: cylinder
   store
   short: "the read replicas"
@@ -65,6 +65,6 @@ node primary "Primary" "writes" {
 }
 
 clients -> api
-api -> replicas: "reads"
+api -> replicaPool: "reads"
 api -> primary: "writes"
-primary -> replicas: "replication"
+primary -> replicaPool: "replication"

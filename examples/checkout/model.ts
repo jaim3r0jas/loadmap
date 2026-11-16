@@ -37,7 +37,7 @@ export const checkout = defineModel({
       text: 'The proposal doubles the gateways and the worker pods: at 20× both are back under half.',
       scenario: 'Proposed',
       set: { load: 20 },
-      focus: 'workers',
+      focus: 'workerPool',
     },
   ],
   flows: {
@@ -59,7 +59,7 @@ export const checkout = defineModel({
         estimated(20_000 * gateways, 'req/s', { source: 'vendor benchmark, not load-tested', within: 0.3 }),
       over: 'clients get 429s',
     },
-    workers: {
+    workerPool: {
       name: 'Worker pool',
       short: 'the worker pool',
       demand: ({ flows }) => workerCores(flows.orders + flows.events),
@@ -89,9 +89,9 @@ export const checkout = defineModel({
     topic: queue({ partitions: { orders: 12, events: 24 } }),
     // what the topic drops as too old, counted
     kafkaDropped: lost({ from: ['topic'], takes: ['dropped'] }),
-    workers: workers('workers', { pods: ({ pods }) => pods, perPod: ({ threads }) => threads }),
+    workerPool: workers('workerPool', { pods: ({ pods }) => pods, perPod: ({ threads }) => threads }),
     db: store('db'),
   },
-  routes: { orders: ['gateway', 'topic', 'workers', 'db'], events: ['gateway', 'topic', 'workers'] },
+  routes: { orders: ['gateway', 'topic', 'workerPool', 'db'], events: ['gateway', 'topic', 'workerPool'] },
   calibration: { 'Worker CPU per request': workerCores },
 })

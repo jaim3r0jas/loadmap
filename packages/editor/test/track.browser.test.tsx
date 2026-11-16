@@ -184,7 +184,7 @@ describe('the editor’s diagram across edits', () => {
   it('brings a new box into view', async () => {
     const { engine, edit } = await mount({ track: true })
     closeOnPhones(engine())
-    edit('phones -> gateway', 'node cache "Cache" { tier: data }\nworkers -> cache\nphones -> gateway')
+    edit('phones -> gateway', 'node cache "Cache" { tier: data }\nworkerPool -> cache\nphones -> gateway')
     await expect.poll(() => engine().frame!.nodes.some((n) => n.id === 'cache'), { timeout: 5000 }).toBe(true)
     await expect.poll(() => inView(engine(), 'cache'), { timeout: 5000 }).toBe(true)
   })

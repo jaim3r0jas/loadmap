@@ -151,7 +151,7 @@ loadmap 1.2
 load "Users, × today" { max: 100; default: 10 }
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
 
-flow orders "orders" { rate: 40 * load; route: gateway -> workers; from: phones }
+flow orders "orders" { rate: 40 * load; route: gateway -> workerPool; from: phones }
 
 node phones "Phones"
 node gateway "API gateway" {
@@ -160,14 +160,14 @@ node gateway "API gateway" {
   capacity: estimated(20_000, "req/s", "vendor benchmark")
   over: "clients get 429s"
 }
-pool workers "Workers" `${pods} pods × 8 threads` {
+pool workerPool "Workers" `${pods} pods × 8 threads` {
   workers { pods: pods; perPod: 8 }
   demand: flows.orders * 4ms
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "messages wait and the lag keeps growing"
 }
 
-phones -> gateway -> workers
+phones -> gateway -> workerPool
 ```
 
 Formulas are a small subset of TypeScript expressions, never `eval`, so a definition can be shared as a link. A link
