@@ -88,7 +88,7 @@ export function propNamed(
 const OLD_NAMES = new WeakMap<object, Map<string, string>>()
 
 export interface ArgSpec {
-  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y' | 'component' | 'metric'
+  name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y' | 'component' | 'metric' | 'path' | 'of' | 'name'
   kind: 'id' | 'text' | 'number'
   optional?: boolean
   /** A text that may be a template computed from the model. */
@@ -117,8 +117,8 @@ export interface BlockSpec {
   /** An example line, shown by autocomplete. */
   example: string
   args: readonly ArgSpec[]
-  /** `let x = …`. */
-  init?: boolean
+  /** `let x = …`; `optional` where the "= …" may be left out (`input pods = 3`). */
+  init?: boolean | 'optional'
   props: Readonly<Record<string, PropSpec>>
   /** Keywords of the statements it may hold. */
   children: readonly string[]
@@ -126,7 +126,7 @@ export interface BlockSpec {
    * Its properties are named by the model: the load and parameters in a preset, parameters only in a scenario, flows in
    * partitions; by the catalog's component in a `published` statement.
    */
-  open?: { names: 'values' | 'params' | 'flows' | 'conditions' | 'arguments'; spec: PropSpec }
+  open?: { names: 'values' | 'params' | 'flows' | 'conditions' | 'arguments' | 'inputs' | 'imports'; spec: PropSpec }
   /** It holds `a -> b` lines: edges at the top, branches in a fan-out or a split. */
   edges?: 'edges' | 'branches'
   /** How one of its branches is written, for the reference. */
@@ -311,7 +311,102 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'tier',
       'thresholds',
       'view',
+      'include',
+      'part',
+      'library',
+      'import',
+      'extends',
+      'subsystem',
     ],
+    edges: 'edges',
+  },
+  include: {
+    since: '1.3',
+    doc: 'A part of this model: another file whose statements join this one, as if written here. In the head, before anything else. The part says `part of` and this file.',
+    example: 'include "./checkout.story.loadmap"',
+    args: [{ name: 'path', kind: 'text' }],
+    props: {},
+    children: [],
+  },
+  part: {
+    since: '1.3',
+    doc: 'The second line of a part: the model this file belongs to, which includes it. A part holds anything a model does but its load, its view, its title and its head, and says its model\'s version.',
+    example: 'part of "./checkout.loadmap"',
+    args: [
+      { name: 'of', kind: 'id' },
+      { name: 'path', kind: 'text' },
+    ],
+    props: {},
+    children: [],
+  },
+  library: {
+    since: '1.3',
+    doc: 'The second line of a library: a file of values (let, fit, metric, measure, tier, published), box prototypes and subsystems that models import by name. It is checked on its own, draws nothing, and reads nothing of who imports it.',
+    example: 'library "Platform building blocks"',
+    args: [{ name: 'label', kind: 'text', optional: true }],
+    props: {},
+    children: [],
+  },
+  import: {
+    since: '1.3',
+    doc: 'Names of a library, used here as if declared here: `a`, or `local: theirs` to give one another name. In the head. The path is relative to this file (`./`, `../`) or starts at the project root (`/`), and ends in .loadmap.',
+    example: 'import "./lib/platform.loadmap" { postgres; pool: podPool }',
+    args: [{ name: 'path', kind: 'text' }],
+    props: {},
+    children: [],
+    open: { names: 'imports', spec: { value: 'string', scope: 'const', doc: 'The name it has in the library.' } },
+  },
+  extends: {
+    since: '1.3',
+    doc: 'The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure or published figure replaces the one of its name; presets, scenarios, expectations and steps are added.',
+    example: 'extends "./checkout.loadmap"',
+    args: [{ name: 'path', kind: 'text' }],
+    props: {},
+    children: [],
+  },
+  input: {
+    since: '1.3',
+    doc: 'A value a prototype or a subsystem takes from the box that is like it, set there in `with { … }`; with `= …` it has a default. `input flow main` takes the name of a flow instead, for `flows.main`, `at.topic.main` and `partitions { main: 12 }`.',
+    example: 'input pods = 3',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'name', kind: 'id', optional: true },
+    ],
+    init: 'optional',
+    props: {},
+    children: [],
+  },
+  with: {
+    since: '1.3',
+    doc: 'The inputs of the prototype or subsystem this one is like, each by its name. A value is a formula of this file.',
+    example: 'with { pods: pods; need: flows.orders }',
+    args: [],
+    props: {},
+    children: [],
+    open: { names: 'inputs', spec: { value: 'value', scope: 'ctx', doc: 'The value of this input.' } },
+  },
+  subsystem: {
+    since: '1.3',
+    doc: 'Several boxes as one: its boxes, components, connections, the edges between them and its lets, each named `<id>.<name>` outside it. In a library it takes inputs; `like:` makes one from another. With `route:`, a flow or an edge may name the subsystem itself.',
+    example: 'subsystem orderLine "Orders" { like: pipeline; with { main: orders } }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {
+      like: {
+        value: 'node',
+        scope: 'const',
+        doc: 'Another subsystem, of this file or imported, to be like: everything it holds, under this id.',
+      },
+      tier: TIER,
+      route: {
+        value: 'route',
+        scope: 'const',
+        doc: 'The stages a flow passes when its route names the subsystem, a -> b. An edge to the subsystem ends at the first one\'s box, an edge from it starts at the last one\'s.',
+      },
+    },
+    children: ['input', 'with', 'node', 'cluster', 'pool', 'component', 'connection', 'let', 'subsystem'],
     edges: 'edges',
   },
   view: {
@@ -325,7 +420,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
-    example: 'loadmap 1.2',
+    example: 'loadmap 1.3',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],
@@ -835,7 +930,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['pass', 'store', 'sink', 'lost', 'fanout', 'split', 'cache', 'limit', 'component', 'held'],
+    children: ['pass', 'store', 'sink', 'lost', 'fanout', 'split', 'cache', 'limit', 'component', 'held', 'input', 'with'],
   },
   cluster: {
     doc: 'Members (brokers) holding the partitions of one or more queues (topics).',
@@ -849,7 +944,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['queue', 'component', 'held'],
+    children: ['queue', 'component', 'held', 'input', 'with'],
   },
   pool: {
     doc: 'A workers stage drawn as pods holding a grid of workers.',
@@ -862,7 +957,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['workers', 'component', 'held'],
+    children: ['workers', 'component', 'held', 'input', 'with'],
   },
   pass: {
     doc: 'Flows pass through; past capacity the share above 100 % is rejected.',

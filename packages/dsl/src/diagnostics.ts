@@ -48,6 +48,10 @@ export const CODES = {
   'bad-expect': 'an expectation without a target, or with one that does not fit',
   'bad-step': 'a story step that sets what it cannot',
   'bad-fit': 'a fit whose points or measures do not fit',
+  'missing-file': 'a file a definition names is not among the files it was given, or its path is not one',
+  'import-loop': 'libraries that import each other in a loop',
+  'bad-file': 'a file used as what it is not: a part that is not of this model, a model imported as a library',
+  'bad-input': 'an input of a prototype or a subsystem that is not set, is set twice, or does not exist',
   'bad-metric': 'a metric, measure or query that cannot be read',
   'bad-rate': 'a flow whose rate is not a finite number from 0 up at some values',
   'bad-demand': 'a component whose demand is not a finite number from 0 up at some values',
@@ -86,6 +90,21 @@ export interface Diagnostic extends Span {
   hint?: string
   /** The names a quick fix needs, so it never reads them back out of the message: `replace`, `key`, `stage`, … */
   data?: Readonly<Record<string, string>>
+  /**
+   * The file it is in, as a path from the project root, when that is not the text that was compiled: a part, a
+   * library, or the model of a part that was compiled. `from`, `to`, `line` and `column` are then in that file.
+   */
+  file?: string
+  /** Where else to look: the line of a library a misuse at an instance is about. */
+  related?: { file?: string; line: number; column: number; message: string }
+}
+
+/** One more file of a model, where the reporter holds it. */
+export interface Placed {
+  path: string
+  /** The offset of its first character in the reporter's source. */
+  base: number
+  end: number
 }
 
 /** More are not listed: a page of garbage must not cost a page of work per keystroke. */
@@ -97,10 +116,48 @@ export class Reporter {
   private seen = new Set<string>()
   private quieted = new Set<string>()
   private starts: number[]
+  /** The text of every file, one after the other with a line break between: an offset says its file. */
+  source: string
+  /** The files after the first, in the order they were added. */
+  readonly files: Placed[] = []
+  /** The path of the first file, and of the text that was asked about: its diagnostics carry no `file`. */
+  first: string | undefined
+  given: string | undefined
 
-  constructor(readonly source: string) {
+  constructor(source: string) {
+    this.source = source
     this.starts = [0]
     for (let i = 0; i < source.length; i++) if (source[i] === '\n') this.starts.push(i + 1)
+  }
+
+  /** Adds a file after the ones held; returns where it is. */
+  append(path: string, text: string): Placed {
+    const base = this.source.length + 1
+    this.source += `\n${text}`
+    this.starts.push(base)
+    for (let i = 0; i < text.length; i++) if (text[i] === '\n') this.starts.push(base + i + 1)
+    const placed = { path, base, end: base + text.length }
+    this.files.push(placed)
+    return placed
+  }
+
+  /** The file an offset is in; undefined for the first. */
+  fileAt(offset: number): Placed | undefined {
+    for (let i = this.files.length - 1; i >= 0; i--) if (this.files[i]!.base <= offset) return this.files[i]
+    return undefined
+  }
+
+  /**
+   * A span as its own file counts it, with the file's path unless it is the text that was asked about. What leaves
+   * the compiler goes through here: inside, every offset is in the one run.
+   */
+  local<T extends Span>(s: T): T & { file?: string } {
+    const f = this.fileAt(s.from)
+    const path = f ? f.path : this.first
+    const base = f?.base ?? 0
+    const out: T & { file?: string } = { ...s, from: s.from - base, to: s.to - base }
+    if (path != null && path !== this.given) out.file = path
+    return out
   }
 
   error(code: Code, at: Span, message: string, hint?: string | Suggestion, data?: Record<string, string>) {
@@ -117,7 +174,10 @@ export class Reporter {
 
   /** The 1-based line and column of an offset. */
   position(offset: number): { line: number; column: number } {
-    return position(this.starts, offset)
+    const p = position(this.starts, offset)
+    const f = this.fileAt(offset)
+    // a later file starts on a line of the run: its own first line is 1
+    return f ? { line: p.line - position(this.starts, f.base).line + 1, column: p.column } : p
   }
 
   /**
@@ -160,7 +220,7 @@ export class Reporter {
         })
       return
     }
-    const { line, column } = position(this.starts, at.from)
+    const { line, column } = this.position(at.from)
     const d: Diagnostic = { severity, code, message, from: at.from, to: Math.max(at.to, at.from), line, column }
     if (typeof hint === 'string') d.hint = hint
     else if (hint) {
@@ -190,7 +250,7 @@ function position(starts: readonly number[], offset: number) {
  *       24 |   demand: flows.order + flows.events
  *          |                 ^^^^^ did you mean "orders"?
  */
-export function formatDiagnostic(d: Diagnostic, source: string, file = 'input.loadmap'): string {
+export function formatDiagnostic(d: Diagnostic, source: string, file = d.file ?? 'input.loadmap'): string {
   const lines = source.split('\n')
   const text = lines[d.line - 1] ?? ''
   const n = String(d.line)

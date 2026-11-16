@@ -70,6 +70,8 @@ import {
   type Type,
   typeWord,
 } from './expr'
+import { Bail, DEFAULT_PATH, type Files, fileText, Loader, normalizePath, relativePath, type Role, type SourceFile } from './files'
+import { expandAlone, type Linked, link, stamp } from './link'
 import { parse } from './parser'
 import {
   type BlockSpec,
@@ -100,7 +102,7 @@ import {
   unitOf,
   wrongMark,
 } from './units'
-import { before, CURRENT, LANGUAGE_VERSION, needs, parseVersion, stampOf, type Version, versionText } from './versions'
+import { before, CURRENT, LANGUAGE_VERSION, parseVersion, type Version, versionText } from './versions'
 import { VIEW_KEYS } from './viewblock'
 
 export { LANGUAGE_VERSION }
@@ -144,6 +146,16 @@ export interface CompileOptions {
    * Without one, every measure is its fallback.
    */
   snapshot?: SnapshotReader
+  /**
+   * This text's own path from the project root (`models/checkout.loadmap`): what the paths in its head start from.
+   * Default `input.loadmap`.
+   */
+  path?: string
+  /**
+   * The other files the definition may name, by their path from the project root: its parts and libraries, and for a
+   * part or a variant its model. The compiler reads nothing itself; without them a definition is one file.
+   */
+  files?: Files
 }
 
 /** A `measure` as `loadmap pull` reads it: the query with its arguments filled in. */
@@ -216,6 +228,8 @@ export interface DslSymbol {
   decl: Span
   /** For a stage, its box; for a node, its kind. */
   detail?: string
+  /** The file it is declared in, from the project root, when that is not the text that was compiled. */
+  file?: string
 }
 
 /** An `expect` line: where it is and whether it holds. */
@@ -225,6 +239,8 @@ export interface ExpectationResult {
   line: number
   column: number
   result: CheckResult
+  /** The file it is written in, when that is not the text that was compiled: a part. */
+  file?: string
 }
 
 export interface CompileResult {
@@ -237,45 +253,111 @@ export interface CompileResult {
   /** Every `measure`, with its query filled in: what `loadmap pull` reads. Empty when the definition has errors. */
   measures: MeasureQuery[]
   symbols: DslSymbol[]
+  /** The text that was compiled, parsed: its own statements, whatever its files add. */
   doc: Document
+  /** What the text is: a model, a part of one, a library, or a variant of a model. */
+  role: Role
+  /** Every file the definition read, by its path from the project root: the model first. */
+  files: string[]
 }
+
+/** What says nothing about a library checked on its own: nothing routes through it, nothing is drawn around it. */
+const ALONE_QUIET = new Set<Code>(['unused-stage', 'unused-component', 'tier-order', 'unseen-loss'])
 
 /** Reads a definition: parses, checks, and builds the model and view `<Loadmap>` takes. Never throws. */
 export function compile(source: string, o: CompileOptions = {}): CompileResult {
-  const report = new Reporter(source)
-  const c = new Compiler(source, report, o.functions ?? {}, o.catalog ?? loadedCatalog(), o.snapshot)
+  const path = normalizePath(o.path ?? DEFAULT_PATH) ?? DEFAULT_PATH
+  const hosted = new Set(Object.keys(o.functions ?? {}))
+  let report = new Reporter(source)
+  report.first = report.given = path
+  let c: Compiler | undefined
   let doc: Document = { body: [] }
+  let role: Role = 'model'
+  let loader: Loader | undefined
+  let linked: Linked | undefined
   let definition: Definition | undefined
   let expectations: ExpectationResult[] = []
   try {
     doc = parse(source, report).doc
-    definition = c.run(doc)
+    loader = new Loader(report, o.files, { path, text: source })
+    let entry = loader.first(path, doc)
+    role = entry.role
+    let variant: SourceFile | undefined
+    if (role === 'part' || role === 'variant') {
+      // read through its model: the names it uses are declared there
+      const owner = entry.head.find((h) => h.kind === (role === 'part' ? 'part' : 'extends'))
+      if (owner?.path == null) throw new Bail()
+      const text = fileText(o.files, owner.path)
+      if (text == null) {
+        const why = o.files ? 'it is not among the files of this definition' : 'this file came alone'
+        report.error('missing-file', owner.at, `there is no "${owner.path}": ${why}`)
+        throw new Bail()
+      }
+      report = new Reporter(text)
+      report.first = owner.path
+      report.given = path
+      loader = new Loader(report, o.files, { path, text: source })
+      const model = loader.first(owner.path, parse(text, report).doc)
+      const mine = loader.load(path, { from: 0, to: 0 })!
+      const back = mine.head.find((h) => h.kind === owner.kind)!
+      if (model.role !== 'model') {
+        report.error('bad-file', back.at, `"${owner.path}" is a ${model.role}, not a model`)
+        throw new Bail()
+      }
+      if (role === 'variant') variant = mine
+      else if (!model.head.some((h) => h.kind === 'include' && h.path === path)) {
+        const line = `include "${relativePath(owner.path, path)}"`
+        report.error('bad-file', back.at, `"${owner.path}" does not include this file`, `${line} in its head`, {
+          file: owner.path,
+          line,
+        })
+        throw new Bail()
+      }
+      entry = model
+    }
+    linked = link(loader, entry, hosted, variant)
+    c = new Compiler(report, o.functions ?? {}, o.catalog ?? loadedCatalog(), o.snapshot, linked)
+    definition = c.run(linked.body)
     if (definition)
       expectations = check(definition.model).map((found, i) => {
-        const at = c.expectSpans[i]!
-        return { at, ...report.position(at.from), result: grounded(definition!.model, found) }
+        const { file, ...at } = report.local(c!.expectSpans[i]!)
+        const where = report.position(c!.expectSpans[i]!.from)
+        return { at, ...where, result: grounded(definition!.model, found), ...(file != null && { file }) }
       })
   } catch (err) {
+    const run = c ?? new Compiler(report, {})
     // a formula that fails only at a capacity bound, while checking: it has its place
     if (err instanceof FormulaError || flowOf(err) || (err instanceof Error && err.message.startsWith('loadmap: ')))
-      c.runError(err, { from: 0, to: 0 })
+      run.runError(err, { from: 0, to: 0 })
     // a bug must not take the editor down with it: say so where the user looks
     else if (!(err instanceof Bail))
       report.error('internal', { from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
   }
-  const diagnostics = [...report.list].sort((a, b) => a.from - b.from)
-  const ok = !report.failed && !!definition
-  return { ok, diagnostics, definition, expectations, measures: ok ? c.measures : [], symbols: c.symbols, doc }
+  const kept = linked?.preview ? report.list.filter((d) => !ALONE_QUIET.has(d.code)) : report.list
+  const diagnostics = [...kept].sort((a, b) => a.from - b.from).map((d) => report.local(d))
+  const ok = !kept.some((d) => d.severity === 'error') && !!definition
+  const symbols = (c?.symbols ?? []).map((s) => {
+    const { file, ...span } = report.local(s.span)
+    const { file: _, ...decl } = report.local(s.decl)
+    return { ...s, span, decl, ...(file != null && { file }) }
+  })
+  const files = loader?.list.map((f) => f.path) ?? [path]
+  return { ok, diagnostics, definition, expectations, measures: ok && c ? c.measures : [], symbols, doc, role, files }
 }
 
 /**
  * The names a definition declares, without checking or building anything else: cheap enough for every keystroke, where
- * a full compile is not. Never throws.
+ * a full compile is not. Never throws. Of this text only: what its other files declare takes a compile.
  */
 export function declarations(source: string, doc: Document): DslSymbol[] {
-  const c = new Compiler(source, new Reporter(source), {})
+  const report = new Reporter(source)
+  const c = new Compiler(report, {})
   try {
-    c.run(doc, true)
+    const loader = new Loader(report, undefined, { path: DEFAULT_PATH, text: source })
+    const file = loader.first(DEFAULT_PATH, doc)
+    stamp(loader, file, new Set())
+    c.version = file.version ?? CURRENT
+    c.run([file.stamp!, ...expandAlone(loader, file.body)], true)
   } catch {
     // a bail leaves the names found so far
   }
@@ -304,33 +386,24 @@ export function problems(
     // a warning-level expect is never more than a warning
     const severity = expectation.severity === 'warn' ? 'warning' : outcome === 'fail' ? failed : inconclusive
     const code = outcome === 'fail' ? 'expect-failed' : 'expect-inconclusive'
-    out.push({ severity, code, message: text, ...e.at, line: e.line, column: e.column })
+    out.push({
+      severity,
+      code,
+      message: text,
+      ...e.at,
+      line: e.line,
+      column: e.column,
+      ...(e.file != null && { file: e.file }),
+    })
   }
-  return out.sort((a, b) => a.from - b.from)
+  // each file's own, in order: the text that was compiled first
+  const files = [...new Set(out.map((d) => d.file))]
+  return out.sort((a, b) => files.indexOf(a.file) - files.indexOf(b.file) || a.from - b.from)
 }
 
 /** A capacity and nothing else: what `capacity` and a connection's `max` take. */
 function checkCapacity(v: unknown): void {
   if (!isCapacity(v)) throw new Error('a capacity comes from measured(…), estimated(…) or configured(…)')
-}
-
-/** The tables a box's own lines read it through: its stage (`at`, `out`) and its component (`demand`, `util`). */
-const SELF_TABLES = new Set(['at', 'out', 'demand', 'util'])
-
-/**
- * A statement with every `at.<from>`, `out.<from>`, `demand.<from>` and `util.<from>` in its formulas naming `to`: a
- * copy, the statement itself is left as the text has it.
- */
-function renamed<T>(node: T, from: string, to: string): T {
-  if (Array.isArray(node)) return node.map((x) => renamed(x, from, to)) as T
-  if (node === null || typeof node !== 'object') return node
-  const o = node as Record<string, unknown>
-  const table = o.t === 'member' ? (o.object as Ident).name : undefined
-  if (table && SELF_TABLES.has(table) && (o.prop as Ident).name === from)
-    return { ...o, prop: { ...(o.prop as Ident), name: to } } as T
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(o)) out[k] = renamed(v, from, to)
-  return out as T
 }
 
 /**
@@ -357,8 +430,6 @@ function grounded(model: Definition['model'], r: CheckResult): CheckResult {
 }
 
 /** Stops compiling after an error that leaves nothing sensible to check. */
-class Bail {}
-
 interface Args {
   id?: Ident
   label?: Expr
@@ -411,23 +482,37 @@ class Compiler {
   private measureIds = new Set<string>()
   /** The measures whose fallback is a number. */
   private numbers = new Set<string>()
-  /** The language version the definition says it is written in. */
-  private version: Version = CURRENT
+  /** The language version the model says it is written in; a library's lines are read under its own. */
+  version: Version
 
   constructor(
-    readonly source: string,
     readonly report: Reporter,
     readonly functions: HostFunctions,
     readonly catalog?: Readonly<Record<string, Catalog>>,
     readonly snapshot?: SnapshotReader,
-  ) {}
+    private readonly linked?: Linked,
+  ) {
+    this.version = linked?.version ?? CURRENT
+  }
 
-  /** With `namesOnly`, stops once every name is declared: `symbols` is then complete, and nothing is built. */
-  run(doc: Document, namesOnly = false): Definition | undefined {
-    // first: a definition for a later version says "update", not "unknown statement" for what that version added
-    this.header(doc.body)
-    this.gluedPercents(doc.body)
-    const root = this.shape('', SCHEMA['']!, this.likes(doc.body), { from: 0, to: 0 })
+  /** Every file of the model, one after the other: a span is a place in it. */
+  get source() {
+    return this.report.source
+  }
+
+  /** The version of the file a place is in. */
+  private versionOf(at: Span): Version {
+    return this.linked?.versionAt(at.from) ?? this.version
+  }
+
+  /**
+   * `body` is the model as one list of statements: its files joined, every `like` and subsystem written out, each
+   * `loadmap` line checked (link.ts). With `namesOnly`, stops once every name is declared: `symbols` is then complete,
+   * and nothing is built.
+   */
+  run(body: readonly Stmt[], namesOnly = false): Definition | undefined {
+    this.gluedPercents(body)
+    const root = this.shape('', SCHEMA['']!, body, { from: 0, to: 0 })
 
     // names first: formulas and routes may refer to anything declared further down
     const byKind = (k: string) => root.children.filter((b) => b.keyword === k)
@@ -1618,7 +1703,7 @@ class Compiler {
           const since = parseVersion(renamed.spec.since ?? '1.0')!
           // beside the new name a rename would set it twice: the error that says so is the one to act on
           const both = stmts.some((x) => x.kind === 'prop' && x.key.name === k)
-          if (!before(this.version, since) && !both)
+          if (!before(this.versionOf(s.key), since) && !both)
             this.report.warning('deprecated', s.key, `${s.key.name} is now ${k}`, 'loadmap fmt rewrites it', { to: k })
         }
         if (!spec.open && !own(spec.props, k)) {
@@ -1693,130 +1778,9 @@ class Compiler {
       else (b.args as Record<string, Expr>)[slot.name] = a
     }
     if (missing) this.report.error('missing-part', b.at, `"${b.keyword}" needs its ${missing.name}`, usage(b.keyword))
-    if (b.spec.init && !d.init)
+    if (b.spec.init === true && !d.init)
       this.report.error('missing-part', b.at, `"${b.keyword}" needs "= formula"`, usage(b.keyword))
     if (!b.spec.init && d.init) this.report.error('misplaced', d.init, `"${b.keyword}" takes no "="`)
-  }
-
-  private header(body: readonly Stmt[]) {
-    const first = body[0]
-    const isHeader = (s: Stmt | undefined): s is Decl => s?.kind === 'decl' && s.keyword.name === 'loadmap'
-    if (!isHeader(first)) {
-      this.report.error(
-        'language-version',
-        first ?? { from: 0, to: 0 },
-        `a definition starts with "loadmap ${LANGUAGE_VERSION}"`,
-        `add "loadmap ${LANGUAGE_VERSION}" as the first line`,
-      )
-      throw new Bail()
-    }
-    for (const s of body.slice(1))
-      if (isHeader(s))
-        this.report.error('language-version', s.keyword, 'the "loadmap" line must be the first and only one')
-    const stamp = stampOf(this.source, body)
-    if (!stamp) return
-    const { at, text, version } = stamp
-    if (!version) {
-      this.report.error(
-        'language-version',
-        at,
-        `there is no language version ${text}; the first is 1`,
-        `write "loadmap ${LANGUAGE_VERSION}"`,
-      )
-      throw new Bail()
-    }
-    if (before(CURRENT, version)) {
-      this.report.error(
-        'language-version',
-        at,
-        `this definition is written in language version ${text}; this loadmap reads version ${LANGUAGE_VERSION}`,
-        'update @loadmap/dsl',
-      )
-      throw new Bail()
-    }
-    this.version = version
-    if (!before(version, CURRENT)) return
-    // what a later version added, used under an earlier stamp: a reader of that stamp would not know it
-    for (const n of needs(body, new Set(Object.keys(this.functions))))
-      if (before(version, n.since))
-        this.report.error(
-          'language-version',
-          n,
-          `${n.what} is from loadmap ${versionText(n.since)}; this definition says loadmap ${text}`,
-          `write "loadmap ${versionText(n.since)}" on the first line`,
-          { version: versionText(n.since) },
-        )
-  }
-
-  /**
-   * `like: db`: the box takes every line and stage of `db` it does not write itself. Worked out on the statements,
-   * before anything reads them, so the rest of the compiler sees a box written in full; the text stays as it is. A
-   * line here replaces the same line there, and a stage here replaces its stages.
-   */
-  private likes(body: readonly Stmt[]): readonly Stmt[] {
-    const isBox = (s: Stmt): s is Decl => s.kind === 'decl' && (BOXES as readonly string[]).includes(s.keyword.name)
-    const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0].name : undefined)
-    const likeOf = (d: Decl) => d.body?.find((st): st is Property => st.kind === 'prop' && st.key.name === 'like')
-    if (!body.some((s) => isBox(s) && likeOf(s))) return body
-    const boxes = new Map<string, Decl>()
-    for (const s of body) if (isBox(s) && idOf(s) != null && !boxes.has(idOf(s)!)) boxes.set(idOf(s)!, s)
-    const done = new Map<Decl, Decl>()
-    const stages: readonly string[] = STAGES
-    const full = (d: Decl, trail: readonly string[]): Decl => {
-      const like = likeOf(d)
-      if (!like) return d
-      const known = done.get(d)
-      if (known) return known
-      done.set(d, d)
-      const name = like.value.t === 'id' ? like.value.name : undefined
-      const proto = name == null ? undefined : boxes.get(name)
-      const self = idOf(d) ?? ''
-      if (name == null || !proto) {
-        const text = this.source.slice(like.value.from, like.value.to)
-        this.report.error('unknown-name', like.value, `unknown box "${text}"`, didYouMean(text, boxes.keys()))
-        return d
-      }
-      if (proto === d || trail.includes(name)) {
-        const loop = [...trail, self, name].join(' → ')
-        this.report.error('bad-box', like.value, `a box cannot be like itself: ${loop}`)
-        return d
-      }
-      if (proto.keyword.name !== d.keyword.name) {
-        this.report.error(
-          'bad-box',
-          like.value,
-          `a ${d.keyword.name} is like another ${d.keyword.name}: "${name}" is a ${proto.keyword.name}`,
-        )
-        return d
-      }
-      const base = full(proto, [...trail, self])
-      const mine = d.body ?? []
-      const props = new Set(mine.flatMap((st) => (st.kind === 'prop' ? [st.key.name] : [])))
-      const kinds = new Set(mine.flatMap((st) => (st.kind === 'decl' ? [st.keyword.name] : [])))
-      const ownStage = [...kinds].some((k) => stages.includes(k))
-      const taken = (base.body ?? []).filter((st) =>
-        st.kind === 'prop'
-          ? st.key.name !== 'like' && !props.has(st.key.name)
-          : st.kind !== 'decl' || !(kinds.has(st.keyword.name) || (ownStage && stages.includes(st.keyword.name))),
-      )
-      // an id of its own on a stage or a component there would be declared again here
-      const named = taken.find((st): st is Decl => st.kind === 'decl' && st.args[0]?.t === 'id')
-      if (named) {
-        const id = (named.args[0] as Ident).name
-        this.report.error(
-          'bad-box',
-          like.value,
-          `"${name}" names its ${named.keyword.name} "${id}": a box like it would declare "${id}" again`,
-          `write the ${named.keyword.name} here too, with an id of its own`,
-        )
-        return d
-      }
-      // a line taken that reads the other box by its name (at.db.orders, out.push) reads this one here
-      const out: Decl = { ...d, body: [...taken.map((st) => renamed(st, name, self)), ...mine] }
-      done.set(d, out)
-      return out
-    }
-    return body.map((s) => (isBox(s) && likeOf(s) ? full(s, []) : s))
   }
 
   /**
@@ -1908,7 +1872,7 @@ class Compiler {
    * that says so before it, so a file that compiled under its stamp still does (docs/dsl.md, "Versions").
    */
   private strict(since: Version, code: Code, at: Span, message: string, hint?: string, data?: Record<string, string>) {
-    if (!before(this.version, since)) this.report.error(code, at, message, hint, data)
+    if (!before(this.versionOf(at), since)) this.report.error(code, at, message, hint, data)
     else this.report.warning(code, at, `${message} (an error from loadmap ${versionText(since)})`, hint, data)
   }
 

@@ -27,6 +27,8 @@ const PREC: Record<string, number> = {
 }
 
 const TOP_LEVEL = new Set(SCHEMA['']!.children)
+/** The tables a formula reads by name: `flows.orders`. Any other `a.b` is one name, a box of a subsystem. */
+const TABLES = new Set(['flows', 'at', 'out', 'demand', 'util', 'derived'])
 /** What cannot start a statement and does continue a formula: a line that starts with one was wrapped. */
 const CONTINUES = new Set(['?', ':', '+', '*', '/', '%', '&&', '||', '==', '!=', '===', '!==', '<', '<=', '>', '>='])
 
@@ -45,6 +47,19 @@ export function parse(source: string, report = new Reporter(source)): { doc: Doc
   }
   const p = new Parser(lex(source, report), source, report)
   return { doc: { body: p.block(false) }, report }
+}
+
+/**
+ * Parses one file of a model where the reporter holds it: `report.source[from, to)`. Every file of a model shares the
+ * reporter's one run of offsets, so a span says its file by where it is.
+ */
+export function parseAt(report: Reporter, from: number, to: number): Document {
+  if (to - from > MAX_SOURCE) {
+    report.error('too-large', { from, to: from }, `the definition is ${to - from} characters long; at most ${MAX_SOURCE}`)
+    return { body: [] }
+  }
+  const p = new Parser(lex(report.source, report, from, to), report.source, report)
+  return { body: p.block(false) }
 }
 
 /** Parses one formula on its own, e.g. a template's `${…}` part. */
@@ -198,8 +213,25 @@ class Parser {
     if (t.kind === 'number' || (this.is('-') && this.peek(1).kind === 'number')) return this.row()
     if (t.kind !== 'ident') this.fail(t, `expected a statement, found ${describe(t)}`)
     if (this.is(':', 1)) return this.property()
-    if (this.is('->', 1)) return this.edge()
+    // `orderLine.workers -> db`: a name may reach into a subsystem
+    let k = 1
+    while (this.is('.', k) && this.peek(k + 1).kind === 'ident') k += 2
+    if (this.is('->', k)) return this.edge()
     return this.decl()
+  }
+
+  /** A name in a route or an edge: an id, or a box of a subsystem by its dotted name (`orderLine.workers`). */
+  dotted(what = 'a name'): Ident {
+    const first = this.ident(what)
+    let to = first.to
+    let name = first.name
+    while (this.is('.') && this.peek(1).kind === 'ident') {
+      this.next()
+      const n = this.ident()
+      name += `.${n.name}`
+      to = n.to
+    }
+    return { name, from: first.from, to }
   }
 
   ident(what = 'a name'): Ident {
@@ -217,7 +249,7 @@ class Parser {
     if (this.is('->')) {
       if (value.t !== 'id') this.fail(value, 'a route is a list of names joined by "->"', undefined, 'bad-route')
       const chain: Ident[] = [{ name: value.name, from: value.from, to: value.to }]
-      while (this.eat('->')) chain.push(this.ident('a stage'))
+      while (this.eat('->')) chain.push(this.dotted('a stage'))
       return { kind: 'prop', key, value, chain, from: key.from, to: chain.at(-1)!.to }
     }
     if (this.peek().kind === 'ident' && this.peek().text === 'as') {
@@ -235,8 +267,8 @@ class Parser {
   }
 
   edge(): Edge {
-    const chain = [this.ident()]
-    while (this.eat('->')) chain.push(this.ident('a name after "->"'))
+    const chain = [this.dotted()]
+    while (this.eat('->')) chain.push(this.dotted('a name after "->"'))
     const e: Edge = { kind: 'edge', chain, from: chain[0]!.from, to: chain.at(-1)!.to }
     // `a -> b: { … }` mixes the two forms: the block is still read, so its lines are checked too
     if (this.is(':') && this.is('{', 1)) {
@@ -423,15 +455,26 @@ class Parser {
           this.next()
           const prop = this.ident('a name after "."')
           if (!this.is('(')) {
-            // at.<stage>.<flow>: the one table with two names
-            if (callee.name === 'at' && this.is('.')) {
+            if (callee.name === 'flows' && this.is('.'))
+              this.fail(this.peek(), 'only one "." is allowed: flows.orders, util.db')
+            // more names: a box of a subsystem (util.orderLine.workers), and the flow of at.<stage>.<flow>
+            const rest = [prop]
+            while (this.is('.')) {
               this.next()
-              const flow = this.ident('a flow after "at.<stage>."')
-              if (this.is('.')) this.fail(this.peek(), 'at takes two names: at.db.orders')
-              return { t: 'member', object: callee, prop, flow, from: t.from, to: flow.to }
+              rest.push(this.ident(callee.name === 'at' ? 'a flow after "at.<stage>."' : 'a name after "."'))
             }
-            if (this.is('.')) this.fail(this.peek(), 'only one "." is allowed: flows.orders, util.db')
-            return { t: 'member', object: callee, prop, from: t.from, to: prop.to }
+            const joined = (list: readonly Ident[]): Ident => ({
+              name: list.map((n) => n.name).join('.'),
+              from: list[0]!.from,
+              to: list.at(-1)!.to,
+            })
+            const last = rest.at(-1)!
+            // no table: one name, as a route writes it
+            if (!TABLES.has(callee.name)) return { t: 'id', name: joined([callee, ...rest]).name, from: t.from, to: last.to }
+            // at.<stage>.<flow>: the one table with two names; the last is the flow, unless the names are one stage
+            if (callee.name === 'at' && rest.length > 1)
+              return { t: 'member', object: callee, prop: joined(rest.slice(0, -1)), flow: last, from: t.from, to: last.to }
+            return { t: 'member', object: callee, prop: joined(rest), from: t.from, to: last.to }
           }
           // Math.min(…) reads as min(…), so formulas can be pasted from TypeScript
           if (callee.name !== 'Math')
