@@ -8,9 +8,13 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 
 const source = await (await fetch('definition.loadmap')).text()
+// the other files of the definition, when it has any: its parts and libraries, by their paths
+const bundle: { path: string; files: Record<string, string> } | null = await fetch('definition.files.json')
+  .then((res) => (res.ok ? res.json() : null))
+  .catch(() => null)
 const root = document.getElementById('root')!
-await loadCatalogFor(source)
-const r = compile(source)
+for (const text of bundle ? Object.values(bundle.files) : [source]) await loadCatalogFor(text)
+const r = compile(source, bundle ? { path: bundle.path, files: bundle.files } : {})
 if (!r.ok || !r.definition) {
   const pre = document.createElement('pre')
   pre.textContent = r.diagnostics.map((d) => formatDiagnostic(d, source, 'definition.loadmap')).join('\n')

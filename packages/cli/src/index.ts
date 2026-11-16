@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { parseArgs } from 'node:util'
-import { compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
+import { compile, formatDiagnostic, gather } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { check } from './check'
 import { drift } from './drift'
@@ -11,6 +11,7 @@ import { fmt } from './fmt'
 import { lsp } from './lsp'
 import { type Chromium, playwright } from './playwright'
 import { pull } from './pull'
+import { loadCatalogForFiles, project } from './project'
 
 export { type CheckOptions, check, github } from './check'
 export { type Drift, drift } from './drift'
@@ -237,10 +238,22 @@ export async function record(a: RecordArgs, o: { viewer?: string } = {}): Promis
   const { chromium } = await playwright()
   if (!a.file) return recordPage(a, format, chromium)
   const source = await readFile(a.file, 'utf8')
-  await loadCatalogFor(source)
-  const r = compile(source)
-  if (!r.ok) throw new Error(r.diagnostics.map((d) => formatDiagnostic(d, source, a.file)).join('\n'))
-  const server = await serve(source, o.viewer ?? join(import.meta.dirname, '../dist/viewer'))
+  const here = project(a.file)
+  await loadCatalogForFiles(source, here.options)
+  const r = compile(source, here.options)
+  if (!r.ok)
+    throw new Error(
+      r.diagnostics
+        .map((d) =>
+          d.file == null
+            ? formatDiagnostic(d, source, a.file)
+            : formatDiagnostic(d, here.files(d.file) ?? '', here.shown(d.file)),
+        )
+        .join('\n'),
+    )
+  // every file the definition reaches goes to the viewer: it reads nothing but what it is served
+  const bundle = gather(source, here.options)
+  const server = await serve(bundle, o.viewer ?? join(import.meta.dirname, '../dist/viewer'))
   try {
     return await recordPage({ ...a, url: server.url }, format, chromium)
   } finally {
@@ -253,10 +266,15 @@ const TYPES: Record<string, string> = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.loadmap': 'text/plain; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
 }
 
 /** The viewer and the definition, on a port of 127.0.0.1 for as long as the recording takes. */
-async function serve(source: string, dir: string): Promise<{ url: string; close: () => Promise<void> }> {
+async function serve(
+  bundle: { path: string; files: Record<string, string> },
+  dir: string,
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const source = bundle.files[bundle.path] ?? ''
   try {
     await readFile(join(dir, 'index.html'))
   } catch {
@@ -267,7 +285,12 @@ async function serve(source: string, dir: string): Promise<{ url: string; close:
       const path = normalize(decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)).replace(/^[/\\]+/, '')
       if (path.split(/[/\\]/).includes('..')) throw new Error('outside the viewer')
       const file = path || 'index.html'
-      const body = file === 'definition.loadmap' ? Buffer.from(source) : await readFile(join(dir, file))
+      const body =
+        file === 'definition.loadmap'
+          ? Buffer.from(source)
+          : file === 'definition.files.json'
+            ? Buffer.from(JSON.stringify(bundle))
+            : await readFile(join(dir, file))
       res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' })
       res.end(body)
     } catch {

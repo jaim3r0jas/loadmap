@@ -5,7 +5,8 @@ import type { Snapshot } from '@loadmap/core'
 import { changePoints, compareWindows, type ThresholdTest, threshold } from '@loadmap/core/drift'
 import { fmt, multiple, pct } from '@loadmap/core/format'
 import { fromSnapshot, parseSnapshot } from '@loadmap/core/measure'
-import { compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
+import { compile, formatDiagnostic } from '@loadmap/dsl'
+import { loadCatalogForFiles, project } from './project'
 import { cell } from './base'
 import { type PullCommandOptions, pullFor, snapshotPath, WINDOW_OPTIONS, windowOf } from './pull'
 
@@ -75,8 +76,9 @@ async function look(a: ReturnType<typeof parse>, o: PullCommandOptions, log: (s:
     log(`${a.file}: cannot read it (${(err as NodeJS.ErrnoException).code ?? (err as Error).message})`)
     return CANNOT
   }
-  await loadCatalogFor(source)
-  const first = compile(source)
+  const here = project(a.file)
+  await loadCatalogForFiles(source, here.options)
+  const first = compile(source, here.options)
   const errors = first.diagnostics.filter((d) => d.severity === 'error')
   if (errors.length) {
     for (const d of errors) log(formatDiagnostic(d, source, a.file))
@@ -174,7 +176,7 @@ async function look(a: ReturnType<typeof parse>, o: PullCommandOptions, log: (s:
   // what the model makes of the data: the fits' slopes (a cost that grew) and the first limit's headroom (lost), only
   // in the direction that costs capacity
   const readings = (s: Snapshot) => {
-    const model = compile(source, { snapshot: fromSnapshot(s) }).definition?.model
+    const model = compile(source, { ...here.options, snapshot: fromSnapshot(s) }).definition?.model
     if (!model) return null
     const fits: Record<string, number> = {}
     for (const [name, f] of Object.entries(model.def.calibration ?? {})) if (f.origin) fits[name] = f.b
