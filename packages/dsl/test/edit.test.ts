@@ -77,6 +77,7 @@ describe('inspect', () => {
     expect(i.title).toBe('Checkout pipeline')
     expect(i.sections.map((s) => s.keyword)).toEqual([
       '',
+      'view',
       'load',
       'param',
       'param',
@@ -355,6 +356,24 @@ describe('setProperty', () => {
     expect(set(set(long, '', 'lanes', 'striped'), '', 'fullScreen', null)).toBe(
       src.replace('load {', 'lanes: striped\nload {'),
     )
+  })
+
+  it('writes a view setting into view { … } where the stamp has it, opening the block and dropping it', () => {
+    const src = tiers('tier x "X"', 'tier y "Y"').replace('loadmap 1.1', 'loadmap 1.2')
+    const off = set(src, '', 'grid', false)
+    expect(off).toBe(src.replace('load {', 'view { grid: false }\nload {'))
+    expect(compile(off).diagnostics.filter((d) => d.code === 'deprecated' || d.severity === 'error')).toEqual([])
+    expect(compile(off).definition!.options.grid).toBe(false)
+    const striped = set(off, '', 'lanes', 'striped')
+    expect(striped).toContain('view { grid: false; lanes: striped }\n')
+    expect(set(striped, '', 'grid', true)).toContain('view { grid: true; lanes: striped }\n')
+    // the block goes with its last line
+    expect(set(set(striped, '', 'lanes', null), '', 'grid', null)).toBe(src)
+    // one still written at the top is changed where it is
+    const top = src.replace('load {', 'grid: false\nload {')
+    expect(set(top, '', 'grid', true)).toBe(src.replace('load {', 'grid: true\nload {'))
+    // what is no view setting stays at the top
+    expect(set(src, '', 'layout', 'stable')).toBe(src.replace('load {', 'layout: stable\nload {'))
   })
 
   it('gives a tier a block for its fill, adds to it, and drops it with its last line', () => {

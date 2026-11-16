@@ -215,8 +215,8 @@ loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectat
 ```
 
 ```
-checkout.loadmap:26:1 error[expect-failed]: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
-  26 | expect "Today keeps 12×" { underTarget: 12 }
+checkout.loadmap:29:1 error[expect-failed]: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
+  29 | expect "Today keeps 12×" { underTarget: 12 }
      | ^^^^^^^^^^^^^^^^^^^^^^^^
 checkout.loadmap: 1 of 2 expectations failed
 ```
@@ -918,7 +918,7 @@ places: what stays slides and resizes, what is new fades in. Each step, scenario
 switch takes only the room it needs, over every load and every value of the range controls, so dragging a slider never
 moves a box, and a step looks the same whichever came before. `layout: stable` gives every box one place instead, the largest it needs anywhere the model
 reaches (its scenarios, steps, presets and controls): no step moves a box, a pool that gains pods grows where it
-stands, and every step pays for the room of the largest. `transition: 1.2` makes a change take 1.2 seconds (0.8 by
+stands, and every step pays for the room of the largest. `view { transition: 1.2 }` makes a change take 1.2 seconds (0.8 by
 default; 0 cuts, and so does a reader who asked for reduced motion). A recording shows it too.
 
 ### Direction and tiers
@@ -948,7 +948,7 @@ without a tier stands in the tier of the boxes that feed it, or of those it feed
 definition names the tier where it changes. In TypeScript:
 `tiers: { edge: { label: 'Edge' }, … }` in the view, `tier: 'edge'` on a box.
 
-`lanes: striped` leaves every other lane clear. A tier can have a colour of its own, and one for the dark theme;
+`view { lanes: striped }` leaves every other lane clear. A tier can have a colour of its own, and one for the dark theme;
 without it, dark keeps the colour's hue as dark as the theme's lanes, and a dark one alone leaves light the theme's. A colour is `"#rrggbb"`, `"rgb(…)"` or
 `"hsl(…)"`, nothing that fetches:
 
@@ -958,7 +958,14 @@ tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }
 
 In TypeScript: `lanes: 'striped'` in the view, `fill` and `fillDark` beside a tier's `label`. The page's theme sets
 the shades: `--lm-tier-base` for the first, third… lanes, `--lm-tier` for the others. In the editor, **View** switches
-the lanes' fills and the dot grid behind the diagram (`grid: false`), and the model's tab gives each lane its colours.
+the lanes' fills and the dot grid behind the diagram (`view { grid: false }`), and the model's tab gives each lane its colours.
+
+### The view block
+
+What only changes how the page looks and plays stands in one block, `view { … }`: `speed`, `transition`, `fullScreen`,
+`fullScreenMode`, `lanes` and `grid`. Nothing in it changes a number, so a reviewer of a change to the model can skip
+it. The block is from `loadmap 1.2`; a file stamped before it writes the same settings at the top, as it always did.
+In a 1.2 file a setting at the top still works and warns, and `loadmap fmt` moves it into the block.
 
 ### Full screen
 
@@ -966,14 +973,14 @@ The diagram's **Full screen** fits the screen without scrolling: the diagram as 
 of the page in a compact form, each of which opens whole. `fullScreen` keeps only the ones it lists:
 
 ```
-fullScreen: [verdict, live, controls]
+view { fullScreen: [verdict, live, controls] }
 ```
 
 The names are `verdict`, `live` (the meters), `limits` (where it runs out, in order), `controls`, `headroom`,
 `compare` (the scenarios side by side) and `assumptions`. `<Loadmap fullScreen={[...]}>` takes the same list.
 
 A switch in full screen, or the F key, turns it into **focus**: the diagram, the story, and the verdict and the load
-slider when `fullScreen` lists them. `fullScreenMode: focus` opens full screen there
+slider when `fullScreen` lists them. `view { fullScreenMode: focus }` opens full screen there
 (`<Loadmap fullScreenMode="focus">`); the default is `panels`.
 
 ### What stays code
@@ -1003,8 +1010,8 @@ property whose value does not parse, a list with a wrong word) is not marked aga
 suggestion:
 
 ```
-checkout.loadmap:102:17 error[unknown-name]: unknown flow "order"
-  102 |   demand: flows.order + flows.events
+checkout.loadmap:104:17 error[unknown-name]: unknown flow "order"
+  104 |   demand: flows.order + flows.events
       |                 ^^^^^ did you mean "orders"?
 ```
 
@@ -1104,7 +1111,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
-| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
+| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 
 ## In code
 
@@ -1193,18 +1200,35 @@ A loadmap definition.
 | `title` | string, constant | The heading above the diagram. |
 | `direction` | `right` \| `down` | Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down. |
 | `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. |
+| `speed` | number, constant | Simulated seconds per real second. Default 10. From loadmap 1.2 in `view { … }`. |
+| `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. From loadmap 1.2 in `view { … }`. |
+| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. From loadmap 1.2 in `view { … }`. |
+| `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. From loadmap 1.2 in `view { … }`. |
+| `assume` | string, constant | A line added before the generated assumptions. |
+| `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
+| `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. From loadmap 1.2 in `view { … }`. |
+| `grid` | boolean, constant | The editor's dot grid. Default true. From loadmap 1.2 in `view { … }`. |
+
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`, `view`.
+
+Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
+
+### view
+
+How the page looks and plays: nothing in here changes a number. Once in a definition. From loadmap 1.2.
+
+```
+view { speed: 10; fullScreen: [verdict, controls]; grid: false }
+```
+
+| Property | Value | |
+| --- | --- | --- |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
 | `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
 | `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |
 | `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
-| `assume` | string, constant | A line added before the generated assumptions. |
-| `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
 | `grid` | boolean, constant | The editor's dot grid. Default true. |
-
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`.
-
-Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
 ### loadmap
 

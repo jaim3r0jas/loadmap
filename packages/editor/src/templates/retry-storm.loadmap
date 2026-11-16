@@ -2,7 +2,7 @@ loadmap 1.2
 # Clients retry what a busy service turns away. Below capacity that costs nothing; past it every failed attempt comes
 # back, and the gateway in front sees several times the traffic. A retry budget keeps it in bounds.
 title: "Retry storm"
-speed: 10
+view { speed: 10 }
 assume: "1× is today's busiest minute; retries are sent right away (backoff spreads them, it does not remove them)."
 
 load "Traffic, × today" { max: 20; default: 1 }

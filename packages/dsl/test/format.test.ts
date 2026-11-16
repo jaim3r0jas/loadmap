@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compile, format, loadCatalog } from '../src'
-import { lex, parse, Reporter } from '../src/internal'
+import { applied, intoView, lex, parse, Reporter } from '../src/internal'
 
 const root = new URL('../../../', import.meta.url)
 const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
@@ -156,7 +156,7 @@ describe('format', () => {
 
   it('keeps one-line blocks on one line, and a statement a line elsewhere', () => {
     expect(fmt('load { max: 10;  default: 2; }\nscenario "A" {  }\nscenario "B" {\n}\ntitle: "x"; speed: 5')).toBe(
-      'load { max: 10; default: 2 }\nscenario "A" {}\nscenario "B" {}\ntitle: "x"\nspeed: 5\n',
+      'load { max: 10; default: 2 }\nscenario "A" {}\nscenario "B" {}\nview { speed: 5 }\ntitle: "x"\n',
     )
     expect(fmt('node a { pass\n  sub: "x"; short: "y" }')).toBe('node a {\n  pass\n  sub: "x"\n  short: "y"\n}\n')
   })
@@ -205,6 +205,28 @@ describe('format', () => {
     expect(fmt(old)).toBe(old)
   })
 
+  it('moves the view settings written at the top into view { … }, where the stamp has it', () => {
+    expect(fmt('loadmap 1.2\ntitle: "x"\nspeed: 5\nlayout: stable\ngrid: false\n')).toBe(
+      'loadmap 1.2\ntitle: "x"\nview { speed: 5; grid: false }\nlayout: stable\n',
+    )
+    // into the block the definition has, a comment above a setting with it, and a setting beside others
+    expect(fmt('loadmap 1.2\nview { lanes: striped }\ntitle: "x"; speed: 5\n# no dots\ngrid: false\n')).toBe(
+      'loadmap 1.2\nview {\n  lanes: striped\n  speed: 5\n  # no dots\n  grid: false\n}\ntitle: "x"\n',
+    )
+    // the comment under the loadmap line is the file's
+    expect(fmt('loadmap 1.2\n# A model.\nspeed: 5\ntitle: "x"\n')).toBe(
+      'loadmap 1.2\n# A model.\nview { speed: 5 }\ntitle: "x"\n',
+    )
+    // set in both: the checker's to say, nothing moves
+    const twice = 'loadmap 1.2\nview { speed: 5 }\nspeed: 6\n'
+    expect(fmt(twice)).toBe(twice)
+    // an older stamp keeps them where its readers look
+    const old = 'loadmap 1.1\ntitle: "x"\nspeed: 5\n'
+    expect(fmt(old)).toBe(old)
+    const moved = fmt('loadmap 1.2\nspeed: 5\ngrid: false\n')
+    expect(fmt(moved)).toBe(moved)
+  })
+
   it('re-indents a formula wrapped inside parentheses', () => {
     expect(fmt('node a {\ncapacity: estimated(\n20_000,\n      "req/s"\n    )\n}')).toBe(
       'node a {\n  capacity: estimated(\n    20_000,\n    "req/s"\n  )\n}\n',
@@ -236,7 +258,8 @@ describe('format', () => {
           const r = format(piece)
           if (!r.ok) continue
           formatted++
-          expect(meaning(r.text)).toEqual(meaning(piece))
+          // the one thing it moves: a view setting at the top, into view { … }
+          expect(meaning(r.text)).toEqual(meaning(applied(piece, intoView(piece, parse(piece).doc.body))))
           expect(format(r.text).text).toBe(r.text)
           expect(compile(r.text).diagnostics.map((d) => d.message)).toEqual(
             compile(piece).diagnostics.map((d) => d.message),

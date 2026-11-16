@@ -2,7 +2,7 @@ loadmap 1.2
 # Reads go to replicas, writes to the primary, and the primary also ships every write to each replica. More replicas
 # take reads off each other but add replication work on the primary.
 title: "Reads on replicas"
-speed: 10
+view { speed: 10 }
 assume: "1× is today's busiest hour; reads and writes grow together."
 
 load "Traffic, × today" { max: 50; default: 1 }

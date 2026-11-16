@@ -644,6 +644,41 @@ push -> desks
     ])
   })
 
+  it('read how the page looks and plays from view { … }, and from the top in a file from before it', () => {
+    const at = (top: string, version = '1.2') => compile(def({ top }).replace('loadmap 1.1', `loadmap ${version}`))
+    const block = at('view { speed: 4; transition: 0; fullScreen: [verdict]; fullScreenMode: focus; grid: false }')
+    expect(block.diagnostics).toEqual([])
+    expect(block.definition!.options).toMatchObject({
+      speed: 4,
+      transition: 0,
+      fullScreen: ['verdict'],
+      fullScreenMode: 'focus',
+      grid: false,
+    })
+    // the same settings at the top, as 1.1 wrote them: silent there, an old spelling from 1.2
+    const top = 'speed: 4\ntransition: 0\nfullScreen: [verdict]\nfullScreenMode: focus\ngrid: false'
+    const old = at(top, '1.1')
+    expect(old.diagnostics).toEqual([])
+    expect(old.definition!.options).toEqual(block.definition!.options)
+    const now = at(top)
+    expect(now.definition!.options).toEqual(block.definition!.options)
+    expect(now.diagnostics.map((d) => `${d.severity}[${d.code}] ${d.message}`)).toEqual([
+      'warning[deprecated] speed is now in view { … }',
+      'warning[deprecated] transition is now in view { … }',
+      'warning[deprecated] fullScreen is now in view { … }',
+      'warning[deprecated] fullScreenMode is now in view { … }',
+      'warning[deprecated] grid is now in view { … }',
+    ])
+    const messages = (t: string, version?: string) => at(t, version).diagnostics.map((d) => d.message)
+    expect(messages('speed: 4\nview { speed: 5 }')).toEqual(['"speed" is set here and in view'])
+    expect(messages('view { speed: 5 }\nview { grid: false }')).toEqual(['only one view block is allowed'])
+    expect(messages('view { transition: 9 }')).toEqual(['transition is 9 seconds; 0 to 5'])
+    expect(messages('view { title: "x" }')[0]).toBe('unknown property "title" in view')
+    expect(messages('view { speed: 5 }', '1.1')).toEqual([
+      '"view" is from loadmap 1.2; this definition says loadmap 1.1',
+    ])
+  })
+
   it('take "as" on a demand only, with the unit in quotes', () => {
     const messages = (src: string) => errors(src).map((e) => e.message)
     expect(messages(api('flows.req', 'measured(400, "req/s") as "req/s"'))).toContain(

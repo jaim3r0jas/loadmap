@@ -2,7 +2,7 @@ loadmap 1.2
 # Reads go through a cache: the hits are answered there and only the misses reach the database. The hit ratio decides
 # how much of the load the database ever sees.
 title: "Cache in front of a database"
-speed: 10
+view { speed: 10 }
 assume: "1× is today's busiest hour; the hit ratio holds as the load grows."
 
 load "Traffic, × today" { max: 50; default: 1 }

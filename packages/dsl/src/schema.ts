@@ -61,6 +61,11 @@ export interface PropSpec {
    * renames it.
    */
   was?: string
+  /**
+   * The block it lives in from loadmap 1.2 (`view`), for a property of the top level: from then on it warns there and
+   * `loadmap fmt` moves it; a definition stamped before still writes it at the top.
+   */
+  movedTo?: string
 }
 
 /** A property of `props` by its name or by its old one (`was`): its spec, and the name it has now. */
@@ -213,6 +218,43 @@ export const COLORS = ['accent', 'alt', 'ok', 'warn', 'drop', 'muted'] as const
 /** The directions, `direction: right | down`, also read under their old name, `layout:`, from before `layout: compact`. */
 export const DIRECTIONS = ['right', 'down'] as const
 
+/**
+ * What changes how the page looks and plays, never a number. From loadmap 1.2 in a `view { … }` block; before it at the
+ * top, where a definition stamped earlier still writes them.
+ */
+const VIEW_PROPS: Readonly<Record<string, PropSpec>> = {
+  speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
+  transition: {
+    value: 'number',
+    scope: 'const',
+    unit: 'seconds',
+    doc: 'Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts.',
+  },
+  fullScreen: {
+    value: 'names',
+    scope: 'const',
+    values: PANELS,
+    doc: 'The panels full screen shows, compact, below the diagram. Default all of them.',
+  },
+  fullScreenMode: {
+    value: 'enum',
+    scope: 'const',
+    values: FULL_SCREEN_MODES,
+    doc: 'What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels.',
+  },
+  lanes: {
+    value: 'enum',
+    scope: 'const',
+    values: ['filled', 'striped'],
+    doc: 'filled (the default): every lane in two alternating shades; striped: every other one clear.',
+  },
+  grid: {
+    value: 'boolean',
+    scope: 'const',
+    doc: "The editor's dot grid. Default true.",
+  },
+}
+
 export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   // the document itself
   '': {
@@ -233,42 +275,18 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         values: ['compact', 'stable'],
         doc: 'compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one.',
       },
-      speed: { value: 'number', scope: 'const', doc: 'Simulated seconds per real second. Default 10.' },
-      transition: {
-        value: 'number',
-        scope: 'const',
-        unit: 'seconds',
-        doc: 'Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts.',
-      },
-      fullScreen: {
-        value: 'names',
-        scope: 'const',
-        values: PANELS,
-        doc: 'The panels full screen shows, compact, below the diagram. Default all of them.',
-      },
-      fullScreenMode: {
-        value: 'enum',
-        scope: 'const',
-        values: FULL_SCREEN_MODES,
-        doc: 'What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels.',
-      },
+      speed: { ...VIEW_PROPS.speed!, movedTo: 'view' },
+      transition: { ...VIEW_PROPS.transition!, movedTo: 'view' },
+      fullScreen: { ...VIEW_PROPS.fullScreen!, movedTo: 'view' },
+      fullScreenMode: { ...VIEW_PROPS.fullScreenMode!, movedTo: 'view' },
       assume: { value: 'string', scope: 'const', repeat: true, doc: 'A line added before the generated assumptions.' },
       searchMax: {
         value: 'number',
         scope: 'const',
         doc: 'The highest load multiple the limits search. Default 2000.',
       },
-      lanes: {
-        value: 'enum',
-        scope: 'const',
-        values: ['filled', 'striped'],
-        doc: 'filled (the default): every lane in two alternating shades; striped: every other one clear.',
-      },
-      grid: {
-        value: 'boolean',
-        scope: 'const',
-        doc: "The editor's dot grid. Default true.",
-      },
+      lanes: { ...VIEW_PROPS.lanes!, movedTo: 'view' },
+      grid: { ...VIEW_PROPS.grid!, movedTo: 'view' },
     },
     children: [
       'loadmap',
@@ -292,8 +310,18 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'connection',
       'tier',
       'thresholds',
+      'view',
     ],
     edges: 'edges',
+  },
+  view: {
+    inspector: 'model',
+    since: '1.2',
+    doc: 'How the page looks and plays: nothing in here changes a number. Once in a definition.',
+    example: 'view { speed: 10; fullScreen: [verdict, controls]; grid: false }',
+    args: [],
+    props: VIEW_PROPS,
+    children: [],
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
