@@ -7,7 +7,8 @@ import type { Expr } from './ast'
  * flow, `20ms`, `80%`, a fit's y, `as "cores"`) is checked.
  */
 export interface Unit {
-  time: number
+  /** Unknown for a fit's y: its word says what it counts, not whether that is a rate. */
+  time?: number
   word?: string
 }
 
@@ -24,10 +25,15 @@ const SECONDS: Unit = { time: 1 }
 const PLAIN: Unit = { time: 0 }
 const RATE: Unit = { time: -1 }
 
+/** The rates written as one word; never any word in "ps", which takes in "groups" and "apps". */
+const RATE_WORDS = 'rps|qps|tps|pps|fps|iops|[kmg]?bps'
 /** A unit a second: "req/s", "MB/sec", "requests per second", "rps", "Mbps". */
-const PER_SECOND = /(\/\s*s(ec(ond)?s?)?|\bper\s+sec(ond)?|^[a-z]*ps)$/i
+const PER_SECOND = new RegExp(`(\\/\\s*s(ec(ond)?s?)?|\\bper\\s+sec(ond)?|^(${RATE_WORDS}))$`, 'i')
 /** A y that names a time or a rate: `ms`, `p99`, `cpu_seconds`, `rps`, `throughput`. */
-const NOT_A_COUNT = /^(ms|s|secs?|seconds?|min|minutes?|h|hours?|p\d+|[a-z]*ps|latency|time|duration|rate|throughput)$/i
+const NOT_A_COUNT = new RegExp(
+  `^(ms|s|secs?|seconds?|min|minutes?|h|hours?|p\\d+|${RATE_WORDS}|latency|time|duration|rate|throughput)$`,
+  'i',
+)
 
 /** A capacity's unit: anything a second ("req/s", "rps") is a rate; any other word is a count of it. */
 export function parseUnit(text: string): Unit {
@@ -36,12 +42,16 @@ export function parseUnit(text: string): Unit {
 }
 
 /**
- * What a fit returns: its y as a count, when y is one plain word that names neither a time nor a rate (`cores`, not
- * `cpu_seconds`, `p99` or `rps`); otherwise unknown.
+ * What a fit returns: its y's word, when y is one plain word that names neither a time nor a rate (`cores`, not
+ * `cpu_seconds`, `p99` or `rps`); otherwise unknown. The word alone: `points hour orders` may well be orders a second,
+ * so a fit is compared only with a count, never with a rate or a property's unit.
  */
 function fitUnit(y: string): Unit | null {
-  return /^[a-z]+$/i.test(y) && !NOT_A_COUNT.test(y) ? { time: 0, word: y } : null
+  return /^[a-z]+$/i.test(y) && !NOT_A_COUNT.test(y) ? { word: y } : null
 }
+
+/** Each let's unit, worked out once: `let b = a + a` must not walk a's lets twice, or a shared link can hang. */
+const memo = new WeakMap<UnitNames, Map<string, Unit | null>>()
 
 /** The unit of a formula, or null where the text does not say. */
 export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = new Set()): Unit | null {
@@ -55,7 +65,12 @@ export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = ne
       const init = names.let(e.name)
       // a let that reads itself is an error of its own: unknown here
       if (!init || seen.has(e.name)) return null
-      return unitOf(init, names, new Set([...seen, e.name]))
+      const known = memo.get(names) ?? new Map<string, Unit | null>()
+      memo.set(names, known)
+      if (known.has(e.name)) return known.get(e.name)!
+      const u = unitOf(init, names, new Set([...seen, e.name]))
+      known.set(e.name, u)
+      return u
     }
     case 'member': {
       const table = e.object.name
@@ -72,9 +87,11 @@ export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = ne
       return same(of(e.then), of(e.else))
     case 'bin': {
       if (e.op !== '*' && e.op !== '/' && e.op !== '+' && e.op !== '-') return null
-      const [a, b] = [of(e.left), of(e.right)]
+      const a = of(e.left)
+      const b = a && of(e.right)
       if (!a || !b) return null
       if (e.op === '+' || e.op === '-') return same(a, b)
+      if (a.time === undefined || b.time === undefined) return null
       // a product's word is gone: cores × 2 counts something else, and saying what is `as`'s job
       return { time: e.op === '*' ? a.time + b.time : a.time - b.time }
     }
@@ -98,21 +115,27 @@ export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = ne
 /** The unit two values share, or null when they differ or either is unknown. */
 function same(a: Unit | null, b: Unit | null): Unit | null {
   if (!a || !b || a.time !== b.time) return null
-  if (a.word === undefined || b.word === undefined) return { time: a.time }
-  return wordsMatch(a.word, b.word) ? a : { time: a.time }
+  if (a.word === undefined || b.word === undefined) return a.time === undefined ? null : { time: a.time }
+  return wordsMatch(a.word, b.word) ? a : a.time === undefined ? null : { time: a.time }
 }
 
-/** "core" and "Cores" are one word; "cores" and "connections" two. */
-const wordsMatch = (a: string, b: string) => norm(a) === norm(b)
-const norm = (w: string) => w.trim().toLowerCase().replace(/s$/, '')
+/** "core" and "Cores" are one word, "process" and "processes" too; "cores" and "connections" two. */
+function wordsMatch(a: string, b: string): boolean {
+  const [x, y] = [a.trim().toLowerCase(), b.trim().toLowerCase()]
+  return x === y || x === `${y}s` || y === `${x}s` || x === `${y}es` || y === `${x}es`
+}
 
 /**
  * Whether a demand in `d` and a capacity in `c` disagree: per second against a count, or two counts in different
  * words. Rates are never compared by word: orders a second become requests or writes a second all the time.
  */
 export function disagree(d: Unit, c: Unit): boolean {
+  const words = d.word !== undefined && c.word !== undefined && !wordsMatch(d.word, c.word)
+  // a fit's y says only its word: checked against a count, never against a rate
+  if (d.time === undefined) return c.time === 0 && words
+  if (c.time === undefined) return d.time === 0 && words
   if (d.time !== c.time) return true
-  return d.time === 0 && d.word !== undefined && c.word !== undefined && !wordsMatch(d.word, c.word)
+  return d.time === 0 && words
 }
 
 /** A unit in words, after "is": `per second`, `in "cores"`, `in seconds`. */

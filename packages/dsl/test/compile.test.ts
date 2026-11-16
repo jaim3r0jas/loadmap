@@ -318,6 +318,40 @@ describe('units', () => {
     expect(messages(api('flows.req as cores', 'measured(400, "req/s")'))).toContain('"as" takes the unit in quotes')
     expect(messages(api('flows.req as " "', 'measured(400, "req/s")'))).toContain('"as" takes the unit in quotes')
   })
+
+  it('read only the rates written as one word, and a word with "es" as its own plural', () => {
+    // "groups" and "apps" end like "rps" but count something
+    const held = (unit: string) =>
+      api('', `measured(200, "${unit}")`).replace('  capacity:', '  held: 20ms\n  capacity:')
+    expect(warnings(held('groups'))).toEqual([])
+    expect(warnings(api('', 'measured(4, "apps")'))).toHaveLength(1)
+    const fit = 'fit cpu "CPU" { points rate processes {\n 1 3\n 2 5\n } }'
+    expect(warnings(api('cpu(flows.req)', 'measured(4, "process")', { top: fit }))).toEqual([])
+    expect(warnings(api('cpu(flows.req)', 'measured(4, "boxes")', { top: fit }))).toHaveLength(1)
+  })
+
+  it("compare a fit's y with a count only: its word does not say whether it is a rate", () => {
+    const fit = 'fit traffic "Traffic" { points hour orders {\n 1 30\n 2 50\n } }'
+    expect(warnings(def({ top: fit, flow: 'rate: traffic(load)' }).replace('  rate: 100 * load\n', ''))).toEqual([])
+    expect(warnings(api('traffic(load)', 'measured(400, "req/s")', { top: fit }))).toEqual([])
+    expect(warnings(api('traffic(load)', 'measured(4, "cores")', { top: fit }))).toEqual([
+      { message: 'the demand is in "orders", the capacity in "cores"', text: 'traffic(load)' },
+    ])
+  })
+
+  it('work out each let once: a chain that reads every let twice must not take 2^n steps', () => {
+    const lets = ['let l0 = flows.req', ...Array.from({ length: 40 }, (_, i) => `let l${i + 1} = l${i} + l${i}`)]
+    expect(warnings(api('l40', 'measured(4, "cores")', { top: lets.join('\n') }))).toEqual([
+      { message: 'the demand is per second, the capacity in "cores"', text: 'l40' },
+    ])
+  })
+
+  it('hint at a per-minute capacity by converting it, not by a CPU time', () => {
+    const [w] = compile(api('flows.req', 'measured(6000, "req/min")')).diagnostics.filter(
+      (d) => d.severity === 'warning',
+    )
+    expect(w?.hint).toContain('per second')
+  })
 })
 
 describe('formulas', () => {

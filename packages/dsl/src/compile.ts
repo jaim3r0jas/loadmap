@@ -1167,7 +1167,7 @@ class Compiler {
       const found = demand && unitOf(demand.value, names)
       if (said && found && disagree(found, said))
         this.report.warning(demand.as!, `"as" says "${said.word}", but the formula is ${describe(found)}`)
-      if (!cap?.word) continue
+      if (!cap?.word || cap.time === undefined) continue
       if (demand) {
         const d = said ?? found
         if (!d || !disagree(d, cap)) continue
@@ -1175,7 +1175,9 @@ class Compiler {
         const hint = said
           ? `say the capacity's unit: as "${cap.word}", or give the capacity the demand's`
           : d.time === -1 && cap.time === 0
-            ? 'multiply by what each unit costs: flows.x * 2ms is the CPU seconds a second'
+            ? cap.word.includes('/')
+              ? 'give the capacity per second: 6000 a minute is 100 a second, "req/s"'
+              : 'multiply by what each unit costs: flows.x * 2ms is CPU seconds a second; slots such as connections take held: 20ms'
             : d.time === 0 && cap.time === -1
               ? 'a capacity a second takes the units a second: leave out what makes the demand a count'
               : 'count both in one unit'
