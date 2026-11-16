@@ -15,6 +15,9 @@ export function flatten(
 ): { text: string } | { error: string; diagnostics: Diagnostic[] } {
   const r = compile(source, o)
   if (!r.ok) return { error: 'the definition does not compile', diagnostics: r.diagnostics }
+  // a library draws nothing of its own: what stands in for a model when it is checked is no text to write
+  if (r.role === 'library')
+    return { error: 'a library is not a definition to flatten: give its model', diagnostics: [] }
   const f: Front = { report: new Reporter(source), doc: { body: [] }, role: 'model' }
   try {
     front(source, o, f)

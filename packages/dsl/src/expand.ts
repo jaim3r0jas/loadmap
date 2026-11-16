@@ -118,6 +118,8 @@ export class Expander {
       // by its keyword: a guard that says "a box" would leave no statement for the lines after it
       const d = s.kind === 'decl' ? s : undefined
       const k = d?.keyword.name
+      // past the most boxes a definition has, nothing more is written out: a few lines must not make millions
+      if (this.tooMany && d && (k === 'subsystem' || (BOXES as readonly string[]).includes(k!))) continue
       if (d && (BOXES as readonly string[]).includes(k!)) {
         out.push(this.box(d, env, []))
         this.count(d.keyword)
@@ -510,7 +512,11 @@ export class Expander {
         [stages.at(-1), last],
       ] as const)
         if (stage && !box)
-          this.report.error('bad-route', stage, `"${stage.name.slice(self.length + 1)}" is no stage of this subsystem`)
+          this.report.error(
+            'bad-route',
+            stage,
+            `"${stage.name.startsWith(`${self}.`) ? stage.name.slice(self.length + 1) : stage.name}" is no stage of this subsystem`,
+          )
       paths.set(self, { stages, entry: first && idOf(first), exit: last && idOf(last) })
     } else paths.set(self, { stages: [] })
     return out
@@ -521,6 +527,7 @@ export class Expander {
    * after those of the subsystem it is like, that one's inputs set from this one's `with`.
    */
   private content(d: Decl, env: Env, depth: number, trail: readonly Decl[]): Content | undefined {
+    if (this.tooMany) return undefined
     const like = propOf(d, 'like')
     const body = d.body ?? []
     const withs = body.filter(isWith)

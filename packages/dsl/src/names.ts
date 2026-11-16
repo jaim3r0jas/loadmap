@@ -1,4 +1,4 @@
-import { childrenOf, type Expr, type Stmt } from './ast'
+import { childrenOf, type Decl, type Expr, type Property, type Stmt } from './ast'
 import type { Span } from './diagnostics'
 import { type BlockSpec, BOXES, EDGE_PROPS, own, propNamed, SCHEMA, STAGES } from './schema'
 
@@ -173,4 +173,39 @@ class Walk {
     }
     for (const c of childrenOf(e, true)) this.expr(c)
   }
+}
+
+/**
+ * For a box that says `like:`, the other box and what this one takes from it, by the names of its lines and stages,
+ * as the compiler takes them (expand.ts): a line written here replaces the same line there, a stage written here
+ * replaces its stages, and what the other takes from a third comes along. `taken` is empty when the other is not a box
+ * of these statements (a prototype a library gave).
+ */
+export function likeness(body: readonly Stmt[], id: string): { from: string; taken: string[] } | undefined {
+  const stages: readonly string[] = STAGES
+  const box = (name: string) =>
+    body.find(
+      (s): s is Decl =>
+        s.kind === 'decl' &&
+        (BOXES as readonly string[]).includes(s.keyword.name) &&
+        s.args[0]?.t === 'id' &&
+        s.args[0].name === name,
+    )
+  const named = (s: Stmt) => (s.kind === 'prop' ? s.key.name : s.kind === 'decl' ? s.keyword.name : '')
+  const skip = (name: string) => !name || name === 'like' || name === 'input' || name === 'with'
+  /** Every line and stage a box has, its own and what it takes: by name. */
+  const full = (d: Decl, seen: readonly Decl[]): string[] => {
+    const own = (d.body ?? []).map(named).filter((k) => !skip(k))
+    const like = d.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === 'like')
+    const other = like?.value.t === 'id' ? box(like.value.name) : undefined
+    if (!other || seen.includes(other) || other.keyword.name !== d.keyword.name) return own
+    const ownStage = own.some((k) => stages.includes(k))
+    const theirs = full(other, [...seen, d]).filter((k) => !own.includes(k) && !(ownStage && stages.includes(k)))
+    return [...theirs, ...own]
+  }
+  const mine = box(id)
+  const like = mine?.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === 'like')
+  if (!mine || like?.value.t !== 'id') return undefined
+  const own = new Set((mine.body ?? []).map(named))
+  return { from: like.value.name, taken: [...new Set(full(mine, []).filter((k) => !own.has(k)))] }
 }

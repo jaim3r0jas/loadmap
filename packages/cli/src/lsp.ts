@@ -120,9 +120,11 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
   let folder: string | undefined
   /** Counts every change to any file: a compile is good for the text and the files it read. */
   let epoch = 0
-  /** For each open document, the files not open it last reported problems in. */
-  const reported = new Map<string, Set<string>>()
-  let listed: { epoch: number; root: string; paths: string[] } | undefined
+  /** For each open document, the problems it last found in files that are not open, by their uri. */
+  const reported = new Map<string, Map<string, object[]>>()
+  /** Counts the files that came or went (opened, closed, changed on disk): the list of them is read again then. */
+  let listing = 0
+  let listed: { listing: number; root: string; paths: string[] } | undefined
   let watch = false
   let shutdown = false
   let stopped = false
@@ -200,8 +202,9 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
     const abs = (path: string) => join(p.root, ...path.split('/'))
     const files = (path: string) => byFile.get(abs(path))?.text ?? p.files(path)
     const paths = () => {
-      if (listed?.epoch !== epoch || listed.root !== p.root)
-        listed = { epoch, root: p.root, paths: loadmapFiles(p.root) }
+      // not on every keystroke: the files of a project change when one is made, removed or saved
+      if (listed?.listing !== listing || listed.root !== p.root)
+        listed = { listing, root: p.root, paths: loadmapFiles(p.root) }
       return listed.paths
     }
     const uriOf = (path: string) => byFile.get(abs(path))?.uri ?? pathToFileURL(abs(path)).href
@@ -275,6 +278,7 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
         return undefined
       case 'workspace/didChangeWatchedFiles':
         epoch++
+        listing++
         for (const d of docs.values()) schedule(d)
         return undefined
       case 'workspace/didChangeWorkspaceFolders':
@@ -306,9 +310,11 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
         const file = fileOf(p.textDocument.uri)
         if (file != null && byFile.get(file) === d) byFile.delete(file)
         notify('textDocument/publishDiagnostics', { uri: p.textDocument.uri, diagnostics: [] })
-        for (const uri of reported.get(p.textDocument.uri) ?? [])
-          notify('textDocument/publishDiagnostics', { uri, diagnostics: [] })
+        const theirs = [...(reported.get(p.textDocument.uri)?.keys() ?? [])]
         reported.delete(p.textDocument.uri)
+        // what the documents still open say about those files stays
+        for (const uri of theirs) publishFor(uri)
+        listing++
         // the disk's text counts again: what read this file is checked again
         epoch++
         for (const other of docs.values()) schedule(other)
@@ -470,11 +476,29 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
     clearTimeout(prev?.timer)
     const d: Doc = { uri, version, text, lines: lineStarts(text), good: prev?.good }
     docs.set(uri, d)
+    if (!prev) listing++
     const file = fileOf(uri)
     if (file != null) byFile.set(file, d)
     epoch++
     // a model reads its parts and libraries, a part its model: every open document is checked again
     for (const other of docs.values()) schedule(other)
+  }
+
+  /**
+   * The problems of a file that is not open, as every open document that reads it found them: two models that import
+   * one library each say what they see in it, and neither takes the other's away.
+   */
+  function publishFor(uri: string) {
+    if (docs.has(uri)) return
+    const seen = new Set<string>()
+    const diagnostics: object[] = []
+    for (const lists of reported.values())
+      for (const x of lists.get(uri) ?? []) {
+        const key = JSON.stringify(x)
+        if (!seen.has(key)) diagnostics.push(x)
+        seen.add(key)
+      }
+    notify('textDocument/publishDiagnostics', { uri, diagnostics })
   }
 
   /** Checks a document after a pause in typing, as the editor's linter does. */
@@ -502,11 +526,9 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
             entry.list.push(x)
             theirs.set(doc.uri, entry)
           }
-        for (const [uri, { doc, list }] of theirs)
-          notify('textDocument/publishDiagnostics', { uri, diagnostics: list.map((x) => toLsp(doc, x)) })
-        for (const uri of reported.get(d.uri) ?? [])
-          if (!theirs.has(uri) && !docs.has(uri)) notify('textDocument/publishDiagnostics', { uri, diagnostics: [] })
-        reported.set(d.uri, new Set(theirs.keys()))
+        const before = [...(reported.get(d.uri)?.keys() ?? [])]
+        reported.set(d.uri, new Map([...theirs].map(([uri, { doc, list }]) => [uri, list.map((x) => toLsp(doc, x))])))
+        for (const uri of new Set([...before, ...theirs.keys()])) publishFor(uri)
       } catch {}
     }, delay)
   }

@@ -114,31 +114,3 @@ export function* formulasOf(body: readonly Stmt[]): Generator<Expr> {
     }
   }
 }
-
-/**
- * For a box that says `like:`, the other box and what this one takes from it: the lines and stages of the other it
- * does not write itself, by their names. `taken` is empty when the other is not a box of these statements (a
- * prototype a library gave).
- */
-export function likeness(body: readonly Stmt[], id: string): { from: string; taken: string[] } | undefined {
-  const box = (name: string) =>
-    body.find(
-      (s): s is Decl =>
-        s.kind === 'decl' &&
-        (s.keyword.name === 'node' || s.keyword.name === 'cluster' || s.keyword.name === 'pool') &&
-        s.args[0]?.t === 'id' &&
-        s.args[0].name === name,
-    )
-  const mine = box(id)
-  const like = mine?.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === 'like')
-  if (!mine || like?.value.t !== 'id') return undefined
-  const from = like.value.name
-  const written = new Set(
-    (mine.body ?? []).map((s) => (s.kind === 'prop' ? s.key.name : s.kind === 'decl' ? s.keyword.name : '')),
-  )
-  const taken = (box(from)?.body ?? []).flatMap((s) => {
-    const name = s.kind === 'prop' ? s.key.name : s.kind === 'decl' ? s.keyword.name : ''
-    return name && name !== 'like' && name !== 'input' && name !== 'with' && !written.has(name) ? [name] : []
-  })
-  return { from, taken: [...new Set(taken)] }
-}

@@ -219,6 +219,27 @@ describe('a model in several files', () => {
     const many = Array.from({ length: 260 }, (_, i) => `node extra${i} "X"`).join('\n')
     const crowd = errors(run(MODEL, set({ [MODEL]: `${base[MODEL]}${many}\n` })))
     expect(crowd.find((d) => d.code === 'too-large')?.message).toContain('at most 256 boxes')
+    // and past that nothing more is written out: a few lines cannot make millions of boxes
+    const wide3 = ['loadmap 1.3', 'library "Wide"', 'subsystem w0 "W" { node n "N" }']
+    for (let i = 1; i <= 3; i++)
+      wide3.push(
+        `subsystem w${i} "W" {\n${Array.from({ length: 150 }, (_, k) => `  subsystem x${k} "X" { like: w${i - 1} }`).join('\n')}\n}`,
+      )
+    const flood = run(
+      MODEL,
+      set({
+        [`${DIR}/wide.loadmap`]: `${wide3.join('\n')}\n`,
+        [MODEL]: swap(
+          MODEL,
+          'import "./platform.loadmap" { postgres; pipeline }',
+          'import "./platform.loadmap" { postgres; pipeline }\nimport "./wide.loadmap" { w3 }',
+        ).concat('subsystem flood "F" { like: w3 }\n'),
+      }),
+    )
+    expect(errors(flood).filter((d) => d.code === 'too-large')).toHaveLength(1)
+    // a route that names what the subsystem does not hold says the name
+    const typo = errors(run(MODEL, set({ [LIB]: swap(LIB, 'route: topic -> consumers', 'route: topik -> consumers') })))
+    expect(typo.map((d) => d.message)).toContain('"topik" is no stage of this subsystem')
     // nor more files
     const parts: Record<string, string> = {}
     let head = ''
@@ -319,6 +340,10 @@ describe('a model in several files', () => {
       expect(x.verdict).toEqual(y.verdict)
       expect(x.ranked.map((c) => c.id)).toEqual(y.ranked.map((c) => c.id))
     }
+    // a library has no model to write out
+    expect(flatten(base[LIB]!, { path: LIB, files: set() })).toMatchObject({
+      error: expect.stringContaining('library'),
+    })
     // a definition that does not compile has no flat copy
     expect(flatten(base[MODEL]!)).toHaveProperty('error')
   })
@@ -349,6 +374,9 @@ describe('a box like another', () => {
     expect(h?.body[0]).toBe('Like `a`: from it `store`, `capacity`, `over`.')
     const box = inspect(twins, { node: 'b' })!.sections[0]!
     expect(box.like).toEqual({ from: 'a', taken: ['store', 'capacity', 'over'] })
+    // a stage written here replaces the other's stages, and what the other takes from a third comes along
+    const chain = `${twins}node c "C" { like: b; pass; short: "the third" }\nstart -> c\n`
+    expect(inspect(chain, { node: 'c' })!.sections[0]!.like).toEqual({ from: 'b', taken: ['capacity', 'over'] })
     // a prototype of a library: the other box is not in this text
     expect(inspect(base[MODEL]!, { node: 'db' })!.sections[0]!.like).toEqual({ from: 'postgres', taken: [] })
   })

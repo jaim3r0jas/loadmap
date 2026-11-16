@@ -113,8 +113,8 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
     }
     const here = project(file)
     // a part is checked through its model: once, when the model is asked about too
-    const owner = ownerOf(source, here.path)
-    if (owner != null && asked.has(owner) && here.files(owner) != null) continue
+    const owner = ownerOf(source, here.path, here.files)
+    if (owner != null && asked.has(owner)) continue
     const one = here.options
     await loadCatalogForFiles(source, one)
     let old: string | null = null

@@ -112,8 +112,13 @@ export async function loadCatalogForFiles(source: string, o: Pick<CompileOptions
   for (const text of Object.values(gather(source, o).files)) await loadCatalogFor(text)
 }
 
-/** The model a part or a variant belongs to, from the project root; undefined for a model or a library. */
-export function ownerOf(source: string, path: string): string | undefined {
-  const head = imports(source, path)
-  return head.files.find((f) => f.kind === 'part' || f.kind === 'extends')?.path
+/**
+ * The model that includes a part, from the project root: a check of that model covers the part. Undefined for any
+ * other file, and for a part its model does not include, which has its own mistake to report.
+ */
+export function ownerOf(source: string, path: string, files: (path: string) => string | undefined): string | undefined {
+  const model = imports(source, path).files.find((f) => f.kind === 'part')?.path
+  const text = model == null ? undefined : files(model)
+  if (model == null || text == null) return undefined
+  return imports(text, model).files.some((f) => f.kind === 'include' && f.path === path) ? model : undefined
 }

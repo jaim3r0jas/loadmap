@@ -81,7 +81,12 @@ async function look(a: ReturnType<typeof parse>, o: PullCommandOptions, log: (s:
   const first = compile(source, here.options)
   const errors = first.diagnostics.filter((d) => d.severity === 'error')
   if (errors.length) {
-    for (const d of errors) log(formatDiagnostic(d, source, a.file))
+    for (const d of errors)
+      log(
+        d.file == null
+          ? formatDiagnostic(d, source, a.file)
+          : formatDiagnostic(d, here.files(d.file) ?? '', here.shown(d.file)),
+      )
     log(`${a.file}: does not compile; nothing to compare`)
     return CANNOT
   }

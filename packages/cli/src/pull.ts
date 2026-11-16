@@ -69,7 +69,12 @@ export async function pull(argv: string[], o: PullCommandOptions = {}): Promise<
   // only what stops it compiling: a failing expect line is what fresh data is for
   const errors = r.diagnostics.filter((d) => d.severity === 'error')
   if (errors.length) {
-    for (const d of errors) log(formatDiagnostic(d, source, file))
+    for (const d of errors)
+      log(
+        d.file == null
+          ? formatDiagnostic(d, source, file)
+          : formatDiagnostic(d, here.files(d.file) ?? '', here.shown(d.file)),
+      )
     log(`${file}: does not compile; nothing pulled`)
     return 1
   }
