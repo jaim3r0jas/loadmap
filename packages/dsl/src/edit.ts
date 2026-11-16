@@ -1,5 +1,5 @@
 import type { Published } from '@loadmap/core'
-import { childrenOf, type Decl, type Expr, type Property, type Stmt } from './ast'
+import { childrenOf, type Decl, type Expr, likeness, type Property, type Stmt } from './ast'
 import { componentOf } from './catalog'
 import { type CompileOptions, compile } from './compile'
 import { type Suffix, unitScale } from './lexer'
@@ -62,6 +62,11 @@ export interface InspectSection {
   id?: string
   title: string
   fields: InspectField[]
+  /**
+   * For a box that says `like:`: the other box, and the lines and stages it takes from it by their names (none known
+   * when the other is in another file). A field of one of those is written here to replace it.
+   */
+  like?: { from: string; taken: string[] }
 }
 
 export interface Inspection {
@@ -110,7 +115,12 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
       ((o.keyword === 'component' && components.has(o.id)) ||
         ((o.keyword === 'param' || o.keyword === 'published' || o.keyword === 'measure') && reads.has(o.id))),
   )
-  return { title: box.title, sections: [...mine, ...extra].map(section).filter((s) => s.fields.length) }
+  const sections = [...mine, ...extra].map(section).filter((s) => s.fields.length)
+  // where the lines it does not write come from: said on the box's own section
+  const like = likeness(parse(source).doc.body, target.node)
+  const first = sections.find((s) => s.path === box.path)
+  if (like && first) first.like = like
+  return { title: box.title, sections }
 }
 
 /**

@@ -224,7 +224,9 @@ export class Expander {
     }
     // a line taken that reads the other box by its name (at.db.orders, out.push) reads this one here
     const theirName = idOf(proto) ?? name
-    return { ...stripped, body: [...taken.map((st) => renamed(st, theirName, self)), ...mine] }
+    // written in full now: it is like nothing any more
+    const own = mine.filter((st) => !(st.kind === 'prop' && st.key.name === 'like'))
+    return { ...stripped, body: [...taken.map((st) => renamed(st, theirName, self)), ...own] }
   }
 
   /**

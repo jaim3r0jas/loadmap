@@ -119,6 +119,13 @@ function Section({ s, onEdit }: { s: InspectSection; onEdit: InspectorProps['onE
   return (
     <fieldset className="lme-section" data-keyword={s.keyword || 'model'}>
       <legend>{LEGEND[s.keyword]?.(s) ?? s.title}</legend>
+      {s.like && (
+        <p className="lme-hint" data-like={s.like.from}>
+          {s.like.taken.length
+            ? `Like ${s.like.from}: ${s.like.taken.join(', ')} from it. A line written here replaces the same line there.`
+            : `Like ${s.like.from}: what is not written here comes from there.`}
+        </p>
+      )}
       {main.map((f) => (
         <Field key={f.key} f={f} onEdit={onEdit} />
       ))}

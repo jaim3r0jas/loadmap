@@ -9,13 +9,14 @@ import {
   encodeShare,
   flatten,
   gather,
+  hover,
   importersOf,
   imports,
   libraryOf,
   referencesAcross,
   renameAcross,
 } from '../src'
-import { edit, fileText, relativePath, resolvePath } from '../src/internal'
+import { edit, fileText, inspect, relativePath, resolvePath } from '../src/internal'
 
 /** The multi-file example of the docs: a model, its part, the library it imports and a variant. */
 const DIR = 'docs/multi-file'
@@ -328,6 +329,28 @@ describe('a model in several files', () => {
     if ('error' in r) throw new Error(r.error)
     expect(r.source).toContain('short: "the front door"')
     expect(compile(r.source, { path: MODEL, files }).ok).toBe(true)
+  })
+})
+
+describe('a box like another', () => {
+  const twins = [
+    'loadmap 1.3',
+    'load "L" { max: 2 }',
+    'flow f "f" { rate: load; route: a; from: start }',
+    'node start "Start"',
+    'node a "A" { store; capacity: estimated(1_000, "req/s", "a test"); over: "requests queue" }',
+    'node b "B" { like: a; short: "the second" }',
+    'start -> a',
+    '',
+  ].join('\n')
+
+  it('says in a hover and in the inspector what it takes from the other', () => {
+    const h = hover(twins, twins.indexOf('node b') + 5)
+    expect(h?.body[0]).toBe('Like `a`: from it `store`, `capacity`, `over`.')
+    const box = inspect(twins, { node: 'b' })!.sections[0]!
+    expect(box.like).toEqual({ from: 'a', taken: ['store', 'capacity', 'over'] })
+    // a prototype of a library: the other box is not in this text
+    expect(inspect(base[MODEL]!, { node: 'db' })!.sections[0]!.like).toEqual({ from: 'postgres', taken: [] })
   })
 })
 

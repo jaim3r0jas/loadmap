@@ -365,7 +365,15 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
       report.error('internal', { from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
   }
   const { report, linked, loader, doc, role } = f
-  const kept = linked?.preview ? report.list.filter((d) => !ALONE_QUIET.has(d.code)) : report.list
+  const stand = linked?.stand
+  const kept = linked?.preview
+    ? report.list.filter(
+        (d) =>
+          !ALONE_QUIET.has(d.code) &&
+          // a line a prototype leaves to the box that is like it
+          !(d.code === 'missing-property' && stand && d.from === stand.from && d.to === stand.to),
+      )
+    : report.list
   const diagnostics = [...kept].sort((a, b) => a.from - b.from).map((d) => report.local(d))
   const ok = !kept.some((d) => d.severity === 'error') && !!definition
   const symbols = (c?.symbols ?? []).map((s) => {

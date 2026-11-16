@@ -1,7 +1,7 @@
 import { type Capacity, type ComponentResult, type Evaluation, sourceText } from '@loadmap/core'
 import { fmt, months, multiple, multiples, pct } from '@loadmap/core/format'
 import { conditionText } from '@loadmap/core/internal'
-import type { Decl, Edge, Expr, Stmt } from './ast'
+import { type Decl, type Edge, type Expr, likeness, type Stmt } from './ast'
 import { componentOf } from './catalog'
 import { type Definition, type DslSymbol, declarations } from './compile'
 import { blockAt, propOf as prop } from './complete'
@@ -488,6 +488,14 @@ class Lookup {
     const stages = this.symbols.filter((s) => s.kind === 'stage' && s.detail === id).map((s) => s.id)
     const body = stages.length ? [`Runs ${stages.length === 1 ? 'the stage' : 'the stages'} ${stages.join(', ')}.`] : []
     const lines = [...body, ...this.componentLines(this.componentOf(id))]
+    // what it is like: where the lines it does not write come from
+    const like = likeness(this.body, id)
+    if (like)
+      lines.unshift(
+        like.taken.length
+          ? `Like \`${like.from}\`: from it ${like.taken.map((k) => `\`${k}\``).join(', ')}.`
+          : `Like \`${like.from}\`: what it does not write itself comes from there.`,
+      )
     return out(this.line(d), lines.length ? lines : [SCHEMA[d.keyword.name]!.doc])
   }
 
