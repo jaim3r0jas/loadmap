@@ -194,7 +194,8 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   // the ways it may run and the rows it may take: a narrow screen and the page's own direction leave one way
   const held: Direction | null = narrow ? 'DOWN' : auto ? null : (o.direction as Direction)
   // a narrow screen runs down in one column: columns side by side would each be narrower still
-  const fixed = narrow ? 1 : typeof o.rows === 'number' ? Math.max(1, Math.floor(o.rows)) : null
+  // (a count that is no number, or under 1, holds nothing)
+  const fixed = narrow ? 1 : typeof o.rows === 'number' && o.rows >= 1 ? Math.floor(o.rows) : null
   const chooses = !!room && !(held && fixed)
   const among = `${held} ${fixed}`
   useEffect(() => {

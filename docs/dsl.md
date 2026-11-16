@@ -933,8 +933,8 @@ narrow screens always run down.
 
 A long diagram is folded where its titles would be hard to read in one row: into two or three rows one under the
 other (columns side by side, running down), cut between two tiers where it can, each row with its own lanes, an edge
-to the next row going round the end of its row. `rows: 1` never folds, and `rows: 2` draws two wherever there is room (a narrow screen never folds, and a diagram
-with one layer has one row).
+to the next row going round the end of its row. `rows: 1` never folds, and `rows: 2` draws two wherever there is
+room: a narrow screen never folds, and a diagram with one layer has one row.
 
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
 bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
