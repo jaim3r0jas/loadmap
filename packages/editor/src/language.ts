@@ -6,7 +6,7 @@ import {
   closeBracketsKeymap,
   snippetCompletion,
 } from '@codemirror/autocomplete'
-import { isolateHistory } from '@codemirror/commands'
+import { invertedEffects, isolateHistory } from '@codemirror/commands'
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror/lint'
 import { type EditorState, type Extension, StateEffect, StateField } from '@codemirror/state'
@@ -367,8 +367,24 @@ type RenameOptions = CompileOptions & {
     changes: readonly { file: string; from: number; to: number; insert: string }[],
     /** The text in the editor does not change with them: nothing else will tell the host of the new files. */
     alone: boolean,
+    /** Which rename this is: the host marks each file's change with `renameMark` of it, as the open text's is. */
+    id: number,
   ) => void
 }
+
+/**
+ * The mark of a rename that reached several files, on the change it made in each: which rename, and whether the change
+ * makes it (`forward`) or takes it back. It travels with the change through the history (`renameHistory`), so an undo
+ * or a redo says by itself which rename it crosses, and the other files can follow exactly that one.
+ */
+export const renameMark = StateEffect.define<{ id: number; forward: boolean }>()
+
+/** Keeps a rename's mark with its change in the history: undone, the change carries the mark turned round. */
+const renameHistory = invertedEffects.of((tr) =>
+  tr.effects.flatMap((e) => (e.is(renameMark) ? [renameMark.of({ id: e.value.id, forward: !e.value.forward })] : [])),
+)
+
+let renameCount = 0
 
 function renameDom(view: EditorView, r: Renaming, o: RenameOptions): HTMLElement {
   const form = document.createElement('form')
@@ -398,10 +414,17 @@ function renameDom(view: EditorView, r: Renaming, o: RenameOptions): HTMLElement
       const elsewhere = all.flatMap((c) => (c.file != null ? [{ ...c, file: c.file }] : []))
       // the other files first: the text's next check reads them as they are after the rename
       const here = all.filter((c) => c.file == null).map(({ from, to, insert }) => ({ from, to, insert }))
-      if (elsewhere.length) o.onElsewhere?.(elsewhere, !here.length)
+      const id = ++renameCount
+      if (elsewhere.length) o.onElsewhere?.(elsewhere, !here.length, id)
       // a step of its own in the history: undoing it undoes the rename, in every file it reached
       if (here.length)
-        view.dispatch({ changes: here, userEvent: 'input.rename', annotations: isolateHistory.of('full') })
+        view.dispatch({
+          changes: here,
+          userEvent: 'input.rename',
+          annotations: isolateHistory.of('full'),
+          // with other files changed too: the mark that lets an undo here take them along
+          ...(elsewhere.length && { effects: renameMark.of({ id, forward: true }) }),
+        })
       else close()
       view.focus()
     }
@@ -520,6 +543,7 @@ export function loadmapLanguage(
     info,
     signature,
     replaced,
+    renameHistory,
     occurrences,
     renameField,
     keymap.of([
