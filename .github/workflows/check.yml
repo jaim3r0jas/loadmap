@@ -19,27 +19,28 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      # the parts and their commands are in scripts/check.mjs; `pnpm check:changed` splits a local run the same way
       matrix:
         include:
-          - name: typecheck, lint, build, budget
-            run: pnpm typecheck && pnpm lint && pnpm build && pnpm budget
-          # the node tests that drive Chromium (the docs site, the cli's recordings) on their own: vitest.config.ts
-          - name: node tests
-            run: LOADMAP_NODE_TESTS=rest pnpm test:node
-          - name: docs site and cli tests
+          - part: static
+            name: typecheck, lint, build, budget
+          - part: node
+            name: node tests
+          # the node tests that drive Chromium: scripts/chromium-node-tests.json
+          - part: chromium
+            name: docs site and cli tests
             chromium: true
-            run: LOADMAP_NODE_TESTS=chromium pnpm test:node
-          - name: browser tests
+          - part: browser
+            name: browser tests
             chromium: true
-            run: pnpm test:browser
           # the VS Code extension as it ships, in a pinned VS Code on a virtual display; then its .vsix, packed and sized
-          - name: vscode
+          - part: vscode
+            name: vscode
             chromium: true # its system libraries and xvfb
-            run: xvfb-run -a pnpm --filter @loadmap/vscode test:e2e && pnpm --filter @loadmap/vscode package
           # the tarballs in a fresh app, as a stranger installs them
-          - name: verify pack
+          - part: pack
+            name: verify pack
             chromium: true
-            run: pnpm verify:pack
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +53,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - if: matrix.chromium
         run: pnpm exec playwright install --with-deps chromium
-      - run: ${{ matrix.run }}
+      - run: pnpm check:part ${{ matrix.part }}
 
   # the one check the rulesets require: green only when every part is
   check:

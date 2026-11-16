@@ -23,30 +23,55 @@ with `docs/every-statement.loadmap` into `llms-full.txt`, and the dsl build copi
 
 ## Verification
 
-Run before every commit that lands:
+`check` runs on CI in parallel parts, each on a runner of its own; `scripts/check.mjs` holds them and the workflow runs
+`pnpm check:part <part>`:
+
+| Part     | What it runs                                                               |
+| -------- | -------------------------------------------------------------------------- |
+| static   | typecheck, biome check, build, budget                                      |
+| node     | the node tests, but the two that drive Chromium                            |
+| chromium | the docs site and the cli tests (`scripts/chromium-node-tests.json`)       |
+| browser  | the browser tests                                                          |
+| vscode   | the extension as it ships in a pinned VS Code (xvfb on CI), then its .vsix |
+| pack     | `pnpm verify:pack`                                                         |
+
+Locally, run only what this branch's changes reach, split the same way, and leave every whole part to CI (the Mac runs
+several sessions at once; a full run times out tests that are fine):
 
 ```bash
-pnpm check        # typecheck, biome check, every test (Node + browser), build
+pnpm check:changed --dry   # the plan: the tests and parts the changes reach (against origin/main, with uncommitted and new files)
+pnpm check:changed         # typecheck, biome on the changed files, then those tests part by part
 ```
 
-After a change to `packages/vscode` (or what it bundles: the cli's `lsp`, `<LoadmapSource>`): `pnpm --filter
-@loadmap/vscode test:e2e` runs the extension as it ships in a pinned VS Code (downloaded once into `.vscode-test`; CI
-runs it under xvfb in `check`), and `pnpm --filter @loadmap/vscode package` makes the .vsix.
-`pnpm budget` (in `check`) builds `scripts/budget/*.html` and fails when a `<Loadmap>` page loads more than 67 kB gzip of
-loadmap first, the editor adds more than 192 kB, or ELK is in a first load. Before a release, and after a change to
-exports, dependencies or the build: `pnpm verify:pack` (packs every package, installs the tarballs with npm in a fresh
-Vite app outside the monorepo, runs tsc, builds, measures the budget, draws checkout and the react README's quick
-start in Chromium, built and in dev). The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
-`__screenshots__/` next to each test (ignored by git). Commit only with `pnpm check && git commit`.
+It takes a changed test file; for a changed source file, the tests named after it (`src/compile.ts`:
+`test/compile.test.ts`, also `.browser.test`) and those importing it by its path; an example's own node tests;
+`docs.test.ts` for `docs/dsl.md`; zizmor for `.github/`; the budget for a package a page loads first; the VS Code e2e
+for `packages/vscode` or the cli's `lsp`; `verify:pack` for a package's exports, dependencies or build, or the lockfile.
+A test that reaches a file only through an index is CI's. Never run a whole package, a folder, a whole part or
+`pnpm check` locally (`pnpm check:part <part>` is for CI and for a part that failed there and must be reproduced, one
+test file at a time first). `pnpm check` runs every part in a row for the release.
+
+Then push and watch CI from the session until every part has finished: a Monitor that polls
+`gh pr checks <n> -R jaim3r0jas/loadmap --json name,bucket,link` every 60 s, prints each part as it finishes, and
+exits once none is pending (re-armed when it expires). A red part: read its log (`gh run view <run> --log-failed`, or
+`gh api --allow-escape-sequences repos/jaim3r0jas/loadmap/actions/jobs/<job>/logs` while the run is still going), fix
+it, push, watch again. A session wraps up only once `check` is green on its last push.
+
+The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
+`__screenshots__/` next to each test (ignored by git). The budget fails when a `<Loadmap>` page loads more than 67 kB
+gzip of loadmap first, the editor adds more than 192 kB, an embed loads more than 106 kB first, or ELK is in a first
+load. `verify:pack` packs every package, installs the tarballs with npm in a fresh Vite app outside the monorepo, runs
+tsc, builds, measures the budget, and draws checkout and the react README's quick start in Chromium, built and in dev.
+`pnpm --filter @loadmap/vscode package` makes the .vsix.
 
 - Load nvm in every new shell before pnpm: `. ~/.nvm/nvm.sh && nvm use`. The default node on `PATH` can be a broken
   Homebrew build.
 - "Cannot find native binding" from Vitest or tsdown: `pnpm install --force`. The lockfile has every platform, but a
   checkout installed on another Mac lacks this machine's binding.
-- On a loaded machine (load 15+) `pnpm check` can time out the docs-site and recording tests (Chromium contention):
-  run the failing test alone before suspecting a hang.
-- Never run `pnpm check && git commit -a` in the background while still editing: it sweeps in files mid-edit. Commit
-  by path once the check is green.
+- On a loaded machine (load 15+) the docs-site and recording tests can time out (Chromium contention): run the
+  failing test alone before suspecting a hang.
+- Never run a check and `git commit -a` in the background while still editing: it sweeps in files mid-edit. Commit by
+  path once `pnpm check:changed` is green.
 - Tests never depend on the wall clock: a busy machine (load 30+) breaks them. Time code with
   `process.threadCpuUsage()` (`process.cpuUsage()` counts every Vitest thread), and give an `expect.poll` after a new
   layout `{ timeout: 5000 }`.
@@ -65,7 +90,8 @@ start in Chromium, built and in dev). The browser tests need Chromium once: `pnp
 
 Work lands on `main` only through a pull request: rulesets on GitHub require the `check`, `workflows` (zizmor) and
 `dependency-review` jobs to pass on a branch up to date with main, keep the history linear and refuse force pushes and
-deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --rebase`: it merges once green.
+deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --rebase`: it merges once green. Watch
+the parts to the end from the session (Verification) before wrapping it up.
 
 - Workflows: their rules are in `.github/CLAUDE.md`.
 - `pnpm-workspace.yaml` refuses a dependency younger than 3 days, one whose trust dropped (lost provenance), one that
