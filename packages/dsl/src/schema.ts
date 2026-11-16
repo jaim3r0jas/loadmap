@@ -51,6 +51,8 @@ export interface PropSpec {
   repeat?: boolean
   /** The editor's inspector shows it first; every other property waits under "More". */
   inspector?: 'main'
+  /** What the value counts: a formula whose text says otherwise (`held: 80%`) is warned about. */
+  unit?: 'seconds' | 'share' | 'per second'
 }
 
 export interface ArgSpec {
@@ -127,11 +129,13 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
   held: {
     value: 'number',
     scope: 'ctx',
+    unit: 'seconds',
     doc: 'The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots.',
   },
   service: {
     value: 'number',
     scope: 'ctx',
+    unit: 'seconds',
     doc: 'The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99).',
   },
   on: {
@@ -198,6 +202,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       transition: {
         value: 'number',
         scope: 'const',
+        unit: 'seconds',
         doc: 'Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts.',
       },
       fullScreen: {
@@ -343,6 +348,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         value: 'number',
         scope: 'const',
         required: true,
+        unit: 'share',
         doc: 'Growth per period, as a share: 0.06 is 6 %.',
       },
       per: { value: 'enum', scope: 'const', values: ['month', 'year'], required: true, doc: 'month or year.' },
@@ -366,9 +372,24 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to target, or at the values.",
       },
-      p50: { value: 'number', scope: 'const', doc: "The flow's median stays under this many seconds." },
-      p95: { value: 'number', scope: 'const', doc: "The flow's 95th percentile stays under this many seconds." },
-      p99: { value: 'number', scope: 'const', doc: "The flow's 99th percentile stays under this many seconds." },
+      p50: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        doc: "The flow's median stays under this many seconds.",
+      },
+      p95: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        doc: "The flow's 95th percentile stays under this many seconds.",
+      },
+      p99: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        doc: "The flow's 99th percentile stays under this many seconds.",
+      },
       target: { value: 'number', scope: 'const', doc: 'The target holds up to at least this load multiple.' },
       full: { value: 'number', scope: 'const', doc: 'Nothing (or the component) runs out before this load multiple.' },
       severity: {
@@ -562,6 +583,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       margin: {
         value: 'number',
         scope: 'const',
+        unit: 'share',
         doc: 'Lowers the best case, as a share from 0 to below 1: 0.3 reads the capacity from 70 % of the figure up to it.',
       },
     },
@@ -596,11 +618,19 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     ],
     props: {
       unit: { value: 'string', scope: 'const', doc: 'One unit of the flow, singular: "order".' },
-      rate: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Units per second.', required: true },
+      rate: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'ctx',
+        unit: 'per second',
+        doc: 'Units per second.',
+        required: true,
+      },
       priority: { value: 'number', scope: 'const', doc: '1 is served first. Flows of the same priority share.' },
       timeout: {
         value: 'number',
         scope: 'values',
+        unit: 'seconds',
         doc: 'Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way.',
       },
       route: {
@@ -624,7 +654,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'drop { olderThan: 60; reason: "too old" }',
     args: [],
     props: {
-      olderThan: { value: 'number', scope: 'ctx', doc: 'Seconds.', required: true },
+      olderThan: { value: 'number', scope: 'ctx', unit: 'seconds', doc: 'Seconds.', required: true },
       reason: { value: 'string', scope: 'ctx', doc: 'Shown with the drop meter.' },
       when: OVERLOAD_WHEN,
     },
@@ -635,7 +665,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'merge { share: 0.37; reason: "newest kept" }',
     args: [],
     props: {
-      share: { value: 'number', scope: 'ctx', doc: 'The share superseded, 0 to 1.', required: true },
+      share: { value: 'number', scope: 'ctx', unit: 'share', doc: 'The share superseded, 0 to 1.', required: true },
       reason: { value: 'string', scope: 'ctx', doc: 'Shown with the meter.' },
       when: OVERLOAD_WHEN,
     },
@@ -657,6 +687,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         inspector: 'main',
         value: 'number',
         scope: 'values',
+        unit: 'share',
         doc: 'At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent.',
       },
       when: {
@@ -683,7 +714,10 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     args: [],
     props: {},
     children: [],
-    open: { names: 'flows', spec: { value: 'number', scope: 'ctx', doc: 'Seconds a unit of this flow holds a slot.' } },
+    open: {
+      names: 'flows',
+      spec: { value: 'number', scope: 'ctx', unit: 'seconds', doc: 'Seconds a unit of this flow holds a slot.' },
+    },
   },
   tier: {
     doc: 'A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.',
@@ -759,6 +793,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         inspector: 'main',
         value: 'number',
         scope: 'ctx',
+        unit: 'share',
         doc: 'The share answered here, 0 to 1.',
         required: true,
       },
@@ -849,6 +884,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         inspector: 'main',
         value: 'number',
         scope: 'ctx',
+        unit: 'share',
         doc: 'The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %.',
         required: true,
       },
@@ -944,8 +980,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'thresholds { target: 0.5; full: 1 }',
     args: [],
     props: {
-      target: { value: 'number', scope: 'const', doc: 'Default 0.5.' },
-      full: { value: 'number', scope: 'const', doc: 'Default 1.' },
+      target: { value: 'number', scope: 'const', unit: 'share', doc: 'Default 0.5.' },
+      full: { value: 'number', scope: 'const', unit: 'share', doc: 'Default 1.' },
     },
     children: [],
   },

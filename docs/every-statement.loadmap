@@ -204,7 +204,7 @@ connection group {
 node push "Push broker" {
   fanout "push broker" { events -> phones: perEvent }
   short: "the push broker"
-  demand: flows.events * perEvent
+  demand: flows.events * perEvent as "packets/s"
   capacity: estimated(8_000, "packets/s", "vendor figure")
   over: "pushes arrive late"
 }

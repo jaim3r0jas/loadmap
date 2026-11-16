@@ -123,6 +123,7 @@ describe('the grammar', () => {
     expect(at('1.5min')).toBe('constant.numeric')
     expect(at('7×')).toBe('constant.numeric')
     expect(at('%')).toBe('keyword.operator')
+    expect(scopeOf('node a "A" { demand: flows.x * 0.002 as "cores" }', 'as')).toBe('keyword.operator.as')
   })
 
   it('reads a template over lines, its formulas as formulas', () => {

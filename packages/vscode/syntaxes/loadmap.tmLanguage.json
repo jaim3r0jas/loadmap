@@ -63,6 +63,10 @@
           "match": "\\b(?:true|false)\\b"
         },
         {
+          "name": "keyword.operator.as.loadmap",
+          "match": "\\bas\\b(?=\\s*[\"'])"
+        },
+        {
           "name": "support.function.builtin.loadmap",
           "match": "\\b(?:abs|ceil|compact|configured|estimated|exp|floor|fmt|log|max|measured|min|pct|pow|round|secs|sqrt)\\b(?=\\s*\\()"
         },

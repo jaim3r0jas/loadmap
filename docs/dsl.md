@@ -95,6 +95,16 @@ as it is.
   someone set, `configured(value, unit, source)`. A bare number is an error, so every capacity says where it came
   from.
 
+**Units are checked where the text says them.** `flows.x` and `at.stage.x` are units a second, a number with a unit is
+what it says, a fit returns its y (`points rate cores` gives cores) and `demand: … as "cores"` declares the rest. A
+capacity in `"…/s"` counts units a second; any other unit (`"cores"`, `"connections"`) is a count of it. Where a
+demand's unit is known and differs from its capacity's (per second against cores, cores against connections), or a
+property gets a unit it is not in (`held: 80%`, `hit: 5s`; the reference says each one's), the definition still
+compiles, with a warning. A bare number is any unit, so `flows.events * 0.002` is never warned about: write
+`flows.events * 2ms`, and the check sees events a second times seconds, a count, as a capacity in cores is. A
+component without a demand line handles the units a second reaching its stages, so a capacity in cores there warns
+too. Words of two rates are never compared: orders a second become requests or writes a second all the time.
+
 Some properties must be constants (a `priority`, a `unit`). Others may read only the parameters (`enabled`).
 
 **Formulas are safe to share.** The text is parsed into a tree and run as closures. There is no `eval` or
@@ -1034,7 +1044,7 @@ A loadmap definition.
 | `direction` | `right` \| `down` | Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down. |
 | `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
-| `transition` | number, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
+| `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
 | `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |
 | `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
 | `assume` | string, constant | A line added before the generated assumptions. |
@@ -1129,7 +1139,7 @@ growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
 | Property | Value | |
 | --- | --- | --- |
-| `rate` (required) | number, constant | Growth per period, as a share: 0.06 is 6 %. |
+| `rate` (required) | share, constant | Growth per period, as a share: 0.06 is 6 %. |
 | `per` (required) | `month` \| `year` | month or year. |
 | `asOf` (required) | string, constant | The day the load is 1×: "2026-11-01". |
 
@@ -1148,9 +1158,9 @@ After the keyword: [label].
 | `scenario` | scenario, constant | The scenario whose values it checks; the defaults without one. |
 | `component` | component, constant | One component; the first limit without one. |
 | `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to target, or at the values. |
-| `p50` | number, constant | The flow's median stays under this many seconds. |
-| `p95` | number, constant | The flow's 95th percentile stays under this many seconds. |
-| `p99` | number, constant | The flow's 99th percentile stays under this many seconds. |
+| `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
+| `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
+| `p99` | number in seconds, constant | The flow's 99th percentile stays under this many seconds. |
 | `target` | number, constant | The target holds up to at least this load multiple. |
 | `full` | number, constant | Nothing (or the component) runs out before this load multiple. |
 | `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
@@ -1284,7 +1294,7 @@ After the keyword: id component.
 | `edition` (required) | string, constant | The catalog edition its figures come from, "YYYY-MM": an old file keeps its numbers. |
 | `version` | string, formula of parameters | The version you run. It decides only for a component whose figures change with the version; elsewhere it is kept beside the figure. |
 | `figure` | string, constant | Which figure, when several match: its id in the catalog. |
-| `margin` | number, constant | Lowers the best case, as a share from 0 to below 1: 0.3 reads the capacity from 70 % of the figure up to it. |
+| `margin` | share, constant | Lowers the best case, as a share from 0 to below 1: 0.3 reads the capacity from 70 % of the figure up to it. |
 
 Its properties are named by the catalog component's conditions (its runs' brokers, message size, …).
 
@@ -1314,9 +1324,9 @@ After the keyword: id [label].
 | Property | Value | |
 | --- | --- | --- |
 | `unit` | string, constant | One unit of the flow, singular: "order". |
-| `rate` (required) | number, formula | Units per second. |
+| `rate` (required) | number per second, formula | Units per second. |
 | `priority` | number, constant | 1 is served first. Flows of the same priority share. |
-| `timeout` | number, formula of parameters | Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way. |
+| `timeout` | number in seconds, formula of parameters | Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way. |
 | `route` (required) | route, constant | The stages it passes, in order: a -> b -> c. An edge draws each hop. |
 | `from` (required) | node, constant | The node its dots start from. |
 | `color` | `accent` \| `alt` \| `ok` \| `warn` \| `drop` \| `muted` | A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes. |
@@ -1333,7 +1343,7 @@ drop { olderThan: 60; reason: "too old" }
 
 | Property | Value | |
 | --- | --- | --- |
-| `olderThan` (required) | number, formula | Seconds. |
+| `olderThan` (required) | number in seconds, formula | Seconds. |
 | `reason` | string, formula | Shown with the drop meter. |
 | `when` | boolean, formula | The rule applies only while this is true. |
 
@@ -1347,7 +1357,7 @@ merge { share: 0.37; reason: "newest kept" }
 
 | Property | Value | |
 | --- | --- | --- |
-| `share` (required) | number, formula | The share superseded, 0 to 1. |
+| `share` (required) | share, formula | The share superseded, 0 to 1. |
 | `reason` | string, formula | Shown with the meter. |
 | `when` | boolean, formula | The rule applies only while this is true. |
 
@@ -1362,7 +1372,7 @@ retry { times: 3; budget: 0.1 }
 | Property | Value | |
 | --- | --- | --- |
 | `times` (required) | number, formula of parameters | Retries after the first attempt: a whole number. Reads only the parameters. |
-| `budget` | number, formula of parameters | At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. |
+| `budget` | share, formula of parameters | At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. |
 | `when` | boolean, formula of parameters | The rule applies only while this is true; it reads only parameters. |
 
 ### component
@@ -1381,8 +1391,8 @@ After the keyword: [id] [label].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
-| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
-| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1435,8 +1445,8 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
-| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
-| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1465,8 +1475,8 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
-| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
-| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1494,8 +1504,8 @@ After the keyword: id [label] [sub].
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
 | `plural` | boolean, constant | "are past capacity" instead of "is". |
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
-| `held` | number, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
-| `service` | number, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
+| `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
@@ -1530,7 +1540,7 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `hit` (required) | number, formula | The share answered here, 0 to 1. |
+| `hit` (required) | share, formula | The share answered here, 0 to 1. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 ### limit
@@ -1642,7 +1652,7 @@ autoscale { min: 2; max: 10; target: 0.7 }
 | --- | --- | --- |
 | `min` (required) | number, formula | The fewest pods, at least 1. |
 | `max` (required) | number, formula | The most pods. |
-| `target` (required) | number, formula | The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %. |
+| `target` (required) | share, formula | The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %. |
 
 ### split
 
@@ -1715,8 +1725,8 @@ thresholds { target: 0.5; full: 1 }
 
 | Property | Value | |
 | --- | --- | --- |
-| `target` | number, constant | Default 0.5. |
-| `full` | number, constant | Default 1. |
+| `target` | share, constant | Default 0.5. |
+| `full` | share, constant | Default 1. |
 
 ### Edges
 

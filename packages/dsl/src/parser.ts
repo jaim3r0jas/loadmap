@@ -191,6 +191,16 @@ class Parser {
       while (this.eat('->')) chain.push(this.ident('a stage'))
       return { kind: 'prop', key, value, chain, from: key.from, to: chain.at(-1)!.to }
     }
+    if (this.peek().kind === 'ident' && this.peek().text === 'as') {
+      const as = this.next()
+      if (key.name !== 'demand') this.fail(as, '"as" says the unit of a demand only', `demand: … as "cores"`)
+      const unit = this.peek()
+      if (unit.kind !== 'string' || !String(unit.value).trim())
+        this.fail(unit, '"as" takes the unit in quotes', `as "cores"`)
+      this.next()
+      const at = { unit: unit.value as string, from: unit.from, to: unit.to }
+      return { kind: 'prop', key, value, as: at, from: key.from, to: unit.to }
+    }
     return { kind: 'prop', key, value, from: key.from, to: value.to }
   }
 
