@@ -1,4 +1,5 @@
 import type { Expr } from './ast'
+import { isSize, SIZES } from './lexer'
 
 /**
  * What a formula counts, as far as its text tells: the power of seconds in it (a rate is -1, a time 1, a share or a
@@ -20,6 +21,8 @@ export interface UnitNames {
   let(name: string): Expr | undefined
   /** A fit's y: what it returns. */
   fit(name: string): string | undefined
+  /** A parameter's default as written (a select's first option without one): `default: 1.5KB` is a size. */
+  param?(name: string): Expr | undefined
 }
 
 const CAPACITIES = new Set(['measured', 'estimated', 'configured'])
@@ -63,7 +66,7 @@ export function unitOf(e: Expr, names: UnitNames, seen: ReadonlySet<string> = ne
   switch (e.t) {
     case 'num':
       if (!e.unit) return null
-      return e.unit === '%' ? SHARE : e.unit === '×' || e.unit === 'x' ? MULTIPLE : SECONDS
+      return e.unit === '%' ? SHARE : e.unit === '×' || e.unit === 'x' ? MULTIPLE : isSize(e.unit) ? PLAIN : SECONDS
     case 'id': {
       // `load` is a multiple, but `rate: load` means one a second at 1×: any unit, like a bare number
       const init = names.let(e.name)
@@ -181,3 +184,79 @@ export const PROPERTY_UNITS = {
   multiple: { unit: MULTIPLE, words: 'a load multiple', hint: "write a multiple of today's load: 7×" },
   'per second': { unit: RATE, words: 'per second', hint: 'write units a second: 40 * load' },
 } as const satisfies Record<string, { unit: Unit; words: string; hint: string }>
+
+/**
+ * Whether a formula is a size, as a power of bytes: 1 for `flows.x * 1.5KB`, 0 for a formula without one or with the
+ * size divided out (`2MB / 1KB`). Unlike `unitOf` this is never unknown: a number without a size suffix is no size, so
+ * a demand in bytes can be converted to its capacity's unit without guessing. `mixed` is where a size is added to,
+ * compared with or chosen against something that is none.
+ */
+export interface SizePower {
+  power: number
+  mixed?: Expr
+}
+
+const NO_SIZE: SizePower = { power: 0 }
+const sizes = new WeakMap<UnitNames, Map<string, SizePower>>()
+
+export function sizePower(e: Expr, names: UnitNames, seen: ReadonlySet<string> = new Set()): SizePower {
+  const of = (x: Expr) => sizePower(x, names, seen)
+  const alike = (list: SizePower[], at: Expr): SizePower => {
+    const mixed = list.find((x) => x.mixed)?.mixed
+    const first = list[0] ?? NO_SIZE
+    return mixed
+      ? { power: first.power, mixed }
+      : list.every((x) => x.power === first.power)
+        ? first
+        : { ...first, mixed: at }
+  }
+  switch (e.t) {
+    case 'num':
+      return isSize(e.unit) ? { power: 1 } : NO_SIZE
+    case 'id': {
+      const init = names.let(e.name) ?? names.param?.(e.name)
+      if (!init || seen.has(e.name)) return NO_SIZE
+      const known = sizes.get(names) ?? new Map<string, SizePower>()
+      sizes.set(names, known)
+      if (!known.has(e.name)) known.set(e.name, sizePower(init, names, new Set([...seen, e.name])))
+      return known.get(e.name)!
+    }
+    case 'member':
+      return e.object.name === 'derived'
+        ? of({ t: 'id', name: e.prop.name, from: e.prop.from, to: e.prop.to })
+        : NO_SIZE
+    case 'unary':
+      return e.op === '!' ? NO_SIZE : of(e.arg)
+    case 'pm':
+      return of(e.value)
+    case 'cond':
+      return alike([of(e.then), of(e.else)], e)
+    case 'bin': {
+      const [a, b] = [of(e.left), of(e.right)]
+      const mixed = a.mixed ?? b.mixed
+      if (e.op === '*' || e.op === '/')
+        return { power: e.op === '*' ? a.power + b.power : a.power - b.power, ...(mixed && { mixed }) }
+      if (e.op === '+' || e.op === '-' || e.op === '%') return alike([a, b], e)
+      // a comparison of two sizes is true or false, no size; of a size with a plain number it is a slip
+      return { power: 0, ...((mixed ?? (a.power !== b.power ? e : undefined)) && { mixed: mixed ?? e }) }
+    }
+    case 'call': {
+      const f = e.callee.name
+      if (names.fit(f) !== undefined) return NO_SIZE
+      if (f === 'round' || f === 'floor' || f === 'ceil' || f === 'abs') return e.args[0] ? of(e.args[0]) : NO_SIZE
+      if (f === 'min' || f === 'max' || f === 'mod') return alike(e.args.map(of), e)
+      return NO_SIZE
+    }
+    default:
+      return NO_SIZE
+  }
+}
+
+/** A size's unit at the start of a capacity's: `MB/s`, `GB`, `KB per second`. Case matters: `Mb` is megabits. */
+const SIZE_UNIT = /^(kB|KB|MB|GB|TB)(?=$|\s*\/|\s+per\b|\s*$)/
+
+/** How many bytes one of a capacity's unit is, when it counts in a size: 1e6 for "MB/s". */
+export function sizeScale(unit: string): number | undefined {
+  const m = SIZE_UNIT.exec(unit.trim())
+  return m ? SIZES[m[1]!.toUpperCase() as keyof typeof SIZES] : undefined
+}

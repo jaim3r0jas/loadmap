@@ -56,7 +56,7 @@
         },
         {
           "name": "constant.numeric.loadmap",
-          "match": "\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?(?:(?:ms|s|min|h|x)(?![A-Za-z0-9_])|×|%(?![-+!]|[ \\t]*(?:[A-Za-z0-9_(\\['\"`]|\\.\\d)))?"
+          "match": "\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?(?:(?:ms|s|min|h|x|KB|MB|GB|TB)(?![A-Za-z0-9_])|×|%(?![-+!]|[ \\t]*(?:[A-Za-z0-9_(\\['\"`]|\\.\\d)))?"
         },
         {
           "name": "constant.language.boolean.loadmap",
@@ -68,7 +68,7 @@
         },
         {
           "name": "support.function.builtin.loadmap",
-          "match": "\\b(?:abs|ceil|compact|configured|estimated|exp|floor|fmt|log|max|measured|min|pct|pow|round|secs|sqrt)\\b(?=\\s*\\()"
+          "match": "\\b(?:abs|ceil|compact|configured|estimated|exp|floor|fmt|log|max|measured|min|mod|pct|pow|round|secs|sqrt)\\b(?=\\s*\\()"
         },
         {
           "name": "variable.language.loadmap",

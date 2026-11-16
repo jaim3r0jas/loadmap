@@ -21,10 +21,15 @@ const PUNCT = ['===', '!==', '+/-', '->', '==', '!=', '<=', '>=', '&&', '||', ..
 
 /**
  * A unit written straight after a number. Durations become seconds and `%` a share, the units every property and
- * formula already counts in; `×` (`x` on a keyboard without it) marks a load multiple and changes nothing.
+ * formula already counts in; `×` (`x` on a keyboard without it) marks a load multiple and changes nothing. A size
+ * (`1.5KB`, `20MB`: decimal, as a network counts) becomes bytes.
  */
-export type Suffix = 'ms' | 's' | 'min' | 'h' | '%' | '×' | 'x'
-const WORDS: readonly Suffix[] = ['ms', 's', 'min', 'h', 'x']
+export type Suffix = 'ms' | 's' | 'min' | 'h' | '%' | '×' | 'x' | Size
+export type Size = 'KB' | 'MB' | 'GB' | 'TB'
+/** The sizes, and how many bytes one of each is. */
+export const SIZES: Readonly<Record<Size, number>> = { KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 }
+export const isSize = (unit: string | undefined): unit is Size => unit !== undefined && Object.hasOwn(SIZES, unit)
+const WORDS: readonly Suffix[] = ['ms', 's', 'min', 'h', 'x', 'KB', 'MB', 'GB', 'TB']
 /** Each unit as a power of ten and a whole factor, so `4.1min` is worked out in decimal: the double nearest 246. */
 const SCALE: Record<Suffix, [exp: number, factor: bigint]> = {
   ms: [-3, 1n],
@@ -34,6 +39,10 @@ const SCALE: Record<Suffix, [exp: number, factor: bigint]> = {
   '%': [-2, 1n],
   '×': [0, 1n],
   x: [0, 1n],
+  KB: [3, 1n],
+  MB: [6, 1n],
+  GB: [9, 1n],
+  TB: [12, 1n],
 }
 
 /**
@@ -128,7 +137,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
           'unknown-unit',
           { from: s, to: i },
           `"${source.slice(w, i)}" is not a unit of a number`,
-          'the units are ms, s, min, h, % and ×',
+          'the units are ms, s, min, h, %, × and the sizes KB, MB, GB, TB',
         )
         push({ kind: 'number', text: source.slice(s, i), value: written, from: s, to: i })
         continue

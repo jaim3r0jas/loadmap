@@ -88,7 +88,18 @@ import {
   type Scope,
   STAGES,
 } from './schema'
-import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitNames, unitOf, wrongMark } from './units'
+import {
+  capacityCall,
+  describe,
+  disagree,
+  PROPERTY_UNITS,
+  parseUnit,
+  sizePower,
+  sizeScale,
+  type UnitNames,
+  unitOf,
+  wrongMark,
+} from './units'
 import { before, CURRENT, LANGUAGE_VERSION, needs, parseVersion, stampOf, type Version, versionText } from './versions'
 
 export { LANGUAGE_VERSION }
@@ -341,6 +352,8 @@ class Compiler {
   /** Where each expectation of the model is written, in order. */
   readonly expectSpans: Span[] = []
   names!: Names
+  /** What the units of a formula's names come from: each let's formula, each fit's y, each parameter's default. */
+  private unitNames: UnitNames = { let: () => undefined, fit: () => undefined }
   readonly measures: MeasureQuery[] = []
   private fits = new Map<string, LinearFit | null>()
   private lets = new Map<string, Type>()
@@ -460,6 +473,23 @@ class Compiler {
       fits: this.fits,
       functions: this.functions,
     }
+    const inits = new Map(
+      lets.flatMap((b) => (b.args.id && b.decl?.init ? [[b.args.id.name, b.decl.init] as const] : [])),
+    )
+    const ys = new Map(
+      fits.flatMap((b) => {
+        const y = b.children.find((c) => c.keyword === 'points')?.args.y
+        return b.args.id && y ? [[b.args.id.name, y.name] as const] : []
+      }),
+    )
+    const defaults = new Map(
+      params.flatMap((b) => {
+        const options = this.prop(b, 'options')?.value
+        const v = this.prop(b, 'default')?.value ?? (options?.t === 'array' ? options.items[0] : undefined)
+        return b.args.id && v ? [[b.args.id.name, v] as const] : []
+      }),
+    )
+    this.unitNames = { let: (n) => inits.get(n), fit: (n) => ys.get(n), param: (n) => defaults.get(n) }
     const scenarioLabels = byKind('scenario').map((b) => {
       const label = this.text(b.args.label)
       if (label != null) this.symbols.push({ kind: 'scenario', id: label, span: b.args.label!, decl: b.decl ?? b.at })
@@ -703,7 +733,7 @@ class Compiler {
           COMPONENT_PROPS.demand!.doc,
         )
     }
-    this.units(root, lets, fits, componentBlocks, used)
+    this.units(root, componentBlocks, used)
 
     const connections: Record<string, Record<string, unknown>> = {}
     const connectionNames = new Map<string, Span>()
@@ -1325,27 +1355,50 @@ class Compiler {
   // -- units ---------------------------------------------------------------------------------------------------
 
   /**
+   * A demand written with a size (`flows.alerts * 1.5KB`) counts bytes; its capacity says the size it counts in
+   * ("MB/s"), so the demand is brought to that. Nothing is guessed: the size is a suffix in the text and the unit the
+   * capacity's own, so a size against a capacity that names none is an error, not a warning.
+   */
+  private inCapacityUnit(b: Block, demand: (ctx: unknown) => number): (ctx: unknown) => number {
+    const prop = this.prop(b, 'demand')
+    const size = prop && sizePower(prop.value, this.unitNames)
+    if (!prop || !size) return demand
+    if (size.mixed) {
+      this.report.error(
+        'unit-mismatch',
+        size.mixed,
+        'a size and a plain number are mixed here',
+        'give both a size (1.5KB + 500KB), or multiply: flows.x * 1.5KB',
+      )
+      return demand
+    }
+    if (size.power === 0) return demand
+    const capacity = this.prop(b, 'capacity')
+    const unit = capacity && capacityCall(capacity.value, this.unitNames)?.args[1]
+    const scale = size.power === 1 && unit?.t === 'str' ? sizeScale(unit.value) : undefined
+    if (!scale) {
+      this.report.error(
+        'unit-mismatch',
+        prop.value,
+        size.power !== 1
+          ? 'the demand multiplies sizes together: it counts no bytes'
+          : unit?.t === 'str'
+            ? `the demand is a size, in bytes; the capacity is in "${unit.value}"`
+            : 'the demand is a size, in bytes; its capacity names no unit to bring it to',
+        'give the capacity a size, "MB/s" or "GB", or divide by the size of one unit: … / 1KB',
+      )
+      return demand
+    }
+    return placed(prop.value, (ctx: unknown) => demand(ctx) / scale)
+  }
+
+  /**
    * Where the text says what a value counts and two of those disagree: a demand and its capacity (per second against a
    * count, or two counts in different words), and a property against the unit the schema gives it (`held: 80%`). A
    * formula of bare numbers says nothing, so it is never warned about.
    */
-  private units(
-    root: Block,
-    lets: Block[],
-    fits: Block[],
-    components: ReadonlyMap<string, Block>,
-    used: ReadonlySet<string | undefined>,
-  ) {
-    const inits = new Map(
-      lets.flatMap((b) => (b.args.id && b.decl?.init ? [[b.args.id.name, b.decl.init] as const] : [])),
-    )
-    const ys = new Map(
-      fits.flatMap((b) => {
-        const y = b.children.find((c) => c.keyword === 'points')?.args.y
-        return b.args.id && y ? [[b.args.id.name, y.name] as const] : []
-      }),
-    )
-    const names: UnitNames = { let: (n) => inits.get(n), fit: (n) => ys.get(n) }
+  private units(root: Block, components: ReadonlyMap<string, Block>, used: ReadonlySet<string | undefined>) {
+    const names = this.unitNames
 
     for (const [id, b] of components) {
       const capacity = this.prop(b, 'capacity')
@@ -1357,6 +1410,14 @@ class Compiler {
           literal,
           "a capacity's unit is empty",
           'name what it counts: "req/s", "cores"',
+        )
+      const value = capacityCall(capacity.value, names)?.args[0]
+      if (value && sizePower(value, names).power !== 0 && literal?.t === 'str')
+        this.report.error(
+          'unit-mismatch',
+          value,
+          "a capacity's size goes in its unit",
+          `write the number as its unit counts it: estimated(20, "MB/s", …)`,
         )
       const cap = unitOf(capacity.value, names)
       const demand = this.prop(b, 'demand')
@@ -2653,6 +2714,7 @@ class Compiler {
       // the model takes demand as a function only: a constant (demand: 0) becomes one
       o[k] = k === 'demand' && v !== undefined && typeof v !== 'function' ? () => v : v
     }
+    if (typeof o.demand === 'function') o.demand = this.inCapacityUnit(b, o.demand as (ctx: unknown) => number)
     const held = this.held(b, flows)
     if (held !== undefined) {
       o.held = held

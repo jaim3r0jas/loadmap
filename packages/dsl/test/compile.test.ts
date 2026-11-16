@@ -422,6 +422,56 @@ describe('units', () => {
     expect(at('1.2', 'let a = 30% + 1\nlet b = 30 % 7\nlet c = pods % 2\nlet d = mod(30, 7)')).toEqual([])
   })
 
+  it('bring a demand written with a size to the size its capacity counts in', () => {
+    const demand = (o: { api: string; demand: string; top?: string }) => {
+      const src = def(o).replace('loadmap 1.1', 'loadmap 1.2').replace('demand: flows.req', `demand: ${o.demand}`)
+      const r = compile(src)
+      expect(r.diagnostics).toEqual([])
+      return r.definition!.model.evaluate({}).components.api!.demand
+    }
+    const broker = (demand: string, unit = 'MB/s') => ({ demand, api: `estimated(20, "${unit}", "sizing guide")` })
+    // 200 requests a second of 1.5 KB each are 0.3 MB a second
+    expect(demand(broker('flows.req * 1.5KB'))).toBeCloseTo(0.3, 12)
+    expect(demand(broker('flows.req * 1.5KB', 'KB/s'))).toBeCloseTo(300, 9)
+    expect(demand(broker('flows.req * 0.0015MB + flows.req * 500KB / 1000', 'GB per second'))).toBeCloseTo(0.0004, 12)
+    // through a let and a parameter's default
+    expect(demand({ ...broker('flows.req * size'), top: 'let size = 1.5KB' })).toBeCloseTo(0.3, 12)
+    expect(
+      demand({ ...broker('flows.req * size'), top: 'param size "Size" { options: [1.5KB, 3KB]; default: 1.5KB }' }),
+    ).toBeCloseTo(0.3, 12)
+    // a size divided out is a plain number again, and a formula without one computes as it always did
+    expect(demand(broker('flows.req * (3KB / 1.5KB)', 'req/s'))).toBe(400)
+    expect(demand(broker('flows.req * 1.5 / 1000'))).toBeCloseTo(0.3, 12)
+  })
+
+  it('refuse a size its capacity cannot count, and a size mixed with a plain number', () => {
+    const found = (api: string, demand = 'flows.req') =>
+      compile(
+        def({ api }).replace('loadmap 1.1', 'loadmap 1.2').replace('demand: flows.req', `demand: ${demand}`),
+      ).diagnostics.map((d) => ({ severity: d.severity, message: d.message }))
+    expect(found('estimated(400, "req/s", "x")', 'flows.req * 1.5KB')).toEqual([
+      { severity: 'error', message: 'the demand is a size, in bytes; the capacity is in "req/s"' },
+    ])
+    // megabits are not megabytes
+    expect(found('estimated(400, "Mb/s", "x")', 'flows.req * 1.5KB')[0]?.message).toBe(
+      'the demand is a size, in bytes; the capacity is in "Mb/s"',
+    )
+    expect(found('estimated(20, "MB/s", "x")', 'flows.req * 1.5KB + 3')).toEqual([
+      { severity: 'error', message: 'a size and a plain number are mixed here' },
+    ])
+    expect(found('estimated(20, "MB/s", "x")', 'flows.req * 1.5KB * 2KB')[0]?.message).toBe(
+      'the demand multiplies sizes together: it counts no bytes',
+    )
+    expect(found('estimated(20MB, "MB/s", "x")')).toEqual([
+      { severity: 'error', message: "a capacity's size goes in its unit" },
+    ])
+    expect(
+      errors(def({ api: 'estimated(20, "MB/s", "x")' }).replace('demand: flows.req', 'demand: flows.req * 1.5KB')),
+    ).toMatchObject([
+      { message: 'a size (1.5KB, 20MB) is from loadmap 1.2; this definition says loadmap 1.1', text: '1.5KB' },
+    ])
+  })
+
   it('have mod(a, b) for the remainder, from loadmap 1.2', () => {
     const v12 = (top: string) => compile(def({ top }).replace('loadmap 1.1', 'loadmap 1.2'))
     expect(v12('let x = mod(7, 3) + mod(pods, 2)').definition!.model.evaluate({}).ctx.derived.x).toBe(1)

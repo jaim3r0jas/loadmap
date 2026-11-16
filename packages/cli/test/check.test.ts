@@ -87,6 +87,25 @@ describe('loadmap check --pull', () => {
     expect(again.out).toContain('✓ Keeps 10×: the 50 % target holds up to 15×')
   })
 
+  it('warns about a unit that disagrees, and fails on it on request', async () => {
+    // a rate against a capacity that counts cores
+    const { path } = await file(`loadmap 1.2
+load { max: 10 }
+flow req "requests" { rate: 40 * load; from: users; route: api }
+node users "Users"
+node api "API" { pass; demand: flows.req; capacity: estimated(8, "cores", "a guess"); over: "clients get 503s" }
+users -> api
+`)
+    const warn = await run([path])
+    expect(warn.code).toBe(0)
+    expect(warn.out).toMatch(/warning\[unit-mismatch\]/)
+    const fail = await run([path, '--units', 'fail'])
+    expect(fail.code).toBe(1)
+    expect(fail.out).toMatch(/error\[unit-mismatch\]/)
+    expect(fail.out).toContain('shop.loadmap: 1 unit disagrees (--units fail)')
+    expect((await run([path, '--units', 'maybe'])).out).toBe('--units is warn or fail, not "maybe"')
+  })
+
   it('is inconclusive when the data is too thin: a warning by default, a failure on request', async () => {
     const { path } = await file()
     // the web rate has 1 of at least 3 samples: the rate is the fallback, and nothing is sure

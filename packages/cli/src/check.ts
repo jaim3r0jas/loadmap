@@ -155,7 +155,11 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
 
     // nothing pulled: the first compile is the answer
     const r = snapshot ? compile(source, { snapshot: fromSnapshot(snapshot) }) : (first ?? compile(source))
-    const list = problems(r, 'error', a.inconclusive === 'fail' ? 'error' : 'warning')
+    const found = problems(r, 'error', a.inconclusive === 'fail' ? 'error' : 'warning')
+    // a unit that disagrees is a warning where the text may be read two ways; a team that writes its units fails on it
+    const isUnit = (d: Diagnostic) => a.units === 'fail' && d.code === 'unit-mismatch' && d.severity === 'warning'
+    const units = found.filter(isUnit).length
+    const list = found.map((d): Diagnostic => (isUnit(d) ? { ...d, severity: 'error' } : d))
     let compared: ReturnType<typeof compareFile> | null = null
     if (a.base != null) {
       const theirs = old == null ? null : compile(old, snapshot ? { snapshot: fromSnapshot(snapshot) } : {})
@@ -185,10 +189,12 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
       if (compared.checked.triggers.length && !a.accept && checked.outcome !== 'error') checked.outcome = 'fail'
     } else if (compared) checked.note = compared.note
     if (baseError) checked.outcome = 'error'
+    if (units && checked.outcome !== 'error') checked.outcome = 'fail'
     files.push(checked)
     if (checked.outcome === 'error' || checked.outcome === 'fail') failed = true
     if (checked.outcome === 'inconclusive' && a.inconclusive === 'fail') failed = true
     say(summary(file, errors, checked.expectations))
+    if (units) say(`${file}: ${units} ${units === 1 ? 'unit disagrees' : 'units disagree'} (--units fail)`)
     if (checked.base) say(`${file}: against ${checked.base.ref}: ${checked.base.text}`)
     if (checked.base?.lacking.length)
       say(
@@ -350,6 +356,7 @@ function parse(argv: string[], env: Readonly<Record<string, string | undefined>>
       pull: { type: 'boolean' },
       snapshot: { type: 'string' },
       inconclusive: { type: 'string' },
+      units: { type: 'string' },
       'dry-run': { type: 'boolean' },
       json: { type: 'string' },
       commit: { type: 'string' },
@@ -367,6 +374,8 @@ function parse(argv: string[], env: Readonly<Record<string, string | undefined>>
   const inconclusive = values.inconclusive ?? 'warn'
   if (inconclusive !== 'warn' && inconclusive !== 'fail')
     throw new Error(`--inconclusive is warn or fail, not "${inconclusive}"`)
+  const units = values.units ?? 'warn'
+  if (units !== 'warn' && units !== 'fail') throw new Error(`--units is warn or fail, not "${units}"`)
   if (!positionals.length) throw new Error('loadmap check needs one or more .loadmap files')
   if (values.pull && values.snapshot != null) throw new Error('--pull reads fresh data, --snapshot a file: not both')
   if (values.snapshot != null && positionals.length > 1)
@@ -385,6 +394,7 @@ function parse(argv: string[], env: Readonly<Record<string, string | undefined>>
     pull,
     snapshot: values.snapshot,
     inconclusive: inconclusive as 'warn' | 'fail',
+    units: units as 'warn' | 'fail',
     dryRun: !!values['dry-run'],
     json: values.json,
     out: values.out,

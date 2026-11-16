@@ -89,7 +89,10 @@ describe('lex', () => {
     const toks = lex(src, report)
     expect(toks.map((t) => t.text)).toEqual(['timeout', ':', '5sec', ''])
     expect(report.list).toMatchObject([
-      { message: '"sec" is not a unit of a number', hint: 'the units are ms, s, min, h, % and ×' },
+      {
+        message: '"sec" is not a unit of a number',
+        hint: 'the units are ms, s, min, h, %, × and the sizes KB, MB, GB, TB',
+      },
     ])
   })
 
