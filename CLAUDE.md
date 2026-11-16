@@ -19,8 +19,8 @@ each also written as a `.loadmap` that must draw exactly what its TypeScript dra
 live (its rules: `apps/docs/CLAUDE.md`). `docs/dsl.md` is the language guide: the site includes it, the build writes it
 with `docs/every-statement.loadmap` into `llms-full.txt`, and the dsl build copies it into its `dist/REFERENCE.md`.
 `docs/every-statement.loadmap` must hold every statement of the schema (`docs.test.ts`); what one file cannot hold (a
-part, a library, a variant) is in `docs/multi-file/`. `examples/checkout/split/` is checkout in several files, held
-to the same `model.ts` and `view.ts` (`split.test.ts`). Recording a page or a `.loadmap` (`pnpm record`, `expose()`):
+part, a library, a variant) is in `docs/multi-file/`. `examples/checkout/split/` and `examples/alerts/split/` are those
+examples in several files, held to the same `model.ts` and `view.ts` (`split.test.ts`). Recording a page or a `.loadmap` (`pnpm record`, `expose()`):
 the `record` skill.
 
 ## Verification

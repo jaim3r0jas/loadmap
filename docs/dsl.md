@@ -1059,7 +1059,9 @@ node postgres "Postgres" "primary" {
 node db "Postgres" "primary" { like: postgres; with { writes: flows.orders } }
 ```
 
-An input without a default must be set; a value in `with` is a formula of the file that writes it. The lines of the
+An input without a default must be set; a value in `with` is a formula of the file that writes it, of the type its
+default has (a number for a number), and where both say a unit, the same one: `wait: flows.orders * 2` for an
+`input wait = 20ms` compiles with a warning. The lines of the
 prototype read only its inputs and its library's own names: `load`, a parameter or a flow of the model reach it only
 as an input. `input flow main` takes the name of a flow instead of a value, for `flows.main`, `at.topic.main` and
 `partitions { main: 12 }`; the model sets it with `main: orders`. The rules of `like:` are the same as in one file: a
@@ -1101,7 +1103,8 @@ at the box that sets it. `loadmap check` prints each with its file (`--format js
 is not in the checked file). `loadmap fmt` on a model sets its parts' `loadmap` lines to its own. `loadmap bundle
 shop.loadmap` writes the definition as one file that draws and computes the same, for a host that reads one file. A
 share link carries every file (`#v2.`); a definition in one file keeps making the `#v1.` link every page reads.
-`docs/multi-file/` holds a model with a part, a library and a variant.
+`docs/multi-file/` holds a model with a part, a library and a variant; `examples/checkout/split/` and
+`examples/alerts/split/` are the two examples in several files, each held to the same TypeScript model.
 
 ## Errors
 
