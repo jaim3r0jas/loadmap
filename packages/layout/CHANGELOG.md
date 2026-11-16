@@ -1,5 +1,47 @@
 # @loadmap/layout
 
+## 0.33.0
+
+### Minor Changes
+
+- 9065003: Dots move only along edges. Every hop a flow takes needs an edge drawn the way it goes: from its `from` node to its
+  first stage, along its route, on each way of a split (and where a way rejoins the route), and from a fan-out to each
+  stage it copies to. A hop without one used to draw its dots straight across the diagram; now `defineView` throws
+  (`flow "signups" goes from node "gateway" to node "api" with no edge between them: add edge('gateway', 'api')`) and
+  the language reports an error at the hop from `loadmap 1.1` on (a warning in a file stamped before, whose dots still
+  cross straight), with quick fixes that add the edge or route the flow through the boxes the
+  edges already join. The edge must point the way the flow goes: one drawn the other way round no longer carries a
+  route's dots (a cache's answers still go back along the edge they came in on). An edge a flow takes that its `when` hides at the defaults, in a preset or a scenario is a warning.
+  To move a file over: apply the quick fix in the editor or VS Code, or add the edge `loadmap check` names.
+  `model.stagesAt()` also returns each flow's ways (`paths`).
+- 91c3aad: Lost boxes: a box for what other boxes lose, counted. A unit a stage turns away (a limiter, or a pass, cache or split
+  past capacity), one a queue drops as too old, or one too slow for its client used to fade where it was; with a lost box,
+  its dot goes along the edge into it and fades there. In the language, `node tooMany "Turned away" { lost }` and an edge
+  `limiter -> tooMany`: the edge says what goes there, and `takes: [rejected]` keeps only some losses (`rejected`,
+  `dropped`, `timedOut`). In TypeScript, `lost({ from: ['limiter'], takes: ['rejected'] })`. `at.tooMany` is what is lost
+  there for good, after every retry, and the box says it on its second line ("500 rejected/s"); it is drawn dashed in the
+  colour of a loss (`--lm-lost-fill`, `--lm-lost-line`), and so is the edge into it. A merge loses nothing: a merged dot
+  now shrinks into a ripple of its flow's colour instead of fading grey, and the legend says "merged, newest kept".
+
+### Patch Changes
+
+- 31404e8: Language versions with a minor: `loadmap 1.1`. `loadmap 1` reads as 1.0, the language of @loadmap/dsl 0.32, and a
+  file keeps compiling as it did under the version it names: a check a later version makes strict is a warning before it
+  ("… (an error from loadmap 1.1)") and an error from it on, so a hop without its edge in a `loadmap 1` file warns and
+  its dots cross straight, as they did. Something a version added (`lost` boxes, numbers with units, `as` after a
+  demand: 1.1) needs that version on the first line, an error with a quick fix that writes it, so a loadmap too old for
+  it says "update @loadmap/dsl" instead of "unknown statement" (one from before this release reads `loadmap 1.1` that
+  way already). `loadmap fmt` raises the first line to the lowest version that has everything the file uses, and never
+  lowers it; `1.10` comes after `1.9`. The reference says which version added a statement, and docs/dsl.md has the rule
+  and a table of versions. `LANGUAGE_VERSION` is now a string, `'1.1'`. The templates, examples and docs' definitions
+  say `loadmap 1.1`.
+- Updated dependencies [189d8db]
+- Updated dependencies [9065003]
+- Updated dependencies [91c3aad]
+- Updated dependencies [8b8bfca]
+- Updated dependencies [bb279a9]
+  - @loadmap/core@0.33.0
+
 ## 0.32.0
 
 ### Patch Changes

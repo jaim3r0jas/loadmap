@@ -1,5 +1,36 @@
 # @loadmap/react
 
+## 0.33.0
+
+### Minor Changes
+
+- 91c3aad: Lost boxes: a box for what other boxes lose, counted. A unit a stage turns away (a limiter, or a pass, cache or split
+  past capacity), one a queue drops as too old, or one too slow for its client used to fade where it was; with a lost box,
+  its dot goes along the edge into it and fades there. In the language, `node tooMany "Turned away" { lost }` and an edge
+  `limiter -> tooMany`: the edge says what goes there, and `takes: [rejected]` keeps only some losses (`rejected`,
+  `dropped`, `timedOut`). In TypeScript, `lost({ from: ['limiter'], takes: ['rejected'] })`. `at.tooMany` is what is lost
+  there for good, after every retry, and the box says it on its second line ("500 rejected/s"); it is drawn dashed in the
+  colour of a loss (`--lm-lost-fill`, `--lm-lost-line`), and so is the edge into it. A merge loses nothing: a merged dot
+  now shrinks into a ripple of its flow's colour instead of fading grey, and the legend says "merged, newest kept".
+
+### Patch Changes
+
+- Updated dependencies [189d8db]
+- Updated dependencies [af8d8d9]
+- Updated dependencies [9065003]
+- Updated dependencies [31404e8]
+- Updated dependencies [91c3aad]
+- Updated dependencies [8b8bfca]
+- Updated dependencies [bb279a9]
+- Updated dependencies [53b3f54]
+- Updated dependencies [4cb38e2]
+- Updated dependencies [5da4dd3]
+- Updated dependencies [fcbf7ec]
+  - @loadmap/dsl@0.33.0
+  - @loadmap/core@0.33.0
+  - @loadmap/layout@0.33.0
+  - @loadmap/sim@0.33.0
+
 ## 0.32.0
 
 ### Minor Changes

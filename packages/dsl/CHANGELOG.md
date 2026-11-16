@@ -1,5 +1,111 @@
 # @loadmap/dsl
 
+## 0.33.0
+
+### Minor Changes
+
+- af8d8d9: Every diagnostic has a code: the kind of problem (`unknown-name`, `missing-edge`, `unseen-loss`, …), which stays when
+  its message is reworded. `Diagnostic` gains `code` and `data` (the names a quick fix needs), and `@loadmap/dsl` exports
+  the list as `DIAGNOSTIC_CODES` (type `DiagnosticCode`); docs/dsl.md lists them under Errors. A host that builds its
+  own `Diagnostic` now gives it a `code`. Quick fixes key on the code
+  and read names from `data`, never from the message. The text output shows the code in brackets
+  (`checkout.loadmap:24:17 error[unknown-name]: unknown flow "order"`); `loadmap check --format json` gives each
+  diagnostic its `code`, `hint`, `endLine` and `endColumn`; a GitHub annotation is titled with the code, and `loadmap lsp`
+  sends it. Ids in messages are quoted: `"orders" goes from "gateway" to "api", and no edge joins them`, `units of "o"
+  too slow for their client at "a" vanish: …`.
+- 9065003: Dots move only along edges. Every hop a flow takes needs an edge drawn the way it goes: from its `from` node to its
+  first stage, along its route, on each way of a split (and where a way rejoins the route), and from a fan-out to each
+  stage it copies to. A hop without one used to draw its dots straight across the diagram; now `defineView` throws
+  (`flow "signups" goes from node "gateway" to node "api" with no edge between them: add edge('gateway', 'api')`) and
+  the language reports an error at the hop from `loadmap 1.1` on (a warning in a file stamped before, whose dots still
+  cross straight), with quick fixes that add the edge or route the flow through the boxes the
+  edges already join. The edge must point the way the flow goes: one drawn the other way round no longer carries a
+  route's dots (a cache's answers still go back along the edge they came in on). An edge a flow takes that its `when` hides at the defaults, in a preset or a scenario is a warning.
+  To move a file over: apply the quick fix in the editor or VS Code, or add the edge `loadmap check` names.
+  `model.stagesAt()` also returns each flow's ways (`paths`).
+- 31404e8: Language versions with a minor: `loadmap 1.1`. `loadmap 1` reads as 1.0, the language of @loadmap/dsl 0.32, and a
+  file keeps compiling as it did under the version it names: a check a later version makes strict is a warning before it
+  ("… (an error from loadmap 1.1)") and an error from it on, so a hop without its edge in a `loadmap 1` file warns and
+  its dots cross straight, as they did. Something a version added (`lost` boxes, numbers with units, `as` after a
+  demand: 1.1) needs that version on the first line, an error with a quick fix that writes it, so a loadmap too old for
+  it says "update @loadmap/dsl" instead of "unknown statement" (one from before this release reads `loadmap 1.1` that
+  way already). `loadmap fmt` raises the first line to the lowest version that has everything the file uses, and never
+  lowers it; `1.10` comes after `1.9`. The reference says which version added a statement, and docs/dsl.md has the rule
+  and a table of versions. `LANGUAGE_VERSION` is now a string, `'1.1'`. The templates, examples and docs' definitions
+  say `loadmap 1.1`.
+- 91c3aad: Lost boxes: a box for what other boxes lose, counted. A unit a stage turns away (a limiter, or a pass, cache or split
+  past capacity), one a queue drops as too old, or one too slow for its client used to fade where it was; with a lost box,
+  its dot goes along the edge into it and fades there. In the language, `node tooMany "Turned away" { lost }` and an edge
+  `limiter -> tooMany`: the edge says what goes there, and `takes: [rejected]` keeps only some losses (`rejected`,
+  `dropped`, `timedOut`). In TypeScript, `lost({ from: ['limiter'], takes: ['rejected'] })`. `at.tooMany` is what is lost
+  there for good, after every retry, and the box says it on its second line ("500 rejected/s"); it is drawn dashed in the
+  colour of a loss (`--lm-lost-fill`, `--lm-lost-line`), and so is the edge into it. A merge loses nothing: a merged dot
+  now shrinks into a ripple of its flow's colour instead of fading grey, and the legend says "merged, newest kept".
+- bb279a9: New names for words that meant two things. In `expect`, `target: 7` and `full: 50` were load multiples while
+  `thresholds` and `autoscale` use `target` for a utilization; they are now `underTarget: 7` and `notFull: 50`
+  (`underTarget: 7×` reads well). A metric's `min` (a sample count) is `minSamples`, a workers stage's `fill` (a
+  placement, not a colour) is `placement`, and a connection's `max` (a capacity) is `accepts`. The new names are from
+  loadmap 1.1. In a `loadmap 1.1` file the old ones still work and warn ("target is now underTarget"), with a quick fix
+  that renames them, and `loadmap fmt` rewrites them; in a `loadmap 1` file they are that version's spelling, read as
+  before, with no warning. TypeScript follows: `Expectation.underTarget` and `notFull`, `ConnectionDef.accepts`,
+  `workers(…, { placement })` and `PullRequest.minSamples`, with the old names kept as `@deprecated`; a resolved workers
+  stage and `compile(…).measures` give `placement` and `minSamples`. A snapshot file still says `min` beside its
+  `samples`. A stage without a label now takes its component's `short` when no other stage runs that component, so the
+  sentences and meters say "the gateway" without a second `pass "the gateway"`.
+- 53b3f54: Formulas are typed strictly, as CEL types JavaScript's syntax: a condition (the test of `? :`, each side of `&&`, `||`
+  and `!`, a `when`, an `enabled`) is true or false, `< <= > >=` compare numbers, `==` and `!=` compare like with like,
+  a literal compared with a select is one of its options (`mode == "c"` with options "a" and "b" is always false), both
+  answers of a `? :` have one type, and comparisons don't chain ("comparisons don't chain: write 1 < load && load <
+  3"). Where the definition is computed, a rate or a demand below 0 and a capacity of 0 or less are refused, and so is
+  a preset's load or slider value outside its range. Each is an error from `loadmap 1.1` and a warning in a file stamped before it,
+  which computes as it did. A demand that is not a number (`flows.orders / (pods - 2)` with 2 pods) warns, as a rate
+  does, instead of a verdict that holds "up to 0×". New codes: `chained-comparison`, `bad-demand`. `edit()` returns at
+  once for a change that leaves the text as it is.
+- 4cb38e2: The language checks units where the text says them. `flows.x` and `at.stage.x` are units a second, a number with a
+  unit is what it says, a fit returns its y (`points rate cores` gives cores), and `demand: … as "cores"` declares the
+  rest. A demand per second against a capacity that counts something (`"cores"`), the reverse, or two counts in different
+  words (`"cores"` against `"connections"`) is a warning, and so is a component without a demand line whose capacity is
+  not per second, an `as` its formula contradicts, and an empty unit. The schema gives the properties that are times,
+  shares or rates their unit (`held`, `service`, `timeout`, `p99`, `olderThan`, `hit`, `share`, `rate`, …), so
+  `held: 80%` warns too, and the reference says each one's. A bare number is any unit: every definition from before
+  compiles as it did, without a new warning. The editor and the VS Code grammar colour `as` as a keyword.
+- 5da4dd3: Numbers with units in the language. A number may carry its unit straight after it: `ms`, `s`, `min` and `h` count in
+  seconds (`held: 20ms` is `held: 0.02`, `timeout: 5s` no longer fails), `%` makes a share (`hit: 80%`), and `×` (or
+  `x`) marks a load multiple. A `%` is a share only where no value follows it, so `10 % 3` is still the remainder and
+  `± 30%` means what it did. A word glued to a number that is not a unit (`5sec`) is one error that lists the units. The
+  inspector changes such a number as written and keeps its unit; the editor and the VS Code grammar colour the unit as
+  part of the number. The examples, the templates and the reference write durations and shares this way instead of
+  saying the unit in a comment.
+- fcbf7ec: A loss the definition plans and no lost box counts is a warning: what a limiter turns away (`what "limiter" turns away
+  vanishes: give it a lost box that counts it`), what a flow's `drop` rule drops, what its `timeout` fails. The quick fix
+  "Add a lost box for what limiter loses" adds `node limiterRejected "Turned away" { lost { takes: [rejected] } }` after
+  the box and the edge into it. A pass, cache or split past capacity warns nothing. The examples, the templates and the
+  docs' definitions have their lost boxes.
+
+### Patch Changes
+
+- 189d8db: One mistake, one mark, where it is. A flow's timeout without latency is marked at its `timeout:` line, and a lost box
+  on a flow's route at its name there, instead of at the first line of the file (core says which property of the flow an
+  error is about). The marks a mistake caused further on are gone: an unknown function no longer also says its arguments
+  must be constants; a misspelt keyword (`nod api`) no longer marks every use of `api`; a second stage in a node, a bare
+  capacity, a value that does not parse and a list with a wrong word (`takes: [rejectd]`) are marked once, without "is
+  declared twice", "needs capacity" or "loses nothing" after them, and a timeout the model refuses no longer also warns
+  that what it times out vanishes.
+- 8b8bfca: A unit is lost once. A flow with a `drop` rule and a `timeout` counted what its queue dropped again as timed out, so a
+  lost box (and `at.<box>`) could show more units a second than the flow sends; with `retry` the dropped units were sent
+  again too. Now a dropped unit is lost at its queue, never sent again and never too slow, as the dots already showed.
+  The losses are counted way by way: a split's ways and a cache's answers no longer share one "got through" figure, a
+  queue on several ways drops on each, and a pass, limit or cache that reads a dropping queue turns away only what still
+  reaches it, in the dots too. Checking the lost boxes walks each flow's ways once.
+- Updated dependencies [189d8db]
+- Updated dependencies [9065003]
+- Updated dependencies [31404e8]
+- Updated dependencies [91c3aad]
+- Updated dependencies [8b8bfca]
+- Updated dependencies [bb279a9]
+  - @loadmap/core@0.33.0
+  - @loadmap/layout@0.33.0
+
 ## 0.32.0
 
 ### Minor Changes

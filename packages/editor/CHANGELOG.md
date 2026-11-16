@@ -1,5 +1,72 @@
 # @loadmap/editor
 
+## 0.33.0
+
+### Minor Changes
+
+- 4cb38e2: The language checks units where the text says them. `flows.x` and `at.stage.x` are units a second, a number with a
+  unit is what it says, a fit returns its y (`points rate cores` gives cores), and `demand: … as "cores"` declares the
+  rest. A demand per second against a capacity that counts something (`"cores"`), the reverse, or two counts in different
+  words (`"cores"` against `"connections"`) is a warning, and so is a component without a demand line whose capacity is
+  not per second, an `as` its formula contradicts, and an empty unit. The schema gives the properties that are times,
+  shares or rates their unit (`held`, `service`, `timeout`, `p99`, `olderThan`, `hit`, `share`, `rate`, …), so
+  `held: 80%` warns too, and the reference says each one's. A bare number is any unit: every definition from before
+  compiles as it did, without a new warning. The editor and the VS Code grammar colour `as` as a keyword.
+- 5da4dd3: Numbers with units in the language. A number may carry its unit straight after it: `ms`, `s`, `min` and `h` count in
+  seconds (`held: 20ms` is `held: 0.02`, `timeout: 5s` no longer fails), `%` makes a share (`hit: 80%`), and `×` (or
+  `x`) marks a load multiple. A `%` is a share only where no value follows it, so `10 % 3` is still the remainder and
+  `± 30%` means what it did. A word glued to a number that is not a unit (`5sec`) is one error that lists the units. The
+  inspector changes such a number as written and keeps its unit; the editor and the VS Code grammar colour the unit as
+  part of the number. The examples, the templates and the reference write durations and shares this way instead of
+  saying the unit in a comment.
+
+### Patch Changes
+
+- af8d8d9: Every diagnostic has a code: the kind of problem (`unknown-name`, `missing-edge`, `unseen-loss`, …), which stays when
+  its message is reworded. `Diagnostic` gains `code` and `data` (the names a quick fix needs), and `@loadmap/dsl` exports
+  the list as `DIAGNOSTIC_CODES` (type `DiagnosticCode`); docs/dsl.md lists them under Errors. A host that builds its
+  own `Diagnostic` now gives it a `code`. Quick fixes key on the code
+  and read names from `data`, never from the message. The text output shows the code in brackets
+  (`checkout.loadmap:24:17 error[unknown-name]: unknown flow "order"`); `loadmap check --format json` gives each
+  diagnostic its `code`, `hint`, `endLine` and `endColumn`; a GitHub annotation is titled with the code, and `loadmap lsp`
+  sends it. Ids in messages are quoted: `"orders" goes from "gateway" to "api", and no edge joins them`, `units of "o"
+  too slow for their client at "a" vanish: …`.
+- 31404e8: Language versions with a minor: `loadmap 1.1`. `loadmap 1` reads as 1.0, the language of @loadmap/dsl 0.32, and a
+  file keeps compiling as it did under the version it names: a check a later version makes strict is a warning before it
+  ("… (an error from loadmap 1.1)") and an error from it on, so a hop without its edge in a `loadmap 1` file warns and
+  its dots cross straight, as they did. Something a version added (`lost` boxes, numbers with units, `as` after a
+  demand: 1.1) needs that version on the first line, an error with a quick fix that writes it, so a loadmap too old for
+  it says "update @loadmap/dsl" instead of "unknown statement" (one from before this release reads `loadmap 1.1` that
+  way already). `loadmap fmt` raises the first line to the lowest version that has everything the file uses, and never
+  lowers it; `1.10` comes after `1.9`. The reference says which version added a statement, and docs/dsl.md has the rule
+  and a table of versions. `LANGUAGE_VERSION` is now a string, `'1.1'`. The templates, examples and docs' definitions
+  say `loadmap 1.1`.
+- bb279a9: New names for words that meant two things. In `expect`, `target: 7` and `full: 50` were load multiples while
+  `thresholds` and `autoscale` use `target` for a utilization; they are now `underTarget: 7` and `notFull: 50`
+  (`underTarget: 7×` reads well). A metric's `min` (a sample count) is `minSamples`, a workers stage's `fill` (a
+  placement, not a colour) is `placement`, and a connection's `max` (a capacity) is `accepts`. The new names are from
+  loadmap 1.1. In a `loadmap 1.1` file the old ones still work and warn ("target is now underTarget"), with a quick fix
+  that renames them, and `loadmap fmt` rewrites them; in a `loadmap 1` file they are that version's spelling, read as
+  before, with no warning. TypeScript follows: `Expectation.underTarget` and `notFull`, `ConnectionDef.accepts`,
+  `workers(…, { placement })` and `PullRequest.minSamples`, with the old names kept as `@deprecated`; a resolved workers
+  stage and `compile(…).measures` give `placement` and `minSamples`. A snapshot file still says `min` beside its
+  `samples`. A stage without a label now takes its component's `short` when no other stage runs that component, so the
+  sentences and meters say "the gateway" without a second `pass "the gateway"`.
+- Updated dependencies [189d8db]
+- Updated dependencies [af8d8d9]
+- Updated dependencies [9065003]
+- Updated dependencies [31404e8]
+- Updated dependencies [91c3aad]
+- Updated dependencies [8b8bfca]
+- Updated dependencies [bb279a9]
+- Updated dependencies [53b3f54]
+- Updated dependencies [4cb38e2]
+- Updated dependencies [5da4dd3]
+- Updated dependencies [fcbf7ec]
+  - @loadmap/dsl@0.33.0
+  - @loadmap/core@0.33.0
+  - @loadmap/react@0.33.0
+
 ## 0.32.0
 
 ### Patch Changes
