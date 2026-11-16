@@ -16,7 +16,7 @@ import {
   referencesAcross,
   renameAcross,
 } from '../src'
-import { edit, fileText, inspect, relativePath, resolvePath } from '../src/internal'
+import { edit, fileText, inspect, relativePath, resolvePath, takeLine } from '../src/internal'
 
 /** The multi-file example of the docs: a model, its part, the library it imports and a variant. */
 const DIR = 'docs/multi-file'
@@ -391,10 +391,22 @@ describe('a box like another', () => {
     const h = hover(twins, twins.indexOf('node b') + 5)
     expect(h?.body[0]).toBe('Like `a`: from it `store`, `capacity`, `over`.')
     const box = inspect(twins, { node: 'b' })!.sections[0]!
-    expect(box.like).toEqual({ from: 'a', taken: ['store', 'capacity', 'over'] })
+    expect(box.like).toMatchObject({ from: 'a', taken: ['store', 'capacity', 'over'] })
+    // the lines among them, as the other writes them; one written here is this box's own from then on
+    expect(box.like!.lines).toEqual([
+      { name: 'capacity', text: 'estimated(1_000, "req/s", "a test")' },
+      { name: 'over', text: '"requests queue"' },
+    ])
+    const taken = takeLine(twins, 'b', 'capacity')
+    if ('error' in taken) throw new Error(taken.error)
+    expect(taken.source).toContain(
+      'node b "B" { like: a; short: "the second"; capacity: estimated(1_000, "req/s", "a test") }',
+    )
+    expect(inspect(taken.source, { node: 'b' })!.sections[0]!.like!.taken).toEqual(['store', 'over'])
+    expect(takeLine(twins, 'b', 'short')).toHaveProperty('error')
     // a stage written here replaces the other's stages, and what the other takes from a third comes along
     const chain = `${twins}node c "C" { like: b; pass; short: "the third" }\nstart -> c\n`
-    expect(inspect(chain, { node: 'c' })!.sections[0]!.like).toEqual({ from: 'b', taken: ['capacity', 'over'] })
+    expect(inspect(chain, { node: 'c' })!.sections[0]!.like).toMatchObject({ from: 'b', taken: ['capacity', 'over'] })
     // with what it sets of the other's inputs
     const db = hover(base[MODEL]!, base[MODEL]!.indexOf('node db') + 5)
     expect(db?.body.slice(0, 2)).toEqual([
@@ -402,7 +414,7 @@ describe('a box like another', () => {
       'Sets `writes`: `flows.orders`.',
     ])
     // a prototype of a library: the other box is not in this text
-    expect(inspect(base[MODEL]!, { node: 'db' })!.sections[0]!.like).toEqual({ from: 'postgres', taken: [] })
+    expect(inspect(base[MODEL]!, { node: 'db' })!.sections[0]!.like).toMatchObject({ from: 'postgres', taken: [] })
   })
 })
 

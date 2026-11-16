@@ -265,6 +265,85 @@ test('Copy Share Link puts the text in a link to the live editor', async () => {
   assert.ok('source' in shared && shared.source === doc.getText())
 })
 
+/** Where a definition or reference provider points: a Location, or a link to one. */
+const fileOf = (l: Location | { targetUri: Uri }) => ('targetUri' in l ? l.targetUri : l.uri).fsPath
+
+test('a part is read through its model: a name of the model is known, a wrong one is said in the part', async () => {
+  const doc = await open('shop/shop.story.loadmap')
+  const list = await diagnose(doc, '\nstep "Nowhere" { load: 2; focus: nowhere }\n')
+  // the one problem is the box that is not there: gateway, orderLine.consumers and the scenario are the model's
+  assert.deepEqual(
+    list.map((d) => d.code),
+    ['unknown-name'],
+    list.map((d) => d.message).join('\n'),
+  )
+  assert.equal(list[0]!.range.start.line, doc.lineCount)
+})
+
+test('go to definition crosses the files of a definition', async () => {
+  const model = await open('shop/shop.loadmap')
+  // a name of an import: where the library declares it
+  const lib = await ask<(Location | { targetUri: Uri })[]>(
+    'vscode.executeDefinitionProvider',
+    model.uri,
+    at(model, 'pipeline }', 2),
+  )
+  assert.equal(fileOf(lib[0]!), join(folder, 'shop', 'platform.loadmap'))
+  // the path in the head is its file
+  const path = await ask<(Location | { targetUri: Uri })[]>(
+    'vscode.executeDefinitionProvider',
+    model.uri,
+    at(model, './shop.story.loadmap', 4),
+  )
+  assert.equal(fileOf(path[0]!), join(folder, 'shop', 'shop.story.loadmap'))
+  // from the part: a box of a subsystem, in the library that writes it
+  const story = await open('shop/shop.story.loadmap')
+  const box = await ask<(Location | { targetUri: Uri })[]>(
+    'vscode.executeDefinitionProvider',
+    story.uri,
+    at(story, 'orderLine.consumers', 12),
+  )
+  assert.equal(fileOf(box[0]!), join(folder, 'shop', 'platform.loadmap'))
+})
+
+test('an import completes to the names of its library, a path to the files of the workspace', async () => {
+  const doc = await open('shop/shop.loadmap')
+  const names = await ask<CompletionList>(
+    'vscode.executeCompletionItemProvider',
+    doc.uri,
+    at(doc, '{ postgres; pipeline }', 2),
+  )
+  assert.ok(
+    names.items.some((i) => i.label === 'messageCost'),
+    names.items.map((i) => i.label).join(', '),
+  )
+  const paths = await ask<CompletionList>(
+    'vscode.executeCompletionItemProvider',
+    doc.uri,
+    at(doc, './platform.loadmap', 2),
+  )
+  assert.ok(
+    paths.items.some((i) => i.label === './shop.big.loadmap'),
+    paths.items.map((i) => i.label).join(', '),
+  )
+})
+
+test('Copy Share Link carries every file of the definition, and opens its model', async () => {
+  const story = await open('shop/shop.story.loadmap')
+  await commands.executeCommand('loadmap.copyShareLink')
+  const link = await env.clipboard.readText()
+  assert.ok(link.startsWith('https://jaim3r0jas.github.io/loadmap/editor/#v2.'), link.slice(0, 80))
+  const shared = await decodeShare(link.slice(link.indexOf('#')))
+  assert.ok('source' in shared, JSON.stringify(shared).slice(0, 200))
+  assert.equal(shared.path, 'shop/shop.loadmap')
+  assert.deepEqual(Object.keys(shared.files ?? {}).sort(), [
+    'shop/platform.loadmap',
+    'shop/shop.loadmap',
+    'shop/shop.story.loadmap',
+  ])
+  assert.equal(shared.files?.['shop/shop.story.loadmap'], story.getText())
+})
+
 export async function run() {
   const failed: string[] = []
   for (const [name, f] of tests) {

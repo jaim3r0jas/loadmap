@@ -18,6 +18,7 @@ export {
   type Provenance,
   setProperty,
   type TextChange,
+  takeLine,
 } from './edit'
 export { BUILTINS } from './expr'
 export { DEFAULT_PATH, fileText, MAX_FILES, MAX_TOTAL, normalizePath, relativePath, resolvePath } from './files'

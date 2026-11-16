@@ -48,6 +48,7 @@ import {
   pageOptions,
   type Range,
   setProperty,
+  takeLine,
 } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
 import {
@@ -739,6 +740,19 @@ export function LoadmapEditor({
       })
     return null
   }
+  /** A line the box takes from the box it is like, written into the box: its own from then on. One undo step. */
+  const take = (box: string, name: string): string | null => {
+    const v = view.current
+    if (!v) return 'the editor is not ready'
+    const r = takeLine(v.state.doc.toString(), box, name, { functions, ...beside() })
+    if ('error' in r) return r.error
+    if (r.changes.length)
+      v.dispatch({
+        changes: r.changes,
+        annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.inspector')],
+      })
+    return null
+  }
   /** What the catalog picker reads and writes through: the catalog, the figure for a pick, its text. */
   const catalogApi: CatalogApi = {
     components: () => loadCatalog().then((e) => Object.values(e[latestEdition(e)]!.components)),
@@ -979,6 +993,7 @@ export function LoadmapEditor({
           setTab(t)
         }}
         onEdit={change}
+        onTake={take}
         lanes={Object.entries(def?.view.def.tiers ?? {}).map(([id, t]) => ({ id, ...t }))}
         onLane={(id, key, value) =>
           key

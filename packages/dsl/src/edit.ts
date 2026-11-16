@@ -67,7 +67,12 @@ export interface InspectSection {
    * For a box that says `like:`: the other box, and the lines and stages it takes from it by their names (none known
    * when the other is in another file). A field of one of those is written here to replace it.
    */
-  like?: { from: string; taken: string[] }
+  like?: {
+    from: string
+    taken: string[]
+    /** The lines among them, as the other box writes them: `takeLine()` writes one here, to change it. */
+    lines: { name: string; text: string }[]
+  }
 }
 
 export interface Inspection {
@@ -120,7 +125,8 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
   // where the lines it does not write come from: said on the box's own section
   const like = likeness(parse(source).doc.body, target.node)
   const first = sections.find((s) => s.path === box.path)
-  if (like && first) first.like = like
+  if (like && first)
+    first.like = { ...like, lines: takenLines(source, target.node).map(({ name, text }) => ({ name, text })) }
   return { title: box.title, sections }
 }
 
@@ -137,6 +143,55 @@ export function edit(source: string, key: string, value: EditValue, options?: Co
   const changes = entry.apply(key.slice(base.length), value)
   if (typeof changes === 'string') return { error: changes }
   return checked(source, changes, options)
+}
+
+/** A box of the text by its id. */
+const boxNamed = (body: readonly Stmt[], id: string) =>
+  body.find(
+    (s): s is Decl =>
+      s.kind === 'decl' &&
+      (BOXES as readonly string[]).includes(s.keyword.name) &&
+      s.args[0]?.t === 'id' &&
+      s.args[0].name === id,
+  )
+
+/** The lines a box takes from the box it is like, each as written there: the first box of the chain that writes it. */
+function takenLines(source: string, id: string): { name: string; text: string; at: Property }[] {
+  const { doc } = parse(source)
+  const like = likeness(doc.body, id)
+  const out: { name: string; text: string; at: Property }[] = []
+  const seen = new Set<Decl>()
+  for (let d = like && boxNamed(doc.body, like.from); d && !seen.has(d); ) {
+    seen.add(d)
+    for (const s of d.body ?? [])
+      if (s.kind === 'prop' && like!.taken.includes(s.key.name) && !out.some((o) => o.name === s.key.name))
+        out.push({ name: s.key.name, text: source.slice(s.value.from, s.as?.to ?? s.to), at: s })
+    const next = d.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === 'like')
+    d = next?.value.t === 'id' ? boxNamed(doc.body, next.value.name) : undefined
+  }
+  return out
+}
+
+/**
+ * The text with a line a box takes from the box it is like written into the box itself, as it is written there: from
+ * then on it is this box's own, and a change to it changes this box only. Refused when the box takes no such line.
+ */
+export function takeLine(source: string, box: string, name: string, options?: CompileOptions): EditResult {
+  const { doc, report } = parse(source)
+  if (report.failed) return { error: 'the text has a syntax error' }
+  const d = boxNamed(doc.body, box)
+  const line = takenLines(source, box).find((l) => l.name === name)
+  if (!d || !line) return { error: `"${box}" takes no "${name}" from another box` }
+  const text = source.slice(line.at.from, line.at.as?.to ?? line.at.to)
+  const last = d.body?.at(-1)
+  if (!d.bodySpan || !last) return { error: `"${box}" has no block to write it in` }
+  // on a line of its own where the block has lines, after a ";" where it is on one
+  const inner = source.slice(d.bodySpan.from, d.bodySpan.to)
+  const indent = /\n([ \t]*)\S[^\n]*$/.exec(source.slice(0, last.from + 1))?.[1] ?? '  '
+  const insert = inner.includes('\n') ? `\n${indent}${text}` : `; ${text}`
+  const end =
+    last.kind === 'prop' ? (last.as?.to ?? last.to) : last.kind === 'row' ? last.to : (last.bodySpan?.to ?? last.to)
+  return checked(source, [{ from: end, to: end, insert }], options)
 }
 
 /**

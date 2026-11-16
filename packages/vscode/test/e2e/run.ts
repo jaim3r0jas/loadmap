@@ -17,6 +17,10 @@ try {
   mkdirSync(folder)
   copyFileSync(join(root, '../../examples/checkout/checkout.loadmap'), join(folder, 'checkout.loadmap'))
   writeFileSync(join(folder, 'messy.loadmap'), 'loadmap 1\nload "Users" {max: 10;default:2}\n')
+  // a definition in several files: a model, its part, the library it imports and a variant
+  mkdirSync(join(folder, 'shop'))
+  for (const f of ['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap', 'shop.big.loadmap'])
+    copyFileSync(join(root, '../../docs/multi-file', f), join(folder, 'shop', f))
   await runTests({
     version: VERSION,
     cachePath: join(root, '.vscode-test'),

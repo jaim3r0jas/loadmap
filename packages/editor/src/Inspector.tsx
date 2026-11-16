@@ -18,6 +18,11 @@ export interface InspectorProps {
   onTab: (tab: InspectorTab) => void
   /** Makes a change; returns why it was refused, or null. */
   onEdit: (key: string, value: EditValue) => string | null
+  /**
+   * A line a box takes from the box it is like, written into the box itself so it can be changed there; answers
+   * with why not, or null.
+   */
+  onTake?: (box: string, name: string) => string | null
   /** Why nothing can be changed now. */
   blocked?: string
   /** A box is selected but no longer in the text. */
@@ -41,7 +46,18 @@ export interface Lane {
  * The fields of a box or of the model, for a reader who does not read the text. Every change goes back to the text
  * as the smallest edit; a change the definition would not take is refused under its field.
  */
-export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClose, lanes, onLane }: InspectorProps) {
+export function Inspector({
+  inspection,
+  tab,
+  onTab,
+  onEdit,
+  onTake,
+  blocked,
+  gone,
+  onClose,
+  lanes,
+  onLane,
+}: InspectorProps) {
   // Close goes away when pressed: the focus moves to the panel, not to the page
   const self = useRef<HTMLElement>(null)
   return (
@@ -86,7 +102,7 @@ export function Inspector({ inspection, tab, onTab, onEdit, blocked, gone, onClo
         <>
           <h3>{inspection.title}</h3>
           {inspection.sections.map((s) => (
-            <Section key={s.path} s={s} onEdit={onEdit} />
+            <Section key={s.path} s={s} onEdit={onEdit} onTake={onTake} />
           ))}
           {tab === 'model' && onLane && !!lanes?.length && (
             <fieldset className="lme-section" data-keyword="lanes">
@@ -113,18 +129,51 @@ const LEGEND: Record<string, (s: InspectSection) => string> = {
   fit: (s) => `Fit · ${s.title}`,
 }
 
-function Section({ s, onEdit }: { s: InspectSection; onEdit: InspectorProps['onEdit'] }) {
+function Section({
+  s,
+  onEdit,
+  onTake,
+}: {
+  s: InspectSection
+  onEdit: InspectorProps['onEdit']
+  onTake?: InspectorProps['onTake']
+}) {
+  const [refused, setRefused] = useState<string | null>(null)
   const main = s.fields.filter((f) => !f.more)
   const more = s.fields.filter((f) => f.more)
   return (
     <fieldset className="lme-section" data-keyword={s.keyword || 'model'}>
       <legend>{LEGEND[s.keyword]?.(s) ?? s.title}</legend>
       {s.like && (
-        <p className="lme-hint" data-like={s.like.from}>
-          {s.like.taken.length
-            ? `Like ${s.like.from}: ${s.like.taken.join(', ')} from it. A line written here replaces the same line there.`
-            : `Like ${s.like.from}: what is not written here comes from there.`}
-        </p>
+        <div className="lme-like" data-like={s.like.from}>
+          <p className="lme-hint">
+            {s.like.taken.length
+              ? `Like ${s.like.from}: ${s.like.taken.join(', ')} from it. A line written here replaces the same line there.`
+              : `Like ${s.like.from}: what is not written here comes from there.`}
+          </p>
+          {s.like.lines.map((l) => (
+            <p key={l.name} className="lme-taken">
+              <span>
+                <b>{l.name}</b> <code>{l.text}</code> <small>from {s.like!.from}</small>
+              </span>
+              {onTake && s.id && (
+                <button
+                  type="button"
+                  className="lm-btn"
+                  title={`Write this line in ${s.id}, to change it there`}
+                  onClick={() => setRefused(onTake(s.id!, l.name))}
+                >
+                  Write here
+                </button>
+              )}
+            </p>
+          ))}
+          {refused && (
+            <p className="lme-hint" role="alert">
+              {refused}
+            </p>
+          )}
+        </div>
       )}
       {main.map((f) => (
         <Field key={f.key} f={f} onEdit={onEdit} />
