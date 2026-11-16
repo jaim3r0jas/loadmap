@@ -266,8 +266,14 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       direction: {
         value: 'enum',
         scope: 'const',
-        values: DIRECTIONS,
-        doc: 'Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down.',
+        values: [...DIRECTIONS, 'auto'],
+        doc: 'Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down.',
+      },
+      rows: {
+        value: 'number',
+        scope: 'const',
+        since: '1.3',
+        doc: 'The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds.',
       },
       layout: {
         value: 'enum',

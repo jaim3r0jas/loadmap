@@ -131,6 +131,8 @@ const STRICT_PERCENT: Version = [1, 2]
 
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
+/** The most rows a definition may fold its diagram into. */
+const MAX_ROWS = 6
 
 /** `{{ args.job }}` in a metric's query: the measure's argument `job`. */
 const TEMPLATE = /\{\{\s*args\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
@@ -189,7 +191,10 @@ export interface MeasureQuery {
 export interface DefinitionOptions {
   speed?: number
   transition?: number
-  direction?: Direction
+  /** `auto`, or none: the way that fits the room larger. */
+  direction?: Direction | 'auto'
+  /** The rows a long diagram is folded into; none: chosen for the room. */
+  rows?: number
   assumptions: string[]
   fullScreen?: (typeof PANELS)[number][]
   fullScreenMode?: (typeof FULL_SCREEN_MODES)[number]
@@ -203,6 +208,7 @@ export function pageOptions(o: DefinitionOptions) {
     ...(o.speed != null ? { speed: o.speed } : {}),
     ...(o.transition != null ? { transition: o.transition } : {}),
     ...(o.direction ? { direction: o.direction } : {}),
+    ...(o.rows != null ? { rows: o.rows } : {}),
     ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
     ...(o.fullScreen ? { fullScreen: o.fullScreen } : {}),
     ...(o.fullScreenMode ? { fullScreenMode: o.fullScreenMode } : {}),
@@ -1130,8 +1136,16 @@ class Compiler {
       )
     else if (transition != null) options.transition = transition
     const direction = this.prop(root, 'direction')
-    if (direction)
-      options.direction = this.enumValue(direction, SCHEMA['']!.props.direction!) === 'down' ? 'DOWN' : 'RIGHT'
+    const runs = direction && this.enumValue(direction, SCHEMA['']!.props.direction!)
+    if (runs) options.direction = runs === 'auto' ? 'auto' : runs === 'down' ? 'DOWN' : 'RIGHT'
+    const rows = this.constProp<number>(root, 'rows')
+    if (rows != null && !(Number.isInteger(rows) && rows >= 1 && rows <= MAX_ROWS))
+      this.report.error(
+        'out-of-range',
+        this.prop(root, 'rows')!.value,
+        `rows is ${rows}; a whole number, 1 to ${MAX_ROWS}`,
+      )
+    else if (rows != null) options.rows = rows
     const layout = this.prop(root, 'layout')
     const way = layout && this.word(layout)
     let arrange: 'compact' | 'stable' | undefined
