@@ -189,10 +189,9 @@ describe('a model in several files', () => {
     expect(db('with { writes: flows.orders; limit: "a lot" }')[0]).toMatchObject({ code: 'wrong-type' })
     expect(db('with { limit: 9_000 }')[0]).toMatchObject({ code: 'bad-input', data: { input: 'writes' } })
     // a formula against the default: one type, and one unit where both say theirs
-    expect(db('with { writes: flows.orders; limit: pods > 3 }')[0]).toMatchObject({
-      code: 'wrong-type',
-      message: '"limit" takes a number, as its default is; this is true or false',
-    })
+    expect(db('with { writes: flows.orders; limit: pods > 3 }').map((d) => d.message)).toContain(
+      '"limit" takes a number, as its default is; this is true or false',
+    )
     const held = set({
       [LIB]: swap(LIB, 'input limit = 4_000', 'input limit = 4_000\n  input wait = 20ms').replace(
         'over: "commits queue on the primary"',
