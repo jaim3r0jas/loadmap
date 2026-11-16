@@ -93,7 +93,8 @@ node db2 "Index shard 2" { like: db; short: "the second shard" }
 ```
 
 It takes every line and stage of that box it does not write itself; a line written here replaces the same line there,
-and a stage written here replaces its stages. The id, the label and the edges are each box's own. The other box is of
+and a stage written here replaces its stages. A line taken that reads the other box by its name (`at.db.orders`,
+`out.db`, `util.db`) reads this box here. The id, the label and the edges are each box's own. The other box is of
 the same kind (a pool is like a pool), may itself be like a third, and gives its stage and its component no id of
 their own, since each would then be declared twice.
 
@@ -114,7 +115,7 @@ as it is.
   `loadmap 1.2` with both spellings as fixes, `30% + 1` and `mod(30, 1)`, and a warning in a file stamped before it.
 - **Sizes** (from `loadmap 1.2`): `KB`, `MB`, `GB` and `TB` after a number count in bytes, decimal as a network counts
   (`1.5KB` is 1,500). A demand written with a size is brought to the size its capacity counts in, so
-  `demand: flows.alerts * 1.5KB` against `estimated(20, "MB/s", …)` is megabytes a second, with no `/ 1000` to forget.
+  `demand: flows.alerts * 1.5KB` against `estimated(20, "MB/s", …)` is megabytes a second, with no `/ 1000` to forget (a capacity in `"bytes/s"` or `"B/s"` takes the bytes as they are).
   A size against a capacity that names none (`"req/s"`, or `"Mb/s"`: megabits), a size added to a plain number, and a
   size in the capacity's number instead of its unit are errors.
 - **Operators:** `+ - * / %`, `< <= > >= == != === !==`, `&& || !`, `? :` and parentheses.

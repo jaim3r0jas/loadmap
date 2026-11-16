@@ -194,6 +194,8 @@ export const PROPERTY_UNITS = {
 export interface SizePower {
   power: number
   mixed?: Expr
+  /** A literal 0: no size and every size, so `max(0, x * 1KB - 1MB)` and `c ? x * 1KB : 0` are sizes. */
+  zero?: true
 }
 
 const NO_SIZE: SizePower = { power: 0 }
@@ -203,16 +205,15 @@ export function sizePower(e: Expr, names: UnitNames, seen: ReadonlySet<string> =
   const of = (x: Expr) => sizePower(x, names, seen)
   const alike = (list: SizePower[], at: Expr): SizePower => {
     const mixed = list.find((x) => x.mixed)?.mixed
-    const first = list[0] ?? NO_SIZE
-    return mixed
-      ? { power: first.power, mixed }
-      : list.every((x) => x.power === first.power)
-        ? first
-        : { ...first, mixed: at }
+    // a literal 0 takes the size of what it stands beside
+    const sized = list.filter((x) => !x.zero)
+    const first = sized[0] ?? list[0] ?? NO_SIZE
+    if (mixed) return { power: first.power, mixed }
+    return sized.every((x) => x.power === first.power) ? first : { power: first.power, mixed: at }
   }
   switch (e.t) {
     case 'num':
-      return isSize(e.unit) ? { power: 1 } : NO_SIZE
+      return isSize(e.unit) ? { power: 1 } : e.value === 0 && !e.unit ? { power: 0, zero: true } : NO_SIZE
     case 'id': {
       const init = names.let(e.name) ?? names.param?.(e.name)
       if (!init || seen.has(e.name)) return NO_SIZE
@@ -238,7 +239,10 @@ export function sizePower(e: Expr, names: UnitNames, seen: ReadonlySet<string> =
         return { power: e.op === '*' ? a.power + b.power : a.power - b.power, ...(mixed && { mixed }) }
       if (e.op === '+' || e.op === '-' || e.op === '%') return alike([a, b], e)
       // a comparison of two sizes is true or false, no size; of a size with a plain number it is a slip
-      return { power: 0, ...((mixed ?? (a.power !== b.power ? e : undefined)) && { mixed: mixed ?? e }) }
+      return {
+        power: 0,
+        ...((mixed ?? (a.power !== b.power && !a.zero && !b.zero ? e : undefined)) && { mixed: mixed ?? e }),
+      }
     }
     case 'call': {
       const f = e.callee.name
@@ -253,10 +257,11 @@ export function sizePower(e: Expr, names: UnitNames, seen: ReadonlySet<string> =
 }
 
 /** A size's unit at the start of a capacity's: `MB/s`, `GB`, `KB per second`. Case matters: `Mb` is megabits. */
-const SIZE_UNIT = /^(kB|KB|MB|GB|TB)(?=$|\s*\/|\s+per\b|\s*$)/
+const SIZE_UNIT = /^(kB|KB|MB|GB|TB|B|bytes?)(?=$|\s*\/|\s+per\b|\s*$)/
 
 /** How many bytes one of a capacity's unit is, when it counts in a size: 1e6 for "MB/s". */
 export function sizeScale(unit: string): number | undefined {
   const m = SIZE_UNIT.exec(unit.trim())
-  return m ? SIZES[m[1]!.toUpperCase() as keyof typeof SIZES] : undefined
+  if (!m) return undefined
+  return m[1] === 'B' || m[1]!.startsWith('byte') ? 1 : SIZES[m[1]!.toUpperCase() as keyof typeof SIZES]
 }

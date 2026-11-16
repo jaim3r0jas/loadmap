@@ -405,7 +405,9 @@ class Compiler {
       // the fit is filled in once its points are read; until then (or with no points) it returns undefined
       return { type: 'number', constant: args.every((x) => x.constant), run: (c, l) => fit?.(a(c, l) as number) }
     }
-    const b = own(BUILTINS, name)
+    // a function a version added does not take the place of the host page's own of that name
+    const hosted = Object.hasOwn(BUILTIN_SINCE, name) && own(this.names.functions, name) !== undefined
+    const b = hosted ? undefined : own(BUILTINS, name)
     if (b) {
       const max = b.variadic ? Number.POSITIVE_INFINITY : b.args.length
       const min = b.min ?? b.args.length

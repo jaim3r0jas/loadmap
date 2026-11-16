@@ -153,7 +153,12 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
       if (!r.closed) {
         // a text carried onto the next line and closed there: one mistake, read as the one text it was meant to be,
         // so its second line is not a statement of its own and its quote opens nothing
-        const next = r.end < to && source[r.end] === '\n' ? readString(source, r.end + 1, to, c) : undefined
+        // only when it is the one quote of its line and the next line has the one that closes it: a stray quote
+        // among others must not take the lines after it
+        const quotes = (a: number, b: number) => source.slice(a, b).split(c).length - 1
+        const [start, nl] = [source.lastIndexOf('\n', s - 1) + 1, source.indexOf('\n', r.end + 1)]
+        const lone = quotes(start, r.end) === 1 && quotes(r.end + 1, nl < 0 || nl > to ? to : nl) === 1
+        const next = lone && r.end < to && source[r.end] === '\n' ? readString(source, r.end + 1, to, c) : undefined
         if (next?.closed) {
           report.error(
             'syntax',

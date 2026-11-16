@@ -55,7 +55,22 @@ export function intoView(source: string, body: readonly Stmt[]): TextChange[] {
       lines: [...(whole ? comments : []), text],
     }
   })
-  const changes: TextChange[] = moved.map((x) => x.cut)
+  // two settings on one line each reach for the ";" between them: the later cut starts where the earlier ends
+  const cuts = moved.map((x) => x.cut).sort((x, y) => x.from - y.from)
+  for (const [i, c] of cuts.entries()) {
+    const prev = cuts[i - 1]
+    if (prev && c.from < prev.to) c.from = Math.min(prev.to, c.to)
+  }
+  // a line they leave empty goes with them
+  for (const c of cuts) {
+    const [a, b] = [lineStart(c.from), lineEnd(c.to)]
+    const on = cuts.filter((x) => x.from >= a && x.to <= b)
+    const left = on.reduceRight((text, x) => text.slice(0, x.from - a) + text.slice(x.to - a), source.slice(a, b))
+    if (left.trim() || on.at(-1) !== c) continue
+    on[0]!.from = a
+    c.to = b
+  }
+  const changes: TextChange[] = cuts.filter((c) => c.to > c.from)
   const lines = moved.flatMap((x) => x.lines)
   // a comment ends its line, so a block that takes one is written a statement a line
   const tall = lines.some((l) => l.startsWith('#'))

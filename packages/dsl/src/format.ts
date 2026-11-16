@@ -98,8 +98,21 @@ const isText = (t: Token | undefined): t is Token =>
 function wrapped(lines: Line[], m: Marks): string[] {
   const out: string[] = []
   const plain = (l: Line) => (l.toks.length ? '  '.repeat(l.depth) + join(l.toks, m) : '')
+  // the parentheses and brackets open where each line starts: inside them a line break is no token, and two texts
+  // side by side would not be joined
+  const held: boolean[] = []
+  let open = 0
+  for (const l of lines) {
+    held.push(open > 0)
+    for (const t of l.toks)
+      if (t.kind === 'punct') open += t.text === '(' || t.text === '[' ? 1 : t.text === ')' || t.text === ']' ? -1 : 0
+  }
   for (let i = 0; i < lines.length; i++) {
     const head = lines[i]!
+    if (held[i]) {
+      out.push(plain(head))
+      continue
+    }
     // the pieces: the text that ends this line, and each line after it that starts with one
     let last = i
     while (
