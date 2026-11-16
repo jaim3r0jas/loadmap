@@ -239,7 +239,7 @@
   "scripts": {
     "build": "tsdown && vite build -c vite.webview.config.ts",
     "package": "node scripts/stage.ts",
-    "test:e2e": "pnpm run build && node scripts/stage.ts --folder && tsdown -c tsdown.e2e.config.ts && node test/e2e/run.ts"
+    "test:e2e": "pnpm --filter @loadmap/cli... build && pnpm run build && node scripts/stage.ts --folder && tsdown -c tsdown.e2e.config.ts && node test/e2e/run.ts"
   },
   "devDependencies": {
     "@loadmap/cli": "workspace:*",
