@@ -147,9 +147,21 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
       push({ kind: 'number', text: source.slice(s, i), value, from: s, to: i, ...(unit && { unit, written }) })
     } else if (c === '"' || c === "'") {
       const s = i
-      const r = readString(source, i + 1, to, c)
-      if (!r.closed)
-        report.error('syntax', { from: s, to: r.end }, 'this text has no closing quote', `end it with ${c}`)
+      let r = readString(source, i + 1, to, c)
+      if (!r.closed) {
+        // a text carried onto the next line and closed there: one mistake, read as the one text it was meant to be,
+        // so its second line is not a statement of its own and its quote opens nothing
+        const next = r.end < to && source[r.end] === '\n' ? readString(source, r.end + 1, to, c) : undefined
+        if (next?.closed) {
+          report.error(
+            'syntax',
+            { from: s, to: r.end },
+            `a ${c}…${c} text ends on its line`,
+            'close it here; a text in backticks may run over lines',
+          )
+          r = { value: `${r.value} ${next.value.trimStart()}`, end: next.end, closed: true }
+        } else report.error('syntax', { from: s, to: r.end }, 'this text has no closing quote', `end it with ${c}`)
+      }
       i = r.end
       push({ kind: 'string', text: source.slice(s, i), value: r.value, from: s, to: i })
     } else if (c === '`') {

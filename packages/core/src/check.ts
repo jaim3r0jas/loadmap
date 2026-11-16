@@ -89,6 +89,10 @@ export function check<P, C extends string>(
     const unread = new Set<string>()
     for (const x of scope) if (x.capacity?.unread) unread.add(`${x.short}: ${x.capacity.unread}`)
     for (const [name, m] of gaps) if (!read.has(name)) unread.add(`${name}: ${m.missing}`)
+    // a demand that is no number (a division by zero at these values) ranks nothing: the crossing found is not one
+    for (const x of scope)
+      if (x.demand != null && !Number.isFinite(x.demand))
+        unread.add(`the demand of ${x.short} is ${x.demand}${where}, not a number to rank by`)
     const data = [...unread]
     const benchmarks = unknown.map((x) => `${x.short}: no published benchmark ${x.missing}`)
     if (c && unknown.length) return result(e, 'inconclusive', [...benchmarks, ...data], found, none)
