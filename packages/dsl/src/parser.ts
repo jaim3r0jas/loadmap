@@ -190,14 +190,15 @@ class Parser {
     if (this.endsStatement()) this.fail(this.peek(), `"${key.name}" has no value`)
     const value = this.expr()
     if (this.is('->')) {
-      if (value.t !== 'id') this.fail(value, 'a route is a list of names joined by "->"')
+      if (value.t !== 'id') this.fail(value, 'a route is a list of names joined by "->"', undefined, 'bad-route')
       const chain: Ident[] = [{ name: value.name, from: value.from, to: value.to }]
       while (this.eat('->')) chain.push(this.ident('a stage'))
       return { kind: 'prop', key, value, chain, from: key.from, to: chain.at(-1)!.to }
     }
     if (this.peek().kind === 'ident' && this.peek().text === 'as') {
       const as = this.next()
-      if (key.name !== 'demand') this.fail(as, '"as" says the unit of a demand only', `demand: … as "cores"`)
+      if (key.name !== 'demand')
+        this.fail(as, '"as" says the unit of a demand only', `demand: … as "cores"`, 'misplaced')
       const unit = this.peek()
       if (unit.kind !== 'string' || !String(unit.value).trim())
         this.fail(unit, '"as" takes the unit in quotes', `as "cores"`)
@@ -401,7 +402,8 @@ class Parser {
             return { t: 'member', object: callee, prop, from: t.from, to: prop.to }
           }
           // Math.min(…) reads as min(…), so formulas can be pasted from TypeScript
-          if (callee.name !== 'Math') this.fail(callee, `"${callee.name}.${prop.name}(…)" is not a function`)
+          if (callee.name !== 'Math')
+            this.fail(callee, `"${callee.name}.${prop.name}(…)" is not a function`, undefined, 'unknown-name')
           callee = prop
         }
         if (this.is('(')) {

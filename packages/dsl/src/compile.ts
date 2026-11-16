@@ -608,6 +608,7 @@ class Compiler {
           on.key,
           'on names the stages that hold its slots: give it held too',
           'held: 0.02',
+          { key: 'held' },
         )
     }
 
@@ -1082,7 +1083,12 @@ class Compiler {
       if (!flows.length) continue
       const at = this.whenAt.get(e) ?? { from: 0, to: 0 }
       const who =
-        flows.length === 1 ? `${flows[0]} still goes` : `${flows.slice(0, -1).join(', ')} and ${flows.at(-1)} still go`
+        flows.length === 1
+          ? `"${flows[0]}" still goes`
+          : `${flows
+              .slice(0, -1)
+              .map((f) => `"${f}"`)
+              .join(', ')} and "${flows.at(-1)}" still go`
       this.report.warning('hidden-edge', at, `${e.from} -> ${e.to} is hidden ${where}, but ${who} that way`)
     }
   }

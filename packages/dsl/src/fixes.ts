@@ -35,13 +35,79 @@ export function quickFixes(source: string, diagnostics: readonly Diagnostic[]): 
   return diagnostics.map((d) => fixesFor(source, d, doc))
 }
 
-function fixesFor(
-  source: string,
-  d: Diagnostic,
-  doc: () => { body: readonly Stmt[]; ids: (kind: string) => string[] },
-): QuickFix[] {
+type Doc = () => { body: readonly Stmt[]; ids: (kind: string) => string[] }
+
+/** What a fix is given: the diagnostic, its text, its data, and the definition parsed once for every fix. */
+interface FixContext {
+  source: string
+  d: Diagnostic
+  text: string
+  data: Readonly<Record<string, string>>
+  doc: Doc
+  replace: (insert: string) => TextChange[]
+}
+
+/** The fix for each code that has one (besides a did-you-mean, which any code can carry): the one place they live. */
+const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
+  // "flow" needs "rate: …"   the component needs "capacity: …"   a slider needs "min: …"
+  'missing-property': ({ source, d, data, doc }) => {
+    const key = data.key
+    const decl = key ? findAt(doc().body, d.from) : undefined
+    if (!key || !decl) return []
+    const spec = own(SCHEMA[decl.keyword.name]?.props ?? {}, key) ?? own(COMPONENT_PROPS, key)
+    const line = `${key}: ${placeholder(spec, key, doc)}`
+    return [{ title: `Add "${line}"`, changes: [addLine(source, decl, line)] }]
+  },
+
+  // capacity: 3000
+  'bare-capacity': ({ text, doc, replace }) => {
+    const unit = JSON.stringify(commonUnit(doc().body))
+    return ['estimated', 'measured'].map((form) => ({
+      title: `Make it ${form}(${text}, ${unit}, "source")`,
+      changes: replace(`${form}(${text}, ${unit}, "source")`),
+    }))
+  },
+
+  // a -> b: { … }
+  'colon-before-block': ({ replace }) => [{ title: 'Drop the ":"', changes: replace('') }],
+
+  // "signups" goes from "gateway" to "api", and no edge joins them
+  'missing-edge': (c) => edgeFixes(c),
+  // … but their edge points the other way
+  'reversed-edge': (c) => edgeFixes(c),
+
+  // what "limiter" turns away vanishes   units of "events" dropped as too old at "topic" vanish   … too slow …
+  'unseen-loss': ({ source, data, doc }) => {
+    const { stage, reason } = data
+    const box = stage && boxOf(doc().body, stage)
+    if (!box || (reason !== 'rejected' && reason !== 'dropped' && reason !== 'timedOut')) return []
+    const name = (box.args[0] as { name: string }).name
+    const taken = new Set([...doc().ids('node'), ...doc().ids('stage'), ...doc().ids('component')])
+    const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedOut: 'TimedOut' }[reason]}`
+    let id = base
+    for (let i = 2; taken.has(id); i++) id = `${base}${i}`
+    const label = { rejected: 'Turned away', dropped: 'Too old', timedOut: 'Timed out' }[reason]
+    const nl = source.indexOf('\n', box.to)
+    const lineEnd = nl < 0 ? source.length : nl
+    return [
+      {
+        title: `Add a lost box for what ${stage} loses`,
+        changes: [
+          // after the box's line, so a comment at its end stays with it
+          { from: lineEnd, to: lineEnd, insert: `\nnode ${id} "${label}" { lost { takes: [${reason}] } }` },
+          addEdge(source, doc().body, name, id),
+        ],
+      },
+    ]
+  },
+}
+
+/** The codes that have a quick fix (besides a did-you-mean, which any code can carry). */
+export const FIXED_CODES = Object.keys(FIXERS) as Code[]
+
+function fixesFor(source: string, d: Diagnostic, doc: Doc): QuickFix[] {
   const text = source.slice(d.from, d.to)
-  const replace = (insert: string, from = d.from, to = d.to) => [{ from, to, insert }]
+  const replace = (insert: string) => [{ from: d.from, to: d.to, insert }]
   const data = d.data ?? {}
 
   // did you mean "orders"?
@@ -53,86 +119,24 @@ function fixesFor(
       return [{ title: `Change to "${mean}"`, changes: replace(JSON.stringify(mean)) }]
     return []
   }
-
-  switch (d.code) {
-    // "flow" needs "rate: …"   the component needs "capacity: …"   a slider needs "min: …"
-    case 'missing-property': {
-      const key = data.key
-      const decl = key ? findAt(doc().body, d.from) : undefined
-      if (!key || !decl) return []
-      const spec = own(SCHEMA[decl.keyword.name]?.props ?? {}, key) ?? own(COMPONENT_PROPS, key)
-      const line = `${key}: ${placeholder(spec, key, doc)}`
-      return [{ title: `Add "${line}"`, changes: [addLine(source, decl, line)] }]
-    }
-
-    // capacity: 3000
-    case 'bare-capacity': {
-      const unit = JSON.stringify(commonUnit(doc().body))
-      return ['estimated', 'measured'].map((form) => ({
-        title: `Make it ${form}(${text}, ${unit}, "source")`,
-        changes: replace(`${form}(${text}, ${unit}, "source")`),
-      }))
-    }
-
-    // a -> b: { … }
-    case 'colon-before-block':
-      return [{ title: 'Drop the ":"', changes: replace('') }]
-
-    // signups goes from gateway to api, and no edge joins them (or against their edge)
-    case 'missing-edge':
-    case 'reversed-edge': {
-      const { from: a, to: b } = data
-      if (!a || !b) return []
-      const fixes: QuickFix[] = [{ title: `Add the edge ${a} -> ${b}`, changes: [addEdge(source, doc().body, a, b)] }]
-      // a hop on a route: through the boxes the edges already join them by, which those boxes then handle too
-      const ends = /^(\w+)(\s*->\s*)(\w+)$/.exec(text)
-      const via = ends && boxesBetween(doc().body, a, b)
-      if (ends && via?.length)
-        fixes.push({
-          title: `Route it through ${via.join(', ')}`,
-          changes: replace([ends[1], ...via, ends[3]].join(ends[2])),
-        })
-      return fixes
-    }
-
-    // what limiter turns away vanishes   units of events dropped as too old at topic vanish   … too slow … at push vanish
-    case 'unseen-loss': {
-      const { stage, reason } = data
-      const box = stage && boxOf(doc().body, stage)
-      if (!box || (reason !== 'rejected' && reason !== 'dropped' && reason !== 'timedOut')) return []
-      const name = (box.args[0] as { name: string }).name
-      const taken = new Set([...doc().ids('node'), ...doc().ids('stage'), ...doc().ids('component')])
-      const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedOut: 'TimedOut' }[reason]}`
-      let id = base
-      for (let i = 2; taken.has(id); i++) id = `${base}${i}`
-      const label = { rejected: 'Turned away', dropped: 'Too old', timedOut: 'Timed out' }[reason]
-      const nl = source.indexOf('\n', box.to)
-      const lineEnd = nl < 0 ? source.length : nl
-      return [
-        {
-          title: `Add a lost box for what ${stage} loses`,
-          changes: [
-            // after the box's line, so a comment at its end stays with it
-            { from: lineEnd, to: lineEnd, insert: `\nnode ${id} "${label}" { lost { takes: [${reason}] } }` },
-            addEdge(source, doc().body, name, id),
-          ],
-        },
-      ]
-    }
-    default:
-      return []
-  }
+  return FIXERS[d.code]?.({ source, d, text, data, doc, replace }) ?? []
 }
 
-/** The codes that have a quick fix (besides a did-you-mean, which any code can carry). */
-export const FIXED_CODES = [
-  'missing-property',
-  'bare-capacity',
-  'colon-before-block',
-  'missing-edge',
-  'reversed-edge',
-  'unseen-loss',
-] as const satisfies readonly Code[]
+/** The edge a hop needs, and on a route the way through the boxes the edges already join. */
+function edgeFixes({ source, text, data, doc, replace }: FixContext): QuickFix[] {
+  const { from: a, to: b } = data
+  if (!a || !b) return []
+  const fixes: QuickFix[] = [{ title: `Add the edge ${a} -> ${b}`, changes: [addEdge(source, doc().body, a, b)] }]
+  // a hop on a route: through the boxes the edges already join them by, which those boxes then handle too
+  const ends = /^(\w+)(\s*->\s*)(\w+)$/.exec(text)
+  const via = ends && boxesBetween(doc().body, a, b)
+  if (ends && via?.length)
+    fixes.push({
+      title: `Route it through ${via.join(', ')}`,
+      changes: replace([ends[1], ...via, ends[3]].join(ends[2])),
+    })
+  return fixes
+}
 
 /** The box that runs a stage: its own id, or the id of a stage written inside it. */
 function boxOf(body: readonly Stmt[], stage: string): Decl | undefined {
@@ -200,23 +204,20 @@ function boxesBetween(body: readonly Stmt[], a: string, b: string): string[] | u
   return undefined
 }
 
-/** The statement whose keyword or id starts at `from`, at any depth: a box's component is reported at the box's id. */
+/**
+ * The innermost statement that holds `from`: a missing line is reported at its statement's keyword or id (a box's
+ * component at the box's id), or at a line of its own (`on` without `held`).
+ */
 function findAt(body: readonly Stmt[], from: number): Decl | undefined {
   for (const s of body) {
-    if (s.kind !== 'decl') continue
-    if (s.keyword.from === from || s.args[0]?.from === from) return s
-    const inner = s.body && findAt(s.body, from)
-    if (inner) return inner
+    if (s.kind !== 'decl' || from < s.from || from >= s.to) continue
+    return (s.body && findAt(s.body, from)) ?? s
   }
   return undefined
 }
 
 /** A value that compiles where one is missing, for the reader to change. */
-function placeholder(
-  spec: PropSpec | undefined,
-  key: string,
-  doc: () => { body: readonly Stmt[]; ids: (kind: string) => string[] },
-): string {
+function placeholder(spec: PropSpec | undefined, key: string, doc: Doc): string {
   switch (spec?.value) {
     case 'string':
       return '""'

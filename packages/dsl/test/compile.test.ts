@@ -1142,14 +1142,14 @@ users -> gw -> api -> db
     expect(all(SRC.replace('users -> gw -> api -> db', 'users -> gw -> api\napi -> db { when: fast }'))).toEqual([
       {
         severity: 'warning',
-        message: 'api -> db is hidden at the defaults, but req still goes that way',
+        message: 'api -> db is hidden at the defaults, but "req" still goes that way',
         text: 'when',
       },
     ])
     expect(all(SRC.replace('users -> gw -> api -> db', 'users -> gw -> api\napi -> db { when: !fast }'))).toEqual([
       {
         severity: 'warning',
-        message: 'api -> db is hidden in the preset "Fast", but req still goes that way',
+        message: 'api -> db is hidden in the preset "Fast", but "req" still goes that way',
         text: 'when',
       },
     ])
