@@ -111,6 +111,10 @@ export const EDITOR_CSS = `
 .lme-tabs { display: flex; gap: 6px; }
 .lme-tabs [aria-selected="true"] { background: var(--lm-accent); color: var(--lm-surface); border-color: var(--lm-accent); }
 .lme-hint { margin: 0; color: var(--lm-muted); }
+.lme-like { display: grid; gap: 4px; }
+.lme-taken { margin: 0; display: flex; gap: 8px; align-items: baseline; justify-content: space-between; color: var(--lm-muted); }
+.lme-taken code { font: 12px/1.4 var(--lm-mono); color: var(--lm-fg); overflow-wrap: anywhere; }
+.lme-taken .lm-btn { flex: none; }
 .lme-hint[data-kind="blocked"] { color: var(--lm-drop); }
 .lme-section { border: 0; border-top: 1px solid var(--lm-line); margin: 0; padding: 8px 0 0; display: grid; gap: 8px; min-width: 0; }
 .lme-section > legend { padding: 0 6px 0 0; font-weight: 600; color: var(--lm-muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .03em; }
