@@ -119,7 +119,7 @@ describe('hover and signature help in the editor', () => {
     await expect.poll(() => tip('.lm-hover'), { timeout: 5000 }).toContain('2,000 a second at the defaults (load 1×).')
     expect(tip('.lm-hover-head')).toBe('flow reads "reads"')
     // break the text: the values stay, from the version without errors, and say so
-    v.dispatch({ changes: { from: 0, to: 'loadmap 1.1'.length, insert: 'loadmap 1.1\nrate oops' } })
+    v.dispatch({ changes: { from: 0, to: 'loadmap 1.2'.length, insert: 'loadmap 1.1\nrate oops' } })
     v.dispatch({ effects: EditorView.scrollIntoView(v.state.doc.toString().indexOf('flows.reads'), { y: 'center' }) })
     v.contentDOM.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
     await expect.poll(() => document.querySelector('.lm-hover')).toBeNull()
@@ -129,7 +129,7 @@ describe('hover and signature help in the editor', () => {
       .toContain('Values from the last version without errors.')
     expect(tip('.lm-hover')).toContain('2,000 a second')
     // another text in its place (a template): the old values are not its own
-    const other = cache.replace('2_000 * load', '9_000 * load').replace('loadmap 1.1', 'loadmap 1.1\nrate oops')
+    const other = cache.replace('2_000 * load', '9_000 * load').replace('loadmap 1.2', 'loadmap 1.1\nrate oops')
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: other } })
     v.contentDOM.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
     await expect.poll(() => document.querySelector('.lm-hover')).toBeNull()

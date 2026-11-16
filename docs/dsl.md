@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```
-loadmap 1.1
+loadmap 1.2
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -43,7 +43,7 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.1`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.2`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it).
@@ -1038,7 +1038,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.1`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.2`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1169,7 +1169,7 @@ Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```
-loadmap 1.1
+loadmap 1.2
 ```
 
 After the keyword: version.

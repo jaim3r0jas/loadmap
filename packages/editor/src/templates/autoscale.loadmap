@@ -1,4 +1,4 @@
-loadmap 1.1
+loadmap 1.2
 # An API that scales its pods with the load: the autoscaler adds a pod whenever the running ones pass their target,
 # up to a maximum. It runs out only when it cannot grow further.
 title: "Autoscaled API"

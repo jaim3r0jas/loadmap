@@ -1,4 +1,4 @@
-loadmap 1.1
+loadmap 1.2
 # Alerts and positions, made up: the same model and view as model.ts and view.ts.
 title: "Alerts and live positions"
 speed: 10
