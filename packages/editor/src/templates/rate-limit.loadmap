@@ -14,7 +14,7 @@ scenario "Today" {}
 scenario "Raise the limit" { limit: 2_500; pods: 4 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "No 429s below 2×" { component: limiter; full: 2 }
+expect "No 429s below 2×" { component: limiter; notFull: 2 }
 
 flow requests "requests" {
   unit: "request"

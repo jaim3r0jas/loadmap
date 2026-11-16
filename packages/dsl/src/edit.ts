@@ -4,7 +4,7 @@ import { componentOf } from './catalog'
 import { type CompileOptions, compile } from './compile'
 import { type Suffix, unitScale } from './lexer'
 import { parse } from './parser'
-import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, SCHEMA } from './schema'
+import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, propNamed, SCHEMA } from './schema'
 
 /**
  * What a reader can change without the text, and the change it makes to the text. The text stays the one source:
@@ -334,13 +334,14 @@ function walk(source: string) {
       if (s.kind === 'prop') {
         names(s.value, o.reads)
         // a published statement's conditions are named by its component
-        const p =
-          own(spec.props, s.key.name) ??
-          (o.catalog && own(o.catalog.conditions, s.key.name) ? spec.open?.spec : undefined)
+        // an old name (`target` in expect) fills the slot of the property it is now
+        const named = propNamed(spec.props, s.key.name)
+        const k = named?.name ?? s.key.name
+        const p = named?.spec ?? (o.catalog && own(o.catalog.conditions, s.key.name) ? spec.open?.spec : undefined)
         // a repeated property (assume) is told apart by its place
-        const n = (seen.get(s.key.name) ?? 0) + 1
-        seen.set(s.key.name, n)
-        if (p) prop(o, `${here}/${s.key.name}${n > 1 ? `~${n}` : ''}`, s, p, body)
+        const n = (seen.get(k) ?? 0) + 1
+        seen.set(k, n)
+        if (p) prop(o, `${here}/${k}${n > 1 ? `~${n}` : ''}`, k, s, p, body)
         if (!d && s.key.name === 'title' && s.value.t === 'str') o.title = s.value.value
         if (p?.value === 'component' && s.value.t === 'id') o.uses.push(s.value.name)
       } else if (s.kind === 'decl' && spec.children.includes(s.keyword.name)) {
@@ -352,12 +353,12 @@ function walk(source: string) {
     return o
   }
 
-  const prop = (o: Owner, key: string, s: Property, p: PropSpec, body: Stmt[]) => {
+  const prop = (o: Owner, key: string, field: string, s: Property, p: PropSpec, body: Stmt[]) => {
     const e = s.value
     const condition = o.catalog && own(o.catalog.conditions, s.key.name)
     const base = {
       key,
-      label: condition ? words(condition.label) : words(s.key.name),
+      label: condition ? words(condition.label) : words(field),
       doc: condition ? condition.doc : p.doc,
       more: !condition && p.inspector !== 'main',
     }

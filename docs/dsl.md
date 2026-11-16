@@ -57,7 +57,8 @@ A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things
 
 - **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink`, `fanout`,
   `split`, `cache` or `limit` in a node, one or more `queue` in a cluster, one `workers` in a pool. Its id is the box's id unless you give it one.
-  A label after the keyword names it in the meters: `pass "the gateway"`.
+  A label after the keyword names it in the meters and the sentences: `queue topic "orders topic"`. Without one it takes
+  its component's `short` ("the gateway") when no other stage runs that component, and its id otherwise.
 - **A component:** what can run out. Write its lines on the box: `demand`, `capacity`, `over`, and optionally
   `name`, `short`, `plural`, `describe` and `when`. Its id is the box's id and its name is the box's label. A stage in
   the box uses this component unless it names another one with `component: …`. A component without a box is a
@@ -151,13 +152,14 @@ capacity whose measurement would change or narrow the answer most. Fits stay exa
 An **expect** line is something that must keep holding, as minimum load multiples on that pessimistic edge:
 
 ```
-expect "Today keeps 7×" { target: 7 }
-expect "Proposed keeps 14×" { scenario: Proposed; target: 14 }
-expect { component: db; full: 100 }
+expect "Today keeps 7×" { underTarget: 7 }
+expect "Proposed keeps 14×" { scenario: Proposed; underTarget: 14 }
+expect { component: db; notFull: 100 }
 ```
 
-`target` is where the 50 % target is reached (by the first limit, or by `component`), `full` where 100 % is; without
-a `scenario` the defaults are checked. The editor marks a failing expectation as a warning on its line and still
+`underTarget` holds while everything (or `component`) stays under the 50 % target, `notFull` while nothing runs out
+(100 %); without a `scenario` the defaults are checked. Before loadmap 1.1 they were `target` and `full`: from 1.1 those
+warn, and `loadmap fmt` renames them. A load multiple may say its unit, `underTarget: 7×`. The editor marks a failing expectation as a warning on its line and still
 draws the diagram. `loadmap check` fails on it, so a change that loses headroom cannot land unseen:
 
 ```bash
@@ -166,19 +168,19 @@ loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectat
 
 ```
 checkout.loadmap:26:1 error[expect-failed]: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
-  26 | expect "Today keeps 12×" { target: 12 }
+  26 | expect "Today keeps 12×" { underTarget: 12 }
      | ^^^^^^^^^^^^^^^^^^^^^^^^
 checkout.loadmap: 1 of 2 expectations failed
 ```
 
 Each expectation ends **pass**, **fail** or **inconclusive**. It is inconclusive when the answer rests on what is not
-known: it holds at the high edge of a ± but not at the low one (`target: 8` above, between 7.4× and 10×), a
+known: it holds at the high edge of a ± but not at the low one (`underTarget: 8` above, between 7.4× and 10×), a
 component has no published benchmark, or measured data it reads is missing or too thin. The line says why, and
 `loadmap check` reports it as a warning; `--inconclusive fail` makes it fail the run. `severity: warn` makes an
 expectation a warning whatever it finds: it is reported, and never fails the run.
 
 ```
-expect "Black Friday keeps 3×" { scenario: Proposed; target: 3; severity: warn }
+expect "Black Friday keeps 3×" { scenario: Proposed; underTarget: 3; severity: warn }
 ```
 
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
@@ -494,7 +496,7 @@ number, as its fallback is, and names the measurement in the snapshot:
 metric served "Requests served" {
   prometheus { query: 'max_over_time(sum(rate(http_requests_total{job="{{ args.job }}"}[5m]))[7d:5m])' }
   stat: max
-  min: 30
+  minSamples: 30
 }
 measure apiCapacity served { job: "api"; fallback: estimated(1_000, "req/s", "vendor benchmark") }
 measure orderRate served { job: "orders"; fallback: 40; unit: "orders/s" }
@@ -504,7 +506,7 @@ measure orderRate served { job: "orders"; fallback: 40; unit: "orders/s" }
 
 `{{ args.job }}` is filled by each measure's `job`, so one metric serves several components; the checker names an
 argument the query needs and one it never uses. `stat` says how the window becomes one value (`mean` by default) and
-`min` how many samples it needs before it counts. A `fit` with `x` and `y` naming two measures is fitted from their
+`minSamples` how many samples it needs before it counts. A `fit` with `x` and `y` naming two measures is fitted from their
 series when there is a snapshot, and from its own `points` when there is none. A value read from a snapshot is
 today's system's: it does not change with the parameters.
 
@@ -538,13 +540,13 @@ shop.snapshot.json: 1 of 2 measurements, 2026-11-01T06:00:00Z to 2026-11-08T06:0
 ```
 
 The window ends on the step's grid, so two pulls in the same step read the same points. A query that fails, or a
-window with fewer samples than `min`, leaves that measurement missing: the model uses the fallback, and the
+window with fewer samples than `minSamples`, leaves that measurement missing: the model uses the fallback, and the
 assumptions say why. A host compiles with the snapshot, `compile(source, { snapshot: fromSnapshot(parseSnapshot(text))
 })`; without one, every measure is its fallback.
 
 In TypeScript, `parseSnapshot` checks the file (an opened file is untrusted input) and `fromSnapshot` reads it inside
 the model's functions. Every read names the value the definition uses when the snapshot has none: a measurement that
-is missing, or has fewer samples than its `min`, falls back to it, never to an invented one, and the assumptions say
+is missing, or has fewer samples than its `minSamples`, falls back to it, never to an invented one, and the assumptions say
 why.
 
 ```ts
@@ -771,7 +773,7 @@ In TypeScript, `connections: { group: { from: 'topic', to: 'pool', assign: 'excl
 gives the factor and the line, and `ev.stages.pool.assignment` the worker that reads each partition.
 
 A connection also counts what it holds open. `open` is the connections each member of the pool on the hop keeps to
-the other side (per pod with `owner: pod`), and `max` the most that side accepts, a capacity like any other. Together
+the other side (per pod with `owner: pod`), and `accepts` the most that side accepts, a capacity like any other. Together
 they make a limit of their own, named by the connection, "Connections to db": the members running times what each
 keeps open, added up over every connection into the stage:
 
@@ -780,12 +782,12 @@ connection dbPool {
   hop: api -> db
   owner: pod
   open: 20
-  max: configured(100, "connections", "max_connections")
+  accepts: configured(100, "connections", "max_connections")
 }
 ```
 
 An autoscaled pool opens more as it adds pods, so this limit runs out at a load: 20 a pod reach 100 at the fifth pod.
-One connection into a stage gives `max`; the others into it only `open`.
+One connection into a stage gives `accepts`; the others into it only `open`.
 
 The stage a connection reaches can be uneven too. `assign: key` sends each unit to the part its key hashes to,
 partition i of each flow on member i mod `members` of that stage (a cluster's queue takes the cluster's members):
@@ -807,7 +809,7 @@ The catalog says how callers connect to each of its components, from their docum
 "kafka/consumer-group"` gives a connection that rule's `assign` and `owner` (what the connection writes wins), and
 the assumptions cite its source. Autocomplete lists every rule. A setting's documented default is a figure taken by
 its name only, never matched to a configuration: PostgreSQL's 97 connections (its 100, less the 3 kept for
-superusers) are `published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }`, for `max: dbMax`. In TypeScript, `rule(kafka, 'kafka/consumer-group')` and
+superusers) are `published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }`, for `accepts: dbMax`. In TypeScript, `rule(kafka, 'kafka/consumer-group')` and
 `published(postgresql, { figure: 'max-connections' })`.
 
 **Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
@@ -824,11 +826,11 @@ node api "API" {
   over: "clients wait"
 }
 
-expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 150ms; target: 10 }
+expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 150ms; underTarget: 10 }
 ```
 
 The expect holds when the p99 stays under 150 ms up to 10× on the pessimistic edge (every capacity at its low
-bound); without `target`, at the values. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
+bound); without `underTarget`, at the values. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
 the shape, not a measurement. To set a service time from data, take a measured p99 at today's utilization: a single
 queue's p99 is `service × ln 100 ÷ (1 − utilization)`, so `service: latencyP99 / 1_000 * (1 - 0.4) / 4.6` for a p99
 in ms at 40 %.
@@ -1048,7 +1050,7 @@ with no warning first; none is planned.
 | Version | Added | Strict from here |
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
-| 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand | a hop needs its edge (`missing-edge`, `reversed-edge`) |
+| 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`) |
 
 ## In code
 
@@ -1242,7 +1244,7 @@ growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 What must keep holding, on the pessimistic edge (every capacity at its low bound): `loadmap check` fails when it does not.
 
 ```
-expect "Today keeps 7×" { target: 7 }
+expect "Today keeps 7×" { underTarget: 7× }
 ```
 
 After the keyword: [label].
@@ -1251,12 +1253,12 @@ After the keyword: [label].
 | --- | --- | --- |
 | `scenario` | scenario, constant | The scenario whose values it checks; the defaults without one. |
 | `component` | component, constant | One component; the first limit without one. |
-| `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to target, or at the values. |
+| `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. |
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
 | `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
 | `p99` | number in seconds, constant | The flow's 99th percentile stays under this many seconds. |
-| `target` | number, constant | The target holds up to at least this load multiple. |
-| `full` | number, constant | Nothing (or the component) runs out before this load multiple. |
+| `underTarget` | number, constant | Every component (or this one) stays under the target utilization up to at least this load multiple. From loadmap 1.1; `target` before. |
+| `notFull` | number, constant | Nothing (or this component) runs out before this load multiple. From loadmap 1.1; `full` before. |
 | `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
 
 ### step
@@ -1315,7 +1317,7 @@ A mapping written once: the query that measures something, how its window become
 metric served "Requests served" {
   prometheus { query: "sum(rate(http_requests_total{job=\"{{ args.job }}\"}[5m]))" }
   stat: max
-  min: 30
+  minSamples: 30
 }
 ```
 
@@ -1324,7 +1326,7 @@ After the keyword: id [label].
 | Property | Value | |
 | --- | --- | --- |
 | `stat` | `mean` \| `min` \| `max` \| `last` \| `p50` \| `p95` \| `p99` | How the window becomes one value. Default mean. |
-| `min` | number, constant | The samples a window needs before its value counts; with fewer, the fallback is used. |
+| `minSamples` | number, constant | The samples a window needs before its value counts; with fewer, the fallback is used. From loadmap 1.1; `min` before. |
 
 Holds: `prometheus`, `elasticsearch`.
 
@@ -1729,7 +1731,7 @@ After the keyword: [id] [label].
 | --- | --- | --- |
 | `pods` | number, formula | How many pods; an autoscaled pool has autoscale instead. |
 | `perPod` (required) | number, formula | Workers per pod. |
-| `fill` | `round-robin` \| `in-order` | round-robin spreads work across pods (the default); in-order fills pod 0 first. |
+| `placement` | `round-robin` \| `in-order` | round-robin spreads work across pods (the default); in-order fills pod 0 first. From loadmap 1.1; `fill` before. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 Holds: `autoscale`.
@@ -1805,7 +1807,7 @@ After the keyword: id.
 | `members` | number, formula | Members of the stage after, when it is no pool. A cluster's members for its queues. |
 | `flows` | flows, constant | The flows it covers. Default every flow on the hop. |
 | `open` | number, formula | Connections each member of the pool on the hop keeps open to the other side. |
-| `max` | capacity, formula | The most connections the other side accepts: a limit named by this connection. |
+| `accepts` | capacity, formula | The most connections the other side accepts: a limit named by this connection. From loadmap 1.1; `max` before. |
 | `skew` | capacity, formula | With key: a flow's share on its hottest part. |
 | `rule` | string, constant | A rule from the catalog, "kafka/consumer-group": its assign and owner unless written, its source cited. |
 

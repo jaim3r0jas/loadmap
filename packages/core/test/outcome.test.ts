@@ -6,7 +6,7 @@ import { fromSnapshot, parseSnapshot } from '../src/measure'
 const snapshot = parseSnapshot(readFileSync(new URL('./fixtures/snapshot.json', import.meta.url), 'utf8'))
 
 // 100 req/s at 1× against 1,000 req/s: the 50 % target at 5×, or 3.5× to 6.5× with a ± 30 %
-const model = (capacity = measured(1000, 'req/s'), o: { snapshot?: typeof snapshot; target?: number } = {}) =>
+const model = (capacity = measured(1000, 'req/s'), o: { snapshot?: typeof snapshot; underTarget?: number } = {}) =>
   defineModel({
     load: p.load({ max: 100 }),
     ...(o.snapshot && { snapshot: o.snapshot }),
@@ -14,18 +14,18 @@ const model = (capacity = measured(1000, 'req/s'), o: { snapshot?: typeof snapsh
     components: { api: { name: 'API', capacity, over: 'clients get 503s' } },
     stages: { api: pass('api') },
     routes: { req: ['api'] },
-    expect: [{ label: 'Keeps it', target: o.target ?? 4 }],
+    expect: [{ label: 'Keeps it', underTarget: o.underTarget ?? 4 }],
   })
 
 describe('check outcomes', () => {
   it('passes, fails, or is inconclusive when only the high edge of a ± holds', () => {
     expect(check(model())[0]).toMatchObject({ outcome: 'pass', ok: true, reasons: [] })
-    expect(check(model(measured(1000, 'req/s'), { target: 6 }))[0]).toMatchObject({ outcome: 'fail', ok: false })
+    expect(check(model(measured(1000, 'req/s'), { underTarget: 6 }))[0]).toMatchObject({ outcome: 'fail', ok: false })
     const ranged = estimated(1000, 'req/s', { within: 0.3 })
-    expect(check(model(ranged, { target: 4 }))[0]).toMatchObject({ outcome: 'inconclusive', ok: false })
-    expect(check(model(ranged, { target: 4 }))[0]!.reasons).toEqual(['holds at 4× only at the high edge of a ±'])
-    expect(check(model(ranged, { target: 7 }))[0]!.outcome).toBe('fail')
-    expect(check(model(ranged, { target: 3 }))[0]!.outcome).toBe('pass')
+    expect(check(model(ranged, { underTarget: 4 }))[0]).toMatchObject({ outcome: 'inconclusive', ok: false })
+    expect(check(model(ranged, { underTarget: 4 }))[0]!.reasons).toEqual(['holds at 4× only at the high edge of a ±'])
+    expect(check(model(ranged, { underTarget: 7 }))[0]!.outcome).toBe('fail')
+    expect(check(model(ranged, { underTarget: 3 }))[0]!.outcome).toBe('pass')
   })
 
   it('is inconclusive while data it rests on is missing, saying which', () => {
@@ -52,7 +52,7 @@ describe('check outcomes', () => {
       },
       stages: { api: pass('api'), db: pass('db') },
       routes: { req: ['api', 'db'] },
-      expect: [{ target: 5 }, { target: 2 }],
+      expect: [{ underTarget: 5 }, { underTarget: 2 }],
     })
     const [fails, holds] = check(m)
     expect(fails).toMatchObject({ outcome: 'fail', reasons: [] })
@@ -66,7 +66,7 @@ describe('check outcomes', () => {
       components: { api: { name: 'API', capacity: measured(1000, 'req/s'), over: 'x' } },
       stages: { api: pass('api') },
       routes: { req: ['api'] },
-      expect: [{ target: 9, severity: 'warn' }],
+      expect: [{ underTarget: 9, severity: 'warn' }],
     })
     expect(check(m)[0]).toMatchObject({ outcome: 'fail', expectation: { severity: 'warn' } })
   })

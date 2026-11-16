@@ -10,7 +10,7 @@ import { Reporter } from './diagnostics'
 import { BUILTINS } from './expr'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
-import { type BlockSpec, BOXES, EDGE_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
+import { type BlockSpec, BOXES, EDGE_PROPS, own, type PropSpec, propNamed, SCHEMA, STAGES } from './schema'
 
 export interface Hover {
   /** The word under the pointer: source[from, to). */
@@ -167,7 +167,7 @@ class Lookup {
       if (first && punct(cur.head[1], ':')) {
         const prop = edgeBody
           ? own(EDGE_PROPS, first.text)
-          : (own(spec.props, first.text) ?? (spec.open ? spec.open.spec : undefined))
+          : (propNamed(spec.props, first.text)?.spec ?? (spec.open ? spec.open.spec : undefined))
         switch (prop?.value) {
           case 'route':
             return this.stage(name, out)
@@ -212,12 +212,19 @@ class Lookup {
     if (spec === SCHEMA.published && !own(spec.props, key)) return this.condition(key, path, out)
     if (spec.open?.names === 'arguments' && !own(spec.props, key))
       return out(`${key}: an argument`, [`It fills \`{{ args.${key} }}\` in the query of the metric it measures.`])
-    const prop = edgeBody ? own(EDGE_PROPS, key) : own(spec.props, key)
+    // an old name shows the property it is now
+    const named = edgeBody ? undefined : propNamed(spec.props, key)
+    const prop = edgeBody ? own(EDGE_PROPS, key) : named?.spec
     if (prop) {
       const values = key === 'color' ? 'a theme colour' : key === 'hop' ? 'a -> b' : prop.values?.join(' | ')
       return out(`${key}: ${values ?? KIND_WORDS[prop.value] ?? prop.value}`, [
         prop.doc,
         ...(prop.required ? ['Required.'] : []),
+        ...(named?.old
+          ? [
+              `Named \`${named.name}\` from loadmap ${prop.since}; \`loadmap fmt\` renames it in a definition of that version.`,
+            ]
+          : []),
       ])
     }
     // the open names of a preset, scenario, step or partitions

@@ -27,9 +27,9 @@ scenario "Today" {}
 scenario "Proposed" { limit: 12_000; maxPods: 16; budget: true }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 10×" { target: 10 }
-expect "Proposed keeps 20×" { scenario: Proposed; target: 20 }
-expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 0.15; target: 10 }
+expect "Today keeps 10×" { underTarget: 10 }
+expect "Proposed keeps 20×" { scenario: Proposed; underTarget: 20 }
+expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 0.15; underTarget: 10 }
 
 step "An ordinary peak: the API runs a few pods, and the cache answers nine searches in ten." {
   title: "An ordinary peak"

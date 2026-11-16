@@ -123,6 +123,31 @@ describe('connections in the language', () => {
     expect(fix?.changes.map((c) => c.insert).join('')).toContain('hop: topic -> pool')
   })
 
+  it("reads a pool's fill and a connection's max under their new names from 1.1, which fmt writes", () => {
+    const v11 = SRC.replace('loadmap 1\n', 'loadmap 1.1\n')
+      .replace('workers { pods: 4; perPod: 4 }', 'workers { pods: 4; perPod: 4; fill: "in-order" }')
+      .replace(
+        '  flows: [orders]\n}',
+        '  flows: [orders]\n  open: 2\n  max: configured(100, "connections", "max.connections")\n}',
+      )
+    expect(errors(v11)).toEqual([
+      'warning: fill is now placement | loadmap fmt rewrites it',
+      'warning: max is now accepts | loadmap fmt rewrites it',
+    ])
+    const ev = compile(v11).definition!.model.evaluate({ load: 1 })
+    expect(ev.stages.pool).toMatchObject({ placement: 'in-order' })
+    // 16 workers × 2 open
+    expect((ev.components as Record<string, ComponentResult>).group!.demand).toBe(32)
+    const text = format(v11).text
+    expect(text).toContain('workers { pods: 4; perPod: 4; placement: "in-order" }')
+    expect(text).toContain('  accepts: configured(100, "connections", "max.connections")\n')
+    expect(errors(text)).toEqual([])
+    // a definition of 1.0 has only the old names: fmt leaves them
+    const v1 = v11.replace('loadmap 1.1\n', 'loadmap 1\n')
+    expect(errors(v1)).toEqual([])
+    expect(format(v1).text).toBe(v1)
+  })
+
   it('counts what a connection holds open against the most the other side accepts', () => {
     const src = SRC.replace(
       'connection group {',

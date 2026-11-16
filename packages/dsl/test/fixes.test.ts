@@ -29,6 +29,11 @@ describe('quick fixes', () => {
     }
   })
 
+  it('rename an old name to the new one', () => {
+    const [fix] = fixes(checkout.replace('{ underTarget: 7 }', '{ target: 7 }'))
+    expect(fix).toMatchObject({ title: 'Rename to "underTarget"', text: checkout })
+  })
+
   it('add a missing required property, in the block laid out as it is', () => {
     const [fix] = fixes(cache.replace('  rate: 2_000 * load\n', ''))
     expect(fix).toMatchObject({ title: 'Add "rate: 1"' })

@@ -1,9 +1,9 @@
-import { childrenOf, type Expr, type Stmt } from './ast'
+import { childrenOf, type Decl, type Expr, type Stmt } from './ast'
 import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
-import { DIRECTIONS } from './schema'
-import { before, CURRENT, lowest, needs, stampOf, versionText } from './versions'
+import { DIRECTIONS, own, propNamed, SCHEMA } from './schema'
+import { before, CURRENT, lowest, needs, parseVersion, stampOf, type Version, versionText } from './versions'
 
 /** A line longer than this has its one-line blocks split, a statement a line. */
 export const FORMAT_WIDTH = 120
@@ -19,7 +19,8 @@ export interface FormatResult {
  * Lays a definition out the one way: two spaces a block, a statement a line, at most one blank line, one space
  * around operators. It works on the tokens, so numbers, texts, templates and parentheses stay exactly as written and
  * a formula never changes. A block written on one line stays on one line while it fits. A text with a syntax error is
- * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`. The `loadmap` line is
+ * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`, and a property's old
+ * name (`target` in `expect`) its new one where the `loadmap` line has it. The `loadmap` line is
  * raised to the lowest version that has everything the definition uses, never lowered: an older stamp keeps what it
  * allows, and a reader of it would not know the rest.
  */
@@ -31,6 +32,10 @@ export function format(source: string): FormatResult {
   const retext = new Map(doc.body.flatMap((st) => (!named && oldDirection(st) ? [[st.key.from, 'direction']] : [])))
   const stamp = raised(source, doc.body)
   if (stamp) retext.set(stamp.from, stamp.text)
+  // without a loadmap line a definition is read at the newest version; a text that is no version is the compiler's
+  const said = stampOf(source, doc.body)
+  const version = stamp ? parseVersion(stamp.text) : said ? said.version : CURRENT
+  if (version) for (const [from, name] of renames(doc.body, version)) retext.set(from, name)
   const toks = lex(source, new Reporter(source), 0, source.length, true)
     .filter((t) => t.kind !== 'eof')
     .map((t) => (retext.has(t.from) ? { ...t, text: retext.get(t.from)! } : t))
@@ -225,6 +230,31 @@ function gap(a: Token, b: Token, m: Marks): string {
 }
 
 const isPunct = (t: Token, text: string) => t.kind === 'punct' && t.text === text
+
+/**
+ * Where each old property name (`was` in the schema) gets its new one: in a block that does not also set the new name
+ * (renamed, it would be set twice), and only where the stamp has the new name already. Raising an older stamp for it
+ * would make that version's strict checks errors in a file that compiled.
+ */
+function renames(body: readonly Stmt[], version: Version): Map<number, string> {
+  const out = new Map<number, string>()
+  const block = (keyword: string, list: readonly Stmt[]) => {
+    const props = own(SCHEMA, keyword)?.props ?? {}
+    const written = new Set(list.flatMap((st) => (st.kind === 'prop' ? [st.key.name] : [])))
+    for (const st of list) {
+      if (st.kind === 'decl') decl(st)
+      if (st.kind !== 'prop' || own(props, st.key.name)) continue
+      const to = propNamed(props, st.key.name)
+      if (to && !written.has(to.name) && !before(version, parseVersion(to.spec.since ?? '1.0')!))
+        out.set(st.key.from, to.name)
+    }
+  }
+  const decl = (d: Decl) => {
+    if (d.body) block(d.keyword.name, d.body)
+  }
+  block('', body)
+  return out
+}
 
 /** `layout: right` or `layout: down` at the top: the direction, under the name it had before `layout: compact`. */
 function oldDirection(st: Stmt): st is Extract<Stmt, { kind: 'prop' }> {

@@ -22,8 +22,8 @@ export const checkout = defineModel({
   growth: { rate: 0.06, per: 'month', asOf: '2026-11-01' },
   // a change that loses headroom fails `pnpm test` (model.test.ts) and `loadmap check checkout.loadmap`
   expect: [
-    { label: 'Today keeps 7×', target: 7 },
-    { label: 'Proposed keeps 14×', scenario: 'Proposed', target: 14 },
+    { label: 'Today keeps 7×', underTarget: 7 },
+    { label: 'Proposed keeps 14×', scenario: 'Proposed', underTarget: 14 },
   ],
   // the walk a design review takes: the page steps through it or plays it, as `loadmap record --story` does
   story: [

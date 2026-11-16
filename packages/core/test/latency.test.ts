@@ -92,8 +92,8 @@ describe('a flow’s latency', () => {
   it('is held under a time by an expectation, on the pessimistic edge', () => {
     // both queues at L / 2: the p99 is 0.14067 × 0.5 / (1 − L / 2), 500 ms at L = 2 (1 − 0.14067) = 1.7187
     const [ok, short, now] = check(shop(), [
-      { flow: 'req', p99: 0.5, target: 1.5 },
-      { flow: 'req', p99: 0.5, target: 2 },
+      { flow: 'req', p99: 0.5, underTarget: 1.5 },
+      { flow: 'req', p99: 0.5, underTarget: 2 },
       { flow: 'req', p99: 0.5 },
     ])
     expect(ok!.outcome).toBe('pass')
@@ -105,7 +105,7 @@ describe('a flow’s latency', () => {
     expect(now!.outcome).toBe('pass')
     expect(now!.message).toBe('the p99 of req is 140.7 ms at 1×, under 500 ms')
     // B ± 30 %: at 1.5× its low bound of 112 req/s is past full, its high bound is not
-    const [edge] = check(shop({ within: 0.3 }), [{ flow: 'req', p99: 0.5, target: 1.5 }])
+    const [edge] = check(shop({ within: 0.3 }), [{ flow: 'req', p99: 0.5, underTarget: 1.5 }])
     expect(edge!.outcome).toBe('inconclusive')
     expect(edge!.reasons).toEqual(['holds at 1.5× only at the high edge of a ±'])
   })
@@ -114,7 +114,9 @@ describe('a flow’s latency', () => {
     expect(() => check(shop(), [{ flow: 'req', p50: 0.1, p99: 0.5 }])).toThrow(
       'loadmap: a latency expectation names a flow and one of p50, p95 or p99',
     )
-    expect(() => check(shop(), [{ flow: 'req', p99: 0.5, component: 'a' }])).toThrow('takes no component and no full')
+    expect(() => check(shop(), [{ flow: 'req', p99: 0.5, component: 'a' }])).toThrow(
+      'takes no component and no notFull',
+    )
     expect(() => check(shop(), [{ flow: 'reqs', p99: 0.5 }])).toThrow('loadmap: no flow "reqs"')
     // a flow without one fails on its own line, and the other expectations keep their results
     const [none, fine] = check(shop(), [
@@ -136,9 +138,11 @@ describe('a flow’s latency', () => {
         routes: { req: ['a'] },
         expect: [e],
       })
-    expect(model({ flow: 'req', target: 2 })).toThrow('holds a latency: a flow and one of p50, p95 or p99')
-    expect(model({ p99: 0.5, target: 2 })).toThrow('holds a latency: a flow and one of p50, p95 or p99')
-    expect(model({ flow: 'req', p99: 0.5, full: 2 })).toThrow('holds the latency of "req": no component and no full')
+    expect(model({ flow: 'req', underTarget: 2 })).toThrow('holds a latency: a flow and one of p50, p95 or p99')
+    expect(model({ p99: 0.5, underTarget: 2 })).toThrow('holds a latency: a flow and one of p50, p95 or p99')
+    expect(model({ flow: 'req', p99: 0.5, notFull: 2 })).toThrow(
+      'holds the latency of "req": no component and no notFull',
+    )
     expect(model({ flow: 'reqs', p99: 0.5 })).toThrow('names unknown flow "reqs"')
   })
 
@@ -175,7 +179,7 @@ describe('the edges of the percentiles', () => {
       { share: 1, mean: 0.01, variance: 1e-4 },
     ]
     expect(latencyOf(ways).mean).toBe(0.01)
-    // 0.99 answered before, the rest past full: 1 − 0.99 is 0.010000000000000009, still no p99
+    // 0.99 answered before, the rest past notFull: 1 − 0.99 is 0.010000000000000009, still no p99
     const stuck = [
       { share: 0.99, mean: 0.01, variance: 1e-4 },
       { share: 1 - 0.99, mean: Number.POSITIVE_INFINITY, variance: Number.POSITIVE_INFINITY },

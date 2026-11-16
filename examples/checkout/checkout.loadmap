@@ -24,8 +24,8 @@ scenario "Proposed" { gateways: 2; pods: 6 }
 growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
 # a change that loses headroom fails `loadmap check checkout.loadmap`
-expect "Today keeps 7×" { target: 7 }
-expect "Proposed keeps 14×" { scenario: Proposed; target: 14 }
+expect "Today keeps 7×" { underTarget: 7 }
+expect "Proposed keeps 14×" { scenario: Proposed; underTarget: 14 }
 
 # the walk a design review takes: the page steps through it or plays it, as `loadmap record --story` does
 step "An ordinary peak: every box is under half its capacity." {

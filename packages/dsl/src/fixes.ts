@@ -19,8 +19,8 @@ const NAME = /^[A-Za-z_]\w*$/
 
 /**
  * The fixes for each diagnostic, in the same order: the did-you-mean applied, a missing required property added, a
- * bare number made a capacity, a stray ":" dropped, an edge or a lost box added. They key on the diagnostic's code and
- * read names from its data, never from its message. Each is the smallest change to the text it was given; an editor
+ * bare number made a capacity, a stray ":" dropped, an edge or a lost box added, an old name renamed. They key on the
+ * diagnostic's code and read names from its data, never from its message. Each is the smallest change to the text it was given; an editor
  * applies it only to that text. Most diagnostics have none.
  */
 export function quickFixes(source: string, diagnostics: readonly Diagnostic[]): QuickFix[][] {
@@ -75,6 +75,9 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
     if (!data.version || !stamp) return []
     return [{ title: `Write "loadmap ${data.version}"`, changes: [{ ...stamp.at, insert: data.version }] }]
   },
+
+  // target is now underTarget   layout: right is now direction: right
+  deprecated: ({ data, replace }) => (data.to ? [{ title: `Rename to "${data.to}"`, changes: replace(data.to) }] : []),
 
   // a -> b: { … }
   'colon-before-block': ({ replace }) => [{ title: 'Drop the ":"', changes: replace('') }],

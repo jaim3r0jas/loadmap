@@ -49,6 +49,8 @@ export interface ConnectionDef<S extends string = string, F extends string = str
    * The most connections the stage on the other side accepts, from every connection into it: `max_connections`. It
    * makes a limit of its own, named by this connection's id: the connections open against it.
    */
+  accepts?: Capacity | ((ctx: any) => Capacity)
+  /** @deprecated `accepts`: a max is a slider's or a pool's bound everywhere else. */
   max?: Capacity | ((ctx: any) => Capacity)
   /** With key: the share of a flow on its hottest part, measured or estimated: a hot key, a hot tenant. */
   skew?: Capacity | ((ctx: any) => Capacity)

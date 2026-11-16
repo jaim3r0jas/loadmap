@@ -42,10 +42,10 @@ export const search = defineModel({
   scenarios: { Today: {}, Proposed: { limit: 12_000, maxPods: 16, budget: true } },
   growth: { rate: 0.05, per: 'month', asOf: '2026-11-01' },
   expect: [
-    { label: 'Today keeps 10×', target: 10 },
-    { label: 'Proposed keeps 20×', scenario: 'Proposed', target: 20 },
+    { label: 'Today keeps 10×', underTarget: 10 },
+    { label: 'Proposed keeps 20×', scenario: 'Proposed', underTarget: 20 },
     // from the service times: 99 searches in 100 answer within 150 ms, up to ten times today
-    { label: 'Searches answer in 150 ms to 10×', flow: 'searches', p99: 0.15, target: 10 },
+    { label: 'Searches answer in 150 ms to 10×', flow: 'searches', p99: 0.15, underTarget: 10 },
   ],
   story: [
     {

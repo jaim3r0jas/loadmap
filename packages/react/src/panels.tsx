@@ -205,14 +205,14 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   for (const f of model.flowIds) {
     const l = ev.latency[f]
     if (!l) continue
-    // a p99 promised for these values: the scenario shown, up to its target (or at the values without one)
+    // a p99 promised for these values: the scenario shown, up to its underTarget (or at the values without one)
     const scenario = model.scenarioOf(lm.values)?.label
     const goal = model.expectations.find(
       (e) =>
         e.flow === f &&
         e.p99 != null &&
         (e.scenario == null || e.scenario === scenario) &&
-        (e.target == null || lm.values.load <= e.target),
+        (e.underTarget == null || lm.values.load <= e.underTarget),
     )?.p99
     items.push({
       key: `${f}/p99`,

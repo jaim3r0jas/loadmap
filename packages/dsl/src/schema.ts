@@ -55,7 +55,32 @@ export interface PropSpec {
   unit?: 'seconds' | 'share' | 'per second'
   /** The language version that added it (`'1.1'`); none for 1.0. A definition stamped before cannot use it. */
   since?: string
+  /**
+   * The name it had before `since`, when that name meant something else elsewhere (`target` in `expect`, a utilization
+   * in `thresholds`). A definition stamped before `since` still writes it; from `since` on it warns and `loadmap fmt`
+   * renames it.
+   */
+  was?: string
 }
+
+/** A property of `props` by its name or by its old one (`was`): its spec, and the name it has now. */
+export function propNamed(
+  props: Readonly<Record<string, PropSpec>>,
+  key: string,
+): { name: string; spec: PropSpec; old: boolean } | undefined {
+  const spec = own(props, key)
+  if (spec) return { name: key, spec, old: false }
+  let old = OLD_NAMES.get(props)
+  if (!old) {
+    old = new Map(Object.entries(props).flatMap(([name, s]) => (s.was ? [[s.was, name] as const] : [])))
+    OLD_NAMES.set(props, old)
+  }
+  const name = old.get(key)
+  return name == null ? undefined : { name, spec: props[name]!, old: true }
+}
+
+/** Per table of properties, each old name and the name it has now: looked up for every name a block does not know. */
+const OLD_NAMES = new WeakMap<object, Map<string, string>>()
 
 export interface ArgSpec {
   name: 'id' | 'label' | 'sub' | 'version' | 'x' | 'y' | 'component' | 'metric'
@@ -362,7 +387,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   expect: {
     doc: 'What must keep holding, on the pessimistic edge (every capacity at its low bound): `loadmap check` fails when it does not.',
-    example: 'expect "Today keeps 7×" { target: 7 }',
+    example: 'expect "Today keeps 7×" { underTarget: 7× }',
     args: [{ name: 'label', kind: 'text', optional: true }],
     props: {
       scenario: {
@@ -374,7 +399,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       flow: {
         value: 'flow',
         scope: 'const',
-        doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to target, or at the values.",
+        doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values.",
       },
       p50: {
         value: 'number',
@@ -394,8 +419,20 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         unit: 'seconds',
         doc: "The flow's 99th percentile stays under this many seconds.",
       },
-      target: { value: 'number', scope: 'const', doc: 'The target holds up to at least this load multiple.' },
-      full: { value: 'number', scope: 'const', doc: 'Nothing (or the component) runs out before this load multiple.' },
+      underTarget: {
+        value: 'number',
+        scope: 'const',
+        since: '1.1',
+        was: 'target',
+        doc: 'Every component (or this one) stays under the target utilization up to at least this load multiple.',
+      },
+      notFull: {
+        value: 'number',
+        scope: 'const',
+        since: '1.1',
+        was: 'full',
+        doc: 'Nothing (or this component) runs out before this load multiple.',
+      },
       severity: {
         value: 'enum',
         scope: 'const',
@@ -463,7 +500,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     inspector: 'model',
     doc: 'A mapping written once: the query that measures something, how its window becomes one value, and how many samples it needs. Each `measure` that uses it fills `{{ args.name }}` in the query. Nothing is read until `loadmap pull`, which takes the address and the credentials from the environment, never from the text.',
     example:
-      'metric served "Requests served" {\n  prometheus { query: "sum(rate(http_requests_total{job=\\"{{ args.job }}\\"}[5m]))" }\n  stat: max\n  min: 30\n}',
+      'metric served "Requests served" {\n  prometheus { query: "sum(rate(http_requests_total{job=\\"{{ args.job }}\\"}[5m]))" }\n  stat: max\n  minSamples: 30\n}',
     args: [
       { name: 'id', kind: 'id' },
       { name: 'label', kind: 'text', optional: true },
@@ -476,9 +513,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         values: ['mean', 'min', 'max', 'last', 'p50', 'p95', 'p99'],
         doc: 'How the window becomes one value. Default mean.',
       },
-      min: {
+      minSamples: {
         value: 'number',
         scope: 'const',
+        since: '1.1',
+        was: 'min',
         doc: 'The samples a window needs before its value counts; with fewer, the fallback is used.',
       },
     },
@@ -868,9 +907,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'How many pods; an autoscaled pool has autoscale instead.',
       },
       perPod: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
-      fill: {
+      placement: {
         value: 'enum',
         scope: 'const',
+        since: '1.1',
+        was: 'fill',
         values: ['round-robin', 'in-order'],
         doc: 'round-robin spreads work across pods (the default); in-order fills pod 0 first.',
       },
@@ -965,9 +1006,11 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'ctx',
         doc: 'Connections each member of the pool on the hop keeps open to the other side.',
       },
-      max: {
+      accepts: {
         value: 'capacity',
         scope: 'ctx',
+        since: '1.1',
+        was: 'max',
         doc: 'The most connections the other side accepts: a limit named by this connection.',
       },
       skew: { value: 'capacity', scope: 'ctx', doc: "With key: a flow's share on its hottest part." },

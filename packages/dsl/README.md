@@ -22,9 +22,9 @@ Also: `format()` lays a definition out the one way (what `loadmap fmt` runs), `c
 `expect` lines say what must keep holding, on the pessimistic edge (every capacity at its low bound):
 
 ```
-expect "Today keeps 7×" { target: 7 }
-expect "Proposed keeps 14×" { scenario: Proposed; target: 14 }
-expect "The database lasts to 10×" { component: db; full: 10 }
+expect "Today keeps 7×" { underTarget: 7 }
+expect "Proposed keeps 14×" { scenario: Proposed; underTarget: 14 }
+expect "The database lasts to 10×" { component: db; notFull: 10 }
 ```
 
 `npx @loadmap/cli check shop.loadmap` compiles the file and tests them: exit 1 on an error or a failed expectation,

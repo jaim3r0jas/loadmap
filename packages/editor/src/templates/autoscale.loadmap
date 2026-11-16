@@ -14,7 +14,7 @@ scenario "Today" {}
 scenario "Higher ceiling" { maxPods: 20 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 2.5×" { target: 2.5 }
+expect "Today keeps 2.5×" { underTarget: 2.5 }
 
 flow requests "requests" {
   unit: "request"

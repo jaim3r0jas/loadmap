@@ -107,6 +107,47 @@ describe('compile', () => {
     expect(both.diagnostics.map((d) => d.message)).toEqual(['layout: down is ignored: direction sets the direction'])
   })
 
+  it('reads an overloaded word under its old name: a warning from 1.1, the spelling of 1.0', () => {
+    const old = 'expect "keeps 3×" { target: 3 }\nexpect { component: api; full: 9 }'
+    const r = compile(def({ top: old }))
+    expect(r.definition!.model.expectations).toEqual([
+      { label: 'keeps 3×', underTarget: 3 },
+      { component: 'api', notFull: 9 },
+    ])
+    expect(r.diagnostics.map((d) => ({ code: d.code, message: d.message, hint: d.hint, data: d.data }))).toEqual([
+      {
+        code: 'deprecated',
+        message: 'target is now underTarget',
+        hint: 'loadmap fmt rewrites it',
+        data: { to: 'underTarget' },
+      },
+      { code: 'deprecated', message: 'full is now notFull', hint: 'loadmap fmt rewrites it', data: { to: 'notFull' } },
+    ])
+    // in a definition of 1.0 the old name is the only one: nothing to say, and the new one is from 1.1
+    const v1 = (top: string) => def({ top }).replace('loadmap 1.1', 'loadmap 1')
+    expect(compile(v1(old)).diagnostics).toEqual([])
+    expect(compile(v1(old)).definition!.model.expectations).toEqual(r.definition!.model.expectations)
+    expect(errors(v1('expect { underTarget: 3 }'))).toEqual([
+      expect.objectContaining({ message: '"underTarget:" is from loadmap 1.1; this definition says loadmap 1' }),
+    ])
+    expect(errors(v1('expect { target: 0 }'))).toEqual([
+      expect.objectContaining({ message: 'target is a load multiple above 0' }),
+    ])
+    expect(errors(v1('expect "nothing" {}'))).toEqual([
+      expect.objectContaining({ message: 'an expect needs a target or a full multiple', hint: 'expect { target: 8 }' }),
+    ])
+    // both names are one property: that error, and no rename that would set it twice
+    expect(compile(def({ top: 'expect { target: 3; underTarget: 4 }' })).diagnostics.map((d) => d.code)).toEqual([
+      'duplicate',
+    ])
+    expect(errors(def({ top: 'expect { target: 3; underTarget: 4 }' }))).toEqual([
+      expect.objectContaining({
+        message: '"target" and "underTarget" are one property in expect',
+        text: 'underTarget',
+      }),
+    ])
+  })
+
   it('takes a transition of 0 to 5 seconds: a shared link cannot ask for a move that never ends', () => {
     expect(compile(def({ top: 'transition: 0' })).definition!.options.transition).toBe(0)
     expect(errors(def({ top: 'transition: 600' }))).toEqual([
@@ -812,20 +853,20 @@ describe('uncertainty and expectations', () => {
 
   it('compile expect lines to the model, and check them where they are written', () => {
     const src = def({
-      top: `${scenarios}\nexpect "keeps 3×" { target: 3 }\nexpect { scenario: "Three pods"; full: 12; component: api }`,
+      top: `${scenarios}\nexpect "keeps 3×" { underTarget: 3 }\nexpect { scenario: "Three pods"; notFull: 12; component: api }`,
     })
     const r = compile(src)
     expect(r.diagnostics).toEqual([])
     expect(r.definition!.model.expectations).toEqual([
-      { label: 'keeps 3×', target: 3 },
-      { scenario: 'Three pods', component: 'api', full: 12 },
+      { label: 'keeps 3×', underTarget: 3 },
+      { scenario: 'Three pods', component: 'api', notFull: 12 },
     ])
     expect(r.expectations.map((e) => [e.line, e.column, src.slice(e.at.from, e.at.to), e.result.ok])).toEqual([
       [4, 1, 'expect "keeps 3×"', true],
       [5, 1, 'expect', true],
     ])
     // 400 req/s a pod against 100 per 1×: 2 pods reach 50 % at 4×, 3 pods run out at 12×
-    const failing = compile(def({ top: 'expect "keeps 5×" { target: 5 }' }))
+    const failing = compile(def({ top: 'expect "keeps 5×" { underTarget: 5 }' }))
     expect(failing.ok).toBe(true)
     expect(failing.expectations.map((e) => [e.line, e.result.ok, e.result.message])).toEqual([
       [2, false, 'expected at least 5×, but the 50 % target holds up to 4×, limited by API'],
@@ -833,17 +874,21 @@ describe('uncertainty and expectations', () => {
   })
 
   it('point at the word an expect line gets wrong', () => {
-    expect(errors(def({ top: `${scenarios}\nexpect { scenario: Today2; target: 1 }` }))).toEqual([
+    expect(errors(def({ top: `${scenarios}\nexpect { scenario: Today2; underTarget: 1 }` }))).toEqual([
       { message: 'unknown scenario "Today2"', hint: 'did you mean "Today"?', text: 'Today2' },
     ])
-    expect(errors(def({ top: 'expect { component: apu; target: 1 }' }))).toEqual([
+    expect(errors(def({ top: 'expect { component: apu; underTarget: 1 }' }))).toEqual([
       { message: 'unknown component "apu"', hint: 'did you mean "api"?', text: 'apu' },
     ])
     expect(errors(def({ top: 'expect "nothing" {}' }))).toEqual([
-      { message: 'an expect needs a target or a full multiple', hint: 'expect { target: 8 }', text: 'expect' },
+      {
+        message: 'an expect needs underTarget or notFull: a load multiple',
+        hint: 'expect { underTarget: 8× }',
+        text: 'expect',
+      },
     ])
-    expect(errors(def({ top: 'expect { target: 0 }' }))).toEqual([
-      { message: 'target is a load multiple above 0', hint: undefined, text: '0' },
+    expect(errors(def({ top: 'expect { underTarget: 0 }' }))).toEqual([
+      { message: 'underTarget is a load multiple above 0', hint: undefined, text: '0' },
     ])
   })
 })

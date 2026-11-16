@@ -19,8 +19,8 @@ scenario "Today" {}
 scenario "Retry budget" { budget: 0.1 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 1.5×" { target: 1.5 }
-expect "The gateway lasts to 3×" { component: gateway; full: 3 }
+expect "Today keeps 1.5×" { underTarget: 1.5 }
+expect "The gateway lasts to 3×" { component: gateway; notFull: 3 }
 
 flow requests "requests" {
   unit: "request"

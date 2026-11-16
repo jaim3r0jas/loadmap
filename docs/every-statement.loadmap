@@ -29,8 +29,8 @@ preset "Sale day" { load: 20; pods: 8 }
 scenario "Bigger API" { pods: 8 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 2×" { target: 2; severity: warn }
-expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; full: 10 }
+expect "Today keeps 2×" { underTarget: 2; severity: warn }
+expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; notFull: 10 }
 # a flow's latency, from the service times on its way: here the database's
 expect "Orders answer in a second" { flow: orders; p99: 1 }
 
@@ -69,7 +69,7 @@ published brokersRef kafka {
 metric ordersPlaced "Orders placed" {
   prometheus { query: 'sum(rate(orders_total{shop="{{ args.shop }}"}[5m]))' }
   stat: p95
-  min: 30
+  minSamples: 30
 }
 metric apiCpu "API CPU" {
   prometheus { query: 'sum(rate(container_cpu_usage_seconds_total{pod=~"api-.*"}[5m]))' }
@@ -117,7 +117,7 @@ node users "Users" "web and app"
 
 node gateway "Gateway" {
   tier: edge
-  pass "the gateway"
+  pass
   short: "the gateway"
   capacity: estimated(30_000, "req/s", "vendor figure")
   service: 2ms

@@ -33,8 +33,8 @@ export const alerts = defineModel({
   scenarios: { Today: {}, Proposed: { posPods: 6, pushNodes: 4 } },
   growth: { rate: 0.04, per: 'month', asOf: '2026-11-01' },
   expect: [
-    { label: 'Today keeps 7×', target: 7 },
-    { label: 'Alerts never wait before 50×', component: 'alertPods', full: 50 },
+    { label: 'Today keeps 7×', underTarget: 7 },
+    { label: 'Alerts never wait before 50×', component: 'alertPods', notFull: 50 },
   ],
   // the walk Play takes: the whole diagram, a close-up on what each step changes, the change, the whole again
   story: [
@@ -118,7 +118,7 @@ export const alerts = defineModel({
     },
   },
   stages: {
-    gateway: pass('gateway', { label: 'the gateway' }),
+    gateway: pass('gateway'),
     alertTopic: queue({
       label: 'alerts topic',
       component: 'brokers',

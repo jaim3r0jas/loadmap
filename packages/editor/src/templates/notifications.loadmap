@@ -17,7 +17,7 @@ scenario "Today" {}
 scenario "Bigger SMS plan" { smsPlan: 200 }
 growth { rate: 0.08; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 1.5×" { target: 1.5 }
+expect "Today keeps 1.5×" { underTarget: 1.5 }
 
 flow events "events" {
   unit: "event"

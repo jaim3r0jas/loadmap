@@ -148,7 +148,7 @@ export class Sim {
         st.kind === 'queue'
           ? [st.id, st.partitions]
           : st.kind === 'workers'
-            ? [st.id, st.pods, st.perPod, st.fill]
+            ? [st.id, st.pods, st.perPod, st.placement]
             : [st.id, st.kind],
       ),
     )
@@ -276,7 +276,7 @@ export class Sim {
     const key = `${stage}/${s.running}`
     let f = this.#fills.get(key)
     if (!f) {
-      f = fillOrder(s.running, s.perPod, s.fill, this.#o.seed)
+      f = fillOrder(s.running, s.perPod, s.placement, this.#o.seed)
       this.#fills.set(key, f)
     }
     return busyOf(i, f, this.busy(stage))

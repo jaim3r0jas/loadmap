@@ -57,7 +57,7 @@ describe('checkout model', () => {
       'the 50 % target holds up to between 14× and 20× in Proposed, limited by the API gateway (capacity estimated ±30 %)',
     ])
     // a single gateway in Proposed would not
-    expect(() => assertHolds(checkout, [{ scenario: 'Proposed', target: 14 }, { target: 8 }])).toThrow(
+    expect(() => assertHolds(checkout, [{ scenario: 'Proposed', underTarget: 14 }, { underTarget: 8 }])).toThrow(
       '1 of 2 expectations failed:\n- expected at least 8×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)',
     )
   })
@@ -156,7 +156,7 @@ describe('checkout model', () => {
 
   it('resolves the stages for the current values', () => {
     const s = checkout.evaluate({ pods: 4, threads: 16 })
-    expect(s.stages.workers).toMatchObject({ kind: 'workers', pods: 4, perPod: 16, fill: 'round-robin' })
+    expect(s.stages.workers).toMatchObject({ kind: 'workers', pods: 4, perPod: 16, placement: 'round-robin' })
     expect(s.stages.topic).toMatchObject({ kind: 'queue', partitions: { orders: 12, events: 24 } })
   })
 })

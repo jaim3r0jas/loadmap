@@ -106,6 +106,22 @@ describe('format', () => {
     expect(fmt('direction: right\nlayout: down\n')).toBe('direction: right\nlayout: down\n')
   })
 
+  it("renames a property's old name where the loadmap line has the new one, not beside it", () => {
+    expect(fmt('loadmap 1.1\nexpect { target: 3; full: 9 }\n')).toBe(
+      'loadmap 1.1\nexpect { underTarget: 3; notFull: 9 }\n',
+    )
+    // set beside its new name, renamed it would be set twice
+    expect(fmt('loadmap 1.1\nexpect { target: 3; underTarget: 4 }\n')).toBe(
+      'loadmap 1.1\nexpect { target: 3; underTarget: 4 }\n',
+    )
+    // 1.0 has only the old name: raising the line for it could make the strict checks of 1.1 errors
+    expect(fmt('loadmap 1\nexpect { target: 3 }\n')).toBe('loadmap 1\nexpect { target: 3 }\n')
+    // thresholds keep theirs: a target there is a utilization
+    expect(fmt('loadmap 1.1\nthresholds { target: 0.6; full: 1 }\n')).toBe(
+      'loadmap 1.1\nthresholds { target: 0.6; full: 1 }\n',
+    )
+  })
+
   it('tells signs, "%" and "?:" by what the parser read', () => {
     expect(fmt('x: - 2 * load\ny: a?b:c\nz: a %b\nw: !(a)\nv: estimated(1 +/- 5 %, "x")\nq: Math . min(1,2)')).toBe(
       'x: -2 * load\ny: a ? b : c\nz: a % b\nw: !(a)\nv: estimated(1 +/- 5%, "x")\nq: Math.min(1, 2)\n',

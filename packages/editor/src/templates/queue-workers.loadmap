@@ -14,8 +14,8 @@ scenario "Today" {}
 scenario "Proposed" { pods: 6 }
 growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 10×" { target: 10 }
-expect "Proposed keeps 20×" { scenario: Proposed; target: 20 }
+expect "Today keeps 10×" { underTarget: 10 }
+expect "Proposed keeps 20×" { scenario: Proposed; underTarget: 20 }
 
 flow jobs "jobs" {
   unit: "job"

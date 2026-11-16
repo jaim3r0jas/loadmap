@@ -5,7 +5,7 @@ import { compile, format } from '../src'
 const SRC = `loadmap 1.1
 load { max: 10 }
 
-expect "Fast to 1.2×" { flow: req; p99: 0.5; target: 1.2 }
+expect "Fast to 1.2×" { flow: req; p99: 0.5; underTarget: 1.2 }
 
 flow req "requests" { rate: 100 * load; from: users; route: a -> b }
 
@@ -40,12 +40,17 @@ describe('latency in the language', () => {
     expect(l.mean).toBeCloseTo(0.08, 12)
     expect(l.p99).toBeCloseTo(2 * 0.14679841222476767, 9)
     expect(r.expectations.map((e) => e.result.outcome)).toEqual(['pass'])
-    expect(r.definition!.model.expectations[0]).toEqual({ label: 'Fast to 1.2×', flow: 'req', p99: 0.5, target: 1.2 })
+    expect(r.definition!.model.expectations[0]).toEqual({
+      label: 'Fast to 1.2×',
+      flow: 'req',
+      p99: 0.5,
+      underTarget: 1.2,
+    })
   })
 
   it('says what is wrong with it', () => {
-    const line = (s: string) => SRC.replace('flow: req; p99: 0.5; target: 1.2', s)
-    expect(errors(line('p99: 0.5; target: 1.2'))).toContain(
+    const line = (s: string) => SRC.replace('flow: req; p99: 0.5; underTarget: 1.2', s)
+    expect(errors(line('p99: 0.5; underTarget: 1.2'))).toContain(
       'error: p99 is the latency of a flow: name it | flow: orders',
     )
     expect(errors(line('flow: req; p50: 0.1; p99: 0.5'))).toContain(
@@ -90,7 +95,7 @@ describe('latency in the language', () => {
     const untimed = SRC.replace('route: a -> b }', 'route: a -> b; timeout: 1 }')
       .replace('  service: 0.01\n', '')
       .replace('  service: 0.03\n', '')
-      .replace('expect "Fast to 1.2×" { flow: req; p99: 0.5; target: 1.2 }\n', '')
+      .replace('expect "Fast to 1.2×" { flow: req; p99: 0.5; underTarget: 1.2 }\n', '')
     expect(errors(untimed).join('\n')).toContain('flow "req" has a timeout but no latency')
   })
 })
