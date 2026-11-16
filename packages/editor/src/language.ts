@@ -285,7 +285,9 @@ function goToDefinition(
 ): boolean {
   const source = view.state.doc.toString()
   const a = around?.()
-  const d = a ? definitionAcross(source, pos, { path: a.path, files: a.files }) : definition(source, pos)
+  const d: Located | null = a
+    ? definitionAcross(source, pos, { path: a.path, files: a.files })
+    : definition(source, pos)
   if (!d) return false
   if (d.file != null) {
     open?.(d)
