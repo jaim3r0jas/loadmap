@@ -206,7 +206,10 @@ describe('a model in several files', () => {
     expect(unit('pods * 5ms')).toEqual([])
     // a bare number is any unit: only what says its own is compared
     expect(unit('flows.orders * 2')).toEqual([])
-    expect(unit('flows.orders')).toHaveLength(1)
+    // said at the input, beside what the line that reads it says of its own
+    expect(unit('flows.orders').map((d) => d.message)).toContain(
+      '"wait" is in seconds, as its default 20ms is; this is per second',
+    )
     // a box of the model has no inputs
     const local = errors(
       run(
