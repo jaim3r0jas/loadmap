@@ -103,7 +103,12 @@ async function main(el: HTMLElement) {
   const r = compile(shared.source, files)
   if (!r.ok || !r.definition) {
     const first = r.diagnostics.find((d) => d.severity === 'error') ?? r.diagnostics[0]
-    const detail = first && formatDiagnostic(first, shared.source, 'embed.loadmap').split('\n')[0]
+    const detail =
+      first &&
+      (first.file == null
+        ? formatDiagnostic(first, shared.source, 'embed.loadmap')
+        : formatDiagnostic(first, shared.files?.[first.file] ?? '', first.file)
+      ).split('\n')[0]
     root.render(<Problem title="This model doesn't compile." detail={detail} fix="Open it in the editor to fix it" />)
     return
   }

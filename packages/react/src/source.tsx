@@ -54,9 +54,9 @@ export function LoadmapSource({
   // every file's tokens: a change in a part or a library is a new model too
   const others = files ? Object.keys(files).sort() : []
   const texts = [source, ...others.map((p) => files![p]!)]
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the texts are compared one by one, not the list made anew on each render
-  const key = useMemo(() => [...texts.map(fingerprint), path ?? '', ...others].join('\n'), [path, ...texts, ...others])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: as above
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the files by the object that holds them: a list of the texts would change length with them, which a dependency list may not
+  const key = useMemo(() => [...texts.map(fingerprint), path ?? '', ...others].join('\n'), [path, source, files])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key says every text
   const all = useMemo(() => texts.join('\n'), [key])
   const waiting = useCatalog(all)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the same tokens are the same model, and the values stay

@@ -17,7 +17,13 @@ for (const text of bundle ? Object.values(bundle.files) : [source]) await loadCa
 const r = compile(source, bundle ? { path: bundle.path, files: bundle.files } : {})
 if (!r.ok || !r.definition) {
   const pre = document.createElement('pre')
-  pre.textContent = r.diagnostics.map((d) => formatDiagnostic(d, source, 'definition.loadmap')).join('\n')
+  pre.textContent = r.diagnostics
+    .map((d) =>
+      d.file == null
+        ? formatDiagnostic(d, source, 'definition.loadmap')
+        : formatDiagnostic(d, bundle?.files[d.file] ?? '', d.file),
+    )
+    .join('\n')
   root.replaceChildren(pre)
 } else {
   const { model, view, options } = r.definition

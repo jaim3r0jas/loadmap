@@ -34,6 +34,9 @@ describe('the cli on a definition in several files', () => {
     const both = await run(check, [at('shop.loadmap'), at('shop.story.loadmap')])
     expect(both.code).toBe(0)
     expect(both.out.match(/expectation holds/g)).toHaveLength(1)
+    // a variant is a definition of its own: checked beside its model, not left to it
+    const withVariant = await run(check, [at('shop.loadmap'), at('shop.big.loadmap')])
+    expect(withVariant.out.match(/expectation holds/g)).toHaveLength(2)
     // the part alone is read through its model; a variant and a library as themselves
     for (const f of ['shop.story.loadmap', 'shop.big.loadmap', 'platform.loadmap'])
       expect((await run(check, [at(f)])).code, f).toBe(0)
