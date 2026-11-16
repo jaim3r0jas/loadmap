@@ -79,6 +79,12 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
   // target is now underTarget   layout: right is now direction: right
   deprecated: ({ data, replace }) => (data.to ? [{ title: `Rename to "${data.to}"`, changes: replace(data.to) }] : []),
 
+  // "30%+1" is the remainder of 30 divided by +1, not a share
+  'glued-percent': ({ data, replace }) => [
+    ...(data.share ? [{ title: `Make it the share: ${data.share}`, changes: replace(data.share) }] : []),
+    ...(data.mod ? [{ title: `Keep the remainder: ${data.mod}`, changes: replace(data.mod) }] : []),
+  ],
+
   // a -> b: { … }
   'colon-before-block': ({ replace }) => [{ title: 'Drop the ":"', changes: replace('') }],
 

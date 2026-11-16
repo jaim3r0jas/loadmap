@@ -42,10 +42,21 @@ import {
   type View,
 } from '@loadmap/layout'
 import { defineViewUnjoined, type Hop, hopsOf, unjoined } from '@loadmap/layout/internal'
-import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
+import {
+  type Decl,
+  type Document,
+  type Edge,
+  type Expr,
+  formulasOf,
+  type Ident,
+  type Property,
+  type Row,
+  type Stmt,
+} from './ast'
 import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './catalog'
 import { type Code, closest, type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
+  BUILTIN_SINCE,
   compileFormula,
   type Formula,
   FormulaError,
@@ -89,6 +100,8 @@ export { LANGUAGE_VERSION }
 const STRICT_FORMULAS: Version = [1, 1]
 /** A `%` where a load multiple goes, a `×` where a share goes: refused from 1.2. */
 const STRICT_SUFFIXES: Version = [1, 2]
+/** `30%+1`, the remainder where a share was likely meant: refused from 1.2. */
+const STRICT_PERCENT: Version = [1, 2]
 
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
@@ -349,6 +362,7 @@ class Compiler {
   run(doc: Document, namesOnly = false): Definition | undefined {
     // first: a definition for a later version says "update", not "unknown statement" for what that version added
     this.header(doc.body)
+    this.gluedPercents(doc.body)
     const root = this.shape('', SCHEMA['']!, doc.body, { from: 0, to: 0 })
 
     // names first: formulas and routes may refer to anything declared further down
@@ -377,7 +391,17 @@ class Compiler {
     }
     for (const b of [...params, ...lets, ...fits, ...publisheds, ...measures]) {
       own(b.keyword as 'param' | 'let' | 'fit' | 'published' | 'measure', b, formulaNames)
-      if (b.args.id && RESERVED.has(b.args.id.name))
+      const since =
+        b.args.id && Object.hasOwn(BUILTIN_SINCE, b.args.id.name) ? BUILTIN_SINCE[b.args.id.name] : undefined
+      // a function a version added: a file from before may have the name, and reads its own where it says it
+      if (b.args.id && since)
+        this.strict(
+          parseVersion(since)!,
+          'reserved-name',
+          b.args.id,
+          `"${b.args.id.name}" is a reserved name; pick another`,
+        )
+      else if (b.args.id && RESERVED.has(b.args.id.name))
         this.report.error('reserved-name', b.args.id, `"${b.args.id.name}" is a reserved name; pick another`)
     }
     for (const b of measures) if (b.args.id) this.measureIds.add(b.args.id.name)
@@ -1555,6 +1579,30 @@ class Compiler {
           `write "loadmap ${versionText(n.since)}" on the first line`,
           { version: versionText(n.since) },
         )
+  }
+
+  /**
+   * `30%+1`: a `%` straight after a number is a share everywhere but before a value or a sign, where it is the
+   * remainder. One space decided which, so from 1.2 it is written as what it means.
+   */
+  private gluedPercents(body: readonly Stmt[]) {
+    for (const e of formulasOf(body)) {
+      if (e.t !== 'bin' || !e.glued) continue
+      const text = (x: Span) => this.source.slice(x.from, x.to)
+      const [left, right] = [text(e.left), text(e.right)]
+      // its own span takes in the parentheses around it, which a fix must leave
+      const at = { from: e.left.from, to: e.right.to }
+      const signed = e.right.t === 'unary' && e.right.op !== '!' ? e.right : undefined
+      const share = signed && `${left}% ${signed.op} ${text(signed.arg)}`
+      this.strict(
+        STRICT_PERCENT,
+        'glued-percent',
+        at,
+        `"${text(at)}" is the remainder of ${left} divided by ${right}, not a share`,
+        share ? `write mod(${left}, ${right}), or ${share} for the share` : `write mod(${left}, ${right})`,
+        { mod: `mod(${left}, ${right})`, ...(share && { share }) },
+      )
+    }
   }
 
   /**

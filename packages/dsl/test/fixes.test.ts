@@ -88,6 +88,18 @@ describe('quick fixes', () => {
     expect(fix?.text).toBe(cache.replace('clients -> api', 'clients -> api { when: true }'))
   })
 
+  it('write a "%" glued to a number as the share or as the remainder', () => {
+    const glued = cache.replace('2_000 * load', '2_000 * load * (30%+1)')
+    expect(fixes(glued).map((f) => f.title)).toEqual(['Make it the share: 30% + 1', 'Keep the remainder: mod(30, +1)'])
+    const [share, mod] = fixes(glued)
+    expect(share!.text).toBe(cache.replace('2_000 * load', '2_000 * load * (30% + 1)'))
+    expect(mod!.text).toBe(cache.replace('2_000 * load', '2_000 * load * (mod(30, +1))'))
+    for (const f of [share, mod]) expect(compile(f!.text).diagnostics).toEqual([])
+    // in a file from before mod(), the fix brings the version it needs
+    const old = glued.replace('loadmap 1.2', 'loadmap 1.1')
+    expect(fixes(old)[1]!.text).toBe(mod!.text)
+  })
+
   it('offer nothing where there is no sure fix', () => {
     const r = compile(cache.replace('rate: 2_000 * load', 'rate: 2_000 * ('))
     expect(quickFixes(cache, r.diagnostics).every((f) => Array.isArray(f))).toBe(true)

@@ -385,8 +385,57 @@ describe('units', () => {
     expect(at('1.1', 'thresholds { target: 7× }')[0]?.severity).toBe('warning')
     // what each takes, a bare number as before
     expect(
-      at('1.2', 'expect "x" { underTarget: 2×; notFull: 3 }\nthresholds { target: 60%; full: 0.9 }\npreset "P" { load: 4x }'),
+      at(
+        '1.2',
+        'expect "x" { underTarget: 2×; notFull: 3 }\nthresholds { target: 60%; full: 0.9 }\npreset "P" { load: 4x }',
+      ),
     ).toEqual([])
+  })
+
+  it('refuse a "%" glued to a number where it reads as the remainder, from loadmap 1.2', () => {
+    const at = (version: string, top: string) =>
+      compile(def({ top }).replace('loadmap 1.1', `loadmap ${version}`))
+        .diagnostics.filter((d) => d.code === 'glued-percent')
+        .map((d) => ({ severity: d.severity, message: d.message, hint: d.hint }))
+    expect(at('1.2', 'let a = 30%+1')).toEqual([
+      {
+        severity: 'error',
+        message: '"30%+1" is the remainder of 30 divided by +1, not a share',
+        hint: 'write mod(30, +1), or 30% + 1 for the share',
+      },
+    ])
+    expect(at('1.2', 'let a = 30%-pods')[0]?.hint).toBe('write mod(30, -pods), or 30% - pods for the share')
+    expect(at('1.2', 'let a = 10%3\nlet b = 2 * 10% pods').map((d) => d.hint)).toEqual([
+      'write mod(10, 3)',
+      'write mod(2 * 10, pods)',
+    ])
+    // a file from before computes what it did, and is told
+    expect(at('1.1', 'let a = 30%+1')).toEqual([
+      {
+        severity: 'warning',
+        message: '"30%+1" is the remainder of 30 divided by +1, not a share (an error from loadmap 1.2)',
+        hint: 'write mod(30, +1), or 30% + 1 for the share',
+      },
+    ])
+    expect(value('30%+1')).toBe(0)
+    // spelled as what it means, either way
+    expect(at('1.2', 'let a = 30% + 1\nlet b = 30 % 7\nlet c = pods % 2\nlet d = mod(30, 7)')).toEqual([])
+  })
+
+  it('have mod(a, b) for the remainder, from loadmap 1.2', () => {
+    const v12 = (top: string) => compile(def({ top }).replace('loadmap 1.1', 'loadmap 1.2'))
+    expect(v12('let x = mod(7, 3) + mod(pods, 2)').definition!.model.evaluate({}).ctx.derived.x).toBe(1)
+    expect(errors(def({ top: 'let x = mod(7, 3)' }))).toMatchObject([
+      { message: 'mod(a, b) is from loadmap 1.2; this definition says loadmap 1.1', text: 'mod' },
+    ])
+    // the name was free before 1.2: a file that took it keeps it, and is told
+    const old = compile(def({ top: 'let mod = 3\nlet x = mod + 1' }))
+    expect(old.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(old.diagnostics.map((d) => d.message)).toContain(
+      '"mod" is a reserved name; pick another (an error from loadmap 1.2)',
+    )
+    expect(old.definition!.model.evaluate({}).ctx.derived.x).toBe(4)
+    expect(v12('let mod = 3').diagnostics.map((d) => d.severity)).toEqual(['error'])
   })
 
   it('take "as" on a demand only, with the unit in quotes', () => {
