@@ -15,6 +15,8 @@
     "test:browser": "node scripts/node-version.mjs && vitest run --project browser",
     "build": "node scripts/node-version.mjs && pnpm -r --filter './packages/*' build && pnpm --filter docs build",
     "check": "node scripts/node-version.mjs && pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm budget",
+    "check:part": "node scripts/node-version.mjs && node scripts/check.mjs part",
+    "check:changed": "node scripts/node-version.mjs && node scripts/check.mjs changed",
     "dev": "node scripts/node-version.mjs && pnpm --filter docs dev",
     "record": "node scripts/node-version.mjs && pnpm --filter @loadmap/cli build > /dev/null && node packages/cli/dist/bin.js record",
     "budget": "node scripts/node-version.mjs && node scripts/budget.mjs",

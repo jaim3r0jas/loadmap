@@ -2,8 +2,9 @@ import react from '@vitejs/plugin-react'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
-/** The node tests that drive Chromium: CI runs them on a runner of their own (LOADMAP_NODE_TESTS=chromium or rest). */
-const CHROMIUM = ['apps/docs/test/site.test.ts', 'packages/cli/test/cli.test.ts']
+/** The node tests that drive Chromium: a part of their own (LOADMAP_NODE_TESTS=chromium or rest, scripts/check.mjs). */
+import CHROMIUM from './scripts/chromium-node-tests.json' with { type: 'json' }
+
 const part = process.env.LOADMAP_NODE_TESTS
 
 export default defineConfig({

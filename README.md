@@ -181,7 +181,8 @@ lays a file out the one way. See [`docs/dsl.md`](docs/dsl.md).
 nvm use && corepack enable pnpm && pnpm install
 pnpm exec playwright install chromium   # once, for the browser tests
 pnpm dev                                # the docs site: the examples, the templates, the editor
-pnpm check                              # typecheck, lint, tests, build, bundle budget
+pnpm check:changed                      # typecheck, lint, and the tests your changes reach
+pnpm check                              # everything: typecheck, lint, tests, build, bundle budget
 pnpm verify:pack                        # the tarballs in a fresh Vite app outside the monorepo
 ```
 
