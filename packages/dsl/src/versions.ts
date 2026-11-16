@@ -52,6 +52,7 @@ const SYNTAX = {
   as: { since: '1.1', what: '"as" after a demand' },
   mod: { since: '1.2', what: 'mod(a, b)' },
   out: { since: '1.2', what: 'out.<stage>, what a fan-out sends' },
+  continued: { since: '1.2', what: 'a text continued on the next line' },
   sizes: { since: '1.2', what: 'a size (1.5KB, 20MB)' },
 } as const
 
@@ -78,6 +79,7 @@ export function needs(body: readonly Stmt[]): Need[] {
   const expr = (e: Expr) => {
     if (e.t === 'num' && isSize(e.unit)) add('sizes', SYNTAX.sizes.since, SYNTAX.sizes.what, e)
     else if (e.t === 'num' && e.unit) add('units', SYNTAX.units.since, SYNTAX.units.what, e)
+    if (e.t === 'str' && e.continued) add('continued', SYNTAX.continued.since, SYNTAX.continued.what, e)
     if (e.t === 'member' && e.object.name === 'out') add('out', SYNTAX.out.since, SYNTAX.out.what, e.object)
     if (e.t === 'call' && e.callee.name === 'mod' && !ownMod) add('mod', SYNTAX.mod.since, SYNTAX.mod.what, e.callee)
     for (const c of childrenOf(e, true)) expr(c)

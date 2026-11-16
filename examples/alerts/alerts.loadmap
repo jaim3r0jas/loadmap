@@ -34,7 +34,8 @@ expect "Alerts never wait before 50×" { component: alertPipeline; notFull: 50 }
 step "An ordinary peak: the position consumer is already past the 50 % target, and runs out first." {
   title: "Today at 10×"
 }
-step "At 25×, the position consumer is past 100 %: positions wait in their topic, and only the newest per user is kept." {
+step "At 25×, the position consumer is past 100 %: positions wait in their topic, and only the newest per user is "
+     "kept." {
   load: 25
   focus: positionConsumer
 }
@@ -44,7 +45,8 @@ step "Launch week runs eight position pods and four alert pods: the consumer is 
   alertPods: 4
   title: "Launch week: more pods"
 }
-step "Pushing every position to every receiver, not only to the users watching, more than triples what the push broker sends: it runs out first now." {
+step "Pushing every position to every receiver, not only to the users watching, more than triples what the push "
+     "broker sends: it runs out first now." {
   load: 25
   posPods: 8
   alertPods: 4

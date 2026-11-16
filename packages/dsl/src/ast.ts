@@ -8,7 +8,7 @@ export interface Ident extends Span {
 export type Expr = Span &
   (
     | { t: 'num'; value: number; unit?: Suffix; written?: number }
-    | { t: 'str'; value: string }
+    | { t: 'str'; value: string; continued?: true }
     | { t: 'bool'; value: boolean }
     | { t: 'tpl'; quasis: string[]; parts: Expr[] }
     | { t: 'id'; name: string }

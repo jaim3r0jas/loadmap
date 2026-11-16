@@ -52,6 +52,9 @@ tests check that each draws exactly what its TypeScript draws.
   then read two different things.
 - **A property is `key: value`**, one per line or separated by `;`.
 - **An edge is `a -> b`**, with an optional label after `:`.
+- **A text is `"…"` on one line.** A long one continues on the next line as another text (from `loadmap 1.2`): the
+  pieces are one text, joined as written, so the space goes inside a piece. `loadmap fmt` breaks a text that runs past
+  120 columns this way. A text in backticks may run over lines, and keeps its line breaks.
 - **`#` starts a comment.**
 
 ### Boxes, stages and components
@@ -984,7 +987,8 @@ the TypeScript API, which reads the same.
 
 `loadmap fmt` (and **Format** in the editor) lays a definition out the one way: two spaces a block, a statement a
 line, at most one blank line, one space around operators. Numbers, texts, templates and parentheses stay as written,
-and a block written on one line stays on one line while it fits in 120 columns. `format(source)` from `@loadmap/dsl`
+and a block written on one line stays on one line while it fits in 120 columns. From `loadmap 1.2` a `"…"` text that
+runs past them is broken at a space into pieces, one under the other, and pieces that fit are one text again. `format(source)` from `@loadmap/dsl`
 does the same in code; a text with a syntax error comes back unchanged, with its diagnostics.
 
 ## Errors
@@ -1096,7 +1100,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
-| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>` | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
+| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 
 ## In code
 

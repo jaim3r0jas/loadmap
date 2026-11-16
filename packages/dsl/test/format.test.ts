@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compile, format, loadCatalog } from '../src'
-import { lex, Reporter } from '../src/internal'
+import { lex, parse, Reporter } from '../src/internal'
 
 const root = new URL('../../../', import.meta.url)
 const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
@@ -169,6 +169,40 @@ describe('format', () => {
     const fits = `step "${'s'.repeat(90)}" { load: 2 }`
     expect(fits.length).toBeLessThanOrEqual(120)
     expect(fmt(fits)).toBe(`${fits}\n`)
+  })
+
+  it('breaks a text past 120 columns at a space, piece under piece, and puts one that fits back on a line', () => {
+    const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ')
+    const long = `loadmap 1.2\nstep "${words(30)}" {\n  load: 2\n}\n`
+    const out = fmt(long)
+    const lines = out.split('\n')
+    expect(lines.every((l) => l.length <= 120)).toBe(true)
+    // each piece ends with its space, the next starts under the first quote, and the block opens after the last
+    expect(lines[1]).toMatch(/^step "word0 .* "$/)
+    expect(lines[2]).toMatch(/^ {5}"word\d+ .*word29" \{$/)
+    expect(fmt(out)).toBe(out)
+    // one text still: the same value, the same tokens
+    expect(meaning(out)).toEqual(meaning(long))
+    const label = (src: string) => (parse(src).doc.body[1] as { args: { value: string }[] }).args[0]!.value
+    expect(label(out)).toBe(words(30))
+    // written in pieces though it fits: one line again
+    expect(fmt('loadmap 1.2\nstep "a short "\n  "text" { load: 2 }\n')).toBe(
+      'loadmap 1.2\nstep "a short text" { load: 2 }\n',
+    )
+    // a property's text, in a block
+    const prop = fmt(`loadmap 1.2\nnode a {\n  over: "${words(30)}"\n}\n`).split('\n')
+    expect(prop[2]).toMatch(/^ {2}over: "word0 .* "$/)
+    expect(prop[3]).toMatch(/^ {8}"word\d+ .*word29"$/)
+    // a text inside parentheses, a template and a text without a space stay as written
+    for (const kept of [
+      `loadmap 1.2\nnode a {\n  capacity: estimated(1, "x/s", "${words(30)}")\n}\n`,
+      `loadmap 1.2\nstep \`${words(30)}\` {\n  load: 2\n}\n`,
+      `loadmap 1.2\nstep "${'w'.repeat(150)}" {\n  load: 2\n}\n`,
+    ])
+      expect(fmt(kept)).toBe(kept)
+    // a text continued over lines is from 1.2: an older stamp keeps its long line
+    const old = long.replace('loadmap 1.2', 'loadmap 1.1')
+    expect(fmt(old)).toBe(old)
   })
 
   it('re-indents a formula wrapped inside parentheses', () => {

@@ -596,6 +596,25 @@ push -> desks
     expect(old.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
   })
 
+  it('read a line that starts with a text as the text above it, continued', () => {
+    const story = (lines: string, version = '1.2') =>
+      compile(def({ extra: lines }).replace('loadmap 1.1', `loadmap ${version}`))
+    const r = story('step "At 2×, the API "\n     "is half full." { load: 2 }')
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.model.story[0]!.text).toBe('At 2×, the API is half full.')
+    // three pieces, and a property's text
+    const three = story('step "a "\n  "b "\n  "c" { load: 2 }\nnode n "N" {\n  sub: "the "\n    "box"\n}')
+    expect(three.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(three.definition!.model.story[0]!.text).toBe('a b c')
+    // a blank line between them ends the statement, as anywhere
+    expect(
+      errors(def({ extra: 'step "a "\n\n  "b" { load: 2 }' }).replace('loadmap 1.1', 'loadmap 1.2'))[0]?.message,
+    ).toBe('expected a statement, found a text')
+    expect(errors(def({ extra: 'step "a "\n  "b" { load: 2 }' }))).toMatchObject([
+      { message: 'a text continued on the next line is from loadmap 1.2; this definition says loadmap 1.1' },
+    ])
+  })
+
   it('take "as" on a demand only, with the unit in quotes', () => {
     const messages = (src: string) => errors(src).map((e) => e.message)
     expect(messages(api('flows.req', 'measured(400, "req/s") as "req/s"'))).toContain(
