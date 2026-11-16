@@ -204,7 +204,9 @@ describe('a model in several files', () => {
         [MODEL]: swap(MODEL, 'with { writes: flows.orders }', `with { writes: flows.orders; wait: ${value} }`),
       }).diagnostics.filter((d) => d.code === 'unit-mismatch')
     expect(unit('pods * 5ms')).toEqual([])
-    expect(unit('flows.orders * 2')).toHaveLength(1)
+    // a bare number is any unit: only what says its own is compared
+    expect(unit('flows.orders * 2')).toEqual([])
+    expect(unit('flows.orders')).toHaveLength(1)
     // a box of the model has no inputs
     const local = errors(
       run(
