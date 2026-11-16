@@ -27,6 +27,8 @@ const PREC: Record<string, number> = {
 }
 
 const TOP_LEVEL = new Set(SCHEMA['']!.children)
+/** What cannot start a statement and does continue a formula: a line that starts with one was wrapped. */
+const CONTINUES = new Set(['?', ':', '+', '*', '/', '%', '&&', '||', '==', '!=', '===', '!==', '<', '<=', '>', '>='])
 
 /** Thrown after a syntax error has been reported, to skip to the next statement. */
 class Bail {}
@@ -66,6 +68,8 @@ class Parser {
   blocks = 0
   /** The statement just read ended in a block left open: the next line starts the next statement. */
   private leftOpen = false
+  /** The lines just skipped started with an operator: the wrapped formula is one mistake. */
+  private wrapped = false
   /** The keys of the block being read whose value failed to parse. */
   broken: string[] = []
 
@@ -137,6 +141,20 @@ class Parser {
       const t = this.peek()
       if (t.kind === 'eof') break
       if (inBraces && this.endsOpenBlock()) break
+      // a line that starts with an operator is the formula above, wrapped: said once, for all its lines
+      if (t.kind === 'punct' && CONTINUES.has(t.text)) {
+        if (!this.wrapped)
+          this.report.error(
+            'syntax',
+            t,
+            `a formula ends with its line: this "${t.text}" starts a new one`,
+            'put the formula in ( … ) to carry it over lines',
+          )
+        this.wrapped = true
+        this.recover()
+        continue
+      }
+      this.wrapped = false
       if (this.is('}')) {
         if (inBraces) break
         this.report.error('syntax', t, 'this "}" closes no block')

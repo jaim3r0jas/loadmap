@@ -337,6 +337,8 @@ interface Block {
   children: Block[]
   edges: Edge[]
   rows: Row[]
+  /** Properties written as a statement (`rate = 40`): an error of their own, and not missing. */
+  said: Set<string>
 }
 
 interface Box {
@@ -1514,7 +1516,18 @@ class Compiler {
   // -- shape ---------------------------------------------------------------------------------------------------
 
   private shape(keyword: string, spec: BlockSpec, stmts: readonly Stmt[], at: Span, decl?: Decl): Block {
-    const b: Block = { keyword, spec, at, decl, args: {}, props: new Map(), children: [], edges: [], rows: [] }
+    const b: Block = {
+      keyword,
+      spec,
+      at,
+      decl,
+      args: {},
+      props: new Map(),
+      children: [],
+      edges: [],
+      rows: [],
+      said: new Set(),
+    }
     if (decl) this.args(b, decl)
     const here = keyword ? `in ${keyword}` : 'at the top'
     for (const s of stmts) {
@@ -1552,8 +1565,11 @@ class Compiler {
         const k = s.keyword.name
         const childSpec = own(SCHEMA, k)
         if (!spec.children.includes(k) || !childSpec || k === '') {
-          if (own(spec.props, k)) this.report.error('misplaced', s.keyword, `"${k}" is a property: write "${k}: …"`)
-          else if (childSpec) this.report.error('misplaced', s.keyword, `"${k}" cannot go ${here}`, where(k))
+          if (own(spec.props, k)) {
+            this.report.error('misplaced', s.keyword, `"${k}" is a property: write "${k}: …"`)
+            // written, if with the wrong mark: the block must not also say it is missing
+            b.said.add(k)
+          } else if (childSpec) this.report.error('misplaced', s.keyword, `"${k}" cannot go ${here}`, where(k))
           else {
             const meant = closest(k, [...spec.children, ...Object.keys(spec.props)])
             this.report.error(
@@ -2252,7 +2268,7 @@ class Compiler {
 
   /** Whether a block has a property, its value compiled or not: one that did not parse is still written. */
   private written(b: Block, key: string): boolean {
-    return b.props.has(key) || !!b.decl?.broken?.includes(key)
+    return b.props.has(key) || b.said.has(key) || !!b.decl?.broken?.includes(key)
   }
 
   private prop(b: Block, key: string): Property | undefined {

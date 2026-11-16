@@ -1712,6 +1712,47 @@ api -> db
     expect(marks(BASE)).toEqual([])
   })
 
+  it('a property written with "=", not also the property as missing', () => {
+    expect(marks(BASE.replace('rate: 40 * load', 'rate = 40 * load'))).toEqual([error('misplaced', 'rate')])
+  })
+
+  it('a "…" text carried onto the next line, not its second line as a statement', () => {
+    const src = `${BASE}step "a long\n text" { load: 2 }\n`
+    expect(marks(src)).toEqual([error('syntax', '"a long')])
+    expect(compile(src).diagnostics[0]).toMatchObject({
+      message: 'a "…" text ends on its line',
+      hint: 'close it here; a text in backticks may run over lines',
+    })
+    // a quote that nothing closes is still said as that
+    expect(compile(`${BASE}step "a long\n text { load: 2 }\n`).diagnostics[0]!.message).toBe(
+      'this text has no closing quote',
+    )
+  })
+
+  it('a formula wrapped without parentheses, once for all its lines', () => {
+    const src = `${BASE}let w = load > 2\n  ? 1\n  : 2\n`
+    expect(marks(src)).toEqual([error('syntax', '?')])
+    expect(compile(src).diagnostics[0]).toMatchObject({
+      message: 'a formula ends with its line: this "?" starts a new one',
+      hint: 'put the formula in ( … ) to carry it over lines',
+    })
+    expect(marks(`${BASE}let w = (load > 2\n  ? 1\n  : 2)\n`)).toEqual([])
+    // two wrapped formulas are two mistakes
+    expect(marks(`${BASE}let w = load\n  + 1\nlet v = load\n  * 2\n`).map((m) => m.text)).toEqual(['+', '*'])
+  })
+
+  it('an expectation that rests on a demand that is no number: inconclusive, not a firm 0×', () => {
+    const src = BASE.replace('load { max: 10 }', 'load { max: 10 }\nparam pods "Pods" { options: [2, 4]; default: 2 }')
+      .replace('demand: flows.orders;', 'demand: flows.orders / (pods - 2);')
+      .concat('expect "x" { underTarget: 2 }\n')
+    const r = compile(src)
+    expect(r.diagnostics.map((d) => d.code)).toEqual(['bad-demand'])
+    expect(r.expectations[0]!.result).toMatchObject({
+      outcome: 'inconclusive',
+      reasons: ['the demand of API is Infinity, not a number to rank by'],
+    })
+  })
+
   it('an unknown function, not also its arguments', () => {
     expect(marks(BASE.replace('rate: 40 * load', 'rate: mx(load, 1)'))).toEqual([error('unknown-name', 'mx')])
   })
