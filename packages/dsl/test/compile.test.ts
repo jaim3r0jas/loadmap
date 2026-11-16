@@ -1403,3 +1403,76 @@ pool -> gone
     expect(compile(counted).diagnostics).toEqual([])
   })
 })
+
+describe('one mistake, one mark, where it is', () => {
+  const BASE = `loadmap 1
+load { max: 10 }
+flow orders "orders" { unit: "order"; rate: 40 * load; route: api -> db; from: users }
+node users "Users"
+node api "API" { pass; demand: flows.orders; capacity: estimated(1000, "req/s"); over: "429s" }
+node db "DB" { store; capacity: measured(500, "commits/s", "test"); over: "queues" }
+users -> api
+api -> db
+`
+  const marks = (src: string) =>
+    compile(src).diagnostics.map((d) => ({ severity: d.severity, code: d.code, text: src.slice(d.from, d.to) }))
+  const error = (code: string, text: string) => ({ severity: 'error', code, text })
+
+  it('starts from a definition without a mark', () => {
+    expect(marks(BASE)).toEqual([])
+  })
+
+  it('an unknown function, not also its arguments', () => {
+    expect(marks(BASE.replace('rate: 40 * load', 'rate: mx(load, 1)'))).toEqual([error('unknown-name', 'mx')])
+  })
+
+  it('a misspelt keyword, not every use of what it would have declared', () => {
+    expect(marks(BASE.replace('node api "API"', 'nod api "API"'))).toEqual([error('unknown-statement', 'nod')])
+  })
+
+  it('a second stage in a node, not the names it would take twice', () => {
+    expect(marks(BASE.replace('{ store; capacity', '{ store; pass; capacity'))).toEqual([error('bad-box', 'pass')])
+  })
+
+  it('a bare capacity once', () => {
+    expect(marks(BASE.replace('capacity: estimated(1000, "req/s")', 'capacity: 1000'))).toEqual([
+      error('bare-capacity', '1000'),
+    ])
+  })
+
+  it('a value that does not parse, not also its property as missing', () => {
+    expect(marks(BASE.replace('estimated(1000, "req/s")', 'estimated(1000 *, "req/s")'))).toEqual([
+      error('syntax', ','),
+    ])
+  })
+
+  it('a list with a wrong word, not what the rest of the list would leave out', () => {
+    const src = `${BASE.replace('api -> db; from', 'lim -> db; from').replace('users -> api\napi -> db', 'users -> lim\nlim -> db')}node lim "Limiter" { limit; capacity: configured(1000, "req/s", "config"); over: "429s" }
+node lost "Turned away" { lost { takes: [rejectd] } }
+lim -> lost
+`
+    expect(marks(src).filter((m) => m.severity === 'error')).toEqual([error('bad-value', 'rejectd')])
+    expect(marks(src).filter((m) => m.code === 'unseen-loss')).toEqual([])
+  })
+
+  it("a flow's timeout without latency at its timeout, and nothing more there", () => {
+    const src = `loadmap 1
+load { max: 10 }
+flow o "o" { rate: 1; route: a; from: u
+  timeout: 2 }
+node u "U"
+node a "A" { sink }
+u -> a
+`
+    expect(marks(src)).toEqual([error('model', 'timeout: 2')])
+  })
+
+  it('a lost box on a route at its name there', () => {
+    const src = `${BASE.replace('route: api -> db', 'route: api -> lost')}node lost "Turned away" { lost }
+api -> lost
+`
+    expect(marks(src).filter((m) => m.severity === 'error')).toEqual([error('model', 'lost')])
+    const d = compile(src).diagnostics.find((x) => x.code === 'model')!
+    expect(d.line).toBe(3)
+  })
+})

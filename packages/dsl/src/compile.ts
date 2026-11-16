@@ -29,7 +29,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
-import { flowOf, lossesIn, waysOf } from '@loadmap/core/internal'
+import { flowOf, lossesIn, propOf, waysOf } from '@loadmap/core/internal'
 import {
   type AnyNodeDef,
   type Direction,
@@ -520,6 +520,7 @@ class Compiler {
       const id = b.args.id
       if (!id) continue
       this.flowAt.set(id.name, id)
+      this.flowBlock.set(id.name, b)
       const label = this.text(b.args.label)
       const def: Record<string, unknown> = {}
       if (label != null) def.label = label
@@ -1105,11 +1106,24 @@ class Compiler {
     const named = /^loadmap: connections? "([^"]+)"/.exec((err as Error)?.message ?? '')?.[1]
     const connection = named ? this.connectionAt.get(named) : undefined
     // a preset or a scenario keeps its place: it is what breaks the flow or the connection
-    this.report.error('model', (onFlow && ((flow && this.flowAt.get(flow)) || connection)) || at, message, hint)
+    this.report.error('model', (onFlow && ((flow && this.flowPlace(flow, err)) || connection)) || at, message, hint)
+  }
+
+  /** Where an error about a flow goes: the stage on its route, or the property, it is about; else the flow's id. */
+  private flowPlace(flow: string, err: unknown): Span | undefined {
+    const about = propOf(err)
+    const b = this.flowBlock.get(flow)
+    const prop = about && b ? this.prop(b, about.prop) : undefined
+    const stage =
+      about?.stage && about.prop === 'route'
+        ? this.routeAt.get(flow)?.find(([, s]) => s === about.stage)?.[0]
+        : undefined
+    return stage ?? prop ?? this.flowAt.get(flow)
   }
 
   private flowRate = new Map<string, Span>()
   private flowAt = new Map<string, Span>()
+  private flowBlock = new Map<string, Block>()
   /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
   private routeAt = new Map<string, [Ident, string][]>()
   private fromAt = new Map<string, Span>()
@@ -1338,6 +1352,9 @@ class Compiler {
               `unknown statement "${k}" ${here}`,
               didYouMean(k, [...spec.children, ...Object.keys(spec.props)]),
             )
+          // what it would have declared is not "unknown" wherever it is used: the one mistake is this line
+          const id = s.args[0]
+          if (!own(spec.props, k) && id?.t === 'id') this.report.quiet(id.name)
           continue
         }
         b.children.push(this.shape(k, childSpec, s.body ?? [], s.keyword, s))
@@ -1349,7 +1366,7 @@ class Compiler {
     }
     if (decl)
       for (const [k, p] of Object.entries(spec.props))
-        if (p.required && !b.props.has(k))
+        if (p.required && !b.props.has(k) && !decl.broken?.includes(k))
           this.report.error('missing-property', at, `"${keyword}" needs "${k}: …"`, p.doc, { key: k })
     return b
   }
@@ -1435,12 +1452,15 @@ class Compiler {
         )
       else component = { block: n, id: n.args.id?.name ?? id, own: false }
     }
-    if (b.keyword === 'node' && stages.length > 1)
+    if (b.keyword === 'node' && stages.length > 1) {
       this.report.error(
         'bad-box',
         stageBlocks[1]!.at,
         'a node runs at most one stage; a cluster can hold several queues',
       )
+      // the rest are that one mistake: as stages they would only be declared twice
+      stages.splice(1)
+    }
     if (b.keyword === 'cluster' && !stages.length)
       this.report.error('missing-part', b.at, 'a cluster needs a queue', 'queue topic { partitions { orders: 12 } }')
     if (b.keyword === 'pool' && stages.length !== 1)
@@ -1942,12 +1962,17 @@ class Compiler {
       return undefined
     }
     const out: string[] = []
+    let broken = false
     for (const e of p.value.items) {
       const word = e.t === 'str' ? e.value : e.t === 'id' ? e.name : this.slice(e)
       if (values.includes(word)) out.push(word)
-      else this.report.error('bad-value', e, `"${word}" is not one of ${values.join(', ')}`, didYouMean(word, values))
+      else {
+        this.report.error('bad-value', e, `"${word}" is not one of ${values.join(', ')}`, didYouMean(word, values))
+        broken = true
+      }
     }
-    return out
+    // a list with a mistake in it is left out, as if not written: what it would have left out raises nothing more
+    return broken ? undefined : out
   }
 
   /** A CSS colour in quotes, or with `themes` a theme colour by name; undefined (and an error) for anything else. */
@@ -2039,7 +2064,7 @@ class Compiler {
     }
     if (b.props.has('min') || b.props.has('max')) {
       for (const k of ['min', 'max'])
-        if (!b.props.has(k))
+        if (!b.props.has(k) && !b.decl?.broken?.includes(k))
           this.report.error('missing-property', b.at, `a slider needs "${k}: …"`, undefined, { key: k })
       const r: Record<string, unknown> = { ...o }
       for (const k of ['min', 'max', 'step']) {
@@ -2407,7 +2432,7 @@ class Compiler {
         this.report.error('bad-box', demand.key, 'a component that is held works out its demand: drop one of them')
     }
     const at = box ? (box.args.id ?? box.at) : b.at
-    const missing = ['capacity', 'over'].filter((k) => !(k in o))
+    const missing = ['capacity', 'over'].filter((k) => !(k in o) && !b.decl?.broken?.includes(k))
     // none of the lines that make one: the box was not meant as a component
     const nested = b.children.some((c) => c.keyword === 'component')
     if (b === box && !nested && missing.length === 2 && !('demand' in o)) {

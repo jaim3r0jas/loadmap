@@ -66,6 +66,8 @@ class Parser {
   blocks = 0
   /** The statement just read ended in a block left open: the next line starts the next statement. */
   private leftOpen = false
+  /** The keys of the block being read whose value failed to parse. */
+  broken: string[] = []
 
   /** For each token, how many more "}" than "{" follow it: fewer than the blocks open means one is never closed. */
   private closes: Int32Array
@@ -141,6 +143,8 @@ class Parser {
         this.next()
         continue
       }
+      // a property, when the statement is one: `key:`
+      const key = t.kind === 'ident' && this.is(':', 1) ? t.text : undefined
       try {
         this.leftOpen = false
         out.push(this.statement())
@@ -149,6 +153,8 @@ class Parser {
           this.fail(end, `expected the end of the line, found ${describe(end)}`)
       } catch (e) {
         if (!(e instanceof Bail)) throw e
+        // a property whose value failed is still written: the block must not also say it is missing
+        if (key) this.broken.push(key)
         this.recover()
       }
     }
@@ -277,7 +283,11 @@ class Parser {
 
   bodyInside(d: Decl | Edge) {
     const open = this.next()
+    const outer = this.broken
+    this.broken = []
     d.body = this.block(true)
+    if (this.broken.length && 'keyword' in d) d.broken = this.broken
+    this.broken = outer
     const close = this.peek()
     if (!this.is('}')) {
       this.report.error('syntax', open, `this "{" of "${'keyword' in d ? d.keyword.name : 'edge'}" is never closed`)

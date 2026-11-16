@@ -46,6 +46,8 @@ export interface Decl extends Span {
   body?: Stmt[]
   /** The braces, for finding the block a cursor sits in. */
   bodySpan?: Span
+  /** Properties of its block whose value did not parse: present, so nothing says they are missing. */
+  broken?: string[]
 }
 
 /** `a -> b -> c [: label] [{ body }]`: edges, and in a fan-out its branches (`flow -> stage: share`). */

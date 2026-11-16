@@ -153,7 +153,8 @@ export function compileFormula(e: Expr, names: Names, scope: Scope, report: Repo
   return new Compiler(names, scope, report).compile(e)
 }
 
-const bad: Formula = { type: 'any', constant: true, run: () => undefined }
+// not a constant: one would be checked again in the constant scope, and a name in it blamed for what was not wrong
+const bad: Formula = { type: 'any', constant: false, run: () => undefined }
 
 class Compiler {
   constructor(

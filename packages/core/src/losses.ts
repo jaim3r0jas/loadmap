@@ -1,3 +1,4 @@
+import { flowError } from './blame'
 import type { Loss, SplitBranch, StageDef } from './stages'
 
 /** What `lossesIn` and the lost box checks read of a model definition: its stages, routes and flows' rules. */
@@ -97,7 +98,12 @@ export function checkLost(def: Shape): void {
     if (!st.from.length) throw new Error(`loadmap: lost "${id}" takes from no stage: name them with from`)
     for (const f of Object.keys(def.flows))
       if (waysOf(def, f).ways.some((w) => w.includes(id)))
-        throw new Error(`loadmap: lost "${id}" is on the way of "${f}": it takes only what other stages lose`)
+        throw flowError(
+          `loadmap: lost "${id}" is on the way of "${f}": it takes only what other stages lose`,
+          f,
+          'route',
+          id,
+        )
     for (const s of st.from) {
       const src = def.stages[s]
       if (!src) throw new Error(`loadmap: lost "${id}" takes from unknown stage "${s}"`)

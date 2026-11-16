@@ -91,6 +91,9 @@ export const MAX_DIAGNOSTICS = 200
 export class Reporter {
   readonly list: Diagnostic[] = []
   private seen = new Set<string>()
+  private errorSpans = new Map<string, Code>()
+  private errorStarts = new Set<number>()
+  private quieted = new Set<string>()
   private starts: number[]
 
   constructor(readonly source: string) {
@@ -106,9 +109,23 @@ export class Reporter {
     this.add('warning', code, at, message, hint, data)
   }
 
+  private unknownQuiet(code: Code, at: Span) {
+    return code === 'unknown-name' && this.quieted.has(this.source.slice(at.from, at.to))
+  }
+
   /** The 1-based line and column of an offset. */
   position(offset: number): { line: number; column: number } {
     return position(this.starts, offset)
+  }
+
+  /**
+   * A name whose declaration failed (`nod api "API"`): every "unknown" mark on it, before and after, is the same
+   * mistake again, so it goes.
+   */
+  quiet(name: string) {
+    this.quieted.add(name)
+    const keep = this.list.filter((d) => !this.unknownQuiet(d.code, d))
+    this.list.splice(0, this.list.length, ...keep)
   }
 
   get failed() {
@@ -127,6 +144,18 @@ export class Reporter {
     const key = `${at.from}:${code}:${message}`
     if (this.seen.has(key)) return
     this.seen.add(key)
+    // one kind of error per span: another kind there is what the first already broke (a statement missing two lines
+    // has two errors of one kind); and a warning where an error starts is about what the error already says
+    const span = `${at.from}:${at.to}`
+    const there = this.errorSpans.get(span)
+    if ((there && there !== code) || this.unknownQuiet(code, at)) return
+    if (severity === 'warning' && this.errorStarts.has(at.from)) return
+    if (severity === 'error') {
+      this.errorSpans.set(span, code)
+      this.errorStarts.add(at.from)
+      const keep = this.list.filter((d) => d.severity === 'error' || d.from !== at.from)
+      this.list.splice(0, this.list.length, ...keep)
+    }
     if (this.list.length >= MAX_DIAGNOSTICS) {
       if (this.list.length === MAX_DIAGNOSTICS)
         this.list.push({

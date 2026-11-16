@@ -944,8 +944,10 @@ does the same in code; a text with a syntax error comes back unchanged, with its
 
 ## Errors
 
-Every error has a line and a column, and parsing goes on after one, so a file shows all its problems at once. Names
-that are almost right get a suggestion:
+Every error has a line and a column, and parsing goes on after one, so a file shows all its problems at once. Each
+mistake is marked once, where it is: what it breaks further on (the uses of a name its line would have declared, a
+property whose value does not parse, a list with a wrong word) is not marked again. Names that are almost right get a
+suggestion:
 
 ```
 checkout.loadmap:102:17 error[unknown-name]: unknown flow "order"
