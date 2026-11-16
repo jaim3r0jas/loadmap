@@ -1,5 +1,5 @@
-# pnpm check on every push and pull request: typecheck, lint, every test (Node and Chromium), build, bundle budget.
-# The rulesets on main require `check`, `workflows` and `dependency-review` to pass before a pull request merges.
+# pnpm check on every push and pull request: typecheck, lint, every test (Node and Chromium), build, bundle budget,
+# in parallel parts. The rulesets on main require `check` (every part green), `workflows` and `dependency-review`.
 # Fork pull requests run here with a read-only token and no secrets: never switch this to pull_request_target.
 name: check
 on:
@@ -10,11 +10,36 @@ on:
 permissions: {}
 
 jobs:
-  check:
+  # pnpm check in parts that need nothing from each other, each on its own runner: the slowest part sets the time
+  part:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: typecheck, lint, build, budget
+            run: pnpm typecheck && pnpm lint && pnpm build && pnpm budget
+          # the node tests that drive Chromium (the docs site, the cli's recordings) on their own: vitest.config.ts
+          - name: node tests
+            run: LOADMAP_NODE_TESTS=rest pnpm test:node
+          - name: docs site and cli tests
+            chromium: true
+            run: LOADMAP_NODE_TESTS=chromium pnpm test:node
+          - name: browser tests
+            chromium: true
+            run: pnpm test:browser
+          # the VS Code extension as it ships, in a pinned VS Code on a virtual display; then its .vsix, packed and sized
+          - name: vscode
+            chromium: true # its system libraries and xvfb
+            run: xvfb-run -a pnpm --filter @loadmap/vscode test:e2e && pnpm --filter @loadmap/vscode package
+          # the tarballs in a fresh app, as a stranger installs them
+          - name: verify pack
+            chromium: true
+            run: pnpm verify:pack
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,13 +50,21 @@ jobs:
           package-manager-cache: false # pnpm arrives after this step, through corepack
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm check
-      # the VS Code extension as it ships, in a pinned VS Code on a virtual display; then its .vsix, packed and sized
-      - run: xvfb-run -a pnpm --filter @loadmap/vscode test:e2e
-      - run: pnpm --filter @loadmap/vscode package
-      # the tarballs in a fresh app, as a stranger installs them
-      - run: pnpm verify:pack
+      - if: matrix.chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - run: ${{ matrix.run }}
+
+  # the one check the rulesets require: green only when every part is
+  check:
+    if: always()
+    needs: [part]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          RESULT: ${{ needs.part.result }}
+        run: test "$RESULT" = success
 
   # the workflows themselves, audited by zizmor: injections, excessive permissions, unpinned actions, leaked tokens
   workflows:

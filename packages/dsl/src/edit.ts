@@ -211,6 +211,8 @@ function checked(source: string, changes: TextChange[], options?: CompileOptions
   changes.sort((a, b) => b.from - a.from)
   let next = source
   for (const c of changes) next = next.slice(0, c.from) + c.insert + next.slice(c.to)
+  // the same text has the same errors: no compile can refuse it (the inspector sends a field's own value back)
+  if (next === source) return { source: next, changes: changes.reverse() }
   const errors = (src: string) =>
     compile(src, options)
       .diagnostics.filter((d) => d.severity === 'error')
