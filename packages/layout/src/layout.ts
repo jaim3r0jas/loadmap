@@ -252,14 +252,7 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
       place(
         prep,
         rows > 1
-          ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, {
-              PADDING,
-              HEAD,
-              HEAD_LINE,
-              TIER_PAD,
-              wrap,
-              lane,
-            })
+          ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, foldKit)
           : lanes(l, frame, view, measure),
         key,
       ),
@@ -880,67 +873,99 @@ function place(prep: Prepared, { l, tiers }: { l: Laid; tiers: SceneTier[] }, ke
  * name needs two lines, every header takes them: the frame moves that much across the flow, the board grows with it.
  */
 function lanes(laid: Laid, frame: Frame, view: View, measure: TextMeasure): { l: Laid; tiers: SceneTier[] } {
-  const ids = frame.tiers ?? []
-  if (!ids.length) return { l: laid, tiers: [] }
   const down = frame.direction === 'DOWN'
-  const along = (b: Box): [number, number] => (down ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
+  const named = tierParts(
+    view,
+    frame,
+    (id) => {
+      const b = laid.slots.get(id)!
+      return down ? [b.y, b.y + b.h] : [b.x, b.x + b.w]
+    },
+    0,
+    down ? laid.height : laid.width,
+    measure,
+  )
+  if (!named.length) return { l: laid, tiers: [] }
+  const head = headOf(named)
+  const l = moved(laid, head - HEAD, down)
+  const across: [number, number] = [0, down ? l.width : l.height]
+  return {
+    l,
+    tiers: named.map(({ id, a, b, lines }) => lane(view, { tier: id, id, along: [a, b], across, lines, head, down })),
+  }
+}
+
+/**
+ * The tiers with a box in a stretch of the flow from `from` to `to`, in their order: each one's band from halfway to
+ * the tier before it to halfway to the tier after, the first and last to the stretch's ends, and its name as it fits
+ * there. `span` is where a box stands along the flow, null for one outside the stretch.
+ */
+function tierParts(
+  view: View,
+  frame: Frame,
+  span: (id: string) => readonly [number, number] | null,
+  from: number,
+  to: number,
+  measure: TextMeasure,
+): TierPart[] {
+  const ids = frame.tiers ?? []
   const spans = ids.map((_, i) => {
-    const mine = frame.nodes.filter((n) => frame.order?.[n.id] === i).map((n) => along(laid.slots.get(n.id)!))
+    const mine = frame.nodes.flatMap((n) => (frame.order?.[n.id] === i ? [span(n.id)].filter((x) => x != null) : []))
     return mine.length ? ([Math.min(...mine.map((s) => s[0])), Math.max(...mine.map((s) => s[1]))] as const) : null
   })
-  const length = down ? laid.height : laid.width
-  const named = ids.flatMap((id, i) => {
+  return ids.flatMap((id, i) => {
     const span = spans[i]
     if (!span) return []
     const before = spans.slice(0, i).findLast((x) => x != null)
     const after = spans.slice(i + 1).find((x) => x != null)
-    const a = before ? (before[1] + span[0]) / 2 : 0
-    const b = after ? (span[1] + after[0]) / 2 : length
-    const lines = wrap((view.def.tiers?.[id]?.label ?? id).toUpperCase(), b - a - 2 * TIER_PAD, measure)
-    return [
-      {
-        id,
-        a,
-        b,
-        lines,
-      },
-    ]
+    const a = before ? (before[1] + span[0]) / 2 : from
+    const b = after ? (span[1] + after[0]) / 2 : to
+    return [{ id, a, b, lines: wrap((view.def.tiers?.[id]?.label ?? id).toUpperCase(), b - a - 2 * TIER_PAD, measure) }]
   })
-  if (!named.length) return { l: laid, tiers: [] }
-  const count = Math.max(...named.map((t) => t.lines.length))
-  const head = HEAD + (count - 1) * HEAD_LINE
-  const l = moved(laid, head - HEAD, down)
-  const tiers = named.map(({ id, a, b, lines }) =>
-    lane(view, id, id, a, b, lines, head, down, 0, down ? l.width : l.height),
-  )
-  return { l, tiers }
 }
 
+/** A tier's part of a stretch of the flow: its band along it and its name, on as many lines as it takes there. */
+export interface TierPart {
+  id: string
+  a: number
+  b: number
+  lines: string[]
+}
+
+/** How deep the headers are: where a name needs two lines, every header takes them. */
+const headOf = (parts: TierPart[]) => HEAD + (Math.max(...parts.map((t) => t.lines.length)) - 1) * HEAD_LINE
+
+/** What the fold (fold.ts) needs of the layout: it imports nothing from here but types. */
+export const foldKit = { PADDING, tierParts, headOf, lane }
+
 /**
- * A lane of the tier `tier`, named `id` on the board: its band from `a` to `b` along the flow and from `top` to `bottom`
- * across it, its header `head` deep at the band's start across the flow.
+ * A tier's lane, named `id` on the board: its band `along` the flow and `across` it, its header `head` deep at the
+ * band's start across the flow.
  */
 function lane(
   view: View,
-  tier: string,
-  id: string,
-  a: number,
-  b: number,
-  lines: string[],
-  head: number,
-  down: boolean,
-  top: number,
-  bottom: number,
+  o: {
+    tier: string
+    id: string
+    along: readonly [number, number]
+    across: readonly [number, number]
+    lines: string[]
+    head: number
+    down: boolean
+  },
 ): SceneTier {
-  const def = view.def.tiers?.[tier]
+  const def = view.def.tiers?.[o.tier]
+  const { head, down } = o
+  const [a, b] = o.along
+  const [top, bottom] = o.across
   return {
-    id,
+    id: o.id,
     ...(down ? { x: top, y: a, w: bottom - top, h: b - a } : { x: a, y: top, w: b - a, h: bottom - top }),
     head: down ? { x: top, y: a, w: head, h: b - a } : { x: a, y: top, w: b - a, h: head },
     // centred across the header, a capital's middle 0.35em above its baseline; at the board's outer edge, clear
     // of a limit's tag above a box and of its glow beside one
-    lines: lines.map((text, k) => {
-      const across = top + head / 2 + (k - (lines.length - 1) / 2) * HEAD_LINE + 0.35 * T_TIER.size
+    lines: o.lines.map((text, k) => {
+      const across = top + head / 2 + (k - (o.lines.length - 1) / 2) * HEAD_LINE + 0.35 * T_TIER.size
       return { text, ...T_TIER, ...(down ? { x: across, y: a + TIER_PAD } : { x: a + TIER_PAD, y: across }) }
     }),
     spacing: TIER_SPACING,

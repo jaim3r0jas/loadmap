@@ -97,6 +97,29 @@ describe('a diagram folded into rows', () => {
     expect(rowsOf(await layout(short, ev, { rows: 5 }))).toEqual([['a'], ['b']])
   })
 
+  it('keeps a loop inside a row in that row: an edge that turns just past a cut does not go round the fold', async () => {
+    // e → g and g → e: ELK turns one of them, and its way back passes the start of the second row
+    const loop = defineView(m, { nodes, edges: [...edges, edge('g', 'e')], flows })
+    const s = await layout(loop, m.evaluate(), { rows: 2 })
+    const upper = ['a', 'b', 'c']
+    const under = Math.max(...upper.map((id) => box(s, id).y + box(s, id).h))
+    for (const id of ids.filter((id) => !upper.includes(id))) expect(box(s, id).y, id).toBeGreaterThan(under)
+    for (const e of s.edges.filter((e) => !upper.includes(e.from) && !upper.includes(e.to)))
+      for (const [x, y] of e.points) {
+        expect(y, `${e.from} → ${e.to}`).toBeGreaterThan(under)
+        expect(x, `${e.from} → ${e.to}`).toBeGreaterThanOrEqual(0)
+      }
+    expectEdgesOnBoxes(s)
+    expect(collisions(s)).toEqual([])
+  })
+
+  it('cuts a long diagram into many rows without trying every way to', async () => {
+    const before = process.threadCpuUsage()
+    const s = await layout(chain, m.evaluate(), { rows: 7 })
+    expect(rowsOf(s)).toHaveLength(7)
+    expect(process.threadCpuUsage(before).user).toBeLessThan(2_000_000)
+  })
+
   it('never moves with the load', async () => {
     const at = async (load: number) => layout(chain, m.evaluate({ load }), { rows: 3 })
     expect(await at(10)).toEqual(await at(1))
@@ -144,6 +167,21 @@ describe('a diagram folded into rows', () => {
       }
       expect(collisions(s)).toEqual([])
       expectEdgesOnBoxes(s)
+      // no edge is drawn through a lane's header: those that come round a fold come down before the row's first lane
+      for (const e of s.edges)
+        for (let i = 1; i < e.points.length; i++) {
+          const [p, q] = [e.points[i - 1]!, e.points[i]!]
+          const [x0, x1, y0, y1] = [
+            Math.min(p[0], q[0]),
+            Math.max(p[0], q[0]),
+            Math.min(p[1], q[1]),
+            Math.max(p[1], q[1]),
+          ]
+          for (const { id, head: h } of s.tiers)
+            expect(x1 <= h.x || x0 >= h.x + h.w || y1 <= h.y || y0 >= h.y + h.h, `${e.id} over ${id}'s header`).toBe(
+              true,
+            )
+        }
 
       // a tier longer than a row has a lane in each row it reaches, named after the row
       const wide = defineView(m, {

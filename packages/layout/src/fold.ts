@@ -1,29 +1,11 @@
-import type { Box, Frame, Laid, SceneTier } from './layout'
+import type { Box, Frame, foldKit, Laid, SceneTier } from './layout'
 import type { TextMeasure } from './text'
 import type { View } from './view'
 
 // Nothing here is imported from the layout but types: a page loads this file with the first diagram that is folded,
 // and a chunk that reached back into the layout's would split that one in two for every page. What the fold needs of
 // it comes as `Kit`.
-export interface Kit {
-  PADDING: number
-  HEAD: number
-  HEAD_LINE: number
-  TIER_PAD: number
-  wrap(name: string, room: number, measure: TextMeasure): string[]
-  lane(
-    view: View,
-    tier: string,
-    id: string,
-    a: number,
-    b: number,
-    lines: string[],
-    head: number,
-    down: boolean,
-    top: number,
-    bottom: number,
-  ): SceneTier
-}
+type Kit = typeof foldKit
 
 // Folding is written for a flow that runs right: rows of layers, one under the other. A frame that runs down is turned
 // on its diagonal first and turned back after, so its rows are columns side by side.
@@ -36,6 +18,8 @@ const TRACK = 12
 const GUTTER = 16
 /** How much longer a row may be for a cut to fall between two tiers rather than inside one. */
 const INSIDE = 1.3
+/** How far past a cut an edge may stray and still belong to the row it comes back to: the room between two layers. */
+const STRAY = 64
 
 type P = [number, number]
 
@@ -89,37 +73,60 @@ function cutsFor(l: Laid, rows: number, inside: (before: string[], after: string
   const layers = layersOf(l)
   const n = Math.min(rows, layers.length) - 1
   if (n < 1) return []
+  // where a row that starts with layer i starts, and where the frame ends
   const at = (i: number) => {
+    if (i === 0) return 0
+    if (i === layers.length) return l.width
     const [a, b] = [layers[i - 1]!, layers[i]!]
     return b.from - a.to > 2 * CUT ? b.from - CUT : (a.to + b.from) / 2
   }
-  let best: { cost: number; cuts: number[] } | null = null
-  const pick = (from: number, picked: number[]) => {
-    if (picked.length === n) {
-      const bounds = [0, ...picked.map(at), l.width]
-      const longest = Math.max(...bounds.slice(1).map((b, i) => b - bounds[i]!))
-      const held = picked.filter((i) => inside(layers[i - 1]!.ids, layers[i]!.ids)).length
-      const cost = longest * INSIDE ** held
-      if (!best || cost < best.cost - 1e-6) best = { cost, cuts: picked.map(at) }
-      return
+  const held = (i: number) => (inside(layers[i - 1]!.ids, layers[i]!.ids) ? 1 : 0)
+  // the shortest longest row for the layers from i on in k rows with h cuts inside a tier, and its first cut: each
+  // found once, so a long diagram in many rows is no slower than a short one in few
+  type Best = { longest: number; next: number; h: number } | null
+  const memo = new Map<string, Best>()
+  const best = (i: number, k: number, h: number): Best => {
+    if (k === 1) return h === 0 ? { longest: at(layers.length) - at(i), next: -1, h: 0 } : null
+    const key = `${i} ${k} ${h}`
+    if (memo.has(key)) return memo.get(key)!
+    let found: Best = null
+    for (let j = i + 1; j <= layers.length - (k - 1); j++) {
+      const rest = h - held(j) < 0 ? null : best(j, k - 1, h - held(j))
+      if (!rest) continue
+      const longest = Math.max(at(j) - at(i), rest.longest)
+      if (!found || longest < found.longest - 1e-6) found = { longest, next: j, h: h - held(j) }
     }
-    for (let i = from; i <= layers.length - (n - picked.length); i++) pick(i + 1, [...picked, i])
+    memo.set(key, found)
+    return found
   }
-  pick(1, [])
-  return (best as { cuts: number[] } | null)?.cuts ?? []
+  let pick: { cost: number; h: number } | null = null
+  for (let h = 0; h <= n; h++) {
+    const b = best(0, n + 1, h)
+    if (b && (!pick || b.longest * INSIDE ** h < pick.cost - 1e-6)) pick = { cost: b.longest * INSIDE ** h, h }
+  }
+  const cuts: number[] = []
+  for (let [i, k, h] = [0, n + 1, pick?.h ?? 0]; k > 1; k--) {
+    const b = best(i, k, h)
+    if (!b) break
+    cuts.push(at(b.next))
+    i = b.next
+    h = b.h
+  }
+  return cuts
 }
 
 /**
  * The frame cut at `cuts` and its rows put one under the other, each with `before` clear above its contents and
- * `after` below (the room at the board's edge too). An edge that crosses a cut leaves its row at the end, goes round under it and comes into the next row
- * from its start: the edges of one fold nest, each on a track of its own, so none of them cross on the way round.
+ * `after` below (the room at the board's edge too). An edge that crosses a cut leaves its row at the end, goes round
+ * under it and comes into the next row from its start: the edges of one fold nest, each on a track of its own, so none
+ * of them cross on the way round. `lead` is the room before every row that those edges come down in.
  */
 function folded(
   l: Laid,
   cuts: number[],
   before: number,
   after: number,
-): { l: Laid; rows: Row[]; rowOf: Map<string, number> } {
+): { l: Laid; rows: Row[]; rowOf: Map<string, number>; lead: number } {
   const bounds = [0, ...cuts, l.width]
   const count = bounds.length - 1
   const rowAt = (x: number) => cuts.filter((c) => x >= c).length
@@ -148,6 +155,16 @@ function folded(
       }
       now.points.push(q)
     })
+    // an edge that only turns just past a cut and comes back (a way back into a row's first layer) stays in its row:
+    // it is not sent round the fold and back
+    for (let i = 1; i < out.length - 1; i++) {
+      const [a, mid, b] = [out[i - 1]!, out[i]!, out[i + 1]!]
+      const c = mid.points[0]![0]
+      if (a.row !== b.row || mid.points.some(([x]) => Math.abs(x - c) > STRAY)) continue
+      a.points.push(...mid.points.slice(1, -1), ...b.points.slice(1))
+      out.splice(i, 2)
+      i--
+    }
     pieces.set(id, out)
   }
 
@@ -175,10 +192,15 @@ function folded(
       const y = (upper === piece ? piece.points.at(-1)! : next.points[0]!)[1]
       rounds[upper.row]!.push({ id, i, y })
     })
-  for (const r of rounds) r.sort((a, b) => b.y - a.y || (a.id < b.id ? -1 : 1) || a.i - b.i)
+  for (const r of rounds) r.sort((a, b) => b.y - a.y || (a.id < b.id ? -1 : a.id > b.id ? 1 : a.i - b.i))
   const most = Math.max(0, ...rounds.map((r) => r.length))
 
-  const lead = TRACK * most
+  // an edge that strays past its row's start (see above) still stands on the board
+  const stray = Math.max(
+    0,
+    ...[...pieces.values()].flatMap((ps) => ps.flatMap((p) => p.points.map(([x]) => bounds[p.row]! - x))),
+  )
+  const lead = Math.max(TRACK * most, Math.ceil(stray))
   const rows: Row[] = []
   let top = 0
   for (let k = 0; k < count; k++) {
@@ -234,11 +256,11 @@ function folded(
       return [id, { ...b, x, y }]
     }),
   )
-  // a row that edges leave ends with the room they turn in; the last ends as the frame did
+  // a row that ends at a cut ends with the room its edges turn in and the board's edge; the last ends as the frame did
   const width = Math.max(
-    ...rows.map((r, k) => r.dx + r.to + (rounds[k]?.length ? TRACK * rounds[k]!.length + after : 0)),
+    ...rows.map((r, k) => r.dx + r.to + (k < count - 1 ? TRACK * (rounds[k]?.length ?? 0) + after : 0)),
   )
-  return { l: { width: Math.ceil(width), height: Math.ceil(rows.at(-1)!.bottom), slots, routes }, rows, rowOf }
+  return { l: { width: Math.ceil(width), height: Math.ceil(rows.at(-1)!.bottom), slots, routes }, rows, rowOf, lead }
 }
 
 /** Where the first layer at or after `x` starts. */
@@ -248,7 +270,8 @@ function layerStart(l: Laid, x: number): number {
 
 /**
  * A laid-out frame folded into `rows` rows (columns, running down), with each row's lanes: a tier's band in every row
- * that holds its boxes, each with its own header. What `lanes` gives for one row, for several.
+ * that holds its boxes, each with its own header, clear of the edges that come round into the row. What `lanes` gives
+ * for one row, for several.
  */
 export function foldLanes(
   laid: Laid,
@@ -258,55 +281,43 @@ export function foldLanes(
   rows: number,
   kit: Kit,
 ): { l: Laid; tiers: SceneTier[] } {
+  // nothing to fold
+  if (!laid.slots.size) return { l: laid, tiers: [] }
   const down = frame.direction === 'DOWN'
   const flat = down ? turned(laid) : laid
-  const ids = frame.tiers ?? []
   const tierOf = (id: string) => frame.order?.[id]
-  const cuts = cutsFor(flat, rows, (a, b) => ids.length > 0 && a.some((x) => b.some((y) => tierOf(x) === tierOf(y))))
+  const tiered = !!frame.tiers?.length
+  const cuts = cutsFor(flat, rows, (a, b) => tiered && a.some((x) => b.some((y) => tierOf(x) === tierOf(y))))
   const rowAt = (x: number) => cuts.filter((c) => x >= c).length
   const bounds = [0, ...cuts, flat.width]
 
   // each tier's part in each row, named as wide as its band there
-  const parts = bounds.slice(1).flatMap((_, row) => {
-    const spans = ids.map((_, i) => {
-      const mine = frame.nodes
-        .filter((n) => tierOf(n.id) === i && rowAt(flat.slots.get(n.id)!.x) === row)
-        .map((n) => flat.slots.get(n.id)!)
-      return mine.length
-        ? ([Math.min(...mine.map((b) => b.x)), Math.max(...mine.map((b) => b.x + b.w))] as const)
-        : null
-    })
-    return ids.flatMap((id, i) => {
-      const span = spans[i]
-      if (!span) return []
-      const beforeIt = spans.slice(0, i).findLast((x) => x != null)
-      const afterIt = spans.slice(i + 1).find((x) => x != null)
-      const a = beforeIt ? (beforeIt[1] + span[0]) / 2 : null
-      const b = afterIt ? (span[1] + afterIt[0]) / 2 : null
-      const room = (b ?? bounds[row + 1]!) - (a ?? bounds[row]!) - 2 * kit.TIER_PAD
-      return [{ id, row, a, b, lines: kit.wrap((view.def.tiers?.[id]?.label ?? id).toUpperCase(), room, measure) }]
-    })
+  const parts = bounds.slice(1).flatMap((to, row) => {
+    const from = bounds[row]!
+    const span = (id: string) => {
+      const b = flat.slots.get(id)!
+      return rowAt(b.x) === row ? ([b.x, b.x + b.w] as const) : null
+    }
+    return kit.tierParts(view, frame, span, from, to, measure).map((part) => ({ ...part, row, from, to }))
   })
-  const head = parts.length ? kit.HEAD + (Math.max(...parts.map((p) => p.lines.length)) - 1) * kit.HEAD_LINE : 0
+  const head = parts.length ? kit.headOf(parts) : 0
   const out = folded(flat, cuts, kit.PADDING + head, kit.PADDING)
   const seen = new Set<string>()
-  const tiers = parts.map(({ id, row, a, b, lines }) => {
+  const tiers = parts.map(({ id, row, a, b, lines, from, to }) => {
     const r = out.rows[row]!
     // a tier in a second row is a lane of its own
     const part = seen.has(id) ? `${id}/${row + 1}` : id
     seen.add(id)
-    return kit.lane(
-      view,
-      id,
-      part,
-      a == null ? 0 : a + r.dx,
-      b == null ? out.l.width : b + r.dx,
+    return kit.lane(view, {
+      tier: id,
+      id: part,
+      // a row's first lane starts past the edges that come round into it, its last ends with the board
+      along: [a === from ? out.lead : a + r.dx, b === to ? out.l.width : b + r.dx],
+      across: [r.top, r.bottom],
       lines,
       head,
       down,
-      r.top,
-      r.bottom,
-    )
+    })
   })
   return { l: down ? turned(out.l) : out.l, tiers }
 }
