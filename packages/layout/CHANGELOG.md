@@ -1,5 +1,30 @@
 # @loadmap/layout
 
+## 0.35.0
+
+### Minor Changes
+
+- 379e4b8: A diagram runs the way that fits its room larger: `direction` takes `'auto'`, now the default. A long chain runs right
+  in a wide frame and down in a tall one (a board that fills its container or the screen, a canvas between its insets;
+  on a page, the board's width by most of the window's height); where both fit about as well, the shape decides as
+  before. Only the room and the structure turn it, never the load, a scenario, a step or a control, and it turns back
+  only when the other way fits clearly larger, never to be drawn past full size. `'RIGHT'` or `'DOWN'` holds a direction
+  as before, and below `narrowBelow` every diagram still runs down.
+- 035f607: A long diagram folds to fill its room. Where its titles would be under 10 px in one row, `<Loadmap>` and
+  `useLoadmap` fold it into the fewest rows, three at most, that draw it at least 15 % larger (columns side by side,
+  running down), and choose the direction and the rows together. It unfolds once one row reads with ease again. Only
+  the room and the structure change the arrangement, never the load or a phase. `rows` holds a count: `rows={1}` never
+  folds.
+- ce37a77: `layout()` takes `rows`: a long diagram folded into that many rows one under the other (columns side by side, running
+  down). The cuts fall between layers, between two tiers rather than inside one where the rows stay about as long; an
+  edge to the next row goes round the end of its row on a track of its own, and each row has its own lanes. The load
+  never moves a folded diagram either, and a stable layout keeps every box in place. The fold loads with the first
+  diagram that asks for one.
+
+### Patch Changes
+
+- @loadmap/core@0.35.0
+
 ## 0.34.0
 
 ### Patch Changes

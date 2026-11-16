@@ -1,5 +1,38 @@
 # @loadmap/react
 
+## 0.35.0
+
+### Minor Changes
+
+- 379e4b8: A diagram runs the way that fits its room larger: `direction` takes `'auto'`, now the default. A long chain runs right
+  in a wide frame and down in a tall one (a board that fills its container or the screen, a canvas between its insets;
+  on a page, the board's width by most of the window's height); where both fit about as well, the shape decides as
+  before. Only the room and the structure turn it, never the load, a scenario, a step or a control, and it turns back
+  only when the other way fits clearly larger, never to be drawn past full size. `'RIGHT'` or `'DOWN'` holds a direction
+  as before, and below `narrowBelow` every diagram still runs down.
+- 035f607: A long diagram folds to fill its room. Where its titles would be under 10 px in one row, `<Loadmap>` and
+  `useLoadmap` fold it into the fewest rows, three at most, that draw it at least 15 % larger (columns side by side,
+  running down), and choose the direction and the rows together. It unfolds once one row reads with ease again. Only
+  the room and the structure change the arrangement, never the load or a phase. `rows` holds a count: `rows={1}` never
+  folds.
+
+### Patch Changes
+
+- 32d5683: Language 1.4 is open: 1.3 shipped in @loadmap/dsl 0.34.0, so what is new to read needs a version of its own. Every
+  definition in the repository says `loadmap 1.4`, and the corpus holds what 0.34.0 released. `rows` takes no unit
+  (`rows: 200%` is refused), and a narrow screen never folds, whatever `rows` says: columns side by side would each be
+  narrower still. The options of a compiled definition may now say `direction: 'auto'` and `rows`; pass them on with
+  `pageOptions()`.
+- Updated dependencies [4122ae6]
+- Updated dependencies [379e4b8]
+- Updated dependencies [035f607]
+- Updated dependencies [ce37a77]
+- Updated dependencies [32d5683]
+  - @loadmap/dsl@0.35.0
+  - @loadmap/layout@0.35.0
+  - @loadmap/core@0.35.0
+  - @loadmap/sim@0.35.0
+
 ## 0.34.0
 
 ### Minor Changes
