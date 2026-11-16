@@ -29,6 +29,7 @@ export const CODES = {
   'wrong-scope': 'a formula reads what its place may not read',
   'wrong-arguments': 'a function called with the wrong number of values',
   'bad-formula': 'a formula that uses a table, a function, a list or "±" where they do not go',
+  'glued-percent': 'a "%" straight after a number and before a value: the remainder, where a share was likely meant',
   'unit-mismatch': 'a demand, capacity or property whose unit differs from the one it should have',
   'empty-unit': 'a capacity whose unit is empty',
   'bare-capacity': 'a capacity without measured(…), estimated(…) or configured(…)',

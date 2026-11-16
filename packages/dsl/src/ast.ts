@@ -16,7 +16,8 @@ export type Expr = Span &
     | { t: 'member'; object: Ident; prop: Ident; flow?: Ident }
     | { t: 'call'; callee: Ident; args: Expr[] }
     | { t: 'unary'; op: '-' | '+' | '!'; arg: Expr }
-    | { t: 'bin'; op: BinOp; left: Expr; right: Expr }
+    /** `glued`: a `%` written straight after a number (`30%+1`), where a share was likely meant. */
+    | { t: 'bin'; op: BinOp; left: Expr; right: Expr; glued?: true }
     | { t: 'cond'; test: Expr; then: Expr; else: Expr }
     | { t: 'array'; items: Expr[] }
     /** `value ± within`, `value ± within%`: only as the first value of measured(…) or estimated(…). */
@@ -92,5 +93,24 @@ export function childrenOf(e: Expr, templates = false): Expr[] {
       return templates ? e.parts : []
     default:
       return []
+  }
+}
+
+/** Every formula of the statements, the ones inside formulas and templates too, outermost first. */
+export function* formulasOf(body: readonly Stmt[]): Generator<Expr> {
+  function* inside(e: Expr): Generator<Expr> {
+    yield e
+    for (const c of childrenOf(e, true)) yield* inside(c)
+  }
+  for (const s of body) {
+    if (s.kind === 'row') for (const v of s.values) yield* inside(v)
+    else if (s.kind === 'prop') yield* inside(s.value)
+    else {
+      if (s.kind === 'decl') {
+        for (const a of s.args) yield* inside(a)
+        if (s.init) yield* inside(s.init)
+      } else if (s.value) yield* inside(s.value)
+      if (s.body) yield* formulasOf(s.body)
+    }
   }
 }

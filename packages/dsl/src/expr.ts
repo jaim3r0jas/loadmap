@@ -119,6 +119,7 @@ export const BUILTINS: Readonly<Record<string, Builtin>> = {
   log: math(Math.log, 'The natural logarithm.'),
   exp: math(Math.exp, 'e to the power of x.'),
   pow: math(Math.pow, 'x to the power of y.', ['x', 'y']),
+  mod: math((a, b) => a % b, 'The remainder of a divided by b: mod(7, 3) is 1.', ['a', 'b']),
   fmt: text(fmt, 'A number for a reader: 1,234 / 12.3 / 0.4.'),
   compact: text(compact, 'A compact number: 980 / 1.2k / 34k / 1.5M.'),
   pct: text(pct, 'A share from 0 to 1 as a percentage: 50 %.'),
@@ -146,6 +147,12 @@ export const RESERVED = new Set<string>([
   ...Object.getOwnPropertyNames(Object.prototype),
   'prototype',
 ])
+
+/**
+ * Functions a version added: a definition stamped before may still give the name to a parameter, a let or a fit, so
+ * taking it is refused only from that version on.
+ */
+export const BUILTIN_SINCE: Readonly<Record<string, string>> = { mod: '1.2' }
 
 const WORD: Record<Type, string> = {
   number: 'a number',

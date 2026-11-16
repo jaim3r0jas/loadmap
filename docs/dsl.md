@@ -86,8 +86,10 @@ as it is.
   `×` (or `x`) marks a load multiple and leaves the number as it is. So `demand: flows.events * 2ms` reads as what it
   is, events a second times the CPU seconds each takes. The two are checked where a property says which it takes:
   `underTarget: 70%` (a load multiple goes there) and `thresholds { target: 7× }` (a share) are errors from
-  `loadmap 1.2`, and a warning in a file stamped before it. A `%` is a share only where no value follows it: `80% * x` is 0.8 × x,
-  while `10 % 3`, `10%-3` and `n % 2` are the remainder.
+  `loadmap 1.2`, and a warning in a file stamped before it. A `%` straight after a number is a share (`80% * x` is 0.8 × x);
+  between two values with spaces it is the remainder (`10 % 3`, `n % 2`), which `mod(10, 3)` says in words. Glued to a
+  number and before a value or a sign (`30%+1`) it would be the remainder where a share was likely meant: an error from
+  `loadmap 1.2` with both spellings as fixes, `30% + 1` and `mod(30, 1)`, and a warning in a file stamped before it.
 - **Operators:** `+ - * / %`, `< <= > >= == != === !==`, `&& || !`, `? :` and parentheses.
 - **Names:**
   - `load` and the parameters by their id;
@@ -1001,6 +1003,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `wrong-scope` | a formula reads what its place may not read |
 | `wrong-arguments` | a function called with the wrong number of values |
 | `bad-formula` | a formula that uses a table, a function, a list or "±" where they do not go |
+| `glued-percent` | a "%" straight after a number and before a value: the remainder, where a share was likely meant |
 | `unit-mismatch` | a demand, capacity or property whose unit differs from the one it should have |
 | `empty-unit` | a capacity whose unit is empty |
 | `bare-capacity` | a capacity without measured(…), estimated(…) or configured(…) |
@@ -1065,7 +1068,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
-| 1.2 | | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`) |
+| 1.2 | `mod(a, b)` | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` as a name |
 
 ## In code
 
@@ -1850,6 +1853,6 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 
 ### Functions
 
-`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`, `configured`
+`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `mod`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`, `configured`
 
 <!-- end of reference -->

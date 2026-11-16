@@ -17,6 +17,7 @@ const BROKEN: Record<string, string> = {
     'capacity: 50_000',
   ),
   'colon-before-block': cache.replace('clients -> api', 'clients -> api: { when: true }'),
+  'glued-percent': cache.replace('2_000 * load', '2_000 * load * (30%+1)'),
   // an old name under a stamp that has the new one
   deprecated: checkout.replace('{ underTarget: 7 }', '{ target: 7 }'),
   'missing-edge': checkout.replace('\nkafka -> workers\n', '\n'),
