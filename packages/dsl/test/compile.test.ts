@@ -91,6 +91,31 @@ describe('compile', () => {
     ])
   })
 
+  it('reads direction: auto and the rows a diagram is folded into, from loadmap 1.3', () => {
+    const at13 = (top: string) => def({ top }).replace('loadmap 1.1', 'loadmap 1.3')
+    const r = compile(at13('direction: auto\nrows: 2'))
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.options).toMatchObject({ direction: 'auto', rows: 2 })
+    expect(pageOptions(r.definition!.options)).toMatchObject({ direction: 'auto', rows: 2 })
+    // neither is set unless written: the page chooses for its room
+    const plain = compile(def({})).definition!.options
+    expect([plain.direction, plain.rows]).toEqual([undefined, undefined])
+    for (const rows of ['0', '2.5', '7'])
+      expect(compile(at13(`rows: ${rows}`)).diagnostics.map((d) => d.message)).toEqual([
+        `rows is ${rows}; a whole number, 1 to 6`,
+      ])
+    // a file stamped before 1.3 has to say 1.3 to use either
+    for (const top of ['direction: auto', 'rows: 2'])
+      expect(
+        compile(def({ top }))
+          .diagnostics.map((d) => d.message)
+          .join(),
+      ).toContain('1.3')
+    expect(compile(def({ top: 'direction: sideways' })).diagnostics.map((d) => d.message)).toEqual([
+      '"sideways" is not one of right, down, auto',
+    ])
+  })
+
   it('still reads the direction under its old name, layout, and says what to write instead', () => {
     const r = compile(def({ top: 'layout: down' }))
     expect(r.definition!.options.direction).toBe('DOWN')

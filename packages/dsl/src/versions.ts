@@ -55,6 +55,7 @@ const SYNTAX = {
   continued: { since: '1.2', what: 'a text continued on the next line' },
   scenarioId: { since: '1.2', what: "a scenario's id" },
   sizes: { since: '1.2', what: 'a size (1.5KB, 20MB)' },
+  autoDirection: { since: '1.3', what: 'direction: auto' },
 } as const
 
 /** A use of something a version added: where, what, and the version. */
@@ -102,6 +103,8 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
             : (own(own(SCHEMA, parent)?.props ?? {}, s.key.name) ?? own(COMPONENT_PROPS, s.key.name))
         add(`property ${parent} ${s.key.name}`, spec?.since, `"${s.key.name}:"`, s.key)
         if (s.as) add('as', SYNTAX.as.since, SYNTAX.as.what, s.as)
+        if (parent === '' && s.key.name === 'direction' && s.value.t === 'id' && s.value.name === 'auto')
+          add('autoDirection', SYNTAX.autoDirection.since, SYNTAX.autoDirection.what, s.value)
         expr(s.value)
       } else if (s.kind === 'edge') {
         if (s.value) expr(s.value)

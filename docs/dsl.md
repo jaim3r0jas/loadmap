@@ -924,10 +924,16 @@ default; 0 cuts, and so does a reader who asked for reduced motion). A recording
 
 ### Direction and tiers
 
-The diagram runs right, or down when it fans out wider than it is long: when its widest layer has more boxes than its
-longest chain. Every edge counts, whatever its `when`, so the direction never turns with the values. `direction:
-right` or `direction: down` says which way (`layout: right` and `layout: down`, its old name, still work, and `loadmap
-fmt` rewrites them); narrow screens always run down.
+The diagram runs the way that fits the room it is drawn in larger: a long chain runs right in a wide frame and down in
+a tall one. Where both fit about as well it runs right, or down when it fans out wider than it is long: when its
+widest layer has more boxes than its longest chain. Every edge counts, whatever its `when`. Only the room and the
+structure turn it, never the values. `direction: right` or `direction: down` holds it (`layout: right` and `layout:
+down`, its old name, still work, and `loadmap fmt` rewrites them), `direction: auto` says the default out loud, and
+narrow screens always run down.
+
+A long diagram is folded where its titles would be hard to read in one row: into two or three rows one under the
+other (columns side by side, running down), cut between two tiers where it can, each row with its own lanes, an edge
+to the next row going round the end of its row. `rows: 1` never folds, and `rows: 2` always draws two.
 
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
 bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
@@ -1220,7 +1226,7 @@ with no warning first; none is planned.
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
-| 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
+| 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`); `direction: auto` and `rows` | |
 
 ## In code
 
@@ -1320,7 +1326,8 @@ A loadmap definition.
 | Property | Value | |
 | --- | --- | --- |
 | `title` | string, constant | The heading above the diagram. |
-| `direction` | `right` \| `down` | Which way the diagram runs. Default right, or down when its widest layer has more boxes than its longest chain. Narrow screens always run down. |
+| `direction` | `right` \| `down` \| `auto` | Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down. |
+| `rows` | number, constant | The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds. From loadmap 1.3. |
 | `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. From loadmap 1.2 in `view { … }`. |
 | `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. From loadmap 1.2 in `view { … }`. |
