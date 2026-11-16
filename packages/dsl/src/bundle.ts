@@ -1,5 +1,5 @@
-import { type CompileOptions, compile, type Front, front } from './compile'
-import { type Diagnostic, Reporter } from './diagnostics'
+import { type CompileOptions, compile, linkedOf } from './compile'
+import type { Diagnostic } from './diagnostics'
 import { format } from './format'
 import { print } from './print'
 
@@ -14,19 +14,14 @@ export function flatten(
   o: CompileOptions = {},
 ): { text: string } | { error: string; diagnostics: Diagnostic[] } {
   const r = compile(source, o)
-  if (!r.ok) return { error: 'the definition does not compile', diagnostics: r.diagnostics }
+  const linked = linkedOf(r)
+  if (!r.ok || !linked) return { error: 'the definition does not compile', diagnostics: r.diagnostics }
   // a library draws nothing of its own: what stands in for a model when it is checked is no text to write
   if (r.role === 'library')
     return { error: 'a library is not a definition to flatten: give its model', diagnostics: [] }
-  const f: Front = { report: new Reporter(source), doc: { body: [] }, role: 'model' }
-  try {
-    front(source, o, f)
-  } catch {
-    // it compiled a moment ago: nothing to say here that compile did not
-  }
-  if (!f.linked) return { error: 'the definition does not compile', diagnostics: r.diagnostics }
-  const flat = format(print(f.linked.body, f.report.source))
-  const text = flat.ok ? flat.text : print(f.linked.body, f.report.source)
+  const printed = print(linked.body, linked.source)
+  const flat = format(printed)
+  const text = flat.ok ? flat.text : printed
   // the one file is read again: it must stand on its own
   const again = compile(text, { functions: o.functions, catalog: o.catalog, snapshot: o.snapshot })
   if (!again.ok) return { error: 'the flat copy does not compile: a bug in loadmap', diagnostics: again.diagnostics }
