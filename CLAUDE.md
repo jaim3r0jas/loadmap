@@ -18,8 +18,10 @@ each also written as a `.loadmap` that must draw exactly what its TypeScript dra
 `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): the examples (walkthroughs and the templates as starters) and the editor
 live (its rules: `apps/docs/CLAUDE.md`). `docs/dsl.md` is the language guide: the site includes it, the build writes it
 with `docs/every-statement.loadmap` into `llms-full.txt`, and the dsl build copies it into its `dist/REFERENCE.md`.
-`docs/every-statement.loadmap` must hold every statement of the schema (`docs.test.ts`). Recording a page or a
-`.loadmap` (`pnpm record`, `expose()`): the `record` skill.
+`docs/every-statement.loadmap` must hold every statement of the schema (`docs.test.ts`); what one file cannot hold (a
+part, a library, a variant) is in `docs/multi-file/`. `examples/checkout/split/` is checkout in several files, held
+to the same `model.ts` and `view.ts` (`split.test.ts`). Recording a page or a `.loadmap` (`pnpm record`, `expose()`):
+the `record` skill.
 
 ## Verification
 
@@ -146,7 +148,9 @@ the parts to the end from the session (Verification) before wrapping it up.
   `constructor` finds nothing). A shared link is untrusted input.
 - **The schema table (`packages/dsl/src/schema.ts`) is the one place a statement or property is added.** The checker,
   autocomplete, the inspector (`inspector: 'main'` puts a property first) and the reference in `docs/dsl.md` read it;
-  `UPDATE_DOCS=1 pnpm test:node` rewrites that reference.
+  `UPDATE_DOCS=1 pnpm test:node` rewrites that reference. What only an editor needs (completion, hover, the help across
+  files, `flatten`) is exported through `help.ts`, an entry of its own: in `index.ts` it would ride along in every
+  embed's first load.
 - **A file that compiled under its `loadmap 1.N` keeps compiling and computing the same** (docs/dsl.md, "Versions";
   `packages/dsl/test/corpus/` holds the released files, never edited; each release adds its own). A change that
   refuses such a file or changes what it computes goes through `strict(version, …)` in compile.ts: a warning that says
@@ -157,6 +161,13 @@ the parts to the end from the session (Verification) before wrapping it up.
   opened it), then frozen: the next change opens the next one,
   adds its row to the table in docs/dsl.md and moves every `.loadmap` in the repository to it. A new warning needs no
   version, and neither does a fix of a figure that was wrong (its changeset says so; the corpus snapshot moves with it).
+- **Files are a front end.** A model's files (parts, libraries, a variant) are linked into one list of statements
+  before the compiler reads them (`link.ts`), every `like` and `subsystem` written out (`expand.ts`): core, sim,
+  layout and `<Loadmap>` never learn about files, and one file reads as it always did. The compiler reads no disk and
+  no network: a host gives the files (`compile(source, { path, files })`), the cli and the language server only what
+  is inside the project root. All files of one compile share one run of offsets (`Reporter.append`), so a span stays
+  two numbers; what leaves the compiler goes through `report.local()` and says its `file`. A library reads its inputs
+  and its own names, nothing of the model: `settle()` in expand.ts is where that holds.
 - **The text is the one source.** An inspector change is `edit()`: the smallest replacement, worked out again from the
   current text, refused when the result would not compile. Never keep a second copy of the model to patch.
 - Every `.loadmap` in the repository (and the docs' definitions) is laid out by `format()`: `format.test.ts` fails
