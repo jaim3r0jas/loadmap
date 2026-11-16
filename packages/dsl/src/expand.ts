@@ -119,7 +119,7 @@ export class Expander {
         out.push(this.box(s, env, []))
         this.count(s.keyword)
       } else if (isSubsystem(s)) out.push(...this.subsystem(s, env, depth, paths))
-      else if (isInput(s) || isWith(s))
+      else if (s.kind === 'decl' && (s.keyword.name === 'input' || s.keyword.name === 'with'))
         this.report.error(
           'misplaced',
           s.keyword,
