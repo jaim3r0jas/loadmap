@@ -84,12 +84,24 @@ class Walk {
           case 'scenario':
             this.scenario(s.value)
             break
+          // a word of the language (`shape: cylinder`, `fullScreen: [verdict]`), not a name of the definition
+          case 'enum':
+          case 'names':
+            break
           default:
             this.expr(s.value)
         }
       } else if (s.kind === 'decl') {
         const k = s.keyword.name
-        // the head of a file names files and another file's names
+        // the head of a file names files; what an import brings is declared here under the name it gives it, whatever
+        // it is in its library: a value, a metric, a tier, a box
+        if (k === 'import')
+          for (const n of s.body ?? []) {
+            const local = n.kind === 'decl' && !n.args.length ? n.keyword : n.kind === 'prop' ? n.key : undefined
+            if (local)
+              for (const space of ['formula', 'node', 'tier', 'metric'] as const)
+                this.add(space, local, local.name, true)
+          }
         if (k === 'import' || k === 'include' || k === 'part' || k === 'library' || k === 'extends') continue
         if (k === 'input') {
           // `input pods`, or `input flow main`: a name the lines of its box read, a flow's where it says so

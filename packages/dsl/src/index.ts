@@ -38,3 +38,15 @@ export {
   type TextChange,
 } from './help'
 export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, type SharedFiles, sharedValues } from './share'
+export {
+  addImport,
+  completionsAcross,
+  definitionAcross,
+  hoverAcross,
+  importersOf,
+  type Located,
+  libraryOf,
+  referencesAcross,
+  renameAcross,
+  type WorkspaceOptions,
+} from './workspace'

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { type Dirent, existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { type CompileOptions, gather, imports, loadCatalogFor } from '@loadmap/dsl'
 
@@ -30,9 +30,10 @@ function gitRoot(from: string): string | undefined {
 
 const inside = (root: string, file: string) => file === root || file.startsWith(root.endsWith(sep) ? root : root + sep)
 
-export function project(file: string, cwd = process.cwd()): Project {
+export function project(file: string, cwd = process.cwd(), folder?: string): Project {
   const abs = resolve(cwd, file)
-  const git = gitRoot(dirname(abs))
+  // an editor's workspace folder is the root of what is in it; else the git checkout, the working directory, the folder
+  const git = folder && inside(resolve(folder), abs) ? resolve(folder) : gitRoot(dirname(abs))
   const root = git ?? (inside(resolve(cwd), abs) ? resolve(cwd) : dirname(abs))
   const path = relative(root, abs).split(sep).join('/')
   let real: string | undefined
@@ -79,6 +80,28 @@ export function filesAt(p: Project, ref: string): (path: string) => string | und
     cache.set(path, text)
     return text
   }
+}
+
+/** Every `.loadmap` file under a root, by its path from it: what an editor completes a path to. At most `max`. */
+export function loadmapFiles(root: string, max = 2000): string[] {
+  const out: string[] = []
+  const walk = (dir: string, rel: string) => {
+    let names: Dirent[]
+    try {
+      names = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const n of names) {
+      if (out.length >= max) return
+      if (n.isDirectory()) {
+        if (n.name !== 'node_modules' && n.name !== 'dist' && !n.name.startsWith('.'))
+          walk(join(dir, n.name), rel ? `${rel}/${n.name}` : n.name)
+      } else if (n.name.endsWith('.loadmap')) out.push(rel ? `${rel}/${n.name}` : n.name)
+    }
+  }
+  walk(root, '')
+  return out.sort()
 }
 
 /** The catalog, when the definition or any file it reaches names it: hosts load it before they compile. */
