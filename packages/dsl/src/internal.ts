@@ -4,6 +4,7 @@ export type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './a
 export { latestEdition } from './catalog'
 export { LIMITS, pageOptions } from './compile'
 export { closest, didYouMean, Reporter } from './diagnostics'
+export { DEFAULT_PATH, fileText, MAX_FILES, MAX_TOTAL, normalizePath, relativePath, resolvePath } from './files'
 export {
   type EditResult,
   type EditValue,

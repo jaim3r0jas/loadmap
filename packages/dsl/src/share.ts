@@ -4,30 +4,63 @@ import type { Model, ParamValue, Values } from '@loadmap/core'
  * A definition in a link: `#v1.` + base64url(deflate-raw(source)), then the values that differ from the defaults
  * (`&load=30&pods=6`). The hash never reaches a server, and the source carries its own language version, so old links
  * keep opening. Compression is the platform's CompressionStream: no dependency.
+ *
+ * A definition in several files is `#v2.` + base64url(deflate-raw(JSON)), the JSON being `{ entry, files }`: the path
+ * of the file to open and every file by its path. One file keeps making `#v1.`, which every page already out there
+ * reads.
  */
 const PREFIX = 'v1.'
+const PREFIX_FILES = 'v2.'
+/** As many files as a definition may have (files.ts): said again here, so reading a link does not load the parser. */
+const MAX_FILES = 64
+/** A path from the project root, as the compiler looks files up: no "./", no "..", no empty part. */
+const isPath = (p: string) =>
+  p.endsWith('.loadmap') && !p.includes('\\') && p.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..')
+
+/** The files of a definition: the one to open, and each by its path from the project root. */
+export interface SharedFiles {
+  path: string
+  files: Readonly<Record<string, string>>
+}
 
 /** A link is refused when its source would unpack to more than this: a small link must not fill the memory. */
 export const MAX_SHARED_BYTES = 1_000_000
 
-export async function encodeShare(source: string, values: Readonly<Record<string, ParamValue>> = {}): Promise<string> {
-  const packed = await pipe(new TextEncoder().encode(source), new CompressionStream('deflate-raw'))
+export async function encodeShare(
+  source: string,
+  values: Readonly<Record<string, ParamValue>> = {},
+  bundle?: SharedFiles,
+): Promise<string> {
+  const others = bundle ? Object.keys(bundle.files).filter((p) => p !== bundle.path) : []
+  const text = others.length
+    ? JSON.stringify({ entry: bundle!.path, files: { ...bundle!.files, [bundle!.path]: source } })
+    : source
+  const packed = await pipe(new TextEncoder().encode(text), new CompressionStream('deflate-raw'))
   const rest = new URLSearchParams(Object.entries(values).map(([k, v]) => [k, String(v)])).toString()
-  return `${PREFIX}${base64url(packed)}${rest ? `&${rest}` : ''}`
+  return `${others.length ? PREFIX_FILES : PREFIX}${base64url(packed)}${rest ? `&${rest}` : ''}`
 }
 
 /**
  * `values` are the texts the link holds: only the model knows whether "20" is a number or the option "20", so the
  * page reads them by each parameter's kind.
  */
-export type Shared = { source: string; values: Record<string, string> } | { error: string }
+export type Shared =
+  | {
+      source: string
+      values: Record<string, string>
+      /** For a definition in several files: the path of `source`, and every file of the link by its path. */
+      path?: string
+      files?: Record<string, string>
+    }
+  | { error: string }
 
 /** Reads a link's hash (with or without its "#"). Never throws: a broken link gives `{ error }`. */
 export async function decodeShare(hash: string): Promise<Shared> {
   const h = hash.replace(/^#/, '')
   const amp = h.indexOf('&')
   const head = amp < 0 ? h : h.slice(0, amp)
-  if (!head.startsWith(PREFIX)) return { error: 'this link holds no loadmap definition' }
+  const several = head.startsWith(PREFIX_FILES)
+  if (!several && !head.startsWith(PREFIX)) return { error: 'this link holds no loadmap definition' }
   let bytes: Uint8Array
   try {
     bytes = unbase64url(head.slice(PREFIX.length))
@@ -42,7 +75,32 @@ export async function decodeShare(hash: string): Promise<Shared> {
     return { error: err instanceof TooLarge ? err.message : 'this link is cut or garbled' }
   }
   const values = Object.fromEntries(new URLSearchParams(amp < 0 ? '' : h.slice(amp + 1)))
-  return { source, values }
+  if (!several) return { source, values }
+  const bundle = filesOf(source)
+  return bundle ? { source: bundle.files[bundle.path]!, values, ...bundle } : { error: 'this link is cut or garbled' }
+}
+
+/** The files of a `#v2.` link, each under a path that is one: a link is untrusted, and so is every path in it. */
+function filesOf(json: string): { path: string; files: Record<string, string> } | undefined {
+  let data: unknown
+  try {
+    data = JSON.parse(json)
+  } catch {
+    return undefined
+  }
+  if (typeof data !== 'object' || data === null) return undefined
+  const { entry, files } = data as { entry?: unknown; files?: unknown }
+  if (typeof entry !== 'string' || typeof files !== 'object' || files === null) return undefined
+  const out: Record<string, string> = {}
+  const paths = Object.keys(files)
+  if (paths.length > MAX_FILES) return undefined
+  for (const p of paths) {
+    const text = (files as Record<string, unknown>)[p]
+    if (typeof text !== 'string' || !isPath(p)) return undefined
+    // defined, not assigned: a file called "__proto__" is a file
+    Object.defineProperty(out, p, { value: text, enumerable: true, writable: true, configurable: true })
+  }
+  return Object.hasOwn(out, entry) ? { path: entry, files: out } : undefined
 }
 
 class TooLarge extends Error {}

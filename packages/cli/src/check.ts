@@ -8,7 +8,6 @@ import {
   compile,
   type Diagnostic,
   formatDiagnostic,
-  loadCatalogFor,
   problems,
 } from '@loadmap/dsl'
 import {
@@ -22,6 +21,7 @@ import {
   parseTolerance,
   range,
 } from './base'
+import { filesAt, loadCatalogForFiles, ownerOf, project } from './project'
 import { type PullCommandOptions, type PullWindow, pullFor, snapshotPath, WINDOW_OPTIONS, windowOf } from './pull'
 
 export interface CheckOptions extends PullCommandOptions {
@@ -59,6 +59,8 @@ export interface CheckedFile {
     endColumn: number
     message: string
     hint: string | null
+    /** The file it is in, when that is not `file`: a part or a library of the definition. */
+    file?: string
   }[]
   expectations: CheckedExpectation[]
   /** The component that reaches the target first at the defaults, on the pessimistic edge. */
@@ -98,6 +100,7 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
   const say = (s: string) => text && log(s)
   const files: CheckedFile[] = []
   let failed = false
+  const asked = new Set(a.files.map((f) => project(f).path))
   for (const file of a.files) {
     let source: string
     try {
@@ -108,7 +111,12 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
       failed = true
       continue
     }
-    await loadCatalogFor(source)
+    const here = project(file)
+    // a part is checked through its model: once, when the model is asked about too
+    const owner = ownerOf(source, here.path)
+    if (owner != null && asked.has(owner) && here.files(owner) != null) continue
+    const one = here.options
+    await loadCatalogForFiles(source, one)
     let old: string | null = null
     // the base cannot be read (a shallow checkout, a ref git does not know): its expect lines are still checked, and
     // the run fails, saying why
@@ -116,7 +124,7 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
     if (a.base != null)
       try {
         old = await baseSource(file, a.base)
-        if (old != null) await loadCatalogFor(old)
+        if (old != null) await loadCatalogForFiles(old, { path: here.path, files: filesAt(here, a.base) })
       } catch (err) {
         baseError = (err as Error).message
       }
@@ -134,12 +142,12 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
         continue
       }
     } else if (a.pull) {
-      first = compile(source)
+      first = compile(source, one)
       // one snapshot for both sides: the base's measures too, from the providers the head reads (one only the base
       // uses is not this change's to configure)
       const mine = first.measures
       const providers = new Set(mine.map((m) => m.provider))
-      const theirs = old != null ? compile(old).measures : []
+      const theirs = old != null ? compile(old, { path: here.path, files: filesAt(here, a.base!) }).measures : []
       const extra = theirs.filter((m) => providers.has(m.provider) && !mine.some((x) => x.id === m.id))
       const measures = [...mine, ...extra]
       if (first.ok && mine.length) {
@@ -154,7 +162,9 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
     }
 
     // nothing pulled: the first compile is the answer
-    const r = snapshot ? compile(source, { snapshot: fromSnapshot(snapshot) }) : (first ?? compile(source))
+    const r = snapshot
+      ? compile(source, { ...one, snapshot: fromSnapshot(snapshot) })
+      : (first ?? compile(source, one))
     const found = problems(r, 'error', a.inconclusive === 'fail' ? 'error' : 'warning')
     // a unit that disagrees is a warning where the text may be read two ways; a team that writes its units fails on it
     const isUnit = (d: Diagnostic) => a.units === 'fail' && d.code === 'unit-mismatch' && d.severity === 'warning'
@@ -162,7 +172,14 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
     const list = found.map((d): Diagnostic => (isUnit(d) ? { ...d, severity: 'error' } : d))
     let compared: ReturnType<typeof compareFile> | null = null
     if (a.base != null) {
-      const theirs = old == null ? null : compile(old, snapshot ? { snapshot: fromSnapshot(snapshot) } : {})
+      const theirs =
+        old == null
+          ? null
+          : compile(old, {
+              path: here.path,
+              files: filesAt(here, a.base),
+              ...(snapshot && { snapshot: fromSnapshot(snapshot) }),
+            })
       // what the base reads and this snapshot does not have: compared on the base's own values, and said so
       const lacking = snapshot
         ? (theirs?.measures ?? []).filter((m) => !Object.hasOwn(snapshot.measurements, m.id)).map((m) => m.id)
@@ -179,10 +196,13 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
         list.sort((x, y) => x.from - y.from)
       }
     }
-    if (a.format === 'github') for (const d of list) log(github(d, file, source))
-    if (text) for (const d of list) log(formatDiagnostic(d, source, file))
+    // a problem in a part or a library is shown in that file
+    const textOf = (d: Diagnostic) => (d.file == null ? source : (here.files(d.file) ?? ''))
+    const nameOf = (d: Diagnostic) => (d.file == null ? file : here.shown(d.file))
+    if (a.format === 'github') for (const d of list) log(github(d, nameOf(d), textOf(d)))
+    if (text) for (const d of list) log(formatDiagnostic(d, textOf(d), nameOf(d)))
     const errors = r.diagnostics.filter((d) => d.severity === 'error').length
-    const checked = checkedFile(file, source, r, list, snapshot)
+    const checked = checkedFile(file, textOf, nameOf, r, list, snapshot)
     if (compared && 'checked' in compared) {
       checked.base = compared.checked
       // a loss nobody accepted fails the change, whatever its expect lines say
@@ -235,7 +255,8 @@ function errorFile(file: string, message: string): CheckedFile {
 
 function checkedFile(
   file: string,
-  source: string,
+  textOf: (d: Diagnostic) => string,
+  nameOf: (d: Diagnostic) => string,
   r: CompileResult,
   list: Diagnostic[],
   snapshot: Snapshot | undefined,
@@ -274,9 +295,10 @@ function checkedFile(
       code: d.code,
       line: d.line,
       column: d.column,
-      ...end(d, source),
+      ...end(d, textOf(d)),
       message: d.message,
       hint: d.hint ?? null,
+      ...(d.file != null && { file: nameOf(d) }),
     })),
     expectations,
     base: null,
