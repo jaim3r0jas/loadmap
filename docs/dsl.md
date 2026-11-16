@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```
-loadmap 1.2
+loadmap 1.3
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -43,7 +43,7 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.2`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.3`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -1003,6 +1003,106 @@ and a block written on one line stays on one line while it fits in 120 columns. 
 runs past them is broken at a space into pieces, one under the other, and pieces that fit are one text again. `format(source)` from `@loadmap/dsl`
 does the same in code; a text with a syntax error comes back unchanged, with its diagnostics.
 
+### Several files
+
+A definition may be written in several files (from `loadmap 1.3`). A file says what it is in its head, the lines
+straight under `loadmap`, before any other statement:
+
+- **A model** is what you open, draw, check and record: the file with the one `load`. Its head names every other file
+  it needs, so the files of a model are always the ones its text names, never the ones a folder happens to hold.
+- **A part** (`part of "./shop.loadmap"`) belongs to one model, which includes it (`include "./shop.story.loadmap"`).
+  Its statements are the model's, as if written there: one namespace, so a part names the model's boxes and the model
+  a part's. A part holds anything a model does but what there is one of (`load`, `view { … }`, `title` and the other
+  properties of the top) and the head. It says its model's version. A natural home for the story, the measured points
+  of a fit, or the expectations.
+- **A library** (`library "Platform building blocks"`) holds what several models share: values (`let`, `fit`,
+  `metric`, `measure`, `tier`, `published`), boxes and subsystems. It is checked on its own, draws nothing, has a
+  version of its own, and reads nothing of the model that imports it. A name that starts with `_` stays in its file.
+- **A variant** (`extends "./shop.loadmap"`) is its model with what it writes changed: a `param` here replaces the
+  lines it writes of that parameter, a `let`, `fit`, `measure`, `metric` or `published` replaces the one of its name,
+  and presets, scenarios, expectations and steps are added. The flows, the boxes and the edges are the model's.
+
+```
+# shop.loadmap
+loadmap 1.3
+include "./shop.story.loadmap"
+import "./platform.loadmap" { postgres; pipeline }
+
+title: "A shop in several files"
+…
+```
+
+**A path** is relative to the file that writes it (`./`, `../`) or starts at the project root (`/lib/x.loadmap`), and
+ends in `.loadmap`. It is never a URL. The compiler reads no disk and no network: the page, the editor or the command
+hands it the files (`compile(source, { path, files })`), and a path they do not have is an error where it is written.
+`loadmap check` and the language server read nothing outside the project root (the git checkout, else the working
+directory; in an editor the workspace folder). A definition has at most 64 files and a million characters.
+
+**An import names what it takes:** `import "./platform.loadmap" { postgres; pool: podPool }`. `a` is used here under
+its own name, `local: theirs` under another. There is no "everything": a library that adds a name never changes a
+model. Libraries may import libraries, never in a loop.
+
+**A box with inputs** is a prototype. In a library, a box says what it needs from the model with `input`, and a box of
+the model says `like:` and sets them in `with { … }`:
+
+```
+# platform.loadmap
+node postgres "Postgres" "primary" {
+  input writes
+  input limit = 4_000
+  store
+  demand: writes
+  capacity: estimated(limit ± 30%, "commits/s", "load test of the primary")
+}
+
+# shop.loadmap
+node db "Postgres" "primary" { like: postgres; with { writes: flows.orders } }
+```
+
+An input without a default must be set; a value in `with` is a formula of the file that writes it. The lines of the
+prototype read only its inputs and its library's own names: `load`, a parameter or a flow of the model reach it only
+as an input. `input flow main` takes the name of a flow instead of a value, for `flows.main`, `at.topic.main` and
+`partitions { main: 12 }`; the model sets it with `main: orders`. The rules of `like:` are the same as in one file: a
+line written here replaces the same line there.
+
+**A subsystem** is several boxes as one: boxes, components, connections, the edges between them and `let`s.
+
+```
+# platform.loadmap
+subsystem pipeline "Queue and workers" {
+  input flow main
+  input pods = 3
+  cluster kafka "Kafka" { members: 3; queue topic { partitions { main: 12 } } }
+  pool consumers "Workers" {
+    workers { pods: pods; perPod: 8 }
+    demand: flows.main * 2ms
+    capacity: measured(pods * 1, "cores", "pod CPU limit")
+  }
+  kafka -> consumers
+  route: topic -> consumers
+}
+
+# shop.loadmap
+subsystem orderLine "Orders" { like: pipeline; tier: services; with { main: orders; pods: pods } }
+flow orders "orders" { rate: 40 * load; route: gateway -> orderLine -> db; from: phones }
+gateway -> orderLine
+orderLine -> db
+```
+
+Outside it, each thing a subsystem holds is named `<id>.<name>`: `orderLine.consumers` in a `focus`, an `expect`, a
+route, an edge, `util.orderLine.consumers`, `at.orderLine.topic.orders`. With a `route:` of its own, a flow's route and
+an edge may name the subsystem itself: the flow passes the stages of that route, an edge to it ends at the box of the
+first and an edge from it starts at the box of the last. `tier:` on the subsystem is the tier of every box in it that
+names none. A subsystem written in a model is drawn as it is, and another may be `like` it; subsystems may hold
+subsystems, four deep, and a definition has at most 256 boxes once they are written out.
+
+A problem is reported in the file that can fix it: a library's own mistake in the library, a wrong or missing input
+at the box that sets it. `loadmap check` prints each with its file (`--format json` adds `file` to a diagnostic that
+is not in the checked file). `loadmap fmt` on a model sets its parts' `loadmap` lines to its own. `loadmap bundle
+shop.loadmap` writes the definition as one file that draws and computes the same, for a host that reads one file. A
+share link carries every file (`#v2.`); a definition in one file keeps making the `#v1.` link every page reads.
+`docs/multi-file/` holds a model with a part, a library and a variant.
+
 ## Errors
 
 Every error has a line and a column, and parsing goes on after one, so a file shows all its problems at once. Each
@@ -1091,7 +1191,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.2`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.3`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1117,6 +1217,7 @@ with no warning first; none is planned.
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
+| 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
 
 ## In code
 
@@ -1141,6 +1242,16 @@ diagnostic's fixes as text changes (the did-you-mean, a missing property, a bare
 `rename(source, offset, name)` renames it everywhere: a box's id with the stage and the component that take it. `encodeShare` and `decodeShare` write and read share
 links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.
+
+A definition in several files is compiled with them: `compile(source, { path, files })`, `path` being the text's own
+path from the project root and `files` the others by theirs (a function, a Map or a plain object; the compiler reads
+nothing itself). A part or a variant is read through its model, and `r.role` says what the text is. A diagnostic or a
+symbol in another file carries its `file`, with its offsets, line and column in that file. `imports(source, path)`
+reads only the head, for a host that must fetch the files first; `gather(source, { path, files })` returns every file
+the definition reaches; `flatten(source, { path, files })` writes it as one file. `encodeShare(source, values, {
+path, files })` makes a `#v2.` link when there is more than one file, and `decodeShare` gives them back.
+`definitionAcross`, `referencesAcross`, `renameAcross`, `hoverAcross` and `completionsAcross` are the help above over
+a model and its parts, each place with its `file`.
 
 ## In your editor
 
@@ -1189,8 +1300,11 @@ command = "npx"
 args = ["loadmap", "lsp"]
 ```
 
-The server reads one file at a time, the whole text on each change, and colours nothing: highlighting stays the
-editor's.
+The server takes the whole text on each change and colours nothing: highlighting stays the editor's. A definition in
+several files is read with them: an open document before the file on disk, and nothing outside the workspace folder.
+A part is checked through its model, and a problem is reported in the file it is in. Go to definition, references and
+rename cross the files of a model; in a head, a path completes to the workspace's `.loadmap` files and an import's
+braces to the library's names; a name that a library declares has a quick fix that imports it.
 
 ## Reference
 
