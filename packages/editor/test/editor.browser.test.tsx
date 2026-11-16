@@ -1,4 +1,4 @@
-import { undo } from '@codemirror/commands'
+import { redo, undo } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { decodeShare } from '@loadmap/dsl'
@@ -122,6 +122,46 @@ describe('the editor', () => {
     await expect.poll(() => view.state.doc.toString()).toContain('node frontDoor')
     expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
     await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // undo takes the rename back in every file it reached, redo makes it again: the model compiles all the way
+    undo(view)
+    await expect.poll(() => view.state.doc.toString()).toBe(shop)
+    expect(handle.files().files['shop.story.loadmap']).toBe(withStep)
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    redo(view)
+    await expect.poll(() => view.state.doc.toString()).toContain('node frontDoor')
+    expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // only the rename's own step: other edits undone and redone around it leave the other files alone
+    undo(view)
+    await expect.poll(() => handle.files().files['shop.story.loadmap']).toBe(withStep)
+    edit('max: 100; default: 10', 'max: 100; default: 11')
+    undo(view)
+    redo(view)
+    expect(view.state.doc.toString()).toContain('default: 11')
+    expect(handle.files().files['shop.story.loadmap']).toBe(withStep)
+    undo(view)
+    expect(view.state.doc.toString()).toBe(shop)
+    // the rename again, for what follows
+    view.dispatch({ selection: { anchor: shop.indexOf('node gateway') + 6 } })
+    view.focus()
+    await userEvent.keyboard('{F2}')
+    await expect.poll(() => document.querySelector<HTMLInputElement>('.lm-rename input')?.value).toBe('gateway')
+    await userEvent.keyboard('frontDoor{Enter}')
+    await expect.poll(() => handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
+    // from the part's own tab too: undone there, it is undone in the model
+    await userEvent.click(page.getByRole('tab', { name: 'shop.story.loadmap' }))
+    undo(view)
+    await expect.poll(() => view.state.doc.toString()).toBe(withStep)
+    expect(handle.files().files['shop.loadmap']).toBe(shop)
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // a file edited after the rename keeps its name, and the editor says so
+    redo(view)
+    await expect.poll(() => handle.files().files['shop.loadmap']).toContain('node frontDoor')
+    edit('{ load: 30; focus: orderLine.consumers }', '{ load: 31; focus: orderLine.consumers }')
+    await userEvent.click(page.getByRole('tab', { name: 'shop.loadmap' }))
+    undo(view)
+    await expect.poll(() => view.state.doc.toString()).toBe(shop)
+    expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
     handle.setFiles(files)
     await expect.poll(() => view.state.doc.toString()).toBe(shop)
     await expect.poll(status, { timeout: 5000 }).toBe('No problems')
