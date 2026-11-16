@@ -342,13 +342,51 @@ describe('units', () => {
 
   it('warn where a property in seconds, a share or units a second gets another unit', () => {
     expect(warnings(def({ flow: 'timeout: 80%', api: 'measured(400, "req/s")\n  service: flows.req' }))).toEqual([
-      { message: 'timeout is in seconds, and this is a plain number (a share or a count)', text: '80%' },
+      { message: 'timeout is in seconds, and this is a share', text: '80%' },
       { message: 'service is in seconds, and this is per second', text: 'flows.req' },
     ])
     expect(warnings(def({ top: 'thresholds { target: 5s }' }))).toEqual([
       { message: 'target is a share, and this is in seconds', text: '5s' },
     ])
     expect(warnings(def({ flow: 'timeout: 2s', api: 'measured(400, "req/s")\n  service: 10ms' }))).toEqual([])
+  })
+
+  it('refuse a share where a load multiple goes, and a multiple where a share goes, from loadmap 1.2', () => {
+    const at = (version: string, extra: string) =>
+      compile(def({ extra }).replace('loadmap 1.1', `loadmap ${version}`))
+        .diagnostics.filter((d) => d.code === 'unit-mismatch')
+        .map((d) => ({ severity: d.severity, message: d.message, hint: d.hint }))
+    const multiple = "write a multiple of today's load: 7×; a utilization goes in thresholds { target: … }"
+    const share = 'write a share: 0.8 or 80%; a load multiple goes in expect { underTarget: … }'
+    expect(at('1.2', 'expect "x" { underTarget: 70% }')).toEqual([
+      { severity: 'error', message: 'underTarget is a load multiple, and this is a share', hint: multiple },
+    ])
+    expect(at('1.2', 'expect "x" { notFull: 50% }')).toEqual([
+      { severity: 'error', message: 'notFull is a load multiple, and this is a share', hint: multiple },
+    ])
+    expect(at('1.2', 'thresholds { target: 7× }')).toEqual([
+      { severity: 'error', message: 'target is a share, and this is a load multiple', hint: share },
+    ])
+    expect(at('1.2', 'preset "Peak" { load: 50% }\nstep "Up" { load: 50% }').map((d) => d.message)).toEqual([
+      'load is a load multiple, and this is a share',
+      'load is a load multiple, and this is a share',
+    ])
+    expect(at('1.2', 'load "Users" { max: 90% }').map((d) => d.message)).toEqual([
+      'max is a load multiple, and this is a share',
+    ])
+    // a file stamped 1.1 compiled with them: a warning, and the same value as before
+    expect(at('1.1', 'expect "x" { underTarget: 70% }')).toEqual([
+      {
+        severity: 'warning',
+        message: 'underTarget is a load multiple, and this is a share (an error from loadmap 1.2)',
+        hint: multiple,
+      },
+    ])
+    expect(at('1.1', 'thresholds { target: 7× }')[0]?.severity).toBe('warning')
+    // what each takes, a bare number as before
+    expect(
+      at('1.2', 'expect "x" { underTarget: 2×; notFull: 3 }\nthresholds { target: 60%; full: 0.9 }\npreset "P" { load: 4x }'),
+    ).toEqual([])
   })
 
   it('take "as" on a demand only, with the unit in quotes', () => {

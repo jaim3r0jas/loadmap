@@ -77,7 +77,7 @@ import {
   type Scope,
   STAGES,
 } from './schema'
-import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitNames, unitOf } from './units'
+import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitNames, unitOf, wrongMark } from './units'
 import { before, CURRENT, LANGUAGE_VERSION, needs, parseVersion, stampOf, type Version, versionText } from './versions'
 
 export { LANGUAGE_VERSION }
@@ -87,6 +87,8 @@ export { LANGUAGE_VERSION }
  * `==`, no chained comparison) and a rate, demand or capacity below 0 is refused: a warning before it.
  */
 const STRICT_FORMULAS: Version = [1, 1]
+/** A `%` where a load multiple goes, a `×` where a share goes: refused from 1.2. */
+const STRICT_SUFFIXES: Version = [1, 2]
 
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
@@ -1382,11 +1384,23 @@ class Compiler {
     const walk = (b: Block) => {
       for (const [k, props] of b.props) {
         const spec = own(b.spec.props, k) ?? b.spec.open?.spec
-        if (!spec?.unit) continue
-        const want = PROPERTY_UNITS[spec.unit]
+        // a preset's or a step's `load` is the one open name whose unit is known
+        const unit = spec?.unit ?? (k === 'load' && b.spec.open?.names === 'values' ? 'multiple' : undefined)
+        if (!unit) continue
+        const want = PROPERTY_UNITS[unit]
         for (const p of props) {
           const u = unitOf(p.value, names)
-          if (u && disagree(u, want.unit))
+          if (u && wrongMark(u, want.unit))
+            this.strict(
+              STRICT_SUFFIXES,
+              'unit-mismatch',
+              p.value,
+              `${k} is ${want.words}, and this is ${describe(u)}`,
+              unit === 'multiple'
+                ? `${want.hint}; a utilization goes in thresholds { target: … }`
+                : `${want.hint}; a load multiple goes in expect { underTarget: … }`,
+            )
+          else if (u && disagree(u, want.unit))
             this.report.warning(
               'unit-mismatch',
               p.value,
