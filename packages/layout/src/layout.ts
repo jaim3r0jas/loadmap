@@ -172,6 +172,7 @@ const frames = new WeakMap<View, Map<string, Promise<Laid>>>()
 // against, and the phase's compact frame in each direction
 const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
 const reserveCache = new WeakMap<TextMeasure, WeakMap<View, Map<Direction, Frame>>>()
+const extents = new WeakMap<TextMeasure, WeakMap<View, Map<string, Promise<{ width: number; height: number }>>>>()
 const textWidths = new WeakMap<TextMeasure, Map<string, number>>()
 
 interface Sampled {
@@ -240,10 +241,15 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   return kept(cache, key, 32, () => {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
     const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep))
-    const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
-    frames.set(view, byFrame)
-    return kept(byFrame, frame.key, 32, () => run(frame, o.elk)).then((l) => place(prep, l, key, frame, view, measure))
+    return laidOut(view, frame, o.elk).then((l) => place(prep, l, key, frame, view, measure))
   })
+}
+
+/** A frame laid out by ELK, once per view and frame. */
+function laidOut(view: View, frame: Frame, elk?: ElkEngine): Promise<Laid> {
+  const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
+  frames.set(view, byFrame)
+  return kept(byFrame, frame.key, 32, () => run(frame, elk))
 }
 
 /**
@@ -251,18 +257,22 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
  * weighed against, the same at every phase and load, so neither turns the diagram. A stable layout is exactly this
  * large; a compact phase is no larger.
  */
-export async function extent(
+export function extent(
   view: View,
   direction: Direction,
   o: Omit<LayoutOptions, 'direction'> = {},
 ): Promise<{ width: number; height: number }> {
   const measure = o.measure ?? estimateText
-  const frame = ordered(view, reserve(view, direction, measure))
-  const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
-  frames.set(view, byFrame)
-  const laid = await kept(byFrame, frame.key, 32, () => run(frame, o.elk))
-  const { l } = lanes(laid, frame, view, measure)
-  return { width: l.width, height: l.height }
+  const byView = extents.get(measure) ?? new WeakMap<View, Map<string, Promise<{ width: number; height: number }>>>()
+  extents.set(measure, byView)
+  const byDirection = byView.get(view) ?? new Map<string, Promise<{ width: number; height: number }>>()
+  byView.set(view, byDirection)
+  // once per view and direction: a resize asks again at every pixel
+  return kept(byDirection, direction, 2, async () => {
+    const frame = ordered(view, reserve(view, direction, measure))
+    const { l } = lanes(await laidOut(view, frame, o.elk), frame, view, measure)
+    return { width: l.width, height: l.height }
+  })
 }
 
 /** A compact layout's frame for this phase; null for a stable layout, whose frame waits until it is laid out. */

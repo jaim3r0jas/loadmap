@@ -66,7 +66,7 @@ the generated ones), `headroom` and `compare` (show the chart and the table; def
 start from), `speed` (simulated seconds per second), `direction` (`'auto'`, the default: the way that fits the
 room the diagram is given larger, and where both fit about as well the way its shape suggests, `directionOf(view)`:
 right unless its widest layer has more boxes than its longest chain; `'RIGHT'` or `'DOWN'` holds it), `narrowBelow`
-(the width under which the diagram runs down: 640 with a direction of your own, none with `auto`), `elk` (where ELK runs; default a shared Web Worker;
+(the width under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker;
 `workerElk(() => new Worker(…))` for one the page starts, see [Without a bundler](/without-a-bundler/)),
 `onNodeClick` (a click or Enter on a box, by its id; every box is a button then), `selected` (the box drawn as
 selected), and `ref`.

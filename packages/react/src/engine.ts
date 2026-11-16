@@ -285,7 +285,7 @@ export class Engine {
   setRoom(room: Room | null): void {
     const was = this.room
     if (was === room) return
-    if (was && room && Math.abs(was.w - room.w) < 1 && Math.abs(was.h - room.h) < 1 && was.max === room.max) return
+    if (was && room && Math.abs(was.w - room.w) < 1 && Math.abs(was.h - room.h) < 1) return
     this.room = room
     for (const f of this.#listeners) f()
   }

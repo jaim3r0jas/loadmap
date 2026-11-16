@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Engine } from './engine'
 import { Viewer } from './viewer'
-import { bring, free, type Insets, panBy, type Viewpoint, zoomAt } from './viewpoint'
+import { bring, free, type Insets, panBy, room, type Viewpoint, zoomAt } from './viewpoint'
 
 /**
  * Injected with the code that uses it: a board the reader zooms keeps its own shape, the SVG filling it whatever part of
@@ -257,6 +257,8 @@ export function mountZoom(
       off = attachZoom(board, engine.viewer, { always: canvas })
     }
     engine.viewer.setViewport(vp)
+    // a canvas's room is what Fit has; a board on a page takes its height from the diagram, and tells its own
+    if (canvas) engine.setRoom(room(vp))
   }
   measure()
   const ro = new ResizeObserver(measure)

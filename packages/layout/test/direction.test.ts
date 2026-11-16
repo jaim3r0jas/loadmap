@@ -106,13 +106,13 @@ describe('the direction for a room', () => {
     // a square room fits both the same; one a tenth taller fits down a tenth larger
     expect(directionFor(s, { w: 600, h: 600 }, 'RIGHT')).toBe('RIGHT')
     expect(directionFor(s, { w: 600, h: 600 }, 'DOWN')).toBe('DOWN')
-    expect(directionFor(s, { w: 1000, h: 1100 }, 'RIGHT')).toBe('RIGHT')
-    expect(directionFor(s, { w: 1000, h: 1300 }, 'RIGHT')).toBe('DOWN')
+    expect(directionFor(s, { w: 600, h: 660 }, 'RIGHT')).toBe('RIGHT')
+    expect(directionFor(s, { w: 600, h: 780 }, 'RIGHT')).toBe('DOWN')
   })
 
-  it('counts no scale past the largest the room draws at: a small diagram keeps its way', () => {
+  it('counts no scale past full size: a diagram that fits as it stands keeps its way', () => {
     const s = { RIGHT: { width: 300, height: 100 }, DOWN: { width: 100, height: 300 } }
-    expect(directionFor(s, { w: 600, h: 900, max: 1.5 }, 'RIGHT')).toBe('RIGHT')
-    expect(directionFor(s, { w: 600, h: 900 }, 'RIGHT')).toBe('DOWN')
+    expect(directionFor(s, { w: 600, h: 900 }, 'RIGHT')).toBe('RIGHT')
+    expect(directionFor(s, { w: 200, h: 900 }, 'RIGHT')).toBe('DOWN')
   })
 })
