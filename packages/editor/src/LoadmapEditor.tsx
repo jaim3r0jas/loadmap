@@ -10,7 +10,8 @@ import {
   undoDepth,
 } from '@codemirror/commands'
 import { bracketMatching, indentOnInput } from '@codemirror/language'
-import { EditorState, Transaction } from '@codemirror/state'
+import { forceLinting } from '@codemirror/lint'
+import { EditorState, type Extension, Transaction } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { published } from '@loadmap/core'
@@ -25,6 +26,8 @@ import {
   encodeShare,
   format,
   type HostFunctions,
+  LANGUAGE_VERSION,
+  type Located,
   loadCatalog,
   loadCatalogFor,
   loadedCatalog,
@@ -65,7 +68,7 @@ import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
 import type { InspectorProps, InspectorTab } from './Inspector'
-import { loadmapLanguage, startRename } from './language'
+import { type Around, loadmapLanguage, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import { injectEditorStyles } from './styles'
@@ -82,7 +85,20 @@ export interface LoadmapEditorHandle {
   shareHash(): Promise<string>
   /** Lays the text out the one way (`format()`); false when it has a syntax error. */
   format(): boolean
+  /** Every file of the definition by its path, and the path of its model: one entry for a definition in one file. */
+  files(): EditorFiles
+  /** Replaces the whole definition with one in several files; its model shows first. */
+  setFiles(files: EditorFiles): void
 }
+
+/** A definition in several files: the path of its model (the file the diagram draws) and every file by its path. */
+export interface EditorFiles {
+  path: string
+  files: Readonly<Record<string, string>>
+}
+
+/** The path a text has when nothing says another: a definition in one file. */
+const ONE = 'input.loadmap'
 
 /** `code`: the text beside the diagram. `reader`: the diagram with an inspector, the text hidden. */
 export type EditorLayout = 'code' | 'reader'
@@ -97,6 +113,13 @@ export interface LoadmapEditorProps {
   theme?: Theme
   /** Every change of the text: a page can keep a draft. */
   onChange?: (source: string) => void
+  /**
+   * A definition in several files (from a `#v2.` link): the path of `initial`, its model, and every file by its path.
+   * Each file is a tab over the text; with one file there are no tabs.
+   */
+  files?: EditorFiles
+  /** Every change of any file, a file added or removed: all of them, for a page that keeps a draft. */
+  onFiles?: (files: EditorFiles) => void
   /** Called with a share hash. Default: puts it in the address bar and copies the link. */
   onShare?: (hash: string) => void | Promise<void>
   /**
@@ -173,6 +196,8 @@ interface Compiled {
   goodKey: string
   /** Counts the whole texts loaded (a template, a shared link): each starts a new diagram, fitted; an edit keeps it. */
   doc: number
+  /** The file the result is about: a problem that names no file is in this one. */
+  given: string
 }
 
 /** A text editor for a `.loadmap` definition next to its live diagram. */
@@ -182,6 +207,8 @@ export function LoadmapEditor({
   functions,
   theme,
   onChange,
+  files: initialFiles,
+  onFiles,
   onShare,
   embedLink,
   newItems,
@@ -205,9 +232,41 @@ export function LoadmapEditor({
   ref,
 }: LoadmapEditorProps) {
   useEffect(() => injectEditorStyles(), [])
+  // the files of a definition in several: the one in the editor (`active`), the model the diagram draws (`entry`) and
+  // the text of every other. With one file there are no others, and the editor is what it is without this
+  const set = useRef<{ entry: string; active: string; others: Record<string, string>; version: number }>(null!)
+  if (!set.current) {
+    const entry = initialFiles?.path ?? ONE
+    const others = Object.fromEntries(Object.entries(initialFiles?.files ?? {}).filter(([p]) => p !== entry))
+    set.current = { entry, active: entry, others, version: 0 }
+  }
+  /** What the language reads beside the open text; nothing for a definition in one file. */
+  const around = (): Around | undefined => {
+    const f = set.current
+    return Object.keys(f.others).length ? { path: f.active, files: f.others, version: f.version } : undefined
+  }
+  const aroundRef = useRef(around)
+  aroundRef.current = around
+  /** The same, as compile(), edit() and the catalog take it. */
+  const beside = () => {
+    const a = around()
+    return a ? { path: a.path, files: a.files } : {}
+  }
+  const [tabs, setTabs] = useState(() => [set.current.entry, ...Object.keys(set.current.others).sort()])
+  const [active, setActive] = useState(set.current.entry)
+  // each file's own editor state while another is in the editor: its text, its cursor, its undo history
+  const states = useRef(new Map<string, EditorState>())
+  const exts = useRef<Extension[]>([])
   const [state, setState] = useState<Compiled>(() => {
-    const result = compile(initial, { functions })
-    return { source: initial, result, good: result.definition ?? null, goodKey: fingerprint(initial), doc: 0 }
+    const result = compile(initial, { functions, ...beside() })
+    return {
+      source: initial,
+      result,
+      good: result.definition ?? null,
+      goodKey: fingerprint(initial),
+      doc: 0,
+      given: set.current.entry,
+    }
   })
   // a first text with a published statement: compiled again once the catalog has loaded
   // biome-ignore lint/correctness/useExhaustiveDependencies: the first text only, as the state above
@@ -216,7 +275,7 @@ export function LoadmapEditor({
     void loadCatalogFor(initial).then(() =>
       setState((s) => {
         if (s.source !== initial) return s
-        const result = compile(initial, { functions })
+        const result = compile(initial, { functions, ...beside() })
         return { ...s, result, good: result.definition ?? s.good }
       }),
     )
@@ -252,8 +311,8 @@ export function LoadmapEditor({
   useEffect(() => unmark, [unmark])
   // the text last loaded whole (the initial one or a template): replacing anything else asks first
   const loaded = useRef(initial)
-  const latest = useRef({ onChange, functions })
-  latest.current = { onChange, functions }
+  const latest = useRef({ onChange, onFiles, functions })
+  latest.current = { onChange, onFiles, functions }
   const [layout, setLayoutState] = useState<EditorLayout>(initialLayout)
   const setLayout = (l: EditorLayout) => {
     setLayoutState(l)
@@ -303,8 +362,10 @@ export function LoadmapEditor({
   const [selected, setSelected] = useState<string | null>(null)
   const [tab, setTab] = useState<InspectorTab>('box')
   // where each box is written, from the last compile: the cursor in a box's lines selects it
-  const symbols = useRef<DslSymbol[]>(state.result.symbols)
-  symbols.current = state.result.symbols
+  const symbols = useRef<DslSymbol[]>(state.result.symbols.filter((s) => s.file == null))
+  // and every box of the definition, with the file that declares it: a click on one opens it there
+  const everywhere = useRef({ symbols: state.result.symbols, given: state.given })
+  everywhere.current = { symbols: state.result.symbols, given: state.given }
   const formatRef = useRef<() => boolean>(() => false)
   const tools = useRef<HTMLDivElement>(null)
   // the phone's sheet of actions, drawn while it is open
@@ -313,7 +374,36 @@ export function LoadmapEditor({
   const shareGroup = useRef<HTMLSpanElement>(null)
   const embed = useRef<EmbedHandle>(null)
 
-  const accept = (source: string, result: CompileResult) => {
+  /** Every file as it is now, the open one from the editor. */
+  const filesNow = (): EditorFiles => {
+    const f = set.current
+    const open = view.current?.state.doc.toString() ?? state.source
+    return { path: f.entry, files: { ...f.others, [f.active]: open } }
+  }
+  // the other files' tokens, once per change of them: with the open text's they say whether the model is the same
+  const othersKey = useRef({ version: -1, key: '' })
+  const accept = (source: string, own: CompileResult) => {
+    const f = set.current
+    symbols.current = own.symbols.filter((s) => s.file == null)
+    // the diagram is the model's, whichever file is in the editor: a part is read through it anyway, a library is not
+    const through = f.active === f.entry || (own.role === 'part' && own.files[0] === f.entry)
+    const result = through
+      ? own
+      : compile(f.others[f.entry] ?? '', {
+          functions: latest.current.functions,
+          path: f.entry,
+          files: { ...f.others, [f.active]: source },
+        })
+    const given = through ? f.active : f.entry
+    if (othersKey.current.version !== f.version)
+      othersKey.current = {
+        version: f.version,
+        key: Object.keys(f.others)
+          .sort()
+          .map((p) => `${p}\n${fingerprint(f.others[p]!)}`)
+          .join('\n'),
+      }
+    const all = `${fingerprint(source)}\n${f.active}\n${othersKey.current.key}`
     const h = preview.current
     // a whole new text stays one until a version of it compiles: fixing its errors starts it fitted, from its defaults
     const whole = fresh.current
@@ -326,10 +416,10 @@ export function LoadmapEditor({
     } else if (tracking.current && !before.current && e?.scene) before.current = { scene: e.scene, ev: e.ev }
     setState((prev) => {
       if (prev.source === source && prev.result === result) return prev
-      if (!result.definition) return { ...prev, source, result }
-      const key = fingerprint(source)
-      if (key === prev.goodKey && prev.good) return { ...prev, source, result }
-      return { source, result, good: result.definition, goodKey: key, doc: prev.doc + (whole ? 1 : 0) }
+      if (!result.definition) return { ...prev, source, result, given }
+      const key = Object.keys(f.others).length ? all : fingerprint(source)
+      if (key === prev.goodKey && prev.good) return { ...prev, source, result, given }
+      return { source, result, good: result.definition, goodKey: key, doc: prev.doc + (whole ? 1 : 0), given }
     })
   }
   const acceptRef = useRef(accept)
@@ -338,64 +428,69 @@ export function LoadmapEditor({
   // biome-ignore lint/correctness/useExhaustiveDependencies: created once; a new text comes in through setSource
   useEffect(() => {
     if (!host.current) return
+    // the same for every file's state: each has its own text and history, and the one language
+    exts.current = [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
+      history(),
+      indentOnInput(),
+      bracketMatching(),
+      keymap.of([
+        {
+          key: 'Shift-Alt-f',
+          run: () => {
+            formatRef.current()
+            return true
+          },
+        },
+        ...defaultKeymap,
+        ...historyKeymap,
+        indentWithTab,
+      ]),
+      EditorState.tabSize.of(2),
+      EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ 'aria-label': 'loadmap definition' }),
+      loadmapLanguage({
+        functions: latest.current.functions,
+        around: () => aroundRef.current(),
+        onOpen: (at) => openRef.current(at),
+        onResult: (source, result) => acceptRef.current(source, result),
+      }),
+      EditorView.updateListener.of((u) => {
+        if (u.docChanged) {
+          typed.current = performance.now()
+          // what tracking follows: an edit's own lines, never what Format re-indents
+          if (tracking.current) {
+            const moved = edits.current.map((r) => ({
+              from: u.changes.mapPos(r.from, -1),
+              to: u.changes.mapPos(r.to, 1),
+            }))
+            if (!u.transactions.some((t) => t.isUserEvent('format')))
+              u.changes.iterChangedRanges((_a, _b, from, to) => moved.push({ from, to }))
+            edits.current = moved
+          }
+          const doc = u.state.doc.toString()
+          // only the inspector reads it: typing in the code layout re-renders nothing
+          if (shownLayout.current === 'reader') setText(doc)
+          latest.current.onChange?.(doc)
+          if (latest.current.onFiles) {
+            const f = set.current
+            latest.current.onFiles({ path: f.entry, files: { ...f.others, [f.active]: doc } })
+          }
+        }
+        setCanUndo(undoDepth(u.state) > 0)
+        // the cursor in a box's lines selects the box
+        if (u.selectionSet && u.view.hasFocus) {
+          const at = u.state.selection.main.head
+          const box = symbols.current.find((s) => s.kind === 'node' && s.decl.from <= at && at <= s.decl.to)
+          if (box) setSelected(box.id)
+        }
+      }),
+    ]
     const v = new EditorView({
       parent: host.current,
-      state: EditorState.create({
-        doc: initial,
-        extensions: [
-          lineNumbers(),
-          highlightActiveLineGutter(),
-          highlightActiveLine(),
-          history(),
-          indentOnInput(),
-          bracketMatching(),
-          keymap.of([
-            {
-              key: 'Shift-Alt-f',
-              run: () => {
-                formatRef.current()
-                return true
-              },
-            },
-            ...defaultKeymap,
-            ...historyKeymap,
-            indentWithTab,
-          ]),
-          EditorState.tabSize.of(2),
-          EditorView.lineWrapping,
-          EditorView.contentAttributes.of({ 'aria-label': 'loadmap definition' }),
-          loadmapLanguage({
-            functions: latest.current.functions,
-            onResult: (source, result) => acceptRef.current(source, result),
-          }),
-          EditorView.updateListener.of((u) => {
-            if (u.docChanged) {
-              typed.current = performance.now()
-              // what tracking follows: an edit's own lines, never what Format re-indents
-              if (tracking.current) {
-                const moved = edits.current.map((r) => ({
-                  from: u.changes.mapPos(r.from, -1),
-                  to: u.changes.mapPos(r.to, 1),
-                }))
-                if (!u.transactions.some((t) => t.isUserEvent('format')))
-                  u.changes.iterChangedRanges((_a, _b, from, to) => moved.push({ from, to }))
-                edits.current = moved
-              }
-              const doc = u.state.doc.toString()
-              // only the inspector reads it: typing in the code layout re-renders nothing
-              if (shownLayout.current === 'reader') setText(doc)
-              latest.current.onChange?.(doc)
-            }
-            setCanUndo(undoDepth(u.state) > 0)
-            // the cursor in a box's lines selects the box
-            if (u.selectionSet && u.view.hasFocus) {
-              const at = u.state.selection.main.head
-              const box = symbols.current.find((s) => s.kind === 'node' && s.decl.from <= at && at <= s.decl.to)
-              if (box) setSelected(box.id)
-            }
-          }),
-        ],
-      }),
+      state: EditorState.create({ doc: initial, extensions: exts.current }),
     })
     view.current = v
     return () => {
@@ -443,10 +538,129 @@ export function LoadmapEditor({
     }
   }, [state.good])
 
-  /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
-  const replace = (source: string) => {
+  /** The file at `path` in the editor, its own state back: where it was left, or new from its text. */
+  const switchTo = (path: string) => {
+    const v = view.current
+    const f = set.current
+    if (!v || path === f.active || !Object.hasOwn(f.others, path)) return false
+    states.current.set(f.active, v.state)
+    const next = states.current.get(path) ?? EditorState.create({ doc: f.others[path]!, extensions: exts.current })
+    const others = { ...f.others, [f.active]: v.state.doc.toString() }
+    delete others[path]
+    states.current.delete(path)
+    set.current = { ...f, active: path, others, version: f.version + 1 }
+    // what tracking and the cursor read are about the file that was open
+    before.current = null
+    edits.current = []
+    v.setState(next)
+    forceLinting(v)
+    setActive(path)
+    setText(next.doc.toString())
+    setCanUndo(undoDepth(next) > 0)
+    return true
+  }
+  /** A place go to definition found in another file: that file, at the place. */
+  const openAt = (at: Located) => {
+    if (at.file != null && !switchTo(at.file)) return
     const v = view.current
     if (!v) return
+    const end = v.state.doc.length
+    v.dispatch({ selection: { anchor: Math.min(at.from, end), head: Math.min(at.to, end) }, scrollIntoView: true })
+    v.focus()
+  }
+  const openRef = useRef(openAt)
+  openRef.current = openAt
+  /** The files changed as a whole (one added, removed, all replaced): the tabs, the next compile, the page's draft. */
+  const filesChanged = () => {
+    const f = set.current
+    setTabs([
+      f.entry,
+      ...Object.keys({ ...f.others, [f.active]: '' })
+        .filter((p) => p !== f.entry)
+        .sort(),
+    ])
+    setActive(f.active)
+    if (view.current) forceLinting(view.current)
+    latest.current.onFiles?.(filesNow())
+  }
+  /** A new file beside the model, and the line in the model's head that names it. */
+  const addFile = (kind: 'part' | 'library') => {
+    const f = set.current
+    const name = window.prompt(kind === 'part' ? 'A name for the part: story, data, …' : 'A name for the library', '')
+    if (!name) return
+    if (!/^[\w-]+$/.test(name)) {
+      setNote('A file name is letters, digits, - and _')
+      return
+    }
+    // its line goes in the model's head
+    if (f.active !== f.entry) switchTo(f.entry)
+    const v = view.current
+    if (!v) return
+    const folder = f.entry.split('/').slice(0, -1)
+    const base = f.entry
+      .split('/')
+      .at(-1)!
+      .replace(/\.loadmap$/, '')
+    const file = kind === 'part' ? `${base}.${name}.loadmap` : `${name}.loadmap`
+    const path = [...folder, file].join('/')
+    if (path === f.entry || Object.hasOwn(set.current.others, path)) {
+      setNote(`There is a ${file} already`)
+      return
+    }
+    const doc = v.state.doc.toString()
+    const version = /^loadmap (\d+(?:\.\d+)?)/.exec(doc)?.[1] ?? LANGUAGE_VERSION
+    // under the last line of the head: the "loadmap" line, then every include and import
+    const lines = doc.split('\n')
+    let last = 0
+    for (let i = 1; i < lines.length; i++) {
+      if (!/^(include|import)\b/.test(lines[i]!)) break
+      while (
+        i < lines.length - 1 &&
+        lines[i]!.includes('{') &&
+        !lines
+          .slice(last + 1, i + 1)
+          .join('')
+          .includes('}')
+      )
+        i++
+      last = i
+    }
+    const at = lines.slice(0, last + 1).join('\n').length
+    const text =
+      kind === 'part'
+        ? `loadmap ${version}\npart of "./${base}.loadmap"\n`
+        : `loadmap ${LANGUAGE_VERSION}\nlibrary "${name}"\n`
+    set.current = { ...set.current, others: { ...set.current.others, [path]: text }, version: set.current.version + 1 }
+    v.dispatch({
+      changes: { from: at, insert: `\n${kind === 'part' ? `include "./${file}"` : `import "./${file}" { }`}` },
+      annotations: isolateHistory.of('full'),
+    })
+    switchTo(path)
+    filesChanged()
+    setNote(`Added ${file}`)
+  }
+  /** A file taken out of the definition; the line that names it stays for the reader to remove, and says so. */
+  const removeFile = (path: string) => {
+    if (path === set.current.entry || !window.confirm(`Remove ${path.split('/').at(-1)}?`)) return
+    if (set.current.active === path) switchTo(set.current.entry)
+    const others = { ...set.current.others }
+    delete others[path]
+    states.current.delete(path)
+    set.current = { ...set.current, others, version: set.current.version + 1 }
+    filesChanged()
+  }
+
+  /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
+  const replace = (source: string, files?: EditorFiles) => {
+    const v = view.current
+    if (!v) return
+    // one file, unless it comes with others: the tabs go with the definition they were of
+    const entry = files?.path ?? ONE
+    const others = Object.fromEntries(Object.entries(files?.files ?? {}).filter(([p]) => p !== entry))
+    states.current.clear()
+    set.current = { entry, active: entry, others, version: set.current.version + 1 }
+    setTabs([entry, ...Object.keys(others).sort()])
+    setActive(entry)
     loaded.current = source
     shown.current = {}
     fresh.current = true
@@ -482,14 +696,18 @@ export function LoadmapEditor({
       for (const [k, v] of Object.entries(h.values() as Record<string, ParamValue>))
         if (defaults[k] !== v) changed[k] = v
     }
-    return encodeShare(view.current?.state.doc.toString() ?? state.source, changed)
+    const all = filesNow()
+    // one file makes the link every page out there reads; several go together
+    return Object.keys(all.files).length > 1
+      ? encodeShare(all.files[all.path]!, changed, all)
+      : encodeShare(view.current?.state.doc.toString() ?? state.source, changed)
   }
 
   /** One change from the inspector: the smallest edit of the text, its own undo step. */
   const change = (key: string, value: EditValue): string | null => {
     const v = view.current
     if (!v) return 'the editor is not ready'
-    const r = edit(v.state.doc.toString(), key, value, { functions })
+    const r = edit(v.state.doc.toString(), key, value, { functions, ...beside() })
     if ('error' in r) return r.error
     if (r.changes.length)
       v.dispatch({
@@ -504,7 +722,7 @@ export function LoadmapEditor({
     figure: published,
     condition: conditionText,
     number: fmt,
-    add: (pick) => addPublished(view.current?.state.doc.toString() ?? '', pick, { functions }),
+    add: (pick) => addPublished(view.current?.state.doc.toString() ?? '', pick, { functions, ...beside() }),
   }
   /** A pick from the catalog: its text added (a published statement, a box or its capacity), the box selected. */
   const addFromCatalog = (r: Extract<AddResult, { box: string }>, note: string) => {
@@ -525,7 +743,7 @@ export function LoadmapEditor({
     let source = v.state.doc.toString()
     const changes = []
     for (const [path, name, value] of steps) {
-      const r = setProperty(source, path, name, value, { functions })
+      const r = setProperty(source, path, name, value, { functions, ...beside() })
       if ('error' in r) return r.error
       source = r.source
       changes.push(r.changes)
@@ -600,7 +818,10 @@ export function LoadmapEditor({
     setSelected(id)
     setTab('box')
     const v = view.current
-    const box = symbols.current.find((s) => s.kind === 'node' && s.id === id)
+    const all = everywhere.current
+    const box = all.symbols.find((s) => s.kind === 'node' && s.id === id)
+    // a box another file declares: that file comes into the editor, for its lines and for the inspector's fields
+    if (box) switchTo(box.file ?? all.given)
     // in full screen, or on the diagram's tab, the text is out of sight: the keyboard must not go into it
     const full = preview.current?.board()?.svg.closest('[data-full]')
     if (textHidden || !v || !box || full) return
@@ -619,10 +840,12 @@ export function LoadmapEditor({
 
   useImperativeHandle(ref, () => ({
     source: () => view.current?.state.doc.toString() ?? state.source,
-    setSource: replace,
+    setSource: (source) => replace(source),
     loadmap: () => preview.current,
     shareHash,
     format: formatText,
+    files: filesNow,
+    setFiles: (files) => replace(files.files[files.path] ?? '', files),
   }))
 
   const shareLink = async () => {
@@ -640,7 +863,15 @@ export function LoadmapEditor({
   }
   const save = () => {
     const text = view.current?.state.doc.toString() ?? state.source
-    const name = fileName ?? slug(def?.model.title ?? '') ?? 'diagram'
+    // of several files, the one in the editor under its own name
+    const own =
+      tabs.length > 1
+        ? active
+            .split('/')
+            .at(-1)!
+            .replace(/\.loadmap$/, '')
+        : undefined
+    const name = own ?? fileName ?? slug(def?.model.title ?? '') ?? 'diagram'
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
     a.download = `${name || 'diagram'}.loadmap`
@@ -648,6 +879,8 @@ export function LoadmapEditor({
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
   }
   const goTo = (d: Diagnostic) => {
+    // a problem in another file: that file first
+    switchTo(d.file ?? state.given)
     const v = view.current
     if (!v) return
     v.dispatch({ selection: { anchor: Math.min(d.from, v.state.doc.length) }, scrollIntoView: true })
@@ -717,7 +950,11 @@ export function LoadmapEditor({
       <Inspector
         inspection={inspection}
         tab={tab}
-        onTab={setTab}
+        onTab={(t) => {
+          // the model's own lines are in its file
+          if (t === 'model') switchTo(set.current.entry)
+          setTab(t)
+        }}
         onEdit={change}
         lanes={Object.entries(def?.view.def.tiers ?? {}).map(([id, t]) => ({ id, ...t }))}
         onLane={(id, key, value) =>
@@ -799,14 +1036,21 @@ export function LoadmapEditor({
       />
     </Suspense>
   )
-  const addGroup = (sheet?: boolean) =>
-    catalog && (
-      <MenuGroup label="Add">
+  const addGroup = (sheet?: boolean) => (
+    <MenuGroup label="Add">
+      {catalog && (
         <MenuItem sheet={sheet} onSelect={() => setPicking(true)}>
           From the catalog…
         </MenuItem>
-      </MenuGroup>
-    )
+      )}
+      <MenuItem sheet={sheet} onSelect={() => addFile('part')}>
+        A part of this model…
+      </MenuItem>
+      <MenuItem sheet={sheet} onSelect={() => addFile('library')}>
+        A library…
+      </MenuItem>
+    </MenuGroup>
+  )
   // the same groups in the phone's sheet and in a narrow column's menu
   const viewGroup = (sheet?: boolean) => (
     <MenuGroup label="View">
@@ -1032,13 +1276,38 @@ export function LoadmapEditor({
               </button>
             </PanelHead>
           )}
+          {tabs.length > 1 && (
+            <div className="lme-tabs" role="tablist" aria-label="Files">
+              {tabs.map((p) => {
+                const name = p.split('/').at(-1)!
+                return (
+                  <span key={p} className="lme-tab" data-active={p === active || undefined}>
+                    <button type="button" role="tab" aria-selected={p === active} title={p} onClick={() => switchTo(p)}>
+                      {name}
+                    </button>
+                    {p !== tabs[0] && (
+                      <button
+                        type="button"
+                        className="lme-tab-x"
+                        aria-label={`Remove ${name}`}
+                        onClick={() => removeFile(p)}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                )
+              })}
+            </div>
+          )}
           <div className="lme-code" ref={host} />
           {list.length > 0 && (
             <ul className="lme-problems">
               {list.map((d) => (
-                <li key={`${d.from}:${d.message}`} data-severity={d.severity}>
+                <li key={`${d.file ?? ''}:${d.from}:${d.message}`} data-severity={d.severity}>
                   <button type="button" onClick={() => goTo(d)}>
                     <span className="lme-at">
+                      {tabs.length > 1 && `${(d.file ?? state.given).split('/').at(-1)}:`}
                       {d.line}:{d.column}
                     </span>{' '}
                     {d.message}

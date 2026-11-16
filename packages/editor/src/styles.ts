@@ -55,6 +55,13 @@ export const EDITOR_CSS = `
 .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(220px, 260px); }
 @container (max-width: 720px) { .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 980px) { .lme-left { position: static; } }
+.lme-tabs { display: flex; gap: 2px; overflow-x: auto; padding: 0 2px; scrollbar-width: thin; }
+.lme-tab { display: inline-flex; align-items: center; border: 1px solid var(--lm-line); border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--lm-muted); white-space: nowrap; }
+.lme-tab[data-active] { background: var(--lm-surface); color: var(--lm-fg); }
+.lme-tab button { font: 12px/1.4 var(--lm-mono); color: inherit; background: none; border: 0; padding: 5px 8px; cursor: pointer; }
+.lme-tab button:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; border-radius: 4px; }
+.lme-tab .lme-tab-x { padding: 5px 6px 5px 0; opacity: 0.6; }
+.lme-tab .lme-tab-x:hover { opacity: 1; }
 .lme-code { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; min-width: 0; }
 .lme-code .cm-editor { height: min(78vh, 900px); font: 13px/1.5 var(--lm-mono); color: var(--lm-fg); background: var(--lm-surface); }
 @container (max-width: 980px) { .lme-code .cm-editor { height: 55vh; } }

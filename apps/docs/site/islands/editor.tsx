@@ -35,6 +35,8 @@ const NAMES: Record<keyof typeof SOURCES, string> = {
   search: 'Search',
 }
 const DRAFT = 'loadmap-editor-draft'
+/** The draft's files when it has several: `{ path, files }`, the model's text also under the key above. */
+const DRAFT_FILES = 'loadmap-editor-draft-files'
 /** The reader's draft as it was before another text took its place. */
 const EARLIER = 'loadmap-editor-draft-earlier'
 /** The code panel's share of the width, as the reader left it (the divider's old share is not one). */
@@ -66,6 +68,22 @@ function write(key: string, value: string) {
 const WHOLE = new Set<string>([...TEMPLATES.map((t) => t.source), ...Object.values(SOURCES)])
 
 const readDraft = () => read(DRAFT)
+
+/** The draft's files, when it was left in several and they still read as files. */
+function readDraftFiles(): { path: string; files: Record<string, string> } | undefined {
+  try {
+    const d = JSON.parse(read(DRAFT_FILES) ?? 'null') as { path?: unknown; files?: unknown } | null
+    if (!d || typeof d.path !== 'string' || typeof d.files !== 'object' || d.files === null) return undefined
+    const files: Record<string, string> = {}
+    for (const [p, text] of Object.entries(d.files)) {
+      if (typeof text !== 'string' || !p.endsWith('.loadmap')) return undefined
+      files[p] = text
+    }
+    return Object.hasOwn(files, d.path) && Object.keys(files).length > 1 ? { path: d.path, files } : undefined
+  } catch {
+    return undefined
+  }
+}
 const query = () => new URLSearchParams(location.search)
 
 /** The site's embed page for a share hash, with what the reader picked: the page ClickUp's /embed frames. */
@@ -76,11 +94,18 @@ function embedLink(hash: string, o: EmbedOptions): string {
   if (o.play) url.searchParams.set('play', '1')
   return `${url.href}#${hash}`
 }
-const fromLink = () => location.hash.startsWith('#v1.')
+const fromLink = () => location.hash.startsWith('#v1.') || location.hash.startsWith('#v2.')
 const template = () => TEMPLATES.find((t) => t.id === query().get('template'))
 const example = () => {
   const name = query().get('example')
   return name && Object.hasOwn(SOURCES, name) ? SOURCES[name as keyof typeof SOURCES] : undefined
+}
+/** What the editor opens with when no link says: a template, an example, else the draft when it is in several files. */
+const startFrom = (): Shared | undefined => {
+  const whole = template()?.source ?? example()
+  if (whole != null) return { source: whole, values: {} }
+  const files = readDraftFiles()
+  return files ? { source: files.files[files.path]!, values: {}, ...files } : undefined
 }
 
 /**
@@ -186,7 +211,7 @@ function Editor({ root }: { root: URL }) {
   const [close] = useState(() => closeTo(root))
   // a link's definition wins over the draft; reading it is async, so the editor waits for it
   const [start, setStart] = useState<Shared | null>(() =>
-    fromLink() ? null : { source: template()?.source ?? example() ?? readDraft() ?? SOURCES.uploads, values: {} },
+    fromLink() ? null : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
   )
   useEffect(() => {
     if (!start) decodeShare(location.hash).then(setStart)
@@ -219,6 +244,19 @@ function Editor({ root }: { root: URL }) {
       history.replaceState(null, '', location.pathname)
     }
     write(DRAFT, s)
+  }
+  // a draft in several files: all of them, and its model under the draft's own key, where one file is read
+  const saveFiles = (all: { path: string; files: Readonly<Record<string, string>> }) => {
+    if (Object.keys(all.files).length > 1) {
+      write(DRAFT_FILES, JSON.stringify(all))
+      write(DRAFT, all.files[all.path] ?? '')
+    } else if (read(DRAFT_FILES) != null) {
+      try {
+        localStorage.removeItem(DRAFT_FILES)
+      } catch {
+        // as for writing: a convenience
+      }
+    }
   }
   // the draft is written on every change, so leaving loses nothing; with a page of the docs behind, Close goes back
   // to it, where the reader was
@@ -260,6 +298,10 @@ function Editor({ root }: { root: URL }) {
       theme="inherit"
       initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
       values={'values' in start ? start.values : undefined}
+      files={
+        'files' in start && start.files && start.path != null ? { path: start.path, files: start.files } : undefined
+      }
+      onFiles={saveFiles}
       layout={layout}
       onChange={save}
       embedLink={embedLink}

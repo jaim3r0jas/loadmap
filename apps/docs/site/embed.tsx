@@ -97,8 +97,10 @@ async function main(el: HTMLElement) {
     root.render(<Problem title="This link holds no loadmap model." detail={detail} fix="Make one in the editor" />)
     return
   }
-  await loadCatalogFor(shared.source)
-  const r = compile(shared.source)
+  // a link with several files carries every one of them: nothing is fetched
+  const files = shared.files && shared.path != null ? { path: shared.path, files: shared.files } : {}
+  for (const text of shared.files ? Object.values(shared.files) : [shared.source]) await loadCatalogFor(text)
+  const r = compile(shared.source, files)
   if (!r.ok || !r.definition) {
     const first = r.diagnostics.find((d) => d.severity === 'error') ?? r.diagnostics[0]
     const detail = first && formatDiagnostic(first, shared.source, 'embed.loadmap').split('\n')[0]
