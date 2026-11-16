@@ -43,7 +43,7 @@ import {
 import { type Hop, hopsOf, unjoined } from '@loadmap/layout/internal'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './catalog'
-import { type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
+import { closest, type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
   compileFormula,
   type Formula,
@@ -631,7 +631,7 @@ class Compiler {
       return known.get(stage)!
     }
     const counted = this.lostFed(boxes, boxById, root.edges, stageDefs, losses)
-    this.unseenLosses(flows, stageOf, counted, shape, losses)
+    this.unseenLosses(flows, stageOf, counted, shape, losses, componentDefs)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs)) {
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
@@ -962,6 +962,7 @@ class Compiler {
     counted: Map<string, string>,
     shape: Parameters<typeof lossesIn>[0],
     losses: (stage: string) => readonly Loss[],
+    components: Record<string, unknown>,
   ) {
     const seen = (stage: string, loss: Loss) => counted.has(`${stage}\u0000${loss}`)
     // one warning for a stage and a loss, however many flows lose there: one lost box counts them all
@@ -984,7 +985,7 @@ class Compiler {
     for (const b of flows) {
       const f = b.args.id?.name
       if (!f) continue
-      const { ways } = waysOf(shape, f)
+      const { ways, open } = waysOf(shape, f)
       // this flow's drops: at a queue on its ways that a stage with a component reads after it
       const drop = b.children.find((c) => c.keyword === 'drop')
       const read = (w: readonly string[], i: number) => {
@@ -1008,6 +1009,10 @@ class Compiler {
       const timeout = this.prop(b, 'timeout')
       const t = (shape.flows[f] as { timeout?: unknown } | undefined)?.timeout
       if (!timeout || t === undefined || (typeof t === 'number' && !(t > 0))) continue
+      // nor one without latency: no stage on its way has a service, which the model refuses at this same line
+      const timed = (c: unknown) => (components[c as string] as { service?: unknown } | undefined)?.service != null
+      const component = (st: string) => (shape.stages[st] as { component?: string } | undefined)?.component
+      if (!(open ? Object.keys(components).some(timed) : ways.flat().some((st) => timed(component(st))))) continue
       // too slow at the end of each way, or answered too slowly by a cache on it
       const late = [
         ...new Set([...ways.map((w) => w.at(-1)!), ...ways.flat().filter((s) => shape.stages[s]?.kind === 'cache')]),
@@ -1345,16 +1350,20 @@ class Compiler {
         if (!spec.children.includes(k) || !childSpec || k === '') {
           if (own(spec.props, k)) this.report.error('misplaced', s.keyword, `"${k}" is a property: write "${k}: …"`)
           else if (childSpec) this.report.error('misplaced', s.keyword, `"${k}" cannot go ${here}`, where(k))
-          else
+          else {
+            const meant = closest(k, [...spec.children, ...Object.keys(spec.props)])
             this.report.error(
               'unknown-statement',
               s.keyword,
               `unknown statement "${k}" ${here}`,
               didYouMean(k, [...spec.children, ...Object.keys(spec.props)]),
             )
-          // what it would have declared is not "unknown" wherever it is used: the one mistake is this line
-          const id = s.args[0]
-          if (!own(spec.props, k) && id?.t === 'id') this.report.quiet(id.name)
+            // a misspelt keyword that declares (`nod api`): the uses of what it would have declared are this one
+            // mistake, not each an unknown name
+            const id = s.args[0]
+            const declares = meant != null && SCHEMA[meant]?.args[0]?.name === 'id'
+            if (declares && id?.t === 'id') this.report.quiet(id.name)
+          }
           continue
         }
         b.children.push(this.shape(k, childSpec, s.body ?? [], s.keyword, s))
@@ -1366,7 +1375,7 @@ class Compiler {
     }
     if (decl)
       for (const [k, p] of Object.entries(spec.props))
-        if (p.required && !b.props.has(k) && !decl.broken?.includes(k))
+        if (p.required && !this.written(b, k))
           this.report.error('missing-property', at, `"${keyword}" needs "${k}: …"`, p.doc, { key: k })
     return b
   }
@@ -1458,8 +1467,9 @@ class Compiler {
         stageBlocks[1]!.at,
         'a node runs at most one stage; a cluster can hold several queues',
       )
-      // the rest are that one mistake: as stages they would only be declared twice
-      stages.splice(1)
+      // the rest without an id of their own would take the box's: declared twice, which is this one mistake again
+      const named = stages.slice(1).filter((s) => s.block.args.id)
+      stages.splice(1, stages.length, ...named)
     }
     if (b.keyword === 'cluster' && !stages.length)
       this.report.error('missing-part', b.at, 'a cluster needs a queue', 'queue topic { partitions { orders: 12 } }')
@@ -1851,6 +1861,11 @@ class Compiler {
     }
   }
 
+  /** Whether a block has a property, its value compiled or not: one that did not parse is still written. */
+  private written(b: Block, key: string): boolean {
+    return b.props.has(key) || !!b.decl?.broken?.includes(key)
+  }
+
   private prop(b: Block, key: string): Property | undefined {
     return b.props.get(key)?.[0]
   }
@@ -1871,6 +1886,8 @@ class Compiler {
           `write measured(${this.slice(e)}, "unit", "source") or estimated(…)`,
         )
       else this.report.error('wrong-type', e, `expected ${typeWord(want)}, this is ${typeWord(f.type)}`)
+      // failed, as a formula that does not compile: what reads its value would only say the same thing again
+      return { type: 'any', constant: false, run: () => undefined }
     }
     return f
   }
@@ -2064,7 +2081,7 @@ class Compiler {
     }
     if (b.props.has('min') || b.props.has('max')) {
       for (const k of ['min', 'max'])
-        if (!b.props.has(k) && !b.decl?.broken?.includes(k))
+        if (!this.written(b, k))
           this.report.error('missing-property', b.at, `a slider needs "${k}: …"`, undefined, { key: k })
       const r: Record<string, unknown> = { ...o }
       for (const k of ['min', 'max', 'step']) {
@@ -2432,7 +2449,7 @@ class Compiler {
         this.report.error('bad-box', demand.key, 'a component that is held works out its demand: drop one of them')
     }
     const at = box ? (box.args.id ?? box.at) : b.at
-    const missing = ['capacity', 'over'].filter((k) => !(k in o) && !b.decl?.broken?.includes(k))
+    const missing = ['capacity', 'over'].filter((k) => !(k in o) && !this.written(b, k))
     // none of the lines that make one: the box was not meant as a component
     const nested = b.children.some((c) => c.keyword === 'component')
     if (b === box && !nested && missing.length === 2 && !('demand' in o)) {

@@ -145,6 +145,7 @@ class Parser {
       }
       // a property, when the statement is one: `key:`
       const key = t.kind === 'ident' && this.is(':', 1) ? t.text : undefined
+      const kept = out.length
       try {
         this.leftOpen = false
         out.push(this.statement())
@@ -154,7 +155,7 @@ class Parser {
       } catch (e) {
         if (!(e instanceof Bail)) throw e
         // a property whose value failed is still written: the block must not also say it is missing
-        if (key) this.broken.push(key)
+        if (key && out.length === kept) this.broken.push(key)
         this.recover()
       }
     }
