@@ -19,6 +19,7 @@ export {
   type Span,
 } from './diagnostics'
 export { FormulaError, type HostFunctions } from './expr'
+export { type Files, gather, imports, type Role } from './files'
 export { FORMAT_WIDTH, type FormatResult, format } from './format'
 export {
   type Completion,
@@ -36,4 +37,4 @@ export {
   signatureHelp,
   type TextChange,
 } from './help'
-export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, sharedValues } from './share'
+export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, type SharedFiles, sharedValues } from './share'

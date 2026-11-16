@@ -38,7 +38,6 @@ const DONE = '$settled'
 type Node = Span & { name?: string; t?: string; [DONE]?: true }
 
 const isBox = (s: Stmt): s is Decl => s.kind === 'decl' && (BOXES as readonly string[]).includes(s.keyword.name)
-const isSubsystem = (s: Stmt): s is Decl => s.kind === 'decl' && s.keyword.name === 'subsystem'
 const isInput = (s: Stmt): s is Decl => s.kind === 'decl' && s.keyword.name === 'input'
 const isWith = (s: Stmt): s is Decl => s.kind === 'decl' && s.keyword.name === 'with'
 const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0].name : undefined)
@@ -115,15 +114,18 @@ export class Expander {
     const out: Stmt[] = []
     const paths = new Map<string, Path>()
     for (const s of stmts) {
-      if (isBox(s)) {
-        out.push(this.box(s, env, []))
-        this.count(s.keyword)
-      } else if (isSubsystem(s)) out.push(...this.subsystem(s, env, depth, paths))
-      else if (s.kind === 'decl' && (s.keyword.name === 'input' || s.keyword.name === 'with'))
+      // by its keyword: a guard that says "a box" would leave no statement for the lines after it
+      const d = s.kind === 'decl' ? s : undefined
+      const k = d?.keyword.name
+      if (d && (BOXES as readonly string[]).includes(k!)) {
+        out.push(this.box(d, env, []))
+        this.count(d.keyword)
+      } else if (d && k === 'subsystem') out.push(...this.subsystem(d, env, depth, paths))
+      else if (d && (k === 'input' || k === 'with'))
         this.report.error(
           'misplaced',
-          s.keyword,
-          s.keyword.name === 'input'
+          d.keyword,
+          k === 'input'
             ? 'an input goes in a box or a subsystem of a library'
             : '"with" goes in the box or the subsystem that is like another',
         )

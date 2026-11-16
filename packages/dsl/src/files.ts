@@ -133,6 +133,40 @@ export function imports(
   }
 }
 
+/**
+ * Every file a definition reaches, read through `files`: for a link, a recording or a flat copy. `path` is the file to
+ * open: the model, also when `source` is one of its parts or a variant of it. `missing` are the paths nothing answered.
+ */
+export function gather(
+  source: string,
+  o: { path?: string; files?: Files } = {},
+): { path: string; files: Record<string, string>; missing: string[] } {
+  const self = normalizePath(o.path ?? DEFAULT_PATH) ?? DEFAULT_PATH
+  const out: Record<string, string> = {}
+  const missing: string[] = []
+  const put = (p: string, text: string) =>
+    Object.defineProperty(out, p, { value: text, enumerable: true, writable: true, configurable: true })
+  let entry = self
+  const todo: [string, string][] = [[self, source]]
+  let total = 0
+  while (todo.length) {
+    const [p, text] = todo.pop()!
+    if (Object.hasOwn(out, p) || Object.keys(out).length >= MAX_FILES || total + text.length > MAX_TOTAL) continue
+    total += text.length
+    put(p, text)
+    const head = imports(text, p)
+    for (const f of head.files) {
+      if (f.path == null || Object.hasOwn(out, f.path)) continue
+      // a part's model includes it, and is the file to open; a variant is opened as itself
+      if (f.kind === 'part' && p === self) entry = f.path
+      const other = f.path === self ? source : fileText(o.files, f.path)
+      if (other == null) missing.push(f.path)
+      else todo.push([f.path, other])
+    }
+  }
+  return { path: entry, files: out, missing }
+}
+
 /** A file's role, its head lines and the statements after them. Head lines further down are reported and left out. */
 export function readHead(
   report: Reporter,
