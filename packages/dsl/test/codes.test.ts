@@ -10,7 +10,7 @@ const checkout = read('../../../examples/checkout/checkout.loadmap')
 const search = read('../../../examples/search/search.loadmap')
 
 /** For each code a quick fix keys on, a text that reports it. */
-const BROKEN: Record<(typeof FIXED_CODES)[number], string> = {
+const BROKEN: Record<string, string> = {
   'missing-property': cache.replace('  rate: 2_000 * load\n', ''),
   'bare-capacity': cache.replace(
     'capacity: estimated(50_000, "ops/s", "vendor sizing for this node")',
@@ -23,8 +23,9 @@ const BROKEN: Record<(typeof FIXED_CODES)[number], string> = {
 }
 
 it('every code a quick fix keys on is reported, and gets its fix', () => {
+  expect(Object.keys(BROKEN).sort()).toEqual([...FIXED_CODES].sort())
   for (const code of FIXED_CODES) {
-    const src = BROKEN[code]
+    const src = BROKEN[code]!
     const list = compile(src).diagnostics
     const i = list.findIndex((d) => d.code === code)
     expect(i, `nothing reports ${code}`).toBeGreaterThanOrEqual(0)
@@ -41,6 +42,12 @@ it('every code is reported somewhere', () => {
       .join('\n')
   }
   const sources = dir('../src/') + dir('../../cli/src/')
-  const unused = Object.keys(CODES).filter((code) => !sources.includes(`'${code}'`))
+  // as a diagnostic's code: the first argument of a report (or of a choice there), the last of a parser failure, a
+  // field of a diagnostic built by hand
+  const reported = (code: string) =>
+    new RegExp(
+      String.raw`(?:(?:error|warning)\(\s*(?:[\w.]+ \? '[a-z-]+' : )?|\? |\? '[a-z-]+' : |undefined, |code: )'${code}'`,
+    ).test(sources)
+  const unused = Object.keys(CODES).filter((code) => !reported(code))
   expect(unused).toEqual([])
 })

@@ -44,6 +44,13 @@ describe('quick fixes', () => {
     ).toContain('load "Traffic, × today" { max: 1 }')
   })
 
+  it('add held to a component whose on names the stages that hold it', () => {
+    const [fix] = fixes(checkout.replace('  held: 20ms\n', ''))
+    expect(fix?.d.code).toBe('missing-property')
+    expect(fix?.title).toBe('Add "held: 1"')
+    expect(fix?.text).toBe(checkout.replace('  held: 20ms\n', '').replace('{\n  on: db', '{\n  held: 1\n  on: db'))
+  })
+
   it('add to a block whose first line shares the "{", and to a box\'s component', () => {
     const shared = cache.replace(
       'flow reads "reads" {\n  unit: "read"\n  rate: 2_000 * load',

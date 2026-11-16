@@ -123,8 +123,8 @@ export class Reporter {
     hint?: string | Suggestion,
     data?: Record<string, string>,
   ) {
-    // one mark per place and message: recovery can reach the same spot twice
-    const key = `${at.from}:${message}`
+    // one mark per place, code and message: recovery can reach the same spot twice
+    const key = `${at.from}:${code}:${message}`
     if (this.seen.has(key)) return
     this.seen.add(key)
     if (this.list.length >= MAX_DIAGNOSTICS) {
