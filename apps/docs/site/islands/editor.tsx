@@ -18,6 +18,9 @@ import { checkoutSource } from '@loadmap/example-checkout'
 import { searchSource } from '@loadmap/example-search'
 import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import platformSource from '../../../../docs/multi-file/platform.loadmap?raw'
+import shopSource from '../../../../docs/multi-file/shop.loadmap?raw'
+import storySource from '../../../../docs/multi-file/shop.story.loadmap?raw'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { useRecorder } from './recorder'
@@ -33,6 +36,11 @@ const NAMES: Record<keyof typeof SOURCES, string> = {
   checkout: 'Checkout',
   alerts: 'Alerts',
   search: 'Search',
+}
+/** One definition in several files: a model, its part and the library it imports, each a tab. */
+const SHOP = {
+  path: 'shop.loadmap',
+  files: { 'shop.loadmap': shopSource, 'shop.story.loadmap': storySource, 'platform.loadmap': platformSource },
 }
 const DRAFT = 'loadmap-editor-draft'
 /** The draft's files when it has several: `{ path, files }`, the model's text also under the key above. */
@@ -275,6 +283,7 @@ function Editor({ root }: { root: URL }) {
           label: NAMES[n],
           onSelect: () => editor.current?.setSource(SOURCES[n]),
         })),
+        { label: 'A shop in several files', onSelect: () => editor.current?.setFiles(SHOP) },
         ...(earlier != null
           ? [{ label: 'Your earlier draft', onSelect: () => editor.current?.setSource(earlier) }]
           : []),

@@ -14,6 +14,11 @@ export interface Linked {
   versionAt(offset: number): Version
   /** A library checked on its own: drawn from its defaults, with nothing around it. */
   preview: boolean
+  /**
+   * For a library on its own: where the boxes that stand in for a model are said to be (its `library` line). A
+   * prototype may leave a required line to the box that is like it: one missing there is no mistake of the library.
+   */
+  stand?: Span
 }
 
 const VALUES = ['let', 'fit', 'metric', 'measure', 'tier', 'published'] as const
@@ -107,6 +112,7 @@ export function link(loader: Loader, entry: SourceFile, hosted: ReadonlySet<stri
   const body = entry.role === 'library' ? l.alone(entry) : l.model(entry, variant)
   return {
     body,
+    ...(entry.role === 'library' && { stand: l.stand }),
     version: entry.version ?? CURRENT,
     versionAt: (offset) => loader.at(offset).version ?? CURRENT,
     preview: entry.role === 'library',
@@ -144,6 +150,8 @@ class Linker {
   /** Those values, as statements of the model. */
   private brought: Stmt[] = []
   private expander: Expander
+  /** Where a library checked alone puts what stands in for a model. */
+  stand: Span = { from: 0, to: 0 }
 
   constructor(
     private readonly loader: Loader,
@@ -495,6 +503,7 @@ class Linker {
     const lib = this.read(file, [file.path])
     this.libraries.set(file.path, lib)
     const at: Span = file.head.find((h) => h.kind === 'library')?.decl.keyword ?? { from: 0, to: 0 }
+    this.stand = at
     const id = (name: string): Ident & { t: 'id' } => ({ t: 'id', name, from: at.from, to: at.to })
     const num = (value: number): Expr => ({ t: 'num', value, from: at.from, to: at.to })
     const text = (value: string): Expr => ({ t: 'str', value, from: at.from, to: at.to })
@@ -541,6 +550,8 @@ class Linker {
         decl(d.keyword.name, [id(name), ...d.args.slice(1)], set.length ? [like, decl('with', [], set)] : [like]),
       )
     }
+    // a definition has a flow: a library that asks for none gets one that passes nothing of it
+    if (!flows.size) flows.set('load', [])
     for (const [flow, passes] of flows) {
       if (!passes.length) {
         // nothing in the library gives it a stage: it ends in a box of its own, so its rate is still a number
