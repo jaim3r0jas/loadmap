@@ -35,7 +35,7 @@ async function mount(
     theme?: 'light' | 'dark'
     embedLink?: (hash: string, o: EmbedOptions) => string
     exportItems?: BarSection[]
-    files?: EditorFiles
+    several?: EditorFiles
   } = {},
 ) {
   await page.viewport(1440, 1000)
@@ -51,7 +51,7 @@ async function mount(
       theme={o.theme}
       embedLink={o.embedLink}
       exportItems={o.exportItems}
-      files={o.files}
+      files={o.several}
     />,
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
@@ -77,7 +77,7 @@ describe('the editor', () => {
       path: 'shop.loadmap',
       files: { 'shop.loadmap': shop, 'shop.story.loadmap': story, 'platform.loadmap': platform },
     }
-    const { host, handle, view, edit } = await mount({ source: shop, files })
+    const { host, handle, view, edit } = await mount({ source: shop, several: files })
     const tabs = () => [...host.querySelectorAll('.lme-tabs [role="tab"]')].map((t) => t.textContent)
     const status = () => host.querySelector('.lme-status')!.textContent
     const boxes = () =>

@@ -6,7 +6,6 @@ import {
   completionsAcross,
   decodeShare,
   definitionAcross,
-  edit,
   encodeShare,
   flatten,
   gather,
@@ -16,7 +15,7 @@ import {
   referencesAcross,
   renameAcross,
 } from '../src'
-import { fileText, relativePath, resolvePath } from '../src/internal'
+import { edit, fileText, relativePath, resolvePath } from '../src/internal'
 
 /** The multi-file example of the docs: a model, its part, the library it imports and a variant. */
 const DIR = 'docs/multi-file'
