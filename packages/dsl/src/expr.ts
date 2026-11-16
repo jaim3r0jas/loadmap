@@ -227,14 +227,8 @@ class Compiler {
         const a = this.compile(e.arg)
         const run = a.run
         if (e.op === '!') {
-          // the whole "!load" is what the hint replaces: write load == 0
-          if (a.type !== 'boolean' && a.type !== 'any')
-            this.strict(
-              'wrong-type',
-              e,
-              `"!" takes true or false, this is ${typeWord(a.type)}`,
-              conditionHint(e.arg, a.type, this.slice(e.arg), true),
-            )
+          // marked on the whole "!load": that is what its fix, load == 0, replaces
+          this.condition(e.arg, a, '"!" takes', e)
           return { type: 'boolean', constant: a.constant, run: (c, l) => !run(c, l) }
         }
         this.want(e.arg, a, 'number')
@@ -521,21 +515,16 @@ class Compiler {
     return this.report.source.slice(e.from, e.to)
   }
 
-  /** A side of `!`, `&&`, `||` or the test of `? :`: true or false, never a number or a text read as one. */
-  condition(e: Expr, f: Formula, what: string) {
-    if (f.type === 'boolean' || f.type === 'any') return
-    this.strict(
-      'wrong-type',
-      e,
-      `${what} true or false, this is ${typeWord(f.type)}`,
-      conditionHint(e, f.type, this.slice(e)),
-    )
+  /** A side of `!` (marked at `not`), `&&`, `||` or the test of `? :`: true or false. */
+  condition(e: Expr, f: Formula, what: string, not?: Span) {
+    const issue = notCondition(e, f.type, this.report.source, what, !!not)
+    if (issue) this.strict('wrong-type', not ?? e, issue.message, issue.hint)
   }
 
   /** `&&` and `||`: true or false on both sides; `0 || 20` as a fallback says how to write one. */
   logical(e: Extract<Expr, { t: 'bin' }>, l: Formula, r: Formula) {
     if (e.op === '||' && l.type === 'number' && r.type === 'number') {
-      const [a, b] = [this.slice(e.left), this.slice(e.right)]
+      const [a, b] = [operand(e.left, this.report.source), operand(e.right, this.report.source)]
       this.strict(
         'wrong-type',
         e,
@@ -555,7 +544,8 @@ class Compiler {
   comparison(e: Extract<Expr, { t: 'bin' }>, l: Formula, r: Formula) {
     const level = RELATIONAL.has(e.op) ? RELATIONAL : EQUALITY
     const left = e.left
-    if (left.t === 'bin' && level.has(left.op)) {
+    // `(a == 1) != (b == 2)` compares two answers on purpose: only a comparison without parentheses chains
+    if (left.t === 'bin' && level.has(left.op) && !parenthesized(left)) {
       const mid = this.slice(left.right)
       this.strict(
         'chained-comparison',
@@ -613,11 +603,39 @@ class Compiler {
   }
 }
 
-/** How to turn a number or a text into the true or false a condition takes; `negated` for the side of a "!". */
-export function conditionHint(e: Expr, type: Type, text: string, negated = false): string | undefined {
-  if (e.t === 'num' || e.t === 'str') return 'write true or false'
-  const op = negated ? '==' : '!='
-  return type === 'number' ? `write ${text} ${op} 0` : type === 'string' ? `write ${text} ${op} ""` : undefined
+const ARITHMETIC = new Set(['+', '-', '*', '/', '%'])
+
+/** An operator written in parentheses: the parser keeps no node for them, only the wider span. */
+const parenthesized = (e: Extract<Expr, { t: 'bin' }>) => e.from < e.left.from
+
+/** A formula's text as the operand of a comparison in a fix: `a || b` becomes `(a || b)`, so the fix means it. */
+function operand(e: Expr, source: string): string {
+  const text = source.slice(e.from, e.to)
+  const loose =
+    (e.t === 'bin' && !ARITHMETIC.has(e.op) && !parenthesized(e)) || (e.t === 'cond' && e.from === e.test.from)
+  return loose ? `(${text})` : text
+}
+
+/**
+ * A condition (`what`: '"&&" takes', '"when" takes') that is not true or false: the message, and the fix that makes it
+ * one (`load != 0`; `load == 0` for the side of a "!"). Undefined when it is one, its type is unknown, or it is an
+ * `&&` or `||` (its sides are checked).
+ */
+export function notCondition(
+  e: Expr,
+  type: Type,
+  source: string,
+  what: string,
+  negated = false,
+): { message: string; hint?: string } | undefined {
+  if (type === 'boolean' || type === 'any') return undefined
+  // `a || b` is marked where its own sides are: one mistake, one mark
+  if (e.t === 'bin' && (e.op === '&&' || e.op === '||')) return undefined
+  const message = `${what} true or false, this is ${typeWord(type)}`
+  if (e.t === 'num' || e.t === 'str') return { message, hint: 'write true or false' }
+  const [text, op] = [operand(e, source), negated ? '==' : '!=']
+  const zero = type === 'number' ? '0' : type === 'string' ? '""' : undefined
+  return { message, hint: zero && `write ${text} ${op} ${zero}` }
 }
 
 /**

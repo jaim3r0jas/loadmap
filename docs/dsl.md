@@ -113,8 +113,8 @@ each side of `&&`, `||` and `!`, a `when`, an `enabled`) is `true` or `false`, n
 `pods ? …` is `pods != 0 ? …`. `< <= > >=` compare numbers, `==` and `!=` compare like with like (`pods == "4"` is
 always false), a literal compared with a select is one of its options, and comparisons don't chain: `1 < load < 3`
 is `1 < load && load < 3`. Both answers of a `? :` have the same type. Where the definition is computed (the
-defaults, each preset and scenario), a rate, a demand and a capacity are at least 0, and a preset's load and slider
-values stay in their ranges. From `loadmap 1.1` each of these is an error; a file stamped before it gets a warning
+defaults, each preset and scenario), a rate and a demand are at least 0, a capacity is above 0, and a preset's load
+and slider values stay in their ranges. From `loadmap 1.1` each of these is an error; a file stamped before it gets a warning
 that says so and computes as it did. A demand that is not a number (`flows.x / (pods - 2)` with 2 pods) is a warning,
 as a rate's is.
 
