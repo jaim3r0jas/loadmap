@@ -70,12 +70,13 @@ import {
   own,
   type PANELS,
   type PropSpec,
+  propNamed,
   SCHEMA,
   type Scope,
   STAGES,
 } from './schema'
 import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitNames, unitOf } from './units'
-import { before, CURRENT, LANGUAGE_VERSION, needs, stampOf, type Version, versionText } from './versions'
+import { before, CURRENT, LANGUAGE_VERSION, needs, parseVersion, stampOf, type Version, versionText } from './versions'
 
 export { LANGUAGE_VERSION }
 
@@ -119,7 +120,8 @@ export interface MeasureQuery {
   /** PromQL for Prometheus; for Elasticsearch, the request as JSON: index, time field, agg, field and query. */
   query: string
   stat?: Stat
-  min?: number
+  /** The samples the window needs before its value counts. */
+  minSamples?: number
   /** The fallback's unit, or the measure's own for a number. */
   unit: string
 }
@@ -402,10 +404,11 @@ class Compiler {
     for (const f of fits) this.fit(f)
     // a published figure is read like a let: a capacity in `derived`
     for (const b of publisheds) if (b.args.id) this.lets.set(b.args.id.name, 'capacity')
-    // a connection that gives max is a limit: expect, focus and formulas read its id as a component's
+    // a connection that gives accepts is a limit: expect, focus and formulas read its id as a component's
     const limits = new Map(componentNames)
     for (const b of byKind('connection'))
-      if (b.args.id && b.props.has('max') && !componentNames.has(b.args.id.name)) limits.set(b.args.id.name, b.args.id)
+      if (b.args.id && b.props.has('accepts') && !componentNames.has(b.args.id.name))
+        limits.set(b.args.id.name, b.args.id)
     this.names = {
       params: paramTypes,
       lets: this.lets,
@@ -797,6 +800,7 @@ class Compiler {
           layout.key,
           `layout: ${way} is now direction: ${way}`,
           'loadmap fmt rewrites it',
+          { to: 'direction' },
         )
         options.direction = way === 'down' ? 'DOWN' : 'RIGHT'
       }
@@ -1197,10 +1201,10 @@ class Compiler {
           )
       }
     }
-    for (const k of ['max', 'skew']) {
-      const p = this.prop(b, k)
-      if (p) def[k] = this.dyn(p.value, 'capacity', 'ctx', checkCapacity)
-    }
+    const accepts = this.prop(b, 'accepts')
+    if (accepts) def.accepts = this.dyn(accepts.value, 'capacity', 'ctx', checkCapacity)
+    const skew = this.prop(b, 'skew')
+    if (skew) def.skew = this.dyn(skew.value, 'capacity', 'ctx', checkCapacity)
     if ((def.assign === 'key' || def.assign === 'leader') && def.members === undefined) {
       const m = membersOf(to)
       if (m !== undefined) def.members = m
@@ -1342,7 +1346,17 @@ class Compiler {
     const here = keyword ? `in ${keyword}` : 'at the top'
     for (const s of stmts) {
       if (s.kind === 'prop') {
-        const k = s.key.name
+        let k = s.key.name
+        const renamed = own(spec.props, k) ? undefined : propNamed(spec.props, k)
+        if (renamed) {
+          // the old name: read under the new one; a file stamped before the new name has nothing else to write
+          k = renamed.name
+          const since = parseVersion(renamed.spec.since ?? '1.0')!
+          // beside the new name a rename would set it twice: the error that says so is the one to act on
+          const both = stmts.some((x) => x.kind === 'prop' && x.key.name === k)
+          if (!before(this.version, since) && !both)
+            this.report.warning('deprecated', s.key, `${s.key.name} is now ${k}`, 'loadmap fmt rewrites it', { to: k })
+        }
         if (!spec.open && !own(spec.props, k)) {
           const hint = spec.children.includes(k)
             ? `write it as a block: ${k} { … }`
@@ -1351,8 +1365,14 @@ class Compiler {
           continue
         }
         const list = b.props.get(k) ?? []
-        if (list.length && !(own(spec.props, k)?.repeat ?? false))
-          this.report.error('duplicate', s.key, `"${k}" is set twice ${here}`, 'remove one of them')
+        if (list.length && !(own(spec.props, k)?.repeat ?? false)) {
+          const first = list[0]!.key.name
+          const twice =
+            first === s.key.name
+              ? `"${k}" is set twice ${here}`
+              : `"${first}" and "${s.key.name}" are one property ${here}`
+          this.report.error('duplicate', s.key, twice, 'remove one of them')
+        }
         list.push(s)
         b.props.set(k, list)
       } else if (s.kind === 'decl') {
@@ -1765,7 +1785,7 @@ class Compiler {
       provider: q.provider,
       query,
       ...(q.stat && { stat: q.stat }),
-      ...(q.min != null && { min: q.min }),
+      ...(q.minSamples != null && { minSamples: q.minSamples }),
       unit: capacity ? fallback.unit : (this.constProp<string>(b, 'unit') ?? ''),
     })
     if (!capacity) this.numbers.add(id.name)
@@ -1815,9 +1835,10 @@ class Compiler {
             'write {{ args.name }}: each measure gives name',
           )
     }
-    const min = this.constProp<number>(b, 'min')
-    if (min != null && !(Number.isInteger(min) && min >= 0)) {
-      this.report.error('out-of-range', this.prop(b, 'min')!.value, 'min is a whole number of samples from 0')
+    const minSamples = this.constProp<number>(b, 'minSamples')
+    if (minSamples != null && !(Number.isInteger(minSamples) && minSamples >= 0)) {
+      const p = this.prop(b, 'minSamples')!
+      this.report.error('out-of-range', p.value, `${p.key.name} is a whole number of samples from 0`)
       return undefined
     }
     const read = { prometheus: () => this.prometheus(texts), elasticsearch: () => this.elasticsearch(p, texts) }
@@ -1829,7 +1850,7 @@ class Compiler {
       names: new Set([...texts.values()].flatMap((t) => templateArgs(t.text))),
       fill,
       stat: this.constProp<Stat>(b, 'stat'),
-      min,
+      minSamples,
     }
   }
 
@@ -2211,7 +2232,7 @@ class Compiler {
     if (scenario === null || component === null || flow === null) return undefined
     if (scenario != null) e.scenario = scenario
     if (component != null) e.component = component
-    // a flow's latency: one percentile under a time, at the values or up to the target
+    // a flow's latency: one percentile under a time, at the values or up to underTarget
     const qs = ['p50', 'p95', 'p99'].filter((q) => b.props.has(q))
     if (flow != null || qs.length) {
       if (flow == null) {
@@ -2227,9 +2248,10 @@ class Compiler {
         this.report.error('bad-expect', b.at, `the latency of "${flow}" takes one of p50, p95 or p99`, `p99: 0.5`)
         return undefined
       }
-      for (const k of ['component', 'full'])
-        if (b.props.has(k))
-          this.report.error('bad-expect', this.prop(b, k)!.key, `an expect on the latency of "${flow}" takes no ${k}`)
+      for (const k of ['component', 'notFull']) {
+        const p = this.prop(b, k)
+        if (p) this.report.error('bad-expect', p.key, `an expect on the latency of "${flow}" takes no ${p.key.name}`)
+      }
       const v = this.constProp<number>(b, qs[0]!)
       if (!(v != null && v > 0 && Number.isFinite(v))) {
         this.report.error('out-of-range', this.prop(b, qs[0]!)!.value, `${qs[0]} is a time in seconds above 0`)
@@ -2238,21 +2260,29 @@ class Compiler {
       e.flow = flow
       e[qs[0]!] = v
     }
-    for (const k of ['target', 'full']) {
+    for (const k of ['underTarget', 'notFull']) {
       const v = this.constProp<number>(b, k)
       if (v == null) continue
+      const p = this.prop(b, k)!
       if (!(v > 0 && Number.isFinite(v)))
-        this.report.error('out-of-range', this.prop(b, k)!.value, `${k} is a load multiple above 0`)
+        this.report.error('out-of-range', p.value, `${p.key.name} is a load multiple above 0`)
       else e[k] = v
     }
     const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
     if (severity) e.severity = severity
     if (e.flow != null) return e
-    if (!b.props.has('target') && !b.props.has('full')) {
-      this.report.error('bad-expect', b.at, 'an expect needs a target or a full multiple', 'expect { target: 8 }')
+    if (!b.props.has('underTarget') && !b.props.has('notFull')) {
+      // in the words of the definition's version: before 1.1 there are only the old names, and no ×
+      const old = before(this.version, parseVersion(SCHEMA.expect!.props.underTarget!.since!)!)
+      this.report.error(
+        'bad-expect',
+        b.at,
+        old ? 'an expect needs a target or a full multiple' : 'an expect needs underTarget or notFull: a load multiple',
+        old ? 'expect { target: 8 }' : 'expect { underTarget: 8× }',
+      )
       return undefined
     }
-    return e.target != null || e.full != null ? e : undefined
+    return e.underTarget != null || e.notFull != null ? e : undefined
   }
 
   /** A property naming a scenario or a component: undefined when absent, null when wrong (reported). */
@@ -2593,8 +2623,8 @@ class Compiler {
       case 'workers': {
         if (!component) return needs()
         const perPod = this.dynProp<number>(b, 'perPod', 'number', this.count('perPod'))
-        const fill = this.constProp<'round-robin' | 'in-order'>(b, 'fill')
-        const rest = { ...base, perPod: perPod ?? 0, ...(fill ? { fill } : {}) }
+        const placement = this.constProp<'round-robin' | 'in-order'>(b, 'placement')
+        const rest = { ...base, perPod: perPod ?? 0, ...(placement ? { placement } : {}) }
         const scale = b.children.find((c) => c.keyword === 'autoscale')
         if (scale) {
           if (this.prop(b, 'pods'))

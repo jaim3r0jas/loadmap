@@ -90,7 +90,9 @@ describe('the pages', () => {
 
   it("show checkout's promises as its text writes them", () => {
     const html = rendered.find((r) => r.page.route === 'examples/checkout')!.html
-    expect(html).toContain('expect &quot;Today keeps 7×&quot; { target: 7 }\nexpect &quot;Proposed keeps 14×&quot;')
+    expect(html).toContain(
+      'expect &quot;Today keeps 7×&quot; { underTarget: 7 }\nexpect &quot;Proposed keeps 14×&quot;',
+    )
   })
 
   it('find the site root from any depth', () => {

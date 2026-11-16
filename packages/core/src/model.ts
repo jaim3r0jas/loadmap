@@ -367,6 +367,20 @@ export interface Model<P = any, F extends string = string, C extends string = st
 
 const RESERVED = ['load', 'flows', 'at', 'demand', 'util', 'derived']
 
+/** An expectation under its current names: `target` and `full` were its names for `underTarget` and `notFull`. */
+export function expectationNamed<C extends string>(e: Expectation<C>): Expectation<C> {
+  if (e.target == null && e.full == null) return e
+  const name = e.label ? `expectation "${e.label}"` : 'an expectation'
+  if (e.target != null && e.underTarget != null)
+    throw new Error(`loadmap: ${name} gives target and underTarget, one property: give underTarget only`)
+  if (e.full != null && e.notFull != null)
+    throw new Error(`loadmap: ${name} gives full and notFull, one property: give notFull only`)
+  const { target, full, ...rest } = e
+  const underTarget = e.underTarget ?? target
+  const notFull = e.notFull ?? full
+  return { ...rest, ...(underTarget != null && { underTarget }), ...(notFull != null && { notFull }) }
+}
+
 export function defineModel<
   const P extends Readonly<Record<string, ParamDef>>,
   F extends string,
@@ -374,8 +388,8 @@ export function defineModel<
   S extends string,
   D extends string = never,
 >(written: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
-  // a connection's rule from the catalog gives what it does not write; one that gives max is a limit of its own
-  const given = withRules(written)
+  // a connection's rule from the catalog gives what it does not write; one that gives accepts is a limit of its own
+  const given = withRules(withNames(written))
   const def = withCounts(given)
   const params = (def.params ?? {}) as Readonly<Record<string, ParamDef>>
   for (const id of Object.keys(params))
@@ -482,7 +496,8 @@ export function defineModel<
   const scenarioOf = (values: LooseValues) =>
     scenarios.find((s) => Object.entries(s.values).every(([k, v]) => values[k] === v)) ?? null
 
-  const expectations = (def.expect ?? []).map((e) => {
+  const expectations = (def.expect ?? []).map((written) => {
+    const e = expectationNamed(written)
     const name = e.label ? `expectation "${e.label}"` : 'an expectation'
     if (e.scenario != null && !scenarios.some((s) => s.label === e.scenario))
       throw new Error(`loadmap: ${name} names unknown scenario "${e.scenario}"`)
@@ -493,20 +508,20 @@ export function defineModel<
     const qs = PERCENTILES.filter((q) => e[q] != null)
     if ((e.flow != null || qs.length) && (e.flow == null || qs.length !== 1))
       throw new Error(`loadmap: ${name} holds a latency: a flow and one of p50, p95 or p99`)
-    if (e.flow != null && (e.component != null || e.full != null))
-      throw new Error(`loadmap: ${name} holds the latency of "${e.flow}": no component and no full`)
+    if (e.flow != null && (e.component != null || e.notFull != null))
+      throw new Error(`loadmap: ${name} holds the latency of "${e.flow}": no component and no notFull`)
     for (const q of qs) {
       const x = e[q]!
       if (!(x > 0 && Number.isFinite(x))) throw new Error(`loadmap: ${name} has a ${q} of ${x}: a time above 0`)
     }
-    // a flow's latency is checked at the values without a target
-    if (e.target == null && e.full == null && e.flow == null)
-      throw new Error(`loadmap: ${name} needs a target or a full multiple`)
-    for (const k of ['target', 'full'] as const) {
+    // a flow's latency is checked at the values without underTarget
+    if (e.underTarget == null && e.notFull == null && e.flow == null)
+      throw new Error(`loadmap: ${name} needs underTarget or notFull: a load multiple`)
+    for (const k of ['underTarget', 'notFull'] as const) {
       const x = e[k]
-      if (x != null && !(x > 0 && Number.isFinite(x)))
-        throw new Error(`loadmap: ${name} needs a ${k} multiple above 0, not ${x}`)
+      if (x != null && !(x > 0 && Number.isFinite(x))) throw new Error(`loadmap: ${name} needs ${k} above 0, not ${x}`)
     }
+    // a copy: a host that changes it changes no other model built from the same definition
     return { ...e } as Expectation<C>
   })
 
@@ -901,9 +916,9 @@ function context(
     })
   const enabled = (c: string): boolean =>
     memo(`${c} enabled`, () => {
-      // a limit a connection's max makes is off with the component of the stage it counts against
+      // a limit a connection's accepts makes is off with the component of the stage it counts against
       const head = Object.hasOwn(def.connections ?? {}, c) ? def.connections![c] : undefined
-      const target = head?.max != null ? opener(stages, head)?.target : undefined
+      const target = head?.accepts != null ? opener(stages, head)?.target : undefined
       const of = target == null ? undefined : (stages[target] as { component?: string }).component
       if (of != null && !enabled(of)) return false
       return def.components[c]!.when?.(ctx as any) ?? true
@@ -1550,12 +1565,12 @@ function context(
   )
   const connections = (def.connections ?? {}) as Readonly<Record<string, ConnectionDef>>
   /**
-   * For the limit a connection's max makes: what each connection into its stage opens, the members of its pool at
+   * For the limit a connection's accepts makes: what each connection into its stage opens, the members of its pool at
    * these values (the pods an autoscaler runs, from the plain utilization) times what each keeps open.
    */
   const counted = (c: string) => {
     const head = Object.hasOwn(connections, c) ? connections[c]! : undefined
-    if (head?.max == null) return null
+    if (head?.accepts == null) return null
     return memo(`connections open for ${c}`, () => {
       const target = opener(stages, head)!.target
       const out: { id: string; members: number; open: number; owner: 'worker' | 'pod' }[] = []
@@ -1829,7 +1844,7 @@ function context(
       return `Each ${part} of ${from}${which} is read by one ${owner} of ${to} (exclusive). The ${part}s are dealt in turn to ${turn}: the most even case.${opens(k)}`
     }
     // one written only to count says what it counts, not a rule nobody set
-    if (cn.assign == null && (cn.open != null || cn.max != null)) {
+    if (cn.assign == null && (cn.open != null || cn.accepts != null)) {
       const target = opener(stages, cn)?.target
       const label = target == null ? to : (stages[target]!.label ?? target)
       return opens(k).trim() || `It gives the most ${label} accepts: the limit on the connections open to it.`
@@ -1926,6 +1941,41 @@ function perWay(
   return [...out.values()].map((e) => ({ ...e.tag, timedOut: e.share > 0 ? e.late / e.share : e.first }))
 }
 
+/**
+ * The definition under its current names (a connection's `max` is `accepts`), and each stage without a label named by
+ * its component's `short` when no other stage runs that component: "the gateway" reads in a sentence, `gateway` does
+ * not. With two stages on one component (two topics on one cluster) the short would name both, so they keep their ids.
+ */
+function withNames<T extends ModelDef<any, any, any, any, any>>(def: T): T {
+  const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
+  const renamed = all.some(([, cn]) => cn.max != null)
+    ? Object.fromEntries(
+        all.map(([k, cn]) => {
+          const { max, ...rest } = cn
+          if (max != null && cn.accepts != null)
+            throw new Error(`loadmap: connection "${k}" gives max and accepts, one property: give accepts only`)
+          return [k, max == null ? cn : { ...rest, accepts: max }]
+        }),
+      )
+    : undefined
+  const stages = def.stages as Readonly<Record<string, StageDef>>
+  const components = def.components as Readonly<Record<string, ComponentDef<any> | undefined>>
+  const runs = new Map<string, number>()
+  for (const st of Object.values(stages)) {
+    const c = (st as { component?: string }).component
+    if (c != null) runs.set(c, (runs.get(c) ?? 0) + 1)
+  }
+  let named: Record<string, StageDef> | undefined
+  for (const [id, st] of Object.entries(stages)) {
+    const c = (st as { component?: string }).component
+    const short = c != null && runs.get(c) === 1 && Object.hasOwn(components, c) ? components[c]?.short : undefined
+    if (st.label != null || short == null) continue
+    named ??= { ...stages }
+    named[id] = { ...st, label: short }
+  }
+  return { ...def, ...(renamed && { connections: renamed }), ...(named && { stages: named }) }
+}
+
 /** The definition with each connection's rule filled in: its assign and owner where the connection writes none. */
 function withRules<T extends ModelDef<any, any, any, any, any>>(def: T): T {
   const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
@@ -1941,14 +1991,14 @@ function withRules<T extends ModelDef<any, any, any, any, any>>(def: T): T {
   return { ...def, connections: Object.fromEntries(all.map(([k, cn]) => [k, cn.rule ? fill(cn) : cn])) }
 }
 
-/** The definition with a component for each connection that gives max: the connections open against it. */
+/** The definition with a component for each connection that gives accepts: the connections open against it. */
 function withCounts<T extends ModelDef<any, any, any, any, any>>(def: T): T {
   const all = Object.entries(def.connections ?? {}) as [string, ConnectionDef][]
-  if (!all.some(([, cn]) => cn.max != null)) return def
+  if (!all.some(([, cn]) => cn.accepts != null)) return def
   const stages = def.stages as Readonly<Record<string, StageDef>>
   const components: Record<string, ComponentDef<any>> = { ...def.components }
   for (const [k, cn] of all) {
-    const o = cn.max == null || Object.hasOwn(components, k) ? undefined : opener(stages, cn)
+    const o = cn.accepts == null || Object.hasOwn(components, k) ? undefined : opener(stages, cn)
     if (!o) continue
     const label = stages[o.target]?.label ?? o.target
     components[k] = {
@@ -1957,7 +2007,7 @@ function withCounts<T extends ModelDef<any, any, any, any, any>>(def: T): T {
       plural: true,
       // worked out where the pods are known: the members of each pool times what each keeps open
       demand: () => 0,
-      capacity: cn.max!,
+      capacity: cn.accepts!,
       over: `new connections to ${label} are refused`,
     }
   }
@@ -2028,9 +2078,9 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
         `${at} spreads parts over "${cn.to}", but its component "${c}" also runs "${also}": give "${cn.to}" a component of its own`,
       )
   }
-  // connections counted against a stage: one of those into it gives max, and those that open need it
+  // connections counted against a stage: one of those into it gives accepts, and those that open need it
   for (const [k, cn] of all) {
-    if (cn.open == null && cn.max == null) continue
+    if (cn.open == null && cn.accepts == null) continue
     const o = opener(stages, cn)
     if (!o)
       throw new Error(
@@ -2041,18 +2091,18 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
       throw new Error(
         `loadmap: connection "${k}" opens from "${o.pool}" and spreads over "${cn.to}": owner cannot name a member of both; give the counting its own connection`,
       )
-    const into = all.filter(([, x]) => (x.open != null || x.max != null) && opener(stages, x)?.target === o.target)
-    const maxes = into.filter(([, x]) => x.max != null).map(([j]) => j)
+    const into = all.filter(([, x]) => (x.open != null || x.accepts != null) && opener(stages, x)?.target === o.target)
+    const maxes = into.filter(([, x]) => x.accepts != null).map(([j]) => j)
     if (maxes.length > 1)
       throw new Error(
-        `loadmap: connections "${maxes[0]}" and "${maxes[1]}" both give the most "${o.target}" accepts: give max on one`,
+        `loadmap: connections "${maxes[0]}" and "${maxes[1]}" both give the most "${o.target}" accepts: give accepts on one`,
       )
     if (!maxes.length)
       throw new Error(
-        `loadmap: connection "${k}" opens connections to "${o.target}", but none into it gives max: the most it accepts`,
+        `loadmap: connection "${k}" opens connections to "${o.target}", but none into it gives accepts: the most it takes`,
       )
     if (!into.some(([, x]) => x.open != null))
-      throw new Error(`loadmap: connection "${k}" gives max, but none into "${o.target}" opens any: give open`)
+      throw new Error(`loadmap: connection "${k}" gives accepts, but none into "${o.target}" opens any: give open`)
   }
   // the flows that can go from one stage straight to the other; a split may send a flow any way its branches go, so a
   // route through one is checked where the values pick a way
@@ -2068,7 +2118,7 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
   const may = (cn: ConnectionDef) => flowIds.filter((f) => mayGo(f, cn.from, cn.to))
   // a connection that only counts what it holds open needs no flow on its hop: a pool keeps connections it may not use
   const countsOnly = (cn: ConnectionDef) =>
-    cn.assign !== 'exclusive' && cn.flows == null && (cn.open != null || cn.max != null)
+    cn.assign !== 'exclusive' && cn.flows == null && (cn.open != null || cn.accepts != null)
   for (const [k, cn] of all) {
     for (const f of cn.flows ?? [])
       if (!mayGo(f, cn.from, cn.to))

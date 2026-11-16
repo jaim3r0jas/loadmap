@@ -35,7 +35,7 @@ within ± 30 %.
 - Replace the numbers with yours, and say where each came from: `measured(…)` for what you measured, `estimated(…,
   { within: 0.3 })` for what you did not. `fitLinear` fits a cost per request from a series of measurements.
 - Add `scenarios: { Today: {}, Proposed: { pods: 8 } }` to compare designs, and `growth` to turn multiples into dates.
-- Add `expect: [{ target: 3 }]` and a test that calls `assertHolds(shop)`: a change that loses the headroom fails it.
+- Add `expect: [{ underTarget: 3 }]` and a test that calls `assertHolds(shop)`: a change that loses the headroom fails it.
 - Add a `story` to walk a reader through it a step at a time.
 
 [Concepts](/concepts/) explains each of these. The same model can also be written as a `.loadmap` text and edited

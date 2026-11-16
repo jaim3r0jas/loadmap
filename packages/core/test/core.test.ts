@@ -13,6 +13,7 @@ import {
   p,
   parseAsOf,
   pass,
+  workers,
 } from '../src'
 import { fitLinear } from '../src/calibrate'
 import { around, multiple, multiples, niceStep } from '../src/format'
@@ -602,9 +603,9 @@ describe('uncertainty', () => {
 describe('expectations', () => {
   it('hold on the pessimistic edge', () => {
     const m = unsure(undefined, [
-      { label: 'Today keeps 4×', target: 4 },
-      { scenario: 'Big', target: 5, full: 10 },
-      { component: 'api', full: 10 },
+      { label: 'Today keeps 4×', underTarget: 4 },
+      { scenario: 'Big', underTarget: 5, notFull: 10 },
+      { component: 'api', notFull: 10 },
     ])
     expect(check(m).map((r) => [r.ok, r.message])).toEqual([
       [true, 'the 50 % target holds up to between 4.2× and 5×, limited by the cache (capacity estimated ±30 %)'],
@@ -615,7 +616,7 @@ describe('expectations', () => {
   })
 
   it('fail with what was expected and what was found', () => {
-    const m = unsure(undefined, [{ label: 'Today keeps 5×', target: 5 }, { full: 9 }])
+    const m = unsure(undefined, [{ label: 'Today keeps 5×', underTarget: 5 }, { notFull: 9 }])
     expect(check(m).map((r) => [r.ok, r.message])).toEqual([
       [
         false,
@@ -627,14 +628,56 @@ describe('expectations', () => {
       '2 of 2 expectations failed:\n- Today keeps 5×: expected at least 5×, but the 50 % target holds up to between 4.2× and 5×, limited by the cache (capacity estimated ±30 %)\n- expected at least 9×, but the cache runs out at between 8.4× and 10× (capacity estimated ±30 %)',
     )
     // the same expectations can be passed in
-    expect(check(unsure(), [{ target: 4 }])[0]!.ok).toBe(true)
+    expect(check(unsure(), [{ underTarget: 4 }])[0]!.ok).toBe(true)
   })
 
   it('are checked when the model is defined', () => {
-    expect(() => unsure(undefined, [{ scenario: 'Later', target: 1 }])).toThrow(/unknown scenario "Later"/)
-    expect(() => unsure(undefined, [{ component: 'db', target: 1 }])).toThrow(/unknown component "db"/)
-    expect(() => unsure(undefined, [{ label: 'empty' }])).toThrow(/expectation "empty" needs a target or a full/)
-    expect(() => unsure(undefined, [{ target: 0 }])).toThrow(/above 0/)
+    expect(() => unsure(undefined, [{ scenario: 'Later', underTarget: 1 }])).toThrow(/unknown scenario "Later"/)
+    expect(() => unsure(undefined, [{ component: 'db', underTarget: 1 }])).toThrow(/unknown component "db"/)
+    expect(() => unsure(undefined, [{ label: 'empty' }])).toThrow(/expectation "empty" needs underTarget or notFull/)
+    expect(() => unsure(undefined, [{ underTarget: 0 }])).toThrow(/above 0/)
+  })
+
+  it('still take their old names, target and full', () => {
+    const m = unsure(undefined, [{ target: 4 }, { component: 'api', full: 10 }])
+    expect(m.expectations).toEqual([{ underTarget: 4 }, { component: 'api', notFull: 10 }])
+    expect(check(unsure(), [{ target: 4 }])[0]).toMatchObject({ ok: true, expectation: { underTarget: 4 } })
+    // both names are one property, as in the language
+    expect(() => unsure(undefined, [{ target: 4, underTarget: 8 }])).toThrow('gives target and underTarget')
+    expect(() => unsure(undefined, [{ full: 4, notFull: 8 }])).toThrow('gives full and notFull')
+  })
+})
+
+describe('stage names', () => {
+  const api = { name: 'API', short: 'the API', demand: ({ flows }: any) => flows.req, over: 'x' }
+  const label = (over: Partial<Parameters<typeof defineModel>[0]>) =>
+    Object.fromEntries(Object.entries(tiny(over).evaluate().stages).map(([id, st]) => [id, st.label]))
+
+  it("is its component's short when no other stage runs that component, else its id", () => {
+    const components = { api: { ...api, capacity: measured(1000, 'req/s') } }
+    expect(label({ components })).toEqual({ api: 'the API' })
+    // a label written wins
+    expect(label({ components, stages: { api: pass('api', { label: 'the front door' }) } })).toEqual({
+      api: 'the front door',
+    })
+    // two stages on one component: the short would name both
+    expect(label({ components, stages: { a: pass('api'), b: pass('api') }, routes: { req: ['a', 'b'] } })).toEqual({
+      a: 'a',
+      b: 'b',
+    })
+  })
+
+  it("places a pool's work as written, under placement or its old name, fill", () => {
+    const pool = (o: { placement?: 'in-order'; fill?: 'in-order' }) =>
+      tiny({ stages: { api: workers('api', { pods: 2, perPod: 4, ...o }) } }).evaluate().stages.api as {
+        placement: string
+      }
+    expect(pool({}).placement).toBe('round-robin')
+    expect(pool({ placement: 'in-order' }).placement).toBe('in-order')
+    expect(pool({ fill: 'in-order' }).placement).toBe('in-order')
+    expect(() => workers('api', { pods: 2, perPod: 4, fill: 'in-order', placement: 'in-order' })).toThrow(
+      'gives fill and placement',
+    )
   })
 })
 

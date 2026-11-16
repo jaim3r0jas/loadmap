@@ -17,8 +17,8 @@ scenario "Today" {}
 scenario "Proposed" { pods: 6; cache: true }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 2×" { target: 2 }
-expect "Proposed keeps 4×" { scenario: Proposed; target: 4 }
+expect "Today keeps 2×" { underTarget: 2 }
+expect "Proposed keeps 4×" { scenario: Proposed; underTarget: 4 }
 
 let queries = cache ? 2 : 5
 

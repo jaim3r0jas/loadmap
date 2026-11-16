@@ -68,7 +68,7 @@ describe('metric and measure', () => {
         provider: 'prometheus',
         query: 'max_over_time(sum(rate(http_requests_total{job="api"}[5m]))[7d:5m])',
         stat: 'max',
-        min: 30,
+        minSamples: 30,
         unit: 'req/s',
       },
       {

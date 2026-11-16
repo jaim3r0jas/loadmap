@@ -91,7 +91,7 @@ test('an error as you type', async () => {
 
 test('a failing expectation as a warning', async () => {
   const doc = await open('checkout.loadmap')
-  const list = await diagnose(doc, '\nexpect "Keeps 1000×" { target: 1000 }\n')
+  const list = await diagnose(doc, '\nexpect "Keeps 1000×" { underTarget: 1000 }\n')
   assert.ok(
     list.some((d) => d.severity === DiagnosticSeverity.Warning && d.message.includes('Keeps 1000×')),
     list.map((d) => d.message).join('\n'),

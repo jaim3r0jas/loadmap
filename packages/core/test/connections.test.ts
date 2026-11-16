@@ -599,10 +599,10 @@ describe('connections counted against a stage', () => {
       connections: connections as Record<string, ConnectionDef<'api' | 'db' | 'workers', 'req'>>,
     })
   const pool = { from: 'api', to: 'db', owner: 'pod', open: 20 } as const
-  const max = configured(100, 'connections', 'max_connections')
+  const accepts = configured(100, 'connections', 'max_connections')
 
   it('is a limit of its own: the pods running times what each keeps open, growing as the pool scales out', () => {
-    const m = api({ dbPool: { ...pool, max } })
+    const m = api({ dbPool: { ...pool, accepts } })
     const ev = m.evaluate({ load: 1 })
     // the limit's id is the connection's: not one of the components the definition types
     const c = (ev.components as Record<string, ComponentResult>).dbPool!
@@ -622,9 +622,18 @@ describe('connections counted against a stage', () => {
     expect(ev.assumptions.find((a) => a.kind === 'capacity' && a.component === 'dbPool')).toBeTruthy()
   })
 
+  it('still takes its old name, max', () => {
+    const c = (
+      api({ dbPool: { ...pool, max: accepts } }).evaluate({ load: 1 }).components as Record<string, ComponentResult>
+    ).dbPool!
+    expect(c.demand).toBe(40)
+    expect(c.util).toBeCloseTo(0.4, 12)
+    expect(() => api({ dbPool: { ...pool, max: accepts, accepts } })).toThrow('gives max and accepts')
+  })
+
   it('adds up every connection into the stage, a pool no flow takes there too', () => {
     const m = api({
-      dbPool: { ...pool, max },
+      dbPool: { ...pool, accepts },
       // no flow goes from the workers to the database, yet each of their workers keeps one connection to it
       batch: { from: 'workers', to: 'db', owner: 'worker', open: 1 },
     })
@@ -645,22 +654,22 @@ describe('connections counted against a stage', () => {
       },
       stages: { api: workers('api', { pods: 2, perPod: 4 }), db: store('db') },
       routes: { req: ['api', 'db'] },
-      connections: { dbPool: { from: 'api', to: 'db', owner: 'pod', open: 20, max } },
+      connections: { dbPool: { from: 'api', to: 'db', owner: 'pod', open: 20, accepts } },
     })
     const on = (useDb: boolean) => (m.evaluate({ useDb }).components as Record<string, ComponentResult>).dbPool!.util
     expect(on(true)).toBeCloseTo(0.4, 12)
     expect(on(false)).toBeNull()
   })
 
-  it('is refused without a pool, without max or open, or with max twice', () => {
+  it('is refused without a pool, without accepts or open, or with accepts twice', () => {
     expect(() => api({ x: { from: 'api', to: 'db', open: 20 } })).toThrow(
-      'loadmap: connection "x" opens connections to "db", but none into it gives max: the most it accepts',
+      'loadmap: connection "x" opens connections to "db", but none into it gives accepts: the most it takes',
     )
-    expect(() => api({ x: { from: 'api', to: 'db', max } })).toThrow(
-      'loadmap: connection "x" gives max, but none into "db" opens any: give open',
+    expect(() => api({ x: { from: 'api', to: 'db', accepts } })).toThrow(
+      'loadmap: connection "x" gives accepts, but none into "db" opens any: give open',
     )
-    expect(() => api({ x: { ...pool, max }, y: { ...pool, max } })).toThrow(
-      'loadmap: connections "x" and "y" both give the most "db" accepts: give max on one',
+    expect(() => api({ x: { ...pool, accepts }, y: { ...pool, accepts } })).toThrow(
+      'loadmap: connections "x" and "y" both give the most "db" accepts: give accepts on one',
     )
     const plain = () =>
       defineModel({
@@ -669,7 +678,7 @@ describe('connections counted against a stage', () => {
         components: { db: { name: 'DB', capacity: estimated(1_000, 'queries/s'), over: 'x' } },
         stages: { in: sink(), db: store('db') },
         routes: { req: ['in', 'db'] },
-        connections: { x: { from: 'in', to: 'db', open: 5, max } },
+        connections: { x: { from: 'in', to: 'db', open: 5, accepts } },
       })
     expect(plain).toThrow(
       'loadmap: connection "x" counts connections, but neither "in" nor "db" is a pool to open them',

@@ -93,7 +93,7 @@ promise headroom that a test or CI checks:
 capacity: ({ gateways }) =>
   estimated(20_000 * gateways, 'req/s', { source: 'vendor benchmark, not load-tested', within: 0.3 }),
 // …
-expect: [{ label: 'Today keeps 7×', target: 7 }, { scenario: 'Proposed', target: 14 }],
+expect: [{ label: 'Today keeps 7×', underTarget: 7 }, { scenario: 'Proposed', underTarget: 14 }],
 
 checkout.evaluate({ load: 1 }).verdict.text
 // "At 1×, every component is under the 50 % target. It holds up to between 7.4× and 10× (…); the API gateway is
@@ -106,7 +106,7 @@ it('keeps its headroom', () => assertHolds(checkout))   // throws, listing every
 ```
 
 The headroom chart draws a band per scenario. In a `.loadmap` it reads `estimated(20_000 ± 30%, …)` and
-`expect "Today keeps 7×" { target: 7 }`; `loadmap check checkout.loadmap` exits 1 when one fails, with its line and
+`expect "Today keeps 7×" { underTarget: 7 }`; `loadmap check checkout.loadmap` exits 1 when one fails, with its line and
 column, and writes GitHub annotations under Actions.
 
 ## Building blocks

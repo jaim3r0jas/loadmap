@@ -16,7 +16,7 @@ scenario "Add a cache" { hit: 0.8 }
 scenario "Bigger plan" { quota: 200 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 1.5×" { target: 1.5 }
+expect "Today keeps 1.5×" { underTarget: 1.5 }
 
 flow lookups "lookups" {
   unit: "lookup"

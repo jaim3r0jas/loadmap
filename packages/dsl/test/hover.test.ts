@@ -74,6 +74,18 @@ describe('hover', () => {
     expect(at(util)?.body).toEqual(db)
   })
 
+  it('says what an old name is now, and from which version', () => {
+    const src = checkout.replace('{ underTarget: 7 }', '{ target: 7 }')
+    expect(at(put(src, 'target: 7'))).toMatchObject({
+      word: 'target',
+      head: 'target: a number',
+      body: [
+        expect.stringMatching(/^Every component/),
+        'Named `underTarget` from loadmap 1.1; `loadmap fmt` renames it in a definition of that version.',
+      ],
+    })
+  })
+
   it('describes parameters, the load, lets, fits and builtins where formulas name them', () => {
     expect(at(put(cache, 'pods * 1', 1))).toEqual(
       expect.objectContaining({ head: 'param pods "API pods"', body: ['A select: 2, 4 or 6. Default 2.'] }),

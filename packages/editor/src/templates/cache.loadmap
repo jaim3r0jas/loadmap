@@ -14,7 +14,7 @@ scenario "Today" {}
 scenario "Warmer cache" { hit: 0.95 }
 growth { rate: 0.04; per: month; asOf: "2026-11-01" }
 
-expect "Today keeps 2×" { target: 2 }
+expect "Today keeps 2×" { underTarget: 2 }
 
 flow reads "reads" {
   unit: "read"

@@ -176,7 +176,7 @@ describe('loadmap check', () => {
     dir = await mkdtemp(join(tmpdir(), 'loadmap-check-'))
     failing = join(dir, 'checkout.loadmap')
     // the same definition, promising 12× today: beyond both edges of its ± (7.4× to 10×)
-    const src = (await readFile(checkout, 'utf8')).replace('{ target: 7 }', '{ target: 12 }')
+    const src = (await readFile(checkout, 'utf8')).replace('{ underTarget: 7 }', '{ underTarget: 12 }')
     await writeFile(failing, src)
   })
   afterAll(async () => {
@@ -203,7 +203,7 @@ describe('loadmap check', () => {
     expect(out).toContain(
       `${failing}:${line}:1 error[expect-failed]: "Today keeps 7×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×`,
     )
-    expect(out).toContain(`${line} | expect "Today keeps 7×" { target: 12 }`)
+    expect(out).toContain(`${line} | expect "Today keeps 7×" { underTarget: 12 }`)
     expect(out).toContain('checkout.loadmap: 1 of 2 expectations failed')
     // the command line gives the same code
     expect(await main(['check', failing], () => {})).toBe(1)

@@ -17,6 +17,8 @@ const BROKEN: Record<string, string> = {
     'capacity: 50_000',
   ),
   'colon-before-block': cache.replace('clients -> api', 'clients -> api: { when: true }'),
+  // an old name under a stamp that has the new one
+  deprecated: checkout.replace('{ underTarget: 7 }', '{ target: 7 }'),
   'missing-edge': checkout.replace('\nkafka -> workers\n', '\n'),
   'reversed-edge': checkout.replace('\nkafka -> workers\n', '\nworkers -> kafka\n'),
   // a lost box under a stamp from before them

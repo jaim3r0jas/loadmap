@@ -186,7 +186,7 @@ describe('a model with a published capacity', () => {
       },
       stages: { brokers: pass('brokers') },
       routes: { events: ['brokers'] },
-      expect: [{ target: 1.5 }],
+      expect: [{ underTarget: 1.5 }],
     } as any)
 
   it('ranks it and says it is published', () => {

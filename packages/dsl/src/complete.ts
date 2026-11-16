@@ -7,7 +7,7 @@ import { Reporter } from './diagnostics'
 import { BUILTINS } from './expr'
 import type { Token } from './lexer'
 import { parse } from './parser'
-import { type BlockSpec, BOXES, COLORS, EDGE_PROPS, own, type PropSpec, SCHEMA, type Scope } from './schema'
+import { type BlockSpec, BOXES, COLORS, EDGE_PROPS, own, type PropSpec, propNamed, SCHEMA, type Scope } from './schema'
 
 export interface Completion {
   label: string
@@ -91,10 +91,12 @@ class Help {
     }
     // key: |
     if (punct(head[1], ':')) {
-      const key = first.text
+      // an old name (`fill` in workers) takes the values of the property it is now
+      const named = this.edgeBody ? undefined : propNamed(this.spec.props, first.text)
+      const key = named?.name ?? first.text
       const prop = this.edgeBody
         ? own(EDGE_PROPS, key)
-        : (own(this.spec.props, key) ?? (this.spec.open ? this.spec.open.spec : undefined))
+        : (named?.spec ?? (this.spec.open ? this.spec.open.spec : undefined))
       return this.value(key, prop, head.slice(2))
     }
     // let x = |
@@ -118,6 +120,11 @@ class Help {
     )
     if (this.edgeBody) return props(EDGE_PROPS, written)
     const { spec } = this
+    // an old name written (`target` in expect) sets the property it is now
+    for (const k of [...written]) {
+      const named = propNamed(spec.props, k)
+      if (named?.old) written.add(named.name)
+    }
     // a whole statement only on a line of its own: not before what the line already holds
     const end = this.source.indexOf('\n', this.offset)
     const alone = !this.source.slice(this.offset, end < 0 ? undefined : end).trim()

@@ -27,6 +27,9 @@ export interface PullRequest {
   provider: string
   query: string
   stat?: Stat
+  /** The samples the window needs before its value counts; with fewer it is missing. */
+  minSamples?: number
+  /** @deprecated `minSamples`. */
   min?: number
   unit: string
 }
@@ -44,7 +47,7 @@ export interface PullOptions {
 
 /**
  * Reads every measurement and writes the snapshot: the value over the window by its stat (mean by default), the
- * points, and where they came from. What fails is missing, with why; a window with fewer samples than its `min`
+ * points, and where they came from. What fails is missing, with why; a window with fewer samples than its `minSamples`
  * counts as missing too, and the model then uses the definition's own value.
  */
 export async function pull(requests: readonly PullRequest[], o: PullOptions): Promise<Snapshot> {
@@ -67,7 +70,8 @@ export async function pull(requests: readonly PullRequest[], o: PullOptions): Pr
         step: o.step,
         fetched: o.fetched,
         samples: points.length,
-        ...(r.min != null && { min: r.min }),
+        // the snapshot's version 1 calls it min, next to its samples
+        ...((r.minSamples ?? r.min) != null && { min: r.minSamples ?? r.min }),
         ...(r.stat != null && { stat: r.stat }),
       }
       const label = r.label != null ? { label: r.label } : {}

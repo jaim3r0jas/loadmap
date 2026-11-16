@@ -88,7 +88,7 @@ describe('pull', () => {
   const requests: PullRequest[] = [
     { id: 'requests', metric: 'rate', provider: 'prometheus', query: 'sum(x)', stat: 'max', unit: 'req/s' },
     { id: 'cores', provider: 'prometheus', query: 'cpu', unit: 'cores', label: 'Worker CPU' },
-    { id: 'thin', provider: 'prometheus', query: 'sum(x)', min: 30, unit: 'req/s' },
+    { id: 'thin', provider: 'prometheus', query: 'sum(x)', minSamples: 30, unit: 'req/s' },
     { id: 'none', provider: 'prometheus', query: 'empty', unit: 'req/s' },
     { id: 'elsewhere', provider: 'elasticsearch', query: '{}', unit: 'req/s' },
   ]

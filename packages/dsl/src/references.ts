@@ -4,7 +4,7 @@ import { Reporter, type Span } from './diagnostics'
 import type { EditResult, TextChange } from './edit'
 import { RESERVED } from './expr'
 import { parse } from './parser'
-import { type BlockSpec, BOXES, EDGE_PROPS, own, SCHEMA, STAGES } from './schema'
+import { type BlockSpec, BOXES, EDGE_PROPS, own, propNamed, SCHEMA, STAGES } from './schema'
 
 /** Where names live: a name is unique in its space, and a reference finds its declaration there. */
 type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario' | 'metric' | 'connection'
@@ -155,7 +155,7 @@ class NameIndex {
   private visit(list: readonly Stmt[], spec: BlockSpec, branches: boolean, edgeBody = false) {
     for (const s of list) {
       if (s.kind === 'prop') {
-        const prop = edgeBody ? own(EDGE_PROPS, s.key.name) : own(spec.props, s.key.name)
+        const prop = edgeBody ? own(EDGE_PROPS, s.key.name) : propNamed(spec.props, s.key.name)?.spec
         if (!prop && spec.open) {
           const k = s.key.name
           if (spec.open.names === 'flows') this.add('flow', s.key, k)
@@ -195,10 +195,14 @@ class NameIndex {
         if (id) {
           if (k === 'param' || k === 'let' || k === 'fit' || k === 'published' || k === 'measure')
             this.add('formula', id, id.name, true)
-          // a connection that gives max is a limit: expect, focus and formulas name it as a component
+          // a connection that gives accepts (or its old name, max) is a limit: expect, focus and formulas name it as a component
           else if (k === 'connection')
             this.add(
-              s.body?.some((p) => p.kind === 'prop' && p.key.name === 'max') ? 'component' : k,
+              s.body?.some(
+                (p) => p.kind === 'prop' && propNamed(SCHEMA.connection!.props, p.key.name)?.name === 'accepts',
+              )
+                ? 'component'
+                : k,
               id,
               id.name,
               true,

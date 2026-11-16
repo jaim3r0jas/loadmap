@@ -38,7 +38,7 @@ export function reference(): string {
         : p.value === 'names'
           ? `a list of ${words.join(', ')}`
           : words.join(' \\| ')
-      const since = p.since ? ` From loadmap ${p.since}.` : ''
+      const since = p.since ? ` From loadmap ${p.since}${p.was ? `; \`${p.was}\` before` : ''}.` : ''
       out.push(`| \`${k}\`${p.required ? ' (required)' : ''} | ${value} | ${p.doc.replaceAll('|', '\\|')}${since} |`)
     }
     out.push('')

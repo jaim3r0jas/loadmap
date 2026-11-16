@@ -30,7 +30,9 @@ export interface WorkersStage<C extends string = string> extends StageBase {
   pods?: Dyn<number>
   perPod: Dyn<number>
   /** 'round-robin' spreads load across pods (the default); 'in-order' fills pod 0 first. */
-  fill: 'round-robin' | 'in-order'
+  placement?: 'round-robin' | 'in-order'
+  /** @deprecated `placement`: a fill is a colour everywhere else. */
+  fill?: 'round-robin' | 'in-order'
   autoscale?: Autoscale
 }
 
@@ -152,10 +154,15 @@ export function workers<const C extends string>(
   component: C,
   o: ({ pods: Dyn<number>; autoscale?: undefined } | { pods?: undefined; autoscale: Autoscale }) & {
     perPod: Dyn<number>
-    fill?: WorkersStage['fill']
+    placement?: WorkersStage['placement']
+    /** @deprecated `placement`. */
+    fill?: WorkersStage['placement']
   } & StageBase,
 ): WorkersStage<C> {
-  return { kind: 'workers', component, ...o, fill: o.fill ?? 'round-robin' }
+  const { fill, ...rest } = o
+  if (fill != null && o.placement != null)
+    throw new Error(`loadmap: workers "${component}" gives fill and placement, one property: give placement only`)
+  return { kind: 'workers', component, ...rest, placement: o.placement ?? fill ?? 'round-robin' }
 }
 
 export function cache<const C extends string = never>(
@@ -219,7 +226,7 @@ export type ResolvedStage = { id: string; label: string } & (
       /** The pods drawn: an autoscaled pool's max, so the load never moves the layout. */
       pods: number
       perPod: number
-      fill: WorkersStage['fill']
+      placement: 'round-robin' | 'in-order'
       /** The pods running at these values: `pods` unless the pool autoscales. */
       running: number
       autoscale?: { min: number; max: number; target: number }
@@ -301,7 +308,14 @@ export function resolveStage(
       return { id, label, kind: 'queue', component: s.component, partitions: dyn(s.partitions, ctx) }
     case 'workers': {
       const perPod = dyn(s.perPod, ctx)
-      const base = { id, label, kind: 'workers' as const, component: s.component, perPod, fill: s.fill }
+      const base = {
+        id,
+        label,
+        kind: 'workers' as const,
+        component: s.component,
+        perPod,
+        placement: s.placement ?? s.fill ?? 'round-robin',
+      }
       return { ...base, ...podsOf(id, s, ctx, plain ? plain(s.component) : util(s.component)) }
     }
     case 'fanout': {
