@@ -1,0 +1,17 @@
+loadmap 1.3
+part of "./checkout.loadmap"
+
+# the walk a design review takes: the page steps through it or plays it, as `loadmap record --story` does
+step "An ordinary peak: every box is under half its capacity." {
+  load: 1
+  title: "An ordinary peak"
+}
+step "At 20×, the gateway and the workers are near full, and the gateway is only an estimate." {
+  load: 20
+  focus: gateway
+}
+step "The proposal doubles the gateways and the worker pods: at 20× both are back under half." {
+  scenario: Proposed
+  load: 20
+  focus: workerPool
+}

@@ -92,7 +92,12 @@ class NameIndex {
     const { doc } = parse(source, new Reporter(source))
     this.symbols = declarations(source, doc)
     for (const s of doc.body)
-      if (s.kind === 'decl' && (BOXES as readonly string[]).includes(s.keyword.name) && s.args[0]?.t === 'id')
+      if (
+        s.kind === 'decl' &&
+        // a subsystem's id is named where a box's is: in a route, on an edge
+        ((BOXES as readonly string[]).includes(s.keyword.name) || s.keyword.name === 'subsystem') &&
+        s.args[0]?.t === 'id'
+      )
         this.boxes.add(s.args[0].name)
     // a stage or component without an id of its own: its symbol points at its keyword (where its statement starts), or
     // for a box's own component lines at the box's id

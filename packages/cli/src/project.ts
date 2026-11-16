@@ -16,6 +16,8 @@ export interface Project {
   files(path: string): string | undefined
   /** Where a file of the project is on disk, as the terminal should show it. */
   shown(path: string): string
+  /** Where it is on disk, in full. */
+  abs(path: string): string
   /** What compile() takes. */
   options: Pick<CompileOptions, 'path' | 'files'>
 }
@@ -53,7 +55,8 @@ export function project(file: string, cwd = process.cwd(), folder?: string): Pro
     return text
   }
   const shown = (p: string) => relative(cwd, join(root, ...p.split('/'))) || p
-  return { root, path, files, shown, options: { path, files } }
+  const at = (p: string) => join(root, ...p.split('/'))
+  return { root, path, files, shown, abs: at, options: { path, files } }
 }
 
 /**

@@ -274,58 +274,78 @@ export interface CompileResult {
 /** What says nothing about a library checked on its own: nothing routes through it, nothing is drawn around it. */
 const ALONE_QUIET = new Set<Code>(['unused-stage', 'unused-component', 'tier-order', 'unseen-loss'])
 
+/** What is read before anything is checked: the text parsed, the files it names, and all of them as one model. */
+export interface Front {
+  /** Holds every file the definition read, one after the other: a place in it says its file. */
+  report: Reporter
+  loader?: Loader
+  /** The text that was asked about, parsed. */
+  doc: Document
+  role: Role
+  linked?: Linked
+}
+
+/**
+ * Parses a text, reads the files it names and links them into one list of statements (link.ts). A part and a variant
+ * are read through their model. Fills `f` as far as it gets; what stops it is reported, and thrown as a Bail.
+ */
+export function front(source: string, o: CompileOptions, f: Front): void {
+  const path = normalizePath(o.path ?? DEFAULT_PATH) ?? DEFAULT_PATH
+  const hosted = new Set(Object.keys(o.functions ?? {}))
+  f.report.first = f.report.given = path
+  f.doc = parse(source, f.report).doc
+  f.loader = new Loader(f.report, o.files, { path, text: source })
+  let entry = f.loader.first(path, f.doc)
+  const role = entry.role
+  f.role = role
+  let variant: SourceFile | undefined
+  if (role === 'part' || role === 'variant') {
+    // read through its model: the names it uses are declared there
+    const owner = entry.head.find((h) => h.kind === (role === 'part' ? 'part' : 'extends'))
+    if (owner?.path == null) throw new Bail()
+    const text = fileText(o.files, owner.path)
+    if (text == null) {
+      const why = o.files ? 'it is not among the files of this definition' : 'this file came alone'
+      f.report.error('missing-file', owner.at, `there is no "${owner.path}": ${why}`)
+      throw new Bail()
+    }
+    const report = new Reporter(text)
+    report.first = owner.path
+    report.given = path
+    f.report = report
+    f.loader = new Loader(report, o.files, { path, text: source })
+    const model = f.loader.first(owner.path, parse(text, report).doc)
+    const mine = f.loader.load(path, { from: 0, to: 0 })!
+    const back = mine.head.find((h) => h.kind === owner.kind)!
+    if (model.role !== 'model') {
+      report.error('bad-file', back.at, `"${owner.path}" is a ${model.role}, not a model`)
+      throw new Bail()
+    }
+    if (role === 'variant') variant = mine
+    else if (!model.head.some((h) => h.kind === 'include' && h.path === path)) {
+      const line = `include "${relativePath(owner.path, path)}"`
+      report.error('bad-file', back.at, `"${owner.path}" does not include this file`, `${line} in its head`, {
+        file: owner.path,
+        line,
+      })
+      throw new Bail()
+    }
+    entry = model
+  }
+  f.linked = link(f.loader, entry, hosted, variant)
+}
+
 /** Reads a definition: parses, checks, and builds the model and view `<Loadmap>` takes. Never throws. */
 export function compile(source: string, o: CompileOptions = {}): CompileResult {
   const path = normalizePath(o.path ?? DEFAULT_PATH) ?? DEFAULT_PATH
-  const hosted = new Set(Object.keys(o.functions ?? {}))
-  let report = new Reporter(source)
-  report.first = report.given = path
+  const f: Front = { report: new Reporter(source), doc: { body: [] }, role: 'model' }
   let c: Compiler | undefined
-  let doc: Document = { body: [] }
-  let role: Role = 'model'
-  let loader: Loader | undefined
-  let linked: Linked | undefined
   let definition: Definition | undefined
   let expectations: ExpectationResult[] = []
   try {
-    doc = parse(source, report).doc
-    loader = new Loader(report, o.files, { path, text: source })
-    let entry = loader.first(path, doc)
-    role = entry.role
-    let variant: SourceFile | undefined
-    if (role === 'part' || role === 'variant') {
-      // read through its model: the names it uses are declared there
-      const owner = entry.head.find((h) => h.kind === (role === 'part' ? 'part' : 'extends'))
-      if (owner?.path == null) throw new Bail()
-      const text = fileText(o.files, owner.path)
-      if (text == null) {
-        const why = o.files ? 'it is not among the files of this definition' : 'this file came alone'
-        report.error('missing-file', owner.at, `there is no "${owner.path}": ${why}`)
-        throw new Bail()
-      }
-      report = new Reporter(text)
-      report.first = owner.path
-      report.given = path
-      loader = new Loader(report, o.files, { path, text: source })
-      const model = loader.first(owner.path, parse(text, report).doc)
-      const mine = loader.load(path, { from: 0, to: 0 })!
-      const back = mine.head.find((h) => h.kind === owner.kind)!
-      if (model.role !== 'model') {
-        report.error('bad-file', back.at, `"${owner.path}" is a ${model.role}, not a model`)
-        throw new Bail()
-      }
-      if (role === 'variant') variant = mine
-      else if (!model.head.some((h) => h.kind === 'include' && h.path === path)) {
-        const line = `include "${relativePath(owner.path, path)}"`
-        report.error('bad-file', back.at, `"${owner.path}" does not include this file`, `${line} in its head`, {
-          file: owner.path,
-          line,
-        })
-        throw new Bail()
-      }
-      entry = model
-    }
-    linked = link(loader, entry, hosted, variant)
+    front(source, o, f)
+    const { report, linked } = f
+    if (!linked) throw new Bail()
     c = new Compiler(report, o.functions ?? {}, o.catalog ?? loadedCatalog(), o.snapshot, linked)
     definition = c.run(linked.body)
     if (definition)
@@ -335,6 +355,7 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
         return { at, ...where, result: grounded(definition!.model, found), ...(file != null && { file }) }
       })
   } catch (err) {
+    const report = f.report
     const run = c ?? new Compiler(report, {})
     // a formula that fails only at a capacity bound, while checking: it has its place
     if (err instanceof FormulaError || flowOf(err) || (err instanceof Error && err.message.startsWith('loadmap: ')))
@@ -343,6 +364,7 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
     else if (!(err instanceof Bail))
       report.error('internal', { from: 0, to: 0 }, `internal error: ${(err as Error)?.message ?? err}`)
   }
+  const { report, linked, loader, doc, role } = f
   const kept = linked?.preview ? report.list.filter((d) => !ALONE_QUIET.has(d.code)) : report.list
   const diagnostics = [...kept].sort((a, b) => a.from - b.from).map((d) => report.local(d))
   const ok = !kept.some((d) => d.severity === 'error') && !!definition

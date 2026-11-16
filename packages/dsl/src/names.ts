@@ -15,6 +15,8 @@ export type NameVisitor = (
   name: string,
   decl: boolean,
   quoted: boolean,
+  /** The name may be of this space or a formula's: the value of an input, a flow's name or a value. */
+  loose?: boolean,
 ) => void
 
 /** Every name in the statements of a block, each with the space it lives in. */
@@ -36,8 +38,8 @@ export function walkFormula(e: Expr, visit: NameVisitor) {
 class Walk {
   constructor(private readonly visitor: NameVisitor) {}
 
-  private add(space: Space, id: Span & { name?: string }, name: string, decl = false, quoted = false) {
-    this.visitor(space, id, name, decl, quoted)
+  private add(space: Space, id: Span & { name?: string }, name: string, decl = false, quoted = false, loose = false) {
+    this.visitor(space, id, name, decl, quoted, loose)
   }
 
   private scenario(e: Expr, decl = false) {
@@ -54,7 +56,11 @@ class Walk {
           if (spec.open.names === 'flows') this.add('flow', s.key, k)
           // an input's name is the prototype's, an imported name its library's: not a name of this text
           else if (spec.open.names === 'inputs' || spec.open.names === 'imports') {
-            if (spec.open.names === 'inputs') this.expr(s.value)
+            if (spec.open.names === 'inputs') {
+              // one name alone may be the flow an `input flow` takes: a rename of the flow reaches it
+              if (s.value.t === 'id') this.add('flow', s.value, s.value.name, false, false, true)
+              this.expr(s.value)
+            }
             continue
           }
           // a catalog condition or a metric's argument is no name of the definition
