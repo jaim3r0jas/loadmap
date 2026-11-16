@@ -1,0 +1,7 @@
+loadmap 1.3
+part of "./shop.loadmap"
+# A part: its statements are the model's, as if written there. The names it uses are declared in shop.loadmap.
+
+step "An ordinary peak: every box is under half its capacity." { load: 1 }
+step "At 30× the workers are the first past their target." { load: 30; focus: orderLine.consumers }
+step "With six pods they are back under it." { scenario: "More workers"; load: 30; focus: orderLine.consumers }

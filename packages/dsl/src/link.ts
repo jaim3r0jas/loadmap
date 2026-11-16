@@ -198,7 +198,12 @@ class Linker {
         const decl = this.exported(lib, n.theirs)
         if (!decl) continue
         if (taken.has(n.local.name)) {
-          report.error('duplicate', n.local, `"${n.local.name}" is imported twice`, `give one another name: other: ${n.theirs.name}`)
+          report.error(
+            'duplicate',
+            n.local,
+            `"${n.local.name}" is imported twice`,
+            `give one another name: other: ${n.theirs.name}`,
+          )
           continue
         }
         taken.set(n.local.name, n.local)
@@ -210,7 +215,12 @@ class Linker {
     const local = templatesOf(stmts)
     for (const [name, at] of taken)
       if (imported.has(name) && local.has(name))
-        report.error('duplicate', at, `"${name}" is also a box of this model`, `give the import another name: other: ${name}`)
+        report.error(
+          'duplicate',
+          at,
+          `"${name}" is also a box of this model`,
+          `give the import another name: other: ${name}`,
+        )
     const env: Env = {
       template: (name) => {
         const decl = local.get(name)
@@ -226,7 +236,8 @@ class Linker {
   private sameVersion(file: SourceFile, m: SourceFile, what: string) {
     const [a, b] = [file.version ?? CURRENT, m.version ?? CURRENT]
     if (a[0] === b[0] && a[1] === b[1]) return
-    const at = stampOf(this.report.source, file.doc.body)?.at ?? file.stamp?.keyword ?? { from: file.base, to: file.base }
+    const at = stampOf(this.report.source, file.doc.body)?.at ??
+      file.stamp?.keyword ?? { from: file.base, to: file.base }
     this.report.error(
       'language-version',
       at,
@@ -274,7 +285,7 @@ class Linker {
         continue
       }
       if (s.kind !== 'decl') {
-        report.error('misplaced', s, 'a variant changes values: the boxes and the edges are its model\'s')
+        report.error('misplaced', s, "a variant changes values: the boxes and the edges are its model's")
         continue
       }
       const k = s.keyword.name
@@ -287,7 +298,9 @@ class Linker {
       } else if ((k === 'param' || VARIANT_REPLACES.has(k)) && id) {
         const i = at(k, id.name)
         if (i < 0) {
-          const known = stmts.flatMap((x) => (x.kind === 'decl' && x.keyword.name === k && idOf(x) ? [idOf(x)!.name] : []))
+          const known = stmts.flatMap((x) =>
+            x.kind === 'decl' && x.keyword.name === k && idOf(x) ? [idOf(x)!.name] : [],
+          )
           report.error('unknown-name', id, `"${m.path}" has no ${k} "${id.name}"`, didYouMean(id.name, known))
           continue
         }
@@ -387,7 +400,12 @@ class Linker {
         continue
       }
       if (names.has(id.name) || imported.has(id.name))
-        report.error('duplicate', id, `"${id.name}" is declared twice: in a library a name is one thing`, 'rename one of them')
+        report.error(
+          'duplicate',
+          id,
+          `"${id.name}" is declared twice: in a library a name is one thing`,
+          'rename one of them',
+        )
       else names.set(id.name, s)
     }
     return lib
@@ -400,11 +418,23 @@ class Linker {
       const what = lib.imported.has(name.name)
         ? `"${name.name}" is not "${lib.file.path}"'s own: import it from where it is declared`
         : `"${lib.file.path}" has no "${name.name}"`
-      this.report.error('unknown-name', name, what, didYouMean(name.name, [...lib.names.keys()].filter((n) => !n.startsWith('_'))))
+      this.report.error(
+        'unknown-name',
+        name,
+        what,
+        didYouMean(
+          name.name,
+          [...lib.names.keys()].filter((n) => !n.startsWith('_')),
+        ),
+      )
       return undefined
     }
     if (name.name.startsWith('_')) {
-      this.report.error('unknown-name', name, `"${name.name}" is private to "${lib.file.path}": a name that starts with "_" stays in its file`)
+      this.report.error(
+        'unknown-name',
+        name,
+        `"${name.name}" is private to "${lib.file.path}": a name that starts with "_" stays in its file`,
+      )
       return undefined
     }
     return decl
@@ -417,7 +447,12 @@ class Linker {
     const decl = own ?? far?.decl
     if (!decl) return undefined
     const k = decl.keyword.name
-    const fits = space === 'metric' ? k === 'metric' : space === 'tier' ? k === 'tier' : isValue(k) && k !== 'metric' && k !== 'tier'
+    const fits =
+      space === 'metric'
+        ? k === 'metric'
+        : space === 'tier'
+          ? k === 'tier'
+          : isValue(k) && k !== 'metric' && k !== 'tier'
     return fits ? this.bring(far?.lib ?? lib, decl) : undefined
   }
 
@@ -434,7 +469,9 @@ class Linker {
         this.report.error(
           'duplicate',
           local,
-          known.includes('@') ? `"${own.name}" is imported after a line that reads it` : `"${own.name}" is already imported as "${known}"`,
+          known.includes('@')
+            ? `"${own.name}" is imported after a line that reads it`
+            : `"${own.name}" is already imported as "${known}"`,
           'import it once, first',
         )
       return known
@@ -500,7 +537,9 @@ class Linker {
         } else if (first?.t === 'id' && !i.init) set.push(prop(first.name, num(1)))
       }
       const like = prop('like', id(name))
-      stmts.push(decl(d.keyword.name, [id(name), ...d.args.slice(1)], set.length ? [like, decl('with', [], set)] : [like]))
+      stmts.push(
+        decl(d.keyword.name, [id(name), ...d.args.slice(1)], set.length ? [like, decl('with', [], set)] : [like]),
+      )
     }
     for (const [flow, passes] of flows) {
       if (!passes.length) {

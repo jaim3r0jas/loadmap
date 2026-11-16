@@ -50,7 +50,11 @@ describe('the grammar', () => {
   })
 
   it('reads every statement of the language as a keyword', () => {
-    const every = tokens(read('docs/every-statement.loadmap'))
+    // with the multi-file example: a part, a library and a variant are files of their own
+    const several = ['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap', 'shop.big.loadmap']
+    const every = tokens(
+      [read('docs/every-statement.loadmap'), ...several.map((f) => read(`docs/multi-file/${f}`))].join('\n'),
+    )
     const seen = new Set(every.filter((t) => t.scope === 'keyword.other.statement').map((t) => t.text))
     // the file holds every statement of the schema (docs.test.ts)
     expect([...seen].sort()).toEqual(Object.keys(SCHEMA).filter(Boolean).sort())
@@ -63,6 +67,8 @@ describe('the grammar', () => {
       // a limiter, a cache, an autoscaled pool and retries
       'examples/search/search.loadmap',
       'docs/every-statement.loadmap',
+      'docs/multi-file/shop.loadmap',
+      'docs/multi-file/platform.loadmap',
     ]) {
       const t = tokens(read(path))
       // every word is something the grammar names, never plain source text

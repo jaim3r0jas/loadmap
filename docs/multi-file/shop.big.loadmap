@@ -1,0 +1,6 @@
+loadmap 1.3
+extends "./shop.loadmap"
+# A variant: the same shop where it runs on more pods. It writes only what differs from its model.
+title: "A shop, on the big cluster"
+
+param pods { default: 6 }

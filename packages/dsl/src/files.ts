@@ -128,7 +128,9 @@ export function imports(
   return {
     role,
     files: head.flatMap((h) =>
-      h.written == null ? [] : [{ kind: h.kind, written: h.written, path: h.path, names: h.names.map((n) => n.theirs.name) }],
+      h.written == null
+        ? []
+        : [{ kind: h.kind, written: h.written, path: h.path, names: h.names.map((n) => n.theirs.name) }],
     ),
   }
 }
@@ -207,7 +209,8 @@ export function readHead(
     }
     if (kind === 'import') {
       for (const n of s.body ?? []) {
-        if (n.kind === 'decl' && !n.args.length && !n.body && !n.init) line.names.push({ local: n.keyword, theirs: n.keyword })
+        if (n.kind === 'decl' && !n.args.length && !n.body && !n.init)
+          line.names.push({ local: n.keyword, theirs: n.keyword })
         else if (n.kind === 'prop' && n.value.t === 'id' && !n.chain)
           line.names.push({ local: n.key, theirs: { name: n.value.name, from: n.value.from, to: n.value.to } })
         else report.error('syntax', n, 'an import lists names: "a", or "local: theirs"', own(EXAMPLES, 'import'))
@@ -220,11 +223,14 @@ export function readHead(
   for (const extra of roles.slice(1))
     report.error('bad-file', extra.decl.keyword, `a file is one thing: this one is already "${roles[0]!.kind}"`)
   const kind = roles[0]?.kind
-  const role: Role = kind === 'part' ? 'part' : kind === 'library' ? 'library' : kind === 'extends' ? 'variant' : 'model'
+  const role: Role =
+    kind === 'part' ? 'part' : kind === 'library' ? 'library' : kind === 'extends' ? 'variant' : 'model'
   for (const h of head) {
     const wrong =
       (h.kind === 'include' && role !== 'model' && 'only a model includes parts') ||
-      (h.kind === 'import' && role === 'part' && "a part's imports go in its model's head: the one list of what it needs") ||
+      (h.kind === 'import' &&
+        role === 'part' &&
+        "a part's imports go in its model's head: the one list of what it needs") ||
       (h.kind === 'import' && role === 'variant' && "a variant's imports are its model's")
     if (wrong) report.error('misplaced', h.decl.keyword, wrong)
   }

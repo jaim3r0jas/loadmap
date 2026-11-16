@@ -18,7 +18,13 @@ export type NameVisitor = (
 ) => void
 
 /** Every name in the statements of a block, each with the space it lives in. */
-export function walkNames(list: readonly Stmt[], spec: BlockSpec, visit: NameVisitor, branches = false, edgeBody = false) {
+export function walkNames(
+  list: readonly Stmt[],
+  spec: BlockSpec,
+  visit: NameVisitor,
+  branches = false,
+  edgeBody = false,
+) {
   new Walk(visit).visit(list, spec, branches, edgeBody)
 }
 
@@ -88,7 +94,8 @@ class Walk {
         if (k === 'input') {
           // `input pods`, or `input flow main`: a name the lines of its box read, a flow's where it says so
           const [first, second] = s.args
-          if (first?.t === 'id' && second?.t === 'id' && first.name === 'flow') this.add('flow', second, second.name, true)
+          if (first?.t === 'id' && second?.t === 'id' && first.name === 'flow')
+            this.add('flow', second, second.name, true)
           else if (first?.t === 'id') this.add('formula', first, first.name, true)
           if (s.init) this.expr(s.init)
           continue

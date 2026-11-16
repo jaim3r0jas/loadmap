@@ -162,9 +162,7 @@ export async function check(argv: string[], o: CheckOptions = {}): Promise<numbe
     }
 
     // nothing pulled: the first compile is the answer
-    const r = snapshot
-      ? compile(source, { ...one, snapshot: fromSnapshot(snapshot) })
-      : (first ?? compile(source, one))
+    const r = snapshot ? compile(source, { ...one, snapshot: fromSnapshot(snapshot) }) : (first ?? compile(source, one))
     const found = problems(r, 'error', a.inconclusive === 'fail' ? 'error' : 'warning')
     // a unit that disagrees is a warning where the text may be read two ways; a team that writes its units fails on it
     const isUnit = (d: Diagnostic) => a.units === 'fail' && d.code === 'unit-mismatch' && d.severity === 'warning'

@@ -1,0 +1,41 @@
+loadmap 1.3
+library "Platform building blocks"
+# A library: facts and building blocks that several models share. It is checked on its own, draws nothing, and reads
+# nothing of the model that imports it: what a model decides comes in through an input.
+
+# what one message costs a worker, measured once for every team
+let messageCost = 2ms
+
+# a box with inputs: the primary, as load-tested. A model says `like: postgres` and sets them in `with { … }`
+node postgres "Postgres" "primary" {
+  input writes
+  input limit = 4_000
+  shape: cylinder
+  store
+  short: "the database"
+  demand: writes
+  capacity: estimated(limit ± 30%, "commits/s", "load test of the primary")
+  over: "commits queue on the primary"
+}
+
+# several boxes as one: a topic and the pool that reads it. Outside, its boxes are <id>.kafka and <id>.consumers
+subsystem pipeline "Queue and workers" {
+  # the name of a flow of the model, for flows.main and the topic's partitions
+  input flow main
+  input pods = 3
+  cluster kafka "Kafka" {
+    members: 3
+    memberLabel: `broker ${i}`
+    queue topic { partitions { main: 12 } }
+  }
+  pool consumers "Workers" `${pods} pods` {
+    workers { pods: pods; perPod: 8 }
+    short: "the workers"
+    demand: flows.main * messageCost
+    capacity: measured(pods * 1, "cores", "pod CPU limit")
+    over: "messages wait in the topic"
+  }
+  kafka -> consumers
+  # what a flow passes when its route names the subsystem; an edge to it ends at kafka, one from it starts at consumers
+  route: topic -> consumers
+}
