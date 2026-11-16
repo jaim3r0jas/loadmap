@@ -1,5 +1,86 @@
 # @loadmap/dsl
 
+## 0.34.0
+
+### Minor Changes
+
+- 4911a7c: A long text no longer has to be one long line. From `loadmap 1.2` a line that starts with a `"…"` text continues the
+  text that ends the line above it, and `loadmap fmt` breaks a text that runs past 120 columns at a space, piece under
+  piece (and puts pieces that fit back on one line). The text is the same text: its value, and a share link's
+  fingerprint, do not change with where it is broken.
+- 59c1182: `30%+1` no longer passes in silence. A `%` straight after a number is a share, but before a value or a sign it read as
+  the remainder, so `30% + 1` was 1.3 and `30%+1` was 0. That spelling is now `glued-percent`, with a quick fix for each
+  meaning (`30% + 1`, `mod(30, 1)`): an error in a `loadmap 1.2` file, a warning in an older one, which computes as
+  before. `mod(a, b)` is new in 1.2 and says the remainder in words; `a % b` with spaces still works.
+- 75ca614: Two ways to say a thing once, from `loadmap 1.2`. `like: db` on a box takes every line and stage of the box `db` that
+  this one does not write itself, so a second shard is one line. `out.<stage>` is what a fan-out sends, a second (what
+  reaches it of each flow times that branch's copies), so its box says `demand: out.push` instead of repeating the
+  copies of its branches. `out` is a reserved name from 1.2; a file stamped before keeps a parameter or let of that name.
+- d77314a: A definition in several files, from `loadmap 1.3`, which this opens: a new definition starts with `loadmap 1.3`, and
+  the templates and examples say it. A file stamped `loadmap 1`, `1.1` or `1.2` reads as it did, and one file is still
+  a whole definition.
+  - **Parts:** a model says `include "./shop.story.loadmap"`, the part `part of "./shop.loadmap"`. Its statements are the
+    model's; it says the model's version.
+  - **Libraries:** `library "…"` holds values (`let`, `fit`, `metric`, `measure`, `tier`, `published`), boxes with
+    inputs and subsystems; a model takes them by name, `import "./platform.loadmap" { postgres; pool: podPool }`.
+  - **Inputs:** `input pods = 3` in a library's box or subsystem, set in `with { … }` by the box that is `like:` it;
+    `input flow main` takes a flow's name.
+  - **Subsystems:** `subsystem orderLine "Orders" { like: pipeline; with { … } }` is several boxes as one, each named
+    `orderLine.<name>`; with a `route:` of its own, a flow's route and an edge may name the subsystem.
+  - **Variants:** `extends "./shop.loadmap"` is a model with other defaults and values.
+  - `compile(source, { path, files })`: the host gives the files, the compiler reads none. A diagnostic and a symbol in
+    another file carry `file`. New: `imports`, `gather`, `flatten`, and `definitionAcross`, `referencesAcross`,
+    `renameAcross`, `hoverAcross`, `completionsAcross`.
+  - A share link with more than one file is `#v2.`; one file still makes `#v1.`.
+  - `loadmap check`, `pull`, `drift` and `record` read a definition with its files, inside the project root;
+    `--format json` adds `file` to a diagnostic of another file. `loadmap fmt` on a model sets its parts' versions.
+    New: `loadmap bundle <model.loadmap>` writes the definition as one file.
+  - The language server and the VS Code extension: problems in the file they are in, definition, references and rename
+    across a model's files, completion of paths, imports and inputs, a quick fix that imports a name, and the preview
+    of a part (its model) and of a library (its own boxes).
+  - The editor shows each file as a tab; `<LoadmapSource>` takes `files` and `path`.
+  - A name with a dot (`a.b`) that is no table is now read as one name: where it names nothing, the error says so
+    as before.
+- bc97bf4: `%` and `×` are checked where a property says which it takes. `expect "x" { underTarget: 70% }` passed as 0.7× and
+  `thresholds { target: 7× }` compiled; both are now `unit-mismatch`, with what to write instead: an error in a
+  `loadmap 1.2` file, a warning marked "(an error from loadmap 1.2)" in an older one, which computes as before. A load
+  multiple goes in `underTarget`, `notFull`, the load's `min`, `max` and `default`, and `load` in a preset or a step.
+- 8c9bc5d: Language 1.2 is open: a new definition starts with `loadmap 1.2`, and the templates and examples say it. A file stamped
+  `loadmap 1` or `loadmap 1.1` reads as it did.
+- 47ab0ae: A scenario may have an id, from `loadmap 1.2`: `scenario bigger "Bigger API" { pods: 8 }`, then `scenario: bigger` in a
+  step or an expect. The label is the button's text and can be reworded without touching what names the scenario; a
+  reference by label still works. Rename, hover and completion follow the id.
+- 825b334: A new warning, `shadowed-name`: an id that names two kinds of thing (`param pods` beside `pool pods`, where `${pods}`
+  reads the parameter and `focus: pods` the box), or that is also a keyword of the language (`param merge`,
+  `pool workers`). A box, its stage and its component still share one id. It needs no language version, and nothing
+  computes differently. The templates and examples have ids of their own now: `workerPool`, `readCache`, `rateLimit`, …
+- 335c55d: Sizes, from `loadmap 1.2`: `KB`, `MB`, `GB` and `TB` after a number count in bytes, and a demand written with one is
+  brought to the size its capacity counts in. `demand: flows.alerts * 1.5KB` against `estimated(20, "MB/s", …)` is
+  megabytes a second, with no `/ 1000` to forget; a size against a capacity that names none is an error.
+  `loadmap check --units fail` fails the run on a unit that disagrees (`unit-mismatch`), as `--inconclusive fail` does
+  for an expectation that is not sure.
+- c7822a5: A `view { … }` block, from `loadmap 1.2`, holds what only changes how the page looks and plays: `speed`, `transition`,
+  `fullScreen`, `fullScreenMode`, `lanes` and `grid`. They stood at the top beside what the model computes from. In a 1.2
+  file a setting at the top still works and warns (`deprecated`, with a quick fix), and `loadmap fmt` moves it into the
+  block, a comment above it too; a file stamped before 1.2 keeps them at the top, silently. The editor's View menu
+  writes into the block.
+
+### Patch Changes
+
+- ae1a0e3: Four diagnostics say one thing instead of several. `rate = 40` is one error, not also "flow needs rate"; a `"…"` text
+  carried onto the next line is one error at its first line, not three; a formula wrapped without parentheses says so
+  once, with the fix ("put the formula in ( … )"); and an expectation that rests on a demand that is no number (a
+  division by zero at the defaults) is inconclusive and says why, instead of a firm "holds up to 0×". A failure that a
+  component with a real demand shows by itself stays a failure.
+- 00b4a76: Several files, what was left:
+  - An input set with a formula is checked against its default: the same type (`wrong-type`), and where both say a
+    unit, the same one (a `unit-mismatch` warning).
+  - Hover on a box that is `like` another lists the inputs it sets. The inspector lists each line the box takes from
+    the other, as written there; "Write here" puts it in the box, to change it there.
+  - Rename in the editor reaches every file of the model: the other tabs change too.
+- @loadmap/core@0.34.0
+  - @loadmap/layout@0.34.0
+
 ## 0.33.0
 
 ### Minor Changes

@@ -1,5 +1,72 @@
 # @loadmap/editor
 
+## 0.34.0
+
+### Minor Changes
+
+- d77314a: A definition in several files, from `loadmap 1.3`, which this opens: a new definition starts with `loadmap 1.3`, and
+  the templates and examples say it. A file stamped `loadmap 1`, `1.1` or `1.2` reads as it did, and one file is still
+  a whole definition.
+  - **Parts:** a model says `include "./shop.story.loadmap"`, the part `part of "./shop.loadmap"`. Its statements are the
+    model's; it says the model's version.
+  - **Libraries:** `library "…"` holds values (`let`, `fit`, `metric`, `measure`, `tier`, `published`), boxes with
+    inputs and subsystems; a model takes them by name, `import "./platform.loadmap" { postgres; pool: podPool }`.
+  - **Inputs:** `input pods = 3` in a library's box or subsystem, set in `with { … }` by the box that is `like:` it;
+    `input flow main` takes a flow's name.
+  - **Subsystems:** `subsystem orderLine "Orders" { like: pipeline; with { … } }` is several boxes as one, each named
+    `orderLine.<name>`; with a `route:` of its own, a flow's route and an edge may name the subsystem.
+  - **Variants:** `extends "./shop.loadmap"` is a model with other defaults and values.
+  - `compile(source, { path, files })`: the host gives the files, the compiler reads none. A diagnostic and a symbol in
+    another file carry `file`. New: `imports`, `gather`, `flatten`, and `definitionAcross`, `referencesAcross`,
+    `renameAcross`, `hoverAcross`, `completionsAcross`.
+  - A share link with more than one file is `#v2.`; one file still makes `#v1.`.
+  - `loadmap check`, `pull`, `drift` and `record` read a definition with its files, inside the project root;
+    `--format json` adds `file` to a diagnostic of another file. `loadmap fmt` on a model sets its parts' versions.
+    New: `loadmap bundle <model.loadmap>` writes the definition as one file.
+  - The language server and the VS Code extension: problems in the file they are in, definition, references and rename
+    across a model's files, completion of paths, imports and inputs, a quick fix that imports a name, and the preview
+    of a part (its model) and of a library (its own boxes).
+  - The editor shows each file as a tab; `<LoadmapSource>` takes `files` and `path`.
+  - A name with a dot (`a.b`) that is no table is now read as one name: where it names nothing, the error says so
+    as before.
+
+### Patch Changes
+
+- 00b4a76: Several files, what was left:
+  - An input set with a formula is checked against its default: the same type (`wrong-type`), and where both say a
+    unit, the same one (a `unit-mismatch` warning).
+  - Hover on a box that is `like` another lists the inputs it sets. The inspector lists each line the box takes from
+    the other, as written there; "Write here" puts it in the box, to change it there.
+  - Rename in the editor reaches every file of the model: the other tabs change too.
+- 8c9bc5d: Language 1.2 is open: a new definition starts with `loadmap 1.2`, and the templates and examples say it. A file stamped
+  `loadmap 1` or `loadmap 1.1` reads as it did.
+- b537430: Undo and redo of a rename that reached several files take it back, or make it again, in every one of them, from
+  whichever tab it is undone in. A file edited since keeps the name it has, and the editor says so.
+- 825b334: A new warning, `shadowed-name`: an id that names two kinds of thing (`param pods` beside `pool pods`, where `${pods}`
+  reads the parameter and `focus: pods` the box), or that is also a keyword of the language (`param merge`,
+  `pool workers`). A box, its stage and its component still share one id. It needs no language version, and nothing
+  computes differently. The templates and examples have ids of their own now: `workerPool`, `readCache`, `rateLimit`, …
+- c7822a5: A `view { … }` block, from `loadmap 1.2`, holds what only changes how the page looks and plays: `speed`, `transition`,
+  `fullScreen`, `fullScreenMode`, `lanes` and `grid`. They stood at the top beside what the model computes from. In a 1.2
+  file a setting at the top still works and warns (`deprecated`, with a quick fix), and `loadmap fmt` moves it into the
+  block, a comment above it too; a file stamped before 1.2 keeps them at the top, silently. The editor's View menu
+  writes into the block.
+- Updated dependencies [4911a7c]
+- Updated dependencies [ae1a0e3]
+- Updated dependencies [59c1182]
+- Updated dependencies [75ca614]
+- Updated dependencies [00b4a76]
+- Updated dependencies [d77314a]
+- Updated dependencies [bc97bf4]
+- Updated dependencies [8c9bc5d]
+- Updated dependencies [47ab0ae]
+- Updated dependencies [825b334]
+- Updated dependencies [335c55d]
+- Updated dependencies [c7822a5]
+  - @loadmap/dsl@0.34.0
+  - @loadmap/react@0.34.0
+  - @loadmap/core@0.34.0
+
 ## 0.33.0
 
 ### Minor Changes
