@@ -47,9 +47,43 @@ export interface DiagramProps {
   canvas?: boolean | Partial<Insets>
 }
 
+/** The share of the window's height a board on a page counts as its room: the diagram and its controls in one view. */
+const INLINE_HEIGHT = 0.7
+
+/**
+ * The height a board that fills the screen or its frame has under the bar: the root's, less the rows around the wrap,
+ * each with its gap (a flexible row at its min-height): not where they are now, which a centred wrap would change.
+ */
+function heightUnder(root: HTMLElement, wrap: HTMLElement, bar: HTMLElement): number {
+  const px = (x: string) => Number.parseFloat(x) || 0
+  const rs = getComputedStyle(root)
+  let around = px(rs.paddingTop) + px(rs.paddingBottom)
+  const add = (el: Element) => {
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return
+    around += px(rs.rowGap) + (px(cs.flexGrow) > 0 ? px(cs.minHeight) : (el as HTMLElement).offsetHeight)
+  }
+  for (const el of root.children) if (el !== wrap) add(el)
+  // focus centres the rows between two spacers: the second is a row too
+  if (getComputedStyle(root, '::after').content !== 'none') around += px(rs.rowGap)
+  return root.clientHeight - around - bar.offsetHeight - px(getComputedStyle(wrap).rowGap)
+}
+
+/**
+ * Tells the engine the room of a board that fills the screen or its frame: what the rows around the wrap leave (`h`);
+ * on a small screen the wrap's own box, which the board scrolls in.
+ */
+function tellRoom(engine: LoadmapController['engine'], wrap: HTMLElement, h: number): void {
+  const small = wrap.ownerDocument.defaultView?.matchMedia('(max-width: 760px)').matches
+  const tall = small ? wrap.clientHeight : h
+  if (wrap.clientWidth > 0 && tall > 0) engine.setRoom({ w: wrap.clientWidth, h: tall })
+}
+
 export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
   const { scene, engine, reducedMotion } = lm
   const zoom = lm.zoom || !!canvas
+  // a canvas has a box of its own: the room is what Fit has in it
+  const boxed = !!canvas
   const inset = { top: 0, right: 0, bottom: 0, left: 0, ...(typeof canvas === 'object' ? canvas : {}) }
   const insetKey = `${inset.top} ${inset.right} ${inset.bottom} ${inset.left}`
   // read when a box is pressed, so a new function each render does not redraw every box
@@ -150,6 +184,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       gone = true
       zoomed.current?.off()
       zoomed.current = null
+      if (canvas) engine.setRoom(null)
     }
   }, [engine, zoom, !!canvas])
   // new insets (a panel pinned, an editor resized) keep the reader's view: only what Fit frames changes
@@ -212,20 +247,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     const bar = barRef.current
     const root = lm.root
     if (!full || !scene || !wrap || !bar || !root) return
-    const px = (x: string) => Number.parseFloat(x) || 0
     const fit = () => {
-      const rs = getComputedStyle(root)
-      // the rows around the wrap, each with its gap: not where they are now, which a centred wrap would change
-      let around = px(rs.paddingTop) + px(rs.paddingBottom)
-      const add = (el: Element) => {
-        const cs = getComputedStyle(el)
-        if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return
-        around += px(rs.rowGap) + (px(cs.flexGrow) > 0 ? px(cs.minHeight) : (el as HTMLElement).offsetHeight)
-      }
-      for (const el of root.children) if (el !== wrap) add(el)
-      // focus centres the rows between two spacers: the second is a row too
-      if (getComputedStyle(root, '::after').content !== 'none') around += px(rs.rowGap)
-      const h = root.clientHeight - around - bar.offsetHeight - px(getComputedStyle(wrap).rowGap)
+      const h = heightUnder(root, wrap, bar)
+      if (!boxed) tellRoom(engine, wrap, h)
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
       wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
     }
@@ -248,7 +272,34 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       mo.disconnect()
       wrap.style.removeProperty('--lm-fit')
     }
-  }, [full, scene, lm.root])
+  }, [full, scene, lm.root, engine, boxed])
+  // a board on a page tells the engine its room: its height follows the diagram, so the room is its width by most of
+  // the window's height. The height is read again only when the width changes: a phone's address bar sliding away
+  // resizes the window, and must not turn the diagram under a scroll. A canvas tells what Fit has (zoom.tsx), a board
+  // that fills the screen or its frame what the rows around it leave: here before anything is drawn, then as they
+  // change (above)
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    const bar = barRef.current
+    if (!wrap || boxed) return
+    if (full) {
+      if (bar && lm.root) tellRoom(engine, wrap, heightUnder(lm.root, wrap, bar))
+      return () => engine.setRoom(null)
+    }
+    let told = { w: 0, h: 0 }
+    const tell = () => {
+      const w = wrap.clientWidth
+      if (Math.abs(w - told.w) >= 1) told = { w, h: INLINE_HEIGHT * (wrap.ownerDocument.defaultView?.innerHeight ?? 0) }
+      if (told.w > 0 && told.h > 0) engine.setRoom(told)
+    }
+    const ro = new ResizeObserver(tell)
+    ro.observe(wrap)
+    tell()
+    return () => {
+      ro.disconnect()
+      engine.setRoom(null)
+    }
+  }, [engine, boxed, full, lm.root])
   // F switches between the panels and focus, unless the keyboard is in a field or a panel is open whole
   const { setFullScreenMode, fullScreenMode } = lm
   const modesRef = useRef<HTMLFieldSetElement>(null)

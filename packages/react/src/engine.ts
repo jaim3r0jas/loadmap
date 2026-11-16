@@ -1,6 +1,6 @@
 import type { Evaluation, Model } from '@loadmap/core'
 import { anchor, legPath, type Point, pointAt, type Scene, type View } from '@loadmap/layout'
-import { morph } from '@loadmap/layout/internal'
+import { morph, type Room } from '@loadmap/layout/internal'
 import { createSim, type Particle, type Sim, type SimOptions } from '@loadmap/sim'
 import {
   between,
@@ -137,6 +137,8 @@ export class Engine {
   drawnFrame = -1
   /** Seconds a new structure takes to move in; 0 cuts. */
   transition = 0.8
+  /** The room the board has for the diagram, as the board measured it; null until one did. */
+  room: Room | null = null
   /** The structure key the current values want; `scene.key` catches up once the layout is done. */
   wantKey = ''
   /** The values React last drew labels and colours for; a frame is complete once they match `ev.values`. */
@@ -277,6 +279,15 @@ export class Engine {
   subscribe = (f: () => void): (() => void) => {
     this.#listeners.add(f)
     return () => this.#listeners.delete(f)
+  }
+
+  /** The board's room for the diagram: the direction follows it. Told only when it changed by a pixel or more. */
+  setRoom(room: Room | null): void {
+    const was = this.room
+    if (was === room) return
+    if (was && room && Math.abs(was.w - room.w) < 1 && Math.abs(was.h - room.h) < 1) return
+    this.room = room
+    for (const f of this.#listeners) f()
   }
 
   #show(frame: Scene): void {

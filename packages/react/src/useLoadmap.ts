@@ -10,9 +10,9 @@ import {
   type TextMeasure,
   type View,
 } from '@loadmap/layout'
-import { shapesOf } from '@loadmap/layout/internal'
+import { directionFor, extent, shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { pageElk } from './elk'
 import { type Cue, Engine } from './engine'
 
@@ -24,10 +24,13 @@ export interface LoadmapOptions<P> extends SimOptions {
   /** Below this container width the diagram is laid out top to bottom. Default 640. */
   narrowBelow?: number
   /**
-   * Which way the diagram runs where there is room. Default: from its shape (`directionOf`), right unless its widest
-   * layer has more boxes than its longest chain; below `narrowBelow` it is always DOWN.
+   * Which way the diagram runs. Default `auto`: the way that fits the room it is given larger (a board that fills its
+   * container, a canvas between its insets; on a page, the board's width by most of the window's height), and where
+   * both fit about as well, the way its shape suggests (`directionOf`: right unless its widest layer has more boxes
+   * than its longest chain). Neither the load nor a scenario, step or control turns it: only the room and the
+   * structure do. `RIGHT` or `DOWN` holds it. Below `narrowBelow` it is always DOWN, whichever is set.
    */
-  direction?: Direction
+  direction?: Direction | 'auto'
   /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
   fullScreenMode?: FullScreenMode
   /**
@@ -136,16 +139,17 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   engine.transition = o.transition ?? 0.8
 
   const [root, setRoot] = useState<HTMLElement | null>(null)
-  const wide = o.direction ?? directionOf(view)
+  const auto = o.direction == null || o.direction === 'auto'
+  const shape = directionOf(view)
   // only the width is state: a view of another shape lays out its own way on the render it arrives in
   const [narrow, setNarrow] = useState(false)
-  const direction: Direction = narrow ? 'DOWN' : wide
   const [measure, setMeasure] = useState<TextMeasure | null>(null)
   const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
   const scene = laid?.view === view ? laid.scene : null
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   engine.reducedMotion = reducedMotion
   const narrowBelow = o.narrowBelow ?? 640
+  const elk = o.elk
 
   // checked when it runs, not when it rendered: React may run a render's effects after newer values were set
   useEffect(() => {
@@ -163,14 +167,51 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => ro.disconnect()
   }, [root, narrowBelow])
 
+  // `auto`: the way the diagram fits the board's room larger, worked out per room and structure, never per phase. The
+  // way it runs now is kept unless the other fits clearly larger, so neither a drag of the window's edge nor an edit
+  // that barely changes the sizes turns it
+  const room = useSyncExternalStore(
+    engine.subscribe,
+    () => engine.room,
+    () => null,
+  )
+  const [picked, setPicked] = useState<{ view: View; direction: Direction } | null>(null)
+  const runs = useRef<Direction | null>(null)
+  useEffect(() => {
+    if (!auto || !room || !measure) return
+    let live = true
+    const o = { measure, elk: elk ?? pageElk() }
+    Promise.all([extent(view, 'RIGHT', o), extent(view, 'DOWN', o)]).then(
+      ([RIGHT, DOWN]) => {
+        if (!live) return
+        const d = directionFor({ RIGHT, DOWN }, room, runs.current ?? directionOf(view))
+        runs.current = d
+        setPicked((p) => (p?.view === view && p.direction === d ? p : { view, direction: d }))
+      },
+      (err) => {
+        console.error('loadmap: layout failed', err)
+        // the sizes are not to be had: the way it runs, or its shape's, so the diagram is still drawn
+        if (live) setPicked({ view, direction: runs.current ?? directionOf(view) })
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [auto, room, measure, view, elk])
+  // a new view runs as the last did until its own sizes are known, so an edit is drawn at once; it is not ready until
+  // then (`pending`), so nothing records it a moment before it turns. A board that told its room is not laid out
+  // before its first pick, so it never shows one way and then the other; without a board the shape decides
+  const pending = auto && !!room && picked?.view !== view
+  const waits = auto && !!room && !picked
+  const direction: Direction = narrow ? 'DOWN' : !auto ? (o.direction as Direction) : (picked?.direction ?? shape)
+
   const key = useMemo(
     () => (measure ? structureKey(view, ev, { direction, measure }) : ''),
     [view, ev, direction, measure],
   )
-  if (fresh) engine.wantKey = key
-  const elk = o.elk
+  if (fresh) engine.wantKey = pending ? '' : key
   useEffect(() => {
-    if (!measure || !key) return
+    if (!measure || !key || waits) return
     let live = true
     layout(view, engine.ev, { direction, measure, elk: elk ?? pageElk() }).then(
       (s) => {
@@ -182,7 +223,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => {
       live = false
     }
-  }, [key, view, engine, direction, measure, elk])
+  }, [key, view, engine, direction, measure, elk, waits])
 
   const labels = useMemo(() => labelsAt(view, ev), [view, ev])
   const valuesRef = useRef(values)

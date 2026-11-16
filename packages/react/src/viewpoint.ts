@@ -47,11 +47,18 @@ export function shown(v: Viewpoint, vp: Viewport): Rect {
   return { x: v.x - w / 2, y: v.y - h / 2, w, h }
 }
 
+/** The room Fit has for the diagram: the free part less its margin. */
+export function room(vp: Viewport): { w: number; h: number } {
+  const f = free(vp)
+  const m = Math.min(vp.margin, f.w / 4, f.h / 4)
+  return { w: f.w - 2 * m, h: f.h - 2 * m }
+}
+
 /** The view that shows `r` centred in the free part, as large as fits with the margin, no closer than `max`. */
 export function frame(r: Rect, vp: Viewport, max = vp.fitMax): Viewpoint {
   const f = free(vp)
-  const m = Math.min(vp.margin, f.w / 4, f.h / 4)
-  const k = Math.min((f.w - 2 * m) / r.w, (f.h - 2 * m) / r.h, max)
+  const fits = room(vp)
+  const k = Math.min(fits.w / r.w, fits.h / r.h, max)
   return at(r.x + r.w / 2, r.y + r.h / 2, f.x + f.w / 2, f.y + f.h / 2, k, vp)
 }
 

@@ -65,3 +65,27 @@ function fromShape(view: View): Direction {
   for (const l of layer.values()) sizes.set(l, (sizes.get(l) ?? 0) + 1)
   return sizes.size >= Math.max(0, ...sizes.values()) ? 'RIGHT' : 'DOWN'
 }
+
+/** The room a diagram is drawn in, in pixels. */
+export interface Room {
+  w: number
+  h: number
+}
+
+/** How much better the other direction must fit before the diagram turns: a drag near the edge turns nothing. */
+const TURN = 1.15
+
+/**
+ * Which way a diagram runs in a room: the way it stands (`keep`: the way it runs now, or its shape's) unless the other
+ * fits the room clearly larger. `sizes` is how large each direction lays it out (`extent`). No scale past full size
+ * counts: a diagram that reads well as it stands does not turn to be drawn larger still.
+ */
+export function directionFor(
+  sizes: Record<Direction, { width: number; height: number }>,
+  room: Room,
+  keep: Direction,
+): Direction {
+  const fit = (d: Direction) => Math.min(room.w / sizes[d].width, room.h / sizes[d].height, 1)
+  const other: Direction = keep === 'RIGHT' ? 'DOWN' : 'RIGHT'
+  return fit(other) > fit(keep) * TURN ? other : keep
+}
