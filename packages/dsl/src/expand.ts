@@ -378,9 +378,11 @@ export class Expander {
     inner?: ReadonlySet<string>,
   ): NameVisitor {
     const lib = env.library
-    return (space, raw, name, decl) => {
+    // the flows handed on to a subsystem inside (`with { main: main }`): named once, not read again as a value
+    const handed = new Set<object>()
+    return (space, raw, name, decl, _quoted, loose) => {
       const node = raw as Node
-      if (node[DONE] || node.name == null) return
+      if (node[DONE] || node.name == null || handed.has(node)) return
       if (space === 'formula') {
         const g = given.get(name)
         if (g?.kind === 'value' && !decl) {
@@ -410,8 +412,10 @@ export class Expander {
         node[DONE] = true
       } else if (space === 'flow') {
         const g = given.get(name)
-        if (g?.kind === 'flow') node.name = g.name
-        else if (lib && !decl) {
+        if (g?.kind === 'flow') {
+          node.name = g.name
+          if (loose) handed.add(node)
+        } else if (lib && !decl && !loose) {
           this.report.error('wrong-scope', node, `a library names no flow of a model: take it as "input flow ${name}"`)
           node[DONE] = true
         }

@@ -5,6 +5,7 @@ import { extname, join, normalize } from 'node:path'
 import { parseArgs } from 'node:util'
 import { compile, formatDiagnostic, gather } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
+import { bundle } from './bundle'
 import { check } from './check'
 import { drift } from './drift'
 import { fmt } from './fmt'
@@ -13,6 +14,7 @@ import { type Chromium, playwright } from './playwright'
 import { loadCatalogForFiles, project } from './project'
 import { pull } from './pull'
 
+export { type BundleOptions, bundle } from './bundle'
 export { type CheckOptions, check, github } from './check'
 export { type Drift, drift } from './drift'
 export { type FmtOptions, fmt } from './fmt'
@@ -24,6 +26,7 @@ loadmap fmt <file.loadmap>… [--check] | loadmap fmt -
 loadmap pull <file.loadmap> [--window 7d] [--step 5m] [--to <instant>] [--out <file.json>]
 loadmap drift <file.loadmap> (--snapshot <file.json> | --pull) [--history <dir>] [options]
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
+loadmap bundle <file.loadmap> [--out <file.loadmap>]
 loadmap lsp
 
 check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
@@ -134,6 +137,7 @@ export async function main(argv: string[], log: (s: string) => void = console.lo
   if (command === 'fmt') return fmt(rest, { log })
   if (command === 'pull') return pull(rest, { log })
   if (command === 'drift') return drift(rest, { log })
+  if (command === 'bundle') return bundle(rest, { log })
   // --stdio is what most clients pass: standard input and output are the only channel
   if (command === 'lsp') return lsp()
   if (command !== 'record') {

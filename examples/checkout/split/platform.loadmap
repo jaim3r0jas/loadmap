@@ -1,0 +1,26 @@
+loadmap 1.3
+library "Checkout platform"
+# What the team's models share: its worker pod and its database, each written once.
+
+# the standard pod: its CPU limit is the capacity; what the pool must handle is the model's to say
+pool podPool "Workers" {
+  input pods
+  input threads = 8
+  input cores = 1
+  input need
+  workers { pods: pods; perPod: threads }
+  demand: need
+  capacity: measured(pods * cores, "cores", "pod CPU limit")
+  describe: `${pods} pods × ${threads} threads, ${cores} cores each`
+}
+
+# the primary, as sized
+node postgres "Postgres" "primary" {
+  input writes
+  shape: cylinder
+  store
+  short: "the database"
+  demand: writes
+  capacity: estimated(4_000 ± 30%, "commits/s")
+  over: "commits queue on the primary"
+}

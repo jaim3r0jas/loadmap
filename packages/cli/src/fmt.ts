@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
-import { format, formatDiagnostic } from '@loadmap/dsl'
+import { format, formatDiagnostic, imports } from '@loadmap/dsl'
+import { project } from './project'
 
 export interface FmtOptions {
   log?: (s: string) => void
@@ -61,6 +62,8 @@ export async function fmt(argv: string[], o: FmtOptions = {}): Promise<number> {
         log(`${file}: formatted`)
       }
     }
+    // a model's parts say its version: one namespace is read one way
+    if (r.ok && (await partsVersion(file, r.text, parsed.check, log))) failed = true
   }
   const n = parsed.files.length
   const files = (k: number) => `${k} ${k === 1 ? 'file' : 'files'}`
@@ -71,6 +74,34 @@ export async function fmt(argv: string[], o: FmtOptions = {}): Promise<number> {
     summary = skipped ? `${n - skipped} of ${files(n)} laid out already` : `${files(n)} laid out already`
   log(summary + left)
   return failed ? 1 : 0
+}
+
+/**
+ * Sets the `loadmap` line of each part a model includes to the model's own; with `check`, only says which differ.
+ * True when one differs under `check`.
+ */
+async function partsVersion(file: string, model: string, check: boolean, log: (s: string) => void): Promise<boolean> {
+  const here = project(file)
+  const head = imports(model, here.path)
+  const want = /^loadmap (\d+(?:\.\d+)?)[ \t]*(?:#.*)?$/m.exec(model.split('\n')[0] ?? '')?.[1]
+  if (head.role !== 'model' || want == null) return false
+  let differs = false
+  for (const f of head.files) {
+    const text = f.kind === 'include' && f.path != null ? here.files(f.path) : undefined
+    if (text == null || f.path == null) continue
+    const line = text.split('\n')[0] ?? ''
+    const has = /^loadmap (\S+)/.exec(line)?.[1]
+    if (has == null || has === want || imports(text, f.path).role !== 'part') continue
+    const shown = here.shown(f.path)
+    if (check) {
+      log(`${shown}: says loadmap ${has}; its model ${file} says loadmap ${want}`)
+      differs = true
+    } else {
+      await writeFile(here.abs(f.path), `${line.replace(has, want)}${text.slice(line.length)}`)
+      log(`${shown}: loadmap ${want}, as its model ${file}`)
+    }
+  }
+  return differs
 }
 
 function parse(argv: string[]) {

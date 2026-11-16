@@ -1,13 +1,16 @@
 // Checks that a .loadmap definition and the TypeScript it mirrors give the same model, layout and dots.
 import { check, compare, type Evaluation, type Model } from '@loadmap/core'
-import { compile, type Definition, formatDiagnostic } from '@loadmap/dsl'
+import { type CompileOptions, compile, type Definition, formatDiagnostic } from '@loadmap/dsl'
 import { labelsAt, layout, structureKey, type View } from '@loadmap/layout'
 import { createSim } from '@loadmap/sim'
 import { expect } from 'vitest'
 
-export function compiled(source: string, file: string): Definition {
-  const r = compile(source)
-  const errors = r.diagnostics.map((d) => formatDiagnostic(d, source, file))
+/** The definition a text compiles to, with no problem at all; `options` name its other files, when it has any. */
+export function compiled(source: string, file: string, options: CompileOptions = {}): Definition {
+  const r = compile(source, options)
+  const errors = r.diagnostics.map((d) =>
+    d.file == null ? formatDiagnostic(d, source, file) : `${d.file}: ${d.message}`,
+  )
   expect(errors).toEqual([])
   return r.definition!
 }

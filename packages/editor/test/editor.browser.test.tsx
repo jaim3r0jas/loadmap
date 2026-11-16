@@ -6,10 +6,20 @@ import { createRef, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import platform from '../../../docs/multi-file/platform.loadmap?raw'
+import shop from '../../../docs/multi-file/shop.loadmap?raw'
+import story from '../../../docs/multi-file/shop.story.loadmap?raw'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
 import { watchDots } from '../../../examples/dots'
-import { type BarSection, type EmbedOptions, LoadmapEditor, type LoadmapEditorHandle, TEMPLATES } from '../src'
+import {
+  type BarSection,
+  type EditorFiles,
+  type EmbedOptions,
+  LoadmapEditor,
+  type LoadmapEditorHandle,
+  TEMPLATES,
+} from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -25,6 +35,7 @@ async function mount(
     theme?: 'light' | 'dark'
     embedLink?: (hash: string, o: EmbedOptions) => string
     exportItems?: BarSection[]
+    files?: EditorFiles
   } = {},
 ) {
   await page.viewport(1440, 1000)
@@ -40,6 +51,7 @@ async function mount(
       theme={o.theme}
       embedLink={o.embedLink}
       exportItems={o.exportItems}
+      files={o.files}
     />,
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
@@ -60,6 +72,53 @@ async function mount(
 const verdict = (host: HTMLElement) => host.querySelector('.lm-verdict')?.textContent ?? ''
 
 describe('the editor', () => {
+  it("shows a definition in several files as tabs, the diagram the model's whichever is open", async () => {
+    const files = {
+      path: 'shop.loadmap',
+      files: { 'shop.loadmap': shop, 'shop.story.loadmap': story, 'platform.loadmap': platform },
+    }
+    const { host, handle, view, edit } = await mount({ source: shop, files })
+    const tabs = () => [...host.querySelectorAll('.lme-tabs [role="tab"]')].map((t) => t.textContent)
+    const status = () => host.querySelector('.lme-status')!.textContent
+    const boxes = () =>
+      [...host.querySelectorAll('.lme-preview [data-node]')].map((el) => el.getAttribute('data-node')).sort()
+    const all = ['db', 'gateway', 'orderLine.consumers', 'orderLine.kafka', 'phones']
+    // the model first; its subsystem's boxes are drawn under its id
+    expect(tabs()).toEqual(['shop.loadmap', 'platform.loadmap', 'shop.story.loadmap'])
+    await expect.poll(status).toBe('No problems')
+    expect(boxes()).toEqual(all)
+    // the part in the editor: its own text, read through the model, the same diagram
+    await userEvent.click(page.getByRole('tab', { name: 'shop.story.loadmap' }))
+    expect(view.state.doc.toString()).toBe(story)
+    await expect.poll(status).toBe('No problems')
+    expect(boxes()).toEqual(all)
+    // a mistake in the part is the part's: said there, the last good diagram kept
+    edit('focus: orderLine.consumers }', 'focus: orderLine.nowhere }')
+    await expect.poll(status, { timeout: 5000 }).toMatch(/error/)
+    expect(host.querySelector('.lme-problems')!.textContent).toContain('shop.story.loadmap:')
+    // back in the model, the problem is still listed, under the part's name; a click on it opens the part there
+    await userEvent.click(page.getByRole('tab', { name: 'shop.loadmap' }))
+    expect(view.state.doc.toString()).toBe(shop)
+    await expect.poll(status, { timeout: 5000 }).toMatch(/error/)
+    ;(host.querySelector('.lme-problems button') as HTMLElement).click()
+    await expect.poll(() => view.state.doc.toString()).toContain('orderLine.nowhere')
+    edit('focus: orderLine.nowhere }', 'focus: orderLine.consumers }')
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // the library in the editor: the diagram stays the model's
+    await userEvent.click(page.getByRole('tab', { name: 'platform.loadmap' }))
+    expect(view.state.doc.toString()).toBe(platform)
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    expect(boxes()).toEqual(all)
+    // a link carries every file, and opens the model
+    const shared = await decodeShare(await handle.shareHash())
+    expect(shared).toMatchObject({ source: shop, path: 'shop.loadmap', files: files.files })
+    expect(handle.files()).toEqual(files)
+    // one file again: no tabs, and the link every page reads
+    handle.setSource(checkout)
+    await expect.poll(tabs).toEqual([])
+    expect(await handle.shareHash()).toMatch(/^v1\./)
+  })
+
   it('redraws the diagram as the text changes, keeping the values', async () => {
     const { host, handle, edit } = await mount()
     handle.loadmap()!.setValues({ pods: 6 })
@@ -185,10 +244,15 @@ describe('the editor', () => {
     const { host, handle } = await mount()
     await userEvent.click(page.getByRole('button', { name: 'New' }))
     // the list loads as the menu first opens
-    // the templates, and Add → From the catalog
-    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length + 1)
+    // the templates, and Add → From the catalog, a part, a library
+    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length + 3)
     const names = [...host.querySelectorAll('[role="menuitem"]')].map((i) => i.firstChild?.textContent)
-    expect(names).toEqual([...TEMPLATES.map((t) => t.title), 'From the catalog…'])
+    expect(names).toEqual([
+      ...TEMPLATES.map((t) => t.title),
+      'From the catalog…',
+      'A part of this model…',
+      'A library…',
+    ])
     // each with its line, said after its name
     const queue = page.getByRole('menuitem', { name: 'Queue and workers' })
     await expect.element(queue).toHaveAccessibleDescription('An API that queues jobs for a pool of workers.')

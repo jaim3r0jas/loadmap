@@ -22,31 +22,30 @@ export { FormulaError, type HostFunctions } from './expr'
 export { type Files, gather, imports, type Role } from './files'
 export { FORMAT_WIDTH, type FormatResult, format } from './format'
 export {
+  addImport,
   type Completion,
   type Completions,
   completions,
+  completionsAcross,
   definition,
+  definitionAcross,
   type EditResult,
+  flatten,
   type Hover,
   hover,
-  type QuickFix,
-  quickFixes,
-  references,
-  rename,
-  type SignatureHelp,
-  signatureHelp,
-  type TextChange,
-} from './help'
-export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, type SharedFiles, sharedValues } from './share'
-export {
-  addImport,
-  completionsAcross,
-  definitionAcross,
   hoverAcross,
   importersOf,
   type Located,
   libraryOf,
+  type QuickFix,
+  quickFixes,
+  references,
   referencesAcross,
+  rename,
   renameAcross,
+  type SignatureHelp,
+  signatureHelp,
+  type TextChange,
   type WorkspaceOptions,
-} from './workspace'
+} from './help'
+export { decodeShare, encodeShare, MAX_SHARED_BYTES, type Shared, type SharedFiles, sharedValues } from './share'

@@ -258,7 +258,8 @@ export function completionsAcross(source: string, offset: number, o: WorkspaceOp
   const path = blockAt(mine.doc.body, offset)
   const block = path.at(-1)
   const line = source.slice(source.lastIndexOf('\n', offset - 1) + 1, offset)
-  if (block?.keyword.name === 'with' && !/[:{].*:/.test(line) && !/:\s*\S*$/.test(line.replace(/^.*[{;]/, ''))) {
+  // where a name starts: after the block's "{" or a ";", before any ":"
+  if (block?.keyword.name === 'with' && !line.replace(/^.*[{;]/, '').includes(':')) {
     const owner = path.at(-2)
     const like = owner?.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
     const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
@@ -335,9 +336,13 @@ export function addImport(
   const known = mine.head.find((h) => h.kind === 'import' && h.path === from && h.decl.bodySpan)
   if (known) {
     if (known.names.some((n) => n.theirs.name === name)) return undefined
-    const close = known.decl.bodySpan!.to - 1
-    const before = source.slice(known.decl.bodySpan!.from + 1, close)
-    return { from: close, to: close, insert: `${before.trim() ? (/[;\n]\s*$/.test(before) ? '' : ';') : ''} ${name} ` }
+    const open = known.decl.bodySpan!.from + 1
+    const inner = source.slice(open, known.decl.bodySpan!.to - 1)
+    const kept = inner.trimEnd()
+    // after the last name, as the names before it are written: on its line, or on a line of its own
+    if (!kept.trim()) return { from: open, to: open + inner.length, insert: ` ${name} ` }
+    const at = open + kept.length
+    return { from: at, to: at, insert: kept.includes('\n') ? `\n  ${name}` : `; ${name}` }
   }
   const last = mine.head.at(-1)?.decl ?? mine.stamp
   if (!last) return undefined
