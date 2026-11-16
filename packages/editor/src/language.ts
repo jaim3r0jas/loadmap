@@ -27,11 +27,15 @@ import {
   type Completion,
   compile,
   completions,
+  completionsAcross,
   type Definition,
   type Diagnostic,
   definition,
+  definitionAcross,
   type Hover,
   hover,
+  hoverAcross,
+  type Located,
   loadCatalogFor,
   loadedCatalog,
   problems,
@@ -166,19 +170,34 @@ function cmCompletion(o: Completion): CmCompletion {
   return snippet ? snippetCompletion(snippet, rest) : rest
 }
 
-/** Completion from the parse alone: no compile per keystroke. */
-const complete: CompletionSource = (ctx) => {
-  const source = ctx.state.doc.toString()
-  const c = completions(source, ctx.pos)
-  if (
-    !c.options.length ||
-    (!ctx.explicit && c.from === c.to && !INVITES.test(source.slice(Math.max(0, c.from - 3), c.from)))
-  )
-    return null
-  // in a text (a unit) a "/" is part of the word; in a formula it is a division, after which the list starts again
-  const inText = /["'`]/.test(source[c.from - 1] ?? '')
-  return { from: c.from, to: c.to, options: c.options.map(cmCompletion), validFor: inText ? /^[\w/]*$/ : /^\w*$/ }
+/** The other files of the definition a text belongs to: what a host with several open hands the language. */
+export interface Around {
+  /** The text's own path, from the root of the files. */
+  path: string
+  /** Every other file by its path. */
+  files: Readonly<Record<string, string>>
+  /** Counts the changes to those files: the same count is the same files. */
+  version: number
 }
+
+/** Completion from the parse alone: no compile per keystroke. With files around, their names and paths too. */
+const completeWith =
+  (around: () => Around | undefined): CompletionSource =>
+  (ctx) => {
+    const source = ctx.state.doc.toString()
+    const a = around()
+    const c = a
+      ? completionsAcross(source, ctx.pos, { path: a.path, files: a.files, paths: [a.path, ...Object.keys(a.files)] })
+      : completions(source, ctx.pos)
+    if (
+      !c.options.length ||
+      (!ctx.explicit && c.from === c.to && !INVITES.test(source.slice(Math.max(0, c.from - 3), c.from)))
+    )
+      return null
+    // in a text (a unit) a "/" is part of the word; in a formula it is a division, after which the list starts again
+    const inText = /["'`]/.test(source[c.from - 1] ?? '')
+    return { from: c.from, to: c.to, options: c.options.map(cmCompletion), validFor: inText ? /^[\w/]*$/ : /^\w*$/ }
+  }
 
 /** A line of help: its `code` as code elements, the rest as text. Never HTML: a shared definition is untrusted. */
 function helpLine(text: string, tag: 'p' | 'div' = 'p'): HTMLElement {
@@ -254,10 +273,24 @@ function fixAgain(source: string, r: CompileResult, was: Diagnostic, from: numbe
   return i < 0 ? null : (quickFixes(source, [list[i]!])[0]!.find((f) => f.title === title)?.changes ?? null)
 }
 
-/** Selects where the name at `pos` (the cursor by default) is declared. */
-function goToDefinition(view: EditorView, pos = view.state.selection.main.head): boolean {
-  const d = definition(view.state.doc.toString(), pos)
+/**
+ * Selects where the name at `pos` (the cursor by default) is declared. A name another file declares is handed to
+ * `open`, when the host has files to open.
+ */
+function goToDefinition(
+  view: EditorView,
+  pos = view.state.selection.main.head,
+  around?: () => Around | undefined,
+  open?: (at: Located) => void,
+): boolean {
+  const source = view.state.doc.toString()
+  const a = around?.()
+  const d = a ? definitionAcross(source, pos, { path: a.path, files: a.files }) : definition(source, pos)
   if (!d) return false
+  if (d.file != null) {
+    open?.(d)
+    return !!open
+  }
   view.dispatch({ selection: { anchor: d.from, head: d.to }, scrollIntoView: true })
   view.focus()
   return true
@@ -369,9 +402,17 @@ export function startRename(view: EditorView): boolean {
  * twice.
  */
 export function loadmapLanguage(
-  o: CompileOptions & { onResult?: (source: string, result: CompileResult) => void; delay?: number } = {},
+  o: CompileOptions & {
+    onResult?: (source: string, result: CompileResult) => void
+    delay?: number
+    /** The other files of the definition, read on every compile: a text among several is read with them. */
+    around?: () => Around | undefined
+    /** Go to definition found the name in another file: the host shows it. */
+    onOpen?: (at: Located) => void
+  } = {},
 ): Extension {
-  let last: { source: string; catalog: boolean; result: CompileResult } | null = null
+  const around = () => o.around?.()
+  let last: { source: string; catalog: boolean; files: string; result: CompileResult } | null = null
   // the last definition without errors: a hover's values while the text has one; not another text's, once replaced
   let good: Definition | undefined
   const replaced = EditorView.updateListener.of((u) => {
@@ -383,17 +424,23 @@ export function loadmapLanguage(
   const result = (source: string) => {
     // a result from before the catalog loaded is not this text's
     const catalog = !!loadedCatalog()
-    if (last?.source !== source || last.catalog !== catalog) last = { source, catalog, result: compile(source, o) }
+    const a = around()
+    const files = a ? `${a.path}#${a.version}` : ''
+    if (last?.source !== source || last.catalog !== catalog || last.files !== files)
+      last = { source, catalog, files, result: compile(source, a ? { ...o, path: a.path, files: a.files } : o) }
     good = last.result.definition ?? good
     return last.result
   }
   const info = hoverTooltip((view, pos) => {
     const source = view.state.doc.toString()
     const r = result(source)
-    const h = hover(source, pos, r.definition ?? good)
+    const a = around()
+    const at = (def?: Definition) =>
+      a ? hoverAcross(source, pos, { path: a.path, files: a.files }, def) : hover(source, pos, def)
+    const h = at(r.definition ?? good)
     if (!h) return null
     // values from an older text: say so, where there are any
-    const stale = !r.definition && good && h.body.length > (hover(source, pos)?.body.length ?? 0)
+    const stale = !r.definition && good && h.body.length > (at()?.body.length ?? 0)
     const note = stale ? 'Values from the last version without errors.' : undefined
     return { pos: h.from, end: h.to, above: true, create: () => ({ dom: hoverDom(h, note) }) }
   })
@@ -401,10 +448,12 @@ export function loadmapLanguage(
     const source = view.state.doc.toString()
     // a published statement: the catalog loads once, the first time a text needs it
     await loadCatalogFor(source)
+    for (const text of Object.values(around()?.files ?? {})) await loadCatalogFor(text)
     const r = result(source)
     o.onResult?.(source, r)
     const end = source.length
-    const list = problems(r)
+    // this text's own: a problem in another file is marked there
+    const list = problems(r).filter((d) => d.file == null)
     const fixes = quickFixes(source, list)
     return list.map((d, i) => ({
       from: Math.min(d.from, end),
@@ -428,7 +477,7 @@ export function loadmapLanguage(
     syntaxHighlighting(loadmapHighlight),
     linter(lint, { delay: o.delay ?? 150 }),
     lintGutter(),
-    autocompletion({ override: [complete], activateOnTyping: true, positionInfo }),
+    autocompletion({ override: [completeWith(around)], activateOnTyping: true, positionInfo }),
     closeBrackets(),
     keymap.of(closeBracketsKeymap),
     info,
@@ -437,14 +486,14 @@ export function loadmapLanguage(
     occurrences,
     renameField,
     keymap.of([
-      { key: 'F12', run: goToDefinition },
+      { key: 'F12', run: (v) => goToDefinition(v, undefined, around, o.onOpen) },
       { key: 'F2', run: (v) => startRename(v) },
     ]),
     EditorView.domEventHandlers({
       mousedown(e, view) {
         if (e.button !== 0 || !(e.metaKey || e.ctrlKey)) return false
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
-        if (pos == null || !goToDefinition(view, pos)) return false
+        if (pos == null || !goToDefinition(view, pos, around, o.onOpen)) return false
         e.preventDefault()
         return true
       },

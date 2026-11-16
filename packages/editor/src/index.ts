@@ -1,6 +1,12 @@
 export type { PanelMode } from './Canvas'
 export type { EmbedOptions } from './Embed'
-export { type EditorLayout, LoadmapEditor, type LoadmapEditorHandle, type LoadmapEditorProps } from './LoadmapEditor'
+export {
+  type EditorFiles,
+  type EditorLayout,
+  LoadmapEditor,
+  type LoadmapEditorHandle,
+  type LoadmapEditorProps,
+} from './LoadmapEditor'
 export { loadmapHighlight, loadmapLanguage, loadmapStream } from './language'
 export type { BarItem, BarSection } from './Menu'
 export { EDITOR_CSS, injectEditorStyles } from './styles'
