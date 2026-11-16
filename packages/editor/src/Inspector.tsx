@@ -139,10 +139,11 @@ function Section({
   onTake?: InspectorProps['onTake']
 }) {
   const [refused, setRefused] = useState<string | null>(null)
+  const section = useRef<HTMLFieldSetElement>(null)
   const main = s.fields.filter((f) => !f.more)
   const more = s.fields.filter((f) => f.more)
   return (
-    <fieldset className="lme-section" data-keyword={s.keyword || 'model'}>
+    <fieldset className="lme-section" data-keyword={s.keyword || 'model'} ref={section} tabIndex={-1}>
       <legend>{LEGEND[s.keyword]?.(s) ?? s.title}</legend>
       {s.like && (
         <div className="lme-like" data-like={s.like.from}>
@@ -161,7 +162,11 @@ function Section({
                   type="button"
                   className="lm-btn"
                   title={`Write this line in ${s.id}, to change it there`}
-                  onClick={() => setRefused(onTake(s.id!, l.name))}
+                  onClick={() => {
+                    // the line, and this button with it, goes once it is written here: the focus stays in the section
+                    section.current?.focus()
+                    setRefused(onTake(s.id!, l.name))
+                  }}
                 >
                   Write here
                 </button>

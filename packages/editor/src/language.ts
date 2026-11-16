@@ -362,7 +362,11 @@ function renaming(o: RenameOptions): Extension {
 type RenameOptions = CompileOptions & {
   around?: () => Around | undefined
   /** The changes a rename makes in the other files of the definition: the host applies them where it keeps those. */
-  onElsewhere?: (changes: readonly { file: string; from: number; to: number; insert: string }[]) => void
+  onElsewhere?: (
+    changes: readonly { file: string; from: number; to: number; insert: string }[],
+    /** The text in the editor does not change with them: nothing else will tell the host of the new files. */
+    alone: boolean,
+  ) => void
 }
 
 function renameDom(view: EditorView, r: Renaming, o: RenameOptions): HTMLElement {
@@ -392,8 +396,8 @@ function renameDom(view: EditorView, r: Renaming, o: RenameOptions): HTMLElement
       const all: readonly { file?: string; from: number; to: number; insert: string }[] = out.changes
       const elsewhere = all.flatMap((c) => (c.file != null ? [{ ...c, file: c.file }] : []))
       // the other files first: the text's next check reads them as they are after the rename
-      if (elsewhere.length) o.onElsewhere?.(elsewhere)
       const here = all.filter((c) => c.file == null).map(({ from, to, insert }) => ({ from, to, insert }))
+      if (elsewhere.length) o.onElsewhere?.(elsewhere, !here.length)
       if (here.length) view.dispatch({ changes: here, userEvent: 'input.rename' })
       else close()
       view.focus()

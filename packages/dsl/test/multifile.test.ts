@@ -189,9 +189,16 @@ describe('a model in several files', () => {
     expect(db('with { writes: flows.orders; limit: "a lot" }')[0]).toMatchObject({ code: 'wrong-type' })
     expect(db('with { limit: 9_000 }')[0]).toMatchObject({ code: 'bad-input', data: { input: 'writes' } })
     // a formula against the default: one type, and one unit where both say theirs
-    expect(db('with { writes: flows.orders; limit: pods > 3 }').map((d) => d.message)).toContain(
-      '"limit" takes a number, as its default is; this is true or false',
-    )
+    // said once, by the line that reads the input where it refuses the type itself
+    expect(db('with { writes: flows.orders; limit: pods > 3 }').filter((d) => d.code === 'wrong-type')).toHaveLength(1)
+    // a default that reads the library's own name is typed by it, whatever the model calls its own
+    const named = set({
+      [LIB]: swap(LIB, 'input limit = 4_000', 'input limit = 4_000\n  input note = messageCost'),
+      [MODEL]: swap(MODEL, 'with { writes: flows.orders }', 'with { writes: flows.orders; note: pods > 3 }'),
+    })
+    expect(errors(run(MODEL, named)).map((d) => d.message)).toEqual([
+      '"note" takes a number, as its default is; this is true or false',
+    ])
     const held = set({
       [LIB]: swap(LIB, 'input limit = 4_000', 'input limit = 4_000\n  input wait = 20ms').replace(
         'over: "commits queue on the primary"',
@@ -408,6 +415,16 @@ describe('a box like another', () => {
     )
     expect(inspect(taken.source, { node: 'b' })!.sections[0]!.like!.taken).toEqual(['store', 'over'])
     expect(takeLine(twins, 'b', 'short')).toHaveProperty('error')
+    // a line that reads the other box by its name reads this one here, as the compiler takes it
+    const self = twins.replace('over: "requests queue"', 'over: "requests queue"; demand: at.a.f * 2')
+    const mine = takeLine(self, 'b', 'demand')
+    if ('error' in mine) throw new Error(mine.error)
+    expect(mine.source).toContain('short: "the second"; demand: at.b.f * 2 }')
+    // in a block of lines: under the last one, a comment at its end left where it is
+    const tall = twins.replace('{ like: a; short: "the second" }', '{\n  like: a\n  short: "the second" # why\n}')
+    const under = takeLine(tall, 'b', 'over')
+    if ('error' in under) throw new Error(under.error)
+    expect(under.source).toContain('  short: "the second" # why\n  over: "requests queue"\n}')
     // a stage written here replaces the other's stages, and what the other takes from a third comes along
     const chain = `${twins}node c "C" { like: b; pass; short: "the third" }\nstart -> c\n`
     expect(inspect(chain, { node: 'c' })!.sections[0]!.like).toMatchObject({ from: 'b', taken: ['capacity', 'over'] })

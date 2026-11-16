@@ -123,10 +123,12 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
   )
   const sections = [...mine, ...extra].map(section).filter((s) => s.fields.length)
   // where the lines it does not write come from: said on the box's own section
-  const like = likeness(parse(source).doc.body, target.node)
+  const body = parse(source).doc.body
+  const like = likeness(body, target.node)
   const first = sections.find((s) => s.path === box.path)
   if (like && first)
-    first.like = { ...like, lines: takenLines(source, target.node).map(({ name, text }) => ({ name, text })) }
+    first.like = { ...like, lines: takenLines(source, target.node, body).map(({ name, text }) => ({ name, text })) }
+
   return { title: box.title, sections }
 }
 
@@ -155,43 +157,74 @@ const boxNamed = (body: readonly Stmt[], id: string) =>
       s.args[0].name === id,
   )
 
-/** The lines a box takes from the box it is like, each as written there: the first box of the chain that writes it. */
-function takenLines(source: string, id: string): { name: string; text: string; at: Property }[] {
-  const { doc } = parse(source)
-  const like = likeness(doc.body, id)
-  const out: { name: string; text: string; at: Property }[] = []
+/** The tables a box's own lines read it through: a line taken reads the box that takes it (expand.ts). */
+const SELF = new Set(['at', 'out', 'demand', 'util'])
+
+/**
+ * A line of the box `from` as the box `to` takes it: its text, with every `at.<from>`, `out.<from>`, `demand.<from>`
+ * and `util.<from>` naming `to`, as the compiler reads a taken line.
+ */
+function asTaken(source: string, p: Property, from: string, to: string, start: number): string {
+  const spans: { from: number; to: number }[] = []
+  const walk = (e: Expr) => {
+    if (e.t === 'member' && SELF.has(e.object.name) && e.prop.name === from) spans.push(e.prop)
+    for (const c of childrenOf(e, true)) walk(c)
+  }
+  walk(p.value)
+  let text = source.slice(start, p.as?.to ?? p.to)
+  for (const s of spans.sort((x, y) => y.from - x.from))
+    if (s.from >= start) text = text.slice(0, s.from - start) + to + text.slice(s.to - start)
+  return text
+}
+
+/**
+ * The lines a box takes from the box it is like, each as this box reads it: from the first box of the chain that
+ * writes it, the other box's own name in it made this one's.
+ */
+function takenLines(source: string, id: string, body: readonly Stmt[]): { name: string; text: string; line: string }[] {
+  const like = likeness(body, id)
+  const out: { name: string; text: string; line: string }[] = []
   const seen = new Set<Decl>()
-  for (let d = like && boxNamed(doc.body, like.from); d && !seen.has(d); ) {
+  for (let d = like && boxNamed(body, like.from); d && !seen.has(d); ) {
     seen.add(d)
+    const other = d.args[0]?.t === 'id' ? d.args[0].name : ''
     for (const s of d.body ?? [])
       if (s.kind === 'prop' && like!.taken.includes(s.key.name) && !out.some((o) => o.name === s.key.name))
-        out.push({ name: s.key.name, text: source.slice(s.value.from, s.as?.to ?? s.to), at: s })
+        out.push({
+          name: s.key.name,
+          text: asTaken(source, s, other, id, s.value.from),
+          line: asTaken(source, s, other, id, s.from),
+        })
     const next = d.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === 'like')
-    d = next?.value.t === 'id' ? boxNamed(doc.body, next.value.name) : undefined
+    d = next?.value.t === 'id' ? boxNamed(body, next.value.name) : undefined
   }
   return out
 }
 
 /**
- * The text with a line a box takes from the box it is like written into the box itself, as it is written there: from
- * then on it is this box's own, and a change to it changes this box only. Refused when the box takes no such line.
+ * The text with a line a box takes from the box it is like written into the box itself, as the box reads it: from then
+ * on it is this box's own, and a change to it changes this box only. Refused when the box takes no such line.
  */
 export function takeLine(source: string, box: string, name: string, options?: CompileOptions): EditResult {
   const { doc, report } = parse(source)
   if (report.failed) return { error: 'the text has a syntax error' }
   const d = boxNamed(doc.body, box)
-  const line = takenLines(source, box).find((l) => l.name === name)
-  if (!d || !line) return { error: `"${box}" takes no "${name}" from another box` }
-  const text = source.slice(line.at.from, line.at.as?.to ?? line.at.to)
+  const taken = takenLines(source, box, doc.body).find((l) => l.name === name)
+  if (!d || !taken) return { error: `"${box}" takes no "${name}" from another box` }
   const last = d.body?.at(-1)
   if (!d.bodySpan || !last) return { error: `"${box}" has no block to write it in` }
-  // on a line of its own where the block has lines, after a ";" where it is on one
-  const inner = source.slice(d.bodySpan.from, d.bodySpan.to)
-  const indent = /\n([ \t]*)\S[^\n]*$/.exec(source.slice(0, last.from + 1))?.[1] ?? '  '
-  const insert = inner.includes('\n') ? `\n${indent}${text}` : `; ${text}`
   const end =
     last.kind === 'prop' ? (last.as?.to ?? last.to) : last.kind === 'row' ? last.to : (last.bodySpan?.to ?? last.to)
-  return checked(source, [{ from: end, to: end, insert }], options)
+  // a block on one line: after a ";"
+  if (!source.slice(d.bodySpan.from, d.bodySpan.to).includes('\n'))
+    return checked(source, [{ from: end, to: end, insert: `; ${taken.line}` }], options)
+  // else on a line of its own under the last statement's line, a comment at its end left where it is
+  const lineStart = source.lastIndexOf('\n', last.from - 1) + 1
+  const lead = source.slice(lineStart, last.from)
+  const indent = /^[ \t]*$/.test(lead) ? lead : '  '
+  const lineEnd = source.indexOf('\n', end)
+  const at = lineEnd < 0 || lineEnd > d.bodySpan.to - 1 ? end : lineEnd
+  return checked(source, [{ from: at, to: at, insert: `\n${indent}${taken.line}` }], options)
 }
 
 /**
