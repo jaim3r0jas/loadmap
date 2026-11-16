@@ -8,4 +8,5 @@ on a flow's route at its name there, instead of at the first line of the file (c
 error is about). The marks a mistake caused further on are gone: an unknown function no longer also says its arguments
 must be constants; a misspelt keyword (`nod api`) no longer marks every use of `api`; a second stage in a node, a bare
 capacity, a value that does not parse and a list with a wrong word (`takes: [rejectd]`) are marked once, without "is
-declared twice", "needs capacity" or "loses nothing" after them. A warning where an error starts goes.
+declared twice", "needs capacity" or "loses nothing" after them, and a timeout the model refuses no longer also warns
+that what it times out vanishes.

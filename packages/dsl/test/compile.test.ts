@@ -1434,6 +1434,14 @@ api -> db
     expect(marks(BASE.replace('{ store; capacity', '{ store; pass; capacity'))).toEqual([error('bad-box', 'pass')])
   })
 
+  it('a second stage with its own id once, and what names it still finds it', () => {
+    const src = BASE.replace('{ store; capacity', '{ store; pass p2; capacity').replace(
+      'route: api -> db',
+      'route: api -> p2',
+    )
+    expect(marks(src).filter((m) => m.severity === 'error')).toEqual([error('bad-box', 'pass')])
+  })
+
   it('a bare capacity once', () => {
     expect(marks(BASE.replace('capacity: estimated(1000, "req/s")', 'capacity: 1000'))).toEqual([
       error('bare-capacity', '1000'),
