@@ -53,13 +53,13 @@ describe('the building blocks in the browser', () => {
     const back = handle.engine.sim.particles.filter((d) => d.back && d.phase === 'move')
     expect(back.length).toBeGreaterThan(0)
     expect(back.every((d) => d.from.stage === 'cache' && d.to.stage === 'api')).toBe(true)
-    await expect.poll(() => meter(host, 'answered at cache')).toBe('1.6k')
+    await expect.poll(() => meter(host, 'answered at the cache')).toBe('1.6k')
   })
 
   it('say what a rate limiter turns away', async () => {
     // 1,800 req/s against 1,500: a sixth turned away
     const { host } = await mount('rate-limit', { load: 3 })
-    await expect.poll(() => meter(host, 'rejected at limiter')).toBe('17 %')
+    await expect.poll(() => meter(host, 'rejected at the rate limiter')).toBe('17 %')
     expect(host.querySelector('.lm-lim[data-component="limiter"] .lm-tag[data-kind="estimated"]')).toBeNull()
   })
 
