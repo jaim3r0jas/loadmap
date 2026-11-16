@@ -274,6 +274,14 @@ export interface CompileResult {
 /** What says nothing about a library checked on its own: nothing routes through it, nothing is drawn around it. */
 const ALONE_QUIET = new Set<Code>(['unused-stage', 'unused-component', 'tier-order', 'unseen-loss'])
 
+/** For each result, the one list of statements its files came to, and the text their places are in. */
+const LINKED = new WeakMap<CompileResult, { body: readonly Stmt[]; source: string }>()
+
+/** The statements a compile read, its files joined and written out: what `flatten()` prints. */
+export function linkedOf(r: CompileResult): { body: readonly Stmt[]; source: string } | undefined {
+  return LINKED.get(r)
+}
+
 /** What is read before anything is checked: the text parsed, the files it names, and all of them as one model. */
 export interface Front {
   /** Holds every file the definition read, one after the other: a place in it says its file. */
@@ -382,7 +390,19 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
     return { ...s, span, decl, ...(file != null && { file }) }
   })
   const files = loader?.list.map((f) => f.path) ?? [path]
-  return { ok, diagnostics, definition, expectations, measures: ok && c ? c.measures : [], symbols, doc, role, files }
+  const result: CompileResult = {
+    ok,
+    diagnostics,
+    definition,
+    expectations,
+    measures: ok && c ? c.measures : [],
+    symbols,
+    doc,
+    role,
+    files,
+  }
+  if (linked) LINKED.set(result, { body: linked.body, source: report.source })
+  return result
 }
 
 /**
