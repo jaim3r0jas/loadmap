@@ -41,6 +41,8 @@ export function grammar() {
             match: `\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?${LEXICON.unit}?`,
           },
           { name: 'constant.language.boolean.loadmap', match: '\\b(?:true|false)\\b' },
+          // a demand's unit: `… as "cores"`
+          { name: 'keyword.operator.as.loadmap', match: `\\bas\\b(?=\\s*["'])` },
           { name: 'support.function.builtin.loadmap', match: `\\b(?:${builtins.join('|')})\\b(?=\\s*\\()` },
           // what every formula may read; `load` where a statement starts is the keyword
           { name: 'variable.language.loadmap', match: '\\b(?:load|flows|at|demand|util|derived)\\b' },

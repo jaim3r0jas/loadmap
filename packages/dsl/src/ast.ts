@@ -32,6 +32,8 @@ export interface Property extends Span {
   key: Ident
   value: Expr
   chain?: Ident[]
+  /** `demand: … as "cores"`: the unit a demand is in, where its formula cannot tell. */
+  as?: Span & { unit: string }
 }
 
 /** `keyword args… [= init] [{ body }]`: every statement that declares something. */

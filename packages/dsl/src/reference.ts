@@ -1,5 +1,6 @@
 import { BUILTINS } from './expr'
 import { type BlockSpec, EDGE_PROPS, type PropSpec, SCHEMA } from './schema'
+import { PROPERTY_UNITS } from './units'
 
 const SCOPE: Record<PropSpec['scope'], string> = {
   ctx: 'formula',
@@ -26,7 +27,7 @@ export function reference(): string {
     for (const [k, p] of Object.entries(props)) {
       const words = p.values?.map((v) => `\`${v}\``)
       const value = !words
-        ? `${p.value}, ${SCOPE[p.scope]}`
+        ? `${p.unit === 'share' ? 'share' : p.unit ? `number ${PROPERTY_UNITS[p.unit].words}` : p.value}, ${SCOPE[p.scope]}`
         : p.value === 'names'
           ? `a list of ${words.join(', ')}`
           : words.join(' \\| ')

@@ -216,6 +216,110 @@ describe('tiers', () => {
   })
 })
 
+describe('units', () => {
+  // a timeout's losses no lost box counts warn too: not what these tests look at
+  const warnings = (src: string) =>
+    compile(src)
+      .diagnostics.filter((d) => d.severity === 'warning' && !d.message.startsWith('units of'))
+      .map((d) => ({ message: d.message, text: src.slice(d.from, d.to) }))
+  /** The small definition with the API's demand line and capacity replaced. */
+  const api = (demand: string, capacity: string, o: Parameters<typeof def>[0] = {}) =>
+    def({ ...o, api: capacity }).replace('  demand: flows.req\n', demand ? `  demand: ${demand}\n` : '')
+
+  it('warn where a demand per second meets a capacity that counts something, and the reverse', () => {
+    expect(warnings(api('flows.req', 'measured(4, "cores")'))).toEqual([
+      { message: 'the demand is per second, the capacity in "cores"', text: 'flows.req' },
+    ])
+    expect(warnings(api('flows.req * 2ms', 'measured(400, "req/s")'))).toEqual([
+      {
+        message: 'the demand is a plain number (a share or a count), the capacity in "req/s"',
+        text: 'flows.req * 2ms',
+      },
+    ])
+    // requests a second times CPU seconds each: cores
+    expect(warnings(api('flows.req * 2ms', 'measured(4, "cores")'))).toEqual([])
+    expect(warnings(api('flows.req * 80%', 'measured(400, "req/s")'))).toEqual([])
+  })
+
+  it('say nothing where a bare number hides the unit: every definition from before compiles as it did', () => {
+    // the review's c11: 0.002 may be seconds
+    expect(warnings(api('flows.req * 0.002', 'estimated(1000, "req/s")'))).toEqual([])
+    expect(warnings(api('flows.req / pods', 'measured(4, "cores")'))).toEqual([])
+    // one a second at 1×
+    expect(warnings(def({ flow: 'rate: load' }).replace('  rate: 100 * load\n', ''))).toEqual([])
+    // a rate however it is spelled
+    for (const unit of ['rps', 'req/sec', 'requests per second', 'Mbps'])
+      expect(warnings(api('flows.req', `measured(400, "${unit}")`)), unit).toEqual([])
+    expect(warnings(api('', 'measured(400, "qps")'))).toEqual([])
+  })
+
+  it('read a fit\'s y and a demand\'s "as", and compare counts by their word', () => {
+    const fit = 'fit cpu "CPU" { points rate cores {\n 1 3\n 2 5\n } }'
+    expect(warnings(api('cpu(flows.req)', 'measured(4, "cores")', { top: fit }))).toEqual([])
+    expect(warnings(api('cpu(flows.req)', 'measured(4, "connections")', { top: fit }))).toEqual([
+      { message: 'the demand is in "cores", the capacity in "connections"', text: 'cpu(flows.req)' },
+    ])
+    expect(warnings(api('flows.req * 0.002 as "cores"', 'measured(4, "core")'))).toEqual([])
+    // a y that names a time or a rate is not a count
+    for (const y of ['cpu_seconds', 'rps', 'p99', 'latency']) {
+      const timed = fit.replace('rate cores', `rate ${y}`)
+      expect(warnings(api('cpu(flows.req)', 'measured(4, "cores")', { top: timed })), y).toEqual([])
+    }
+    expect(warnings(api('flows.req * 0.002 as "cores"', 'measured(4, "connections")'))).toEqual([
+      { message: 'the demand is in "cores", the capacity in "connections"', text: '"cores"' },
+    ])
+    expect(warnings(api('flows.req as "cores"', 'measured(4, "cores")'))).toEqual([
+      { message: '"as" says "cores", but the formula is per second', text: '"cores"' },
+    ])
+    // a let carries its formula's unit
+    expect(warnings(api('perReq * flows.req', 'measured(4, "cores")', { top: 'let perReq = 2ms' }))).toEqual([])
+    expect(warnings(api('perReq', 'measured(400, "req/s")', { top: 'let perReq = flows.req * 2ms' }))).toHaveLength(1)
+  })
+
+  it('warn where no demand line leaves a count against the units a second, and at an empty unit', () => {
+    expect(warnings(api('', 'measured(4, "cores")'))).toEqual([
+      {
+        message: 'without a demand line the demand is what reaches its stages, per second; the capacity is in "cores"',
+        text: 'measured(4, "cores")',
+      },
+    ])
+    expect(warnings(api('', 'measured(400, "req/s")'))).toEqual([])
+    expect(warnings(api('flows.req', 'measured(400, "")'))).toEqual([
+      { message: "a capacity's unit is empty", text: '""' },
+    ])
+    // a held component counts slots
+    const held = (unit: string) =>
+      api('', `measured(200, "${unit}")`).replace('  capacity:', '  held: 20ms\n  capacity:')
+    expect(warnings(held('connections'))).toEqual([])
+    expect(warnings(held('req/s'))).toEqual([
+      {
+        message: 'a held component\'s demand is the slots in use, a count; the capacity is in "req/s"',
+        text: 'measured(200, "req/s")',
+      },
+    ])
+  })
+
+  it('warn where a property in seconds, a share or units a second gets another unit', () => {
+    expect(warnings(def({ flow: 'timeout: 80%', api: 'measured(400, "req/s")\n  service: flows.req' }))).toEqual([
+      { message: 'timeout is in seconds, and this is a plain number (a share or a count)', text: '80%' },
+      { message: 'service is in seconds, and this is per second', text: 'flows.req' },
+    ])
+    expect(warnings(def({ top: 'thresholds { target: 5s }' }))).toEqual([
+      { message: 'target is a share, and this is in seconds', text: '5s' },
+    ])
+    expect(warnings(def({ flow: 'timeout: 2s', api: 'measured(400, "req/s")\n  service: 10ms' }))).toEqual([])
+  })
+
+  it('take "as" on a demand only, with the unit in quotes', () => {
+    const messages = (src: string) => errors(src).map((e) => e.message)
+    expect(messages(api('flows.req', 'measured(400, "req/s") as "req/s"'))).toContain(
+      '"as" says the unit of a demand only',
+    )
+    expect(messages(api('flows.req as cores', 'measured(400, "req/s")'))).toContain('"as" takes the unit in quotes')
+    expect(messages(api('flows.req as " "', 'measured(400, "req/s")'))).toContain('"as" takes the unit in quotes')
+  })
+})
+
 describe('formulas', () => {
   it('follow the precedence and meaning of TypeScript', () => {
     expect(value('1 + 2 * 3 - 4 / 2')).toBe(5)

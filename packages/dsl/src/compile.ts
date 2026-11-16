@@ -74,6 +74,7 @@ import {
   type Scope,
   STAGES,
 } from './schema'
+import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitNames, unitOf } from './units'
 
 /** The version of the language this package reads: the number on a definition's first line. */
 export const LANGUAGE_VERSION = 1
@@ -623,6 +624,7 @@ class Compiler {
           COMPONENT_PROPS.demand!.doc,
         )
     }
+    this.units(root, lets, fits, componentBlocks, used)
 
     const connections: Record<string, Record<string, unknown>> = {}
     const connectionNames = new Map<string, Span>()
@@ -1127,6 +1129,91 @@ class Compiler {
     return def
   }
   private plainBoxes = new Set<string>()
+
+  // -- units ---------------------------------------------------------------------------------------------------
+
+  /**
+   * Where the text says what a value counts and two of those disagree: a demand and its capacity (per second against a
+   * count, or two counts in different words), and a property against the unit the schema gives it (`held: 80%`). A
+   * formula of bare numbers says nothing, so it is never warned about.
+   */
+  private units(
+    root: Block,
+    lets: Block[],
+    fits: Block[],
+    components: ReadonlyMap<string, Block>,
+    used: ReadonlySet<string | undefined>,
+  ) {
+    const inits = new Map(
+      lets.flatMap((b) => (b.args.id && b.decl?.init ? [[b.args.id.name, b.decl.init] as const] : [])),
+    )
+    const ys = new Map(
+      fits.flatMap((b) => {
+        const y = b.children.find((c) => c.keyword === 'points')?.args.y
+        return b.args.id && y ? [[b.args.id.name, y.name] as const] : []
+      }),
+    )
+    const names: UnitNames = { let: (n) => inits.get(n), fit: (n) => ys.get(n) }
+
+    for (const [id, b] of components) {
+      const capacity = this.prop(b, 'capacity')
+      if (!capacity) continue
+      const literal = capacityCall(capacity.value, names)?.args[1]
+      if (literal?.t === 'str' && !literal.value.trim())
+        this.report.warning(literal, "a capacity's unit is empty", 'name what it counts: "req/s", "cores"')
+      const cap = unitOf(capacity.value, names)
+      const demand = this.prop(b, 'demand')
+      const said = demand?.as && parseUnit(demand.as.unit)
+      const found = demand && unitOf(demand.value, names)
+      if (said && found && disagree(found, said))
+        this.report.warning(demand.as!, `"as" says "${said.word}", but the formula is ${describe(found)}`)
+      if (!cap?.word) continue
+      if (demand) {
+        const d = said ?? found
+        if (!d || !disagree(d, cap)) continue
+        // never `as`: on a formula whose unit is known it only says the same thing wrong
+        const hint = said
+          ? `say the capacity's unit: as "${cap.word}", or give the capacity the demand's`
+          : d.time === -1 && cap.time === 0
+            ? 'multiply by what each unit costs: flows.x * 2ms is the CPU seconds a second'
+            : d.time === 0 && cap.time === -1
+              ? 'a capacity a second takes the units a second: leave out what makes the demand a count'
+              : 'count both in one unit'
+        this.report.warning(
+          demand.as ?? demand.value,
+          `the demand is ${describe(d)}, the capacity ${describe(cap)}`,
+          hint,
+        )
+      } else if (this.prop(b, 'held') || b.children.some((c) => c.keyword === 'held')) {
+        if (cap.time !== 0)
+          this.report.warning(
+            capacity.value,
+            `a held component's demand is the slots in use, a count; the capacity is ${describe(cap)}`,
+            'count the slots: configured(200, "connections", "pool size")',
+          )
+      } else if (used.has(id) && cap.time !== -1)
+        this.report.warning(
+          capacity.value,
+          `without a demand line the demand is what reaches its stages, per second; the capacity is ${describe(cap)}`,
+          'add demand: …, such as flows.orders * 2ms for the CPU seconds each order takes',
+        )
+    }
+
+    const walk = (b: Block) => {
+      for (const [k, props] of b.props) {
+        const spec = own(b.spec.props, k) ?? b.spec.open?.spec
+        if (!spec?.unit) continue
+        const want = PROPERTY_UNITS[spec.unit]
+        for (const p of props) {
+          const u = unitOf(p.value, names)
+          if (u && disagree(u, want.unit))
+            this.report.warning(p.value, `${k} is ${want.words}, and this is ${describe(u)}`, want.hint)
+        }
+      }
+      b.children.forEach(walk)
+    }
+    walk(root)
+  }
 
   // -- shape ---------------------------------------------------------------------------------------------------
 

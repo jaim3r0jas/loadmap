@@ -92,6 +92,8 @@ export const loadmapStream = StreamLanguage.define<State>({
     if (stream.match(/^[A-Za-z_]\w*/)) {
       const w = stream.current()
       if (w === 'true' || w === 'false') return 'atom'
+      // a demand's unit: `… as "cores"`
+      if (w === 'as' && stream.match(/^\s*["']/, false)) return 'keyword'
       if (stream.match(/^\s*:/, false)) return 'property'
       const head = stream.string.slice(0, stream.start).trimEnd()
       if (KEYWORDS.has(w) && (head === '' || head.endsWith('{') || head.endsWith(';'))) {
