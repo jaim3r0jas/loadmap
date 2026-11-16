@@ -455,6 +455,7 @@ export function LoadmapEditor({
         functions: latest.current.functions,
         around: () => aroundRef.current(),
         onOpen: (at) => openRef.current(at),
+        onElsewhere: (changes) => elsewhereRef.current(changes),
         onResult: (source, result) => acceptRef.current(source, result),
       }),
       EditorView.updateListener.of((u) => {
@@ -570,6 +571,28 @@ export function LoadmapEditor({
   }
   const openRef = useRef(openAt)
   openRef.current = openAt
+  /** Changes to files that are not in the editor (a rename reaches every file of the model): each in its own state. */
+  const changeElsewhere = (changes: readonly { file: string; from: number; to: number; insert: string }[]) => {
+    const others = { ...set.current.others }
+    for (const file of new Set(changes.map((c) => c.file))) {
+      if (!Object.hasOwn(others, file)) continue
+      const mine = changes.filter((c) => c.file === file).map(({ from, to, insert }) => ({ from, to, insert }))
+      const kept = states.current.get(file)
+      if (kept) {
+        // with its own undo step, as a change made in it
+        const next = kept.update({ changes: mine, annotations: isolateHistory.of('full') }).state
+        states.current.set(file, next)
+        others[file] = next.doc.toString()
+      } else
+        others[file] = [...mine]
+          .sort((a, b) => b.from - a.from)
+          .reduce((t, c) => t.slice(0, c.from) + c.insert + t.slice(c.to), others[file]!)
+    }
+    set.current = { ...set.current, others, version: set.current.version + 1 }
+    latest.current.onFiles?.(filesNow())
+  }
+  const elsewhereRef = useRef(changeElsewhere)
+  elsewhereRef.current = changeElsewhere
   /** The files changed as a whole (one added, removed, all replaced): the tabs, the next compile, the page's draft. */
   const filesChanged = () => {
     const f = set.current
@@ -1340,7 +1363,11 @@ export function LoadmapEditor({
               <button type="button" className="lm-btn" aria-label="Quotes" onClick={() => wrap('"', '"')}>
                 "
               </button>
-              <button type="button" className="lm-btn" onClick={() => view.current && startRename(view.current)}>
+              <button
+                type="button"
+                className="lm-btn"
+                onClick={() => view.current && startRename(view.current, aroundRef.current)}
+              >
                 Rename
               </button>
               <span className="lme-grow" />

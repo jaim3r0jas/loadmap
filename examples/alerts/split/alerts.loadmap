@@ -1,0 +1,139 @@
+loadmap 1.3
+include "./alerts.data.loadmap"
+include "./alerts.story.loadmap"
+import "./platform.loadmap" { podPool }
+# Alerts and positions in several files: the same model and view as ../model.ts and ../view.ts, as ../alerts.loadmap is
+# in one. The fitted series and the story are parts; the two pools are one prototype of a library, each with its inputs.
+title: "Alerts and live positions"
+view { speed: 10; transition: 1; fullScreen: [verdict, live, limits, controls, headroom]; fullScreenMode: panels }
+assume: "Load scales linearly with users; 1× is the busiest five minutes of an ordinary week."
+assume: "Alerts come first at every hop: their own topic, their own pods, served before positions."
+
+load "Users, × today" { max: 100; default: 10 }
+
+param alertPods "Alert pipeline pods (8 threads each)" { options: [2, 3, 4, 6, 8]; default: 3 }
+param posPods "Position consumer pods (16 threads each)" { options: [2, 3, 4, 6, 8]; default: 3 }
+param pushNodes "Push broker nodes" { options: [2, 3, 4, 6]; default: 3 }
+param mergeNewest "Keep only the newest position per user" {
+  hint: "under backlog a batch saves only the newest fix of each user"
+  default: true
+}
+param watchOnly "Push positions only to users watching" {
+  hint: "instead of to every receiver"
+  default: true
+}
+
+preset "Launch week" { load: 25; posPods: 8; alertPods: 4 }
+
+scenario "Today" {}
+scenario "Proposed" { posPods: 6; pushNodes: 4 }
+growth { rate: 0.04; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 7×" { underTarget: 7 }
+expect "Alerts never wait before 50×" { component: alertPipeline; notFull: 50 }
+
+# push packets per position: to watchers only, or to every receiver
+let perPosition = watchOnly ? 0.3 : 1.2
+
+flow alerts "alerts" {
+  unit: "alert"
+  rate: 12 * load
+  priority: 1
+  route: gateway -> alertTopic -> alertPipeline -> push
+  from: phones
+  color: alt
+}
+
+flow positions "positions" {
+  unit: "position"
+  rate: 260 * load
+  priority: 2
+  merge { when: mergeNewest; share: 0.37; reason: "newest kept" }
+  route: gateway -> posTopic -> positionConsumer -> push
+  from: phones
+  color: accent
+}
+
+tier edge "Edge"
+tier processing "Processing"
+tier delivery "Delivery"
+
+node phones "Devices" "alerts and positions"
+
+node gateway "Gateway" {
+  tier: edge
+  pass
+  short: "the gateway"
+  demand: flows.alerts + flows.positions
+  capacity: estimated(30_000 ± 30%, "req/s", "load test pending")
+  over: "phones get timeouts, alerts and positions alike"
+}
+
+cluster brokers "Brokers" "two topics, three brokers" {
+  tier: processing
+  members: 3
+  memberLabel: `broker ${i}`
+  queue alertTopic "alerts topic" { partitions { alerts: alertPods * 8 } }
+  queue posTopic "positions topic" { partitions { positions: posPods * 16 } }
+  short: "the brokers"
+  plural: true
+  demand: flows.alerts * 1.5KB + flows.positions * 1KB
+  capacity: estimated(20, "MB/s", "vendor sizing guide")
+  over: "produce latency grows on both topics"
+  describe: "3 brokers, both topics"
+}
+
+pool alertPipeline "Alert pipeline" `${alertPods} pods × 8 · high priority` {
+  like: podPool
+  with { pods: alertPods; need: alertCores(flows.alerts) }
+  # a stage written here replaces the prototype's: this one has a name of its own
+  workers "alert pipeline" { pods: alertPods; perPod: 8 }
+  short: "the alert pipeline"
+  over: "alerts wait in their topic: the one lag that pages"
+  describe: `${alertPods} pods × 8 threads, 1 core each`
+}
+
+pool positionConsumer "Position consumer" `${posPods} pods × 16` {
+  like: podPool
+  with { pods: posPods; cores: 2; need: flows.positions * 1.5ms }
+  workers "position consumer" { pods: posPods; perPod: 16 }
+  short: "the position consumer"
+  over: "positions wait in their topic; under backlog only the newest per user is kept"
+  describe: `${posPods} pods × 16 threads, 1.5 ms a position`
+}
+
+node db "State store" "primary" {
+  shape: cylinder
+  short: "the state store"
+  demand: flows.alerts * 2
+  capacity: estimated(2000, "writes/s")
+  over: "state writes queue on the primary"
+}
+
+node push "Push broker" `${pushNodes} nodes` {
+  tier: delivery
+  fanout "push broker" {
+    alerts -> contacts: 1
+    alerts -> responders: 0.4
+    positions -> watchers: perPosition
+  }
+  short: "the push broker"
+  demand: out.push
+  capacity: estimated(pushNodes * 4000, "packets/s", "about 4,000 packets/s per node")
+  over: "pushes queue on the broker, so positions and alert updates arrive late"
+}
+
+node contacts "Contacts" "notified" { sink "contacts" }
+node responders "Responders" "on duty" { sink "responders" }
+node watchers "Watchers" "following live" { sink "watchers" }
+
+phones -> gateway: "POST /events"
+gateway -> brokers: `${compact(flows.positions)} positions/s`
+brokers -> alertPipeline
+brokers -> positionConsumer
+alertPipeline -> db: "state writes"
+alertPipeline -> push
+positionConsumer -> push: mergeNewest ? "newest per user" : "every fix"
+push -> contacts
+push -> responders
+push -> watchers: watchOnly ? "watchers only" : "every receiver"

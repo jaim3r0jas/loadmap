@@ -1,6 +1,6 @@
 import type { Decl, Edge, Expr, Ident, Property, Stmt } from './ast'
 import { didYouMean, type Span } from './diagnostics'
-import { type Env, Expander, type Template } from './expand'
+import { type Env, Expander, type InputCheck, type Template } from './expand'
 import { Bail, type Loader, MAX_LIBRARY_DEPTH, relativePath, type SourceFile } from './files'
 import { BOXES, STAGES } from './schema'
 import { before, CURRENT, LANGUAGE_VERSION, needs, stampOf, type Version, versionText } from './versions'
@@ -14,6 +14,8 @@ export interface Linked {
   versionAt(offset: number): Version
   /** A library checked on its own: drawn from its defaults, with nothing around it. */
   preview: boolean
+  /** The inputs a box of the model set with a formula, each beside its default: checked once names are known. */
+  checks: readonly InputCheck[]
   /**
    * For a library on its own: where the boxes that stand in for a model are said to be (its `library` line). A
    * prototype may leave a required line to the box that is like it: one missing there is no mistake of the library.
@@ -112,6 +114,7 @@ export function link(loader: Loader, entry: SourceFile, hosted: ReadonlySet<stri
   const body = entry.role === 'library' ? l.alone(entry) : l.model(entry, variant)
   return {
     body,
+    checks: l.checks,
     ...(entry.role === 'library' && { stand: l.stand }),
     version: entry.version ?? CURRENT,
     versionAt: (offset) => loader.at(offset).version ?? CURRENT,
@@ -162,6 +165,10 @@ class Linker {
 
   private get report() {
     return this.loader.report
+  }
+
+  get checks() {
+    return this.expander.checks
   }
 
   model(m: SourceFile, variant?: SourceFile): Stmt[] {
