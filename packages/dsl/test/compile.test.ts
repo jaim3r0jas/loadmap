@@ -1529,3 +1529,121 @@ api -> lost
     expect(d.line).toBe(3)
   })
 })
+
+describe('strict formulas', () => {
+  /** Each diagnostic as [severity, code, message, hint, the text it marks]. */
+  const marks = (src: string) =>
+    compile(src).diagnostics.map((d) => [d.severity, d.code, d.message, d.hint, src.slice(d.from, d.to)])
+  const v10 = (src: string) => src.replace(/^loadmap 1\.1/, 'loadmap 1')
+  const later = ' (an error from loadmap 1.1)'
+
+  it.each([
+    // the review's cases: c01, c02, c03 and fable 08a-e, 31
+    [
+      'let x = 1 < load < 3',
+      'chained-comparison',
+      "comparisons don't chain",
+      'write 1 < load && load < 3',
+      '1 < load < 3',
+    ],
+    [
+      'let x = pods ? 1 : 2',
+      'wrong-type',
+      'the test before "?" is true or false, this is a number',
+      'write pods != 0',
+      'pods',
+    ],
+    [
+      'let x = fast ? 1 : "two"',
+      'wrong-type',
+      'the two answers of "? :" are a number and a text',
+      'give both the same type',
+      'fast ? 1 : "two"',
+    ],
+    [
+      'let x = pods == "2"',
+      'wrong-type',
+      'this is always false: a number is never equal to a text',
+      'write 2 to compare like with like',
+      'pods == "2"',
+    ],
+    ['let x = !load', 'wrong-type', '"!" takes true or false, this is a number', 'write load == 0', '!load'],
+    [
+      'let x = pods || 20',
+      'wrong-type',
+      '"||" takes true or false on both sides, these are numbers',
+      'for a fallback, write pods != 0 ? pods : 20',
+      'pods || 20',
+    ],
+    ['let x = fast && pods', 'wrong-type', '"&&" takes true or false, this is a number', 'write pods != 0', 'pods'],
+    ['let x = load < "a"', 'wrong-type', '"<" compares numbers, this is a text', undefined, '"a"'],
+    ['let x = pods != 5', 'bad-value', '5 is not an option of "pods", so this is always true', '1, 2, 3', '5'],
+  ])('%s: an error from loadmap 1.1, a warning before', (top, code, message, hint, text) => {
+    expect(marks(def({ top }))).toEqual([['error', code, message, hint, text]])
+    const old = compile(v10(def({ top })))
+    expect(old.ok).toBe(true)
+    expect(marks(v10(def({ top })))).toEqual([['warning', code, message + later, hint, text]])
+  })
+
+  it('wants true or false for a when and an enabled', () => {
+    const src = def({
+      api: 'measured(400, "req/s", "load test")\n  when: 1',
+      extra: 'param slow "Slow" { default: false; enabled: pods }',
+    })
+    expect(marks(src)).toEqual([
+      ['error', 'wrong-type', 'expected true or false, this is a number', 'write true or false', '1'],
+      ['error', 'wrong-type', 'expected true or false, this is a number', 'write pods != 0', 'pods'],
+    ])
+    expect(compile(v10(src)).ok).toBe(true)
+  })
+
+  it('refuses a preset outside the load or a slider', () => {
+    const src = def({
+      extra: 'param size "Size" { min: 1; max: 5; default: 2 }\npreset "big" { load: 99; size: 9 }',
+    })
+    expect(marks(src)).toEqual([
+      ['error', 'out-of-range', 'the load goes from 1 to 10', undefined, '99'],
+      ['error', 'out-of-range', '"size" goes from 1 to 5', undefined, '9'],
+    ])
+    expect(compile(v10(src)).ok).toBe(true)
+  })
+
+  it('refuses a rate or a capacity below 0 where it is computed', () => {
+    const capacity = def({ api: 'measured(pods * -400, "req/s", "load test")' })
+    expect(marks(capacity)).toEqual([
+      [
+        'error',
+        'out-of-range',
+        'the capacity of "api" is -800 here',
+        'a capacity is above 0',
+        'measured(pods * -400, "req/s", "load test")',
+      ],
+    ])
+    expect(compile(v10(capacity)).ok).toBe(true)
+    // the rate is the mistake: the demand it feeds is not blamed again
+    const rate = def().replace('rate: 100 * load', 'rate: -100 * load')
+    expect(marks(rate)).toEqual([
+      ['error', 'bad-rate', 'the rate of "req" is -200 here', 'a rate is units per second, from 0 up', '-100 * load'],
+    ])
+    expect(compile(v10(rate)).ok).toBe(true)
+  })
+
+  it('says when a demand is not a number, as a rate does: c19 held up to 0×', () => {
+    const src = def().replace('demand: flows.req', 'demand: flows.req / (pods - 2)')
+    expect(marks(src)).toEqual([
+      ['warning', 'bad-demand', 'the demand of "api" is Infinity here', undefined, 'flows.req / (pods - 2)'],
+    ])
+  })
+
+  it('leaves what is typed alone', () => {
+    for (const top of [
+      'let x = fast ? 1 : 2',
+      'let x = 1 < load && load < 3',
+      'let x = (load < 2) == fast',
+      'let x = pods == 2 || !fast',
+      'let x = `${pods}` == "2"',
+    ])
+      expect(marks(def({ top })), top).toEqual([])
+    expect(marks(def({ extra: 'preset "big" { load: 10; pods: 3 }' }))).toEqual([])
+  })
+})

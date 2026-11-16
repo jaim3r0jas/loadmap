@@ -139,9 +139,12 @@ describe('edit', () => {
       '+  capacity: estimated(25_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")',
     ])
     expect(diff(checkout, 'flow:orders/rate#0', 52.5)).toEqual(['-  rate: 40 * load', '+  rate: 52.5 * load'])
-    expect(diff(checkout, 'pool:workers/capacity#0', -1)[1]).toBe(
-      '+  capacity: measured(pods * (-1), "cores", "pod CPU limit")',
+    // a negative number in parentheses: where it keeps the value at 0 or more (a capacity below 0 is refused)
+    const offset = mini('node b { pass; demand: flows.f * 2 + 5; capacity: measured(9, "req/s"); over: "y" }')
+    expect(diff(offset, 'node:b/demand#1', -1)[1]).toBe(
+      '+node b { pass; demand: flows.f * 2 + (-1); capacity: measured(9, "req/s"); over: "y" }',
     )
+    expect(edit(checkout, 'pool:workers/capacity#0', -1)).toEqual({ error: 'the capacity of "workers" is -3 here' })
   })
 
   it('changes a number with a unit as written, keeping its unit', () => {

@@ -2,7 +2,7 @@ import { type Capacity, configured, estimated, type LinearFit, measured } from '
 import { compact, fmt, pct, secs } from '@loadmap/core/format'
 import { flowOf } from '@loadmap/core/internal'
 import type { Expr } from './ast'
-import { didYouMean, type Reporter, type Span } from './diagnostics'
+import { type Code, didYouMean, type Reporter, type Span } from './diagnostics'
 import { own, type Scope } from './schema'
 
 export type Type = 'number' | 'boolean' | 'string' | 'capacity' | 'any'
@@ -30,7 +30,18 @@ export interface Names {
   components: ReadonlySet<string>
   fits: ReadonlyMap<string, LinearFit | null>
   functions: HostFunctions
+  /** The options of each select parameter: a literal compared with one must be one of them. */
+  options?: ReadonlyMap<string, readonly (number | string)[]>
 }
+
+/**
+ * Reports what the strict typing of formulas refuses: in compile, an error from the language version that made it
+ * strict and a warning before (a file that compiled under its stamp still does).
+ */
+export type Strict = (code: Code, at: Span, message: string, hint?: string) => void
+
+const RELATIONAL = new Set(['<', '<=', '>', '>='])
+const EQUALITY = new Set(['==', '!='])
 
 /** A formula failed while the model ran: where, and why. */
 export class FormulaError extends Error {
@@ -149,8 +160,13 @@ export const typeWord = (t: Type) => WORD[t]
  * Checks a formula against what it may read (`scope`) and compiles it. Errors are reported; the result then has type
  * `any` and returns undefined, so checking goes on.
  */
-export function compileFormula(e: Expr, names: Names, scope: Scope, report: Reporter): Formula {
-  return new Compiler(names, scope, report).compile(e)
+export function compileFormula(e: Expr, names: Names, scope: Scope, report: Reporter, strict?: Strict): Formula {
+  return new Compiler(
+    names,
+    scope,
+    report,
+    strict ?? ((code, at, m, hint) => report.warning(code, at, m, hint)),
+  ).compile(e)
 }
 
 // not a constant: one would be checked again in the constant scope, and a name in it blamed for what was not wrong
@@ -161,6 +177,7 @@ class Compiler {
     readonly names: Names,
     readonly scope: Scope,
     readonly report: Reporter,
+    readonly strict: Strict,
   ) {}
 
   canRead(e: Span, what: string): boolean {
@@ -209,7 +226,17 @@ class Compiler {
       case 'unary': {
         const a = this.compile(e.arg)
         const run = a.run
-        if (e.op === '!') return { type: 'boolean', constant: a.constant, run: (c, l) => !run(c, l) }
+        if (e.op === '!') {
+          // the whole "!load" is what the hint replaces: write load == 0
+          if (a.type !== 'boolean' && a.type !== 'any')
+            this.strict(
+              'wrong-type',
+              e,
+              `"!" takes true or false, this is ${typeWord(a.type)}`,
+              conditionHint(e.arg, a.type, this.slice(e.arg), true),
+            )
+          return { type: 'boolean', constant: a.constant, run: (c, l) => !run(c, l) }
+        }
         this.want(e.arg, a, 'number')
         return { type: 'number', constant: a.constant, run: e.op === '-' ? (c, l) => -(run(c, l) as number) : run }
       }
@@ -219,6 +246,14 @@ class Compiler {
         const test = this.compile(e.test)
         const then = this.compile(e.then)
         const other = this.compile(e.else)
+        this.condition(e.test, test, 'the test before "?" is')
+        if (then.type !== other.type && then.type !== 'any' && other.type !== 'any')
+          this.strict(
+            'wrong-type',
+            e,
+            `the two answers of "? :" are ${typeWord(then.type)} and ${typeWord(other.type)}`,
+            'give both the same type',
+          )
         const [t, a, b] = [test.run, then.run, other.run]
         return {
           type: then.type === other.type ? then.type : 'any',
@@ -435,11 +470,15 @@ class Compiler {
     const [a, b] = [l.run, r.run]
     const constant = l.constant && r.constant
     const f = (type: Type, run: Formula['run']): Formula => ({ type, constant, run })
+    if (RELATIONAL.has(e.op) || EQUALITY.has(e.op)) this.comparison(e, l, r)
     switch (e.op) {
+      // a side that is no boolean keeps the type it had before the check, so a file it warns about compiles as before
       case '||':
-        return f(l.type === r.type ? l.type : 'any', (c, x) => a(c, x) || b(c, x))
-      case '&&':
-        return f(l.type === r.type ? l.type : 'any', (c, x) => a(c, x) && b(c, x))
+      case '&&': {
+        this.logical(e, l, r)
+        const or = e.op === '||'
+        return f(l.type === r.type ? l.type : 'any', or ? (c, x) => a(c, x) || b(c, x) : (c, x) => a(c, x) && b(c, x))
+      }
       case '==':
         return f('boolean', (c, x) => a(c, x) === b(c, x))
       case '!=':
@@ -478,10 +517,107 @@ class Compiler {
     }
   }
 
+  slice(e: Span): string {
+    return this.report.source.slice(e.from, e.to)
+  }
+
+  /** A side of `!`, `&&`, `||` or the test of `? :`: true or false, never a number or a text read as one. */
+  condition(e: Expr, f: Formula, what: string) {
+    if (f.type === 'boolean' || f.type === 'any') return
+    this.strict(
+      'wrong-type',
+      e,
+      `${what} true or false, this is ${typeWord(f.type)}`,
+      conditionHint(e, f.type, this.slice(e)),
+    )
+  }
+
+  /** `&&` and `||`: true or false on both sides; `0 || 20` as a fallback says how to write one. */
+  logical(e: Extract<Expr, { t: 'bin' }>, l: Formula, r: Formula) {
+    if (e.op === '||' && l.type === 'number' && r.type === 'number') {
+      const [a, b] = [this.slice(e.left), this.slice(e.right)]
+      this.strict(
+        'wrong-type',
+        e,
+        '"||" takes true or false on both sides, these are numbers',
+        `for a fallback, write ${a} != 0 ? ${a} : ${b}`,
+      )
+      return
+    }
+    this.condition(e.left, l, `"${e.op}" takes`)
+    this.condition(e.right, r, `"${e.op}" takes`)
+  }
+
+  /**
+   * A comparison: numbers on both sides of `<`, like types on both sides of `==`, a literal one of the options of the
+   * parameter it is compared with, and no chain (`1 < load < 3` compares true or false with 3).
+   */
+  comparison(e: Extract<Expr, { t: 'bin' }>, l: Formula, r: Formula) {
+    const level = RELATIONAL.has(e.op) ? RELATIONAL : EQUALITY
+    const left = e.left
+    if (left.t === 'bin' && level.has(left.op)) {
+      const mid = this.slice(left.right)
+      this.strict(
+        'chained-comparison',
+        e,
+        "comparisons don't chain",
+        `write ${this.slice(left.left)} ${left.op} ${mid} && ${mid} ${e.op} ${this.slice(e.right)}`,
+      )
+      return
+    }
+    if (level === RELATIONAL) {
+      for (const [side, f] of [
+        [e.left, l],
+        [e.right, r],
+      ] as const)
+        if (f.type !== 'number' && f.type !== 'any')
+          this.strict('wrong-type', side, `"${e.op}" compares numbers, this is ${typeWord(f.type)}`)
+      return
+    }
+    const never = e.op === '==' ? 'always false' : 'always true'
+    if (l.type !== r.type && l.type !== 'any' && r.type !== 'any') {
+      const literal = [e.left, e.right].find((x) => x.t === 'str' || x.t === 'num')
+      const as =
+        literal?.t === 'str' && literal.value.trim() !== '' && Number.isFinite(Number(literal.value))
+          ? `write ${Number(literal.value)}`
+          : literal?.t === 'num'
+            ? `write "${this.slice(literal)}"`
+            : undefined
+      this.strict(
+        'wrong-type',
+        e,
+        `this is ${never}: ${typeWord(l.type)} is never equal to ${typeWord(r.type)}`,
+        as && `${as} to compare like with like`,
+      )
+      return
+    }
+    for (const [p, v] of [
+      [e.left, e.right],
+      [e.right, e.left],
+    ] as const) {
+      if (p.t !== 'id' || (v.t !== 'str' && v.t !== 'num')) continue
+      const options = this.names.options?.get(p.name)
+      if (options && !options.includes(v.value))
+        this.strict(
+          'bad-value',
+          v,
+          `${this.slice(v)} is not an option of "${p.name}", so this is ${never}`,
+          options.map((o) => (typeof o === 'string' ? JSON.stringify(o) : String(o))).join(', '),
+        )
+    }
+  }
+
   want(at: Span, f: Formula, type: Type) {
     if (f.type !== type && f.type !== 'any' && type !== 'any')
       this.report.error('wrong-type', at, `expected ${typeWord(type)}, this is ${typeWord(f.type)}`)
   }
+}
+
+/** How to turn a number or a text into the true or false a condition takes; `negated` for the side of a "!". */
+export function conditionHint(e: Expr, type: Type, text: string, negated = false): string | undefined {
+  if (e.t === 'num' || e.t === 'str') return 'write true or false'
+  const op = negated ? '==' : '!='
+  return type === 'number' ? `write ${text} ${op} 0` : type === 'string' ? `write ${text} ${op} ""` : undefined
 }
 
 /**

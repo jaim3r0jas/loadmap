@@ -108,6 +108,16 @@ compiles, with a warning. A bare number is any unit, so `flows.events * 0.002` i
 component without a demand line handles the units a second reaching its stages, so a capacity in cores there warns
 too. Words of two rates are never compared: orders a second become requests or writes a second all the time.
 
+**Formulas are typed, as TypeScript's are, without its loose reading of values.** A condition (the test of `? :`,
+each side of `&&`, `||` and `!`, a `when`, an `enabled`) is `true` or `false`, never a number or a text read as one:
+`pods ? …` is `pods != 0 ? …`. `< <= > >=` compare numbers, `==` and `!=` compare like with like (`pods == "4"` is
+always false), a literal compared with a select is one of its options, and comparisons don't chain: `1 < load < 3`
+is `1 < load && load < 3`. Both answers of a `? :` have the same type. Where the definition is computed (the
+defaults, each preset and scenario), a rate, a demand and a capacity are at least 0, and a preset's load and slider
+values stay in their ranges. From `loadmap 1.1` each of these is an error; a file stamped before it gets a warning
+that says so and computes as it did. A demand that is not a number (`flows.x / (pods - 2)` with 2 pods) is a warning,
+as a rate's is.
+
 Some properties must be constants (a `priority`, a `unit`). Others may read only the parameters (`enabled`).
 
 **Formulas are safe to share.** The text is parsed into a tree and run as closures. There is no `eval` or
@@ -983,6 +993,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `missing-part` | a required statement, argument or block is missing |
 | `unknown-unit` | a number with a suffix that is not a unit: 5sec |
 | `wrong-type` | a value of the wrong type |
+| `chained-comparison` | comparisons written as a chain: 1 < load < 3 |
 | `bad-value` | a value of the right type that the property does not take |
 | `out-of-range` | a number outside the range the property takes |
 | `wrong-scope` | a formula reads what its place may not read |
@@ -1006,7 +1017,8 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `bad-step` | a story step that sets what it cannot |
 | `bad-fit` | a fit whose points or measures do not fit |
 | `bad-metric` | a metric, measure or query that cannot be read |
-| `bad-rate` | a flow whose rate is not a finite number at some values |
+| `bad-rate` | a flow whose rate is not a finite number from 0 up at some values |
+| `bad-demand` | a component whose demand is not a finite number from 0 up at some values |
 | `unused-stage` | a stage no flow passes |
 | `unused-component` | a component no stage uses or holds |
 | `tier-order` | an edge that runs back against the tiers |
@@ -1050,7 +1062,7 @@ with no warning first; none is planned.
 | Version | Added | Strict from here |
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
-| 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`) |
+| 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
 
 ## In code
 

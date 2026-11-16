@@ -5,6 +5,7 @@ import {
   cache,
   check,
   defineModel,
+  type Evaluation,
   fanout,
   type LinearFit,
   type Loss,
@@ -46,6 +47,7 @@ import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './
 import { type Code, closest, type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
   compileFormula,
+  conditionHint,
   type Formula,
   FormulaError,
   failure,
@@ -79,6 +81,12 @@ import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitN
 import { before, CURRENT, LANGUAGE_VERSION, needs, parseVersion, stampOf, type Version, versionText } from './versions'
 
 export { LANGUAGE_VERSION }
+
+/**
+ * The version from which formulas are typed strictly (true or false for a condition, numbers for `<`, like types for
+ * `==`, no chained comparison) and a rate, demand or capacity below 0 is refused: a warning before it.
+ */
+const STRICT_FORMULAS: Version = [1, 1]
 
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
@@ -401,6 +409,14 @@ class Compiler {
 
     const paramTypes = new Map<string, Type>([['load', 'number']])
     for (const b of params) if (b.args.id) paramTypes.set(b.args.id.name, this.paramType(b))
+    // a select's options as written: a formula compares a literal with them (one computed leaves it unchecked)
+    const paramOptions = new Map<string, (number | string)[]>()
+    for (const b of params) {
+      const items = this.prop(b, 'options')?.value
+      if (!b.args.id || items?.t !== 'array') continue
+      const list = items.items.map((e) => (e.t === 'num' || e.t === 'str' ? e.value : undefined))
+      if (list.every((v) => v !== undefined)) paramOptions.set(b.args.id.name, list as (number | string)[])
+    }
     for (const f of fits) this.fit(f)
     // a published figure is read like a let: a capacity in `derived`
     for (const b of publisheds) if (b.args.id) this.lets.set(b.args.id.name, 'capacity')
@@ -411,6 +427,7 @@ class Compiler {
         limits.set(b.args.id.name, b.args.id)
     this.names = {
       params: paramTypes,
+      options: paramOptions,
       lets: this.lets,
       flows: new Set(flowNames.keys()),
       stages: new Set(stageNames.keys()),
@@ -461,7 +478,12 @@ class Compiler {
     const presets: Record<string, Record<string, unknown>> = {}
     for (const b of byKind('preset')) {
       const label = this.text(b.args.label)
-      if (label != null) presets[label] = this.preset(b, params)
+      if (label == null) continue
+      const set = this.preset(b, params)
+      presets[label] = set
+      const l = this.prop(b, 'load')
+      if (l && load && typeof set.load === 'number' && !(set.load >= load.min && set.load <= load.max))
+        this.strict(STRICT_FORMULAS, 'out-of-range', l.value, `the load goes from ${load.min} to ${load.max}`)
     }
     const scenarios: Record<string, Record<string, unknown>> = {}
     for (const [i, b] of byKind('scenario').entries()) {
@@ -582,7 +604,7 @@ class Compiler {
     }
 
     const componentDefs: Record<string, Record<string, unknown>> = {}
-    const componentBlocks = new Map<string, Block>()
+    const componentBlocks = this.componentBlocks
     for (const box of boxes) {
       const stray = box.component?.own ? undefined : box.block.children.find((c) => c.keyword === 'held')
       if (stray)
@@ -895,15 +917,56 @@ class Compiler {
         }
         const hidden = viewDef.edges.filter((e) => e.when && !e.when(ev.ctx))
         if (hidden.length) this.hiddenHops(model, viewDef, hidden, values, where)
-        for (const f of model.flowIds)
-          if (!Number.isFinite(ev.flows[f]))
-            this.report.warning('bad-rate', this.flowRate.get(f) ?? at, `the rate of "${f}" is ${ev.flows[f]} here`)
+        let ratesFine = true
+        for (const f of model.flowIds) {
+          const rate = ev.flows[f] as number
+          if (!(rate >= 0 && Number.isFinite(rate))) ratesFine = false
+          const rateAt = this.flowRate.get(f) ?? at
+          if (!Number.isFinite(rate)) this.report.warning('bad-rate', rateAt, `the rate of "${f}" is ${rate} here`)
+          else if (rate < 0)
+            this.strict(
+              STRICT_FORMULAS,
+              'bad-rate',
+              rateAt,
+              `the rate of "${f}" is ${rate} here`,
+              'a rate is units per second, from 0 up',
+            )
+        }
+        this.ranges(ev, ratesFine)
       } catch (err) {
         this.runError(err, at, i === 0)
       }
     }
     if (this.report.failed) return undefined
     return { model, view, options }
+  }
+
+  /**
+   * A component's demand and capacity where the definition was evaluated: a demand that is not finite says so, as a
+   * rate does (a verdict "holds up to 0×" would hide it), and one below 0 or a capacity below 0 is refused. With a
+   * rate already wrong, the demands it feeds are not blamed for it.
+   */
+  private ranges(ev: Evaluation, ratesFine: boolean) {
+    for (const [id, b] of this.componentBlocks) {
+      const c = ev.components[id]
+      if (!c) continue
+      const demand = c.demand
+      if (ratesFine && demand != null && !(demand >= 0 && Number.isFinite(demand))) {
+        const at = this.prop(b, 'demand')?.value ?? b.at
+        const message = `the demand of "${id}" is ${demand} here`
+        if (!Number.isFinite(demand)) this.report.warning('bad-demand', at, message)
+        else this.strict(STRICT_FORMULAS, 'bad-demand', at, message, 'a demand is from 0 up')
+      }
+      const capacity = this.prop(b, 'capacity')
+      if (capacity && c.capacity && c.capacity.value < 0)
+        this.strict(
+          STRICT_FORMULAS,
+          'out-of-range',
+          capacity.value,
+          `the capacity of "${id}" is ${c.capacity.value} here`,
+          'a capacity is above 0',
+        )
+    }
   }
 
   /**
@@ -1142,6 +1205,8 @@ class Compiler {
   }
 
   private flowRate = new Map<string, Span>()
+  /** Each component's block: where its demand and capacity are written. */
+  private componentBlocks = new Map<string, Block>()
   private flowAt = new Map<string, Span>()
   private flowBlock = new Map<string, Block>()
   /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
@@ -1933,7 +1998,9 @@ class Compiler {
   }
 
   private formula(e: Expr, scope: Scope, want?: Type): Formula {
-    const f = compileFormula(e, this.names, scope, this.report)
+    const f = compileFormula(e, this.names, scope, this.report, (code, at, message, hint) =>
+      this.strict(STRICT_FORMULAS, code, at, message, hint),
+    )
     if (want && want !== 'any' && f.type !== want && f.type !== 'any') {
       // a number reads fine where a text is wanted: it is shown as written
       if (want === 'string' && f.type === 'number') {
@@ -1951,6 +2018,20 @@ class Compiler {
       // failed, as a formula that does not compile: what reads its value would only say the same thing again
       return { type: 'any', constant: false, run: () => undefined }
     }
+    return f
+  }
+
+  /** A condition (`when`, `enabled`): true or false; a number or a text read as one is refused from loadmap 1.1. */
+  private condition(e: Expr, scope: Scope): Formula {
+    const f = this.formula(e, scope)
+    if (f.type !== 'boolean' && f.type !== 'any')
+      this.strict(
+        STRICT_FORMULAS,
+        'wrong-type',
+        e,
+        `expected true or false, this is ${typeWord(f.type)}`,
+        conditionHint(e, f.type, this.slice(e)),
+      )
     return f
   }
 
@@ -2114,7 +2195,7 @@ class Compiler {
       if (v != null) o[k] = v
     }
     const enabled = this.prop(b, 'enabled')
-    if (enabled) o.enabled = placed(enabled.value, this.formula(enabled.value, 'values').run)
+    if (enabled) o.enabled = placed(enabled.value, this.condition(enabled.value, 'values').run)
     const format = this.prop(b, 'format')
     if (format) {
       const run = placed<string>(format.value, this.formula(format.value, 'value', 'string').run)
@@ -2210,6 +2291,12 @@ class Compiler {
         const list = opts.value.items.map((e) => (e.t === 'num' || e.t === 'str' ? e.value : undefined))
         if (!list.includes(v as never))
           this.report.error('bad-value', prop.value, `${String(v)} is not an option of "${k}"`, list.join(', '))
+      }
+      const slider = known.get(k)
+      if (slider && typeof v === 'number' && slider.props.has('min') && slider.props.has('max')) {
+        const [min, max] = [this.constProp<number>(slider, 'min'), this.constProp<number>(slider, 'max')]
+        if (typeof min === 'number' && typeof max === 'number' && !(v >= min && v <= max))
+          this.strict(STRICT_FORMULAS, 'out-of-range', prop.value, `"${k}" goes from ${min} to ${max}`)
       }
       out[k] = v
     }
@@ -2442,7 +2529,7 @@ class Compiler {
         if (v !== undefined) fields.push([k, v])
       }
       const when = this.prop(r, 'when')
-      parts.push({ key, fields, when: when && placed(when.value, this.formula(when.value, 'ctx').run) })
+      parts.push({ key, fields, when: when && placed(when.value, this.condition(when.value, 'ctx').run) })
     }
     const fixed = parts.every((x) => !x.when && x.fields.every(([, v]) => typeof v !== 'function'))
     const at = (ctx: any): Overload => {
@@ -2467,7 +2554,7 @@ class Compiler {
     const times = this.dynProp<number>(rule, 'times', 'number')
     const budget = this.dynProp<number>(rule, 'budget', 'number')
     const w = this.prop(rule, 'when')
-    const when = w && placed(w.value, this.formula(w.value, 'values').run)
+    const when = w && placed(w.value, this.condition(w.value, 'values').run)
     const at = (v: any): RetryRule | undefined => {
       if (when && !when(v)) return undefined
       const out: RetryRule = { times: (typeof times === 'function' ? times(v) : times) ?? 0 }
@@ -2499,6 +2586,7 @@ class Compiler {
     ] as const) {
       const prop = this.prop(b, k)
       if (!prop) continue
+      if (k === 'when') this.condition(prop.value, 'ctx')
       const check =
         k === 'capacity'
           ? checkCapacity
@@ -2851,7 +2939,7 @@ class Compiler {
       const d: EdgeDef = { from: e.chain[i]!.name, to: e.chain[i + 1]!.name }
       if (label != null) d.label = label
       if (when) {
-        d.when = placed(when.value, this.formula(when.value, 'ctx').run)
+        d.when = placed(when.value, this.condition(when.value, 'ctx').run)
         this.whenAt.set(d, when.key)
       }
       out.push(d)
