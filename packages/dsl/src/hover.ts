@@ -453,7 +453,9 @@ class Lookup {
 
   scenario(label: string, out: Out): Hover | null {
     const all = this.body.filter((s): s is Decl => s.kind === 'decl' && s.keyword.name === 'scenario')
-    const d = all.find((s) => s.args[0]?.t === 'str' && s.args[0].value === label)
+    const d = all.find((s) =>
+      s.args.some((a) => (a.t === 'str' ? a.value === label : a.t === 'id' && a.name === label)),
+    )
     if (!d) return null
     const sets = (d.body ?? []).flatMap((s) =>
       s.kind === 'prop' ? [`${s.key.name} ${this.source.slice(s.value.from, s.value.to)}`] : [],

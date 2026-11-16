@@ -53,6 +53,7 @@ const SYNTAX = {
   mod: { since: '1.2', what: 'mod(a, b)' },
   out: { since: '1.2', what: 'out.<stage>, what a fan-out sends' },
   continued: { since: '1.2', what: 'a text continued on the next line' },
+  scenarioId: { since: '1.2', what: "a scenario's id" },
   sizes: { since: '1.2', what: 'a size (1.5KB, 20MB)' },
 } as const
 
@@ -89,6 +90,8 @@ export function needs(body: readonly Stmt[]): Need[] {
       if (s.kind === 'decl') {
         const spec = own(SCHEMA, s.keyword.name)
         add(`statement ${s.keyword.name}`, spec?.since, `"${s.keyword.name}"`, s.keyword)
+        if (s.keyword.name === 'scenario' && s.args[0]?.t === 'id')
+          add('scenarioId', SYNTAX.scenarioId.since, SYNTAX.scenarioId.what, s.args[0])
         decl(s)
       } else if (s.kind === 'prop') {
         const spec =

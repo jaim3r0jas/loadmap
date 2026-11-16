@@ -169,6 +169,10 @@ scenario "Proposed" { gateways: 2; pods: 6 }
 growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 ```
 
+A scenario may have an id before its label (from `loadmap 1.2`): `scenario proposed "Proposed" { … }`. A step or an
+expect then says `scenario: proposed`, and the button's text can be reworded without touching them; naming it by its
+label, `scenario: "Proposed"`, still works.
+
 The page shows a button per scenario above the diagram, a table of where each one first runs out, and a headroom
 chart with one line per scenario. **Growth** turns load multiples into dates: the load is 1× on `asOf` and grows by
 `rate` every `per`, compounded, so 10× at 6 % a month is about 40 months later ("around February 2030"). Dates come
@@ -1100,7 +1104,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
-| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
+| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 
 ## In code
 
@@ -1265,13 +1269,13 @@ Its properties are named by parameters (and `load`).
 
 ### scenario
 
-A named design to compare: the defaults plus these values, never the load. The first is the baseline.
+A named design to compare: the defaults plus these values, never the load. The first is the baseline. An id before the label (from loadmap 1.2) is what a step or an expect names it by, so the button can be reworded.
 
 ```
-scenario "Proposed" { pods: 6; gateways: 2 }
+scenario proposed "Proposed" { pods: 6; gateways: 2 }
 ```
 
-After the keyword: label.
+After the keyword: [id] label.
 
 Its properties are named by parameters (not `load`).
 

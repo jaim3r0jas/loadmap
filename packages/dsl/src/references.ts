@@ -55,6 +55,9 @@ export function rename(source: string, offset: number, name: string, options?: C
   if (at.space === 'formula' && at.name === 'load') return { error: 'the load keeps its name' }
   if (at.space === 'scenario') {
     if (!name.trim() || /["\n\\]/.test(name)) return { error: 'a scenario label is a line of text without quotes' }
+    // its id, where it is declared bare: a name, never a text
+    if (i.of(at).some((r) => r.decl && !r.quoted) && !NAME.test(name))
+      return { error: `"${name}" is not a name: a scenario's id is letters, digits and _, not starting with a digit` }
   } else if (!NAME.test(name))
     return { error: `"${name}" is not a name: letters, digits and _, not starting with a digit` }
   else if (RESERVED.has(name) || name === 'prototype') return { error: `"${name}" is reserved` }
@@ -213,7 +216,8 @@ class NameIndex {
         }
         const metric = s.args[1]
         if (k === 'measure' && metric?.t === 'id') this.add('metric', metric, metric.name)
-        if (k === 'scenario' && s.args[0]) this.scenario(s.args[0], true)
+        // its id, when it has one, and its label: a step or an expect names it by either
+        if (k === 'scenario') for (const a of s.args.slice(0, 2)) this.scenario(a, true)
         for (const a of s.args) if (a.t === 'tpl') this.expr(a)
         if (s.init) this.expr(s.init)
         const inner = own(SCHEMA, k)
