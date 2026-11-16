@@ -125,7 +125,7 @@ cluster brokers "Brokers" "two topics, three brokers" {
   queue posTopic "positions topic" { partitions { positions: posPods * 16 } }
   short: "the brokers"
   plural: true
-  demand: (flows.alerts * 1.5 + flows.positions * 1.0) / 1000
+  demand: flows.alerts * 1.5KB + flows.positions * 1KB
   capacity: estimated(20, "MB/s", "vendor sizing guide")
   over: "produce latency grows on both topics"
   describe: "3 brokers, both topics"

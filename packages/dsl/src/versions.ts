@@ -1,5 +1,6 @@
 import { childrenOf, type Decl, type Expr, type Stmt } from './ast'
 import type { Span } from './diagnostics'
+import { isSize } from './lexer'
 import { COMPONENT_PROPS, EDGE_PROPS, own, SCHEMA } from './schema'
 
 /**
@@ -50,6 +51,7 @@ const SYNTAX = {
   units: { since: '1.1', what: 'a number with a unit (20ms, 80%, 7×)' },
   as: { since: '1.1', what: '"as" after a demand' },
   mod: { since: '1.2', what: 'mod(a, b)' },
+  sizes: { since: '1.2', what: 'a size (1.5KB, 20MB)' },
 } as const
 
 /** A use of something a version added: where, what, and the version. */
@@ -73,7 +75,8 @@ export function needs(body: readonly Stmt[]): Need[] {
     (s) => s.kind === 'decl' && s.keyword.name === 'fit' && s.args.some((a) => a.t === 'id' && a.name === 'mod'),
   )
   const expr = (e: Expr) => {
-    if (e.t === 'num' && e.unit) add('units', SYNTAX.units.since, SYNTAX.units.what, e)
+    if (e.t === 'num' && isSize(e.unit)) add('sizes', SYNTAX.sizes.since, SYNTAX.sizes.what, e)
+    else if (e.t === 'num' && e.unit) add('units', SYNTAX.units.since, SYNTAX.units.what, e)
     if (e.t === 'call' && e.callee.name === 'mod' && !ownMod) add('mod', SYNTAX.mod.since, SYNTAX.mod.what, e.callee)
     for (const c of childrenOf(e, true)) expr(c)
   }

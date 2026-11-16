@@ -81,7 +81,8 @@ export const alerts = defineModel({
       name: 'Brokers',
       short: 'the brokers',
       plural: true,
-      demand: ({ flows }) => (flows.alerts * 1.5 + flows.positions * 1.0) / 1000,
+      // 1.5 KB an alert and 1 KB a position, in bytes, then as the MB the capacity counts (alerts.loadmap: 1.5KB, 1KB)
+      demand: ({ flows }) => (flows.alerts * 1500 + flows.positions * 1000) / 1e6,
       capacity: estimated(20, 'MB/s', 'vendor sizing guide'),
       over: 'produce latency grows on both topics',
       describe: '3 brokers, both topics',

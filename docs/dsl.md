@@ -90,6 +90,11 @@ as it is.
   between two values with spaces it is the remainder (`10 % 3`, `n % 2`), which `mod(10, 3)` says in words. Glued to a
   number and before a value or a sign (`30%+1`) it would be the remainder where a share was likely meant: an error from
   `loadmap 1.2` with both spellings as fixes, `30% + 1` and `mod(30, 1)`, and a warning in a file stamped before it.
+- **Sizes** (from `loadmap 1.2`): `KB`, `MB`, `GB` and `TB` after a number count in bytes, decimal as a network counts
+  (`1.5KB` is 1,500). A demand written with a size is brought to the size its capacity counts in, so
+  `demand: flows.alerts * 1.5KB` against `estimated(20, "MB/s", …)` is megabytes a second, with no `/ 1000` to forget.
+  A size against a capacity that names none (`"req/s"`, or `"Mb/s"`: megabits), a size added to a plain number, and a
+  size in the capacity's number instead of its unit are errors.
 - **Operators:** `+ - * / %`, `< <= > >= == != === !==`, `&& || !`, `? :` and parentheses.
 - **Names:**
   - `load` and the parameters by their id;
@@ -110,7 +115,8 @@ property gets a unit it is not in (`held: 80%`, `hit: 5s`; the reference says ea
 compiles, with a warning. A bare number is any unit, so `flows.events * 0.002` is never warned about: write
 `flows.events * 2ms`, and the check sees events a second times seconds, a count, as a capacity in cores is. A
 component without a demand line handles the units a second reaching its stages, so a capacity in cores there warns
-too. Words of two rates are never compared: orders a second become requests or writes a second all the time.
+too. Words of two rates are never compared: orders a second become requests or writes a second all the time. In CI,
+`loadmap check --units fail` fails the run on any of these warnings.
 
 **Formulas are typed, as TypeScript's are, without its loose reading of values.** A condition (the test of `? :`,
 each side of `&&`, `||` and `!`, a `when`, an `enabled`) is `true` or `false`, never a number or a text read as one:
@@ -1068,7 +1074,7 @@ with no warning first; none is planned.
 | ------- | ----- | ---------------- |
 | 1.0 | the language as @loadmap/dsl 0.32 reads it | |
 | 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand; new names for overloaded words: `underTarget` and `notFull` in `expect`, `minSamples` on a metric, `placement` in `workers`, `accepts` on a connection (the old ones warn) | a hop needs its edge (`missing-edge`, `reversed-edge`); typed formulas and value ranges (`wrong-type`, `chained-comparison`, `bad-value`, `bad-rate`, `bad-demand`, `out-of-range`) |
-| 1.2 | `mod(a, b)` | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` as a name |
+| 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` as a name |
 
 ## In code
 

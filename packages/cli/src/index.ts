@@ -33,6 +33,7 @@ an error or an expectation fails, 0 when everything holds; a severity: warn line
   --pull                read the measures first (as pull does: --window, --step, --to, --out) and check against them
   --snapshot <file>     check one definition against a snapshot already written
   --inconclusive <i>    warn (the default) or fail
+  --units <u>           warn (the default) or fail: a unit that disagrees (unit-mismatch) fails the run
   --dry-run             report everything, the annotations and the job summary, and exit 0
   --json <file>         write the run's result: outcomes, reasons, headroom, the window, the commit
   --commit <sha>        the commit the result is keyed by (default GITHUB_SHA)
