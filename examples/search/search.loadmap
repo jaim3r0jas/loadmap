@@ -111,15 +111,7 @@ node db "Index shard 1" {
   over: "queries queue, and the API waits on them"
 }
 
-node db2 "Index shard 2" {
-  tier: data
-  shape: cylinder
-  store
-  short: "the second shard"
-  capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
-  service: 20ms
-  over: "queries queue, and the API waits on them"
-}
+node db2 "Index shard 2" { like: db; short: "the second shard" }
 
 clients -> limiter: `${compact(flows.searches)} searches/s`
 limiter -> api

@@ -194,6 +194,12 @@ const TIER: PropSpec = {
   scope: 'const',
   doc: 'The tier the box stands in; without one, that of the boxes that feed it.',
 }
+const LIKE: PropSpec = {
+  value: 'node',
+  scope: 'const',
+  since: '1.2',
+  doc: 'Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages.',
+}
 const OVERLOAD_WHEN: PropSpec = { value: 'boolean', scope: 'ctx', doc: 'The rule applies only while this is true.' }
 
 /** The panels of `<Loadmap>` below the diagram, as its `fullScreen` prop names them. */
@@ -795,6 +801,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       sub: SUB,
       shape: { value: 'enum', scope: 'const', values: ['box', 'cylinder'], doc: 'box (the default) or cylinder.' },
       tier: TIER,
+      like: LIKE,
       ...COMPONENT_PROPS,
     },
     children: ['pass', 'store', 'sink', 'lost', 'fanout', 'split', 'cache', 'limit', 'component', 'held'],
@@ -808,6 +815,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       members: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'How many members.', required: true },
       memberLabel: { value: 'string', scope: 'i', doc: "Each member's label, from its index i: `broker ${i}`." },
       tier: TIER,
+      like: LIKE,
       ...COMPONENT_PROPS,
     },
     children: ['queue', 'component', 'held'],
@@ -820,6 +828,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       sub: SUB,
       podLabel: { value: 'string', scope: 'i', doc: "Each pod's label, from its index i: `pod ${i}`." },
       tier: TIER,
+      like: LIKE,
       ...COMPONENT_PROPS,
     },
     children: ['workers', 'component', 'held'],

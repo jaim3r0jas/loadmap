@@ -525,6 +525,77 @@ describe('units', () => {
     ])
   })
 
+  it('make a box like another: its lines and stages, but the ones written here', () => {
+    const twin = (extra: string, version = '1.2') =>
+      compile(def({ extra }).replace('loadmap 1.1', `loadmap ${version}`))
+    const r = twin('node api2 "API 2" { like: api; over: "the second fails" }\nclient -> api2')
+    // no flow goes there yet: a warning at the stage it took, in the box it is like
+    expect(r.diagnostics.map((d) => d.message)).toEqual(['no flow passes the stage "api2"'])
+    const ev = r.definition!.model.evaluate({})
+    // the same capacity, by the same formula; its own over, and nothing reaches it yet
+    expect(ev.components.api2!.capacity).toEqual(ev.components.api!.capacity)
+    expect(ev.components.api2!.over).toBe('the second fails')
+    expect(ev.components.api!.over).toBe('requests fail')
+    expect(Object.keys(ev.stages)).toEqual(['api', 'api2'])
+    // through another box that is like one
+    const chain = twin('node b "B" { like: api }\nnode c "C" { like: b; demand: 1 }\nclient -> b\nclient -> c')
+    expect(chain.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(chain.definition!.model.evaluate({}).components.c!.demand).toBe(1)
+    // a stage written here replaces the stage there
+    const sink = twin('node end "End" { like: api; sink }\nclient -> end')
+    expect(sink.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    expect(sink.definition!.model.evaluate({}).stages.end).toMatchObject({ kind: 'sink' })
+    const messages = (extra: string, version?: string) =>
+      twin(extra, version)
+        .diagnostics.filter((d) => d.severity === 'error')
+        .map((d) => d.message)
+    expect(messages('node b "B" { like: apy }')).toEqual(['unknown box "apy"'])
+    expect(messages('node b "B" { like: b }')).toEqual(['a box cannot be like itself: b → b'])
+    expect(messages('node b "B" { like: c }\nnode c "C" { like: b }')[0]).toBe('a box cannot be like itself: b → c → b')
+    expect(messages('pool b "B" { like: api }')).toContain('a pool is like another pool: "api" is a node')
+    expect(
+      messages('node q "Q" { pass inner; capacity: measured(1, "x/s"); over: "x" }\nnode b "B" { like: q }'),
+    ).toEqual(['"q" names its pass "inner": a box like it would declare "inner" again'])
+    expect(messages('node b "B" { like: api }\nclient -> b', '1.1')).toEqual([
+      '"like:" is from loadmap 1.2; this definition says loadmap 1.1',
+    ])
+  })
+
+  it('read what a fan-out sends as out.<stage>', () => {
+    const src = (demand: string, version = '1.2') => `loadmap ${version}
+load { max: 10; default: 2 }
+param copies "Copies" { options: [1, 3]; default: 3 }
+flow a "alerts" { rate: 10 * load; route: push; from: client }
+flow b "positions" { rate: 100 * load; route: push; from: client }
+node client "Client"
+node push "Push" {
+  fanout { a -> phones: 1; a -> desks: 0.5; b -> phones: copies }
+  demand: ${demand}
+  capacity: estimated(5_000, "packets/s", "a guess")
+  over: "pushes queue"
+}
+node phones "Phones" { sink }
+node desks "Desks" { sink }
+client -> push
+push -> phones
+push -> desks
+`
+    const r = compile(src('out.push'))
+    expect(r.diagnostics).toEqual([])
+    // 20 alerts × 1.5 copies + 200 positions × 3
+    expect(r.definition!.model.evaluate({}).components.push!.demand).toBe(630)
+    expect(r.definition!.model.evaluate({ copies: 1 }).components.push!.demand).toBe(230)
+    const messages = (s: string) => compile(s).diagnostics.map((d) => d.message)
+    expect(messages(src('out.phones'))).toEqual(['"phones" is no fan-out: out. is what a fan-out sends'])
+    expect(messages(src('out.pusher'))).toEqual(['unknown fan-out "pusher"'])
+    expect(messages(src('out.push', '1.1'))).toContain(
+      'out.<stage>, what a fan-out sends is from loadmap 1.2; this definition says loadmap 1.1',
+    )
+    // a file from before may have the name
+    const old = compile(src('flows.a', '1.1').replace('param copies', 'let out = 2\nparam copies'))
+    expect(old.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+  })
+
   it('take "as" on a demand only, with the unit in quotes', () => {
     const messages = (src: string) => errors(src).map((e) => e.message)
     expect(messages(api('flows.req', 'measured(400, "req/s") as "req/s"'))).toContain(
@@ -635,7 +706,7 @@ describe('formulas', () => {
       ['flows.__proto__', 'unknown flow "__proto__"'],
       ['Math.constructor(1)', 'unknown function "constructor"'],
       ['window.alert(1)', '"window.alert(…)" is not a function'],
-      ['x.y', '"x" has no entries: only flows., at., demand., util. and derived. do'],
+      ['x.y', '"x" has no entries: only flows., at., out., demand., util. and derived. do'],
       ['at.constructor.req', 'unknown stage "constructor"'],
       ['at.api.__proto__', 'unknown flow "__proto__"'],
       ['flows.req.x', 'only one "." is allowed: flows.orders, util.db'],
