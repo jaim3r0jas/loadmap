@@ -1,6 +1,6 @@
 import { dyn, type Evaluation, type LooseValues, type ResolvedStage } from '@loadmap/core'
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
-import { directionOf, endsFlow } from './direction'
+import { type Arrangement, directionOf, endsFlow, type Room } from './direction'
 import { estimateText, type TextMeasure } from './text'
 import type { AnyNodeDef, EdgeDef, Label, View } from './view'
 
@@ -177,7 +177,6 @@ const frames = new WeakMap<View, Map<string, Promise<Laid>>>()
 // against, and the phase's compact frame in each direction
 const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
 const reserveCache = new WeakMap<TextMeasure, WeakMap<View, Map<Direction, Frame>>>()
-const extents = new WeakMap<TextMeasure, WeakMap<View, Map<string, Promise<{ width: number; height: number }>>>>()
 const textWidths = new WeakMap<TextMeasure, Map<string, number>>()
 
 interface Sampled {
@@ -271,27 +270,25 @@ function laidOut(view: View, frame: Frame, elk?: ElkEngine): Promise<Laid> {
 }
 
 /**
- * How large this direction lays the view out with every box at its largest anywhere the model reaches: what a room is
- * weighed against, the same at every phase and load, so neither turns the diagram. A stable layout is exactly this
- * large; a compact phase is no larger.
+ * How large this direction lays the view out, folded into `rows` or not, with every box at its largest anywhere the
+ * model reaches: what a room is weighed against, the same at every phase and load, so neither changes how the diagram
+ * is arranged. A stable layout is exactly this large; a compact phase is no larger in one row.
  */
-export function extent(
+export const extent = async (view: View, direction: Direction, o: Omit<LayoutOptions, 'direction'> = {}) =>
+  (await import('./fold')).extent(foldKit, view, direction, o)
+
+/**
+ * How the view is arranged in a room, among the `ways` it may take: as it stands (`keep`) unless another fits clearly
+ * larger, folded only where one row would be hard to read. It comes with the fold: every page asks once it knows its
+ * room, none in its first load.
+ */
+export const arrange = async (
   view: View,
-  direction: Direction,
-  o: Omit<LayoutOptions, 'direction'> = {},
-): Promise<{ width: number; height: number }> {
-  const measure = o.measure ?? estimateText
-  const byView = extents.get(measure) ?? new WeakMap<View, Map<string, Promise<{ width: number; height: number }>>>()
-  extents.set(measure, byView)
-  const byDirection = byView.get(view) ?? new Map<string, Promise<{ width: number; height: number }>>()
-  byView.set(view, byDirection)
-  // once per view and direction: a resize asks again at every pixel
-  return kept(byDirection, direction, 2, async () => {
-    const frame = ordered(view, reserve(view, direction, measure))
-    const { l } = lanes(await laidOut(view, frame, o.elk), frame, view, measure)
-    return { width: l.width, height: l.height }
-  })
-}
+  ways: readonly Arrangement[],
+  room: Room,
+  keep: Arrangement,
+  o: Omit<LayoutOptions, 'direction' | 'rows'> = {},
+) => (await import('./fold')).arrange(foldKit, view, ways, room, keep, o)
 
 /** A compact layout's frame for this phase; null for a stable layout, whose frame waits until it is laid out. */
 function baseFrame(view: View, ev: Drawn, direction: Direction, measure: TextMeasure): Frame | null {
@@ -936,7 +933,7 @@ export interface TierPart {
 const headOf = (parts: TierPart[]) => HEAD + (Math.max(...parts.map((t) => t.lines.length)) - 1) * HEAD_LINE
 
 /** What the fold (fold.ts) needs of the layout: it imports nothing from here but types. */
-export const foldKit = { PADDING, tierParts, headOf, lane }
+export const foldKit = { PADDING, tierParts, headOf, lane, lanes, ordered, reserve, laidOut, rowsOf, estimateText }
 
 /**
  * A tier's lane, named `id` on the board: its band `along` the flow and `across` it, its header `head` deep at the

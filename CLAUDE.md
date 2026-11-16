@@ -61,7 +61,7 @@ it, push, watch again. A session wraps up only once `check` is green on its last
 
 The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
 `__screenshots__/` next to each test (ignored by git). The budget fails when a `<Loadmap>` page loads more than 68 kB
-gzip of loadmap first, the editor adds more than 215 kB, an embed loads more than 123 kB first, or ELK is in a first
+gzip of loadmap first, the editor adds more than 215 kB, an embed loads more than 124 kB first, or ELK is in a first
 load. `verify:pack` packs every package, installs the tarballs with npm in a fresh Vite app outside the monorepo, runs
 tsc, builds, measures the budget, and draws checkout and the react README's quick start in Chromium, built and in dev.
 `pnpm --filter @loadmap/vscode package` makes the .vsix.

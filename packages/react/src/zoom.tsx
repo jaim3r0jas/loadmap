@@ -243,7 +243,11 @@ export function mountZoom(
     const r = board.getBoundingClientRect()
     const w = r.width - 2 * board.clientLeft
     const h = r.height - 2 * board.clientTop
-    if (!(w > 0 && h > 0)) return
+    if (!(w > 0 && h > 0)) {
+      // a board hidden at first (a tab) has no room yet: the diagram is laid out by its shape until it shows
+      if (canvas) engine.expectRoom(false)
+      return
+    }
     const vp = {
       w,
       h,

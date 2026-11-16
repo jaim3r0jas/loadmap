@@ -11,20 +11,27 @@ let root: Root | null = null
 let host: HTMLDivElement | null = null
 
 /** Alerts, a long chain, filling a frame of this size: the frame is the diagram's room. */
-async function frame(width: number, height: number, direction?: Direction | 'auto') {
+async function frame(width: number, height: number, direction?: Direction | 'auto', rows?: number) {
   await page.viewport(1600, 1300)
   host = document.createElement('div')
   host.style.cssText = `width: ${width}px; height: ${height}px`
   document.body.appendChild(host)
   root = createRoot(host)
   const ref = createRef<LoadmapHandle>()
-  root.render(<Loadmap ref={ref} model={alerts} view={view} fill fullScreenMode="focus" direction={direction} />)
+  root.render(
+    <Loadmap ref={ref} model={alerts} view={view} fill fullScreenMode="focus" direction={direction} rows={rows} />,
+  )
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
   return ref.current!
 }
 
 const runs = (handle: LoadmapHandle) => handle.board()?.scene.direction
+/** The rows the diagram is folded into: each row has its own lanes, at a place of their own across the flow. */
+const rows = (handle: LoadmapHandle) => {
+  const scene = handle.board()?.scene
+  return scene && new Set(scene.tiers.map((t) => (scene.direction === 'DOWN' ? t.x : t.y))).size
+}
 /** The share of the frame the diagram's board covers. */
 const covers = () => {
   const b = host!.querySelector('.lm-board')!.getBoundingClientRect()
@@ -55,14 +62,15 @@ describe('the direction follows the room', () => {
     root!.unmount()
     host!.remove()
     // the same frame with the chain held to the right: a thin strip across it
-    const held = await frame(760, 1100, 'RIGHT')
+    const held = await frame(760, 1100, 'RIGHT', 1)
     expect(runs(held)).toBe('RIGHT')
     await page.screenshot({ path: '__screenshots__/room-tall-right.png', element: host! })
     expect(down).toBeGreaterThan(covers() * 1.5)
   })
 
   it('keeps a direction the page sets, whatever the room', async () => {
-    expect(runs(await frame(760, 1100, 'RIGHT'))).toBe('RIGHT')
+    const held = await frame(760, 1100, 'RIGHT', 1)
+    expect([runs(held), rows(held)]).toEqual(['RIGHT', 1])
     root!.unmount()
     host!.remove()
     expect(runs(await frame(1100, 560, 'DOWN'))).toBe('DOWN')
@@ -71,15 +79,51 @@ describe('the direction follows the room', () => {
   it('turns when the frame is resized, and neither the load nor a scenario turns it', async () => {
     const handle = await frame(760, 1100)
     await expect.poll(() => runs(handle), { timeout: 5000 }).toBe('DOWN')
+    const folds = rows(handle)
     handle.setValues({ load: alerts.def.load.max })
     await handle.ready()
-    expect(runs(handle)).toBe('DOWN')
+    expect([runs(handle), rows(handle)]).toEqual(['DOWN', folds])
     for (const s of alerts.scenarios) {
       handle.setValues(s.values)
       await handle.ready()
-      expect(runs(handle)).toBe('DOWN')
+      expect([runs(handle), rows(handle)]).toEqual(['DOWN', folds])
     }
     Object.assign(host!.style, { width: '1100px', height: '560px' })
     await expect.poll(() => runs(handle), { timeout: 5000 }).toBe('RIGHT')
+  })
+})
+
+describe('a long diagram folds to fill its room', () => {
+  it('stays in one row in a wide frame, where folding would draw it no larger', async () => {
+    const handle = await frame(1100, 560)
+    expect([runs(handle), rows(handle)]).toEqual(['RIGHT', 1])
+  })
+
+  it('folds a chain held to the right into rows in a frame too narrow for it, larger than in one row', async () => {
+    const one = await frame(760, 1100, 'RIGHT', 1)
+    expect(rows(one)).toBe(1)
+    const strip = covers()
+    const width = one.board()!.scene.width
+    root!.unmount()
+    host!.remove()
+    const handle = await frame(760, 1100, 'RIGHT')
+    await expect.poll(() => rows(handle), { timeout: 5000 }).toBeGreaterThan(1)
+    await handle.ready()
+    expect(runs(handle)).toBe('RIGHT')
+    expect(handle.board()!.scene.width).toBeLessThan(width * 0.7)
+    expect(covers()).toBeGreaterThan(strip * 1.5)
+    await page.screenshot({ path: '__screenshots__/room-tall-folded.png', element: host! })
+  })
+
+  it('holds the rows the page sets', async () => {
+    const handle = await frame(1100, 560, 'RIGHT', 2)
+    expect([runs(handle), rows(handle)]).toEqual(['RIGHT', 2])
+  })
+
+  it('unfolds when the frame grows wide enough for one row to read with ease', async () => {
+    const handle = await frame(760, 1100, 'RIGHT')
+    await expect.poll(() => rows(handle), { timeout: 5000 }).toBeGreaterThan(1)
+    Object.assign(host!.style, { width: '1560px', height: '700px' })
+    await expect.poll(() => rows(handle), { timeout: 5000 }).toBe(1)
   })
 })

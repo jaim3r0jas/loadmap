@@ -10,7 +10,7 @@ import {
   type TextMeasure,
   type View,
 } from '@loadmap/layout'
-import { directionFor, extent, shapesOf } from '@loadmap/layout/internal'
+import { type Arrangement, arrange, shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { pageElk } from './elk'
@@ -31,6 +31,12 @@ export interface LoadmapOptions<P> extends SimOptions {
    * structure do. `RIGHT` or `DOWN` holds it. Below `narrowBelow` it is always DOWN, whichever is set.
    */
   direction?: Direction | 'auto'
+  /**
+   * The rows a long diagram is folded into (columns, running down). Default `auto`: one row where its titles read
+   * with ease in the room it is given, else the fewest rows, three at most, that draw it clearly larger. A number
+   * holds it: 1 never folds.
+   */
+  rows?: number | 'auto'
   /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
   fullScreenMode?: FullScreenMode
   /**
@@ -106,6 +112,11 @@ export interface LoadmapController<P = any> {
   root: HTMLElement | null
 }
 
+/** The rows `auto` may fold a diagram into. */
+const FOLDS = [1, 2, 3]
+/** Stands for a room that is still to come. */
+const DUE = { w: 0, h: 0 }
+
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
@@ -167,53 +178,70 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => ro.disconnect()
   }, [root, narrowBelow])
 
-  // `auto`: the way the diagram fits the board's room larger, worked out per room and structure, never per phase. The
-  // way it runs now is kept unless the other fits clearly larger, so neither a drag of the window's edge nor an edit
-  // that barely changes the sizes turns it
-  const room = useSyncExternalStore(
+  // how the diagram is arranged in the board's room: the way it runs (`auto`) and the rows it is folded into, worked
+  // out per room and structure, never per phase. It stays as it stands unless another arrangement fits clearly larger,
+  // so neither a drag of the window's edge nor an edit that barely changes the sizes turns or folds it
+  // `DUE`: a board will tell its room but has not yet (a canvas before its zoom is there)
+  const told = useSyncExternalStore(
     engine.subscribe,
-    () => engine.room,
+    () => engine.room ?? (engine.roomDue ? DUE : null),
     () => null,
   )
-  const [picked, setPicked] = useState<{ view: View; direction: Direction } | null>(null)
-  const runs = useRef<Direction | null>(null)
+  const due = told === DUE
+  const room = due ? null : told
+  const [picked, setPicked] = useState<({ view: View; among: string } & Arrangement) | null>(null)
+  const stands = useRef<Arrangement | null>(null)
+  // the ways it may run and the rows it may take: a narrow screen and the page's own direction leave one way
+  const held: Direction | null = narrow ? 'DOWN' : auto ? null : (o.direction as Direction)
+  const fixed = typeof o.rows === 'number' ? Math.max(1, Math.floor(o.rows)) : null
+  const chooses = !!room && !(held && fixed)
+  const among = `${held} ${fixed}`
   useEffect(() => {
-    if (!auto || !room || !measure) return
+    if (!chooses || !room || !measure) return
     let live = true
-    const o = { measure, elk: elk ?? pageElk() }
-    Promise.all([extent(view, 'RIGHT', o), extent(view, 'DOWN', o)]).then(
-      ([RIGHT, DOWN]) => {
-        if (!live) return
-        const d = directionFor({ RIGHT, DOWN }, room, runs.current ?? directionOf(view))
-        runs.current = d
-        setPicked((p) => (p?.view === view && p.direction === d ? p : { view, direction: d }))
-      },
-      (err) => {
-        console.error('loadmap: layout failed', err)
-        // the sizes are not to be had: the way it runs, or its shape's, so the diagram is still drawn
-        if (live) setPicked({ view, direction: runs.current ?? directionOf(view) })
-      },
+    const at = { measure, elk: elk ?? pageElk() }
+    const ways = (held ? [held] : (['RIGHT', 'DOWN'] as const)).flatMap((direction) =>
+      (fixed ? [fixed] : FOLDS).map((rows) => ({ direction, rows })),
     )
+    const keep = stands.current ?? { direction: directionOf(view), rows: 1 }
+    const take = (a: Arrangement) => {
+      if (!live) return
+      stands.current = a
+      setPicked((p) =>
+        p?.view === view && p.among === among && p.direction === a.direction && p.rows === a.rows
+          ? p
+          : { view, among, ...a },
+      )
+    }
+    arrange(view, ways, room, keep, at).then(take, (err) => {
+      console.error('loadmap: layout failed', err)
+      // the sizes are not to be had: as it stands, or as its shape runs, so the diagram is still drawn
+      take({ direction: held ?? keep.direction, rows: fixed ?? 1 })
+    })
     return () => {
       live = false
     }
-  }, [auto, room, measure, view, elk])
-  // a new view runs as the last did until its own sizes are known, so an edit is drawn at once; it is not ready until
-  // then (`pending`), so nothing records it a moment before it turns. A board that told its room is not laid out
-  // before its first pick, so it never shows one way and then the other; without a board the shape decides
-  const pending = auto && !!room && picked?.view !== view
-  const waits = auto && !!room && !picked
-  const direction: Direction = narrow ? 'DOWN' : !auto ? (o.direction as Direction) : (picked?.direction ?? shape)
+  }, [chooses, held, fixed, among, room, measure, view, elk])
+  // a new view is arranged as the last was until its own sizes are known, so an edit is drawn at once; it is not ready
+  // until then (`pending`), so nothing records it a moment before it changes. A board that told its room is not laid
+  // out before its first pick, so it never shows one arrangement and then another; without a board the shape decides
+  // The same after its room narrows past `narrowBelow` or the page holds another direction or row count
+  const pending = due || (chooses && (picked?.view !== view || picked.among !== among))
+  const waits = due || (chooses && !picked)
+  // a board that has no room to tell (a small screen it fills) runs as its shape says, in one row
+  const chosen = chooses ? picked : null
+  const direction: Direction = held ?? chosen?.direction ?? shape
+  const rows = fixed ?? (chosen && chosen.direction === direction ? chosen.rows : 1)
 
   const key = useMemo(
-    () => (measure ? structureKey(view, ev, { direction, measure }) : ''),
-    [view, ev, direction, measure],
+    () => (measure ? structureKey(view, ev, { direction, rows, measure }) : ''),
+    [view, ev, direction, rows, measure],
   )
   if (fresh) engine.wantKey = pending ? '' : key
   useEffect(() => {
     if (!measure || !key || waits) return
     let live = true
-    layout(view, engine.ev, { direction, measure, elk: elk ?? pageElk() }).then(
+    layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk() }).then(
       (s) => {
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
         if (live) setLaid({ view, scene: s })
@@ -223,7 +251,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     return () => {
       live = false
     }
-  }, [key, view, engine, direction, measure, elk, waits])
+  }, [key, view, engine, direction, rows, measure, elk, waits])
 
   const labels = useMemo(() => labelsAt(view, ev), [view, ev])
   const valuesRef = useRef(values)

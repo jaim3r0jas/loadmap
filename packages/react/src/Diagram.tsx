@@ -47,9 +47,6 @@ export interface DiagramProps {
   canvas?: boolean | Partial<Insets>
 }
 
-/** The share of the window's height a board on a page counts as its room: the diagram and its controls in one view. */
-const INLINE_HEIGHT = 0.7
-
 /**
  * The height a board that fills the screen or its frame has under the bar: the root's, less the rows around the wrap,
  * each with its gap (a flexible row at its min-height): not where they are now, which a centred wrap would change.
@@ -67,16 +64,6 @@ function heightUnder(root: HTMLElement, wrap: HTMLElement, bar: HTMLElement): nu
   // focus centres the rows between two spacers: the second is a row too
   if (getComputedStyle(root, '::after').content !== 'none') around += px(rs.rowGap)
   return root.clientHeight - around - bar.offsetHeight - px(getComputedStyle(wrap).rowGap)
-}
-
-/**
- * Tells the engine the room of a board that fills the screen or its frame: what the rows around the wrap leave (`h`);
- * on a small screen the wrap's own box, which the board scrolls in.
- */
-function tellRoom(engine: LoadmapController['engine'], wrap: HTMLElement, h: number): void {
-  const small = wrap.ownerDocument.defaultView?.matchMedia('(max-width: 760px)').matches
-  const tall = small ? wrap.clientHeight : h
-  if (wrap.clientWidth > 0 && tall > 0) engine.setRoom({ w: wrap.clientWidth, h: tall })
 }
 
 export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
@@ -175,16 +162,21 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     const board = boardRef.current
     if (!zoom || !board) return
     let gone = false
+    // a canvas tells its room once its zoom is there: the diagram is not laid out one way before, another after
+    if (canvas) engine.expectRoom(true)
     import('./zoom')
       .then(({ mountZoom }) => {
         if (!gone) zoomed.current = mountZoom(board, engine, () => shape.current)
       })
-      .catch(() => {})
+      .catch(() => engine.expectRoom(false))
     return () => {
       gone = true
       zoomed.current?.off()
       zoomed.current = null
-      if (canvas) engine.setRoom(null)
+      if (canvas) {
+        engine.expectRoom(false)
+        engine.setRoom(null)
+      }
     }
   }, [engine, zoom, !!canvas])
   // new insets (a panel pinned, an editor resized) keep the reader's view: only what Fit frames changes
@@ -249,7 +241,6 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     if (!full || !scene || !wrap || !bar || !root) return
     const fit = () => {
       const h = heightUnder(root, wrap, bar)
-      if (!boxed) tellRoom(engine, wrap, h)
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
       wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
     }
@@ -272,31 +263,27 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       mo.disconnect()
       wrap.style.removeProperty('--lm-fit')
     }
-  }, [full, scene, lm.root, engine, boxed])
-  // a board on a page tells the engine its room: its height follows the diagram, so the room is its width by most of
-  // the window's height. The height is read again only when the width changes: a phone's address bar sliding away
-  // resizes the window, and must not turn the diagram under a scroll. A canvas tells what Fit has (zoom.tsx), a board
-  // that fills the screen or its frame what the rows around it leave: here before anything is drawn, then as they
-  // change (above)
+  }, [full, scene, lm.root])
+  // the board's room, which the diagram is arranged for: a canvas tells what Fit has (zoom.tsx); a board on a page or
+  // one that fills the screen has it watched by room.ts, which comes after the first load: until it has told, the
+  // room is due and nothing is laid out, so the diagram is never drawn one way and then another
   useLayoutEffect(() => {
     const wrap = wrapRef.current
     const bar = barRef.current
-    if (!wrap || boxed) return
-    if (full) {
-      if (bar && lm.root) tellRoom(engine, wrap, heightUnder(lm.root, wrap, bar))
-      return () => engine.setRoom(null)
-    }
-    let told = { w: 0, h: 0 }
-    const tell = () => {
-      const w = wrap.clientWidth
-      if (Math.abs(w - told.w) >= 1) told = { w, h: INLINE_HEIGHT * (wrap.ownerDocument.defaultView?.innerHeight ?? 0) }
-      if (told.w > 0 && told.h > 0) engine.setRoom(told)
-    }
-    const ro = new ResizeObserver(tell)
-    ro.observe(wrap)
-    tell()
+    const root = lm.root
+    if (!wrap || boxed || (full && !(root && bar))) return
+    let off: (() => void) | undefined
+    let gone = false
+    engine.expectRoom(true)
+    import('./room')
+      .then(({ watchRoom }) => {
+        if (!gone) off = watchRoom(engine, wrap, root, full && root && bar ? () => heightUnder(root, wrap, bar) : null)
+      })
+      .catch(() => engine.expectRoom(false))
     return () => {
-      ro.disconnect()
+      gone = true
+      off?.()
+      engine.expectRoom(false)
       engine.setRoom(null)
     }
   }, [engine, boxed, full, lm.root])

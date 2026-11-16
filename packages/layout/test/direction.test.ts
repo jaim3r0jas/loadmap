@@ -1,7 +1,8 @@
 import { defineModel, measured, p, pass, sink } from '@loadmap/core'
 import { defineView, directionOf, edge, layout, node, type ViewDef } from '@loadmap/layout'
-import { directionFor, extent } from '@loadmap/layout/internal'
+import { extent } from '@loadmap/layout/internal'
 import { describe, expect, it } from 'vitest'
+import { arrangementFor } from '../src/fold'
 
 const sinks = ['s1', 's2', 's3', 's4', 's5'] as const
 const m = defineModel({
@@ -82,37 +83,87 @@ describe('the direction from the shape', () => {
   })
 })
 
-describe('the direction for a room', () => {
+describe('the arrangement for a room', () => {
   const chain = view('a>b b>c c>d d>e e>g g>h')
-  const sizes = async () => ({ RIGHT: await extent(chain, 'RIGHT'), DOWN: await extent(chain, 'DOWN') })
+  const sized = async (direction: 'RIGHT' | 'DOWN', rows = 1) => ({
+    direction,
+    rows,
+    ...(await extent(chain, direction, { rows })),
+  })
+  const ways = async () => [await sized('RIGHT'), await sized('DOWN')]
+  const right = { direction: 'RIGHT', rows: 1 } as const
+  const down = { direction: 'DOWN', rows: 1 } as const
 
   it('knows how large each way lays a view out, the same as the scene where nothing changes it', async () => {
-    const { RIGHT, DOWN } = await sizes()
+    const [RIGHT, DOWN] = await ways()
     const scene = await layout(chain, m.evaluate(), { direction: 'RIGHT' })
-    expect(RIGHT).toEqual({ width: scene.width, height: scene.height })
-    expect(RIGHT.width).toBeGreaterThan(RIGHT.height)
-    expect(DOWN.height).toBeGreaterThan(DOWN.width)
+    expect(RIGHT).toMatchObject({ width: scene.width, height: scene.height })
+    expect(RIGHT!.width).toBeGreaterThan(RIGHT!.height)
+    expect(DOWN!.height).toBeGreaterThan(DOWN!.width)
+    const folded = await layout(chain, m.evaluate(), { direction: 'RIGHT', rows: 2 })
+    expect(await sized('RIGHT', 2)).toMatchObject({ width: folded.width, height: folded.height })
   })
 
   it('runs a long chain right in a wide room and down in a tall one', async () => {
-    const s = await sizes()
-    expect(directionFor(s, { w: 1100, h: 400 }, 'RIGHT')).toBe('RIGHT')
-    expect(directionFor(s, { w: 400, h: 1100 }, 'RIGHT')).toBe('DOWN')
-    expect(directionFor(s, { w: 1100, h: 400 }, 'DOWN')).toBe('RIGHT')
+    const s = await ways()
+    expect(arrangementFor(s, { w: 1100, h: 400 }, right)).toEqual(right)
+    expect(arrangementFor(s, { w: 400, h: 1100 }, right)).toEqual(down)
+    expect(arrangementFor(s, { w: 1100, h: 400 }, down)).toEqual(right)
   })
 
+  const s = [
+    { ...right, width: 1000, height: 500 },
+    { ...down, width: 500, height: 1000 },
+  ]
+
   it('keeps the way it runs where the other fits no more than a little larger', () => {
-    const s = { RIGHT: { width: 1000, height: 500 }, DOWN: { width: 500, height: 1000 } }
     // a square room fits both the same; one a tenth taller fits down a tenth larger
-    expect(directionFor(s, { w: 600, h: 600 }, 'RIGHT')).toBe('RIGHT')
-    expect(directionFor(s, { w: 600, h: 600 }, 'DOWN')).toBe('DOWN')
-    expect(directionFor(s, { w: 600, h: 660 }, 'RIGHT')).toBe('RIGHT')
-    expect(directionFor(s, { w: 600, h: 780 }, 'RIGHT')).toBe('DOWN')
+    expect(arrangementFor(s, { w: 600, h: 600 }, right)).toEqual(right)
+    expect(arrangementFor(s, { w: 600, h: 600 }, down)).toEqual(down)
+    expect(arrangementFor(s, { w: 600, h: 660 }, right)).toEqual(right)
+    expect(arrangementFor(s, { w: 600, h: 780 }, right)).toEqual(down)
   })
 
   it('counts no scale past full size: a diagram that fits as it stands keeps its way', () => {
-    const s = { RIGHT: { width: 300, height: 100 }, DOWN: { width: 100, height: 300 } }
-    expect(directionFor(s, { w: 600, h: 900 }, 'RIGHT')).toBe('RIGHT')
-    expect(directionFor(s, { w: 200, h: 900 }, 'RIGHT')).toBe('DOWN')
+    const small = [
+      { ...right, width: 300, height: 100 },
+      { ...down, width: 100, height: 300 },
+    ]
+    expect(arrangementFor(small, { w: 600, h: 900 }, right)).toEqual(right)
+    expect(arrangementFor(small, { w: 200, h: 900 }, right)).toEqual(down)
+  })
+
+  // a strip of 2000 × 200, in two rows 1040 × 480, in three 720 × 760
+  const rows = [
+    { ...right, width: 2000, height: 200 },
+    { direction: 'RIGHT', rows: 2, width: 1040, height: 480 },
+    { direction: 'RIGHT', rows: 3, width: 720, height: 760 },
+  ] as const
+
+  it('folds a diagram only where one row would be hard to read, into the fewest rows that fit about as large', () => {
+    // 0.8 in one row: read with ease, left alone though two rows would fit at full size
+    expect(arrangementFor(rows, { w: 1600, h: 900 }, right)).toEqual(right)
+    // 0.5 in one row, 0.96 in two, 0.99 in three: two
+    expect(arrangementFor(rows, { w: 1000, h: 750 }, right)).toEqual({ direction: 'RIGHT', rows: 2 })
+    // 0.36 in one row, 0.69 in two, 0.99 in three: three
+    expect(arrangementFor(rows, { w: 720, h: 750 }, right)).toEqual({ direction: 'RIGHT', rows: 3 })
+    // 0.5 in one row and no better folded: a room too flat for two rows
+    expect(arrangementFor(rows, { w: 1000, h: 250 }, right)).toEqual(right)
+  })
+
+  it('keeps a fold until one row reads with ease by a margin, and a row count unless another fits clearly larger', () => {
+    const two = { direction: 'RIGHT', rows: 2 } as const
+    // one row at 0.8: not folded from one row, but not unfolded either until it reaches 0.88
+    expect(arrangementFor(rows, { w: 1600, h: 900 }, two)).toEqual(two)
+    expect(arrangementFor(rows, { w: 1800, h: 900 }, two)).toEqual(right)
+    // three rows fit a tenth larger than two: it stays in two
+    expect(arrangementFor(rows, { w: 800, h: 640 }, two)).toEqual(two)
+    // in a room that grew, three rows come back to two once two fit as large
+    expect(arrangementFor(rows, { w: 1100, h: 800 }, { direction: 'RIGHT', rows: 3 })).toEqual(two)
+  })
+
+  it('chooses only among the arrangements it is given', () => {
+    expect(arrangementFor([s[1]!], { w: 2000, h: 300 }, right)).toEqual(down)
+    expect(arrangementFor([rows[1]], { w: 4000, h: 4000 }, right)).toEqual({ direction: 'RIGHT', rows: 2 })
   })
 })

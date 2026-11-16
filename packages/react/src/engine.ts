@@ -139,6 +139,8 @@ export class Engine {
   transition = 0.8
   /** The room the board has for the diagram, as the board measured it; null until one did. */
   room: Room | null = null
+  /** A board said it will tell its room (a canvas, once its zoom is there): nothing is laid out before it has. */
+  roomDue = false
   /** The structure key the current values want; `scene.key` catches up once the layout is done. */
   wantKey = ''
   /** The values React last drew labels and colours for; a frame is complete once they match `ev.values`. */
@@ -279,6 +281,13 @@ export class Engine {
   subscribe = (f: () => void): (() => void) => {
     this.#listeners.add(f)
     return () => this.#listeners.delete(f)
+  }
+
+  /** A board will tell its room, or will not after all. */
+  expectRoom(due: boolean): void {
+    if (this.roomDue === due) return
+    this.roomDue = due
+    for (const f of this.#listeners) f()
   }
 
   /** The board's room for the diagram: the direction follows it. Told only when it changed by a pixel or more. */
