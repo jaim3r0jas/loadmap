@@ -246,6 +246,25 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   })
 }
 
+/**
+ * How large this direction lays the view out with every box at its largest anywhere the model reaches: what a room is
+ * weighed against, the same at every phase and load, so neither turns the diagram. A stable layout is exactly this
+ * large; a compact phase is no larger.
+ */
+export async function extent(
+  view: View,
+  direction: Direction,
+  o: Omit<LayoutOptions, 'direction'> = {},
+): Promise<{ width: number; height: number }> {
+  const measure = o.measure ?? estimateText
+  const frame = ordered(view, reserve(view, direction, measure))
+  const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
+  frames.set(view, byFrame)
+  const laid = await kept(byFrame, frame.key, 32, () => run(frame, o.elk))
+  const { l } = lanes(laid, frame, view, measure)
+  return { width: l.width, height: l.height }
+}
+
 /** A compact layout's frame for this phase; null for a stable layout, whose frame waits until it is laid out. */
 function baseFrame(view: View, ev: Drawn, direction: Direction, measure: TextMeasure): Frame | null {
   return view.def.layout === 'stable' ? null : phase(view, ev, direction, measure)

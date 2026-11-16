@@ -63,7 +63,8 @@ function Embed({ def, values }: { def: Definition; values: Record<string, string
       fullScreen={listed?.length ? listed : page.fullScreen}
       theme={pick('theme', ['auto', 'light', 'dark'] as const) ?? 'auto'}
       initial={sharedValues(def.model, values)}
-      narrowBelow={portrait ? undefined : 0}
+      // a direction the definition sets is kept in a frame wider than tall; without one the frame's room decides
+      narrowBelow={page.direction == null ? undefined : portrait ? 640 : 0}
       title={
         <>
           {def.model.title}

@@ -47,6 +47,28 @@ export interface DiagramProps {
   canvas?: boolean | Partial<Insets>
 }
 
+/** The share of the window's height a board on a page counts as its room: the diagram and its controls in one view. */
+const INLINE_HEIGHT = 0.7
+
+/**
+ * The height a board that fills the screen or its frame has under the bar: the root's, less the rows around the wrap,
+ * each with its gap (a flexible row at its min-height): not where they are now, which a centred wrap would change.
+ */
+function heightUnder(root: HTMLElement, wrap: HTMLElement, bar: HTMLElement): number {
+  const px = (x: string) => Number.parseFloat(x) || 0
+  const rs = getComputedStyle(root)
+  let around = px(rs.paddingTop) + px(rs.paddingBottom)
+  const add = (el: Element) => {
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return
+    around += px(rs.rowGap) + (px(cs.flexGrow) > 0 ? px(cs.minHeight) : (el as HTMLElement).offsetHeight)
+  }
+  for (const el of root.children) if (el !== wrap) add(el)
+  // focus centres the rows between two spacers: the second is a row too
+  if (getComputedStyle(root, '::after').content !== 'none') around += px(rs.rowGap)
+  return root.clientHeight - around - bar.offsetHeight - px(getComputedStyle(wrap).rowGap)
+}
+
 export function Diagram({ lm, legend = true, onNodeClick, selected = null, canvas = false }: DiagramProps) {
   const { scene, engine, reducedMotion } = lm
   const zoom = lm.zoom || !!canvas
@@ -212,20 +234,8 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     const bar = barRef.current
     const root = lm.root
     if (!full || !scene || !wrap || !bar || !root) return
-    const px = (x: string) => Number.parseFloat(x) || 0
     const fit = () => {
-      const rs = getComputedStyle(root)
-      // the rows around the wrap, each with its gap: not where they are now, which a centred wrap would change
-      let around = px(rs.paddingTop) + px(rs.paddingBottom)
-      const add = (el: Element) => {
-        const cs = getComputedStyle(el)
-        if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return
-        around += px(rs.rowGap) + (px(cs.flexGrow) > 0 ? px(cs.minHeight) : (el as HTMLElement).offsetHeight)
-      }
-      for (const el of root.children) if (el !== wrap) add(el)
-      // focus centres the rows between two spacers: the second is a row too
-      if (getComputedStyle(root, '::after').content !== 'none') around += px(rs.rowGap)
-      const h = root.clientHeight - around - bar.offsetHeight - px(getComputedStyle(wrap).rowGap)
+      const h = heightUnder(root, wrap, bar)
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
       wrap.style.setProperty('--lm-fit', `${Math.max(0, Math.floor(w))}px`)
     }
@@ -249,6 +259,45 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       wrap.style.removeProperty('--lm-fit')
     }
   }, [full, scene, lm.root])
+  // the room the diagram has, told to the engine: `auto` runs it the way that fits this larger. A canvas has its box
+  // less what floats over it, a board that fills the screen or its frame what the rows around it leave, and a board on
+  // a page, whose height follows the diagram, its width by most of the window's height. Never the board's own size
+  // where the diagram gives it
+  // biome-ignore lint/correctness/useExhaustiveDependencies: insetKey stands for the insets
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    const bar = barRef.current
+    const board = boardRef.current
+    const root = lm.root
+    if (!wrap || !bar || !board) return
+    const view = wrap.ownerDocument.defaultView
+    const tell = () => {
+      if (canvas) {
+        const r = board.getBoundingClientRect()
+        const w = r.width - inset.left - inset.right
+        const h = r.height - inset.top - inset.bottom
+        const m = Math.min(r.width < 640 ? 16 : 24, w / 4, h / 4)
+        if (w > 0 && h > 0) engine.setRoom({ w: w - 2 * m, h: h - 2 * m, max: 1.5 })
+      } else {
+        const w = wrap.clientWidth
+        const h = full && root ? heightUnder(root, wrap, bar) : INLINE_HEIGHT * (view?.innerHeight ?? 0)
+        if (w > 0 && h > 0) engine.setRoom({ w, h })
+      }
+    }
+    const ro = new ResizeObserver(tell)
+    ro.observe(wrap)
+    if (canvas) ro.observe(board)
+    if (full && root) ro.observe(root)
+    const mo = new MutationObserver(tell)
+    if (full && root) mo.observe(root, { childList: true, attributeFilter: ['data-mode'] })
+    view?.addEventListener('resize', tell)
+    tell()
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+      view?.removeEventListener('resize', tell)
+    }
+  }, [engine, !!canvas, insetKey, full, lm.root])
   // F switches between the panels and focus, unless the keyboard is in a field or a panel is open whole
   const { setFullScreenMode, fullScreenMode } = lm
   const modesRef = useRef<HTMLFieldSetElement>(null)

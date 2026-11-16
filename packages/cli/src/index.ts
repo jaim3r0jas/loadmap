@@ -106,7 +106,7 @@ chromium (check and fmt run without it).
   --scale <n>           pixels per diagram unit (default 1, PNG 2)
   --seed <n>            the sim's seed (default 1)
   --name <name>         which exposed loadmap, when the page has several (default "default")
-  --width <px>          the browser window (default 1280; below 640 the diagram runs top to bottom)
+  --width <px>          the browser window (default 1280; a narrow one runs the diagram top to bottom)
   --color-scheme <s>    light or dark, for a page that follows the system theme (default light)`
 
 export interface RecordArgs {

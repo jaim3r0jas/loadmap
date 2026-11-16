@@ -1,5 +1,6 @@
 import { defineModel, measured, p, pass, sink } from '@loadmap/core'
 import { defineView, directionOf, edge, layout, node, type ViewDef } from '@loadmap/layout'
+import { directionFor, extent } from '@loadmap/layout/internal'
 import { describe, expect, it } from 'vitest'
 
 const sinks = ['s1', 's2', 's3', 's4', 's5'] as const
@@ -78,5 +79,40 @@ describe('the direction from the shape', () => {
     const fan = view('a>b a>c a>d a>e')
     expect((await layout(fan, m.evaluate())).direction).toBe('DOWN')
     expect((await layout(fan, m.evaluate(), { direction: 'RIGHT' })).direction).toBe('RIGHT')
+  })
+})
+
+describe('the direction for a room', () => {
+  const chain = view('a>b b>c c>d d>e e>g g>h')
+  const sizes = async () => ({ RIGHT: await extent(chain, 'RIGHT'), DOWN: await extent(chain, 'DOWN') })
+
+  it('knows how large each way lays a view out, the same as the scene where nothing changes it', async () => {
+    const { RIGHT, DOWN } = await sizes()
+    const scene = await layout(chain, m.evaluate(), { direction: 'RIGHT' })
+    expect(RIGHT).toEqual({ width: scene.width, height: scene.height })
+    expect(RIGHT.width).toBeGreaterThan(RIGHT.height)
+    expect(DOWN.height).toBeGreaterThan(DOWN.width)
+  })
+
+  it('runs a long chain right in a wide room and down in a tall one', async () => {
+    const s = await sizes()
+    expect(directionFor(s, { w: 1100, h: 400 }, 'RIGHT')).toBe('RIGHT')
+    expect(directionFor(s, { w: 400, h: 1100 }, 'RIGHT')).toBe('DOWN')
+    expect(directionFor(s, { w: 1100, h: 400 }, 'DOWN')).toBe('RIGHT')
+  })
+
+  it('keeps the way it runs where the other fits no more than a little larger', () => {
+    const s = { RIGHT: { width: 1000, height: 500 }, DOWN: { width: 500, height: 1000 } }
+    // a square room fits both the same; one a tenth taller fits down a tenth larger
+    expect(directionFor(s, { w: 600, h: 600 }, 'RIGHT')).toBe('RIGHT')
+    expect(directionFor(s, { w: 600, h: 600 }, 'DOWN')).toBe('DOWN')
+    expect(directionFor(s, { w: 1000, h: 1100 }, 'RIGHT')).toBe('RIGHT')
+    expect(directionFor(s, { w: 1000, h: 1300 }, 'RIGHT')).toBe('DOWN')
+  })
+
+  it('counts no scale past the largest the room draws at: a small diagram keeps its way', () => {
+    const s = { RIGHT: { width: 300, height: 100 }, DOWN: { width: 100, height: 300 } }
+    expect(directionFor(s, { w: 600, h: 900, max: 1.5 }, 'RIGHT')).toBe('RIGHT')
+    expect(directionFor(s, { w: 600, h: 900 }, 'RIGHT')).toBe('DOWN')
   })
 })
