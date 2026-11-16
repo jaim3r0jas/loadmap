@@ -1,5 +1,44 @@
 # @loadmap/sim
 
+## 0.33.0
+
+### Minor Changes
+
+- 91c3aad: Lost boxes: a box for what other boxes lose, counted. A unit a stage turns away (a limiter, or a pass, cache or split
+  past capacity), one a queue drops as too old, or one too slow for its client used to fade where it was; with a lost box,
+  its dot goes along the edge into it and fades there. In the language, `node tooMany "Turned away" { lost }` and an edge
+  `limiter -> tooMany`: the edge says what goes there, and `takes: [rejected]` keeps only some losses (`rejected`,
+  `dropped`, `timedOut`). In TypeScript, `lost({ from: ['limiter'], takes: ['rejected'] })`. `at.tooMany` is what is lost
+  there for good, after every retry, and the box says it on its second line ("500 rejected/s"); it is drawn dashed in the
+  colour of a loss (`--lm-lost-fill`, `--lm-lost-line`), and so is the edge into it. A merge loses nothing: a merged dot
+  now shrinks into a ripple of its flow's colour instead of fading grey, and the legend says "merged, newest kept".
+- bb279a9: New names for words that meant two things. In `expect`, `target: 7` and `full: 50` were load multiples while
+  `thresholds` and `autoscale` use `target` for a utilization; they are now `underTarget: 7` and `notFull: 50`
+  (`underTarget: 7×` reads well). A metric's `min` (a sample count) is `minSamples`, a workers stage's `fill` (a
+  placement, not a colour) is `placement`, and a connection's `max` (a capacity) is `accepts`. The new names are from
+  loadmap 1.1. In a `loadmap 1.1` file the old ones still work and warn ("target is now underTarget"), with a quick fix
+  that renames them, and `loadmap fmt` rewrites them; in a `loadmap 1` file they are that version's spelling, read as
+  before, with no warning. TypeScript follows: `Expectation.underTarget` and `notFull`, `ConnectionDef.accepts`,
+  `workers(…, { placement })` and `PullRequest.minSamples`, with the old names kept as `@deprecated`; a resolved workers
+  stage and `compile(…).measures` give `placement` and `minSamples`. A snapshot file still says `min` beside its
+  `samples`. A stage without a label now takes its component's `short` when no other stage runs that component, so the
+  sentences and meters say "the gateway" without a second `pass "the gateway"`.
+
+### Patch Changes
+
+- 8b8bfca: A unit is lost once. A flow with a `drop` rule and a `timeout` counted what its queue dropped again as timed out, so a
+  lost box (and `at.<box>`) could show more units a second than the flow sends; with `retry` the dropped units were sent
+  again too. Now a dropped unit is lost at its queue, never sent again and never too slow, as the dots already showed.
+  The losses are counted way by way: a split's ways and a cache's answers no longer share one "got through" figure, a
+  queue on several ways drops on each, and a pass, limit or cache that reads a dropping queue turns away only what still
+  reaches it, in the dots too. Checking the lost boxes walks each flow's ways once.
+- Updated dependencies [189d8db]
+- Updated dependencies [9065003]
+- Updated dependencies [91c3aad]
+- Updated dependencies [8b8bfca]
+- Updated dependencies [bb279a9]
+  - @loadmap/core@0.33.0
+
 ## 0.32.0
 
 ### Minor Changes

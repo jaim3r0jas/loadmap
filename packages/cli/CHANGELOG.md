@@ -1,5 +1,33 @@
 # @loadmap/cli
 
+## 0.33.0
+
+### Minor Changes
+
+- af8d8d9: Every diagnostic has a code: the kind of problem (`unknown-name`, `missing-edge`, `unseen-loss`, …), which stays when
+  its message is reworded. `Diagnostic` gains `code` and `data` (the names a quick fix needs), and `@loadmap/dsl` exports
+  the list as `DIAGNOSTIC_CODES` (type `DiagnosticCode`); docs/dsl.md lists them under Errors. A host that builds its
+  own `Diagnostic` now gives it a `code`. Quick fixes key on the code
+  and read names from `data`, never from the message. The text output shows the code in brackets
+  (`checkout.loadmap:24:17 error[unknown-name]: unknown flow "order"`); `loadmap check --format json` gives each
+  diagnostic its `code`, `hint`, `endLine` and `endColumn`; a GitHub annotation is titled with the code, and `loadmap lsp`
+  sends it. Ids in messages are quoted: `"orders" goes from "gateway" to "api", and no edge joins them`, `units of "o"
+  too slow for their client at "a" vanish: …`.
+
+### Patch Changes
+
+- bb279a9: New names for words that meant two things. In `expect`, `target: 7` and `full: 50` were load multiples while
+  `thresholds` and `autoscale` use `target` for a utilization; they are now `underTarget: 7` and `notFull: 50`
+  (`underTarget: 7×` reads well). A metric's `min` (a sample count) is `minSamples`, a workers stage's `fill` (a
+  placement, not a colour) is `placement`, and a connection's `max` (a capacity) is `accepts`. The new names are from
+  loadmap 1.1. In a `loadmap 1.1` file the old ones still work and warn ("target is now underTarget"), with a quick fix
+  that renames them, and `loadmap fmt` rewrites them; in a `loadmap 1` file they are that version's spelling, read as
+  before, with no warning. TypeScript follows: `Expectation.underTarget` and `notFull`, `ConnectionDef.accepts`,
+  `workers(…, { placement })` and `PullRequest.minSamples`, with the old names kept as `@deprecated`; a resolved workers
+  stage and `compile(…).measures` give `placement` and `minSamples`. A snapshot file still says `min` beside its
+  `samples`. A stage without a label now takes its component's `short` when no other stage runs that component, so the
+  sentences and meters say "the gateway" without a second `pass "the gateway"`.
+
 ## 0.32.0
 
 ### Patch Changes
