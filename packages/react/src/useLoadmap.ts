@@ -114,6 +114,8 @@ export interface LoadmapController<P = any> {
 
 /** The rows `auto` may fold a diagram into. */
 const FOLDS = [1, 2, 3]
+/** Stands for a room that is still to come. */
+const DUE = { w: 0, h: 0 }
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
@@ -179,17 +181,14 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   // how the diagram is arranged in the board's room: the way it runs (`auto`) and the rows it is folded into, worked
   // out per room and structure, never per phase. It stays as it stands unless another arrangement fits clearly larger,
   // so neither a drag of the window's edge nor an edit that barely changes the sizes turns or folds it
-  const room = useSyncExternalStore(
+  // `DUE`: a board will tell its room but has not yet (a canvas before its zoom is there)
+  const told = useSyncExternalStore(
     engine.subscribe,
-    () => engine.room,
+    () => engine.room ?? (engine.roomDue ? DUE : null),
     () => null,
   )
-  // a board that will tell its room but has not yet (a canvas before its zoom is there)
-  const due = useSyncExternalStore(
-    engine.subscribe,
-    () => engine.roomDue && !engine.room,
-    () => false,
-  )
+  const due = told === DUE
+  const room = due ? null : told
   const [picked, setPicked] = useState<({ view: View; among: string } & Arrangement) | null>(null)
   const stands = useRef<Arrangement | null>(null)
   // the ways it may run and the rows it may take: a narrow screen and the page's own direction leave one way
