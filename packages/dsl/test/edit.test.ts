@@ -7,7 +7,8 @@ import { type EditValue, edit, type InspectField, inspect, setProperty } from '.
 const root = new URL('../../../', import.meta.url)
 const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
 const checkout = read('examples/checkout/checkout.loadmap')
-const files = execSync('git ls-files "*.loadmap"', { cwd: root }).toString().trim().split('\n')
+// each file on its own; a definition in several files is edited with them (multifile.test.ts)
+const files = execSync('git ls-files "*.loadmap" ":!docs/multi-file/"', { cwd: root }).toString().trim().split('\n')
 
 /** The lines an edit takes out and puts in, as a unified diff without context. */
 function diff(source: string, key: string, value: EditValue): string[] {

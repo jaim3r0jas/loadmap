@@ -405,7 +405,7 @@ export class Expander {
             name === 'load'
               ? 'a library does not read the load: take what depends on it as an input'
               : `unknown name "${name}": a library reads its inputs and its own names`,
-            'input ' + name,
+            `take it in: input ${name}`,
           )
         node[DONE] = true
       } else if (space === 'flow') {
