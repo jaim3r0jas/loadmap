@@ -86,7 +86,12 @@ export function Preview({ host, elk }: { host: Host; elk?: LoadmapSourceProps['e
         version.current = m.version
         came.current = performance.now()
         if (was && was.uri !== m.uri) memory.set(was.uri, valuesOf(was.uri))
-        const next = { uri: m.uri, source: m.source, name: m.name }
+        const next = {
+          uri: m.uri,
+          source: m.source,
+          name: m.name,
+          ...(m.files && m.path != null && { files: m.files, path: m.path }),
+        }
         current.current = next
         setDoc(next)
         host.setState({ ...next, values: was?.uri === m.uri ? valuesOf(m.uri) : (memory.get(m.uri) ?? {}) })
@@ -138,7 +143,7 @@ export function Preview({ host, elk }: { host: Host; elk?: LoadmapSourceProps['e
         { scene: e.scene, ev: e.ev },
         doc.source,
         edits.current,
-        compile(doc.source).symbols,
+        compile(doc.source, doc.files ? { files: doc.files, path: doc.path } : {}).symbols,
       )
       before.current = null
       edits.current = []
@@ -167,6 +172,8 @@ export function Preview({ host, elk }: { host: Host; elk?: LoadmapSourceProps['e
       ref={ref}
       source={doc.source}
       name={doc.name}
+      files={doc.files}
+      path={doc.path}
       fill
       zoom
       theme="inherit"

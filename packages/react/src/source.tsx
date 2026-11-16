@@ -20,6 +20,13 @@ export interface LoadmapSourceProps extends Omit<LoadmapProps<any>, 'model' | 'v
   name?: string
   /** A host's own functions for the formulas, as `compile(…, { functions })` takes them; read when the text compiles. */
   functions?: CompileOptions['functions']
+  /**
+   * The other files of a definition written in several, by their path from the project root: its parts and libraries,
+   * and for a part or a variant its model. The component fetches nothing: what is not here is an error in the text.
+   */
+  files?: Readonly<Record<string, string>>
+  /** This text's own path among them, from the project root (`models/checkout.loadmap`). */
+  path?: string
 }
 
 /**
@@ -33,6 +40,8 @@ export function LoadmapSource({
   source,
   name = 'input.loadmap',
   functions,
+  files,
+  path,
   theme,
   assumptions,
   initial,
@@ -42,11 +51,28 @@ export function LoadmapSource({
   // read when the text compiles, so an object made on every render recompiles nothing
   const fns = useRef(functions)
   fns.current = functions
-  const key = useMemo(() => fingerprint(source), [source])
-  const waiting = useCatalog(source)
+  // every file's tokens: a change in a part or a library is a new model too
+  const others = files ? Object.keys(files).sort() : []
+  const texts = [source, ...others.map((p) => files![p]!)]
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the texts are compared one by one, not the list made anew on each render
+  const key = useMemo(() => [...texts.map(fingerprint), path ?? '', ...others].join('\n'), [path, ...texts, ...others])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: as above
+  const all = useMemo(() => texts.join('\n'), [key])
+  const waiting = useCatalog(all)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the same tokens are the same model, and the values stay
   const compiled = useMemo(
-    () => (waiting ? null : { source, r: compile(source, fns.current ? { functions: fns.current } : {}) }),
+    () =>
+      waiting
+        ? null
+        : {
+            source,
+            files,
+            r: compile(source, {
+              ...(fns.current && { functions: fns.current }),
+              ...(files && { files }),
+              ...(path != null && { path }),
+            }),
+          },
     [key, waiting],
   )
   const good = useRef<Definition | null>(null)
@@ -76,7 +102,13 @@ export function LoadmapSource({
     <>
       {compiled && !compiled.r.ok && (
         <Problems theme={theme} stale={def != null}>
-          {compiled.r.diagnostics.map((d) => formatDiagnostic(d, compiled.source, name)).join('\n')}
+          {compiled.r.diagnostics
+            .map((d) =>
+              d.file == null
+                ? formatDiagnostic(d, compiled.source, name)
+                : formatDiagnostic(d, compiled.files?.[d.file] ?? '', d.file),
+            )
+            .join('\n')}
         </Problems>
       )}
       {def && (
