@@ -72,20 +72,46 @@ export interface Room {
   h: number
 }
 
-/** How much better the other direction must fit before the diagram turns: a drag near the edge turns nothing. */
+/** A way to arrange a diagram: the way it runs and the rows it is folded into (1: one row). */
+export interface Arrangement {
+  direction: Direction
+  rows: number
+}
+
+/** How large an arrangement lays a view out (`extent`). */
+export interface Sized extends Arrangement {
+  width: number
+  height: number
+}
+
+/** How much better another arrangement must fit before the diagram changes: a drag near the edge changes nothing. */
 const TURN = 1.15
+/** The scale under which a box's title is no longer read with ease: 10 px of its 13. Only then is a diagram folded. */
+const LEGIBLE = 10 / 13
 
 /**
- * Which way a diagram runs in a room: the way it stands (`keep`: the way it runs now, or its shape's) unless the other
- * fits the room clearly larger. `sizes` is how large each direction lays it out (`extent`). No scale past full size
- * counts: a diagram that reads well as it stands does not turn to be drawn larger still.
+ * How a diagram is arranged in a room, among the arrangements it may take (`sizes`: one direction or both, one row
+ * count or several). It stays as it stands (`keep`: as it is now, or as its shape runs) unless another fits the room
+ * clearly larger, and no scale past full size counts: a diagram that reads well does not change to be drawn larger
+ * still. It is folded only where its titles would be hard to read in one row, and then into the fewest rows that fit
+ * about as large as the best.
  */
-export function directionFor(
-  sizes: Record<Direction, { width: number; height: number }>,
-  room: Room,
-  keep: Direction,
-): Direction {
-  const fit = (d: Direction) => Math.min(room.w / sizes[d].width, room.h / sizes[d].height, 1)
-  const other: Direction = keep === 'RIGHT' ? 'DOWN' : 'RIGHT'
-  return fit(other) > fit(keep) * TURN ? other : keep
+export function arrangementFor(sizes: readonly Sized[], room: Room, keep: Arrangement): Arrangement {
+  const fit = (s: Sized) => Math.min(room.w / s.width, room.h / s.height, 1)
+  const out = ({ direction, rows }: Arrangement): Arrangement => ({ direction, rows })
+  const fewest = Math.min(...sizes.map((s) => s.rows))
+  const flat = sizes.filter((s) => s.rows === fewest)
+  const first = flat.find((s) => s.direction === keep.direction) ?? flat[0]
+  if (!first) return out(keep)
+  // in one row: the way it runs unless the other fits clearly larger
+  const plain = flat.reduce((b, s) => (fit(s) > fit(b) * TURN ? s : b), first)
+  const kept = sizes.find((s) => s.direction === keep.direction && s.rows === keep.rows)
+  // a folded diagram unfolds only once one row reads with ease by the same margin
+  if (fit(plain) >= LEGIBLE * (kept && kept.rows > plain.rows ? TURN : 1)) return out(plain)
+  const stands = kept ?? plain
+  const best = sizes.reduce((b, s) => (fit(s) > fit(b) ? s : b), stands)
+  if (fit(best) <= fit(stands) * TURN) return out(stands)
+  const near = sizes.filter((s) => fit(s) * TURN >= fit(best))
+  const turned = (s: Sized) => (s.direction === stands.direction ? 0 : 1)
+  return out(near.reduce((b, s) => ((s.rows - b.rows || turned(s) - turned(b) || fit(b) - fit(s)) < 0 ? s : b)))
 }

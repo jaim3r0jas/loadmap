@@ -271,9 +271,9 @@ function laidOut(view: View, frame: Frame, elk?: ElkEngine): Promise<Laid> {
 }
 
 /**
- * How large this direction lays the view out with every box at its largest anywhere the model reaches: what a room is
- * weighed against, the same at every phase and load, so neither turns the diagram. A stable layout is exactly this
- * large; a compact phase is no larger.
+ * How large this direction lays the view out, folded into `rows` or not, with every box at its largest anywhere the
+ * model reaches: what a room is weighed against, the same at every phase and load, so neither changes how the diagram
+ * is arranged. A stable layout is exactly this large; a compact phase is no larger in one row.
  */
 export function extent(
   view: View,
@@ -281,14 +281,19 @@ export function extent(
   o: Omit<LayoutOptions, 'direction'> = {},
 ): Promise<{ width: number; height: number }> {
   const measure = o.measure ?? estimateText
+  const rows = rowsOf(o)
   const byView = extents.get(measure) ?? new WeakMap<View, Map<string, Promise<{ width: number; height: number }>>>()
   extents.set(measure, byView)
-  const byDirection = byView.get(view) ?? new Map<string, Promise<{ width: number; height: number }>>()
-  byView.set(view, byDirection)
-  // once per view and direction: a resize asks again at every pixel
-  return kept(byDirection, direction, 2, async () => {
+  const sizes = byView.get(view) ?? new Map<string, Promise<{ width: number; height: number }>>()
+  byView.set(view, sizes)
+  // once per view and arrangement: a resize asks again at every pixel. ELK runs once per direction, whatever the rows
+  return kept(sizes, `${direction} ${rows}`, 16, async () => {
     const frame = ordered(view, reserve(view, direction, measure))
-    const { l } = lanes(await laidOut(view, frame, o.elk), frame, view, measure)
+    const laid = await laidOut(view, frame, o.elk)
+    const { l } =
+      rows > 1
+        ? (await import('./fold')).foldLanes(laid, frame, view, measure, rows, foldKit)
+        : lanes(laid, frame, view, measure)
     return { width: l.width, height: l.height }
   })
 }

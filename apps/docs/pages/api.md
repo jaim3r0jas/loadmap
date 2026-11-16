@@ -65,7 +65,9 @@ Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layou
 the generated ones), `headroom` and `compare` (show the chart and the table; default true), `initial` (values to
 start from), `speed` (simulated seconds per second), `direction` (`'auto'`, the default: the way that fits the
 room the diagram is given larger, and where both fit about as well the way its shape suggests, `directionOf(view)`:
-right unless its widest layer has more boxes than its longest chain; `'RIGHT'` or `'DOWN'` holds it), `narrowBelow`
+right unless its widest layer has more boxes than its longest chain; `'RIGHT'` or `'DOWN'` holds it), `rows` (`'auto'`, the default: a long diagram is folded into two or three rows,
+columns running down, where its titles would be hard to read in one and the fold draws it clearly larger; a number
+holds it, 1 never folds), `narrowBelow`
 (the width under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker;
 `workerElk(() => new Worker(…))` for one the page starts, see [Without a bundler](/without-a-bundler/)),
 `onNodeClick` (a click or Enter on a box, by its id; every box is a button then), `selected` (the box drawn as
