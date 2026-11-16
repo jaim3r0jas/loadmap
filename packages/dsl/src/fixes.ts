@@ -5,6 +5,7 @@ import { type Code, type Diagnostic, Reporter } from './diagnostics'
 import type { TextChange } from './edit'
 import { parse } from './parser'
 import { BOXES, COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
+import { CURRENT, lowest, needs, before as older, stampOf, versionText } from './versions'
 
 export interface QuickFix {
   /** What it does, as a menu shows it: `Change to "orders"`. */
@@ -32,7 +33,7 @@ export function quickFixes(source: string, diagnostics: readonly Diagnostic[]): 
     }
     return parsed
   }
-  return diagnostics.map((d) => fixesFor(source, d, doc))
+  return diagnostics.map((d) => fixesFor(source, d, doc).map((f) => stamped(source, doc().body, f)))
 }
 
 type Doc = () => { body: readonly Stmt[]; ids: (kind: string) => string[] }
@@ -66,6 +67,13 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
       title: `Make it ${form}(${text}, ${unit}, "source")`,
       changes: replace(`${form}(${text}, ${unit}, "source")`),
     }))
+  },
+
+  // "lost" is from loadmap 1.1; this definition says loadmap 1
+  'language-version': ({ source, data, doc }) => {
+    const stamp = stampOf(source, doc().body)
+    if (!data.version || !stamp) return []
+    return [{ title: `Write "loadmap ${data.version}"`, changes: [{ ...stamp.at, insert: data.version }] }]
   },
 
   // a -> b: { … }
@@ -120,6 +128,22 @@ function fixesFor(source: string, d: Diagnostic, doc: Doc): QuickFix[] {
     return []
   }
   return FIXERS[d.code]?.({ source, d, text, data, doc, replace }) ?? []
+}
+
+/**
+ * The fix, with the `loadmap` line raised when what it adds is newer than the line says (a lost box in a
+ * `loadmap 1` file): a fix never trades a warning for an error.
+ */
+function stamped(source: string, body: readonly Stmt[], fix: QuickFix): QuickFix {
+  const before = stampOf(source, body)
+  if (!before?.version || !older(before.version, CURRENT)) return fix
+  let after = source
+  for (const c of [...fix.changes].sort((a, b) => b.from - a.from))
+    after = after.slice(0, c.from) + c.insert + after.slice(c.to)
+  const need = lowest(needs(parse(after, new Reporter(after)).doc.body))
+  if (!older(before.version, need) || fix.changes.some((c) => c.from < before.at.to && c.to > before.at.from))
+    return fix
+  return { ...fix, changes: [{ ...before.at, insert: versionText(need) }, ...fix.changes] }
 }
 
 /** The edge a hop needs, and on a route the way through the boxes the edges already join. */

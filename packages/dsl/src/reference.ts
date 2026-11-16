@@ -38,12 +38,18 @@ export function reference(): string {
         : p.value === 'names'
           ? `a list of ${words.join(', ')}`
           : words.join(' \\| ')
-      out.push(`| \`${k}\`${p.required ? ' (required)' : ''} | ${value} | ${p.doc.replaceAll('|', '\\|')} |`)
+      const since = p.since ? ` From loadmap ${p.since}.` : ''
+      out.push(`| \`${k}\`${p.required ? ' (required)' : ''} | ${value} | ${p.doc.replaceAll('|', '\\|')}${since} |`)
     }
     out.push('')
   }
   const block = (name: string, spec: BlockSpec) => {
-    out.push(`### ${name || 'The top level'}`, '', spec.doc, '')
+    out.push(
+      `### ${name || 'The top level'}`,
+      '',
+      spec.since ? `${spec.doc} From loadmap ${spec.since}.` : spec.doc,
+      '',
+    )
     if (spec.example) out.push('```', spec.example, '```', '')
     if (spec.args.length)
       out.push(

@@ -19,6 +19,8 @@ const BROKEN: Record<string, string> = {
   'colon-before-block': cache.replace('clients -> api', 'clients -> api: { when: true }'),
   'missing-edge': checkout.replace('\nkafka -> workers\n', '\n'),
   'reversed-edge': checkout.replace('\nkafka -> workers\n', '\nworkers -> kafka\n'),
+  // a lost box under a stamp from before them
+  'language-version': search.replace(/^loadmap [\d.]+/, 'loadmap 1'),
   'unseen-loss': search.replace(/\nnode limiterRejected[^\n]*/, '').replace(/\nlimiter -> limiterRejected/, ''),
 }
 

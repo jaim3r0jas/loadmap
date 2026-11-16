@@ -121,6 +121,16 @@ deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto -
 - **The schema table (`packages/dsl/src/schema.ts`) is the one place a statement or property is added.** The checker,
   autocomplete, the inspector (`inspector: 'main'` puts a property first) and the reference in `docs/dsl.md` read it;
   `UPDATE_DOCS=1 pnpm test:node` rewrites that reference.
+- **A file that compiled under its `loadmap 1.N` keeps compiling and computing the same** (docs/dsl.md, "Versions";
+  `packages/dsl/test/corpus/` holds the released files, never edited; each release adds its own). A change that
+  refuses such a file or changes what it computes goes through `strict(version, …)` in compile.ts: a warning that says
+  "(an error from loadmap 1.N)" before that version, an error from it on, with a quick fix keyed on its code. An old
+  spelling warns and `format()` rewrites it (`layout: right`). Something new to read (a statement or property:
+  `since` in the schema; syntax: `SYNTAX` in versions.ts) needs its version on the first line. `LANGUAGE_VERSION`
+  (versions.ts) is the open minor until the release that ships it (a `@loadmap/dsl@` tag holds the commit that
+  opened it), then frozen: the next change opens the next one,
+  adds its row to the table in docs/dsl.md and moves every `.loadmap` in the repository to it. A new warning needs no
+  version, and neither does a fix of a figure that was wrong (its changeset says so; the corpus snapshot moves with it).
 - **The text is the one source.** An inspector change is `edit()`: the smallest replacement, worked out again from the
   current text, refused when the result would not compile. Never keep a second copy of the model to patch.
 - Every `.loadmap` in the repository (and the docs' definitions) is laid out by `format()`: `format.test.ts` fails

@@ -1,0 +1,93 @@
+loadmap 1
+# One event becomes several messages: a sender pool turns events into push notifications, emails and texts, and each
+# provider has a quota of its own. The quota that runs out first is usually not the one with the most traffic.
+title: "Notification fan-out"
+speed: 10
+assume: "1× is a normal weekday peak; a campaign is a preset."
+
+load "Events, × today" { max: 100; default: 1 }
+
+param pods "Sender pods" { options: [2, 4, 6]; default: 2 }
+param emailShare "Events that also send an email" { options: [0.1, 0.3, 0.6]; default: 0.3 }
+param smsPlan "SMS plan (messages/s)" { options: [10, 50, 200]; default: 10 }
+
+preset "Campaign" { load: 20; emailShare: 0.6 }
+
+scenario "Today" {}
+scenario "Bigger SMS plan" { smsPlan: 200 }
+growth { rate: 0.08; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 1.5×" { target: 1.5 }
+
+flow events "events" {
+  unit: "event"
+  rate: 60 * load
+  route: api -> topic -> senders -> dispatch
+  from: apps
+  color: accent
+}
+
+node apps "Your services"
+
+node api "Events API" {
+  pass
+  short: "the events API"
+  demand: flows.events
+  capacity: measured(2_000, "req/s", "load test")
+  over: "events are rejected"
+}
+
+cluster broker "Queue" "events topic" {
+  members: 3
+  memberLabel: `broker ${i}`
+  queue topic { partitions { events: pods * 8 } }
+}
+
+pool senders "Senders" `${pods} pods × 8` {
+  workers { pods: pods; perPod: 8 }
+  short: "the senders"
+  plural: true
+  demand: flows.events * (1 + emailShare + 0.05) * 0.003
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "notifications wait in the queue and arrive late"
+}
+
+node dispatch "Dispatch" {
+  fanout {
+    events -> push: 1
+    events -> email: emailShare
+    events -> sms: 0.05
+  }
+}
+
+node push "Push service" "APNs and FCM" {
+  sink
+  short: "the push service"
+  demand: flows.events
+  capacity: estimated(5_000, "messages/s", "provider guidance")
+  over: "pushes are throttled and arrive late"
+}
+
+node email "Email provider" {
+  sink
+  short: "the email provider"
+  demand: flows.events * emailShare
+  capacity: measured(200, "messages/s", "plan quota")
+  over: "emails queue at the provider; past the daily cap they are dropped"
+}
+
+node sms "SMS provider" `${smsPlan}/s plan` {
+  sink
+  short: "the SMS provider"
+  demand: flows.events * 0.05
+  capacity: measured(smsPlan, "messages/s", "plan quota")
+  over: "texts are rejected with 429s"
+}
+
+apps -> api
+api -> broker
+broker -> senders
+senders -> dispatch
+dispatch -> push
+dispatch -> email
+dispatch -> sms

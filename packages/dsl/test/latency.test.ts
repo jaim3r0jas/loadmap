@@ -2,7 +2,7 @@ import { defineModel, measured, p, pass } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, format } from '../src'
 
-const SRC = `loadmap 1
+const SRC = `loadmap 1.1
 load { max: 10 }
 
 expect "Fast to 1.2×" { flow: req; p99: 0.5; target: 1.2 }

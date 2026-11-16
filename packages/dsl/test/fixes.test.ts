@@ -124,7 +124,7 @@ describe('statement snippets', () => {
 })
 
 describe('a hop without an edge', () => {
-  const SRC = `loadmap 1
+  const SRC = `loadmap 1.1
 load { max: 10 }
 flow req "requests" { rate: 100 * load; route: gw -> db; from: users }
 node users "Users"
@@ -171,7 +171,7 @@ describe('a loss no lost box counts', () => {
   })
 
   it('leaves a comment at the end of the box on the box', () => {
-    const src = `loadmap 1
+    const src = `loadmap 1.1
 load { max: 10 }
 flow req "requests" { rate: 100 * load; route: limiter; from: users }
 node users "Users"

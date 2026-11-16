@@ -1,0 +1,51 @@
+loadmap 1
+# Clients retry what a busy service turns away. Below capacity that costs nothing; past it every failed attempt comes
+# back, and the gateway in front sees several times the traffic. A retry budget keeps it in bounds.
+title: "Retry storm"
+speed: 10
+assume: "1× is today's busiest minute; retries are sent right away (backoff spreads them, it does not remove them)."
+
+load "Traffic, × today" { max: 20; default: 1 }
+
+param retries "Retries per request" { options: [0, 1, 3]; default: 3 }
+param budget "Retry budget" {
+  options: [3, 0.1]
+  default: 3
+  format: `${value * 100} %`
+  hint: "retries add at most this share to the traffic"
+}
+
+scenario "Today" {}
+scenario "Retry budget" { budget: 0.1 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 1.5×" { target: 1.5 }
+expect "The gateway lasts to 3×" { component: gateway; full: 3 }
+
+flow requests "requests" {
+  unit: "request"
+  rate: 1_000 * load
+  retry { times: retries; budget: budget }
+  route: gateway -> service
+  from: clients
+  color: accent
+}
+
+node clients "Clients" "retrying apps"
+
+node gateway "Gateway" {
+  pass
+  short: "the gateway"
+  capacity: estimated(8_000, "req/s", "vendor figure")
+  over: "every client gets errors, not only the retried ones"
+}
+
+node service "Service" {
+  pass
+  short: "the service"
+  capacity: measured(3_000, "req/s", "load test")
+  over: "requests above it get 503s and come back as retries"
+}
+
+clients -> gateway: `${compact(flows.requests)} attempts/s`
+gateway -> service

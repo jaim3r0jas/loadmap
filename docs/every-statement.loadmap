@@ -1,4 +1,4 @@
-loadmap 1
+loadmap 1.1
 # Every statement of the language at least once, in one model: the complete example of the docs' llms-full.txt. A
 # made-up shop: orders go through a gateway, a rate limiter, an API and a cache to the database; events go through a
 # topic to an autoscaled pool and a push broker. docs.test.ts fails when a statement of the schema is missing here.
