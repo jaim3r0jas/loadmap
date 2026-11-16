@@ -1,3 +1,4 @@
+import { blame, flowError } from './blame'
 import type { LinearFit } from './calibrate'
 import { type Bound, boundOf, type Capacity, type CrossingRange } from './capacity'
 import type { Expectation } from './check'
@@ -14,7 +15,6 @@ import {
 } from './connections'
 import { capital, fmt, joinAnd, months, multiple, multiples, pct } from './format'
 import { growth as checkGrowth, dateAt, type Growth } from './growth'
-import { blame } from './internal'
 import { beyond, type Latency, latencyOf, PERCENTILES, type WayTime } from './latency'
 import { checkLost, waysOf } from './losses'
 import type { Measurement, Snapshot } from './measure'
@@ -409,7 +409,11 @@ export function defineModel<
     }
     const any = componentIds.some((c) => def.components[c].service != null)
     if (open ? !any : ![...way].some(timedStage))
-      throw new Error(`loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`)
+      throw flowError(
+        `loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`,
+        f,
+        'timeout',
+      )
   }
   for (const c of componentIds) {
     const d = def.components[c]
@@ -1478,7 +1482,11 @@ function context(
       if (t == null) return 0
       const times = timesOf(f)
       if (!times)
-        throw new Error(`loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`)
+        throw flowError(
+          `loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`,
+          f,
+          'timeout',
+        )
       // below a millionth it moves no capacity number: none, so the retries stay unsolved below their knee, as without
       // a timeout
       const late = beyond(times.ways, t)
