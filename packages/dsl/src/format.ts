@@ -3,6 +3,7 @@ import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
 import { DIRECTIONS } from './schema'
+import { before, CURRENT, lowest, needs, stampOf, versionText } from './versions'
 
 /** A line longer than this has its one-line blocks split, a statement a line. */
 export const FORMAT_WIDTH = 120
@@ -18,17 +19,21 @@ export interface FormatResult {
  * Lays a definition out the one way: two spaces a block, a statement a line, at most one blank line, one space
  * around operators. It works on the tokens, so numbers, texts, templates and parentheses stay exactly as written and
  * a formula never changes. A block written on one line stays on one line while it fits. A text with a syntax error is
- * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`.
+ * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`. The `loadmap` line is
+ * raised to the lowest version that has everything the definition uses, never lowered: an older stamp keeps what it
+ * allows, and a reader of it would not know the rest.
  */
 export function format(source: string): FormatResult {
   const { doc, report } = parse(source)
   if (report.failed) return { ok: false, text: source, diagnostics: report.list }
   // a definition that also says direction keeps the old line as written: renamed, it would set the direction twice
   const named = doc.body.some((st) => st.kind === 'prop' && st.key.name === 'direction')
-  const renamed = new Set(doc.body.flatMap((st) => (!named && oldDirection(st) ? [st.key.from] : [])))
+  const retext = new Map(doc.body.flatMap((st) => (!named && oldDirection(st) ? [[st.key.from, 'direction']] : [])))
+  const stamp = raised(source, doc.body)
+  if (stamp) retext.set(stamp.from, stamp.text)
   const toks = lex(source, new Reporter(source), 0, source.length, true)
     .filter((t) => t.kind !== 'eof')
-    .map((t) => (renamed.has(t.from) ? { ...t, text: 'direction' } : t))
+    .map((t) => (retext.has(t.from) ? { ...t, text: retext.get(t.from)! } : t))
   const marks = marksOf(doc.body, toks)
   const lines = new Reporter(source)
   const match = new Map<number, number>()
@@ -58,6 +63,15 @@ export function format(source: string): FormatResult {
     if (!long) return { ok: true, text: text.length ? `${text.join('\n')}\n` : '', diagnostics: [] }
     split.add(index.get(long.toks.find(oneLine)!)!)
   }
+}
+
+/** The `loadmap` line's version raised to what the definition uses, when it says less. */
+function raised(source: string, body: readonly Stmt[]): { from: number; text: string } | undefined {
+  // a text that is no version, or a later one, is the compiler's to name
+  const said = stampOf(source, body)?.version
+  if (!said || !before(said, CURRENT)) return undefined
+  const need = lowest(needs(body))
+  return before(said, need) ? { from: stampOf(source, body)!.at.from, text: versionText(need) } : undefined
 }
 
 interface Line {

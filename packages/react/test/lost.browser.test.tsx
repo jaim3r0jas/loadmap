@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // a rate limiter of 1,500 req/s at 2×: 500 a second turned away, into a lost box
-const SOURCE = `loadmap 1
+const SOURCE = `loadmap 1.1
 load { max: 10; default: 2 }
 
 flow req "requests" { rate: 1_000 * load; route: limiter -> api; from: users }

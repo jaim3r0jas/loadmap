@@ -1,4 +1,4 @@
-loadmap 1
+loadmap 1.1
 # The checkout pipeline, as a definition: the same model and view as model.ts and view.ts.
 title: "Checkout pipeline"
 speed: 10

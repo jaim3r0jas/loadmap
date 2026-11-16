@@ -1,4 +1,4 @@
-loadmap 1
+loadmap 1.1
 # Your service depends on someone else's API with a rate quota. A cache in front answers the repeated lookups; the
 # plan sets the quota, and above it the vendor answers 429s. Which one buys more headroom is the question this answers.
 title: "Third-party API with a quota"

@@ -107,6 +107,22 @@ export function defineView<
   const N extends string,
   const T extends string = never,
 >(model: Model<P, F, C, S>, def: ViewDef<F, S, N, T>): View<F, S, N> {
+  return checked(model, def, true)
+}
+
+/**
+ * `defineView` that lets a hop go without its edge, its dots straight across: for a `.loadmap` stamped before
+ * loadmap 1.1, which warns about the hop instead, so a file that drew before still draws.
+ */
+export function defineViewUnjoined(model: Model, def: ViewDef<string, string, string>): View {
+  return checked(model, def, false)
+}
+
+function checked<F extends string, S extends string, N extends string, T extends string>(
+  model: Model<any, F, any, S>,
+  def: ViewDef<F, S, N, T>,
+  hops: boolean,
+): View<F, S, N> {
   const nodes = def.nodes as Record<string, AnyNodeDef>
   for (const e of def.edges)
     for (const end of [e.from, e.to]) if (!(end in nodes)) throw new Error(`loadmap: edge to unknown node "${end}"`)
@@ -121,7 +137,7 @@ export function defineView<
   for (const s of model.stageIds)
     if (!Object.values(nodes).some((n) => shows(n, s))) throw new Error(`loadmap: no node shows stage "${s}"`)
   // a dot moves only along an edge: one it would cross the diagram without is a mistake, not a shortcut
-  const gap = unjoined(model, def as ViewDef<string, string, string>)[0]
+  const gap = hops && unjoined(model, def as ViewDef<string, string, string>)[0]
   if (gap)
     throw new Error(
       `loadmap: flow "${gap.flow}" goes from node "${gap.from}" to node "${gap.to}"${gap.edge === 'reversed' ? ', but their edge points the other way' : ' with no edge between them'}: add edge('${gap.from}', '${gap.to}')`,

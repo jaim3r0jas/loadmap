@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```
-loadmap 1
+loadmap 1.1
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -43,7 +43,8 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1`. A file written for a newer version says so instead of half working.
+- **The first line is the version:** `loadmap 1.1`. A file keeps reading as it did under the version it names, and
+  one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it).
 - **A property is `key: value`**, one per line or separated by `;`.
@@ -68,7 +69,8 @@ A route lists stages: `route: gateway -> topic -> workers`. It may also name a b
 its first stage, between the stages next to each other on its route, on each way of a split (and where a way rejoins
 the route), and from a fan-out to each stage it copies to. Two stages in one box are no hop. A hop without its edge is
 an error at the hop (`"signups" goes from "gateway" to "api", and no edge joins them`); the editor offers to add the edge
-or, when other edges already join the two boxes, to route the flow through them. An edge a flow takes may still have a
+or, when other edges already join the two boxes, to route the flow through them. In a file stamped before
+`loadmap 1.1` it is a warning, and its dots cross straight, as they did. An edge a flow takes may still have a
 `when`, but where it hides the edge (at the defaults, in a preset or a scenario) and the flow still goes that way, the
 checker warns.
 
@@ -1020,6 +1022,34 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 <!-- end of codes -->
 
+## Versions
+
+The first line names the language version a definition is written in: `loadmap 1.1`, a major and a minor (`loadmap 1`
+is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
+"update @loadmap/dsl" instead of half working.
+
+**The rule.** A file that compiled under its version keeps compiling, and computes the same limits, verdict and
+expectations, on every later loadmap with the same major:
+
+- A change that refuses a file the last release read, or changes what it computes, comes with a new minor version. A
+  file stamped before it gets a **warning** that says "(an error from loadmap 1.N)", with a quick fix where one
+  exists, and keeps its old meaning; from 1.N on it is an **error**.
+- An old spelling keeps working and warns, and `loadmap fmt` rewrites it (`layout: right` became `direction: right`).
+- A new statement, property or syntax also comes with a minor version: a file that uses it says that version or a
+  later one (an error with a quick fix otherwise), so a loadmap too old for it says "update" instead of "unknown
+  statement". `loadmap fmt` raises the first line to the lowest version that has everything the file uses, and never
+  lowers it.
+- A new warning, a change to how the diagram is drawn, and a fix of a figure that was wrong (a unit counted twice)
+  need no version; the fix says so in its release notes.
+
+A new definition starts at the newest version, which has every check. A major version, `loadmap 2`, would be a change
+with no warning first; none is planned.
+
+| Version | Added | Strict from here |
+| ------- | ----- | ---------------- |
+| 1.0 | the language as @loadmap/dsl 0.32 reads it | |
+| 1.1 | `lost` boxes, numbers with units (`20ms`, `80%`, `7×`), `as` after a demand | a hop needs its edge (`missing-edge`, `reversed-edge`) |
+
 ## In code
 
 ```ts
@@ -1122,10 +1152,10 @@ Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
 ### loadmap
 
-The first line: the version of the language this definition is written in.
+The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```
-loadmap 1
+loadmap 1.1
 ```
 
 After the keyword: version.
@@ -1647,7 +1677,7 @@ After the keyword: [id] [label].
 
 ### lost
 
-Where what other boxes lose goes, counted: an edge from a box into this one sends what that box turns away, drops as too old or times out here, after every retry. It is on no route.
+Where what other boxes lose goes, counted: an edge from a box into this one sends what that box turns away, drops as too old or times out here, after every retry. It is on no route. From loadmap 1.1.
 
 ```
 lost { takes: [rejected] }

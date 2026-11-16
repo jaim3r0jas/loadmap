@@ -29,7 +29,7 @@ const refused = (source: string, key: string, value: EditValue) => {
 
 /** A small definition that compiles, around the given lines. */
 const mini = (...lines: string[]) =>
-  ['loadmap 1', 'load { max: 2 }', 'flow f { rate: load; route: b; from: a }', ...lines, ''].join('\n')
+  ['loadmap 1.1', 'load { max: 2 }', 'flow f { rate: load; route: b; from: a }', ...lines, ''].join('\n')
 
 const fieldsOf = (source: string, target: Parameters<typeof inspect>[1]) =>
   new Map(inspect(source, target)!.sections.flatMap((s) => s.fields.map((f): [string, InspectField] => [f.key, f])))

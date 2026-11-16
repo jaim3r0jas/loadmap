@@ -20,7 +20,7 @@ import { failure, placed } from '../src/expr'
 import { pageOptions } from '../src/internal'
 
 /** A small valid definition; `top` goes after the header, `flow` inside the flow, `extra` at the end. */
-const def = (o: { top?: string; flow?: string; api?: string; extra?: string } = {}) => `loadmap 1
+const def = (o: { top?: string; flow?: string; api?: string; extra?: string } = {}) => `loadmap 1.1
 ${o.top ?? ''}
 load { max: 10; default: 2 }
 param pods "Pods" { options: [1, 2, 3]; default: 2 }
@@ -551,7 +551,7 @@ step "x" { scenario: Later; focus: db; title: " "; seconds: 0; pod: 2; pods: 9 }
 
 describe('run-time errors', () => {
   it('compile a constant flow rate, the same at any load', () => {
-    const r = compile(`loadmap 1
+    const r = compile(`loadmap 1.1
 load "Load" { max: 10 }
 flow orders "orders" { unit: "order"; rate: 40 * load; route: api; from: users }
 flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: api; from: users }
@@ -728,12 +728,12 @@ describe('the checker', () => {
   })
 
   it('needs the version line, and refuses a newer language', () => {
-    expect(errors(def().replace('loadmap 1\n', ''))).toMatchObject([
-      { message: 'a definition starts with "loadmap 1"', hint: 'add "loadmap 1" as the first line' },
+    expect(errors(def().replace('loadmap 1.1\n', ''))).toMatchObject([
+      { message: 'a definition starts with "loadmap 1.1"', hint: 'add "loadmap 1.1" as the first line' },
     ])
-    expect(errors(def().replace('loadmap 1', 'loadmap 2'))).toMatchObject([
+    expect(errors(def().replace('loadmap 1.1', 'loadmap 2'))).toMatchObject([
       {
-        message: 'this definition is written in language version 2; this loadmap reads version 1',
+        message: 'this definition is written in language version 2; this loadmap reads version 1.1',
         hint: 'update @loadmap/dsl',
       },
     ])
@@ -877,7 +877,7 @@ const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
   it('compile a cache, whose hits are gone from the stages after it', () => {
-    const dsl = model(`loadmap 1
+    const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }
 param hit "Hit ratio" { options: [0.5, 0.8]; default: 0.8 }
 flow reads "reads" { rate: 1000 * load; route: cache -> db; from: client }
@@ -911,7 +911,7 @@ cache -> db: \`\${compact(at.db.reads)} misses/s\`
   })
 
   it('compile an autoscaled pool', () => {
-    const dsl = model(`loadmap 1
+    const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }
 param most "Most pods" { options: [6, 10]; default: 10 }
 flow req "requests" { rate: 300 * load; route: topic -> api; from: client }
@@ -955,7 +955,7 @@ broker -> api
   })
 
   it('compile a rate limiter with a configured limit', () => {
-    const dsl = model(`loadmap 1
+    const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }
 flow req "requests" { rate: 1000 * load; route: limiter -> db; from: client }
 node client "Client"
@@ -988,7 +988,7 @@ limiter -> tooMany
   })
 
   it('compile retries with a budget, switched by a parameter', () => {
-    const dsl = model(`loadmap 1
+    const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }
 param tries "Retries" { options: [0, 3]; default: 3 }
 param capped "Retry budget" { default: false }
@@ -1048,7 +1048,7 @@ client -> gateway -> service
 
   it('point at what a block is missing', () => {
     const at = (box: string) =>
-      errors(`loadmap 1
+      errors(`loadmap 1.1
 load { max: 10 }
 flow req "r" { rate: load; route: x; from: client }
 node client "Client"
@@ -1076,7 +1076,7 @@ client -> x
 })
 
 describe('hops', () => {
-  const SRC = `loadmap 1
+  const SRC = `loadmap 1.1
 load { max: 10 }
 param fast "Fast path" { default: false }
 preset "Fast" { fast: true }
@@ -1249,7 +1249,7 @@ users -> gw -> api -> db
 })
 
 describe('lost boxes', () => {
-  const SRC = `loadmap 1
+  const SRC = `loadmap 1.1
 load { max: 10 }
 flow req "requests" { rate: 1_000 * load; retry { times: 3 }; route: limiter -> api -> db; from: users }
 node users "Users"
@@ -1313,7 +1313,7 @@ api -> failed
 })
 
 describe('losses no lost box counts', () => {
-  const SRC = `loadmap 1
+  const SRC = `loadmap 1.1
 load { max: 10 }
 flow req "requests" { rate: 100 * load; route: limiter -> api; from: users }
 flow ev "events" {
@@ -1357,7 +1357,7 @@ users -> kafka -> pool
   })
 
   it('warn once for a stage, only for losses that happen, and where a way really ends', () => {
-    const MINI = `loadmap 1
+    const MINI = `loadmap 1.1
 load { max: 10 }
 node users "Users"
 node api "API" { pass; capacity: measured(1_000, "req/s"); service: 0.01; over: "503s" }
@@ -1405,7 +1405,7 @@ pool -> gone
 })
 
 describe('one mistake, one mark, where it is', () => {
-  const BASE = `loadmap 1
+  const BASE = `loadmap 1.1
 load { max: 10 }
 flow orders "orders" { unit: "order"; rate: 40 * load; route: api -> db; from: users }
 node users "Users"
@@ -1464,7 +1464,7 @@ lim -> lost
   })
 
   it("a flow's timeout without latency at its timeout, and nothing more there", () => {
-    const src = `loadmap 1
+    const src = `loadmap 1.1
 load { max: 10 }
 flow o "o" { rate: 1; route: a; from: u
   timeout: 2 }

@@ -1,0 +1,148 @@
+loadmap 1
+# Every statement of the language at least once, in one model: the complete example of the docs' llms-full.txt. A
+# made-up shop: orders go through a gateway, a rate limiter, an API and a cache to the database; events go through a
+# topic to an autoscaled pool and a push broker. docs.test.ts fails when a statement of the schema is missing here.
+title: "A shop, every statement once"
+layout: right
+speed: 10
+transition: 0.8
+fullScreen: [verdict, live, limits, controls]
+fullScreenMode: focus
+searchMax: 120
+assume: "1× is today's busiest hour; the numbers are made up."
+
+thresholds { target: 0.7; full: 1 }
+
+load "Users, × today" { max: 50; default: 2 }
+
+param pods "API pods" { options: [2, 4, 8]; default: 4 }
+# retries cost a solve on every evaluation: off by default, so the editor stays quick
+param tries "Retries per order" { options: [0, 2]; default: 0 }
+param newest "Keep only the newest event" { default: true }
+param hit "Cache hit ratio" { options: [0.5, 0.8]; default: 0.8 }
+
+preset "Sale day" { load: 20; pods: 8 }
+
+scenario "Bigger API" { pods: 8 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2×" { target: 2 }
+expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; full: 10 }
+
+step "An ordinary hour: every box is under half its capacity." { load: 1 }
+step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: workers }
+
+# push packets per event: fewer when only the newest is kept
+let perEvent = newest ? 1 : 2
+
+# cost = a + b × rate, fitted from a series
+fit apiCores "API CPU per order" {
+  source: "made-up series"
+  points rate cores {
+    100 0.31
+    200 0.52
+    300 0.69
+    400 0.92
+  }
+}
+
+flow orders "orders" {
+  unit: "order"
+  rate: 50 * load
+  priority: 1
+  retry { times: tries; budget: 0.1 }
+  route: gateway -> limiter -> api -> cache -> db
+  from: users
+  color: accent
+}
+
+flow events "events" {
+  unit: "event"
+  rate: 400 * load
+  priority: 2
+  drop { olderThan: 60; reason: "too old" }
+  merge { when: newest; share: 0.5; reason: "newest kept" }
+  route: gateway -> topic -> workers -> push
+  from: users
+  color: alt
+}
+
+# a constant rate: the same at any load
+flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> api; from: users }
+
+node users "Users" "web and app"
+
+node gateway "Gateway" {
+  pass "the gateway"
+  short: "the gateway"
+  capacity: estimated(30_000, "req/s", "vendor figure")
+  over: "every client gets errors"
+}
+
+node limiter "Rate limiter" "2,000 req/s" {
+  limit
+  short: "the rate limiter"
+  capacity: configured(2_000, "req/s", "gateway config")
+  over: "clients above the limit get 429s"
+}
+
+pool api "API" `${pods} pods` {
+  workers { pods: pods; perPod: 8 }
+  short: "the API"
+  demand: apiCores(at.api.orders + flows.signups)
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "orders queue in the API"
+  describe: `${pods} pods, 1 core each`
+}
+
+# a component without a box of its own: the cache stage uses it
+component lookups "Cache lookups" {
+  short: "the cache"
+  capacity: estimated(50_000, "ops/s", "vendor sizing")
+  over: "lookups time out and fall through"
+}
+
+node cache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
+
+node db "Database" "primary" {
+  shape: cylinder
+  store
+  short: "the database"
+  capacity: estimated(1_500 ± 30%, "commits/s", "load test of a replica")
+  over: "commits queue on the primary"
+}
+
+cluster kafka "Kafka" "events" {
+  members: 3
+  memberLabel: `broker ${i}`
+  queue topic "events topic" { partitions { events: 12 } }
+}
+
+pool workers "Event workers" "2 to 6 pods" {
+  workers { perPod: 4; autoscale { min: 2; max: 6; target: 0.7 } }
+  short: "the event workers"
+  plural: true
+  demand: flows.events * 0.002
+  capacity: measured(6 * 1, "cores", "1 core a pod, at most 6")
+  over: "events wait in the topic"
+}
+
+node push "Push broker" {
+  fanout "push broker" { events -> phones: perEvent }
+  short: "the push broker"
+  demand: flows.events * perEvent
+  capacity: estimated(8_000, "packets/s", "vendor figure")
+  over: "pushes arrive late"
+}
+
+node phones "Phones" "notified" { sink "phones" }
+
+users -> gateway: "HTTPS"
+gateway -> limiter
+gateway -> kafka
+limiter -> api
+api -> cache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
+cache -> db
+kafka -> workers
+workers -> push
+push -> phones

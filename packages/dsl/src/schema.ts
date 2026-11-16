@@ -53,6 +53,8 @@ export interface PropSpec {
   inspector?: 'main'
   /** What the value counts: a formula whose text says otherwise (`held: 80%`) is warned about. */
   unit?: 'seconds' | 'share' | 'per second'
+  /** The language version that added it (`'1.1'`); none for 1.0. A definition stamped before cannot use it. */
+  since?: string
 }
 
 export interface ArgSpec {
@@ -103,6 +105,8 @@ export interface BlockSpec {
   rows?: boolean
   /** The inspector's Model tab shows it (a top-level statement). */
   inspector?: 'model'
+  /** The language version that added it (`'1.1'`); none for 1.0. A definition stamped before cannot use it. */
+  since?: string
 }
 
 const STAGE_LABEL: ArgSpec[] = [
@@ -261,8 +265,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     edges: 'edges',
   },
   loadmap: {
-    doc: 'The first line: the version of the language this definition is written in.',
-    example: 'loadmap 1',
+    doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
+    example: 'loadmap 1.1',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],
@@ -824,6 +828,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   lost: {
     doc: 'Where what other boxes lose goes, counted: an edge from a box into this one sends what that box turns away, drops as too old or times out here, after every retry. It is on no route.',
+    since: '1.1',
     example: 'lost { takes: [rejected] }',
     args: STAGE_LABEL,
     props: {

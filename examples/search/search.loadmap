@@ -1,4 +1,4 @@
-loadmap 1
+loadmap 1.1
 # Product search, made up: the same model and view as model.ts and view.ts. A rate limiter, an autoscaled API, a
 # cache and clients that retry: the four building blocks in one system, and an index of two shards behind a
 # coordinator that sends each miss to one.

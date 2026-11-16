@@ -1,0 +1,70 @@
+loadmap 1
+# Reads go to replicas, writes to the primary, and the primary also ships every write to each replica. More replicas
+# take reads off each other but add replication work on the primary.
+title: "Reads on replicas"
+speed: 10
+assume: "1× is today's busiest hour; reads and writes grow together."
+
+load "Traffic, × today" { max: 50; default: 1 }
+
+param pods "API pods" { options: [2, 4, 6, 8]; default: 4 }
+param replicas "Read replicas" { options: [1, 2, 3, 4]; default: 2 }
+
+scenario "Today" {}
+scenario "Two more replicas" { replicas: 4 }
+growth { rate: 0.04; per: month; asOf: "2026-11-01" }
+
+expect "Today keeps 2×" { target: 2 }
+
+flow reads "reads" {
+  unit: "read"
+  rate: 1_200 * load
+  route: api -> replicas
+  from: clients
+  color: accent
+}
+
+flow writes "writes" {
+  unit: "write"
+  rate: 90 * load
+  priority: 1
+  route: api -> primary
+  from: clients
+  color: alt
+}
+
+node clients "Clients" "web and mobile"
+
+pool api "API" `${pods} pods` {
+  workers { pods: pods; perPod: 8 }
+  short: "the API"
+  demand: (flows.reads + flows.writes) * 0.0005
+  capacity: measured(pods * 1, "cores", "pod CPU limit")
+  over: "requests queue in the API"
+}
+
+node replicas "Read replicas" `${replicas} replicas` {
+  shape: cylinder
+  store
+  short: "the read replicas"
+  plural: true
+  demand: flows.reads
+  capacity: estimated(replicas * 4_000 ± 30%, "queries/s", "about 4,000 reads/s per replica")
+  over: "reads slow down and fall behind the primary"
+}
+
+node primary "Primary" "writes" {
+  shape: cylinder
+  store
+  short: "the primary"
+  # every write is applied here and shipped to each replica
+  demand: flows.writes * (1 + 0.25 * replicas)
+  capacity: estimated(1_500 ± 30%, "writes/s", "vendor sizing for this instance")
+  over: "writes queue and replication lag grows"
+  describe: `${replicas} replicas to ship to`
+}
+
+clients -> api
+api -> replicas: "reads"
+api -> primary: "writes"
+primary -> replicas: "replication"

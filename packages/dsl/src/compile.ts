@@ -40,10 +40,10 @@ import {
   type TierDef,
   type View,
 } from '@loadmap/layout'
-import { type Hop, hopsOf, unjoined } from '@loadmap/layout/internal'
+import { defineViewUnjoined, type Hop, hopsOf, unjoined } from '@loadmap/layout/internal'
 import type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 import { catalogComponent, catalogRules, latestEdition, loadedCatalog } from './catalog'
-import { closest, type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
+import { type Code, closest, type Diagnostic, didYouMean, Reporter, type Span } from './diagnostics'
 import {
   compileFormula,
   type Formula,
@@ -75,9 +75,9 @@ import {
   STAGES,
 } from './schema'
 import { capacityCall, describe, disagree, PROPERTY_UNITS, parseUnit, type UnitNames, unitOf } from './units'
+import { before, CURRENT, LANGUAGE_VERSION, needs, stampOf, type Version, versionText } from './versions'
 
-/** The version of the language this package reads: the number on a definition's first line. */
-export const LANGUAGE_VERSION = 1
+export { LANGUAGE_VERSION }
 
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
@@ -322,6 +322,8 @@ class Compiler {
   private measureIds = new Set<string>()
   /** The measures whose fallback is a number. */
   private numbers = new Set<string>()
+  /** The language version the definition says it is written in. */
+  private version: Version = CURRENT
 
   constructor(
     readonly source: string,
@@ -333,8 +335,9 @@ class Compiler {
 
   /** With `namesOnly`, stops once every name is declared: `symbols` is then complete, and nothing is built. */
   run(doc: Document, namesOnly = false): Definition | undefined {
-    const root = this.shape('', SCHEMA['']!, doc.body, { from: 0, to: 0 })
+    // first: a definition for a later version says "update", not "unknown statement" for what that version added
     this.header(doc.body)
+    const root = this.shape('', SCHEMA['']!, doc.body, { from: 0, to: 0 })
 
     // names first: formulas and routes may refer to anything declared further down
     const byKind = (k: string) => root.children.filter((b) => b.keyword === k)
@@ -847,8 +850,15 @@ class Compiler {
     let view: View
     try {
       model = defineModel(modelDef as any)
-      // with a hop unjoined the definition fails, but the presets and scenarios still run, to report their errors now
-      view = this.hopsJoined(model, viewDef) ? defineView(model, viewDef as any) : { model, def: viewDef as any }
+      // with a hop unjoined the definition fails, but the presets and scenarios still run, to report their errors now;
+      // a definition stamped before hops needed edges draws as it did, its dots straight across
+      const hops = this.hopsJoined(model, viewDef)
+      view =
+        hops === 'joined'
+          ? defineView(model, viewDef as any)
+          : hops === 'warned'
+            ? defineViewUnjoined(model, viewDef as any)
+            : { model, def: viewDef as any }
     } catch (err) {
       this.runError(err, top)
       return undefined
@@ -1031,18 +1041,19 @@ class Compiler {
 
   /**
    * Whether an edge joins every hop a flow takes, in its direction; each one without is an error at the line that makes
-   * the hop: the route, a split's way, a fan-out's branch or the flow's `from`.
+   * the hop (the route, a split's way, a fan-out's branch or the flow's `from`), a warning before loadmap 1.1.
    */
   private hopsJoined(
     model: Model,
     viewDef: { nodes: Record<string, AnyNodeDef>; edges: EdgeDef[]; flows: Record<string, FlowView> },
-  ): boolean {
-    let ok = true
-    for (const h of unjoined(model, viewDef as never)) {
-      ok = false
+  ): 'joined' | 'warned' | 'failed' {
+    const strictFrom: Version = [1, 1]
+    const gaps = unjoined(model, viewDef as never)
+    for (const h of gaps) {
       const reversed = h.edge === 'reversed'
       const how = reversed ? 'but their edge points the other way' : 'and no edge joins them'
-      this.report.error(
+      this.strict(
+        strictFrom,
         reversed ? 'reversed-edge' : 'missing-edge',
         this.hopAt(h),
         `"${h.flow}" goes from "${h.from}" to "${h.to}", ${how}`,
@@ -1050,7 +1061,7 @@ class Compiler {
         { from: h.from, to: h.to },
       )
     }
-    return ok
+    return !gaps.length ? 'joined' : before(this.version, strictFrom) ? 'warned' : 'failed'
   }
 
   /** The text that makes a hop. */
@@ -1415,18 +1426,48 @@ class Compiler {
     for (const s of body.slice(1))
       if (isHeader(s))
         this.report.error('language-version', s.keyword, 'the "loadmap" line must be the first and only one')
-    const v = first.args[0]
-    if (v?.t === 'num' && v.value !== LANGUAGE_VERSION) {
+    const stamp = stampOf(this.source, body)
+    if (!stamp) return
+    const { at, text, version } = stamp
+    if (!version) {
       this.report.error(
         'language-version',
-        v,
-        v.value > LANGUAGE_VERSION
-          ? `this definition is written in language version ${v.value}; this loadmap reads version ${LANGUAGE_VERSION}`
-          : `there is no language version ${v.value}; the first is 1`,
-        v.value > LANGUAGE_VERSION ? 'update @loadmap/dsl' : undefined,
+        at,
+        `there is no language version ${text}; the first is 1`,
+        `write "loadmap ${LANGUAGE_VERSION}"`,
       )
       throw new Bail()
     }
+    if (before(CURRENT, version)) {
+      this.report.error(
+        'language-version',
+        at,
+        `this definition is written in language version ${text}; this loadmap reads version ${LANGUAGE_VERSION}`,
+        'update @loadmap/dsl',
+      )
+      throw new Bail()
+    }
+    this.version = version
+    if (!before(version, CURRENT)) return
+    // what a later version added, used under an earlier stamp: a reader of that stamp would not know it
+    for (const n of needs(body))
+      if (before(version, n.since))
+        this.report.error(
+          'language-version',
+          n,
+          `${n.what} is from loadmap ${versionText(n.since)}; this definition says loadmap ${text}`,
+          `write "loadmap ${versionText(n.since)}" on the first line`,
+          { version: versionText(n.since) },
+        )
+  }
+
+  /**
+   * A check a language version made strict: an error in a definition stamped with that version or later, a warning
+   * that says so before it, so a file that compiled under its stamp still does (docs/dsl.md, "Versions").
+   */
+  private strict(since: Version, code: Code, at: Span, message: string, hint?: string, data?: Record<string, string>) {
+    if (!before(this.version, since)) this.report.error(code, at, message, hint, data)
+    else this.report.warning(code, at, `${message} (an error from loadmap ${versionText(since)})`, hint, data)
   }
 
   private declare(

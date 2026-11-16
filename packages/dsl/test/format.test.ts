@@ -9,7 +9,8 @@ const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
 
 /** Every definition the repository holds: the files, the docs' fences, the full ones in docs/dsl.md and the README. */
 const definitions: [string, string][] = [
-  ...execSync('git ls-files "*.loadmap"', { cwd: root }).toString().trim().split('\n'),
+  // but the released ones, kept as they shipped (corpus.test.ts)
+  ...execSync('git ls-files "*.loadmap" ":!packages/dsl/test/corpus/"', { cwd: root }).toString().trim().split('\n'),
   ...execSync('git ls-files "apps/docs/pages/*.md"', { cwd: root }).toString().trim().split('\n'),
   'docs/dsl.md',
   'README.md',
@@ -18,7 +19,7 @@ const definitions: [string, string][] = [
   if (f.endsWith('.loadmap')) return [[f, src]]
   const fences = [
     ...src.matchAll(/```loadmap[^\n]*\n([\s\S]*?)```/g),
-    ...src.matchAll(/```\n(loadmap 1\n[\s\S]*?)```/g),
+    ...src.matchAll(/```\n(loadmap \d+(?:\.\d+)?\n[\s\S]*?)```/g),
   ]
   return fences.map((m, i): [string, string] => [`${f} #${i + 1}`, m[1]!])
 })
