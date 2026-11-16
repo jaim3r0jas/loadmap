@@ -497,6 +497,15 @@ class Lookup {
           ? `Like \`${like.from}\`: from it ${like.taken.map((k) => `\`${k}\``).join(', ')}.`
           : `Like \`${like.from}\`: what it does not write itself comes from there.`,
       )
+    // the inputs it sets, each with the formula it gives
+    const set = (d.body ?? []).flatMap((s) =>
+      s.kind === 'decl' && s.keyword.name === 'with'
+        ? (s.body ?? []).flatMap((p) =>
+            p.kind === 'prop' ? [`\`${p.key.name}\`: \`${this.source.slice(p.value.from, p.value.to)}\``] : [],
+          )
+        : [],
+    )
+    if (like && set.length) lines.splice(1, 0, `Sets ${set.join(', ')}.`)
     return out(this.line(d), lines.length ? lines : [SCHEMA[d.keyword.name]!.doc])
   }
 

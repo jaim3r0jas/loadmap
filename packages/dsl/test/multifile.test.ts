@@ -188,6 +188,24 @@ describe('a model in several files', () => {
     const db = (to: string) => errors(run(MODEL, set({ [MODEL]: swap(MODEL, 'with { writes: flows.orders }', to) })))
     expect(db('with { writes: flows.orders; limit: "a lot" }')[0]).toMatchObject({ code: 'wrong-type' })
     expect(db('with { limit: 9_000 }')[0]).toMatchObject({ code: 'bad-input', data: { input: 'writes' } })
+    // a formula against the default: one type, and one unit where both say theirs
+    expect(db('with { writes: flows.orders; limit: pods > 3 }')[0]).toMatchObject({
+      code: 'wrong-type',
+      message: '"limit" takes a number, as its default is; this is true or false',
+    })
+    const held = set({
+      [LIB]: swap(LIB, 'input limit = 4_000', 'input limit = 4_000\n  input wait = 20ms').replace(
+        'over: "commits queue on the primary"',
+        'over: "commits queue on the primary"\n  service: wait',
+      ),
+    })
+    const unit = (value: string) =>
+      run(MODEL, {
+        ...held,
+        [MODEL]: swap(MODEL, 'with { writes: flows.orders }', `with { writes: flows.orders; wait: ${value} }`),
+      }).diagnostics.filter((d) => d.code === 'unit-mismatch')
+    expect(unit('pods * 5ms')).toEqual([])
+    expect(unit('flows.orders * 2')).toHaveLength(1)
     // a box of the model has no inputs
     const local = errors(
       run(
@@ -377,6 +395,12 @@ describe('a box like another', () => {
     // a stage written here replaces the other's stages, and what the other takes from a third comes along
     const chain = `${twins}node c "C" { like: b; pass; short: "the third" }\nstart -> c\n`
     expect(inspect(chain, { node: 'c' })!.sections[0]!.like).toEqual({ from: 'b', taken: ['capacity', 'over'] })
+    // with what it sets of the other's inputs
+    const db = hover(base[MODEL]!, base[MODEL]!.indexOf('node db') + 5)
+    expect(db?.body.slice(0, 2)).toEqual([
+      'Like `postgres`: what it does not write itself comes from there.',
+      'Sets `writes`: `flows.orders`.',
+    ])
     // a prototype of a library: the other box is not in this text
     expect(inspect(base[MODEL]!, { node: 'db' })!.sections[0]!.like).toEqual({ from: 'postgres', taken: [] })
   })

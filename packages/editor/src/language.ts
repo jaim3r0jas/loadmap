@@ -41,7 +41,9 @@ import {
   problems,
   quickFixes,
   references,
+  referencesAcross,
   rename,
+  renameAcross,
   type SignatureHelp,
   signatureHelp,
 } from '@loadmap/dsl'
@@ -330,7 +332,7 @@ interface Renaming {
 const openRename = StateEffect.define<Renaming | null>()
 
 /** F2's field at a name: Enter renames it everywhere it is written, Escape closes it. */
-function renaming(o: CompileOptions): Extension {
+function renaming(o: RenameOptions): Extension {
   return StateField.define<Renaming | null>({
     create: () => null,
     update(r, tr) {
@@ -356,7 +358,14 @@ function renaming(o: CompileOptions): Extension {
   })
 }
 
-function renameDom(view: EditorView, r: Renaming, o: CompileOptions): HTMLElement {
+/** What a rename reads beyond the text: the functions formulas call, and the other files with a way to change them. */
+type RenameOptions = CompileOptions & {
+  around?: () => Around | undefined
+  /** The changes a rename makes in the other files of the definition: the host applies them where it keeps those. */
+  onElsewhere?: (changes: readonly { file: string; from: number; to: number; insert: string }[]) => void
+}
+
+function renameDom(view: EditorView, r: Renaming, o: RenameOptions): HTMLElement {
   const form = document.createElement('form')
   form.className = 'lm-hover lm-rename'
   const input = document.createElement('input')
@@ -371,11 +380,22 @@ function renameDom(view: EditorView, r: Renaming, o: CompileOptions): HTMLElemen
   }
   form.addEventListener('submit', (e) => {
     e.preventDefault()
-    const out = rename(view.state.doc.toString(), r.from, input.value.trim(), o)
+    const a = o.around?.()
+    const source = view.state.doc.toString()
+    // with other files: everywhere the name is written in the model and its parts
+    const out = a
+      ? renameAcross(source, r.from, input.value.trim(), { path: a.path, files: a.files, functions: o.functions })
+      : rename(source, r.from, input.value.trim(), o)
     if ('error' in out) view.dispatch({ effects: openRename.of({ ...r, value: input.value, error: out.error }) })
     else if (!out.changes.length) close()
     else {
-      view.dispatch({ changes: out.changes, userEvent: 'input.rename' })
+      const all: readonly { file?: string; from: number; to: number; insert: string }[] = out.changes
+      const elsewhere = all.flatMap((c) => (c.file != null ? [{ ...c, file: c.file }] : []))
+      // the other files first: the text's next check reads them as they are after the rename
+      if (elsewhere.length) o.onElsewhere?.(elsewhere)
+      const here = all.filter((c) => c.file == null).map(({ from, to, insert }) => ({ from, to, insert }))
+      if (here.length) view.dispatch({ changes: here, userEvent: 'input.rename' })
+      else close()
       view.focus()
     }
   })
@@ -389,8 +409,14 @@ function renameDom(view: EditorView, r: Renaming, o: CompileOptions): HTMLElemen
 }
 
 /** Opens the rename field at the name under the cursor; false where there is no name to rename. */
-export function startRename(view: EditorView): boolean {
-  const spans = references(view.state.doc.toString(), view.state.selection.main.head)
+export function startRename(view: EditorView, around?: () => Around | undefined): boolean {
+  const a = around?.()
+  const source = view.state.doc.toString()
+  const head = view.state.selection.main.head
+  // a name another file of the model declares is a name to rename too
+  const spans = a
+    ? referencesAcross(source, head, { path: a.path, files: a.files })?.filter((s) => s.file == null)
+    : references(source, head)
   const at = spans?.find((s) => s.from <= view.state.selection.main.head && view.state.selection.main.head <= s.to)
   if (!at) return false
   view.dispatch({ effects: openRename.of({ from: at.from, to: at.to }) })
@@ -411,6 +437,8 @@ export function loadmapLanguage(
     around?: () => Around | undefined
     /** Go to definition found the name in another file: the host shows it. */
     onOpen?: (at: Located) => void
+    /** A rename changed other files of the definition: the host applies the changes there. */
+    onElsewhere?: RenameOptions['onElsewhere']
   } = {},
 ): Extension {
   const around = () => o.around?.()
@@ -489,7 +517,7 @@ export function loadmapLanguage(
     renameField,
     keymap.of([
       { key: 'F12', run: (v) => goToDefinition(v, undefined, around, o.onOpen) },
-      { key: 'F2', run: (v) => startRename(v) },
+      { key: 'F2', run: (v) => startRename(v, around) },
     ]),
     EditorView.domEventHandlers({
       mousedown(e, view) {

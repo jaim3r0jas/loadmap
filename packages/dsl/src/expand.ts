@@ -33,6 +33,15 @@ export interface Template {
   env: Env
 }
 
+/** An input set with a formula, and the default it stands in for. */
+export interface InputCheck {
+  input: string
+  default: Expr
+  value: Expr
+}
+
+const LITERAL = new Set(['num', 'bool', 'str', 'tpl'])
+
 /** A name a library's own file settled: nothing renames it again further out. */
 const DONE = '$settled'
 type Node = Span & { name?: string; t?: string; [DONE]?: true }
@@ -92,6 +101,11 @@ interface Content {
  * sees boxes written in full, each with its own id, and never learns that some came from another file.
  */
 export class Expander {
+  /**
+   * Each input a box of the model set with a formula, beside its default: the compiler, which knows the model's
+   * names, checks that the two are one type and one unit.
+   */
+  readonly checks: InputCheck[] = []
   private boxes = 0
   private tooMany = false
   /** The boxes of a loop of `like`s, said once: each is then left as it is written. */
@@ -200,7 +214,7 @@ export class Expander {
     const base = this.box(proto, found.env, [...trail, d])
     const theirs = (base.body ?? []).filter(isInput)
     const rest = (base.body ?? []).filter((s) => !isInput(s))
-    const given = this.given(d, withs, theirs, found.env, `"${name}"`)
+    const given = this.given(d, withs, theirs, found.env, `"${name}"`, env)
     const lines = theirs.length || found.env !== env ? this.settle(rest, proto.keyword.name, found.env, given) : rest
     const mine = stripped.body
     const props = new Set(mine.flatMap((st) => (st.kind === 'prop' ? [st.key.name] : [])))
@@ -241,6 +255,8 @@ export class Expander {
     inputs: readonly Decl[],
     theirs: Env,
     what: string,
+    /** Where the box that sets them is written. */
+    here: Env,
   ): Map<string, Given> {
     const out = new Map<string, Given>()
     const set = new Map<string, Property>()
@@ -277,6 +293,9 @@ export class Expander {
       }
       if (value) {
         this.fits(i, value)
+        // a formula of the model against the default: said once the model's names are known
+        if (i.init && !here.library && !(LITERAL.has(i.init.t) && LITERAL.has(value.value.t)))
+          this.checks.push({ input: id, default: i.init, value: value.value })
         out.set(id, { kind: 'value', value: value.value })
       } else if (i.init) {
         // the default is the library's own formula: its names are settled there
@@ -584,7 +603,7 @@ export class Expander {
     }
     const base = this.content(found.decl, found.env, depth, [...trail, d])
     if (!base) return undefined
-    const given = this.given(d, withs, base.inputs, found.env, `"${name}"`)
+    const given = this.given(d, withs, base.inputs, found.env, `"${name}"`, env)
     const theirs =
       base.inputs.length || found.env !== env ? this.settle(base.stmts, 'subsystem', found.env, given) : base.stmts
     return { stmts: [...theirs, ...clone(mine)], inputs }

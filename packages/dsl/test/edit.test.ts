@@ -8,7 +8,10 @@ const root = new URL('../../../', import.meta.url)
 const read = (f: string) => readFileSync(new URL(f, root), 'utf8')
 const checkout = read('examples/checkout/checkout.loadmap')
 // each file on its own; a definition in several files is edited with them (multifile.test.ts)
-const files = execSync('git ls-files "*.loadmap" ":!docs/multi-file/" ":!examples/checkout/split/"', { cwd: root })
+const files = execSync(
+  'git ls-files "*.loadmap" ":!docs/multi-file/" ":!examples/checkout/split/" ":!examples/alerts/split/"',
+  { cwd: root },
+)
   .toString()
   .trim()
   .split('\n')
