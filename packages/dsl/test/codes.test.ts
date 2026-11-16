@@ -46,11 +46,11 @@ it('every code is reported somewhere', () => {
       .join('\n')
   }
   const sources = dir('../src/') + dir('../../cli/src/')
-  // as a diagnostic's code: the first argument of a report (or of a choice there), the last of a parser failure, a
-  // field of a diagnostic built by hand
+  // as a diagnostic's code: the first argument of a report (or of a choice there), the second of a strict check or the
+  // first of a formula's, the last of a parser failure, a field of a diagnostic built by hand
   const reported = (code: string) =>
     new RegExp(
-      String.raw`(?:(?:error|warning)\(\s*(?:[\w.]+ \? '[a-z-]+' : )?|\? |\? '[a-z-]+' : |undefined, |code: )'${code}'`,
+      String.raw`(?:(?:error|warning|strict)\(\s*(?:[A-Z_]+,\s*)?(?:[\w.]+ \? '[a-z-]+' : )?|\? |\? '[a-z-]+' : |undefined, |code: )'${code}'`,
     ).test(sources)
   const unused = Object.keys(CODES).filter((code) => !reported(code))
   expect(unused).toEqual([])
