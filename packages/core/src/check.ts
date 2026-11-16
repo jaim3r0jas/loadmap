@@ -90,10 +90,6 @@ export function check<P, C extends string>(
     for (const x of scope) if (x.capacity?.unread) unread.add(`${x.short}: ${x.capacity.unread}`)
     for (const [name, m] of gaps) if (!read.has(name)) unread.add(`${name}: ${m.missing}`)
     const data = [...unread]
-    // a demand that is no number (a division by zero at these values) ranks nothing: the crossing found for its
-    // component is not one. What another component shows on its own still stands
-    const adrift = scope.filter((x) => x.demand != null && !Number.isFinite(x.demand))
-    const unranked = adrift.map((x) => `the demand of ${x.short} is ${x.demand}${where}, not a number to rank by`)
     const benchmarks = unknown.map((x) => `${x.short}: no published benchmark ${x.missing}`)
     if (c && unknown.length) return result(e, 'inconclusive', [...benchmarks, ...data], found, none)
     if (c && c.util == null)
@@ -134,23 +130,17 @@ export function check<P, C extends string>(
     const edges = claims
       .filter((x) => x.at === 'edge')
       .map((x) => `holds at ${fmt(x.min)}× only at the high edge of a ±`)
-    // beside a demand that is no number, a failure is certain only where a component with a real one fails by itself
-    const alone = (k: 'target' | 'full', min: number | undefined) =>
-      min != null && scope.some((x) => !adrift.includes(x) && at(x[`${k}Range`], min) === 'fail')
-    const fails = adrift.length
-      ? alone('target', e.underTarget) || alone('full', e.notFull)
-      : claims.some((x) => x.at === 'fail')
     const outcome: Outcome =
-      fails && !data.length
+      claims.some((x) => x.at === 'fail') && !data.length
         ? 'fail'
-        : data.length || edges.length || benchmarks.length || unranked.length
+        : data.length || edges.length || benchmarks.length
           ? 'inconclusive'
           : 'pass'
     // what the ranked components show still says how much headroom is left
     return result(
       e,
       outcome,
-      outcome === 'fail' ? [] : [...benchmarks, ...data, ...unranked, ...edges],
+      outcome === 'fail' ? [] : [...benchmarks, ...data, ...edges],
       found,
       unknown.length ? `${none}; among the rest, ${message}` : message,
     )

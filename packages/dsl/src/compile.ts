@@ -251,9 +251,9 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
     doc = parse(source, report).doc
     definition = c.run(doc)
     if (definition)
-      expectations = check(definition.model).map((result, i) => {
+      expectations = check(definition.model).map((found, i) => {
         const at = c.expectSpans[i]!
-        return { at, ...report.position(at.from), result }
+        return { at, ...report.position(at.from), result: grounded(definition!.model, found) }
       })
   } catch (err) {
     // a formula that fails only at a capacity bound, while checking: it has its place
@@ -331,6 +331,29 @@ function renamed<T>(node: T, from: string, to: string): T {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(o)) out[k] = renamed(v, from, to)
   return out as T
+}
+
+/**
+ * An expectation's result, made inconclusive where it rests on a demand that is no number (a division by zero at these
+ * values): the crossing found for that component is not one, so "holds up to 0×" is no answer. A failure stays one
+ * where a component with a real demand fails by itself. Here and not in core's check, which every page loads first.
+ */
+function grounded(model: Definition['model'], r: CheckResult): CheckResult {
+  const e = r.expectation
+  if (e.flow != null || (e.underTarget == null && e.notFull == null)) return r
+  const scenario = e.scenario == null ? undefined : model.scenarios.find((s) => s.label === e.scenario)
+  const all = Object.values(model.evaluate(scenario?.values).components)
+  const scope = e.component == null ? all : all.filter((x) => x.id === e.component)
+  const adrift = scope.filter((x) => x.demand != null && !Number.isFinite(x.demand))
+  if (!adrift.length) return r
+  const where = scenario ? ` in ${scenario.label}` : ''
+  const reasons = adrift.map((x) => `the demand of ${x.short} is ${x.demand}${where}, not a number to rank by`)
+  const short = (x: { high: number } | null, min: number | undefined) => min != null && x != null && x.high < min
+  const alone = scope.some(
+    (x) => !adrift.includes(x) && (short(x.targetRange, e.underTarget) || short(x.fullRange, e.notFull)),
+  )
+  if (r.outcome === 'fail' && alone) return r
+  return { ...r, ok: false, outcome: 'inconclusive', reasons: [...r.reasons, ...reasons] }
 }
 
 /** Stops compiling after an error that leaves nothing sensible to check. */

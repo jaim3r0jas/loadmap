@@ -1860,6 +1860,13 @@ api -> db
       outcome: 'inconclusive',
       reasons: ['the demand of API is Infinity, not a number to rank by'],
     })
+    // what a component with a real demand shows by itself still stands: the DB runs out at 12.5×
+    const outcomes = (expect: string) =>
+      compile(src.replace('expect "x" { underTarget: 2 }', expect)).expectations.map((x) => x.result.outcome)
+    expect(outcomes('expect "x" { notFull: 20 }')).toEqual(['fail'])
+    expect(outcomes('expect "x" { component: db; notFull: 20 }')).toEqual(['fail'])
+    expect(outcomes('expect "x" { notFull: 5 }')).toEqual(['inconclusive'])
+    expect(outcomes('expect "x" { component: db; notFull: 5 }')).toEqual(['pass'])
   })
 
   it('an unknown function, not also its arguments', () => {
