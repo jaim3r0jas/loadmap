@@ -3,7 +3,6 @@
 '@loadmap/cli': minor
 '@loadmap/editor': minor
 '@loadmap/react': minor
-'@loadmap/vscode': minor
 ---
 
 A definition in several files, from `loadmap 1.3`, which this opens: a new definition starts with `loadmap 1.3`, and

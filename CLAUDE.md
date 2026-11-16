@@ -30,7 +30,7 @@ the `record` skill.
 
 | Part     | What it runs                                                               |
 | -------- | -------------------------------------------------------------------------- |
-| static   | typecheck, biome check, build, budget                                      |
+| static   | typecheck, biome check, the changesets, build, budget                      |
 | node     | the node tests, but the two that drive Chromium                            |
 | chromium | the docs site and the cli tests (`scripts/chromium-node-tests.json`)       |
 | browser  | the browser tests                                                          |

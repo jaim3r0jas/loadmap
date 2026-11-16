@@ -1,7 +1,6 @@
 ---
 '@loadmap/dsl': minor
 '@loadmap/cli': minor
-'@loadmap/vscode': patch
 ---
 
 Sizes, from `loadmap 1.2`: `KB`, `MB`, `GB` and `TB` after a number count in bytes, and a demand written with one is
