@@ -14,6 +14,7 @@ import {
 } from 'vscode'
 import { LanguageClient, type ServerOptions, TransportKind } from 'vscode-languageclient/node'
 import { addFromCatalog, boxAt, type Target } from './catalog'
+import { bundleOf } from './files'
 import { launch } from './launch'
 import { editorUrl } from './links'
 import { Preview } from './preview'
@@ -67,7 +68,11 @@ export async function activate(context: ExtensionContext) {
     if (set && !url)
       void window.showWarningMessage("loadmap.editorUrl is not an http(s) link: the docs' own editor opens.")
     const base = url ?? editorUrl(config.inspect<string>('editorUrl')?.defaultValue)!
-    return `${base}#${await encodeShare(s.doc.getText(), s.values)}`
+    // a definition in several files: the link opens its model and carries every file
+    const bundle = bundleOf(s.doc)
+    const several = bundle && Object.keys(bundle.files).length > 1
+    const source = several ? bundle.files[bundle.path]! : s.doc.getText()
+    return `${base}#${await encodeShare(source, s.values, several ? bundle : undefined)}`
   }
   context.subscriptions.push(
     commands.registerCommand('loadmap.showPreview', () => {

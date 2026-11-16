@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { basename } from 'node:path'
+import { compile } from '@loadmap/dsl'
 import {
   commands,
   type Disposable,
@@ -17,6 +18,7 @@ import {
   workspace,
 } from 'vscode'
 import { Edits } from './edits'
+import { bundleOf } from './files'
 import { type FromPreview, ID, type ParamValue, type PreviewState, type Shown, type ToPreview } from './protocol'
 
 export const VIEW_TYPE = 'loadmap.preview'
@@ -56,6 +58,9 @@ export class Preview {
         },
       }),
       workspace.onDidChangeTextDocument((e) => {
+        // another file of the definition (a part, a library): the preview draws it again
+        if (this.doc && !this.follows(e.document) && e.document.languageId === 'loadmap' && e.contentChanges.length)
+          this.later()
         if (!this.follows(e.document) || !e.contentChanges.length) return
         if (this.tracking) this.edits.apply(e.contentChanges, e.document.getText(), e.document.version)
         this.later()
@@ -178,6 +183,9 @@ export class Preview {
 
   private send() {
     if (!this.doc) return
+    // a definition in several files goes with them: a part draws its model, a library its own boxes
+    const bundle = bundleOf(this.doc)
+    const several = bundle && Object.keys(bundle.files).length > 1
     this.post({
       type: 'source',
       uri: this.doc.uri.toString(),
@@ -185,7 +193,28 @@ export class Preview {
       name: basename(this.doc.uri.path),
       version: this.doc.version,
       edits: this.edits.take(),
+      ...(several && { path: bundle.self, files: bundle.files }),
     })
+  }
+
+  /** A box that another file declares (a part, a library): that file, at the box. */
+  private async revealAcross(id: string) {
+    const doc = this.doc
+    const bundle = doc && bundleOf(doc)
+    if (!doc || !bundle) return
+    const s = compile(doc.getText(), { path: bundle.self, files: bundle.files }).symbols.find(
+      (x) => x.kind === 'node' && x.id === id,
+    )
+    if (!s) return
+    const other = s.file == null ? doc : await workspace.openTextDocument(Uri.file(bundle.fsPath(s.file)))
+    const shown = window.visibleTextEditors.find((e) => this.follows(e.document))
+    const editor = await window.showTextDocument(other, {
+      viewColumn: shown?.viewColumn ?? ViewColumn.One,
+      preserveFocus: false,
+    })
+    const [from, to] = [other.positionAt(s.decl.from), other.positionAt(s.decl.to)]
+    editor.selection = new Selection(from, to)
+    editor.revealRange(new Range(from, from), TextEditorRevealType.AtTop)
   }
 
   private post(m: ToPreview) {
@@ -247,6 +276,7 @@ export class Preview {
     } else if (m?.type === 'reveal' && typeof m.id === 'string' && ID.test(m.id)) {
       const doc = this.doc
       const box = (await this.boxes()).find((s) => s.name === m.id)
+      if (doc && !box) await this.revealAcross(m.id)
       if (!doc || !box) return
       const shown = window.visibleTextEditors.find((e) => this.follows(e.document))
       const editor = await window.showTextDocument(doc, {

@@ -8,7 +8,17 @@ export type ToPreview =
    * The text to draw, its document, and the file name the diagnostics give. Its version, and the edits the preview
    * has not followed yet (null: a whole new text, nothing to follow), while it tracks live changes.
    */
-  | { type: 'source'; uri: string; source: string; name: string; version: number; edits: Edit[] | null }
+  | {
+      type: 'source'
+      uri: string
+      source: string
+      name: string
+      version: number
+      edits: Edit[] | null
+      /** For a definition in several files: the text's own path and every file by its path, from their root. */
+      path?: string
+      files?: Record<string, string>
+    }
   /** Track live changes: the preview shows what each edit changed. */
   | { type: 'track'; on: boolean }
   /** The box the cursor is in, or none. */
@@ -45,7 +55,9 @@ export interface PreviewState {
   source: string
   name: string
   values?: Record<string, ParamValue>
+  path?: string
+  files?: Record<string, string>
 }
 
-/** A box id as the language writes one. */
-export const ID = /^[A-Za-z_]\w*$/
+/** A box id as the language writes one: `db`, or a box of a subsystem, `orderLine.consumers`. */
+export const ID = /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/

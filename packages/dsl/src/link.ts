@@ -547,9 +547,18 @@ class Linker {
         passes.push(`${flow}End`)
         stmts.push(decl('node', [id(`${flow}End`), text(flow)], [decl('sink', [])]))
       }
+      // from a box of its own, with the edges its dots take
+      const source = `${flow}From`
+      stmts.push(decl('node', [id(source), text(flow)]))
       const chain = passes.map((p) => id(p))
-      stmts.push(decl('flow', [id(flow), text(flow)], [prop('rate', id('load')), prop('route', chain[0]!, chain)]))
-      if (chain.length > 1) stmts.push({ kind: 'edge', chain, from: at.from, to: at.to } satisfies Edge)
+      stmts.push(
+        decl(
+          'flow',
+          [id(flow), text(flow)],
+          [prop('rate', id('load')), prop('route', chain[0]!, chain), prop('from', id(source))],
+        ),
+      )
+      stmts.push({ kind: 'edge', chain: [id(source), ...chain], from: at.from, to: at.to } satisfies Edge)
     }
     const env: Env = {
       template: (name) => lib.env.template(name),
