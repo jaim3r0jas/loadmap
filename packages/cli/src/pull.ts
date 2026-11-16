@@ -2,7 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import type { Snapshot } from '@loadmap/core'
 import { fmt } from '@loadmap/core/format'
-import { type CompileResult, compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
+import { type CompileResult, compile, formatDiagnostic } from '@loadmap/dsl'
+import { loadCatalogForFiles, project } from './project'
 import { PROVIDER_ENV, providersFromEnv, pull as read } from '@loadmap/providers'
 
 export interface PullCommandOptions {
@@ -62,8 +63,9 @@ export async function pull(argv: string[], o: PullCommandOptions = {}): Promise<
     log(`${file}: cannot read it (${(err as NodeJS.ErrnoException).code ?? (err as Error).message})`)
     return 1
   }
-  await loadCatalogFor(source)
-  const r = compile(source)
+  const here = project(file)
+  await loadCatalogForFiles(source, here.options)
+  const r = compile(source, here.options)
   // only what stops it compiling: a failing expect line is what fresh data is for
   const errors = r.diagnostics.filter((d) => d.severity === 'error')
   if (errors.length) {
