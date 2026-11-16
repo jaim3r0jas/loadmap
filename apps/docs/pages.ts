@@ -411,6 +411,18 @@ export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
     model,
     '```',
     '',
+    '## A model in several files',
+    '',
+    'A model (`shop.loadmap`), a part of it, the library it imports and a variant of it:',
+    '',
+    ...['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap', 'shop.big.loadmap'].flatMap((f) => [
+      `\`docs/multi-file/${f}\`:`,
+      '',
+      '```',
+      readFileSync(join(repo, 'docs/multi-file', f), 'utf8').trimEnd(),
+      '```',
+      '',
+    ]),
   ].join('\n')
   return { 'llms.txt': map, 'llms-full.txt': full }
 }

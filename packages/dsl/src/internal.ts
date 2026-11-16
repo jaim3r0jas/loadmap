@@ -4,7 +4,6 @@ export type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './a
 export { latestEdition } from './catalog'
 export { LIMITS, pageOptions } from './compile'
 export { closest, didYouMean, Reporter } from './diagnostics'
-export { DEFAULT_PATH, fileText, MAX_FILES, MAX_TOTAL, normalizePath, relativePath, resolvePath } from './files'
 export {
   type EditResult,
   type EditValue,
@@ -21,6 +20,7 @@ export {
   type TextChange,
 } from './edit'
 export { BUILTINS } from './expr'
+export { DEFAULT_PATH, fileText, MAX_FILES, MAX_TOTAL, normalizePath, relativePath, resolvePath } from './files'
 export { fingerprint, LEXICON, lex, type Token } from './lexer'
 export { MAX_DEPTH, MAX_SOURCE, parse, parseExpression } from './parser'
 export { codeReference, reference } from './reference'

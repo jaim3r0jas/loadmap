@@ -55,7 +55,11 @@ export function parse(source: string, report = new Reporter(source)): { doc: Doc
  */
 export function parseAt(report: Reporter, from: number, to: number): Document {
   if (to - from > MAX_SOURCE) {
-    report.error('too-large', { from, to: from }, `the definition is ${to - from} characters long; at most ${MAX_SOURCE}`)
+    report.error(
+      'too-large',
+      { from, to: from },
+      `the definition is ${to - from} characters long; at most ${MAX_SOURCE}`,
+    )
     return { body: [] }
   }
   const p = new Parser(lex(report.source, report, from, to), report.source, report)
@@ -470,10 +474,18 @@ class Parser {
             })
             const last = rest.at(-1)!
             // no table: one name, as a route writes it
-            if (!TABLES.has(callee.name)) return { t: 'id', name: joined([callee, ...rest]).name, from: t.from, to: last.to }
+            if (!TABLES.has(callee.name))
+              return { t: 'id', name: joined([callee, ...rest]).name, from: t.from, to: last.to }
             // at.<stage>.<flow>: the one table with two names; the last is the flow, unless the names are one stage
             if (callee.name === 'at' && rest.length > 1)
-              return { t: 'member', object: callee, prop: joined(rest.slice(0, -1)), flow: last, from: t.from, to: last.to }
+              return {
+                t: 'member',
+                object: callee,
+                prop: joined(rest.slice(0, -1)),
+                flow: last,
+                from: t.from,
+                to: last.to,
+              }
             return { t: 'member', object: callee, prop: joined(rest), from: t.from, to: last.to }
           }
           // Math.min(…) reads as min(…), so formulas can be pasted from TypeScript

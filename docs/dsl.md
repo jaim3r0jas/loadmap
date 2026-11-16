@@ -1065,6 +1065,10 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `bad-expect` | an expectation without a target, or with one that does not fit |
 | `bad-step` | a story step that sets what it cannot |
 | `bad-fit` | a fit whose points or measures do not fit |
+| `missing-file` | a file a definition names is not among the files it was given, or its path is not one |
+| `import-loop` | libraries that import each other in a loop |
+| `bad-file` | a file used as what it is not: a part that is not of this model, a model imported as a library |
+| `bad-input` | an input of a prototype or a subsystem that is not set, is set twice, or does not exist |
 | `bad-metric` | a metric, measure or query that cannot be read |
 | `bad-rate` | a flow whose rate is not a finite number from 0 up at some values |
 | `bad-demand` | a component whose demand is not a finite number from 0 up at some values |
@@ -1210,7 +1214,99 @@ A loadmap definition.
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. From loadmap 1.2 in `view { … }`. |
 | `grid` | boolean, constant | The editor's dot grid. Default true. From loadmap 1.2 in `view { … }`. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`, `view`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`, `view`, `include`, `part`, `library`, `import`, `extends`, `subsystem`.
+
+Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
+
+### include
+
+A part of this model: another file whose statements join this one, as if written here. In the head, before anything else. The part says `part of` and this file. From loadmap 1.3.
+
+```
+include "./checkout.story.loadmap"
+```
+
+After the keyword: path.
+
+### part
+
+The second line of a part: the model this file belongs to, which includes it. A part holds anything a model does but its load, its view, its title and its head, and says its model's version. From loadmap 1.3.
+
+```
+part of "./checkout.loadmap"
+```
+
+After the keyword: of path.
+
+### library
+
+The second line of a library: a file of values (let, fit, metric, measure, tier, published), box prototypes and subsystems that models import by name. It is checked on its own, draws nothing, and reads nothing of who imports it. From loadmap 1.3.
+
+```
+library "Platform building blocks"
+```
+
+After the keyword: [label].
+
+### import
+
+Names of a library, used here as if declared here: `a`, or `local: theirs` to give one another name. In the head. The path is relative to this file (`./`, `../`) or starts at the project root (`/`), and ends in .loadmap. From loadmap 1.3.
+
+```
+import "./lib/platform.loadmap" { postgres; pool: podPool }
+```
+
+After the keyword: path.
+
+Its properties are named by this file: each a name of the library, `local: theirs` to give it another.
+
+### extends
+
+The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure or published figure replaces the one of its name; presets, scenarios, expectations and steps are added. From loadmap 1.3.
+
+```
+extends "./checkout.loadmap"
+```
+
+After the keyword: path.
+
+### input
+
+A value a prototype or a subsystem takes from the box that is like it, set there in `with { … }`; with `= …` it has a default. `input flow main` takes the name of a flow instead, for `flows.main`, `at.topic.main` and `partitions { main: 12 }`. From loadmap 1.3.
+
+```
+input pods = 3
+```
+
+After the keyword: id [name] [= formula].
+
+### with
+
+The inputs of the prototype or subsystem this one is like, each by its name. A value is a formula of this file. From loadmap 1.3.
+
+```
+with { pods: pods; need: flows.orders }
+```
+
+Its properties are named by the inputs of the prototype or the subsystem it is like.
+
+### subsystem
+
+Several boxes as one: its boxes, components, connections, the edges between them and its lets, each named `<id>.<name>` outside it. In a library it takes inputs; `like:` makes one from another. With `route:`, a flow or an edge may name the subsystem itself. From loadmap 1.3.
+
+```
+subsystem orderLine "Orders" { like: pipeline; with { main: orders } }
+```
+
+After the keyword: id [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `like` | node, constant | Another subsystem, of this file or imported, to be like: everything it holds, under this id. |
+| `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `route` | route, constant | The stages a flow passes when its route names the subsystem, a -> b. An edge to the subsystem ends at the first one's box, an edge from it starts at the last one's. |
+
+Holds: `input`, `with`, `node`, `cluster`, `pool`, `component`, `connection`, `let`, `subsystem`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
@@ -1236,7 +1332,7 @@ view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```
-loadmap 1.2
+loadmap 1.3
 ```
 
 After the keyword: version.
@@ -1629,7 +1725,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `split`, `cache`, `limit`, `component`, `held`.
+Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `split`, `cache`, `limit`, `component`, `held`, `input`, `with`.
 
 ### cluster
 
@@ -1660,7 +1756,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `queue`, `component`, `held`.
+Holds: `queue`, `component`, `held`, `input`, `with`.
 
 ### pool
 
@@ -1690,7 +1786,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `workers`, `component`, `held`.
+Holds: `workers`, `component`, `held`, `input`, `with`.
 
 ### pass
 

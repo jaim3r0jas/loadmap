@@ -70,7 +70,17 @@ import {
   type Type,
   typeWord,
 } from './expr'
-import { Bail, DEFAULT_PATH, type Files, fileText, Loader, normalizePath, relativePath, type Role, type SourceFile } from './files'
+import {
+  Bail,
+  DEFAULT_PATH,
+  type Files,
+  fileText,
+  Loader,
+  normalizePath,
+  type Role,
+  relativePath,
+  type SourceFile,
+} from './files'
 import { expandAlone, type Linked, link, stamp } from './link'
 import { parse } from './parser'
 import {

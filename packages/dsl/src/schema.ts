@@ -330,7 +330,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   part: {
     since: '1.3',
-    doc: 'The second line of a part: the model this file belongs to, which includes it. A part holds anything a model does but its load, its view, its title and its head, and says its model\'s version.',
+    doc: "The second line of a part: the model this file belongs to, which includes it. A part holds anything a model does but its load, its view, its title and its head, and says its model's version.",
     example: 'part of "./checkout.loadmap"',
     args: [
       { name: 'of', kind: 'id' },
@@ -403,7 +403,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       route: {
         value: 'route',
         scope: 'const',
-        doc: 'The stages a flow passes when its route names the subsystem, a -> b. An edge to the subsystem ends at the first one\'s box, an edge from it starts at the last one\'s.',
+        doc: "The stages a flow passes when its route names the subsystem, a -> b. An edge to the subsystem ends at the first one's box, an edge from it starts at the last one's.",
       },
     },
     children: ['input', 'with', 'node', 'cluster', 'pool', 'component', 'connection', 'let', 'subsystem'],
@@ -930,7 +930,20 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['pass', 'store', 'sink', 'lost', 'fanout', 'split', 'cache', 'limit', 'component', 'held', 'input', 'with'],
+    children: [
+      'pass',
+      'store',
+      'sink',
+      'lost',
+      'fanout',
+      'split',
+      'cache',
+      'limit',
+      'component',
+      'held',
+      'input',
+      'with',
+    ],
   },
   cluster: {
     doc: 'Members (brokers) holding the partitions of one or more queues (topics).',

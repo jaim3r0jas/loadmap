@@ -3,10 +3,9 @@ import { type CompileOptions, compile, type DslSymbol, declarations } from './co
 import { Reporter, type Span } from './diagnostics'
 import type { EditResult, TextChange } from './edit'
 import { RESERVED } from './expr'
-import { parse } from './parser'
 import { type Space, walkNames } from './names'
+import { parse } from './parser'
 import { type BlockSpec, BOXES, SCHEMA } from './schema'
-
 
 interface Ref extends Span {
   space: Space

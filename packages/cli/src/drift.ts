@@ -6,8 +6,8 @@ import { changePoints, compareWindows, type ThresholdTest, threshold } from '@lo
 import { fmt, multiple, pct } from '@loadmap/core/format'
 import { fromSnapshot, parseSnapshot } from '@loadmap/core/measure'
 import { compile, formatDiagnostic } from '@loadmap/dsl'
-import { loadCatalogForFiles, project } from './project'
 import { cell } from './base'
+import { loadCatalogForFiles, project } from './project'
 import { type PullCommandOptions, pullFor, snapshotPath, WINDOW_OPTIONS, windowOf } from './pull'
 
 /** The exit code of a run that could not look: not a drift, and not to be filed as one. */

@@ -309,7 +309,10 @@ class Compiler {
     }
     const dot = name.indexOf('.')
     // `x.y` where x is no subsystem: read as a table that does not exist, at its first name
-    if (dot > 0 && ![...this.names.stages, ...this.names.components].some((n) => n.startsWith(name.slice(0, dot + 1)))) {
+    if (
+      dot > 0 &&
+      ![...this.names.stages, ...this.names.components].some((n) => n.startsWith(name.slice(0, dot + 1)))
+    ) {
       const table = name.slice(0, dot)
       this.report.error(
         'bad-formula',

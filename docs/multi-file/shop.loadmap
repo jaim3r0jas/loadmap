@@ -1,0 +1,57 @@
+loadmap 1.3
+include "./shop.story.loadmap"
+import "./platform.loadmap" { postgres; pipeline }
+# One model in several files. This file is the system; its story is a part beside it (shop.story.loadmap), and the
+# queue with its workers and the database come from a library other models share (platform.loadmap).
+title: "A shop in several files"
+
+load "Users, × today" { max: 100; default: 10 }
+
+param pods "Worker pods" { options: [3, 6]; default: 3 }
+
+scenario "Today" {}
+scenario "More workers" { pods: 6 }
+
+expect "Today keeps 5×" { underTarget: 5 }
+
+flow orders "orders" {
+  unit: "order"
+  rate: 40 * load
+  # the subsystem by its id: the flow passes its topic and its workers
+  route: gateway -> orderLine -> db
+  from: phones
+  color: accent
+}
+
+tier edge "Edge"
+tier services "Services"
+tier data "Data"
+
+node phones "Phones" "app checkout"
+
+node gateway "API gateway" {
+  tier: edge
+  pass
+  short: "the API gateway"
+  capacity: estimated(20_000 ± 30%, "req/s", "vendor benchmark")
+  over: "clients get 429s"
+}
+
+# the library's pipeline, with this model's flow and parameter: its boxes are orderLine.kafka and orderLine.consumers
+subsystem orderLine "Orders" {
+  like: pipeline
+  tier: services
+  with { main: orders; pods: pods }
+}
+
+# the library's database: what it writes is this model's to say
+node db "Postgres" "primary" {
+  like: postgres
+  with { writes: flows.orders }
+  tier: data
+  name: "Postgres primary"
+}
+
+phones -> gateway: "POST /checkout"
+gateway -> orderLine
+orderLine -> db

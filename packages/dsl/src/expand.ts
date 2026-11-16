@@ -41,8 +41,7 @@ const isBox = (s: Stmt): s is Decl => s.kind === 'decl' && (BOXES as readonly st
 const isInput = (s: Stmt): s is Decl => s.kind === 'decl' && s.keyword.name === 'input'
 const isWith = (s: Stmt): s is Decl => s.kind === 'decl' && s.keyword.name === 'with'
 const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0].name : undefined)
-const propOf = (d: Decl, key: string) =>
-  d.body?.find((st): st is Property => st.kind === 'prop' && st.key.name === key)
+const propOf = (d: Decl, key: string) => d.body?.find((st): st is Property => st.kind === 'prop' && st.key.name === key)
 
 /** A copy all the way down: a rewrite never touches what the text parsed to. */
 function clone<T>(node: T): T {
@@ -95,6 +94,8 @@ interface Content {
 export class Expander {
   private boxes = 0
   private tooMany = false
+  /** The boxes of a loop of `like`s, said once: each is then left as it is written. */
+  private looped = new Set<Decl>()
 
   constructor(
     readonly report: Reporter,
@@ -156,17 +157,21 @@ export class Expander {
         this.report.error(
           'misplaced',
           i.keyword,
-          env.library ? 'an input goes at the top of the subsystem' : 'an input goes in a box or a subsystem of a library',
+          env.library
+            ? 'an input goes at the top of the subsystem'
+            : 'an input goes in a box or a subsystem of a library',
         )
     const stripped =
       withs.length || (drawn && inputs.length)
         ? { ...d, body: (d.body ?? []).filter((s) => !isWith(s) && !(drawn && isInput(s))) }
         : { ...d, body: d.body ?? [] }
     if (!like) {
-      for (const w of withs) this.report.error('misplaced', w.keyword, '"with" sets the inputs of the box this one is like')
+      for (const w of withs)
+        this.report.error('misplaced', w.keyword, '"with" sets the inputs of the box this one is like')
       return withs.length || (drawn && inputs.length) ? stripped : d
     }
     const self = idOf(d) ?? ''
+    if (this.looped.has(d)) return stripped
     const name = like.value.t === 'id' ? like.value.name : undefined
     const found = name == null ? undefined : env.template(name)
     if (name == null || !found) {
@@ -178,6 +183,7 @@ export class Expander {
     if (proto === d || trail.includes(proto)) {
       const loop = [...trail.map((t) => idOf(t) ?? ''), self, name].filter(Boolean).join(' → ')
       this.report.error('bad-box', like.value, `a box cannot be like itself: ${loop}`)
+      for (const t of [...trail, d]) this.looped.add(t)
       return stripped
     }
     if (proto.keyword.name !== d.keyword.name) {
@@ -225,7 +231,13 @@ export class Expander {
    * What each input of a prototype or a subsystem is given: the value in `with`, else its default, each checked
    * against the other. An input left open, set twice or not there is said at the box that is like it.
    */
-  private given(d: Decl, withs: readonly Decl[], inputs: readonly Decl[], theirs: Env, what: string): Map<string, Given> {
+  private given(
+    d: Decl,
+    withs: readonly Decl[],
+    inputs: readonly Decl[],
+    theirs: Env,
+    what: string,
+  ): Map<string, Given> {
     const out = new Map<string, Given>()
     const set = new Map<string, Property>()
     for (const w of withs.slice(1)) this.report.error('duplicate', w.keyword, 'one "with" block is enough')
@@ -249,7 +261,14 @@ export class Expander {
         if (i.init) this.report.error('bad-input', i.init, 'a flow input has no default: the model says which flow')
         if (value?.value.t === 'id') out.set(id, { kind: 'flow', name: value.value.name })
         else if (value) this.report.error('bad-input', value.value, `"${id}" takes the name of a flow`)
-        else this.report.error('bad-input', withs[0]?.keyword ?? d.keyword, `${what} needs its flow "${id}"`, `with { ${id}: … }`, { input: id })
+        else
+          this.report.error(
+            'bad-input',
+            withs[0]?.keyword ?? d.keyword,
+            `${what} needs its flow "${id}"`,
+            `with { ${id}: … }`,
+            { input: id },
+          )
         continue
       }
       if (value) {
@@ -261,7 +280,13 @@ export class Expander {
         this.settleFormula(init, theirs)
         out.set(id, { kind: 'value', value: init })
       } else
-        this.report.error('bad-input', withs[0]?.keyword ?? d.keyword, `${what} needs its input "${id}"`, `with { ${id}: … }`, { input: id })
+        this.report.error(
+          'bad-input',
+          withs[0]?.keyword ?? d.keyword,
+          `${what} needs its input "${id}"`,
+          `with { ${id}: … }`,
+          { input: id },
+        )
     }
     for (const [k, p] of set)
       if (!names.has(k))
@@ -278,7 +303,14 @@ export class Expander {
   private fits(input: Decl, value: Property) {
     const [d, v] = [input.init, value.value]
     if (!d) return
-    const kind = (e: Expr) => (e.t === 'num' ? 'a number' : e.t === 'bool' ? 'true or false' : e.t === 'str' || e.t === 'tpl' ? 'a text' : undefined)
+    const kind = (e: Expr) =>
+      e.t === 'num'
+        ? 'a number'
+        : e.t === 'bool'
+          ? 'true or false'
+          : e.t === 'str' || e.t === 'tpl'
+            ? 'a text'
+            : undefined
     const [want, got] = [kind(d), kind(v)]
     const id = (input.args[0] as Ident).name
     if (want && got && want !== got) {
@@ -287,7 +319,15 @@ export class Expander {
     }
     if (d.t !== 'num' || v.t !== 'num') return
     const unit = (u: string | undefined) =>
-      u == null ? undefined : u === '%' ? 'a share' : u === '×' || u === 'x' ? 'a load multiple' : /^(ms|s|min|h)$/.test(u) ? 'a time' : 'a size'
+      u == null
+        ? undefined
+        : u === '%'
+          ? 'a share'
+          : u === '×' || u === 'x'
+            ? 'a load multiple'
+            : /^(ms|s|min|h)$/.test(u)
+              ? 'a time'
+              : 'a size'
     const [du, vu] = [unit(d.unit), unit(v.unit)]
     if (du && vu && du !== vu)
       this.report.warning(
@@ -331,7 +371,12 @@ export class Expander {
     return out
   }
 
-  private settler(env: Env, given: ReadonlyMap<string, Given>, swaps: [Node, Expr][], inner?: ReadonlySet<string>): NameVisitor {
+  private settler(
+    env: Env,
+    given: ReadonlyMap<string, Given>,
+    swaps: [Node, Expr][],
+    inner?: ReadonlySet<string>,
+  ): NameVisitor {
     const lib = env.library
     return (space, raw, name, decl) => {
       const node = raw as Node
@@ -340,13 +385,20 @@ export class Expander {
         const g = given.get(name)
         if (g?.kind === 'value' && !decl) {
           if (node.t === 'id') swaps.push([node, g.value])
-          else this.report.error('bad-input', node, `the input "${name}" is a value: it cannot be called or read as a table`)
+          else
+            this.report.error(
+              'bad-input',
+              node,
+              `the input "${name}" is a value: it cannot be called or read as a table`,
+            )
           return
         }
         if (inner?.has(name) || decl || !lib) return
         const id = lib.value(name, 'formula')
         if (id != null) node.name = id
-        else if (!(own(BUILTINS, name) || RESERVED.has(name) || this.hosted.has(name) || name === 'i' || name === 'value'))
+        else if (
+          !(own(BUILTINS, name) || RESERVED.has(name) || this.hosted.has(name) || name === 'i' || name === 'value')
+        )
           this.report.error(
             'unknown-name',
             node,
@@ -393,7 +445,9 @@ export class Expander {
       this.report.error(
         'misplaced',
         i.keyword,
-        env.library ? 'an input goes at the top of a subsystem of a library' : 'an input goes in a subsystem of a library',
+        env.library
+          ? 'an input goes at the top of a subsystem of a library'
+          : 'an input goes in a subsystem of a library',
       )
     const stmts = content.stmts
     // every name it declares, as it is known outside: its lets, and its boxes with their stages and components
@@ -429,7 +483,9 @@ export class Expander {
       out.push(s)
     }
     if (route) {
-      const stages = route.chain ?? (route.value.t === 'id' ? [{ name: route.value.name, from: route.value.from, to: route.value.to }] : [])
+      const stages =
+        route.chain ??
+        (route.value.t === 'id' ? [{ name: route.value.name, from: route.value.from, to: route.value.to }] : [])
       const boxOf = (stage: string | undefined) =>
         stage == null
           ? undefined
@@ -438,7 +494,8 @@ export class Expander {
                 isBox(s) &&
                 (idOf(s) === stage ||
                   (s.body ?? []).some(
-                    (c) => c.kind === 'decl' && (STAGES as readonly string[]).includes(c.keyword.name) && idOf(c) === stage,
+                    (c) =>
+                      c.kind === 'decl' && (STAGES as readonly string[]).includes(c.keyword.name) && idOf(c) === stage,
                   )),
             )
       const [first, last] = [boxOf(stages[0]?.name), boxOf(stages.at(-1)?.name)]
@@ -467,7 +524,12 @@ export class Expander {
     )
     for (const s of own_)
       if (s.kind === 'prop' && s.key.name !== 'route')
-        this.report.error('unknown-property', s.key, `unknown property "${s.key.name}" in subsystem`, didYouMean(s.key.name, ['like', 'tier', 'route']))
+        this.report.error(
+          'unknown-property',
+          s.key,
+          `unknown property "${s.key.name}" in subsystem`,
+          didYouMean(s.key.name, ['like', 'tier', 'route']),
+        )
       else if (s.kind === 'decl' && !SCHEMA.subsystem!.children.includes(s.keyword.name))
         this.report.error(
           'misplaced',
@@ -483,7 +545,8 @@ export class Expander {
     )
     const mine = this.body(kept, env, depth + 1, 'subsystem')
     if (!like) {
-      for (const w of withs) this.report.error('misplaced', w.keyword, '"with" sets the inputs of the subsystem this one is like')
+      for (const w of withs)
+        this.report.error('misplaced', w.keyword, '"with" sets the inputs of the subsystem this one is like')
       return { stmts: clone(mine), inputs }
     }
     const name = like.value.t === 'id' ? like.value.name : undefined
@@ -494,7 +557,11 @@ export class Expander {
       return undefined
     }
     if (found.decl.keyword.name !== 'subsystem') {
-      this.report.error('bad-box', like.value, `a subsystem is like another subsystem: "${name}" is a ${found.decl.keyword.name}`)
+      this.report.error(
+        'bad-box',
+        like.value,
+        `a subsystem is like another subsystem: "${name}" is a ${found.decl.keyword.name}`,
+      )
       return undefined
     }
     if (found.decl === d || trail.includes(found.decl)) {
@@ -538,7 +605,8 @@ function through(written: Stmt[], paths: ReadonlyMap<string, Path>, report: Repo
       if (s.kind === 'prop') {
         const spec = propNamed(own(SCHEMA, keyword)?.props ?? {}, s.key.name)?.spec ?? own(COMPONENT_PROPS, s.key.name)
         if (spec?.value !== 'route' && !s.chain) continue
-        const names = s.chain ?? (s.value.t === 'id' ? [{ name: s.value.name, from: s.value.from, to: s.value.to }] : [])
+        const names =
+          s.chain ?? (s.value.t === 'id' ? [{ name: s.value.name, from: s.value.from, to: s.value.to }] : [])
         if (!names.some((n) => paths.has(n.name))) continue
         const chain = names.flatMap((n) => {
           const p = paths.get(n.name)

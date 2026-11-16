@@ -3,8 +3,8 @@ import { parseArgs } from 'node:util'
 import type { Snapshot } from '@loadmap/core'
 import { fmt } from '@loadmap/core/format'
 import { type CompileResult, compile, formatDiagnostic } from '@loadmap/dsl'
-import { loadCatalogForFiles, project } from './project'
 import { PROVIDER_ENV, providersFromEnv, pull as read } from '@loadmap/providers'
+import { loadCatalogForFiles, project } from './project'
 
 export interface PullCommandOptions {
   log?: (s: string) => void
