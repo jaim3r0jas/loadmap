@@ -952,7 +952,8 @@ class Compiler {
         else this.strict(STRICT_FORMULAS, 'bad-demand', at, message, 'a demand is from 0 up')
       }
       const capacity = this.prop(b, 'capacity')
-      if (capacity && c.capacity && !(c.capacity.value > 0))
+      // NaN is no figure (a published run that does not match, measured data missing), which says so itself
+      if (capacity && c.capacity && c.capacity.value <= 0)
         this.strict(
           STRICT_FORMULAS,
           'out-of-range',
