@@ -7,6 +7,9 @@ import { compile, loadCatalog } from '../src'
  * each release shipped. A file that compiled under its version keeps compiling and computing the same on every later
  * loadmap 1 (docs/dsl.md, "Versions"). Never edit one; a release adds its files in a folder of its own. The snapshot
  * of what their expectations find moves only with a fix of a figure that was wrong, which its changeset names.
+ *
+ * `unreleased-1.2` is the one folder that is no release: the files as they were in language 1.2, at the commit before
+ * 1.3 opened. No release shipped 1.2 on its own, and a file written for it still has to read as it did.
  */
 const dir = new URL('corpus/', import.meta.url)
 const files = readdirSync(dir).flatMap((release) =>
