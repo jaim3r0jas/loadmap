@@ -1060,7 +1060,7 @@ node db "Postgres" "primary" { like: postgres; with { writes: flows.orders } }
 ```
 
 An input without a default must be set; a value in `with` is a formula of the file that writes it, of the type its
-default has (a number for a number), and where both say a unit, the same one: `wait: flows.orders * 2` for an
+default has (a number for a number), and where both say a unit, the same one: `wait: flows.orders` for an
 `input wait = 20ms` compiles with a warning. The lines of the
 prototype read only its inputs and its library's own names: `load`, a parameter or a flow of the model reach it only
 as an input. `input flow main` takes the name of a flow instead of a value, for `flows.main`, `at.topic.main` and
