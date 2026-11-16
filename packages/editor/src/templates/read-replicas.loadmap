@@ -1,4 +1,4 @@
-loadmap 1.2
+loadmap 1.3
 # Reads go to replicas, writes to the primary, and the primary also ships every write to each replica. More replicas
 # take reads off each other but add replication work on the primary.
 title: "Reads on replicas"

@@ -1,13 +1,12 @@
-import { childrenOf, type Expr, type Ident, type Stmt } from './ast'
+import type { Stmt } from './ast'
 import { type CompileOptions, compile, type DslSymbol, declarations } from './compile'
 import { Reporter, type Span } from './diagnostics'
 import type { EditResult, TextChange } from './edit'
 import { RESERVED } from './expr'
 import { parse } from './parser'
-import { type BlockSpec, BOXES, EDGE_PROPS, own, propNamed, SCHEMA, STAGES } from './schema'
+import { type Space, walkNames } from './names'
+import { type BlockSpec, BOXES, SCHEMA } from './schema'
 
-/** Where names live: a name is unique in its space, and a reference finds its declaration there. */
-type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario' | 'metric' | 'connection'
 
 interface Ref extends Span {
   space: Space
@@ -146,107 +145,11 @@ class NameIndex {
     return this.stages.has(name)
   }
 
-  private add(space: Space, id: Ident | (Span & { name?: string }), name: string, decl = false, quoted = false) {
+  private add(space: Space, id: Span, name: string, decl = false, quoted = false) {
     this.refs.push({ space, name, from: id.from, to: id.to, decl, quoted })
   }
 
-  private scenario(e: Expr, decl = false) {
-    if (e.t === 'id') this.add('scenario', e, e.name, decl)
-    else if (e.t === 'str') this.add('scenario', { from: e.from + 1, to: e.to - 1 }, e.value, decl, true)
-  }
-
-  private visit(list: readonly Stmt[], spec: BlockSpec, branches: boolean, edgeBody = false) {
-    for (const s of list) {
-      if (s.kind === 'prop') {
-        const prop = edgeBody ? own(EDGE_PROPS, s.key.name) : propNamed(spec.props, s.key.name)?.spec
-        if (!prop && spec.open) {
-          const k = s.key.name
-          if (spec.open.names === 'flows') this.add('flow', s.key, k)
-          // a catalog condition or a metric's argument is no name of the definition
-          else if (k !== 'load' && spec.open.names !== 'conditions' && spec.open.names !== 'arguments')
-            this.add('formula', s.key, k)
-          this.expr(s.value)
-          continue
-        }
-        switch (prop?.value) {
-          case 'route':
-            for (const n of s.chain ??
-              (s.value.t === 'id' ? [{ name: s.value.name, from: s.value.from, to: s.value.to }] : []))
-              this.add('stage', n, n.name)
-            break
-          case 'node':
-          case 'component':
-          case 'flow':
-          case 'tier':
-            if (s.value.t === 'id') this.add(prop.value, s.value, s.value.name)
-            break
-          case 'flows':
-            if (s.value.t === 'array') for (const e of s.value.items) if (e.t === 'id') this.add('flow', e, e.name)
-            break
-          case 'measure':
-            if (s.value.t === 'id') this.add('formula', s.value, s.value.name)
-            break
-          case 'scenario':
-            this.scenario(s.value)
-            break
-          default:
-            this.expr(s.value)
-        }
-      } else if (s.kind === 'decl') {
-        const k = s.keyword.name
-        const id = s.args[0]?.t === 'id' ? s.args[0] : undefined
-        if (id) {
-          if (k === 'param' || k === 'let' || k === 'fit' || k === 'published' || k === 'measure')
-            this.add('formula', id, id.name, true)
-          // a connection that gives accepts (or its old name, max) is a limit: expect, focus and formulas name it as a component
-          else if (k === 'connection')
-            this.add(
-              s.body?.some(
-                (p) => p.kind === 'prop' && propNamed(SCHEMA.connection!.props, p.key.name)?.name === 'accepts',
-              )
-                ? 'component'
-                : k,
-              id,
-              id.name,
-              true,
-            )
-          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric') this.add(k, id, id.name, true)
-          else if ((BOXES as readonly string[]).includes(k)) this.add('node', id, id.name, true)
-          else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)
-        }
-        const metric = s.args[1]
-        if (k === 'measure' && metric?.t === 'id') this.add('metric', metric, metric.name)
-        // its id, when it has one, and its label: a step or an expect names it by either
-        if (k === 'scenario') for (const a of s.args.slice(0, 2)) this.scenario(a, true)
-        for (const a of s.args) if (a.t === 'tpl') this.expr(a)
-        if (s.init) this.expr(s.init)
-        const inner = own(SCHEMA, k)
-        if (s.body && inner) this.visit(s.body, inner, inner.edges === 'branches')
-      } else if (s.kind === 'edge') {
-        if (branches) {
-          const [flow, ...stages] = s.chain
-          if (flow) this.add('flow', flow, flow.name)
-          for (const n of stages) this.add('stage', n, n.name)
-        } else for (const n of s.chain) this.add('node', n, n.name)
-        if (s.value) this.expr(s.value)
-        if (s.body) this.visit(s.body, spec, false, true)
-      }
-    }
-  }
-
-  private expr(e: Expr) {
-    if (e.t === 'id') this.add('formula', e, e.name)
-    else if (e.t === 'call') this.add('formula', e.callee, e.callee.name)
-    else if (e.t === 'member') {
-      const table = e.object.name
-      if (table === 'flows') this.add('flow', e.prop, e.prop.name)
-      else if (table === 'at') {
-        this.add('stage', e.prop, e.prop.name)
-        if (e.flow) this.add('flow', e.flow, e.flow.name)
-      } else if (table === 'out') this.add('stage', e.prop, e.prop.name)
-      else if (table === 'demand' || table === 'util') this.add('component', e.prop, e.prop.name)
-      else if (table === 'derived') this.add('formula', e.prop, e.prop.name)
-    }
-    for (const c of childrenOf(e, true)) this.expr(c)
+  private visit(list: readonly Stmt[], spec: BlockSpec, branches: boolean) {
+    walkNames(list, spec, (space, node, name, decl, quoted) => this.add(space, node, name, decl, quoted), branches)
   }
 }

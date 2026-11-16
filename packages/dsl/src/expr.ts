@@ -307,6 +307,17 @@ class Compiler {
       this.report.error('bad-formula', e, `"${name}" is a function: call it, ${name}(…)`)
       return bad
     }
+    const dot = name.indexOf('.')
+    // `x.y` where x is no subsystem: read as a table that does not exist, at its first name
+    if (dot > 0 && ![...this.names.stages, ...this.names.components].some((n) => n.startsWith(name.slice(0, dot + 1)))) {
+      const table = name.slice(0, dot)
+      this.report.error(
+        'bad-formula',
+        { from: e.from, to: e.from + table.length },
+        `"${table}" has no entries: only flows., at., out., demand., util. and derived. do`,
+      )
+      return bad
+    }
     const known = [...this.names.params.keys(), ...this.names.lets.keys()]
     this.report.error('unknown-name', e, `unknown name "${name}"`, didYouMean(name, known))
     return bad

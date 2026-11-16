@@ -1,4 +1,4 @@
-loadmap 1.2
+loadmap 1.3
 # Requests are accepted fast and done later: an API puts jobs on a queue, a pool of workers drains it, and each job
 # ends in the database. Past capacity the queue grows instead of requests failing.
 title: "Queue and workers"
