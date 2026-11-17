@@ -288,6 +288,65 @@ describe('a model in several files', () => {
     expect(said('', '1.4')).toHaveLength(2)
   })
 
+  it('names copies of one subsystem apart, by the subsystems around them that differ', () => {
+    const lib = [
+      'loadmap 1.5',
+      'library "Regions"',
+      'subsystem line "Orders" {',
+      '  input flow main',
+      '  node workers "Workers" { pass; demand: flows.main; capacity: estimated(10, "req/s"); over: "x"; short: "the workers" }',
+      '}',
+      'subsystem region "Region" {',
+      '  input flow main',
+      '  node api "API" { pass; demand: flows.main; capacity: estimated(100, "req/s"); over: "x" }',
+      '  subsystem orders { like: line; with { main: main } }',
+      '  api -> orders.workers',
+      '}',
+      '',
+    ].join('\n')
+    const model = [
+      'loadmap 1.5',
+      'import "./regions.loadmap" { region }',
+      'load "x" { max: 10; default: 1 }',
+      'flow eu "eu" { rate: load; route: eu.api -> eu.orders.workers; from: s }',
+      'flow us "us" { rate: 2 * load; route: us.api -> us.orders.workers; from: s }',
+      'node s "S"',
+      'node api "API" { pass; demand: flows.eu; capacity: estimated(100, "req/s"); over: "x" }',
+      'subsystem eu "EU region" { like: region; with { main: eu } }',
+      'subsystem us "US region" { like: region; with { main: us } }',
+      's -> eu.api',
+      's -> us.api',
+      's -> api',
+      '',
+    ].join('\n')
+    const r = compile(model, { path: 'm.loadmap', files: { 'm.loadmap': model, 'regions.loadmap': lib } })
+    expect(errors(r)).toEqual([])
+    const named = Object.fromEntries(
+      Object.entries(r.definition!.model.def.components as Record<string, { name: string; short?: string }>).map(
+        ([id, c]) => [id, [c.name, c.short]],
+      ),
+    )
+    expect(named).toEqual({
+      // "Orders" is the same in both regions: it tells nothing apart, so it is left out
+      'eu.orders.workers': ['EU region › Workers', 'the workers in EU region'],
+      'us.orders.workers': ['US region › Workers', 'the workers in US region'],
+      'eu.api': ['EU region › API', 'API in EU region'],
+      'us.api': ['US region › API', 'API in US region'],
+      // one outside every subsystem keeps its name
+      api: ['API', undefined],
+    })
+    // the box keeps its label: its frame says where it stands
+    expect(r.definition!.view.def.nodes['eu.orders.workers']!.label).toBe('Workers')
+    // the verdict says which copy runs out
+    const ev = r.definition!.model.evaluate({ load: 8 })
+    expect(ev.verdict.text).toContain('the workers in US region')
+    // copies without names of their own both read "Region": their ids tell them apart
+    const plain = model.replace(' "EU region"', '').replace(' "US region"', '')
+    const p = compile(plain, { path: 'm.loadmap', files: { 'm.loadmap': plain, 'regions.loadmap': lib } })
+    const c = p.definition!.model.def.components as Record<string, { name: string }>
+    expect([c['eu.orders.workers']!.name, c['us.orders.workers']!.name]).toEqual(['eu › Workers', 'us › Workers'])
+  })
+
   it('writes a subsystem out under its id, and bounds how far that goes', () => {
     const r = run(MODEL)
     expect(r.definition!.model.stageIds).toEqual(['gateway', 'orderLine.topic', 'orderLine.consumers', 'db'])

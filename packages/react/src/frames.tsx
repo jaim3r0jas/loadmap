@@ -19,7 +19,9 @@ const past = (states: (ComponentState | null)[]) =>
 /**
  * The subsystems' frames behind the boxes and edges: a tint that lets a lane show through and deepens where a frame
  * stands in another, its name at its top (up its left side running down, as a tier's), and its line in the colour of
- * the worst box inside once one is past its target. The name is a button that closes the subsystem into one box.
+ * the worst box inside once one is past its target. The name is a button that closes the subsystem into one box; on
+ * a board that zooms, the frame is one that flies in to it (the path to where the view is shows with the zoom's
+ * buttons, zoom.tsx).
  * Paint goes in attributes, as a tier's does: export resolves the tokens in them.
  */
 export function Frames({
@@ -35,9 +37,18 @@ export function Frames({
     const state = past(scene.nodes.filter((n) => s.nodes.includes(n.id)).map(stateOf))
     const { x, y, size, weight } = s.title
     const close = () => lm.setClosed([...lm.closed, s.id])
+    // a board hidden at first has no viewer until it shows: the click asks for it then
+    const enter = () => lm.engine.viewer?.enter(s, s.id)
     return (
       <g key={s.id} data-subsystem-id={s.id} data-state={state} opacity={s.fade}>
         <rect
+          {...(lm.zoom && {
+            role: 'button',
+            tabIndex: 0,
+            'aria-label': `${s.label}: fly in to it`,
+            onClick: enter,
+            onKeyDown: pressed(enter),
+          })}
           x={s.x}
           y={s.y}
           width={s.w}

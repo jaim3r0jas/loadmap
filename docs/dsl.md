@@ -1127,6 +1127,12 @@ click on it and closes one with a click on its name; a subsystem in a closed one
 [eu, us] }` says which the page starts with, and a step says its own: `step "…" { closed: [us] }`, or `closed: []` for
 every one open. Closing changes no number: the dots still pass every stage inside.
 
+On a board that zooms, a click on a frame flies in to it, and the path to where the view is shows over the board
+("Whole diagram › EU region › Orders"); each step of it flies back out. Copies of one subsystem name their components
+alike, so each such name takes the names of the subsystems around it that tell the copies apart: the verdict says
+"limited by EU region › Workers" and "the workers in EU region", while the box itself still reads "Workers" in its
+frame. A name no other component has stays as written.
+
 A problem is reported in the file that can fix it: a library's own mistake in the library, a wrong or missing input
 at the box that sets it. `loadmap check` prints each with its file (`--format json` adds `file` to a diagnostic that
 is not in the checked file). `loadmap fmt` on a model sets its parts' `loadmap` lines to its own. `loadmap bundle

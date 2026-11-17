@@ -83,6 +83,8 @@ the page starts with, and a story step its own (`closed: ['us']` in the step, `[
 opens one with a click on it and closes one with a click on its name; `setClosed(ids)` on the controller
 (`useLoadmap`) sets them from code.
 
+With `zoom`, a click on a frame flies in to it, and the path to where the view is shows over the board.
+
 ## The page (`@loadmap/react`)
 
 | Export                                                                                                                               | What                                                                            |
