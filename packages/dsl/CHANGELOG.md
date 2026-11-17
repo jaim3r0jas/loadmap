@@ -1,5 +1,26 @@
 # @loadmap/dsl
 
+## 0.35.0
+
+### Minor Changes
+
+- 4122ae6: Language 1.4 reads `direction: auto` (the default said out loud: the way that fits the room larger) and `rows`, the
+  rows a long diagram is folded into: `rows: 1` never folds, `rows: 2` draws two wherever there is room; without it the
+  page chooses for its room. A file stamped before 1.4 has to say 1.4 to use either.
+- 32d5683: Language 1.4 is open: 1.3 shipped in @loadmap/dsl 0.34.0, so what is new to read needs a version of its own. Every
+  definition in the repository says `loadmap 1.4`, and the corpus holds what 0.34.0 released. `rows` takes no unit
+  (`rows: 200%` is refused), and a narrow screen never folds, whatever `rows` says: columns side by side would each be
+  narrower still. The options of a compiled definition may now say `direction: 'auto'` and `rows`; pass them on with
+  `pageOptions()`.
+
+### Patch Changes
+
+- Updated dependencies [379e4b8]
+- Updated dependencies [035f607]
+- Updated dependencies [ce37a77]
+  - @loadmap/layout@0.35.0
+  - @loadmap/core@0.35.0
+
 ## 0.34.0
 
 ### Minor Changes
