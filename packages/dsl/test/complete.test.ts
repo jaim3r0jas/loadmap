@@ -364,11 +364,14 @@ describe('completions that leave out what would not compile', () => {
   it('offer a node one stage and a box one component', () => {
     const db = at(inside('node db "Postgres" "primary" {', '|')).labels
     for (const k of ['pass', 'cache', 'limit', 'sink']) expect(db).not.toContain(k)
-    expect(db).toContain('component')
+    // its own lines (demand, capacity) are its component already
+    expect(db).not.toContain('component')
     const fresh = at(`${checkout}\nnode x "X" {\n  |\n}`).labels
     expect(fresh).toEqual(expect.arrayContaining(['pass', 'store', 'cache', 'component']))
     const owned = at(`${checkout}\nnode x "X" {\n  pass\n  component c { capacity: 1 }\n  |\n}`).labels
     expect(owned).not.toContain('component')
+    // and with a component block, the box takes none of a component's lines
+    for (const k of ['capacity', 'demand', 'over']) expect(owned).not.toContain(k)
     // a cluster holds several queues
     expect(at(checkout.replace('  members: 3', '  members: 3\n  |')).labels).toContain('queue')
     // with sets the inputs of what the box is like: only after a like
@@ -431,7 +434,9 @@ line -> db
     expect(c.options.map((o) => o.label)).not.toContain('workers')
   })
 
-  it("offer a prototype's inputs in its formulas, and a flow for a flow input", () => {
+  it("offer a prototype's inputs in its formulas, over a parameter of that name, and a flow for a flow input", () => {
+    const shadowed = at(text('DEMAND').replace('load { max: 10 }', 'load { max: 10 }\nparam rate { default: 1 }'))
+    expect(shadowed.c.options.filter((o) => o.label === 'rate')).toMatchObject([{ detail: 'input' }])
     expect(pick('DEMAND').c.options.find((o) => o.label === 'rate')).toMatchObject({ detail: 'input', boost: 1 })
     expect(pick('PARTS').labels).toEqual(['orders', 'main'])
     expect(pick('MAIN').labels).toEqual(['orders'])
@@ -440,13 +445,16 @@ line -> db
   it("offer a subsystem's own boxes inside it, its boxes after its id outside, and itself in a route", () => {
     expect(pick('EDGE').labels).toEqual(expect.arrayContaining(['kafka', 'consumers']))
     expect(pick('EDGE').labels).not.toContain('queue.kafka')
+    // a subsystem made from another: its boxes are what the like brought
+    const made = text('TOP').replaceAll('|', '').replace('  like: queue\n', '  like: queue\n  |\n')
+    expect(at(made).labels).toEqual(expect.arrayContaining(['kafka', 'consumers']))
     expect(pick('TOP', 'line.').labels).toEqual(['kafka', 'consumers'])
     expect(pick('TOP', 'users -> line.').labels).toEqual(['kafka', 'consumers'])
     // after a subsystem, not its own boxes
     expect(pick('TOP', 'line -> ').labels).not.toContain('line.kafka')
-    const route = at(text('TOP').replace('|', '').replace('route: line -> db', 'route: |')).labels
+    const route = at(text('TOP').replaceAll('|', '').replace('route: line -> db', 'route: |')).labels
     expect(route).toEqual(expect.arrayContaining(['line', 'line.topic', 'db']))
-    expect(at(text('TOP').replace('|', '').replace('route: line -> db', 'route: line.|')).labels).toEqual(
+    expect(at(text('TOP').replaceAll('|', '').replace('route: line -> db', 'route: line.|')).labels).toEqual(
       expect.arrayContaining(['topic', 'consumers']),
     )
   })

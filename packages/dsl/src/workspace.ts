@@ -1,6 +1,6 @@
 import type { Decl, Stmt } from './ast'
-import { type CompileOptions, compile, type Definition, declarationsAcross } from './compile'
-import { type Completion, type Completions, completionsIn, headAt, type Input, inputsOf } from './complete'
+import { type CompileOptions, Compiler, compile, type Definition, type DslSymbol, type Front, front } from './compile'
+import { type Completion, type Completions, completionsIn, headIn, type Input, inputsIn, inputsOf } from './complete'
 import { Reporter, type Span } from './diagnostics'
 import type { TextChange } from './edit'
 import { DEFAULT_PATH, type Files, fileText, type HeadLine, normalizePath, readHead, relativePath } from './files'
@@ -81,6 +81,31 @@ function join(source: string, o: WorkspaceOptions): Joined {
     pieces.push({ path, base, end: base + part.length })
   }
   return { self, text: out, pieces }
+}
+
+/**
+ * The names a model's files declare, linked: what a `like` or a subsystem brings from a library too (`orderLine.kafka`,
+ * the stage of a box like `postgres`). Each says its `file` when it is not the model's own (a part's own names say
+ * theirs too). Here and not beside
+ * `declarations`: an embed, which loads the compiler, never needs it. Never throws; a file that stops the link leaves
+ * the names found before it.
+ */
+function declarationsAcross(source: string, o: Pick<CompileOptions, 'path' | 'files'>): DslSymbol[] {
+  const f: Front = { report: new Reporter(source), doc: { body: [] }, role: 'model' }
+  let c: Compiler | undefined
+  try {
+    front(source, o, f)
+    if (!f.linked) return []
+    c = new Compiler(f.report, {}, undefined, undefined, f.linked)
+    c.run(f.linked.body, true)
+  } catch {
+    // a bail leaves the names found so far
+  }
+  return (c?.symbols ?? []).map((s) => {
+    const { file, ...span } = f.report.local(s.span)
+    const { file: _, ...decl } = f.report.local(s.decl)
+    return { ...s, span, decl, ...(file != null && { file }) }
+  })
 }
 
 /** A place of the text that was asked about, in the joined text. */
@@ -261,15 +286,15 @@ export function completionsAcross(source: string, offset: number, o: WorkspaceOp
               keyword: d.keyword.name,
               from: h.written ?? h.path!,
               inputs: inputsOf(text, d).length > 0,
-              route: !!d.body?.some((s) => s.kind === 'prop' && s.key.name === 'route'),
+              route: routed(body, d),
             },
           ]
         : []
     })
   })
   const c = completionsIn(j.text, into(j, offset), {
-    symbols: declarationsAcross(source, { path: self, files: o.files }),
-    head: headAt(source, offset),
+    symbols: linkedNames(source, self, o.files),
+    head: headIn(source, mine.doc.body, offset),
     imported,
     inputsOf: (name) => inputsNamed(name, j, mine.head, o),
   })
@@ -279,16 +304,44 @@ export function completionsAcross(source: string, offset: number, o: WorkspaceOp
 
 /** The inputs of the box or subsystem a file knows as `name`: its own, a part's, or an imported one. */
 function inputsNamed(name: string, j: Joined, head: readonly HeadLine[], o: WorkspaceOptions): Input[] {
-  const list = (text: string, stmts: readonly Stmt[], id: string) => {
-    const d = stmts.find((s): s is Decl => s.kind === 'decl' && s.args[0]?.t === 'id' && s.args[0].name === id)
-    return d ? inputsOf(text, d) : []
-  }
   for (const h of head) {
     const n = h.kind === 'import' && h.path != null ? h.names.find((x) => x.local.name === name) : undefined
     const text = n && fileText(o.files, h.path!)
-    if (n && text != null) return list(text, parse(text, new Reporter(text)).doc.body, n.theirs.name)
+    if (n && text != null) return inputsIn(text, parse(text, new Reporter(text)).doc.body, n.theirs.name)
   }
-  return list(j.text, parse(j.text, new Reporter(j.text)).doc.body, name)
+  return inputsIn(j.text, parse(j.text, new Reporter(j.text)).doc.body, name)
+}
+
+/** Whether a route may name a subsystem of a library: it says what a flow passes, or is like one there that does. */
+function routed(body: readonly Stmt[], d: Decl, depth = 0): boolean {
+  if (d.body?.some((s) => s.kind === 'prop' && s.key.name === 'route')) return true
+  const like = d.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
+  const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
+  const base = body.find(
+    (s): s is Decl =>
+      s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id' && s.args[0].name === name,
+  )
+  return !!base && depth < 4 && routed(body, base, depth + 1)
+}
+
+/** The last linked names, by the texts they were read from: completion asks again on every keystroke. */
+let lastLinked: { source: string; path: string; files: Files | undefined; symbols: DslSymbol[] } | undefined
+
+/** The same texts by the same paths: a host may hand a new object each time. */
+function sameFiles(a: Files | undefined, b: Files | undefined): boolean {
+  if (a === b) return true
+  // a reader or a map is the same only as itself
+  if (!a || !b || typeof a === 'function' || typeof b === 'function' || a instanceof Map || b instanceof Map)
+    return false
+  const [x, y] = [a as Readonly<Record<string, string>>, b as Readonly<Record<string, string>>]
+  const keys = Object.keys(x)
+  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k])
+}
+
+function linkedNames(source: string, path: string, files: Files | undefined): DslSymbol[] {
+  if (lastLinked?.source !== source || lastLinked.path !== path || !sameFiles(lastLinked.files, files))
+    lastLinked = { source, path, files, symbols: declarationsAcross(source, { path, files }) }
+  return lastLinked.symbols
 }
 
 /** One library that declares `name`, for a quick fix that imports it: its path and what the name is there. */

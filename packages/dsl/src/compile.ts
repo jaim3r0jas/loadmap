@@ -440,29 +440,6 @@ export function declarations(source: string, doc: Document): DslSymbol[] {
 }
 
 /**
- * The same, over a model's files: linked, so what a `like` or a subsystem brings from a library is declared too
- * (`orderLine.kafka`, the stage of a box like `postgres`). Each says its `file` when it is not this text's. Never
- * throws; a file that stops the link leaves the names found before it.
- */
-export function declarationsAcross(source: string, o: Pick<CompileOptions, 'path' | 'files'>): DslSymbol[] {
-  const f: Front = { report: new Reporter(source), doc: { body: [] }, role: 'model' }
-  let c: Compiler | undefined
-  try {
-    front(source, o, f)
-    if (!f.linked) return []
-    c = new Compiler(f.report, {}, undefined, undefined, f.linked)
-    c.run(f.linked.body, true)
-  } catch {
-    // a bail leaves the names found so far
-  }
-  return (c?.symbols ?? []).map((s) => {
-    const { file, ...span } = f.report.local(s.span)
-    const { file: _, ...decl } = f.report.local(s.decl)
-    return { ...s, span, decl, ...(file != null && { file }) }
-  })
-}
-
-/**
  * The diagnostics and every expectation that does not pass, in source order: an editor marks a failure as a warning
  * (the diagram still shows), `loadmap check` as an error. An inconclusive one says why; an expect with `severity:
  * warn` is a warning either way.
@@ -565,7 +542,7 @@ interface Box {
   component?: { block: Block; id: string; own: boolean }
 }
 
-class Compiler {
+export class Compiler {
   readonly symbols: DslSymbol[] = []
   /** Where each expectation of the model is written, in order. */
   readonly expectSpans: Span[] = []

@@ -682,7 +682,7 @@ describe('the help across the files of a model', () => {
   it('offers what a like or a subsystem brings from a library, by the names it has here', () => {
     /** Completions in `path` with `from` written as `to`, the cursor where "|" is in it. */
     const across = (path: string, from: string, to: string) => {
-      const text = swap(path, from, to.replace('|', ''))
+      const text = swap(path, from, to.replaceAll('|', ''))
       const offset = base[path]!.indexOf(from) + to.indexOf('|')
       const c = completionsAcross(text, offset, { path, files: set({ [path]: text }), paths: Object.keys(base) })
       return c.options

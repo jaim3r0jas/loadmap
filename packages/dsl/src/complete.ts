@@ -7,12 +7,13 @@ import { Reporter } from './diagnostics'
 import { BUILTINS } from './expr'
 import { DEFAULT_PATH, type Role, readHead } from './files'
 import type { Token } from './lexer'
-import { holdsAtTop } from './link'
+import { isTemplate, isValue, MODEL_ONLY, VARIANT_ADDS, VARIANT_ONCE, VARIANT_PROPS, VARIANT_REPLACES } from './link'
 import { parse } from './parser'
 import {
   type BlockSpec,
   BOXES,
   COLORS,
+  COMPONENT_PROPS,
   EDGE_PROPS,
   own,
   type PropSpec,
@@ -99,27 +100,36 @@ export interface Context {
 export function completionsIn(source: string, offset: number, ctx: Context = {}): Completions {
   const cur = cursorAt(source, offset)
   const { doc } = parse(source, new Reporter(source))
-  const own = declarations(source, doc)
-  // the linked names, and this text's own where linking stopped short of them
-  const symbols = ctx.symbols ? union(ctx.symbols, own) : own
+  // the linked names; this text's own when linking found none (a file that stops it, while being typed)
+  const symbols = ctx.symbols?.length ? ctx.symbols : declarations(source, doc)
   const head = ctx.head ?? headIn(source, doc.body, offset)
   const options = new Help(source, doc.body, symbols, cur, offset, { ...ctx, head }).options()
   return { from: cur.from, to: cur.to, options }
 }
 
-const union = (a: readonly DslSymbol[], b: readonly DslSymbol[]) => {
-  const seen = new Set(a.map((s) => `${s.kind} ${s.id}`))
-  return [...a, ...b.filter((s) => !seen.has(`${s.kind} ${s.id}`))]
-}
-
 const HEAD_LINES = new Set(['include', 'part', 'library', 'import', 'extends'])
+
+/**
+ * Whether the top of a file of `role` may hold a property, a statement of `name` or an edge: what the linker refuses
+ * there as misplaced, for completion to leave out. Head lines are the head's to say.
+ */
+function holdsAtTop(role: Role, what: 'prop' | 'decl' | 'edge', name = ''): boolean {
+  if (role === 'model') return true
+  if (role === 'part') return what === 'edge' || (what === 'decl' && !MODEL_ONLY.has(name))
+  if (role === 'library') return what === 'decl' && (isValue(name) || isTemplate(name))
+  if (what === 'prop') return VARIANT_PROPS.has(name)
+  return (
+    what === 'decl' &&
+    (name === 'param' || VARIANT_REPLACES.has(name) || VARIANT_ADDS.has(name) || VARIANT_ONCE.has(name))
+  )
+}
 
 /** The head of a text, as it stands at `offset`. */
 export function headAt(source: string, offset: number): HeadState {
   return headIn(source, parse(source, new Reporter(source)).doc.body, offset)
 }
 
-function headIn(source: string, body: readonly Stmt[], offset: number): HeadState {
+export function headIn(source: string, body: readonly Stmt[], offset: number): HeadState {
   const { role, head, stamp } = readHead(new Reporter(source), DEFAULT_PATH, body)
   const line = source.lastIndexOf('\n', offset - 1) + 1
   const earlier = body.filter((s) => s.from < line)
@@ -184,7 +194,7 @@ class Help {
     }
     // orderLine.|  at the start of an edge
     if (names.length === 2 && punct(names[1], '.') && cur.in === 'code')
-      return this.spec.edges === 'edges' ? this.inside(first.text, 'node') : []
+      return this.spec.edges === 'edges' ? this.inside(names[0]!.text, 'node') : []
     // loadmap |
     if (first.text === 'loadmap' && head.length === 1 && cur.in === 'code' && !this.path.length)
       return [{ label: LANGUAGE_VERSION, type: 'constant', detail: 'the language version', boost: 9 }]
@@ -248,18 +258,23 @@ class Help {
     const has = new Set(others.flatMap((s) => (s.kind === 'decl' ? [s.keyword.name] : [])))
     const stages: readonly string[] = STAGES
     const kind = box?.kind === 'decl' ? box.keyword.name : ''
+    const boxKind = (BOXES as readonly string[]).includes(kind)
+    // a box's own component lines, or a component block: one or the other
+    const ownComponent = Object.keys(COMPONENT_PROPS).some((p) => written.has(p))
     const fits = (k: string) => {
       if (top) return HEAD_LINES.has(k) ? this.headLine(k) : holdsAtTop(head.role, 'decl', k)
       // a node runs one stage; a box has one component
       if (kind === 'node' && stages.includes(k)) return ![...has].some((h) => stages.includes(h))
-      if (k === 'component' && (BOXES as readonly string[]).includes(kind)) return !has.has(k)
+      if (k === 'component' && boxKind) return !has.has(k) && !ownComponent
       // with sets the inputs of what this one is like
       if (k === 'with') return written.has('like') && !has.has(k)
       return true
     }
-    const fields = top
-      ? props(spec.props, written, this.version).filter((p) => holdsAtTop(head.role, 'prop', p.label))
-      : props(spec.props, written, this.version)
+    const fields = props(spec.props, written, this.version).filter((p) =>
+      top
+        ? holdsAtTop(head.role, 'prop', p.label)
+        : !(boxKind && has.has('component') && own(COMPONENT_PROPS, p.label)),
+    )
     const blocks = statements(spec, this.version, alone).filter((s) => fits(s.label))
     for (const s of blocks) {
       if (HEAD_LINES.has(s.label)) {
@@ -318,8 +333,8 @@ class Help {
   /** The inputs of what the block around `with` is like. */
   prototypeInputs(): Input[] {
     const owner = this.path.at(-2)
-    const like = owner?.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
-    const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
+    const like = owner?.kind === 'decl' ? propOf(owner, 'like') : undefined
+    const name = like?.t === 'id' ? like.name : undefined
     if (name == null) return []
     return this.ctx.inputsOf?.(name) ?? inputsIn(this.source, this.body, name)
   }
@@ -469,18 +484,23 @@ class Help {
     const { scope } = slot
     if (scope === 'i' || scope === 'value') return [{ label: scope, type: 'variable' }]
     const wantsSwitch = slot.prop?.value === 'boolean'
+    // in a prototype or a subsystem: what the box that is like it sets, over a parameter of that name
+    const inputs = scope === 'values' ? [] : this.ownInputs().flatMap((i) => (i.flow ? [] : [i.name]))
     const list: Completion[] = [
       { label: 'load', type: 'variable', detail: '× today' },
-      ...this.ids('param').map((label) => ({
-        label,
-        type: 'variable' as const,
-        detail: 'parameter',
-        boost: wantsSwitch && this.isSwitch(label) ? 2 : undefined,
-      })),
-      // in a prototype or a subsystem: what the box that is like it sets
-      ...this.ownInputs().flatMap((i) =>
-        i.flow ? [] : [{ label: i.name, type: 'variable' as const, detail: 'input', boost: 1 }],
+      ...this.ids('param').flatMap((label) =>
+        inputs.includes(label)
+          ? []
+          : [
+              {
+                label,
+                type: 'variable' as const,
+                detail: 'parameter',
+                boost: wantsSwitch && this.isSwitch(label) ? 2 : undefined,
+              },
+            ],
       ),
+      ...inputs.map((label) => ({ label, type: 'variable' as const, detail: 'input', boost: 1 })),
     ]
     if (scope === 'values') return list
     const capacity = slot.prop?.value === 'capacity'
@@ -679,13 +699,23 @@ class Help {
 
   /** Every node; after `a ->`, not `a` itself. In a subsystem, its own boxes, by the ids they have there. */
   nodes(prev?: string): Completion[] {
-    const sub = this.path.findLast((d): d is Decl => d.kind === 'decl' && d.keyword.name === 'subsystem')
+    const subs = this.path.filter((d): d is Decl => d.kind === 'decl' && d.keyword.name === 'subsystem')
+    const sub = subs.at(-1)
+    // its id outside, `outer.inner.`: what a like brought into it is declared under it
+    const prefix = `${subs.map((d) => (d.args[0]?.t === 'id' ? d.args[0].name : '')).join('.')}.`
     const ids = sub
-      ? (sub.body ?? []).flatMap((s) =>
-          s.kind === 'decl' && ([...BOXES, 'subsystem'] as string[]).includes(s.keyword.name) && s.args[0]?.t === 'id'
-            ? [s.args[0].name]
-            : [],
-        )
+      ? [
+          ...new Set([
+            ...(sub.body ?? []).flatMap((s) =>
+              s.kind === 'decl' &&
+              ([...BOXES, 'subsystem'] as string[]).includes(s.keyword.name) &&
+              s.args[0]?.t === 'id'
+                ? [s.args[0].name]
+                : [],
+            ),
+            ...this.ids('node').flatMap((id) => (id.startsWith(prefix) ? [id.slice(prefix.length)] : [])),
+          ]),
+        ]
       : [...this.ids('node'), ...this.subsystems(false)]
     // not the box itself, nor its own boxes: an edge leaves a subsystem from its last box
     const mine = (id: string) => prev != null && (id === prev || id.startsWith(`${prev}.`))
@@ -702,8 +732,8 @@ class Help {
     )
     const routes = (d: Decl, depth = 0): boolean => {
       if (d.body?.some((s) => s.kind === 'prop' && s.key.name === 'route')) return true
-      const like = d.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
-      const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
+      const like = propOf(d, 'like')
+      const name = like?.t === 'id' ? like.name : undefined
       if (name == null || depth > 4) return false
       const local = subs.find((x) => (x.args[0] as { name: string }).name === name)
       return local ? routes(local, depth + 1) : !!this.ctx.imported?.some((i) => i.name === name && i.route)
@@ -849,7 +879,7 @@ export function inputsOf(source: string, d: Decl): Input[] {
 }
 
 /** The inputs of the box or subsystem `name` declared at the top of `body`. */
-function inputsIn(source: string, body: readonly Stmt[], name: string): Input[] {
+export function inputsIn(source: string, body: readonly Stmt[], name: string): Input[] {
   const d = body.find((s): s is Decl => s.kind === 'decl' && s.args[0]?.t === 'id' && s.args[0].name === name)
   return d ? inputsOf(source, d) : []
 }
