@@ -152,9 +152,10 @@ producers -> workers
     expect(r.source).toContain(
       'published kafkaFigure kafka {\n  edition: "2026-11"\n  version: "4.4"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
     )
-    // a stream is a cluster with a queue, as many members as the run's brokers, its demand at the run's message size
+    // a stream is a cluster with a queue, as many members as the run's brokers, its demand at the run's message size:
+    // in MB, as a file from before sizes (loadmap 1.2) counts it
     expect(r.source).toContain(
-      'cluster kafka "Apache Kafka" {\n  members: 3\n  queue { partitions {} }\n  # each unit at the size its published run used, as MB/s\n  demand: at.kafka * 1KB\n',
+      'cluster kafka "Apache Kafka" {\n  members: 3\n  queue { partitions {} }\n  # each unit at the size its published run used (1KB), in MB/s\n  demand: at.kafka * 0.001\n',
     )
     const def = compile(r.source).definition!
     expect(def.model.evaluate().components.kafka!.capacity).toMatchObject({ value: 605, provenance: 'published' })

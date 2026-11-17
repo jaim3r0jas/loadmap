@@ -1,11 +1,13 @@
 import { type CatalogComponent, type ConditionValue, type Published, published } from '@loadmap/core'
-import type { Decl, Edge, Ident, Stmt } from './ast'
+import type { Decl, Edge, Ident, Property, Stmt } from './ast'
+import { boxOf } from './boxes'
 import { type CompileOptions, compile, declarations } from './compile'
 import type { TextChange } from './edit'
-import { boxOf } from './fixes'
+import { SIZES } from './lexer'
 import { parse } from './parser'
 import { BOXES, STAGES } from './schema'
 import { parseUnit, sizeScale } from './units'
+import { before as older, stampOf } from './versions'
 
 /** A stage a catalog component can run: what the dots do in its box. */
 export type CatalogStage = 'queue' | 'cache' | 'store' | 'pass'
@@ -82,28 +84,106 @@ export type AddResult = { source: string; changes: TextChange[]; id: string; box
 /** The members of a cluster, as its figure's run had them: brokers, nodes or members. */
 const MEMBERS = ['brokers', 'nodes', 'members']
 
-/** "1 KB", "100 B": a size a run used, as the language writes one (`1KB`, `0.1KB`). */
-function sizeLiteral(v: ConditionValue): string | undefined {
+/** "1 KB", "100 B": a size a run used, as the language writes one (`1KB`, `0.1KB`), and its bytes. */
+function sizeOf(v: ConditionValue): { text: string; bytes: number } | undefined {
   const m = typeof v === 'string' ? /^(\d+(?:\.\d+)?)\s*(B|kB|KB|MB|GB|TB)$/.exec(v.trim()) : null
   if (!m) return undefined
   const n = Number(m[1])
-  return m[2] === 'B' ? `${n / 1000}KB` : `${n}${m[2]!.toUpperCase()}`
+  if (m[2] === 'B') return { text: `${n / 1000}KB`, bytes: n }
+  const unit = m[2]!.toUpperCase() as keyof typeof SIZES
+  return { text: `${n}${unit}`, bytes: n * SIZES[unit] }
+}
+
+/**
+ * How a new box's demand meets its figure's unit, never scaling the figure: `none` without a stage (nothing reaches
+ * it); `size` for bytes a second, each unit at the size its run was made with (`size`, and `perUnit` in the unit's own
+ * size, absent when no condition says one); `rate` for units a second, what reaches its stage; `worth` for any other unit (tpmC), what one unit a second
+ * reaching it is worth.
+ */
+export function catalogDemand(
+  stage: CatalogStage | undefined,
+  unit: string,
+  conditions: Readonly<Record<string, ConditionValue>>,
+): { how: 'none' | 'size' | 'rate' | 'worth'; unit: string; size?: string; perUnit?: number } {
+  if (!stage) return { how: 'none', unit }
+  const rate = !unit || parseUnit(unit).time === -1
+  const scale = rate ? sizeScale(unit) : undefined
+  if (scale !== undefined) {
+    const size = Object.values(conditions).map(sizeOf).find(Boolean)
+    return { how: 'size', unit, ...(size && { size: size.text, perUnit: size.bytes / scale }) }
+  }
+  return { how: rate ? 'rate' : 'worth', unit }
 }
 
 /** The demand line of a new box: in its figure's unit, never scaling the figure. */
-function demandLines(stage: CatalogStage | undefined, id: string, unit: string, pick: CatalogPick): string[] {
-  if (!stage) return [`# what reaches it, in ${unit || 'the unit of its capacity'}`, 'demand: 0']
-  const rate = !unit || parseUnit(unit).time === -1
-  if (rate && sizeScale(unit) !== undefined) {
-    // bytes a second: what reaches it, each unit at the size its run was made with, so the two never disagree
-    const size = Object.values(pick.conditions).map(sizeLiteral).find(Boolean)
-    if (size) return [`# each unit at the size its published run used, as ${unit}`, `demand: at.${id} * ${size}`]
-    return [`# what reaches it, in ${unit}`, 'demand: 0']
+function demandLines(
+  stage: CatalogStage | undefined,
+  id: string,
+  unit: string,
+  pick: CatalogPick,
+  sizes: boolean,
+): string[] {
+  const d = catalogDemand(stage, unit, pick.conditions)
+  switch (d.how) {
+    case 'size':
+      // bytes a second: each unit at the size its run was made with, so the two never disagree; a file from before
+      // sizes (loadmap 1.2) counts it in the unit's own size
+      if (!d.size) return [`# what reaches it, in ${unit}`, 'demand: 0']
+      return sizes
+        ? [`# each unit at the size its published run used, as ${unit}`, `demand: at.${id} * ${d.size}`]
+        : [`# each unit at the size its published run used (${d.size}), in ${unit}`, `demand: at.${id} * ${d.perUnit}`]
+    case 'rate':
+      // what reaches its stage, which a component without a demand line handles; a queue's units only wait in it, so
+      // its cluster says what it handles
+      return stage === 'queue' ? [`demand: at.${id}`] : []
+    case 'worth':
+      return [`# what one unit a second reaching it is worth, in ${unit}`, `demand: at.${id} * ${pick.use?.worth ?? 1}`]
+    default:
+      return [`# what reaches it, in ${unit || 'the unit of its capacity'}`, 'demand: 0']
   }
-  // units a second: what reaches its stage, which a component without a demand line handles; a queue's units only
-  // wait in it, so its cluster says what it handles
-  if (rate) return stage === 'queue' ? [`demand: at.${id}`] : []
-  return [`# what one unit a second reaching it is worth, in ${unit}`, `demand: at.${id} * ${pick.use?.worth ?? 1}`]
+}
+
+/** A flow of the text as the catalog picker offers it: where a new box can go on its route. */
+export interface CatalogFlow {
+  id: string
+  label: string
+  /** The box its units start from, before its first stage. */
+  from?: string
+  /** Its route's stages, each with the box that runs it and that box's label. */
+  route: readonly { stage: string; box: string; label: string; pool: boolean }[]
+}
+
+/** The flows a new box from the catalog can go on: those written at the top, with a route. */
+export function catalogFlows(source: string): CatalogFlow[] {
+  const { doc } = parse(source)
+  const boxes = new Map(
+    doc.body.flatMap((s) =>
+      s.kind === 'decl' && (BOXES as readonly string[]).includes(s.keyword.name) && s.args[0]?.t === 'id'
+        ? [[s.args[0].name, s] as const]
+        : [],
+    ),
+  )
+  const labelOf = (d: Decl | undefined, id: string) => (d?.args[1]?.t === 'str' ? d.args[1].value : id)
+  return doc.body.flatMap((f) => {
+    if (f.kind !== 'decl' || f.keyword.name !== 'flow' || f.args[0]?.t !== 'id') return []
+    const prop = (k: string) => f.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === k)
+    const chain = prop('route')?.chain
+    if (!chain) return []
+    const from = prop('from')?.value
+    const id = f.args[0].name
+    return [
+      {
+        id,
+        label: labelOf(f, id),
+        ...(from?.t === 'id' && { from: from.name }),
+        route: chain.map((n) => {
+          const d = boxOf(doc.body, n.name) ?? boxes.get(n.name)
+          const box = d?.args[0]?.t === 'id' ? d.args[0].name : n.name
+          return { stage: n.name, box, label: labelOf(d, box), pool: d?.keyword.name === 'pool' }
+        }),
+      },
+    ]
+  })
 }
 
 /**
@@ -152,7 +232,10 @@ export function addPublished(source: string, pick: CatalogPick, options?: Compil
   let box: string
   let dropped: TextChange[] = []
   if (pick.into === 'new') {
-    const added = newBox(source, doc.body, pick, { figure: id, unit: figure.unit, fresh, taken, quote })
+    // a size (1KB) reads from loadmap 1.2 on
+    const stamp = stampOf(source, doc.body)?.version
+    const sizes = !stamp || !older(stamp, [1, 2])
+    const added = newBox(source, doc.body, pick, { figure: id, unit: figure.unit, sizes, fresh, taken, quote })
     if ('error' in added) return added
     box = added.box
     changes.push({ from: end, to: source.length, insert: `${gap}${statement}\n\n${added.text}\n` }, ...added.changes)
@@ -222,6 +305,7 @@ export function addPublished(source: string, pick: CatalogPick, options?: Compil
 }
 
 interface NewBoxContext {
+  sizes: boolean
   figure: string
   unit: string
   fresh: (base: string) => string
@@ -238,7 +322,7 @@ function newBox(
   source: string,
   body: readonly Stmt[],
   pick: CatalogPick,
-  { figure, unit, fresh, taken, quote }: NewBoxContext,
+  { figure, unit, sizes, fresh, taken, quote }: NewBoxContext,
 ): { box: string; text: string; changes: TextChange[]; dropped: TextChange[] } | { error: string } {
   const c = pick.component
   const use = pick.use ?? {}
@@ -295,7 +379,11 @@ function newBox(
     if (use.hit == null) lines.push('# the share it answers, 0 to 1')
     lines.push(`cache { hit: ${use.hit ?? 0.8} }`)
   } else if (stage) lines.push(stage)
-  lines.push(...demandLines(stage, box, unit, pick), `capacity: ${figure}`, 'over: "past its published capacity"')
+  lines.push(
+    ...demandLines(stage, box, unit, pick, sizes),
+    `capacity: ${figure}`,
+    'over: "past its published capacity"',
+  )
   let text = `${kind.box} ${box} ${quote(use.label ?? c.name)} {\n${lines.map((l) => `  ${l}`).join('\n')}\n}`
 
   if (placed.length && !stage) return { error: `${c.name} runs no stage: no flow can pass it` }
