@@ -1,4 +1,5 @@
 import type { Role } from '@loadmap/dsl'
+import type { Property, Stmt } from '@loadmap/dsl/internal'
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { FICON, type FileMark, MARK_TEXT } from './filenames'
 import {
@@ -91,25 +92,31 @@ type Row =
   | { folder?: false; sub: true; path: string; file: string; id: string; name: string; at: number; depth: number }
 
 /**
- * The subsystems a text declares, each with its id as that file knows it (`region.orders` for one in another), its
- * name, where its line starts, and how deep it stands. Read from the lines as `loadmap fmt` lays them out, one
- * statement a line and two spaces a block, so the explorer needs no parser.
+ * The subsystems a text declares, read by the parser: each with its id as that file knows it (`region.orders` for one
+ * in another), its name (its own, else that of a subsystem of this file it is like, else its id), where its line starts,
+ * and how deep it stands.
  */
-function subsystemsIn(text: string) {
+function subsystemsIn(dsl: Dsl, text: string) {
   const out: { id: string; name: string; at: number; depth: number }[] = []
-  const around: { indent: number; id: string }[] = []
-  let at = 0
-  for (const line of text.split('\n')) {
-    const m = /^( *)subsystem +([A-Za-z_]\w*)(?: +"([^"]*)")?/.exec(line)
-    if (m) {
-      const indent = m[1]!.length
-      while (around.length && around.at(-1)!.indent >= indent) around.pop()
-      const id = [...around.map((a) => a.id), m[2]!].join('.')
-      out.push({ id, name: m[3] ?? m[2]!, at: at + indent, depth: around.length })
-      around.push({ indent, id: m[2]! })
+  const named = new Map<string, string>()
+  const walk = (body: readonly Stmt[], around: string, depth: number) => {
+    for (const st of body) {
+      if (st.kind !== 'decl' || st.keyword.name !== 'subsystem' || st.args[0]?.t !== 'id') continue
+      const own = st.args[0].name
+      const id = around ? `${around}.${own}` : own
+      const label = st.args[1]?.t === 'str' ? st.args[1].value : undefined
+      const like = st.body?.find((x): x is Property => x.kind === 'prop' && x.key.name === 'like')?.value
+      if (label != null) named.set(own, label)
+      out.push({
+        id,
+        name: label ?? (like?.t === 'id' ? named.get(like.name) : undefined) ?? own,
+        at: st.from,
+        depth,
+      })
+      if (st.body) walk(st.body, id, depth + 1)
     }
-    at += line.length + 1
   }
+  walk(dsl.parse(text).doc.body, '', 0)
   return out
 }
 
@@ -200,17 +207,19 @@ export default function Explorer({
     const text = all.files[path] ?? ''
     const kept = subs.current.get(path)
     if (kept?.text === text) return kept.list
-    const list = subsystemsIn(text)
+    const list = subsystemsIn(dsl, text)
     subs.current.set(path, { text, list })
     return list
   }
+  for (const p of subs.current.keys()) if (!Object.hasOwn(all.files, p)) subs.current.delete(p)
   const rows = rowsOf(paths, entry, closed).flatMap((r): Row[] => [
     r,
     ...(r.folder
       ? []
-      : subsystems(r.path).map((x) => ({
+      : subsystems(r.path).map((x, i, list) => ({
           sub: true as const,
-          path: `${r.path}#${x.id}`,
+          // an id written twice (a block pasted, not yet renamed) is two rows all the same
+          path: `${r.path}#${x.id}${list.findIndex((y) => y.id === x.id) < i ? `#${i}` : ''}`,
           file: r.path,
           id: x.id,
           name: x.name,
@@ -272,7 +281,9 @@ export default function Explorer({
   const pick = (r: Row) => {
     setCursor(r.path)
     if (r.folder) toggle(r.path)
-    else if (r.sub) onOpen(r.file, r.at)
+    // typing above it since the explorer drew has moved its line: where it is now
+    else if (r.sub)
+      onOpen(r.file, subsystemsIn(dsl, files().files[r.file] ?? '').find((x) => x.id === r.id)?.at ?? r.at)
     else onOpen(r.path)
   }
   const keys = (e: KeyboardEvent, r: Row) => {
@@ -283,7 +294,8 @@ export default function Explorer({
       setCursor(to.path)
       focusRow(to.path)
     }
-    if (e.key === 'ArrowDown') move(rows[i + 1])
+    if (e.key === 'ArrowLeft' && r.sub) move(rows.find((x) => x.path === r.file))
+    else if (e.key === 'ArrowDown') move(rows[i + 1])
     else if (e.key === 'ArrowUp') move(rows[i - 1])
     else if (e.key === 'Home') move(rows[0])
     else if (e.key === 'End') move(rows.at(-1))

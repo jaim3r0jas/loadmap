@@ -49,6 +49,7 @@ import {
   latestEdition,
   MAX_FILES,
   pageOptions,
+  parse,
   type Range,
   relativePath,
   resolvePath,
@@ -598,7 +599,8 @@ export function LoadmapEditor({
   }
   /** A place go to definition found in another file: that file, at the place. */
   const openAt = (at: Located) => {
-    if (at.file != null && !switchTo(at.file)) return
+    // the file shown already is a place in it all the same
+    if (at.file != null && at.file !== set.current.active && !switchTo(at.file)) return
     const v = view.current
     if (!v) return
     const end = v.state.doc.length
@@ -1434,13 +1436,9 @@ export function LoadmapEditor({
                   start={startNew}
                   onStarted={() => setStartNew(null)}
                   onOpen={(p, at) => {
-                    switchTo(p)
-                    // a subsystem's row: the cursor goes to its line
-                    if (at != null)
-                      view.current?.dispatch({
-                        selection: { anchor: Math.min(at, view.current.state.doc.length) },
-                        scrollIntoView: true,
-                      })
+                    // the view takes the keyboard first: the box under the cursor is then picked on the board
+                    if (at != null) openAt({ file: p, from: at, to: at })
+                    else switchTo(p)
                     // on a phone the files are over the text: a pick shows it
                     if (phone) setExplorer(false)
                     view.current?.focus()
@@ -1653,7 +1651,7 @@ export function between(a: string, b: string): { from: number; to: number; inser
  */
 const CODE = { start: 440, min: 360, max: 0.6, room: 320 } as const
 /** What the explorer's file operations read of the language: handed over, so its chunk imports none of it. */
-const DSL: Dsl = { imports, resolvePath, relativePath, MAX_FILES, LANGUAGE_VERSION }
+const DSL: Dsl = { imports, resolvePath, relativePath, parse, MAX_FILES, LANGUAGE_VERSION }
 /** The width of the files' explorer, in pixels (its rule is in Explorer.tsx). */
 const FILES = 220
 /** Below this width the canvas's bar is short: a page's controls in it take their short form. */
