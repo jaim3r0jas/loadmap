@@ -32,6 +32,18 @@ function expectLinks(html: string, route: string, label: string) {
   }
 }
 
+/** The text a piece of the build's own HTML shows: what is between its tags, the three entities the build writes read. */
+const textOf = (html: string) =>
+  html
+    .split(/<[^>]*>/)
+    .join('')
+    .split('&lt;')
+    .join('<')
+    .split('&gt;')
+    .join('>')
+    .split('&amp;')
+    .join('&')
+
 describe('the pages', () => {
   const rendered = PAGES.map((p) => ({ page: p, ...render(p) }))
 
@@ -92,22 +104,14 @@ describe('the pages', () => {
   it("show checkout's promises as its text writes them", () => {
     const html = rendered.find((r) => r.page.route === 'examples/checkout')!.html
     // without the spans that colour it
-    expect(html.replace(/<[^>]+>/g, '')).toContain(
-      'expect "Today keeps 7×" { underTarget: 7 }\nexpect "Proposed keeps 14×"',
-    )
+    expect(textOf(html)).toContain('expect "Today keeps 7×" { underTarget: 7 }\nexpect "Proposed keeps 14×"')
   })
 
   it('colour every fence at build time, each in a language it names, its text unchanged', () => {
-    const text = (html: string) =>
-      html
-        .replace(/<[^>]+>/g, '')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
     const loadmap =
       'node db "Database" {\n  store # the <primary> & its replicas\n  capacity: estimated(3_000, "queries/s")\n}'
     const out = highlight(loadmap, 'loadmap', 'x.md')
-    expect(text(out.html)).toBe(loadmap)
+    expect(textOf(out.html)).toBe(loadmap)
     expect(out.label).toBe('loadmap')
     for (const [cls, token] of [
       ['tok-keyword', 'node'],
@@ -122,7 +126,7 @@ describe('the pages', () => {
     const sample = 'const a = { "b": [1, true], c: "<d>" } // e\n'
     for (const lang of FENCES) {
       const { html } = highlight(sample, lang, 'x.md')
-      expect(text(html), lang).toBe(sample)
+      expect(textOf(html), lang).toBe(sample)
       // every language but plain text finds something to colour
       expect(html.includes('<span class="tok-'), lang).toBe(lang !== 'text')
     }
@@ -249,9 +253,9 @@ describe('the built site', () => {
     const first = [...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]!)
     expect(first.length).toBeGreaterThan(0)
     const kb = first.reduce((s, f) => s + gzipSync(readFileSync(join(out, f))).length, 0) / 1024
-    // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.5 kB): an
+    // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.7 kB): an
     // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window
-    expect(kb).toBeLessThan(6.5)
+    expect(kb).toBeLessThan(6.2)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
@@ -865,12 +869,12 @@ describe('the built site', () => {
         .locator('.snippet .cm-content')
         .nth(nth)
         .evaluate((el) => [...el.querySelectorAll('.cm-line')].map((l) => l.textContent).join('\n'))
-    /** Every snippet of the page with its view in place: each mounts as it nears the window. */
+    /** Every snippet of the page with its view in place: each mounts when the pointer reaches it. */
     async function mounted(page: Page) {
       const snippets = page.locator('.snippet:not(details:not([open]) .snippet)')
       const n = await snippets.count()
       for (let i = 0; i < n; i++) {
-        await snippets.nth(i).scrollIntoViewIfNeeded()
+        await snippets.nth(i).locator('pre').hover()
         await snippets.nth(i).locator('.cm-editor').waitFor()
       }
       return n
@@ -904,6 +908,10 @@ describe('the built site', () => {
       page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
       page.on('pageerror', (e) => errors.push(e.message))
       await page.goto(`${url}language/`)
+      // untouched, every snippet stays the <pre>: all of its text in the page, for the browser's find and for print
+      await page.locator('.snippet > .copy:not([hidden])').first().waitFor({ state: 'attached' })
+      expect(await page.locator('.cm-editor').count()).toBe(0)
+      expect(await page.locator('.snippet pre[hidden]').count()).toBe(0)
       const n = await mounted(page)
       expect(n).toBe(before.heights.length)
       expect(await boxes(page)).toEqual(before)
@@ -929,6 +937,7 @@ describe('the built site', () => {
       const page = await context.newPage()
       await page.goto(`${url}language/`)
       const content = page.locator('.snippet .cm-content').first()
+      await page.locator('.snippet pre').first().hover()
       await content.waitFor()
       const text = (await page
         .locator('.snippet pre')
@@ -970,8 +979,12 @@ describe('the built site', () => {
       const page = await context.newPage()
       await page.goto(`${url}recording/`)
       const snippet = page.locator('.snippet').first()
-      await snippet.locator('.cm-content').click()
       const text = await snippet.locator('pre').evaluate((el) => el.textContent)
+      // the keyboard reaches the <pre>, and is in the view that takes its place
+      await snippet.locator('pre').focus()
+      await expect
+        .poll(() => snippet.locator('.cm-content').evaluate((el) => el === document.activeElement), { timeout: 5000 })
+        .toBe(true)
       // a part selected: the button still copies the whole
       await page.keyboard.press('Shift+ArrowRight')
       // Tab is not the snippet's: it moves on, to its button
@@ -983,6 +996,12 @@ describe('the built site', () => {
       await expect.poll(() => snippet.locator('.copy').textContent(), { timeout: 5000 }).toBe('Copied')
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(text)
       expect(await page.getByRole('status').textContent()).toBe('Copied')
+      // a press anywhere else takes it back, as a finger does (no pointer leaves, no focus moves)
+      await page.locator('h1').click()
+      expect(await snippet.locator('.copy').textContent()).toBe('Copy')
+      await snippet.locator('.copy').click()
+      await expect.poll(() => snippet.locator('.copy').textContent(), { timeout: 5000 }).toBe('Copied')
+      await snippet.locator('.copy').focus()
       await page.keyboard.press('Tab')
       expect(await snippet.locator('.copy').textContent()).toBe('Copy')
       expect(await page.getByRole('status').textContent()).toBe('')
@@ -1012,7 +1031,7 @@ describe('the built site', () => {
         })
         const page = await context.newPage()
         await page.goto(`${url}language/`)
-        await page.waitForSelector('.snippet .cm-content .tok-keyword')
+        await page.waitForSelector('.snippet .tok-keyword')
         const got = await page.evaluate(() => {
           // in a view or in a <pre> further down that has none yet: the same classes
           const look = (kind: string) => {
@@ -1051,6 +1070,7 @@ describe('the built site', () => {
       await page.goto(`${url}concepts/`)
       const island = page.locator('[data-island="loadmap"]').first()
       await island.locator('summary').click()
+      await island.locator('.snippet pre').hover()
       await island.locator('.snippet .cm-editor').waitFor()
       expect(await island.locator('.snippet .cm-content').getAttribute('aria-label')).toBe('loadmap snippet')
       expect(await island.locator('.snippet .tok-keyword').count()).toBeGreaterThan(0)

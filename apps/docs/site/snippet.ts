@@ -1,6 +1,7 @@
 // A snippet as a read-only CodeMirror view: the cursor goes in (to select, to move with the keyboard, to select all of
-// it and nothing else) and nothing edits. Loaded only once a snippet is near the window; until then, and without
-// scripts, the page shows the coloured <pre> the build wrote.
+// it and nothing else) and nothing edits. The client loads this once a snippet is near the window and mounts a view
+// when the reader points at a snippet or the focus reaches it; until then, and without scripts, the page shows the
+// coloured <pre> the build wrote.
 import { EditorState, RangeSetBuilder } from '@codemirror/state'
 import { Decoration, EditorView } from '@codemirror/view'
 
@@ -32,12 +33,15 @@ function tokens(code: Element) {
   return marks.finish()
 }
 
-/** Puts the view after the `<pre>`, which stays (hidden) as the text the copy button and an island read. */
-export function mount(pre: HTMLElement) {
+/**
+ * Puts the view after the `<pre>`, which stays (hidden) as the text the copy button and an island read; `focus` when
+ * the keyboard was on the `<pre>`.
+ */
+export function mount(pre: HTMLElement, focus = false) {
   const code = pre.querySelector('code') ?? pre
   const host = document.createElement('div')
   pre.after(host)
-  new EditorView({
+  const view = new EditorView({
     parent: host,
     state: EditorState.create({
       doc: pre.textContent ?? '',
@@ -57,4 +61,5 @@ export function mount(pre: HTMLElement) {
     }),
   })
   pre.hidden = true
+  if (focus) view.focus()
 }

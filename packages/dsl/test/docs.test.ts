@@ -45,6 +45,17 @@ it('every definition in docs/dsl.md and the README compiles', () => {
   for (const b of blocks) expect(compile(b).diagnostics).toEqual([])
 })
 
+it('every fence in docs/dsl.md and the README names its language', () => {
+  // a definition in a bare fence would be left out of the check above and of format.test.ts
+  for (const f of [file, new URL('../../../README.md', import.meta.url)]) {
+    const fences = readFileSync(f, 'utf8')
+      .split('\n')
+      .filter((l) => /^ *```/.test(l))
+    const bare = fences.filter((l, i) => i % 2 === 0 && /^ *```$/.test(l))
+    expect(bare, f.pathname).toEqual([])
+  }
+})
+
 it('shows the error the checker gives', () => {
   const src = readFileSync(new URL('../../../examples/checkout/checkout.loadmap', import.meta.url), 'utf8').replace(
     'demand: flows.orders + flows.events',

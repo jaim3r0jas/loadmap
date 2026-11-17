@@ -373,6 +373,11 @@ pre.code code {
   margin: 0;
 }
 
+.snippet > pre.code:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .snippet > .copy {
   position: absolute;
   top: 6px;

@@ -48,7 +48,7 @@ const CLASSES = tagHighlighter([
   { tag: [t.propertyName, t.attributeName], class: 'tok-property' },
   { tag: [t.string, t.special(t.string)], class: 'tok-string' },
   { tag: [t.number, t.bool, t.atom, t.null], class: 'tok-number' },
-  { tag: [t.comment, t.meta], class: 'tok-comment' },
+  { tag: t.comment, class: 'tok-comment' },
   { tag: [t.operator, t.standard(t.variableName), t.tagName], class: 'tok-accent' },
   { tag: [t.typeName, t.className, t.namespace], class: 'tok-property' },
 ])
