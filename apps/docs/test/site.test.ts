@@ -874,7 +874,8 @@ describe('the built site', () => {
       const snippets = page.locator('.snippet:not(details:not([open]) .snippet)')
       const n = await snippets.count()
       for (let i = 0; i < n; i++) {
-        await snippets.nth(i).locator('pre').hover()
+        // the snippet, not its <pre>: the view takes the <pre>'s place under the pointer as it arrives
+        await snippets.nth(i).hover()
         await snippets.nth(i).locator('.cm-editor').waitFor()
       }
       return n
@@ -937,7 +938,7 @@ describe('the built site', () => {
       const page = await context.newPage()
       await page.goto(`${url}language/`)
       const content = page.locator('.snippet .cm-content').first()
-      await page.locator('.snippet pre').first().hover()
+      await page.locator('.snippet').first().hover()
       await content.waitFor()
       const text = (await page
         .locator('.snippet pre')
@@ -1070,7 +1071,7 @@ describe('the built site', () => {
       await page.goto(`${url}concepts/`)
       const island = page.locator('[data-island="loadmap"]').first()
       await island.locator('summary').click()
-      await island.locator('.snippet pre').hover()
+      await island.locator('.snippet').hover()
       await island.locator('.snippet .cm-editor').waitFor()
       expect(await island.locator('.snippet .cm-content').getAttribute('aria-label')).toBe('loadmap snippet')
       expect(await island.locator('.snippet .tok-keyword').count()).toBeGreaterThan(0)
