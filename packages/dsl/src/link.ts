@@ -1,7 +1,7 @@
 import type { Decl, Edge, Expr, Ident, Property, Stmt } from './ast'
 import { didYouMean, type Span } from './diagnostics'
 import { type Env, Expander, type InputCheck, type Template } from './expand'
-import { Bail, type Loader, MAX_LIBRARY_DEPTH, relativePath, type SourceFile } from './files'
+import { Bail, type Loader, MAX_LIBRARY_DEPTH, type Role, relativePath, type SourceFile } from './files'
 import { BOXES, STAGES } from './schema'
 import { before, CURRENT, LANGUAGE_VERSION, needs, stampOf, type Version, versionText } from './versions'
 
@@ -35,6 +35,21 @@ const VARIANT_PROPS = new Set(['title', 'assume', 'searchMax'])
 const VARIANT_REPLACES = new Set(['let', 'fit', 'metric', 'measure', 'published'])
 const VARIANT_ADDS = new Set(['preset', 'scenario', 'expect', 'step'])
 const VARIANT_ONCE = new Set(['growth', 'thresholds'])
+
+/**
+ * Whether the top of a file of `role` may hold a property, a statement of `name` or an edge: what the linker refuses
+ * there as misplaced, for completion to leave out. Head lines are the head's to say.
+ */
+export function holdsAtTop(role: Role, what: 'prop' | 'decl' | 'edge', name = ''): boolean {
+  if (role === 'model') return true
+  if (role === 'part') return what === 'edge' || (what === 'decl' && !MODEL_ONLY.has(name))
+  if (role === 'library') return what === 'decl' && (isValue(name) || isTemplate(name))
+  if (what === 'prop') return VARIANT_PROPS.has(name)
+  return (
+    what === 'decl' &&
+    (name === 'param' || VARIANT_REPLACES.has(name) || VARIANT_ADDS.has(name) || VARIANT_ONCE.has(name))
+  )
+}
 
 interface Library {
   file: SourceFile

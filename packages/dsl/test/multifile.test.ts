@@ -679,6 +679,51 @@ describe('the help across the files of a model', () => {
     expect(focus.options.map((x) => x.label)).toContain('gateway')
   })
 
+  it('offers what a like or a subsystem brings from a library, by the names it has here', () => {
+    /** Completions in `path` with `from` written as `to`, the cursor where "|" is in it. */
+    const across = (path: string, from: string, to: string) => {
+      const text = swap(path, from, to.replace('|', ''))
+      const offset = base[path]!.indexOf(from) + to.indexOf('|')
+      const c = completionsAcross(text, offset, { path, files: set({ [path]: text }), paths: Object.keys(base) })
+      return c.options
+    }
+    const labels = (o: { label: string }[]) => o.map((x) => x.label)
+    // the subsystem itself, its boxes, and a box like the library's postgres, which runs its store
+    const route = labels(across(MODEL, 'route: gateway -> orderLine -> db', 'route: gateway -> |'))
+    expect(route).toEqual(expect.arrayContaining(['orderLine', 'orderLine.consumers', 'db']))
+    expect(labels(across(MODEL, 'route: gateway -> orderLine -> db', 'route: gateway -> orderLine.|')).sort()).toEqual([
+      'consumers',
+      'kafka',
+      'topic',
+    ])
+    expect(labels(across(MODEL, '\norderLine -> db\n', '\norderLine -> db\norderLine.|\n')).sort()).toEqual([
+      'consumers',
+      'kafka',
+    ])
+    // like: what the file imports of the same kind
+    expect(across(MODEL, 'like: pipeline', 'like: |')).toMatchObject([
+      { label: 'pipeline', detail: 'subsystem of ./platform.loadmap' },
+    ])
+    // a node may be like any node of this file too; the imported prototype, with inputs, first
+    const like = across(MODEL, 'like: postgres', 'like: |').sort((a, b) => (b.boost ?? 0) - (a.boost ?? 0))
+    expect(like[0]).toMatchObject({ label: 'postgres', detail: 'node of ./platform.loadmap' })
+    // a flow input takes a flow
+    expect(labels(across(MODEL, 'with { main: orders; pods: pods }', 'with { main: |; pods: pods }'))).toEqual([
+      'orders',
+    ])
+    // in the library: a prototype's formulas read its inputs, a subsystem's edges its own boxes
+    const demand = across(LIB, 'demand: writes', 'demand: |')
+    const first = [...demand].sort((a, b) => (b.boost ?? 0) - (a.boost ?? 0)).slice(0, 2)
+    expect(labels(first)).toEqual(['writes', 'limit'])
+    const edges = labels(across(LIB, '  kafka -> consumers\n', '  kafka -> consumers\n  |\n'))
+    expect(edges).toEqual(expect.arrayContaining(['kafka', 'consumers']))
+    expect(edges).not.toContain('pipeline.kafka')
+    // a part holds statements: not the model's title, load or view
+    const part = labels(across(STORY, 'part of "./shop.loadmap"\n', 'part of "./shop.loadmap"\n|\n'))
+    expect(part).toEqual(expect.arrayContaining(['step', 'expect']))
+    for (const k of ['title', 'load', 'view', 'include', 'import']) expect(part).not.toContain(k)
+  })
+
   it('imports a name a library declares, and tells who imports a library', () => {
     const o = { path: MODEL, files, paths: Object.keys(files) }
     expect(libraryOf('messageCost', o)).toEqual({ path: LIB, keyword: 'let' })

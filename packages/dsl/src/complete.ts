@@ -5,10 +5,23 @@ import { type DslSymbol, declarations, templateArgs } from './compile'
 import { type Cursor, callAt, cursorAt } from './cursor'
 import { Reporter } from './diagnostics'
 import { BUILTINS } from './expr'
+import { DEFAULT_PATH, type Role, readHead } from './files'
 import type { Token } from './lexer'
+import { holdsAtTop } from './link'
 import { parse } from './parser'
-import { type BlockSpec, BOXES, COLORS, EDGE_PROPS, own, type PropSpec, propNamed, SCHEMA, type Scope } from './schema'
-import { before, CURRENT, parseVersion, stampOf, type Version } from './versions'
+import {
+  type BlockSpec,
+  BOXES,
+  COLORS,
+  EDGE_PROPS,
+  own,
+  type PropSpec,
+  propNamed,
+  SCHEMA,
+  type Scope,
+  STAGES,
+} from './schema'
+import { before, CURRENT, LANGUAGE_VERSION, parseVersion, stampOf, type Version } from './versions'
 
 export interface Completion {
   label: string
@@ -46,10 +59,78 @@ const TABLES = ['flows', 'at', 'out', 'demand', 'util', 'derived'] as const
  * the parse and the declared names, never runs the model: cheap enough for every keystroke.
  */
 export function completions(source: string, offset: number): Completions {
+  return completionsIn(source, offset)
+}
+
+/** An input of a prototype or a subsystem: a value, or (`input flow main`) the name of a flow. */
+export interface Input {
+  name: string
+  flow: boolean
+  default?: string
+}
+
+/** Where the cursor is in its file's head: what the head lines and the first line may still be. */
+export interface HeadState {
+  role: Role
+  /** The file has its `loadmap` line. */
+  stamp: boolean
+  /** Nothing but the `loadmap` line and head lines before the cursor's line: a head line may still go here. */
+  open: boolean
+  /** No statement before the cursor's line. */
+  first: boolean
+  /** The head lines the file has, by kind. */
+  kinds: ReadonlySet<string>
+}
+
+/**
+ * What the files around a text add, for `completionsAcross`: the names of the model linked (a library's prototypes
+ * written out), this file's own head (a part's is blanked in the text it is read in), what it imports, and the inputs
+ * of a prototype wherever it is declared. Without it, each is worked out from the text alone.
+ */
+export interface Context {
+  symbols?: readonly DslSymbol[]
+  head?: HeadState
+  /** The boxes and subsystems this file imports, by the name they have here. */
+  imported?: readonly { name: string; keyword: string; from: string; inputs: boolean; route: boolean }[]
+  inputsOf?: (name: string) => Input[]
+}
+
+/** The one-file help, with what `ctx` says of the files around: for `completionsAcross`. */
+export function completionsIn(source: string, offset: number, ctx: Context = {}): Completions {
   const cur = cursorAt(source, offset)
   const { doc } = parse(source, new Reporter(source))
-  const options = new Help(source, doc.body, declarations(source, doc), cur, offset).options()
+  const own = declarations(source, doc)
+  // the linked names, and this text's own where linking stopped short of them
+  const symbols = ctx.symbols ? union(ctx.symbols, own) : own
+  const head = ctx.head ?? headIn(source, doc.body, offset)
+  const options = new Help(source, doc.body, symbols, cur, offset, { ...ctx, head }).options()
   return { from: cur.from, to: cur.to, options }
+}
+
+const union = (a: readonly DslSymbol[], b: readonly DslSymbol[]) => {
+  const seen = new Set(a.map((s) => `${s.kind} ${s.id}`))
+  return [...a, ...b.filter((s) => !seen.has(`${s.kind} ${s.id}`))]
+}
+
+const HEAD_LINES = new Set(['include', 'part', 'library', 'import', 'extends'])
+
+/** The head of a text, as it stands at `offset`. */
+export function headAt(source: string, offset: number): HeadState {
+  return headIn(source, parse(source, new Reporter(source)).doc.body, offset)
+}
+
+function headIn(source: string, body: readonly Stmt[], offset: number): HeadState {
+  const { role, head, stamp } = readHead(new Reporter(source), DEFAULT_PATH, body)
+  const line = source.lastIndexOf('\n', offset - 1) + 1
+  const earlier = body.filter((s) => s.from < line)
+  const heads = new Set<Stmt>(head.map((h) => h.decl))
+  return {
+    role,
+    stamp: !!stamp,
+    open: earlier.every((s) => s === stamp || heads.has(s)),
+    first: !earlier.length,
+    kinds: new Set(head.map((h) => h.kind)),
+  }
 }
 
 /** Where a formula is written: what it may read, and what the slot wants. */
@@ -71,6 +152,7 @@ class Help {
     readonly symbols: readonly DslSymbol[],
     readonly cur: Cursor,
     readonly offset: number,
+    readonly ctx: Context & { head: HeadState },
   ) {
     ;({ spec: this.spec, edgeBody: this.edgeBody, path: this.path } = blockAt(body, offset))
     this.version = stampOf(source, body)?.version ?? CURRENT
@@ -86,14 +168,29 @@ class Help {
     const first = head[0]
     if (!first) return cur.in === 'code' ? this.lineStart() : []
     if (first.kind !== 'ident') return []
+    // the names as written: orderLine.kafka is one
+    const names = joinDots(head)
 
     // a -> b -> |   flow -> |   a -> b: `${…}`
-    if (punct(head[1], '->')) {
+    if (punct(names[1], '->')) {
       const colon = head.findIndex((t) => punct(t, ':'))
       if (colon >= 0) return this.formula(cur.part ?? head.slice(colon + 1), { scope: 'ctx' })
-      if (!punct(head.at(-1), '->') || cur.in !== 'code') return []
-      return this.spec.edges === 'branches' ? this.stages() : this.nodes(head.at(-2)?.text)
+      if (cur.in !== 'code') return []
+      const kind = this.spec.edges === 'branches' ? 'stage' : 'node'
+      // a -> orderLine.|
+      if (punct(names.at(-1), '.') && punct(names.at(-3), '->')) return this.inside(names.at(-2)!.text, kind)
+      if (!punct(names.at(-1), '->')) return []
+      return kind === 'stage' ? this.stages() : this.nodes(names.at(-2)?.text)
     }
+    // orderLine.|  at the start of an edge
+    if (names.length === 2 && punct(names[1], '.') && cur.in === 'code')
+      return this.spec.edges === 'edges' ? this.inside(first.text, 'node') : []
+    // loadmap |
+    if (first.text === 'loadmap' && head.length === 1 && cur.in === 'code' && !this.path.length)
+      return [{ label: LANGUAGE_VERSION, type: 'constant', detail: 'the language version', boost: 9 }]
+    // measure x |: a metric
+    if (first.text === 'measure' && head.length === 2 && cur.in === 'code' && !this.path.length)
+      return this.ids('metric').map((label) => ({ label, type: 'variable', detail: 'metric' }))
     // key: |
     if (punct(head[1], ':')) {
       // an old name (`fill` in workers) takes the values of the property it is now
@@ -133,14 +230,63 @@ class Help {
     // a whole statement only on a line of its own: not before what the line already holds
     const end = this.source.indexOf('\n', this.offset)
     const alone = !this.source.slice(this.offset, end < 0 ? undefined : end).trim()
-    const list: Completion[] = [...props(spec.props, written, this.version), ...statements(spec, this.version, alone)]
+    const top = !this.path.length
+    const { head } = this.ctx
+    // before anything else, a file starts with its version
+    if (top && !head.stamp && head.first)
+      return [
+        {
+          label: `loadmap ${LANGUAGE_VERSION}`,
+          type: 'keyword',
+          detail: 'the first line',
+          info: SCHEMA.loadmap!.doc,
+          boost: 9,
+        },
+      ]
+    const box = this.path.at(-1)
+    const others = (box?.body ?? []).filter((s) => !(s.from <= this.offset && this.offset <= s.to))
+    const has = new Set(others.flatMap((s) => (s.kind === 'decl' ? [s.keyword.name] : [])))
+    const stages: readonly string[] = STAGES
+    const kind = box?.kind === 'decl' ? box.keyword.name : ''
+    const fits = (k: string) => {
+      if (top) return HEAD_LINES.has(k) ? this.headLine(k) : holdsAtTop(head.role, 'decl', k)
+      // a node runs one stage; a box has one component
+      if (kind === 'node' && stages.includes(k)) return ![...has].some((h) => stages.includes(h))
+      if (k === 'component' && (BOXES as readonly string[]).includes(kind)) return !has.has(k)
+      // with sets the inputs of what this one is like
+      if (k === 'with') return written.has('like') && !has.has(k)
+      return true
+    }
+    const fields = top
+      ? props(spec.props, written, this.version).filter((p) => holdsAtTop(head.role, 'prop', p.label))
+      : props(spec.props, written, this.version)
+    const blocks = statements(spec, this.version, alone).filter((s) => fits(s.label))
+    for (const s of blocks) {
+      if (HEAD_LINES.has(s.label)) {
+        s.snippet = alone ? HEAD_SNIPPETS[s.label] : undefined
+        s.boost = 5
+      }
+      // a property and a block of one name (held): the block says it is one
+      if (fields.some((f) => f.label === s.label)) s.detail = 'block'
+    }
+    const list: Completion[] = [...fields, ...blocks]
     const open = (names: string[]) =>
       names
         .filter((n) => !written.has(n))
         .map((label) => ({ label, type: 'variable' as const, apply: `${label}: `, boost: 1 }))
     if (spec.open?.names === 'values') list.push(...open(['load', ...this.ids('param')]))
     if (spec.open?.names === 'params') list.push(...open(this.ids('param')))
-    if (spec.open?.names === 'flows') list.push(...open(this.ids('flow')))
+    if (spec.open?.names === 'flows') list.push(...open(this.flows()))
+    if (spec.open?.names === 'inputs')
+      for (const i of this.prototypeInputs())
+        if (!written.has(i.name))
+          list.push({
+            label: i.name,
+            type: 'property',
+            apply: `${i.name}: `,
+            detail: i.flow ? 'a flow' : i.default != null ? `default ${i.default}` : 'required',
+            boost: i.flow || i.default == null ? 2 : 1,
+          })
     if (spec.open?.names === 'conditions') {
       const c = this.publishedComponent()
       for (const [label, def] of Object.entries(c?.conditions ?? {}))
@@ -150,23 +296,88 @@ class Help {
       for (const label of this.metricArguments())
         if (!written.has(label))
           list.push({ label, type: 'variable', apply: `${label}: `, detail: 'argument', boost: 1 })
-    if (spec.edges === 'edges') list.push(...this.nodes())
-    if (spec.edges === 'branches') list.push(...this.ids('flow').map((label) => ({ label, type: 'variable' as const })))
+    if (spec.edges === 'edges' && (!top || holdsAtTop(head.role, 'edge'))) list.push(...this.nodes())
+    if (spec.edges === 'branches') list.push(...this.flows().map((label) => ({ label, type: 'variable' as const })))
     return list
+  }
+
+  /** Whether a head line of kind `k` may still be written here. */
+  headLine(k: string): boolean {
+    const { head } = this.ctx
+    if (!head.open || !head.stamp) return false
+    const role = head.kinds.has('part') || head.kinds.has('library') || head.kinds.has('extends')
+    const imports = head.kinds.has('import')
+    const includes = head.kinds.has('include')
+    if (k === 'include') return head.role === 'model'
+    if (k === 'import') return head.role === 'model' || head.role === 'library'
+    if (k === 'library') return !role && !includes
+    // part of, extends: a part and a variant take their model's imports
+    return !role && !includes && !imports
+  }
+
+  /** The inputs of what the block around `with` is like. */
+  prototypeInputs(): Input[] {
+    const owner = this.path.at(-2)
+    const like = owner?.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
+    const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
+    if (name == null) return []
+    return this.ctx.inputsOf?.(name) ?? inputsIn(this.source, this.body, name)
+  }
+
+  /** The input that `with { key: … }` sets. */
+  inputNamed(key: string): Input | undefined {
+    return this.prototypeInputs().find((i) => i.name === key)
+  }
+
+  /** The inputs of the prototypes and subsystems around the cursor: names its formulas read. */
+  ownInputs(): Input[] {
+    return this.path.flatMap((d) => (d.kind === 'decl' ? inputsOf(this.source, d) : []))
+  }
+
+  /** The flows, and the flow inputs of what the cursor is in (`flows.main`). */
+  flows(): string[] {
+    return [...new Set([...this.ids('flow'), ...this.ownInputs().flatMap((i) => (i.flow ? [i.name] : []))])]
+  }
+
+  /** The names of kind `kind` under a subsystem's id: `orderLine.` gives kafka, consumers. */
+  inside(prefix: string, kind: 'node' | 'stage' | 'component'): Completion[] {
+    const ids =
+      kind === 'stage'
+        ? [...this.ids('stage'), ...singleStageBoxes(this.symbols)]
+        : kind === 'node'
+          ? this.ids('node')
+          : this.ids('component')
+    const out = new Set<string>()
+    for (const id of ids) if (id.startsWith(`${prefix}.`)) out.add(id.slice(prefix.length + 1))
+    return [...out].map((label) => ({ label, type: 'variable', detail: `${kind} of ${prefix}` }))
   }
 
   value(key: string, p: PropSpec | undefined, rest: Token[]): Completion[] {
     const { cur } = this
     const kind = p?.value
+    const names = joinDots(rest)
+    // orderLine.|: a name inside a subsystem
+    const dotted =
+      cur.in === 'code' && punct(names.at(-1), '.') && names.at(-2)?.kind === 'ident' ? names.at(-2)!.text : undefined
     if (kind === 'route') {
-      if (cur.in !== 'code' || (rest.length && !punct(rest.at(-1), '->'))) return []
-      return this.stages(rest.at(-2)?.text)
+      if (cur.in !== 'code') return []
+      if (dotted != null && (names.length === 2 || punct(names.at(-3), '->'))) return this.inside(dotted, 'stage')
+      if (names.length && !punct(names.at(-1), '->')) return []
+      return this.stages(names.at(-2)?.text)
     }
-    if (kind === 'node') return cur.in === 'code' ? this.nodes() : []
-    if (kind === 'component' || kind === 'flow' || kind === 'flows')
-      return cur.in === 'code'
-        ? this.ids(kind === 'flows' ? 'flow' : kind).map((label) => ({ label, type: 'variable' }))
-        : []
+    if (key === 'like' && !this.edgeBody) return cur.in === 'code' ? this.prototypes() : []
+    if (kind === 'node') return cur.in !== 'code' ? [] : dotted != null ? this.inside(dotted, 'node') : this.nodes()
+    if (kind === 'component' && dotted != null) return this.inside(dotted, 'component')
+    if (kind === 'flow' || kind === 'flows')
+      return cur.in === 'code' ? this.flows().map((label) => ({ label, type: 'variable' })) : []
+    if (kind === 'component')
+      return cur.in === 'code' ? this.ids('component').map((label) => ({ label, type: 'variable' })) : []
+    // with { main: | }: a flow for a flow input, else a formula of this file
+    if (this.spec === SCHEMA.with) {
+      if (this.inputNamed(key)?.flow)
+        return cur.in === 'code' ? this.flows().map((label) => ({ label, type: 'variable', detail: 'flow' })) : []
+      return this.formula(cur.part ?? rest, { scope: 'ctx', key, prop: p })
+    }
     if (kind === 'measure')
       return cur.in === 'code' ? this.ids('measure').map((label) => ({ label, type: 'variable' })) : []
     if (kind === 'tier') return cur.in === 'code' ? this.ids('tier').map((label) => ({ label, type: 'constant' })) : []
@@ -248,7 +459,8 @@ class Help {
         ]
       return []
     }
-    const names = this.names(slot)
+    // a capacity's value is a number: what a capacity names (a published figure) does not go there
+    const names = this.names(call && CAPACITY.has(call.name) ? { scope: slot.scope, key: slot.key } : slot)
     if (slot.prop?.value === 'capacity' && !tokens.length) names.push(...capacityForms())
     return names
   }
@@ -265,6 +477,10 @@ class Help {
         detail: 'parameter',
         boost: wantsSwitch && this.isSwitch(label) ? 2 : undefined,
       })),
+      // in a prototype or a subsystem: what the box that is like it sets
+      ...this.ownInputs().flatMap((i) =>
+        i.flow ? [] : [{ label: i.name, type: 'variable' as const, detail: 'input', boost: 1 }],
+      ),
     ]
     if (scope === 'values') return list
     const capacity = slot.prop?.value === 'capacity'
@@ -325,7 +541,7 @@ class Help {
       case 'flows': {
         const box = slot.key === 'demand' ? this.box() : undefined
         const near = new Set(box ? this.reaching(box) : [])
-        return this.ids('flow').map((f) =>
+        return this.flows().map((f) =>
           entry(f, near.has(f) ? 'reaches this box' : 'flows', near.has(f) ? 3 : undefined),
         )
       }
@@ -385,9 +601,10 @@ class Help {
   metricArguments(): string[] {
     const d = this.path.at(-1)
     const name = d?.kind === 'decl' && d.keyword.name === 'measure' ? d.args[1] : undefined
-    const metric = name?.t === 'id' ? this.symbols.find((s) => s.kind === 'metric' && s.id === name.name) : undefined
+    // by its statement in this text: a symbol of another file has its place there
+    const metric = name?.t === 'id' ? this.decl('metric', name.name) : undefined
     if (!metric) return []
-    return templateArgs(this.source.slice(metric.decl.from, metric.decl.to))
+    return templateArgs(this.source.slice(metric.from, metric.to))
   }
 
   /** The component the `published` statement around the cursor names, in its edition (or the latest). */
@@ -450,6 +667,7 @@ class Help {
     const all = [
       ...this.ids('stage').map((label) => ({ label, detail: 'stage' })),
       ...singleStageBoxes(this.symbols).map((label) => ({ label, detail: 'box' })),
+      ...this.subsystems(true).map((label) => ({ label, detail: 'subsystem' })),
     ].filter(({ label }) => !lost.has(label))
     return all.map(({ label, detail }) => ({
       label,
@@ -459,11 +677,57 @@ class Help {
     }))
   }
 
-  /** Every node; after `a ->`, not `a` itself. */
+  /** Every node; after `a ->`, not `a` itself. In a subsystem, its own boxes, by the ids they have there. */
   nodes(prev?: string): Completion[] {
-    return this.ids('node').flatMap((label) =>
-      label === prev ? [] : [{ label, type: 'variable' as const, detail: 'node' }],
+    const sub = this.path.findLast((d): d is Decl => d.kind === 'decl' && d.keyword.name === 'subsystem')
+    const ids = sub
+      ? (sub.body ?? []).flatMap((s) =>
+          s.kind === 'decl' && ([...BOXES, 'subsystem'] as string[]).includes(s.keyword.name) && s.args[0]?.t === 'id'
+            ? [s.args[0].name]
+            : [],
+        )
+      : [...this.ids('node'), ...this.subsystems(false)]
+    // not the box itself, nor its own boxes: an edge leaves a subsystem from its last box
+    const mine = (id: string) => prev != null && (id === prev || id.startsWith(`${prev}.`))
+    return ids.flatMap((label) => (mine(label) ? [] : [{ label, type: 'variable' as const, detail: 'node' }]))
+  }
+
+  /**
+   * The subsystems at the top, by id; `routed`: only those a route may name, which say what a flow passes (`route:`)
+   * or are like one that does.
+   */
+  subsystems(routed: boolean): string[] {
+    const subs = this.body.filter(
+      (s): s is Decl => s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id',
     )
+    const routes = (d: Decl, depth = 0): boolean => {
+      if (d.body?.some((s) => s.kind === 'prop' && s.key.name === 'route')) return true
+      const like = d.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
+      const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
+      if (name == null || depth > 4) return false
+      const local = subs.find((x) => (x.args[0] as { name: string }).name === name)
+      return local ? routes(local, depth + 1) : !!this.ctx.imported?.some((i) => i.name === name && i.route)
+    }
+    return subs.flatMap((d) => (!routed || routes(d) ? [(d.args[0] as { name: string }).name] : []))
+  }
+
+  /** What the box or subsystem being written may be like: one of its kind, of this file or imported. */
+  prototypes(): Completion[] {
+    const d = this.path.at(-1)
+    if (d?.kind !== 'decl') return []
+    const kind = d.keyword.name
+    const self = d.args[0]?.t === 'id' ? d.args[0].name : undefined
+    const out: Completion[] = []
+    for (const s of this.body) {
+      const id = s.kind === 'decl' && s.keyword.name === kind ? s.args[0] : undefined
+      if (id?.t !== 'id' || id.name === self || out.some((o) => o.label === id.name)) continue
+      const inputs = inputsOf(this.source, s as Decl).length > 0
+      out.push({ label: id.name, type: 'type', detail: inputs ? `${kind} with inputs` : kind, boost: inputs ? 2 : 0 })
+    }
+    for (const i of this.ctx.imported ?? [])
+      if (i.keyword === kind && !out.some((o) => o.label === i.name))
+        out.push({ label: i.name, type: 'type', detail: `${kind} of ${i.from}`, boost: i.inputs ? 3 : 1 })
+    return out
   }
 
   private routesMemo?: Map<string, Set<string>>
@@ -553,6 +817,51 @@ class Help {
 }
 
 const punct = (t: Token | undefined, text: string) => t?.kind === 'punct' && t.text === text
+
+/** The tokens with each dotted name as one: `orderLine . kafka` is `orderLine.kafka`; a trailing dot stays. */
+function joinDots(tokens: readonly Token[]): Token[] {
+  const out: Token[] = []
+  for (const t of tokens) {
+    const dot = out.at(-1)
+    const name = out.at(-2)
+    if (
+      t.kind === 'ident' &&
+      punct(dot, '.') &&
+      name?.kind === 'ident' &&
+      name.to === dot!.from &&
+      dot!.to === t.from
+    ) {
+      out.splice(-2, 2, { ...name, text: `${name.text}.${t.text}`, to: t.to })
+    } else out.push(t)
+  }
+  return out
+}
+
+/** The `input` lines of a prototype or a subsystem. */
+export function inputsOf(source: string, d: Decl): Input[] {
+  return (d.body ?? []).flatMap((s): Input[] => {
+    if (s.kind !== 'decl' || s.keyword.name !== 'input') return []
+    const [first, second] = s.args
+    if (first?.t === 'id' && first.name === 'flow' && second?.t === 'id') return [{ name: second.name, flow: true }]
+    if (first?.t !== 'id') return []
+    return [{ name: first.name, flow: false, ...(s.init && { default: source.slice(s.init.from, s.init.to) }) }]
+  })
+}
+
+/** The inputs of the box or subsystem `name` declared at the top of `body`. */
+function inputsIn(source: string, body: readonly Stmt[], name: string): Input[] {
+  const d = body.find((s): s is Decl => s.kind === 'decl' && s.args[0]?.t === 'id' && s.args[0].name === name)
+  return d ? inputsOf(source, d) : []
+}
+
+/** The head lines as snippets: the path in quotes, an import's names. */
+const HEAD_SNIPPETS: Readonly<Record<string, string>> = {
+  include: 'include "${1:./part.loadmap}"',
+  import: 'import "${1:./library.loadmap}" { ${2:name} }',
+  part: 'part of "${1:./model.loadmap}"',
+  library: 'library "${1:what it holds}"',
+  extends: 'extends "${1:./model.loadmap}"',
+}
 
 export function propOf(d: Decl, key: string): Expr | undefined {
   const p = d.body?.find((s) => s.kind === 'prop' && s.key.name === key)

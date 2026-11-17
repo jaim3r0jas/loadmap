@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { completions, decodeShare, encodeShare, MAX_SHARED_BYTES } from '../src'
+import { completions, decodeShare, encodeShare, LANGUAGE_VERSION, MAX_SHARED_BYTES } from '../src'
 
 const checkout = readFileSync(new URL('../../../examples/checkout/checkout.loadmap', import.meta.url), 'utf8')
 const alerts = readFileSync(new URL('../../../examples/alerts/alerts.loadmap', import.meta.url), 'utf8')
@@ -328,5 +328,142 @@ describe('completions while typing', () => {
     }
     const offset = checkout.indexOf('demand: flows.orders + flows.events') + 'demand: '.length
     expect(cpu(() => completions(checkout, offset)) * 5).toBeLessThan(cpu(() => compile(checkout)))
+  })
+})
+
+describe('completions that leave out what would not compile', () => {
+  it('start a file with its version, and offer the head lines only in the head', () => {
+    expect(at('|').c.options).toMatchObject([{ label: `loadmap ${LANGUAGE_VERSION}`, boost: 9 }])
+    expect(at('loadmap |').labels).toEqual([LANGUAGE_VERSION])
+    const head = at(`loadmap ${LANGUAGE_VERSION}\n|\n`).c.options
+    for (const k of ['include', 'import', 'library', 'part', 'extends'])
+      expect(head.find((o) => o.label === k)).toMatchObject({ boost: 5 })
+    expect(head.find((o) => o.label === 'part')?.snippet).toBe('part of "${1:./model.loadmap}"')
+    // after an include, the file is a model: no part of, library or extends
+    const model = at(`loadmap ${LANGUAGE_VERSION}\ninclude "./a.loadmap"\n|\n`).labels
+    expect(model).toEqual(expect.arrayContaining(['include', 'import']))
+    for (const k of ['library', 'part', 'extends']) expect(model).not.toContain(k)
+    // once a statement is written, the head is closed
+    const body = at(`${checkout}\n|`).labels
+    for (const k of ['include', 'import', 'library', 'part', 'extends', 'loadmap']) expect(body).not.toContain(k)
+  })
+
+  it('offer a part, a library and a variant what each may hold', () => {
+    const part = at(`loadmap ${LANGUAGE_VERSION}\npart of "./m.loadmap"\n|`).labels
+    expect(part).toEqual(expect.arrayContaining(['flow', 'node', 'step']))
+    for (const k of ['title', 'assume', 'load', 'view', 'import', 'include']) expect(part).not.toContain(k)
+    const library = at(`loadmap ${LANGUAGE_VERSION}\nlibrary "L"\nnode a "A" { pass }\n|`).labels
+    expect(library).toEqual(expect.arrayContaining(['let', 'node', 'subsystem', 'published']))
+    // no flows, no properties, no edges (a box's name would start one)
+    for (const k of ['flow', 'title', 'step', 'connection', 'a']) expect(library).not.toContain(k)
+    const variant = at(`loadmap ${LANGUAGE_VERSION}\nextends "./m.loadmap"\n|`).labels
+    expect(variant).toEqual(expect.arrayContaining(['title', 'param', 'scenario', 'let', 'growth']))
+    for (const k of ['node', 'flow', 'view', 'load']) expect(variant).not.toContain(k)
+  })
+
+  it('offer a node one stage and a box one component', () => {
+    const db = at(inside('node db "Postgres" "primary" {', '|')).labels
+    for (const k of ['pass', 'cache', 'limit', 'sink']) expect(db).not.toContain(k)
+    expect(db).toContain('component')
+    const fresh = at(`${checkout}\nnode x "X" {\n  |\n}`).labels
+    expect(fresh).toEqual(expect.arrayContaining(['pass', 'store', 'cache', 'component']))
+    const owned = at(`${checkout}\nnode x "X" {\n  pass\n  component c { capacity: 1 }\n  |\n}`).labels
+    expect(owned).not.toContain('component')
+    // a cluster holds several queues
+    expect(at(checkout.replace('  members: 3', '  members: 3\n  |')).labels).toContain('queue')
+    // with sets the inputs of what the box is like: only after a like
+    expect(fresh).not.toContain('with')
+    expect(at(`${checkout}\nnode x "X" {\n  like: db\n  |\n}`).labels).toContain('with')
+  })
+})
+
+describe('completions for prototypes and subsystems in one file', () => {
+  const src = `loadmap ${LANGUAGE_VERSION}
+load { max: 10 }
+flow orders { rate: 10 * load; route: line -> db; from: users }
+node users "Users"
+node proto "Proto" {
+  input rate = 1
+  pass
+  demand: |DEMAND
+  capacity: estimated(100, "req/s", "x")
+}
+pool workers "Workers" { pods: 2; perPod: 1; capacity: estimated(10, "cores", "x") }
+subsystem queue "Queue" {
+  input flow main
+  input pods = 3
+  cluster kafka "Kafka" { queue topic { partitions { |PARTS } } }
+  pool consumers "Consumers" { pods: pods; perPod: 2; demand: flows.main; capacity: estimated(1, "cores", "x") }
+  kafka -> consumers
+  |EDGE
+  route: kafka -> consumers
+}
+subsystem line "Line" {
+  like: queue
+  with { main: |MAIN }
+}
+node db "DB" { like: |LIKE }
+users -> line
+line -> db
+|TOP
+`
+  /** What each place holds when the cursor is elsewhere. */
+  const held: Record<string, string> = {
+    DEMAND: 'rate',
+    PARTS: 'main: 4',
+    EDGE: '',
+    MAIN: 'orders',
+    LIKE: 'proto',
+    TOP: '',
+  }
+  /** The model with the cursor at `mark`, after `add`. */
+  const text = (mark: string, add = '') => {
+    let out = src
+    for (const [m, value] of Object.entries(held)) out = out.replace(`|${m}`, m === mark ? `${add}|` : value)
+    return out
+  }
+  const pick = (mark: string, add = '') => at(text(mark, add))
+
+  it('offer the boxes of the kind being written to be like, those with inputs first', () => {
+    const { c } = pick('LIKE')
+    expect(c.options.map((o) => o.label)).toEqual(['users', 'proto'])
+    expect(c.options.find((o) => o.label === 'proto')).toMatchObject({ detail: 'node with inputs', boost: 2 })
+    expect(c.options.map((o) => o.label)).not.toContain('workers')
+  })
+
+  it("offer a prototype's inputs in its formulas, and a flow for a flow input", () => {
+    expect(pick('DEMAND').c.options.find((o) => o.label === 'rate')).toMatchObject({ detail: 'input', boost: 1 })
+    expect(pick('PARTS').labels).toEqual(['orders', 'main'])
+    expect(pick('MAIN').labels).toEqual(['orders'])
+  })
+
+  it("offer a subsystem's own boxes inside it, its boxes after its id outside, and itself in a route", () => {
+    expect(pick('EDGE').labels).toEqual(expect.arrayContaining(['kafka', 'consumers']))
+    expect(pick('EDGE').labels).not.toContain('queue.kafka')
+    expect(pick('TOP', 'line.').labels).toEqual(['kafka', 'consumers'])
+    expect(pick('TOP', 'users -> line.').labels).toEqual(['kafka', 'consumers'])
+    // after a subsystem, not its own boxes
+    expect(pick('TOP', 'line -> ').labels).not.toContain('line.kafka')
+    const route = at(text('TOP').replace('|', '').replace('route: line -> db', 'route: |')).labels
+    expect(route).toEqual(expect.arrayContaining(['line', 'line.topic', 'db']))
+    expect(at(text('TOP').replace('|', '').replace('route: line -> db', 'route: line.|')).labels).toEqual(
+      expect.arrayContaining(['topic', 'consumers']),
+    )
+  })
+})
+
+describe('completions after a keyword line', () => {
+  const every = readFileSync(new URL('../../../docs/every-statement.loadmap', import.meta.url), 'utf8')
+
+  it("offer the metrics after a measure's id", () => {
+    const text = every.replace('measure orderRate ordersPlaced {', 'measure orderRate | {')
+    expect(at(text).labels).toEqual(['ordersPlaced', 'apiCpu', 'signupsLogged'])
+  })
+
+  it("rank numbers over a published figure in a capacity's value", () => {
+    const text = every.replace('capacity: brokersRef', 'capacity: measured(|)')
+    const first = ranked(text).slice(0, 3)
+    expect(first).not.toContain('brokersRef')
+    expect(ranked(every.replace('capacity: brokersRef', 'capacity: |')).slice(0, 3)).toContain('brokersRef')
   })
 })
