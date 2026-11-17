@@ -1433,8 +1433,14 @@ export function LoadmapEditor({
                   marks={marks}
                   start={startNew}
                   onStarted={() => setStartNew(null)}
-                  onOpen={(p) => {
+                  onOpen={(p, at) => {
                     switchTo(p)
+                    // a subsystem's row: the cursor goes to its line
+                    if (at != null)
+                      view.current?.dispatch({
+                        selection: { anchor: Math.min(at, view.current.state.doc.length) },
+                        scrollIntoView: true,
+                      })
                     // on a phone the files are over the text: a pick shows it
                     if (phone) setExplorer(false)
                     view.current?.focus()

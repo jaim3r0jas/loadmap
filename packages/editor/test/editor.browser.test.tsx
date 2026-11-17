@@ -210,8 +210,23 @@ describe('the editor', () => {
       [...host.querySelectorAll<HTMLElement>('.lme-tree-row')].map(
         (r) => `${r.dataset.path} ${r.querySelector('.lme-tree-role')?.textContent}`,
       )
-    // the model first, each file with what its head says it is
-    expect(rows()).toEqual(['shop.loadmap model', 'platform.loadmap library', 'shop.story.loadmap part'])
+    // the model first, each file with what its head says it is, and under it the subsystems it declares
+    expect(rows()).toEqual([
+      'shop.loadmap model',
+      'shop.loadmap#orderLine subsystem',
+      'platform.loadmap library',
+      'platform.loadmap#pipeline subsystem',
+      'shop.story.loadmap part',
+    ])
+    // a subsystem's row opens its file at its line
+    host.querySelector<HTMLElement>('.lme-tree-row[data-path="platform.loadmap#pipeline"]')!.click()
+    await expect.poll(() => activeTab(host)).toBe('platform.loadmap')
+    const line = view.state.doc.lineAt(view.state.selection.main.head).text
+    expect(line).toBe('subsystem pipeline "Queue and workers" {')
+    expect(host.querySelector('.lme-tree-row[data-path="platform.loadmap#pipeline"] .lme-tree-name')?.textContent).toBe(
+      'Queue and workers',
+    )
+    await openFile(host, 'shop.loadmap')
     await openFile(host, 'shop.story.loadmap')
     expect(view.state.doc.toString()).toBe(story)
     await openFile(host, 'platform.loadmap')

@@ -1133,6 +1133,9 @@ alike, so each such name takes the names of the subsystems around it that tell t
 "limited by EU region › Workers" and "the workers in EU region", while the box itself still reads "Workers" in its
 frame. A name no other component has stays as written.
 
+In the editor, the files' explorer lists under each file the subsystems it declares, one in another indented under
+it; a click opens the file at that subsystem's line.
+
 A problem is reported in the file that can fix it: a library's own mistake in the library, a wrong or missing input
 at the box that sets it. `loadmap check` prints each with its file (`--format json` adds `file` to a diagnostic that
 is not in the checked file). `loadmap fmt` on a model sets its parts' `loadmap` lines to its own. `loadmap bundle
