@@ -55,13 +55,32 @@ export const EDITOR_CSS = `
 .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(220px, 260px); }
 @container (max-width: 720px) { .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 980px) { .lme-left { position: static; } }
-.lme-tabs { display: flex; gap: 2px; overflow-x: auto; padding: 0 2px; scrollbar-width: thin; }
-.lme-tab { display: inline-flex; align-items: center; border: 1px solid var(--lm-line); border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--lm-muted); white-space: nowrap; }
-.lme-tab[data-active] { background: var(--lm-surface); color: var(--lm-fg); }
-.lme-tab button { font: 12px/1.4 var(--lm-mono); color: inherit; background: none; border: 0; padding: 5px 8px; cursor: pointer; }
-.lme-tab button:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; border-radius: 4px; }
-.lme-tab .lme-tab-x { padding: 5px 6px 5px 0; opacity: 0.6; }
-.lme-tab .lme-tab-x:hover { opacity: 1; }
+/* the text with what belongs to it: the open files' tabs over it, the files' explorer on its left */
+.lme-work { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-width: 0; }
+.lme-work > .lme-code { grid-column: 2; grid-row: 2; }
+.lme-work[data-files] { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; }
+.lme-work[data-files] > .lme-code { border: 0; border-radius: 0; }
+/* tabs as an editor has them: one snug row that scrolls, the open file's joined to the text under an accent line */
+.lme-ftabs { grid-column: 2; grid-row: 1; display: flex; box-sizing: border-box; height: 30px; min-width: 0; background: var(--lm-bg); box-shadow: inset 0 -1px 0 var(--lm-line); }
+.lme-ftoggle { flex: none; display: grid; place-items: center; width: 32px; padding: 0; color: var(--lm-muted); background: none; border: 0; border-right: 1px solid var(--lm-line); cursor: pointer; }
+.lme-ftoggle:hover, .lme-ftoggle[aria-pressed="true"] { color: var(--lm-fg); }
+.lme-ftoggle[aria-pressed="true"] { background: color-mix(in srgb, var(--lm-fg) 7%, transparent); }
+.lme-ftablist { flex: 1; display: flex; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.lme-ftablist::-webkit-scrollbar { display: none; }
+.lme-ftab { flex: none; display: inline-flex; align-items: center; color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
+.lme-ftab:hover { color: var(--lm-fg); }
+.lme-ftab[data-active] { color: var(--lm-fg); background: var(--lm-surface); box-shadow: inset 0 2px 0 var(--lm-accent); }
+.lme-ftab [role="tab"] { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 12px; font: 12px var(--lm-mono); color: inherit; white-space: nowrap; background: none; border: 0; cursor: pointer; }
+.lme-ftab [role="tab"]:has(+ .lme-ftab-x) { padding-right: 4px; }
+.lme-fdir { color: var(--lm-muted); margin-right: -6px; }
+.lme-ftab-x { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; padding: 0; color: var(--lm-muted); background: none; border: 0; border-radius: 4px; cursor: pointer; opacity: 0; }
+.lme-ftab-x .lme-svg { width: 12px; height: 12px; }
+.lme-ftab[data-active] .lme-ftab-x, .lme-ftab:hover .lme-ftab-x, .lme-ftab:focus-within .lme-ftab-x { opacity: 1; }
+.lme-ftab-x:hover { color: var(--lm-fg); background: color-mix(in srgb, var(--lm-fg) 10%, transparent); }
+.lme-ftabs button:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; border-radius: 4px; }
+.lme-fdot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--lm-warn); }
+.lme-fdot[data-mark="error"] { background: var(--lm-drop); }
+@media (pointer: coarse) { .lme-ftab-x { opacity: 1; } }
 .lme-code { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; min-width: 0; }
 .lme-code .cm-editor { height: min(78vh, 900px); font: 13px/1.5 var(--lm-mono); color: var(--lm-fg); background: var(--lm-surface); }
 @container (max-width: 980px) { .lme-code .cm-editor { height: 55vh; } }
@@ -147,7 +166,7 @@ export const EDITOR_CSS = `
 .lme[data-fill] .lme-tools { flex: none; flex-wrap: nowrap; }
 .lme[data-fill] .lme-split { gap: 0; align-items: stretch; min-height: 0; }
 .lme[data-fill] .lme-left { position: static; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; padding: 10px 0 10px 10px; }
-.lme[data-fill] .lme-code { min-height: 0; }
+.lme[data-fill] .lme-work, .lme[data-fill] .lme-code { min-height: 0; }
 .lme[data-fill] .lme-code .cm-editor { height: 100%; }
 .lme[data-fill] .lme-preview { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 16px 24px; }
 .lme[data-fill] .lme-preview[hidden] { display: none; }
@@ -206,7 +225,7 @@ export const EDITOR_CSS = `
 .lme-preview [data-node][data-changed] { animation: lme-changed 1.6s ease-out; }
 @keyframes lme-changed { 0%, 35% { filter: drop-shadow(0 0 6px var(--lm-accent)); } to { filter: none; } }
 @media (prefers-reduced-motion: reduce) { .lme-preview [data-node][data-changed] { animation: none; filter: drop-shadow(0 0 4px var(--lm-accent)); } }
-.lme[data-canvas] .lme-code { border: 0; border-radius: 0; }
+.lme[data-canvas] .lme-code, .lme[data-canvas] .lme-work { border: 0; border-radius: 0; }
 .lme[data-canvas] .lme-problems { padding: 6px; border-top: 1px solid var(--lm-line); }
 .lme-resize { position: absolute; z-index: 6; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
 .lme-resize[data-side="start"] { right: -5px; }
@@ -245,7 +264,12 @@ export const EDITOR_CSS = `
 .lme-switch [data-warn]::after { background: var(--lm-warn); }
 .lme[data-narrow] > .lme-split { position: relative; display: block; overflow: hidden; }
 .lme[data-narrow] .lme-left { position: absolute; inset: 0; padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr) auto auto; }
-.lme[data-narrow] .lme-code { border: 0; border-radius: 0; }
+.lme[data-narrow] .lme-code, .lme[data-narrow] .lme-work { border: 0; border-radius: 0; }
+/* a thumb high, the names a size up */
+.lme[data-narrow] .lme-ftabs { height: 40px; }
+.lme[data-narrow] .lme-ftoggle { width: 44px; }
+.lme[data-narrow] .lme-ftab [role="tab"] { font-size: 14px; }
+.lme[data-narrow] .lme-ftab-x { width: 32px; height: 32px; margin-right: 2px; }
 /* 16 px: Safari zooms the page into a field whose text is smaller */
 .lme[data-narrow] .lme-code .cm-editor { height: 100%; font-size: 16px; }
 .lme[data-narrow] .lme-problems { max-height: 20dvh; padding: 6px; border-top: 1px solid var(--lm-line); }

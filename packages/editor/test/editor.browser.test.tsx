@@ -70,6 +70,23 @@ async function mount(
 }
 
 const verdict = (host: HTMLElement) => host.querySelector('.lm-verdict')?.textContent ?? ''
+const tabNames = (host: HTMLElement) => [...host.querySelectorAll('.lme-ftabs [role="tab"]')].map((t) => t.textContent)
+const activeTab = (host: HTMLElement) => host.querySelector('.lme-ftab[data-active] [role="tab"]')?.textContent
+/** The files' explorer, shown: it loads when first asked for. */
+async function explorer(host: HTMLElement) {
+  if (!host.querySelector('.lme-tree')) host.querySelector<HTMLElement>('.lme-ftoggle')!.click()
+  await expect.poll(() => host.querySelector('.lme-tree'), { timeout: 5000 }).toBeTruthy()
+}
+/** A file in the editor, picked in the explorer: its tab opens, or is the one shown. */
+async function openFile(host: HTMLElement, path: string) {
+  await explorer(host)
+  host.querySelector<HTMLElement>(`.lme-tree-row[data-path="${path}"]`)!.click()
+  await expect.poll(() => host.querySelector('.lme-ftab[data-active] [role="tab"]')?.getAttribute('title')).toBe(path)
+}
+const several = {
+  path: 'shop.loadmap',
+  files: { 'shop.loadmap': shop, 'shop.story.loadmap': story, 'platform.loadmap': platform },
+}
 
 describe('the editor', () => {
   it("shows a definition in several files as tabs, the diagram the model's whichever is open", async () => {
@@ -78,17 +95,19 @@ describe('the editor', () => {
       files: { 'shop.loadmap': shop, 'shop.story.loadmap': story, 'platform.loadmap': platform },
     }
     const { host, handle, view, edit } = await mount({ source: shop, several: files })
-    const tabs = () => [...host.querySelectorAll('.lme-tabs [role="tab"]')].map((t) => t.textContent)
+    const tabs = () => [...host.querySelectorAll('.lme-ftabs [role="tab"]')].map((t) => t.textContent)
+    const show = (path: string) => openFile(host, path)
     const status = () => host.querySelector('.lme-status')!.textContent
     const boxes = () =>
       [...host.querySelectorAll('.lme-preview [data-node]')].map((el) => el.getAttribute('data-node')).sort()
     const all = ['db', 'gateway', 'orderLine.consumers', 'orderLine.kafka', 'phones']
     // the model first; its subsystem's boxes are drawn under its id
-    expect(tabs()).toEqual(['shop.loadmap', 'platform.loadmap', 'shop.story.loadmap'])
+    // the model alone has a tab; the others open from the explorer
+    expect(tabs()).toEqual(['shop.loadmap'])
     await expect.poll(status).toBe('No problems')
     expect(boxes()).toEqual(all)
     // the part in the editor: its own text, read through the model, the same diagram
-    await userEvent.click(page.getByRole('tab', { name: 'shop.story.loadmap' }))
+    await show('shop.story.loadmap')
     expect(view.state.doc.toString()).toBe(story)
     await expect.poll(status).toBe('No problems')
     expect(boxes()).toEqual(all)
@@ -97,7 +116,7 @@ describe('the editor', () => {
     await expect.poll(status, { timeout: 5000 }).toMatch(/error/)
     expect(host.querySelector('.lme-problems')!.textContent).toContain('shop.story.loadmap:')
     // back in the model, the problem is still listed, under the part's name; a click on it opens the part there
-    await userEvent.click(page.getByRole('tab', { name: 'shop.loadmap' }))
+    await show('shop.loadmap')
     expect(view.state.doc.toString()).toBe(shop)
     await expect.poll(status, { timeout: 5000 }).toMatch(/error/)
     ;(host.querySelector('.lme-problems button') as HTMLElement).click()
@@ -105,7 +124,7 @@ describe('the editor', () => {
     edit('focus: orderLine.nowhere }', 'focus: orderLine.consumers }')
     await expect.poll(status, { timeout: 5000 }).toBe('No problems')
     // the library in the editor: the diagram stays the model's
-    await userEvent.click(page.getByRole('tab', { name: 'platform.loadmap' }))
+    await show('platform.loadmap')
     expect(view.state.doc.toString()).toBe(platform)
     await expect.poll(status, { timeout: 5000 }).toBe('No problems')
     expect(boxes()).toEqual(all)
@@ -149,7 +168,7 @@ describe('the editor', () => {
     await userEvent.keyboard('frontDoor{Enter}')
     await expect.poll(() => handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
     // from the part's own tab too: undone there, it is undone in the model
-    await userEvent.click(page.getByRole('tab', { name: 'shop.story.loadmap' }))
+    await show('shop.story.loadmap')
     undo(view)
     await expect.poll(() => view.state.doc.toString()).toBe(withStep)
     expect(handle.files().files['shop.loadmap']).toBe(shop)
@@ -158,7 +177,7 @@ describe('the editor', () => {
     redo(view)
     await expect.poll(() => handle.files().files['shop.loadmap']).toContain('node frontDoor')
     edit('{ load: 30; focus: orderLine.consumers }', '{ load: 31; focus: orderLine.consumers }')
-    await userEvent.click(page.getByRole('tab', { name: 'shop.loadmap' }))
+    await show('shop.loadmap')
     undo(view)
     await expect.poll(() => view.state.doc.toString()).toBe(shop)
     expect(handle.files().files['shop.story.loadmap']).toContain('focus: frontDoor')
@@ -169,10 +188,131 @@ describe('the editor', () => {
     const shared = await decodeShare(await handle.shareHash())
     expect(shared).toMatchObject({ source: shop, path: 'shop.loadmap', files: files.files })
     expect(handle.files()).toEqual(files)
-    // one file again: no tabs, and the link every page reads
+    // one file again, the explorer hidden: no tabs, and the link every page reads
+    host.querySelector<HTMLElement>('[aria-label="Hide the files"]')!.click()
     handle.setSource(checkout)
     await expect.poll(tabs).toEqual([])
     expect(await handle.shareHash()).toMatch(/^v1\./)
+  })
+
+  it('opens files from the explorer as one row of tabs; a tab closed keeps its file', async () => {
+    const { host, handle, view, edit } = await mount({ source: shop, several })
+    const row = () => host.querySelector('.lme-ftabs')!.getBoundingClientRect()
+    expect(tabNames(host)).toEqual(['shop.loadmap'])
+    expect(row().height).toBe(30)
+    // the model's tab has no way to close it
+    expect(host.querySelector('.lme-ftab-x')).toBeNull()
+    await explorer(host)
+    const rows = () =>
+      [...host.querySelectorAll<HTMLElement>('.lme-tree-row')].map(
+        (r) => `${r.dataset.path} ${r.querySelector('.lme-tree-role')?.textContent}`,
+      )
+    // the model first, each file with what its head says it is
+    expect(rows()).toEqual(['shop.loadmap model', 'platform.loadmap library', 'shop.story.loadmap part'])
+    await openFile(host, 'shop.story.loadmap')
+    expect(view.state.doc.toString()).toBe(story)
+    await openFile(host, 'platform.loadmap')
+    expect(tabNames(host)).toEqual(['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap'])
+    // one snug row, however many: every tab on one line, the row no taller
+    const tops = [...host.querySelectorAll('.lme-ftab')].map((t) => Math.round(t.getBoundingClientRect().top))
+    expect(new Set(tops).size).toBe(1)
+    expect(row().height).toBe(30)
+    // a mistake in a part marks its tab and its row, from any file
+    await openFile(host, 'shop.story.loadmap')
+    edit('focus: orderLine.consumers }', 'focus: orderLine.nowhere }')
+    const dot = (inside: string) => host.querySelector(`${inside} .lme-fdot[data-mark="error"]`)
+    await expect.poll(() => dot('.lme-ftab[data-active]'), { timeout: 5000 }).toBeTruthy()
+    expect(dot('.lme-tree-row[data-path="shop.story.loadmap"]')).toBeTruthy()
+    await openFile(host, 'shop.loadmap')
+    await expect.poll(() => host.querySelectorAll('.lme-ftab .lme-fdot').length, { timeout: 5000 }).toBe(1)
+    expect(host.querySelector('.lme-ftab[data-active] .lme-fdot')).toBeNull()
+    await openFile(host, 'shop.story.loadmap')
+    edit('focus: orderLine.nowhere }', 'focus: orderLine.consumers }')
+    await expect.poll(() => host.querySelector('.lme-fdot'), { timeout: 5000 }).toBeNull()
+    // the arrows, Home and End move between the tabs, the keyboard with them
+    host.querySelector<HTMLElement>('.lme-ftab[data-active] [role="tab"]')!.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.poll(() => activeTab(host)).toBe('platform.loadmap')
+    await expect.poll(() => document.activeElement?.textContent).toBe('platform.loadmap')
+    expect(view.state.doc.toString()).toBe(platform)
+    await userEvent.keyboard('{Home}')
+    await expect.poll(() => activeTab(host)).toBe('shop.loadmap')
+    await expect.poll(() => document.activeElement?.textContent).toBe('shop.loadmap')
+    // one stop for Tab
+    expect(
+      [...host.querySelectorAll<HTMLElement>('.lme-ftablist button')].filter((b) => b.tabIndex === 0),
+    ).toHaveLength(1)
+    // a tab closed: the file stays one of the definition's, and opens again from the explorer
+    host.querySelector<HTMLElement>('[aria-label="Close platform.loadmap"]')!.click()
+    await expect.poll(() => tabNames(host)).toEqual(['shop.loadmap', 'shop.story.loadmap'])
+    expect(handle.files().files['platform.loadmap']).toBe(platform)
+    // Delete closes the tab the keyboard is on; the one beside it shows
+    await userEvent.keyboard('{End}')
+    await expect.poll(() => activeTab(host)).toBe('shop.story.loadmap')
+    await userEvent.keyboard('{Delete}')
+    await expect.poll(() => tabNames(host)).toEqual(['shop.loadmap'])
+    expect(view.state.doc.toString()).toBe(shop)
+    expect(handle.files()).toEqual(several)
+    await openFile(host, 'platform.loadmap')
+    expect(view.state.doc.toString()).toBe(platform)
+  })
+
+  it('adds, renames and removes files in the explorer, the head lines following', async () => {
+    const { host, handle, view } = await mount({ source: shop, several })
+    const status = () => host.querySelector('.lme-status')!.textContent
+    const field = () => host.querySelector<HTMLInputElement>('.lme-tree-field input')
+    const paths = () => Object.keys(handle.files().files).sort()
+    await explorer(host)
+    // a part moved into a folder: the model's include follows, and the part's own "part of"
+    host.querySelector<HTMLElement>('[aria-label="Rename shop.story.loadmap"]')!.click()
+    await expect.poll(() => field()?.value).toBe('shop.story')
+    await userEvent.fill(field()!, 'parts/walk')
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(paths).toEqual(['parts/walk.loadmap', 'platform.loadmap', 'shop.loadmap'])
+    expect(view.state.doc.toString()).toContain('include "./parts/walk.loadmap"')
+    expect(handle.files().files['parts/walk.loadmap']).toContain('part of "../shop.loadmap"')
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // the tree shows the folder, and the keyboard is on the file's row
+    expect(host.querySelector('.lme-tree-row[data-folder]')?.textContent).toBe('parts')
+    await expect.poll(() => (document.activeElement as HTMLElement | null)?.dataset.path).toBe('parts/walk.loadmap')
+    // a name another file has is refused, said under the field; Escape leaves the file as it was
+    await userEvent.keyboard('{F2}')
+    await expect.poll(() => field()?.value).toBe('parts/walk')
+    await userEvent.fill(field()!, 'platform')
+    await userEvent.keyboard('{Enter}')
+    await expect
+      .poll(() => host.querySelector('.lme-tree-field [role="alert"]')?.textContent)
+      .toBe('There is a platform.loadmap already')
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(field).toBeNull()
+    expect(paths()).toEqual(['parts/walk.loadmap', 'platform.loadmap', 'shop.loadmap'])
+    // a variant: a file that extends the model, opened in its own tab; the model's text does not change
+    const model = view.state.doc.toString()
+    await userEvent.click(page.getByRole('button', { name: 'New file' }))
+    await userEvent.click(page.getByRole('menuitem', { name: 'A variant of this model' }))
+    await expect.poll(field).toBeTruthy()
+    await userEvent.fill(field()!, 'big')
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => activeTab(host)).toBe('shop.big.loadmap')
+    expect(view.state.doc.toString()).toBe(`${shop.split('\n')[0]}\nextends "./shop.loadmap"\n`)
+    expect(handle.files().files['shop.loadmap']).toBe(model)
+    await expect.poll(status, { timeout: 5000 }).toBe('No problems')
+    // a part removed: asked first, then the file goes with the include that named it
+    host.querySelector<HTMLElement>('[aria-label="Remove walk.loadmap"]')!.click()
+    await expect.poll(() => host.querySelector('.lme-tree-ask p')?.textContent).toBe('Remove walk.loadmap?')
+    host.querySelector<HTMLElement>('.lme-tree-ask .lme-danger')!.click()
+    await expect.poll(paths).toEqual(['platform.loadmap', 'shop.big.loadmap', 'shop.loadmap'])
+    expect(handle.files().files['shop.loadmap']).not.toContain('include "./parts')
+    // the model has no way to remove it
+    expect(host.querySelector('[aria-label="Remove shop.loadmap"]')).toBeNull()
+    // Add in the bar's menu asks the name in the explorer too
+    await userEvent.click(page.getByRole('button', { name: 'New', exact: true }))
+    await userEvent.click(page.getByRole('menuitem', { name: 'A part of this model…' }))
+    await expect.poll(field).toBeTruthy()
+    await userEvent.fill(field()!, 'data')
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => activeTab(host)).toBe('shop.data.loadmap')
+    expect(handle.files().files['shop.loadmap']).toContain('include "./shop.data.loadmap"')
   })
 
   it('redraws the diagram as the text changes, keeping the values', async () => {
@@ -300,14 +440,15 @@ describe('the editor', () => {
     const { host, handle } = await mount()
     await userEvent.click(page.getByRole('button', { name: 'New' }))
     // the list loads as the menu first opens
-    // the templates, and Add → From the catalog, a part, a library
-    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length + 3)
+    // the templates, and Add → From the catalog, a part, a library, a variant
+    await expect.poll(() => host.querySelectorAll('[role="menuitem"]').length).toBe(TEMPLATES.length + 4)
     const names = [...host.querySelectorAll('[role="menuitem"]')].map((i) => i.firstChild?.textContent)
     expect(names).toEqual([
       ...TEMPLATES.map((t) => t.title),
       'From the catalog…',
       'A part of this model…',
       'A library…',
+      'A variant of this model…',
     ])
     // each with its line, said after its name
     const queue = page.getByRole('menuitem', { name: 'Queue and workers' })
@@ -459,6 +600,7 @@ describe('the editor filling its container', () => {
       newItems?: BarSection[]
       exportItems?: BarSection[]
       actions?: ReactNode
+      several?: EditorFiles
     } = {},
   ) {
     await page.viewport(Math.max(1440, width), 900)
@@ -471,7 +613,8 @@ describe('the editor filling its container', () => {
       <LoadmapEditor
         ref={ref}
         fill
-        initial={checkout}
+        initial={o.several ? o.several.files[o.several.path]! : checkout}
+        files={o.several}
         split={o.split}
         onSplit={o.onSplit}
         onPanel={o.onPanel}
@@ -501,6 +644,45 @@ describe('the editor filling its container', () => {
       bottom: Math.max(...r.map((b) => b.bottom)),
     }
   }
+
+  it('gives the tabs a row of their own over the text, and the explorer a column the canvas makes room for', async () => {
+    const { host } = await fill(1440, { several })
+    // under the panel's head, over the text: a row of its own, never squeezed out
+    expect(box(host, '.lme-ftabs').height).toBe(30)
+    expect(box(host, '.lme-ftabs').top).toBeCloseTo(box(host, '.lme-pane-head').bottom, 0)
+    expect(box(host, '.lme-code').top).toBeCloseTo(box(host, '.lme-ftabs').bottom, 0)
+    expect(box(host, '.lme-code').bottom).toBeCloseTo(box(host, '.lme-left').bottom, 0)
+    const code = box(host, '.lme-code').width
+    await explorer(host)
+    // the explorer's column is added to the panel: the text keeps its width, the canvas starts where the panel ends
+    expect(box(host, '.lme-files').width).toBe(220)
+    await expect.poll(() => box(host, '.lme-code').width).toBeCloseTo(code, 0)
+    expect(box(host, '.lme-files').top).toBeCloseTo(box(host, '.lme-ftabs').top, 0)
+    expect(box(host, '.lme-files').bottom).toBeCloseTo(box(host, '.lme-code').bottom, 0)
+    await expect.poll(() => box(host, '.lme-canvas').left).toBeCloseTo(box(host, '.lme-left').right, 0)
+    // the View menu hides it again
+    await userEvent.click(page.getByRole('button', { name: 'View', exact: true }))
+    await userEvent.click(page.getByRole('menuitemcheckbox', { name: 'Files' }))
+    await expect.poll(() => host.querySelector('.lme-files')).toBeNull()
+    await expect.poll(() => box(host, '.lme-left').width).toBeCloseTo(440, 0)
+  })
+
+  it('shows a phone the open files in a row a thumb high, and the files over the text', async () => {
+    const { host } = await fill(390, { several })
+    expect(box(host, '.lme-ftabs').height).toBe(40)
+    expect(box(host, '.lme-code').top).toBeCloseTo(box(host, '.lme-ftabs').bottom, 0)
+    await explorer(host)
+    // over the text, as wide as the phone, each row a thumb high
+    expect(box(host, '.lme-files').width).toBe(390)
+    expect(box(host, '.lme-tree-row').height).toBe(44)
+    // a pick opens the file and shows its text
+    host.querySelector<HTMLElement>('.lme-tree-row[data-path="shop.story.loadmap"]')!.click()
+    await expect.poll(() => host.querySelector('.lme-files')).toBeNull()
+    expect(activeTab(host)).toBe('shop.story.loadmap')
+    // the tabs scroll, they never wrap
+    const tops = [...host.querySelectorAll('.lme-ftab')].map((t) => Math.round(t.getBoundingClientRect().top))
+    expect(new Set(tops).size).toBe(1)
+  })
 
   it('switches the lanes’ fills and the dot grid from the View menu, and gives a lane its own colour', async () => {
     const { host, handle } = await fill(1400, { layout: 'reader' })

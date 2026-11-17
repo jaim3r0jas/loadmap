@@ -27,7 +27,6 @@ import {
   encodeShare,
   format,
   type HostFunctions,
-  LANGUAGE_VERSION,
   type Located,
   loadCatalog,
   loadCatalogFor,
@@ -59,6 +58,7 @@ import {
   type RefObject,
   Suspense,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -69,6 +69,9 @@ import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
+import type { ExplorerProps } from './Explorer'
+import { type FileMark, FileTabs, shortNames } from './FileTabs'
+import type { FileChange, NewKind } from './fileops'
 import type { InspectorProps, InspectorTab } from './Inspector'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
@@ -117,7 +120,8 @@ export interface LoadmapEditorProps {
   onChange?: (source: string) => void
   /**
    * A definition in several files (from a `#v2.` link): the path of `initial`, its model, and every file by its path.
-   * Each file is a tab over the text; with one file there are no tabs.
+   * The model opens in the editor; the others open from the files' explorer, each a tab over the text. With one file
+   * there are no tabs.
    */
   files?: EditorFiles
   /** Every change of any file, a file added or removed: all of them, for a page that keeps a draft. */
@@ -256,6 +260,13 @@ export function LoadmapEditor({
   }
   const [tabs, setTabs] = useState(() => [set.current.entry, ...Object.keys(set.current.others).sort()])
   const [active, setActive] = useState(set.current.entry)
+  // the files with a tab, in the order they were opened: what shows, never what the definition is. The model's is
+  // always there
+  const [open, setOpen] = useState(() => [set.current.entry])
+  // the files' explorer beside the text, and a new file it asks the name of as it opens
+  const [explorer, setExplorer] = useState(false)
+  const [startNew, setStartNew] = useState<NewKind | null>(null)
+  const panelId = useId()
   // each file's own editor state while another is in the editor: its text, its cursor, its undo history
   const states = useRef(new Map<string, EditorState>())
   const exts = useRef<Extension[]>([])
@@ -549,7 +560,9 @@ export function LoadmapEditor({
   const switchTo = (path: string) => {
     const v = view.current
     const f = set.current
-    if (!v || path === f.active || !Object.hasOwn(f.others, path)) return false
+    if (!v || (path !== f.active && !Object.hasOwn(f.others, path))) return false
+    setOpen((o) => (o.includes(path) ? o : [...o, path]))
+    if (path === f.active) return false
     states.current.set(f.active, v.state)
     const next = states.current.get(path) ?? EditorState.create({ doc: f.others[path]!, extensions: exts.current })
     const others = { ...f.others, [f.active]: v.state.doc.toString() }
@@ -657,74 +670,97 @@ export function LoadmapEditor({
         .sort(),
     ])
     setActive(f.active)
+    setOpen((o) => o.filter((p) => p === f.active || p === f.entry || Object.hasOwn(f.others, p)))
     if (view.current) forceLinting(view.current)
     latest.current.onFiles?.(filesNow())
   }
-  /** A new file beside the model, and the line in the model's head that names it. */
-  const addFile = (kind: 'part' | 'library') => {
-    const f = set.current
-    const name = window.prompt(kind === 'part' ? 'A name for the part: story, data, …' : 'A name for the library', '')
-    if (!name) return
-    if (!/^[\w-]+$/.test(name)) {
-      setNote('A file name is letters, digits, - and _')
-      return
-    }
-    // its line goes in the model's head
-    if (f.active !== f.entry) switchTo(f.entry)
+  /**
+   * An operation of the explorer (a file added, renamed or removed, with the head lines that go with it), as the texts
+   * it leaves. Each text changed is a step of its own file's history; the page hears of the files once, whole.
+   */
+  const reshape = (c: FileChange) => {
     const v = view.current
     if (!v) return
-    const folder = f.entry.split('/').slice(0, -1)
-    const base = f.entry
-      .split('/')
-      .at(-1)!
-      .replace(/\.loadmap$/, '')
-    const file = kind === 'part' ? `${base}.${name}.loadmap` : `${name}.loadmap`
-    const path = [...folder, file].join('/')
-    if (path === f.entry || Object.hasOwn(set.current.others, path)) {
-      setNote(`There is a ${file} already`)
-      return
+    let f = set.current
+    const others = { ...f.others }
+    if (c.add) others[c.add.path] = c.add.text
+    let mine: string | undefined
+    for (const [path, text] of Object.entries(c.texts ?? {})) {
+      if (path === f.active) mine = text
+      else if (Object.hasOwn(others, path)) {
+        const kept = states.current.get(path) ?? EditorState.create({ doc: others[path]!, extensions: exts.current })
+        const was = kept.doc.toString()
+        states.current.set(
+          path,
+          kept.update({ changes: between(was, text), annotations: isolateHistory.of('full') }).state,
+        )
+        others[path] = text
+      }
     }
-    const doc = v.state.doc.toString()
-    const version = /^loadmap (\d+(?:\.\d+)?)/.exec(doc)?.[1] ?? LANGUAGE_VERSION
-    // under the last line of the head: the "loadmap" line, then every include and import
-    const lines = doc.split('\n')
-    let last = 0
-    for (let i = 1; i < lines.length; i++) {
-      if (!/^(include|import)\b/.test(lines[i]!)) break
-      while (
-        i < lines.length - 1 &&
-        lines[i]!.includes('{') &&
-        !lines
-          .slice(last + 1, i + 1)
-          .join('')
-          .includes('}')
-      )
-        i++
-      last = i
+    let { entry, active: now } = f
+    if (c.rename) {
+      const { from, to } = c.rename
+      if (entry === from) entry = to
+      if (now === from) now = to
+      else if (Object.hasOwn(others, from)) {
+        others[to] = others[from]!
+        delete others[from]
+        const kept = states.current.get(from)
+        states.current.delete(from)
+        if (kept) states.current.set(to, kept)
+      }
+      for (const reached of renamed.current.values()) if (reached.delete(from)) reached.add(to)
+      setOpen((o) => o.map((p) => (p === from ? to : p)))
     }
-    const at = lines.slice(0, last + 1).join('\n').length
-    const text =
-      kind === 'part'
-        ? `loadmap ${version}\npart of "./${base}.loadmap"\n`
-        : `loadmap ${LANGUAGE_VERSION}\nlibrary "${name}"\n`
-    set.current = { ...set.current, others: { ...set.current.others, [path]: text }, version: set.current.version + 1 }
-    v.dispatch({
-      changes: { from: at, insert: `\n${kind === 'part' ? `include "./${file}"` : `import "./${file}" { }`}` },
-      annotations: isolateHistory.of('full'),
-    })
-    switchTo(path)
+    f = { entry, active: now, others, version: f.version + 1 }
+    set.current = f
+    if (c.remove && c.remove !== f.entry) {
+      // the file in the editor goes: the model takes its place first
+      if (f.active === c.remove) {
+        mine = undefined
+        const next =
+          states.current.get(f.entry) ?? EditorState.create({ doc: others[f.entry]!, extensions: exts.current })
+        const rest = { ...others }
+        delete rest[f.entry]
+        states.current.delete(f.entry)
+        set.current = { ...f, active: f.entry, others: rest, version: f.version + 1 }
+        before.current = null
+        edits.current = []
+        v.setState(next)
+        setText(next.doc.toString())
+        setCanUndo(undoDepth(next) > 0)
+      } else {
+        const rest = { ...others }
+        delete rest[c.remove]
+        set.current = { ...f, others: rest, version: f.version + 1 }
+      }
+      states.current.delete(c.remove)
+    }
+    // the open text last: the page then hears of every file as the operation left it, never of half of it
+    if (mine != null) {
+      const doc = v.state.doc.toString()
+      if (doc !== mine) v.dispatch({ changes: between(doc, mine), annotations: isolateHistory.of('full') })
+    }
     filesChanged()
-    setNote(`Added ${file}`)
+    if (c.add) switchTo(c.add.path)
+    if (c.note) setNote(c.note)
   }
-  /** A file taken out of the definition; the line that names it stays for the reader to remove, and says so. */
-  const removeFile = (path: string) => {
-    if (path === set.current.entry || !window.confirm(`Remove ${path.split('/').at(-1)}?`)) return
-    if (set.current.active === path) switchTo(set.current.entry)
-    const others = { ...set.current.others }
-    delete others[path]
-    states.current.delete(path)
-    set.current = { ...set.current, others, version: set.current.version + 1 }
-    filesChanged()
+  /** A new file: the explorer opens and asks its name. */
+  const addFile = (kind: NewKind) => {
+    if (layout === 'reader') setLayout('code')
+    setPane('text')
+    setExplorer(true)
+    setStartNew(kind)
+  }
+  /** A tab closed: the file stays one of the definition's, in the explorer. The model's tab stays. */
+  const closeTab = (path: string) => {
+    const f = set.current
+    if (path === f.entry) return
+    if (f.active === path) {
+      const i = open.indexOf(path)
+      switchTo(open[i + 1] ?? open[i - 1] ?? f.entry)
+    }
+    setOpen((o) => o.filter((p) => p !== path))
   }
 
   /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
@@ -739,6 +775,7 @@ export function LoadmapEditor({
     set.current = { entry, active: entry, others, version: set.current.version + 1 }
     setTabs([entry, ...Object.keys(others).sort()])
     setActive(entry)
+    setOpen([entry])
     loaded.current = source
     shown.current = {}
     fresh.current = true
@@ -1000,7 +1037,11 @@ export function LoadmapEditor({
   const codeMost = Math.max(CODE.min, Math.min(CODE.max * width, width - right - CODE.room))
   const codePx = (share: number) =>
     Math.round(Math.max(CODE.min, Math.min(codeMost, Number.isFinite(share) ? share * width : CODE.start)))
-  const resizeCode = (px: number, done: boolean) => {
+  // the explorer's column is added to the code's panel, as far as the canvas keeps its room: the text keeps its width
+  const filesPx =
+    explorer && !reader ? Math.max(0, Math.min(FILES, Math.round(width - right - CODE.room - codePx(ratio)))) : 0
+  const resizeCode = (all: number, done: boolean) => {
+    const px = all - filesPx
     setRatio(px / width)
     if (done) onSplit?.(px / width)
   }
@@ -1010,6 +1051,25 @@ export function LoadmapEditor({
   }
 
   const list = problems(state.result)
+  const several = tabs.length > 1
+  // the worst each file has, for its tab and its row in the explorer
+  const marks = new Map<string, FileMark>()
+  for (const d of list) {
+    const p = d.file ?? state.given
+    if (d.severity === 'error' || !marks.has(p)) marks.set(p, d.severity === 'error' ? 'error' : 'warning')
+  }
+  const labels = shortNames(tabs)
+  const fileLabel = (p: string) => {
+    const l = labels.get(p)
+    return l ? `${l.folder}${l.name}` : p.split('/').at(-1)!
+  }
+  /** The explorer hidden; the keyboard, which may be in it, goes to its button on the tabs' row, or to the text. */
+  const hideFiles = () => {
+    setExplorer(false)
+    requestAnimationFrame(() =>
+      (root.current?.querySelector<HTMLElement>('.lme-ftoggle') ?? view.current?.contentDOM)?.focus(),
+    )
+  }
   const errors = list.filter((d) => d.severity === 'error').length
   const warnings = list.length - errors
   const stale = !state.result.ok && !!def
@@ -1141,7 +1201,23 @@ export function LoadmapEditor({
       <MenuItem sheet={sheet} onSelect={() => addFile('library')}>
         A library…
       </MenuItem>
+      <MenuItem sheet={sheet} onSelect={() => addFile('variant')}>
+        A variant of this model…
+      </MenuItem>
     </MenuGroup>
+  )
+  /** The files' explorer, shown beside the text or hidden. */
+  const toggleFiles = () => {
+    if (!explorer) {
+      if (reader) setLayout('code')
+      setPane('text')
+    }
+    setExplorer(!explorer)
+  }
+  const filesItem = (sheet?: boolean) => (
+    <MenuItem sheet={sheet} toggle checked={explorer && !textHidden} onSelect={toggleFiles}>
+      Files
+    </MenuItem>
   )
   // the same groups in the phone's sheet and in a narrow column's menu
   const viewGroup = (sheet?: boolean) => (
@@ -1154,6 +1230,7 @@ export function LoadmapEditor({
           Format
         </MenuItem>
       )}
+      {filesItem(sheet)}
       {lookItems(sheet)}
     </MenuGroup>
   )
@@ -1216,7 +1293,7 @@ export function LoadmapEditor({
       style={
         canvas
           ? ({
-              '--lme-start': `${reader ? RAIL : codePx(ratio)}px`,
+              '--lme-start': `${reader ? RAIL : codePx(ratio) + filesPx}px`,
               '--lme-panel': `${panelAt}px`,
               '--lme-rail': `${RAIL}px`,
             } as CSSProperties)
@@ -1285,11 +1362,14 @@ export function LoadmapEditor({
                   Format
                 </button>
               )}
-              {!errors && (
-                <Menu label="View" className="lme-wide">
-                  {() => lookItems()}
-                </Menu>
-              )}
+              <Menu label="View" className="lme-wide">
+                {() => (
+                  <>
+                    {filesItem()}
+                    {lookItems()}
+                  </>
+                )}
+              </Menu>
               {(hasTemplates || catalog || !!newItems?.length) && (
                 <Menu label="New" className="lme-wide">
                   {() => (
@@ -1368,38 +1448,50 @@ export function LoadmapEditor({
               </button>
             </PanelHead>
           )}
-          {tabs.length > 1 && (
-            <div className="lme-tabs" role="tablist" aria-label="Files">
-              {tabs.map((p) => {
-                const name = p.split('/').at(-1)!
-                return (
-                  <span key={p} className="lme-tab" data-active={p === active || undefined}>
-                    <button type="button" role="tab" aria-selected={p === active} title={p} onClick={() => switchTo(p)}>
-                      {name}
-                    </button>
-                    {p !== tabs[0] && (
-                      <button
-                        type="button"
-                        className="lme-tab-x"
-                        aria-label={`Remove ${name}`}
-                        onClick={() => removeFile(p)}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                )
-              })}
-            </div>
-          )}
-          <div className="lme-code" ref={host} />
+          <div className="lme-work" data-files={several || explorer || undefined}>
+            {explorer && (
+              <Suspense fallback={null}>
+                <Explorer
+                  files={filesNow}
+                  active={active}
+                  open={open}
+                  marks={marks}
+                  start={startNew}
+                  onStarted={() => setStartNew(null)}
+                  onOpen={(p) => {
+                    switchTo(p)
+                    // on a phone the files are over the text: a pick shows it
+                    if (phone) setExplorer(false)
+                    view.current?.focus()
+                  }}
+                  onChange={reshape}
+                  onHide={hideFiles}
+                />
+              </Suspense>
+            )}
+            {(several || explorer) && (
+              <FileTabs
+                open={open}
+                all={tabs}
+                active={active}
+                entry={tabs[0]!}
+                marks={marks}
+                panel={panelId}
+                explorer={explorer}
+                onExplorer={() => (explorer ? hideFiles() : setExplorer(true))}
+                onPick={switchTo}
+                onClose={closeTab}
+              />
+            )}
+            <div className="lme-code" id={panelId} role={several || explorer ? 'tabpanel' : undefined} ref={host} />
+          </div>
           {list.length > 0 && (
             <ul className="lme-problems">
               {list.map((d) => (
                 <li key={`${d.file ?? ''}:${d.from}:${d.message}`} data-severity={d.severity}>
                   <button type="button" onClick={() => goTo(d)}>
                     <span className="lme-at">
-                      {tabs.length > 1 && `${(d.file ?? state.given).split('/').at(-1)}:`}
+                      {several && `${fileLabel(d.file ?? state.given)}:`}
                       {d.line}:{d.column}
                     </span>{' '}
                     {d.message}
@@ -1449,11 +1541,11 @@ export function LoadmapEditor({
             <Resize
               side="start"
               label="Resize the code"
-              value={codePx(ratio)}
-              min={CODE.min}
-              max={Math.round(codeMost)}
+              value={codePx(ratio) + filesPx}
+              min={CODE.min + filesPx}
+              max={Math.round(codeMost) + filesPx}
               onChange={resizeCode}
-              onReset={() => resizeCode(codePx(split ?? Number.NaN), true)}
+              onReset={() => resizeCode(codePx(split ?? Number.NaN) + filesPx, true)}
             />
           )}
         </div>
@@ -1575,6 +1667,8 @@ export function between(a: string, b: string): { from: number; to: number; inser
  * canvas always keeps between the panels.
  */
 const CODE = { start: 440, min: 360, max: 0.6, room: 320 } as const
+/** The width of the files' explorer, in pixels (its rule is in Explorer.tsx). */
+const FILES = 220
 /** Below this width the canvas's bar is short: a page's controls in it take their short form. */
 const SHORT = 1000
 /** From this width the side panel starts pinned. */
@@ -1646,6 +1740,7 @@ const MAC = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform
 const Starters = later(() => import('./Starters'), 'The templates did not load: reload the page.')
 const Actions = later(() => import('./Actions'))
 const CatalogPicker = later(() => import('./CatalogPicker'), 'The catalog did not load: reload the page.')
+const Explorer = later<ExplorerProps>(() => import('./Explorer'), 'The files did not load: reload the page.')
 const Inspector = later<InspectorProps>(
   () => import('./Inspector').then((m) => ({ default: m.Inspector })),
   'The inspector did not load: reload the page.',
