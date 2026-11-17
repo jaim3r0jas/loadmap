@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compile, completions, format, hover, loadCatalog, loadedCatalog, needsCatalog, rename } from '../src'
-import { addPublished, edit, inspect } from '../src/internal'
+import { addPublished, catalogBox, edit, inspect } from '../src/internal'
 
 const SRC = `loadmap 1
 title: "Events"
@@ -79,7 +79,7 @@ describe('a published statement', () => {
       'error: Apache Kafka has no condition "ack" | did you mean "acks"?',
     )
     expect(errors(swap('edition: "2026-11"', 'edition: "2030-01"'))[0]).toBe(
-      'error: no catalog edition "2030-01" | this loadmap has 2026-11, 2026-12; a later edition needs a later loadmap',
+      'error: no catalog edition "2030-01" | this loadmap has 2026-11, 2026-12, 2027-01; a later edition needs a later loadmap',
     )
     expect(errors(swap('producers: 4', 'producers: 4\n  figure: "x"'))[0]).toMatch(
       /^error: Apache Kafka has no figure "x"/,
@@ -114,7 +114,7 @@ describe('a published statement', () => {
     expect(labels(swap('  brokers: brokers\n', '  |\n'))).toEqual(['figure', 'margin', 'brokers'])
     expect(labels(swap('  acks: "all"', '  acks: |'))).toEqual(expect.arrayContaining(['all', '1']))
     expect(at(swap('  acks: "all"', '  acks: |')).find((o) => o.label === 'all')?.apply).toBe('"all"')
-    expect(labels(swap('edition: "2026-11"', 'edition: |'))).toEqual(['2026-12', '2026-11'])
+    expect(labels(swap('edition: "2026-11"', 'edition: |'))).toEqual(['2027-01', '2026-12', '2026-11'])
     expect(at(swap('  capacity: brokersRef', '  capacity: |')).find((o) => o.label === 'brokersRef')).toMatchObject({
       detail: 'published',
       boost: 3,
@@ -152,7 +152,10 @@ producers -> workers
     expect(r.source).toContain(
       'published kafkaFigure kafka {\n  edition: "2026-11"\n  version: "4.4"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
     )
-    expect(r.source).toContain('node kafka "Apache Kafka" {\n  # what reaches it')
+    // a stream is a cluster with a queue, as many members as the run's brokers, its demand at the run's message size
+    expect(r.source).toContain(
+      'cluster kafka "Apache Kafka" {\n  members: 3\n  queue { partitions {} }\n  # each unit at the size its published run used, as MB/s\n  demand: at.kafka * 1KB\n',
+    )
     const def = compile(r.source).definition!
     expect(def.model.evaluate().components.kafka!.capacity).toMatchObject({ value: 605, provenance: 'published' })
     // again: new ids
@@ -188,6 +191,186 @@ producers -> workers
     const msgs = base.replace('estimated(900, "MB/s")', 'estimated(900, "msg/s")')
     expect(addPublished(msgs, { component: kafka(), conditions, into: { box: 'workers' } })).toEqual({
       error: "workers's capacity is in msg/s, Apache Kafka's figure in MB/s",
+    })
+  })
+  describe('a new box runs the stage its kind needs, and goes on routes', () => {
+    const latest = () => {
+      const e = loadedCatalog()!
+      return e[Object.keys(e).at(-1)!]!.components
+    }
+    const kc = { brokers: 3, replication: 3, acks: 'all', messageSize: '1 KB', producers: 4 }
+    const shop = `loadmap 1.5
+load { max: 10 }
+flow orders "orders" { from: phones; rate: 100 * load; route: gateway -> consumers }
+flow pings "pings" { from: phones; rate: 10 * load; route: gateway }
+node phones "Phones"
+node gateway "Gateway" { pass; capacity: estimated(1000, "req/s"); over: "x" }
+pool consumers "Consumers" { pods: 2; perPod: 4; capacity: estimated(1000, "req/s"); over: "y" }
+phones -> gateway
+gateway -> consumers
+`
+    const added = (r: ReturnType<typeof addPublished>) => {
+      if ('error' in r) throw new Error(r.error)
+      return r
+    }
+    const errors = (src: string) => compile(src).diagnostics.filter((d) => d.severity === 'error')
+
+    it("draws every component in the box its kind's stage lives in", () => {
+      for (const c of Object.values(latest())) expect(catalogBox(c).box, c.id).toBe(c.box)
+    })
+
+    it('puts a Kafka topic between two stages: route, edges, partitions, the consumer group, bytes in MB/s', () => {
+      const r = added(
+        addPublished(shop, {
+          component: latest().kafka!,
+          conditions: kc,
+          into: 'new',
+          use: { routes: [{ flow: 'orders', at: 1 }], partitions: 12, rule: 'kafka/consumer-group' },
+        }),
+      )
+      expect(r.source).toContain('route: gateway -> kafka -> consumers }')
+      expect(r.source).toContain(
+        'cluster kafka "Apache Kafka" {\n  members: 3\n  queue { partitions { orders: 12 } }\n  # each unit at the size its published run used, as MB/s\n  demand: at.kafka * 1KB\n  capacity: kafkaFigure\n',
+      )
+      expect(r.source).toContain(
+        'connection kafkaConsumers {\n  hop: kafka -> consumers\n  rule: "kafka/consumer-group"\n}',
+      )
+      // the hop it now stands in is taken by no route: its edge goes, and the new ones follow the box
+      expect(r.source).toContain('phones -> gateway\n\npublished kafkaFigure')
+      expect(r.source).not.toContain('gateway -> consumers\n')
+      expect(r.source.endsWith('}\n\ngateway -> kafka\nkafka -> consumers\n')).toBe(true)
+      expect(errors(r.source)).toEqual([])
+      expect(format(r.source).text).toBe(r.source)
+      // 100 orders a second of 1 KB: 0.1 MB/s against the published 605
+      const kafka = compile(r.source).definition!.model.evaluate().components.kafka!
+      expect(kafka.demand).toBeCloseTo(0.1)
+      expect(kafka.capacity).toMatchObject({ value: 605, unit: 'MB/s', provenance: 'published' })
+    })
+
+    it('keeps an edge another flow still takes, and starts a route at its source', () => {
+      const r = added(
+        addPublished(shop, {
+          component: latest().kafka!,
+          conditions: kc,
+          into: 'new',
+          use: { routes: [{ flow: 'orders', at: 0 }] },
+        }),
+      )
+      expect(r.source).toContain('route: kafka -> gateway -> consumers }')
+      expect(r.source).toContain('phones -> gateway\ngateway -> consumers\n')
+      expect(r.source).toContain('  over: "past its published capacity"\n}\n\nphones -> kafka\nkafka -> gateway\n')
+      expect(r.source).toContain('queue { partitions { orders: 1 } }')
+      expect(errors(r.source)).toEqual([])
+    })
+
+    it('keeps comments with the lines they are on', () => {
+      const commented = shop.replace(
+        'phones -> gateway\ngateway -> consumers\n',
+        'phones -> gateway # https\ngateway -> consumers # async\nnode spare "Spare"\n',
+      )
+      const r = added(
+        addPublished(commented, {
+          component: latest().kafka!,
+          conditions: kc,
+          into: 'new',
+          use: { routes: [{ flow: 'orders', at: 1 }] },
+        }),
+      )
+      // the edge it replaces goes with its comment; the new ones after the last edge's comment
+      expect(r.source).toContain(
+        'phones -> gateway # https\ngateway -> kafka\nkafka -> consumers\nnode spare "Spare"\n',
+      )
+      expect(r.source).not.toContain('# async')
+    })
+
+    it('a cache answers its hit ratio; a database stores where a route ends and passes in its middle', () => {
+      const cache = added(
+        addPublished(shop, {
+          component: latest().valkey!,
+          conditions: {},
+          into: 'new',
+          use: { hit: 0.9, routes: [{ flow: 'orders', at: 1 }] },
+        }),
+      )
+      expect(cache.source).toContain('node valkey "Valkey" {\n  cache { hit: 0.9 }\n  capacity: valkeyFigure\n')
+      expect(errors(cache.source)).toEqual([])
+      const db = latest().cockroachdb!
+      const end = added(
+        addPublished(shop, {
+          component: db,
+          conditions: { nodes: 3, warehouses: 1000 },
+          into: 'new',
+          use: { routes: [{ flow: 'orders', at: 2 }], worth: 60 },
+        }),
+      )
+      expect(end.source).toContain(
+        'node cockroachdb "CockroachDB" {\n  shape: cylinder\n  store\n  # what one unit a second reaching it is worth, in tpmC\n  demand: at.cockroachdb * 60\n',
+      )
+      expect(errors(end.source)).toEqual([])
+      const middle = added(
+        addPublished(shop, {
+          component: db,
+          conditions: { nodes: 3, warehouses: 1000 },
+          into: 'new',
+          use: { routes: [{ flow: 'orders', at: 1 }] },
+        }),
+      )
+      expect(middle.source).toContain('  shape: cylinder\n  pass\n')
+      // the stage asked for, of the ones its kind runs
+      const asked = added(
+        addPublished(shop, {
+          component: db,
+          conditions: {},
+          into: 'new',
+          use: { stage: 'store', routes: [{ flow: 'orders', at: 1 }] },
+        }),
+      )
+      expect(asked.source).toContain('  shape: cylinder\n  store\n')
+    })
+
+    it("writes the demand in the unit of the figure picked, a documented default's too", () => {
+      const r = added(
+        addPublished(shop, { component: latest().postgresql!, conditions: {}, figure: 'max-connections', into: 'new' }),
+      )
+      expect(r.source).toContain(
+        '# what one unit a second reaching it is worth, in connections\n  demand: at.postgresql * 1\n',
+      )
+    })
+
+    it('without routes, a box of its kind that no flow passes yet; a platform runs no stage', () => {
+      const q = added(addPublished(shop, { component: latest().rabbitmq!, conditions: { nodes: 1 }, into: 'new' }))
+      expect(q.source).toContain(
+        'cluster rabbitmq "RabbitMQ" {\n  members: 1\n  queue { partitions {} }\n  demand: at.rabbitmq\n',
+      )
+      const k = added(addPublished(shop, { component: latest().kubernetes!, conditions: {}, into: 'new' }))
+      expect(k.source).toContain('node kubernetes "Kubernetes" {\n  # what reaches it, in')
+      expect(k.source).toContain('  demand: 0\n')
+    })
+
+    it('refuses what it cannot write, and says why', () => {
+      const kafka = latest().kafka!
+      const pick = (use: object) => addPublished(shop, { component: kafka, conditions: kc, into: 'new', use })
+      expect(pick({ routes: [{ flow: 'nope', at: 0 }] })).toEqual({ error: 'no flow "nope"' })
+      expect(pick({ routes: [{ flow: 'orders', at: 3 }] })).toEqual({ error: '"orders" has no place 3 on its route' })
+      expect(pick({ stage: 'cache' })).toEqual({ error: 'Apache Kafka runs queue, not cache' })
+      expect(pick({ rule: 'kafka/nope' })).toEqual({ error: 'Apache Kafka has no connection rule "kafka/nope"' })
+      expect(pick({ id: 'gateway' })).toEqual({ error: 'the text has a "gateway" already' })
+      expect(pick({ id: '9x' })).toEqual({ error: '"9x" is no id: letters, digits and _' })
+      expect(pick({ rule: 'kafka/consumer-group', routes: [{ flow: 'orders', at: 2 }] })).toEqual({
+        error: 'a connection rule needs a pool right after it on a route',
+      })
+      expect(addPublished(shop, { component: kafka, conditions: { ack: 'all' }, into: 'new' })).toEqual({
+        error: 'Apache Kafka has no condition "ack": brokers, replication, acks, messageSize, producers',
+      })
+      const valkey = addPublished(shop, { component: latest().valkey!, conditions: {}, into: 'new', use: { hit: 2 } })
+      expect(valkey).toEqual({ error: 'a hit ratio is a share from 0 to 1' })
+      const k8s = addPublished(shop, {
+        component: latest().kubernetes!,
+        conditions: {},
+        into: 'new',
+        use: { routes: [{ flow: 'orders', at: 1 }] },
+      })
+      expect(k8s).toEqual({ error: 'Kubernetes runs no stage: no flow can pass it' })
     })
   })
 })

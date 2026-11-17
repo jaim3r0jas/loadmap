@@ -1673,6 +1673,8 @@ class Compiler {
     return def
   }
   private plainBoxes = new Set<string>()
+  /** The unit each published figure counts in, by its id: where a demand written in bytes is brought to. */
+  private publishedUnits = new Map<string, string>()
 
   // -- units ---------------------------------------------------------------------------------------------------
 
@@ -1696,7 +1698,14 @@ class Compiler {
     }
     if (size.power === 0) return demand
     const capacity = this.prop(b, 'capacity')
-    const unit = capacity && capacityCall(capacity.value, this.unitNames)?.args[1]
+    const call = capacity && capacityCall(capacity.value, this.unitNames)?.args[1]
+    // a published figure's unit is the catalog's: `capacity: brokersRef`, in MB/s
+    const unit =
+      call?.t === 'str'
+        ? call
+        : capacity?.value.t === 'id' && this.publishedUnits.has(capacity.value.name)
+          ? { t: 'str' as const, value: this.publishedUnits.get(capacity.value.name)! }
+          : call
     const scale = size.power === 1 && unit?.t === 'str' ? sizeScale(unit.value) : undefined
     if (!scale) {
       this.report.error(
@@ -2263,6 +2272,14 @@ class Compiler {
       )
       return undefined
     }
+    // the unit a demand in bytes is brought to (`at.topic * 1KB` against MB/s): the one every figure it may take has
+    const units = new Set(
+      (figure != null
+        ? named.filter((f) => f.id === figure)
+        : c.figures.filter((f) => f.measure === 'capacity' || f.measure === 'limit')
+      ).map((f) => f.unit),
+    )
+    if (units.size === 1) this.publishedUnits.set(b.args.id.name, [...units][0]!)
     const margin = this.constProp<number>(b, 'margin')
     if (margin != null && !(margin >= 0 && margin < 1)) {
       this.report.error(

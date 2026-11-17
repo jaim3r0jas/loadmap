@@ -215,7 +215,7 @@ function edgeFixes({ source, text, data, doc, replace }: FixContext): QuickFix[]
 }
 
 /** The box that runs a stage: its own id, or the id of a stage written inside it. */
-function boxOf(body: readonly Stmt[], stage: string): Decl | undefined {
+export function boxOf(body: readonly Stmt[], stage: string): Decl | undefined {
   for (const s of body) {
     if (s.kind !== 'decl' || !(BOXES as readonly string[]).includes(s.keyword.name)) continue
     const id = s.args[0]

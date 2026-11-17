@@ -96,7 +96,7 @@ tsc, builds, measures the budget, and draws checkout and the react README's quic
 
 Work lands on `main` only through a pull request: rulesets on GitHub require the `check`, `workflows` (zizmor) and
 `dependency-review` jobs to pass on a branch up to date with main, keep the history linear and refuse force pushes and
-deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --rebase`: it merges once green. Watch
+deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --squash`: it merges once green. Watch
 the parts to the end from the session (Verification) before wrapping it up.
 
 - Workflows: their rules are in `.github/CLAUDE.md`.

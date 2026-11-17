@@ -65,8 +65,8 @@ describe('the catalog picker', () => {
     await userEvent.selectOptions(page.getByRole('combobox', { name: 'Message size' }), 'message size 1 KB')
     await userEvent.click(page.getByRole('button', { name: 'Add as a new box' }))
     const text = view.state.doc.toString()
-    expect(text).toContain('published kafkaFigure kafka {\n  edition: "2026-12"')
-    expect(text).toContain('node kafka "Apache Kafka" {')
+    expect(text).toContain('published kafkaFigure kafka {\n  edition: "2027-01"')
+    expect(text).toContain('cluster kafka "Apache Kafka" {')
     // the assumptions name it, published and linked
     await expect
       .poll(() => [...host.querySelectorAll('.lm-facts li')].map((li) => li.textContent).join('\n'), { timeout: 5000 })

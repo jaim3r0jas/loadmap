@@ -1,5 +1,13 @@
 // For loadmap's own packages (the editor, the docs): no promise of stability between versions
-export { type AddResult, addPublished, type CatalogPick } from './add'
+export {
+  type AddResult,
+  addPublished,
+  type CatalogPick,
+  type CatalogRoute,
+  type CatalogStage,
+  type CatalogUse,
+  catalogBox,
+} from './add'
 export type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 export { latestEdition } from './catalog'
 export { LIMITS, pageOptions } from './compile'

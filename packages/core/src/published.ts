@@ -71,7 +71,7 @@ export interface CatalogComponent {
     | 'dns'
     | 'platform'
     | 'mesh'
-  /** How a box of it is drawn. */
+  /** The box a model draws it as: the one its stage lives in (a queue in a cluster, a store or a cache in a node). */
   box: 'node' | 'cluster' | 'pool'
   shape?: 'box' | 'cylinder'
   /** Other names it is found by: a protocol-compatible project. */
