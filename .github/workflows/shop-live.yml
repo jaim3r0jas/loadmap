@@ -6,8 +6,12 @@ on:
   pull_request:
     paths:
       - examples/shop-live/**
+      # what the job builds and runs: the command line and the packages under it
+      - packages/cli/**
+      - packages/core/**
+      - packages/dsl/**
       - packages/providers/**
-      - packages/cli/src/pull.ts
+      - pnpm-lock.yaml
       - .github/workflows/shop-live.yml
 
 permissions: {}
@@ -21,6 +25,8 @@ jobs:
       contents: read
     defaults:
       run:
+        # bash by name: with pipefail, so a pull that fails is not hidden by the tee after it
+        shell: bash
         working-directory: examples/shop-live
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

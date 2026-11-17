@@ -98,6 +98,8 @@ describe('the pages', () => {
       'react/README.md',
       'react/package.json',
       'search/search.loadmap',
+      'shop-live/live.tsx',
+      'shop-live/shop.loadmap',
     ])
   })
 

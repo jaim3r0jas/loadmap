@@ -33,17 +33,17 @@ out and the scenarios compared. `--script` changes values during the recording:
 [{ "at": 0, "set": { "load": 5 } }, { "at": 2, "set": { "load": 30 } }, { "at": 4, "scenario": "Proposed" }]
 ```
 
-| Option                | What                                                                          |
-| --------------------- | ----------------------------------------------------------------------------- |
-| `--scenario <label>`  | Start from a scenario's values                                                |
-| `--set <key=value>`   | A value before recording starts, on top of the scenario; repeatable           |
-| `--seconds <n>`       | Length of a video or GIF (default 8, or the script's)                         |
-| `--fps <n>`           | Frames per second (default 30; GIF 15, at most 50)                            |
-| `--scale <n>`         | Pixels per diagram unit (default 1, PNG 2)                                    |
-| `--seed <n>`          | The simulation's seed (default 1)                                             |
-| `--name <name>`       | Which exposed loadmap, when the page has several                              |
-| `--width <px>`        | The browser window (default 1280; a narrow one runs the diagram top to bottom) |
-| `--color-scheme <s>`  | `light` or `dark`, for a page that follows the system theme (default light)   |
+| Option               | What                                                                           |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `--scenario <label>` | Start from a scenario's values                                                 |
+| `--set <key=value>`  | A value before recording starts, on top of the scenario; repeatable            |
+| `--seconds <n>`      | Length of a video or GIF (default 8, or the script's)                          |
+| `--fps <n>`          | Frames per second (default 30; GIF 15, at most 50)                             |
+| `--scale <n>`        | Pixels per diagram unit (default 1, PNG 2)                                     |
+| `--seed <n>`         | The simulation's seed (default 1)                                              |
+| `--name <name>`      | Which exposed loadmap, when the page has several                               |
+| `--width <px>`       | The browser window (default 1280; a narrow one runs the diagram top to bottom) |
+| `--color-scheme <s>` | `light` or `dark`, for a page that follows the system theme (default light)    |
 
 `loadmap --help` lists every option. In a page, the same functions are `exportPng`, `exportSvg`, `recordVideo` and
 `recordPoster` from `@loadmap/export`.
@@ -90,19 +90,19 @@ expectation.
 Each expectation ends pass, fail or inconclusive: data missing, or a ± that decides it. A `severity: warn` line never
 fails the run.
 
-| Option                 | What                                                                              |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| `--format <f>`         | `text`, `github` (annotations; the default under GitHub Actions) or `json`        |
-| `--pull`               | Read the measures first, as `loadmap pull` does, and check against them           |
-| `--snapshot <file>`    | Check one definition against a snapshot already written                           |
-| `--inconclusive <i>`   | `warn` (the default) or `fail`                                                    |
-| `--units <u>`          | `warn` (the default) or `fail`: a unit that disagrees fails the run               |
-| `--dry-run`            | Report everything and exit 0                                                      |
-| `--json <file>`        | Write the run's result: outcomes, reasons, headroom, the window, the commit       |
-| `--base <ref>`         | Compare each definition with itself at a git ref, against the same data           |
-| `--tolerance <t>`      | How much headroom a change may lose: `10%` (the default) or multiples (`0.5×`)    |
-| `--accept <reason>`    | A deliberate loss: what `--base` finds becomes warnings, with the reason          |
-| `--comment <file>`     | Write the pull request comment, as Markdown                                       |
+| Option               | What                                                                           |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `--format <f>`       | `text`, `github` (annotations; the default under GitHub Actions) or `json`     |
+| `--pull`             | Read the measures first, as `loadmap pull` does, and check against them        |
+| `--snapshot <file>`  | Check one definition against a snapshot already written                        |
+| `--inconclusive <i>` | `warn` (the default) or `fail`                                                 |
+| `--units <u>`        | `warn` (the default) or `fail`: a unit that disagrees fails the run            |
+| `--dry-run`          | Report everything and exit 0                                                   |
+| `--json <file>`      | Write the run's result: outcomes, reasons, headroom, the window, the commit    |
+| `--base <ref>`       | Compare each definition with itself at a git ref, against the same data        |
+| `--tolerance <t>`    | How much headroom a change may lose: `10%` (the default) or multiples (`0.5×`) |
+| `--accept <reason>`  | A deliberate loss: what `--base` finds becomes warnings, with the reason       |
+| `--comment <file>`   | Write the pull request comment, as Markdown                                    |
 
 With `--base origin/main` the check fails when the first limit's headroom drops by more than the tolerance, when the
 first limit moves to another component without more headroom, or when a component crosses the target or 100 % from

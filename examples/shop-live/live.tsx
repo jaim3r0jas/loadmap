@@ -16,10 +16,13 @@ const WINDOW = 120
 // the page's own origin (a provider takes a whole URL): vite.config.ts passes /prometheus on to the server
 const providers = { prometheus: prometheus({ url: new URL('/prometheus', location.href).href }) }
 
+// the definition on its own values: what the page draws until a read lands, and the measures every read asks for
+const plain = compile(source)
+
 async function read() {
   // on the step's grid, so two reads in the same step ask for the same points
   const to = Math.floor(Date.now() / (EVERY * 1000)) * EVERY * 1000
-  const snapshot = await pull(compile(source).measures, {
+  const snapshot = await pull(plain.measures, {
     from: new Date(to - WINDOW * 1000).toISOString(),
     to: new Date(to).toISOString(),
     step: EVERY,
@@ -42,30 +45,35 @@ function Live() {
   const board = useRef<LoadmapHandle | null>(null)
   useEffect(() => {
     let open = true
+    let timer: ReturnType<typeof setTimeout>
+    // one read at a time, the next one a step after it ends: a slow answer never lands after a newer one
     const tick = () =>
-      read().then(
-        (next) => {
-          if (!open) return
-          setLive(next)
-          setError('')
-        },
-        (err) => open && setError(String(err)),
-      )
+      read()
+        .then(
+          (next) => {
+            if (!open) return
+            setLive(next)
+            setError('')
+          },
+          (err) => open && setError(String(err)),
+        )
+        .finally(() => {
+          if (open) timer = setTimeout(tick, EVERY * 1000)
+        })
     tick()
-    const timer = setInterval(tick, EVERY * 1000)
     return () => {
       open = false
-      clearInterval(timer)
+      clearTimeout(timer)
     }
   }, [])
-  // until the first read, and whenever Prometheus is away: the definition's own values
-  const { definition } = live?.result.definition ? live.result : compile(source)
+  // until the first read: the definition's own values; when Prometheus goes away later, the last read stays
+  const { definition } = live?.result.definition ? live.result : plain
   if (!definition) return <p>shop.loadmap does not compile.</p>
   return (
     <>
       <p id="read">
         {error
-          ? `No data: ${error}. The diagram shows the definition's own values.`
+          ? `Prometheus did not answer (${error}). The diagram shows ${live ? `the read of ${live.at.slice(11, 19)} UTC` : "the definition's own values"}.`
           : live
             ? `${live.of - live.missing} of ${live.of} measurements read from Prometheus at ${live.at.slice(11, 19)} UTC`
             : 'Reading Prometheus…'}

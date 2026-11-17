@@ -1,5 +1,5 @@
 # A shop with data, in a minute: `docker compose up` here, then Grafana on http://localhost:3000 (no login) and
-# Prometheus on http://localhost:9090. The shop is simulator.ts; nothing leaves this machine.
+# Prometheus on http://localhost:9090. The shop is simulator.ts; the ports open on this machine only.
 services:
   shop:
     image: node:24-alpine
@@ -7,7 +7,7 @@ services:
     volumes:
       - ./simulator.ts:/shop/simulator.ts:ro
     ports:
-      - "9464:9464"
+      - "127.0.0.1:9464:9464"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9464/metrics"]
       interval: 2s
@@ -18,7 +18,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     depends_on:
       shop:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       prometheus:
         condition: service_healthy

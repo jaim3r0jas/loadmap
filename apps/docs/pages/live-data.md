@@ -14,11 +14,11 @@ docker compose up
 
 That starts three containers, and a minute later there is data to read:
 
-| Where                 | What                                                                             |
-| --------------------- | -------------------------------------------------------------------------------- |
-| http://localhost:3000 | Grafana, without a login: the **Shop** dashboard, already there                  |
-| http://localhost:9090 | Prometheus, scraping the shop every 5 seconds                                    |
-| http://localhost:9464 | The shop's `/metrics`: requests by service, database queries, worker CPU         |
+| Where                         | What                                                               |
+| ----------------------------- | ------------------------------------------------------------------ |
+| http://localhost:3000         | Grafana, without a login: the **Shop** dashboard, already there    |
+| http://localhost:9090         | Prometheus, scraping the shop every 5 seconds                      |
+| http://localhost:9464/metrics | The shop itself: requests by service, database queries, worker CPU |
 
 The shop is `simulator.ts`, one file with no dependencies: visitors browse, one in twenty orders, workers handle the
 orders and everything ends in a database. Its traffic rises and falls over ten minutes, a day in small, so the
@@ -34,8 +34,10 @@ The queries are the ones a Grafana panel runs: copy a panel's PromQL into a metr
 ```
 
 The flows run at `visitRate * load` and `orderRate * load`, so 1× is the shop as it is now, and the slider asks what
-happens at twice or ten times that. The workers' demand is `workerCores(flows.orders)`: a cost per order fitted from
-the two series, not a number someone typed. [The language guide](/language/#measured-data) has every statement.
+happens at twice or ten times that. The workers' demand is `coresNow * load`, the CPU they use now, and the
+database's `queryRate * load`: numbers the shop reports, not ones someone typed.
+[The language guide](/language/#measured-data) has every statement, and fits a cost per request from two measured
+series.
 
 ## 3. Read it once
 

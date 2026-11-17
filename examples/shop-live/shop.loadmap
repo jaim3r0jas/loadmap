@@ -32,18 +32,6 @@ measure orderRate served { service: "checkout"; fallback: 10; unit: "orders/s" }
 measure coresNow workerCpu { fallback: 0.6; unit: "cores" }
 measure queryRate dbQueries { fallback: 650; unit: "queries/s" }
 
-# cost = a + b × orders: fitted from the two series of a snapshot, from these points without one
-fit workerCores "Worker CPU per order" {
-  source: "the simulator's own numbers"
-  x: orderRate
-  y: coresNow
-  points rate cores {
-    5 0.35
-    10 0.6
-    15 0.85
-  }
-}
-
 flow visits "visits" {
   unit: "visit"
   rate: visitRate * load
@@ -73,7 +61,8 @@ pool orderWorkers "Order workers" `${pods} pods` {
   workers { pods: pods; perPod: 4 }
   short: "the workers"
   plural: true
-  demand: workerCores(flows.orders)
+  # the CPU the workers use now, growing with the traffic
+  demand: coresNow * load
   capacity: measured(pods, "cores", "pod CPU limit")
   over: "orders wait and confirmations arrive late"
   describe: `${pods} pods, 1 core each`

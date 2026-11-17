@@ -20,20 +20,20 @@ To try it on a model that uses most of the language, take one from an example: *
 
 ## The VS Code extension's commands and settings
 
-| Command (under **loadmap:**)                        | What                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------ |
-| **Open Preview**, **Open Preview to the Side**      | The diagram of the file, drawn as you type                         |
-| **Track Live Changes**, **Stop Tracking Live Changes** | The preview brings the boxes each edit changed into view        |
-| **Add from the Catalog…**                           | A component's published figure, as a new box or a box's capacity   |
-| **Copy Share Link**, **Open in the Live Editor**    | The text and the values shown, in a link to the editor on this site |
-| **Restart the Language Server**                     | Starts the language server again                                   |
+| Command (under **loadmap:**)                           | What                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| **Open Preview**, **Open Preview to the Side**         | The diagram of the file, drawn as you type                          |
+| **Track Live Changes**, **Stop Tracking Live Changes** | The preview brings the boxes each edit changed into view            |
+| **Add from the Catalog…**                              | A component's published figure, as a new box or a box's capacity    |
+| **Copy Share Link**, **Open in the Live Editor**       | The text and the values shown, in a link to the editor on this site |
+| **Restart the Language Server**                        | Starts the language server again                                    |
 
-| Setting                         | What                                                                              |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| `loadmap.server.path`           | A project's own `loadmap` command to run as the language server                   |
-| `loadmap.preview.trackChanges`  | Track live changes in the preview (default off)                                   |
-| `loadmap.editorUrl`             | The live editor a share link opens: this site's, or a copy hosted elsewhere       |
-| `loadmap.trace.server`          | Log the messages between VS Code and the language server (default off)            |
+| Setting                        | What                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| `loadmap.server.path`          | A project's own `loadmap` command to run as the language server             |
+| `loadmap.preview.trackChanges` | Track live changes in the preview (default off)                             |
+| `loadmap.editorUrl`            | The live editor a share link opens: this site's, or a copy hosted elsewhere |
+| `loadmap.trace.server`         | Log the messages between VS Code and the language server (default off)      |
 
 The preview runs nothing but the extension's own files: no network, no `eval`. A definition's formulas are read as a
 syntax tree, never run as code, so opening someone else's file is safe.

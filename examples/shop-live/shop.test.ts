@@ -1,9 +1,9 @@
+import { fromSnapshot } from '@loadmap/core/measure'
 import { compile } from '@loadmap/dsl'
 import { type Provider, pull } from '@loadmap/providers'
-import { fromSnapshot } from '@loadmap/react'
 import { expect, it } from 'vitest'
 import source from './shop.loadmap?raw'
-import { advance, IDLE, metrics, ORDERS, open, PER_ORDER, VISITS } from './simulator'
+import { advance, metrics, ORDERS, open, VISITS } from './simulator'
 
 it('the shop serves counters that only grow, in the text Prometheus reads', () => {
   const shop = open()
@@ -74,10 +74,9 @@ it('the definition reads every one of its measures from the shop, and its promis
   const live = compile(source, { snapshot: fromSnapshot(snapshot) })
   expect(live.diagnostics).toEqual([])
   expect(live.expectations.map((e) => e.result.ok)).toEqual([true])
-  // the fit reads the workers' cost from the two series: what the simulator spends
+  // the workers' demand is the CPU the shop reports, not the definition's own 0.6 cores
   const { model } = live.definition!
-  const fits = model.evaluate(model.defaults()).assumptions.flatMap((a) => (a.kind === 'fit' ? [a.fit] : []))
-  expect(fits).toHaveLength(1)
-  expect(fits[0]!.a).toBeCloseTo(IDLE, 1)
-  expect(fits[0]!.b).toBeCloseTo(PER_ORDER, 2)
+  const now = model.evaluate(model.defaults()).components.orderWorkers!
+  const cores = Object.values(snapshot.measurements).map((m) => ('value' in m ? m.value : 0))[2]!
+  expect(now.demand).toBeCloseTo(cores, 6)
 })

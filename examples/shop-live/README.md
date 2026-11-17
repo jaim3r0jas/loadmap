@@ -15,6 +15,6 @@ pnpm install && pnpm dev                         # from a clone: the live page, 
 | ---------------- | -------------------------------------------------------------------------------- |
 | `simulator.ts`   | The shop: visits, orders, database queries and worker CPU, served on `/metrics`  |
 | `compose.yaml`   | The shop, Prometheus scraping it, and Grafana with a dashboard already there     |
-| `shop.loadmap`   | The model: its rates and the workers' cost are measures read from Prometheus     |
+| `shop.loadmap`   | The model: its rates and the workers' CPU are measures read from Prometheus      |
 | `live.tsx`       | The page: pulls the measures every 10 seconds and draws the model with them      |
 | `vite.config.ts` | Passes the page's `/prometheus` on to Prometheus, so the address stays out of it |

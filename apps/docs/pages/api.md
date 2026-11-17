@@ -4,17 +4,17 @@ Most pages install only `@loadmap/react`: it re-exports the model and view API b
 language, the editor, media, measured data and the command line. Everything is ESM with TypeScript types; React is a
 peer (19).
 
-| Package              | What                                                                    |
-| -------------------- | ----------------------------------------------------------------------- |
-| `@loadmap/react`     | `<Loadmap>` and its pieces, plus everything from core and the view API  |
-| `@loadmap/core`      | the model: no dependencies, runs in Node                                |
-| `@loadmap/layout`    | views and their ELK layout                                              |
-| `@loadmap/sim`       | the simulation behind the dots (used by react)                          |
-| `@loadmap/dsl`       | the `.loadmap` language                                                 |
-| `@loadmap/editor`    | `<LoadmapEditor>` and the templates                                     |
-| `@loadmap/export`    | PNG, SVG, GIF, WebM, MP4 and `expose()` for the CLI                     |
-| `@loadmap/providers` | measured data from Prometheus and Elasticsearch, into a snapshot        |
-| `@loadmap/cli`       | `loadmap check`, `fmt`, `pull`, `drift`, `record`, `bundle` and `lsp`   |
+| Package              | What                                                                   |
+| -------------------- | ---------------------------------------------------------------------- |
+| `@loadmap/react`     | `<Loadmap>` and its pieces, plus everything from core and the view API |
+| `@loadmap/core`      | the model: no dependencies, runs in Node                               |
+| `@loadmap/layout`    | views and their ELK layout                                             |
+| `@loadmap/sim`       | the simulation behind the dots (used by react)                         |
+| `@loadmap/dsl`       | the `.loadmap` language                                                |
+| `@loadmap/editor`    | `<LoadmapEditor>` and the templates                                    |
+| `@loadmap/export`    | PNG, SVG, GIF, WebM, MP4 and `expose()` for the CLI                    |
+| `@loadmap/providers` | measured data from Prometheus and Elasticsearch, into a snapshot       |
+| `@loadmap/cli`       | `loadmap check`, `fmt`, `pull`, `drift`, `record`, `bundle` and `lsp`  |
 
 The VS Code extension (`jaim3r0jas.loadmap`, in the Marketplace and Open VSX) is not a library: [In your editor](/in-your-editor/)
 has what it does.
@@ -47,13 +47,13 @@ A `defineModel` definition takes, besides the required parts: `title`, `presets`
 
 `@loadmap/core` has entries of its own for what a page rarely loads:
 
-| Entry                     | What                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------- |
-| `@loadmap/core/calibrate` | `fitLinear`                                                                           |
-| `@loadmap/core/format`    | the number formats                                                                    |
-| `@loadmap/core/measure`   | snapshots of measured data: see [Measured data](#measured-data-loadmap-providers)     |
-| `@loadmap/core/catalog`   | the published figures: see [The catalog](#the-catalog-loadmap-core-catalog)           |
-| `@loadmap/core/drift`     | the tests behind `loadmap drift`: `changePoints`, `compareWindows`, `threshold`       |
+| Entry                     | What                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `@loadmap/core/calibrate` | `fitLinear`                                                                       |
+| `@loadmap/core/format`    | the number formats                                                                |
+| `@loadmap/core/measure`   | snapshots of measured data: see [Measured data](#measured-data-loadmap-providers) |
+| `@loadmap/core/catalog`   | the published figures: see [The catalog](#the-catalog-loadmap-core-catalog)       |
+| `@loadmap/core/drift`     | the tests behind `loadmap drift`: `changePoints`, `compareWindows`, `threshold`   |
 
 ## The view (`@loadmap/layout`, re-exported by react)
 
@@ -168,7 +168,6 @@ errors, completion, hover, rename), and `loadmapStream` with `loadmapHighlight` 
 | `composeFrame(handle, options?)`                                                   | The board as one image on a canvas: the SVG with the dots painted on top   |
 | `download(blob, name)`                                                             | Saves a blob through the browser                                           |
 
-
 ## Measured data (`@loadmap/providers`)
 
 A model reads measured data from a **snapshot**: a JSON file with each measurement's value over a window, its points
@@ -176,15 +175,15 @@ and where they came from. Nothing in a definition or a shared link fetches anyth
 the address and the credentials come from the environment, never from the text. `loadmap pull` is the usual way in;
 [the language guide](/language/#measured-data) has the statements, and [Live data](/live-data/) a shop to try it on.
 
-| Export                                           | What                                                                    |
-| ------------------------------------------------ | ----------------------------------------------------------------------- |
-| `pull(measures, { from, to, step, fetched, providers })` | Reads every measurement and returns the snapshot                |
-| `prometheus({ url, token? })`                    | A provider: a PromQL query over a range; the query must give one series |
-| `elasticsearch({ url, apiKey? })`                | A provider: an index as a date histogram at the step (OpenSearch too)   |
-| `providersFromEnv(env)`                          | The providers `LOADMAP_PROMETHEUS_URL` and the rest configure           |
-| `parseSnapshot(json)` (`@loadmap/core/measure`)  | The file checked: a snapshot, or an error that says what is wrong       |
-| `fromSnapshot(snapshot)` (`@loadmap/core/measure`) | A reader: `capacity(name, fallback)`, `value`, `fit`, `unread(name)`  |
-| `MEASURES` (`@loadmap/core/measure`)             | The standard measurements per kind of component                         |
+| Export                                                   | What                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `pull(measures, { from, to, step, fetched, providers })` | Reads every measurement and returns the snapshot                        |
+| `prometheus({ url, token? })`                            | A provider: a PromQL query over a range; the query must give one series |
+| `elasticsearch({ url, apiKey? })`                        | A provider: an index as a date histogram at the step (OpenSearch too)   |
+| `providersFromEnv(env)`                                  | The providers `LOADMAP_PROMETHEUS_URL` and the rest configure           |
+| `parseSnapshot(json)` (`@loadmap/core/measure`)          | The file checked: a snapshot, or an error that says what is wrong       |
+| `fromSnapshot(snapshot)` (`@loadmap/core/measure`)       | A reader: `capacity(name, fallback)`, `value`, `fit`, `unread(name)`    |
+| `MEASURES` (`@loadmap/core/measure`)                     | The standard measurements per kind of component                         |
 
 ```ts
 import { fromSnapshot } from '@loadmap/core/measure'
@@ -224,15 +223,14 @@ load where its component is full. `<Loadmap>` runs it; a page rarely needs it di
 
 ## The command line (`@loadmap/cli`)
 
-| Command                 | What                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `loadmap check <file>…` | Tests each definition's `expect` lines; `--pull`, `--snapshot`, `--base <ref>`   |
-| `loadmap fmt <file>…`   | Lays each definition out the one way; `--check` for CI                           |
-| `loadmap pull <file>`   | Reads the measures from their providers and writes `x.snapshot.json`             |
-| `loadmap drift <file>`  | Finds what moved in the measured data that no change of the definition shows     |
-| `loadmap record <src>`  | GIF, WebM, MP4, PNG or SVG of a page or a `.loadmap`, on a fixed clock           |
-| `loadmap bundle <file>` | A model in several files written as one                                          |
-| `loadmap lsp`           | The language server, for any editor that speaks the protocol                     |
+| Command                 | What                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `loadmap check <file>…` | Tests each definition's `expect` lines; `--pull`, `--snapshot`, `--base <ref>` |
+| `loadmap fmt <file>…`   | Lays each definition out the one way; `--check` for CI                         |
+| `loadmap pull <file>`   | Reads the measures from their providers and writes `x.snapshot.json`           |
+| `loadmap drift <file>`  | Finds what moved in the measured data that no change of the definition shows   |
+| `loadmap record <src>`  | GIF, WebM, MP4, PNG or SVG of a page or a `.loadmap`, on a fixed clock         |
+| `loadmap bundle <file>` | A model in several files written as one                                        |
+| `loadmap lsp`           | The language server, for any editor that speaks the protocol                   |
 
 [Recording and CI](/recording/) has each command's options; `loadmap --help` prints them.
-\n
