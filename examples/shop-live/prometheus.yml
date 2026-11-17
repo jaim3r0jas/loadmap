@@ -1,0 +1,7 @@
+# Reads the shop every five seconds, so a query has points soon after the stack starts.
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: shop
+    static_configs:
+      - targets: ["shop:9464"]

@@ -1,0 +1,21 @@
+{
+  "name": "@loadmap/example-shop-live",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "shop": "node simulator.ts",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@loadmap/core": "workspace:*",
+    "@loadmap/dsl": "workspace:*",
+    "@loadmap/providers": "workspace:*",
+    "@loadmap/react": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5"
+  }
+}
