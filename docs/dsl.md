@@ -1144,7 +1144,8 @@ it keeps of a subsystem is its first line (`subsystem orderLine "Orders"`, no bl
 `orderLine.…`. A share link carries every file (`#v2.`); a definition in one file keeps making the `#v1.` link every
 page reads.
 `docs/multi-file/` holds a model with a part, a library and a variant; `examples/checkout/split/` and
-`examples/alerts/split/` are the two examples in several files, each held to the same TypeScript model.
+`examples/alerts/split/` are the two examples in several files, each held to the same TypeScript model, and
+`examples/regions/` is written in several files from the start: two regions as copies of one subsystem of a library.
 
 ## Errors
 

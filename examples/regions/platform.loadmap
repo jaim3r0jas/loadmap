@@ -1,0 +1,39 @@
+loadmap 1.5
+library "Platform building blocks"
+# What every region runs: the primary database and the line that takes orders. A region says how big each one is.
+
+# what one order costs a worker, measured once for every team
+let orderCost = 2ms
+
+node postgres "Postgres" "primary" {
+  input writes
+  input limit = 4_000
+  shape: cylinder
+  store
+  short: "the database"
+  demand: writes
+  capacity: estimated(limit ± 30%, "commits/s", "load test of the primary")
+  over: "commits queue on the primary"
+}
+
+# a topic and the workers that read it: its own orders, and those another region sends when it is lost
+subsystem pipeline "Orders" {
+  input flow main
+  input flow spill
+  input pods = 3
+  cluster kafka "Kafka" {
+    members: 3
+    memberLabel: `broker ${i}`
+    queue topic { partitions { main: 12; spill: 12 } }
+  }
+  pool workers "Workers" `${pods} pods` {
+    pods: pods
+    perPod: 8
+    short: "the workers"
+    demand: (flows.main + flows.spill) * orderCost
+    capacity: measured(pods * 1, "cores", "pod CPU limit")
+    over: "orders wait in the topic"
+  }
+  kafka -> workers
+  route: topic -> workers
+}

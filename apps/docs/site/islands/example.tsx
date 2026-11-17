@@ -4,6 +4,7 @@
 import type { ParamValue } from '@loadmap/core'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
 import { Checkout, checkoutSource } from '@loadmap/example-checkout'
+import { Regions, regionsFiles, regionsOne } from '@loadmap/example-regions'
 import { Search, searchSource } from '@loadmap/example-search'
 import type { LoadmapHandle } from '@loadmap/react'
 import { type MouseEvent, StrictMode, useRef, useState } from 'react'
@@ -11,8 +12,11 @@ import { createRoot } from 'react-dom/client'
 import { Actions } from './actions'
 import { useRecorder } from './recorder'
 
-const EXAMPLES = { checkout: Checkout, alerts: Alerts, search: Search } as const
-const SOURCES = { checkout: checkoutSource, alerts: alertsSource, search: searchSource } as const
+const EXAMPLES = { checkout: Checkout, alerts: Alerts, search: Search, regions: Regions } as const
+// what the download gives: one file, those in several written as one (`loadmap bundle`)
+const SOURCES = { checkout: checkoutSource, alerts: alertsSource, search: searchSource, regions: regionsOne } as const
+/** The examples in several files: a share link carries them all, and the editor opens each as a tab. */
+const FILES: Partial<Record<Name, typeof regionsFiles>> = { regions: regionsFiles }
 type Name = keyof typeof EXAMPLES
 
 function Example({
@@ -41,7 +45,11 @@ function Example({
       if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') values[k] = v
     try {
       const { encodeShare } = await import('@loadmap/dsl')
-      location.href = `${editor}?code#${await encodeShare(SOURCES[name], values)}`
+      const files = FILES[name]
+      const hash = files
+        ? await encodeShare(files.files[files.path as keyof typeof files.files], values, files)
+        : await encodeShare(SOURCES[name], values)
+      location.href = `${editor}?code#${hash}`
     } catch {
       // the example's text without the values, rather than a link that does nothing
       location.href = plain

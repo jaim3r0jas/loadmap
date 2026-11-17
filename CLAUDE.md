@@ -13,7 +13,9 @@ stops first with that hint on an older Node (`scripts/node-version.mjs`). The pa
 `package.json` says what it holds and what it depends on.
 
 `examples/checkout` (the small reference), `examples/alerts` (two topics on shared brokers, merge, fan-out) and
-`examples/search` (a rate limiter, an autoscaled pool, a cache and retries, laid out stable) hold the end-to-end tests,
+`examples/search` (a rate limiter, an autoscaled pool, a cache and retries, laid out stable) and `examples/regions`
+(two regions as copies of one subsystem, in several files: a model, its story, two libraries and a variant) hold the
+end-to-end tests,
 each also written as a `.loadmap` that must draw exactly what its TypeScript draws (`definition.test.ts`,
 `examples/roundtrip.ts`). `apps/docs` is the docs site (`pnpm dev`): the examples (walkthroughs and the templates as starters) and the editor
 live (its rules: `apps/docs/CLAUDE.md`). `docs/dsl.md` is the language guide: the site includes it, the build writes it

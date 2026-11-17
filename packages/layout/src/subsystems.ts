@@ -240,7 +240,12 @@ export function closedView(view: View, closed: readonly string[]): View {
           (a, b) => (util[b] != null && (a == null || util[b] > util[a]!) ? b : a),
           undefined,
         )
-        return worst == null ? '' : `${names[worst]?.name ?? worst} ${pct(util[worst]!)}`
+        if (worst == null) return ''
+        if (!util[worst]) return 'no traffic'
+        // "EU region › Workers" reads "Workers" in the box that is the EU region
+        const name = names[worst]?.name ?? worst
+        const own = `${defs[c]!.label} › `
+        return `${name.startsWith(own) ? name.slice(own.length) : name} ${pct(util[worst]!)}`
       },
       stage: h.stages,
       subsystem: c,

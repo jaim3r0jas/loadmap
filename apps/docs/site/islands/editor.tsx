@@ -15,6 +15,7 @@ import {
 import { Icon, Menu, MenuItem } from '@loadmap/editor/internal'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
+import { regionsFiles } from '@loadmap/example-regions'
 import { searchSource } from '@loadmap/example-search'
 import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -42,6 +43,8 @@ const SHOP = {
   path: 'shop.loadmap',
   files: { 'shop.loadmap': shopSource, 'shop.story.loadmap': storySource, 'platform.loadmap': platformSource },
 }
+/** The regions example in its files: the model, its story, two libraries and a variant. */
+const REGIONS = regionsFiles
 const DRAFT = 'loadmap-editor-draft'
 /** The draft's files when it has several: `{ path, files }`, the model's text also under the key above. */
 const DRAFT_FILES = 'loadmap-editor-draft-files'
@@ -73,7 +76,11 @@ function write(key: string, value: string) {
 }
 
 /** Texts that come whole from the site: replacing a draft with one of them keeps the draft aside. */
-const WHOLE = new Set<string>([...TEMPLATES.map((t) => t.source), ...Object.values(SOURCES)])
+const WHOLE = new Set<string>([
+  ...TEMPLATES.map((t) => t.source),
+  ...Object.values(SOURCES),
+  REGIONS.files['regions.loadmap'],
+])
 
 const readDraft = () => read(DRAFT)
 
@@ -110,6 +117,7 @@ const example = () => {
 }
 /** What the editor opens with when no link says: a template, an example, else the draft when it is in several files. */
 const startFrom = (): Shared | undefined => {
+  if (query().get('example') === 'regions') return { source: REGIONS.files['regions.loadmap'], values: {}, ...REGIONS }
   const whole = template()?.source ?? example()
   if (whole != null) return { source: whole, values: {} }
   const files = readDraftFiles()
@@ -284,6 +292,7 @@ function Editor({ root }: { root: URL }) {
           onSelect: () => editor.current?.setSource(SOURCES[n]),
         })),
         { label: 'A shop in several files', onSelect: () => editor.current?.setFiles(SHOP) },
+        { label: 'Two regions, in several files', onSelect: () => editor.current?.setFiles(REGIONS) },
         ...(earlier != null
           ? [{ label: 'Your earlier draft', onSelect: () => editor.current?.setSource(earlier) }]
           : []),

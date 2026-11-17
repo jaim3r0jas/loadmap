@@ -1,0 +1,34 @@
+loadmap 1.5
+library "A region"
+import "./platform.loadmap" { postgres; pipeline }
+# One region: a load balancer, the API, the line that takes orders and the database. Its own orders come in as `main`,
+# those of a region that is lost as `spill`.
+
+subsystem region "Region" {
+  input flow main
+  input flow spill
+  input pods = 3
+  input apiPods = 4
+  input dbLimit = 4_000
+  node lb "Load balancer" {
+    pass
+    short: "the load balancer"
+    demand: flows.main + flows.spill
+    capacity: estimated(20_000 ± 30%, "req/s", "vendor sizing guide")
+    over: "requests are refused at the door"
+  }
+  pool api "API" `${apiPods} pods` {
+    pods: apiPods
+    perPod: 16
+    short: "the API"
+    demand: (flows.main + flows.spill) * 4ms
+    capacity: measured(apiPods * 1, "cores", "pod CPU limit")
+    over: "requests queue in the API"
+  }
+  subsystem orders { like: pipeline; with { main: main; spill: spill; pods: pods } }
+  node db "Postgres" "primary" { like: postgres; with { writes: flows.main + flows.spill; limit: dbLimit } }
+  lb -> api
+  api -> orders
+  orders -> db
+  route: lb -> api -> orders -> db
+}
