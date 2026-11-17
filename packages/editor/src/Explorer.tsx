@@ -1,4 +1,5 @@
 import type { Role } from '@loadmap/dsl'
+import type { Property, Stmt } from '@loadmap/dsl/internal'
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { FICON, type FileMark, MARK_TEXT } from './filenames'
 import {
@@ -14,6 +15,9 @@ import {
 } from './fileops'
 import { ICON, Icon, Menu, MenuItem } from './Menu'
 import { type FileHost, reshape } from './reshape'
+
+/** A subsystem's mark: a frame around two boxes, as the board draws one. */
+const FRAME = 'M2.5 3.5h11v9h-11zM4.5 7h3v3h-3zM8.5 7h3v3h-3z'
 
 /** The explorer's own rules: they come with it, not in the editor's first load. */
 const CSS = `
@@ -31,6 +35,8 @@ const CSS = `
 .lme-tree-row:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
 .lme-tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--lm-mono); }
 .lme-tree-row[data-folder] .lme-tree-name { font-family: var(--lm-font); font-weight: 600; }
+.lme-tree-row[data-subsystem] .lme-tree-name { font-family: var(--lm-font); }
+.lme-tree-sub { flex: none; width: 12px; height: 12px; color: var(--lm-muted); }
 .lme-tree-fold { flex: none; width: 10px; height: 10px; margin-left: -2px; color: var(--lm-muted); transition: transform .1s; }
 .lme-tree-row[aria-expanded="false"] .lme-tree-fold { transform: rotate(-90deg); }
 .lme-tree-role { flex: none; margin-left: auto; font-size: 10.5px; color: var(--lm-muted); }
@@ -72,15 +78,47 @@ export interface ExplorerProps {
   /** A new file to ask the name of as soon as the explorer shows (Add in the bar's menu). */
   start?: NewKind | null
   onStarted: () => void
-  onOpen: (path: string) => void
+  /** Opens a file; with `at`, the cursor goes to that place in it (a subsystem's line). */
+  onOpen: (path: string, at?: number) => void
   /** What an operation reaches of the editor. */
   host: FileHost
   onHide: () => void
 }
 
 type Row =
-  | { folder: true; path: string; name: string; depth: number }
-  | { folder?: false; path: string; name: string; depth: number }
+  | { folder: true; sub?: false; path: string; name: string; depth: number }
+  | { folder?: false; sub?: false; path: string; name: string; depth: number }
+  /** A subsystem a file declares: `path` is the row's own (`file#id`), `at` where its line starts in the file. */
+  | { folder?: false; sub: true; path: string; file: string; id: string; name: string; at: number; depth: number }
+
+/**
+ * The subsystems a text declares, read by the parser: each with its id as that file knows it (`region.orders` for one
+ * in another), its name (its own, else that of a subsystem of this file it is like, else its id), where its line starts,
+ * and how deep it stands.
+ */
+function subsystemsIn(dsl: Dsl, text: string) {
+  const out: { id: string; name: string; at: number; depth: number }[] = []
+  const named = new Map<string, string>()
+  const walk = (body: readonly Stmt[], around: string, depth: number) => {
+    for (const st of body) {
+      if (st.kind !== 'decl' || st.keyword.name !== 'subsystem' || st.args[0]?.t !== 'id') continue
+      const own = st.args[0].name
+      const id = around ? `${around}.${own}` : own
+      const label = st.args[1]?.t === 'str' ? st.args[1].value : undefined
+      const like = st.body?.find((x): x is Property => x.kind === 'prop' && x.key.name === 'like')?.value
+      if (label != null) named.set(own, label)
+      out.push({
+        id,
+        name: label ?? (like?.t === 'id' ? named.get(like.name) : undefined) ?? own,
+        at: st.from,
+        depth,
+      })
+      if (st.body) walk(st.body, id, depth + 1)
+    }
+  }
+  walk(dsl.parse(text).doc.body, '', 0)
+  return out
+}
 
 /** What the reader is in the middle of: a name for a new file, another name for one, or the question before one goes. */
 type Doing =
@@ -163,7 +201,32 @@ export default function Explorer({
     roles.current.set(path, { text, role: r })
     return r
   }
-  const rows = rowsOf(paths, entry, closed)
+  // each file's subsystems, read again only when its text changes
+  const subs = useRef(new Map<string, { text: string; list: ReturnType<typeof subsystemsIn> }>())
+  const subsystems = (path: string) => {
+    const text = all.files[path] ?? ''
+    const kept = subs.current.get(path)
+    if (kept?.text === text) return kept.list
+    const list = subsystemsIn(dsl, text)
+    subs.current.set(path, { text, list })
+    return list
+  }
+  for (const p of subs.current.keys()) if (!Object.hasOwn(all.files, p)) subs.current.delete(p)
+  const rows = rowsOf(paths, entry, closed).flatMap((r): Row[] => [
+    r,
+    ...(r.folder
+      ? []
+      : subsystems(r.path).map((x, i, list) => ({
+          sub: true as const,
+          // an id written twice (a block pasted, not yet renamed) is two rows all the same
+          path: `${r.path}#${x.id}${list.findIndex((y) => y.id === x.id) < i ? `#${i}` : ''}`,
+          file: r.path,
+          id: x.id,
+          name: x.name,
+          at: x.at,
+          depth: r.depth + 1 + x.depth,
+        }))),
+  ])
   const at = rows.some((r) => r.path === cursor) ? cursor : (rows.find((r) => r.path === active)?.path ?? rows[0]?.path)
   const focusRow = (path: string | undefined) =>
     requestAnimationFrame(() => {
@@ -218,6 +281,9 @@ export default function Explorer({
   const pick = (r: Row) => {
     setCursor(r.path)
     if (r.folder) toggle(r.path)
+    // typing above it since the explorer drew has moved its line: where it is now
+    else if (r.sub)
+      onOpen(r.file, subsystemsIn(dsl, files().files[r.file] ?? '').find((x) => x.id === r.id)?.at ?? r.at)
     else onOpen(r.path)
   }
   const keys = (e: KeyboardEvent, r: Row) => {
@@ -228,7 +294,8 @@ export default function Explorer({
       setCursor(to.path)
       focusRow(to.path)
     }
-    if (e.key === 'ArrowDown') move(rows[i + 1])
+    if (e.key === 'ArrowLeft' && r.sub) move(rows.find((x) => x.path === r.file))
+    else if (e.key === 'ArrowDown') move(rows[i + 1])
     else if (e.key === 'ArrowUp') move(rows[i - 1])
     else if (e.key === 'Home') move(rows[0])
     else if (e.key === 'End') move(rows.at(-1))
@@ -241,10 +308,10 @@ export default function Explorer({
     ) {
       e.preventDefault()
       toggle(r.path)
-    } else if (!r.folder && e.key === 'F2') {
+    } else if (!r.folder && !r.sub && e.key === 'F2') {
       e.preventDefault()
       setDoing({ what: 'rename', path: r.path, value: r.path.replace(/\.loadmap$/, '') })
-    } else if (!r.folder && r.path !== entry && (e.key === 'Delete' || e.key === 'Backspace')) {
+    } else if (!r.folder && !r.sub && r.path !== entry && (e.key === 'Delete' || e.key === 'Backspace')) {
       e.preventDefault()
       setDoing({ what: 'remove', path: r.path })
     }
@@ -338,6 +405,27 @@ export default function Explorer({
                     </button>
                   </span>
                 </span>
+              </div>
+            )
+          if (r.sub)
+            return (
+              <div key={r.path} role="none" style={depth}>
+                <div
+                  className="lme-tree-row"
+                  role="treeitem"
+                  aria-level={r.depth + 1}
+                  aria-selected={false}
+                  data-path={r.path}
+                  data-subsystem={r.id}
+                  tabIndex={r.path === at ? 0 : -1}
+                  title={`subsystem ${r.id} in ${r.file}`}
+                  onClick={() => pick(r)}
+                  onKeyDown={(e) => keys(e, r)}
+                >
+                  <Icon d={FRAME} className="lme-tree-sub" />
+                  <span className="lme-tree-name">{r.name}</span>
+                  <span className="lme-tree-role">subsystem</span>
+                </div>
               </div>
             )
           const mark = r.folder ? undefined : marks.get(r.path)

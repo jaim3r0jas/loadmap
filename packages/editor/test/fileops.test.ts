@@ -1,5 +1,5 @@
 import { compile, imports, LANGUAGE_VERSION } from '@loadmap/dsl'
-import { MAX_FILES, relativePath, resolvePath } from '@loadmap/dsl/internal'
+import { MAX_FILES, parse, relativePath, resolvePath } from '@loadmap/dsl/internal'
 import { describe, expect, it } from 'vitest'
 import platform from '../../../docs/multi-file/platform.loadmap?raw'
 import shop from '../../../docs/multi-file/shop.loadmap?raw'
@@ -15,7 +15,7 @@ import {
   roleOf,
 } from '../src/fileops'
 
-const dsl: Dsl = { imports, resolvePath, relativePath, MAX_FILES, LANGUAGE_VERSION }
+const dsl: Dsl = { imports, resolvePath, relativePath, parse, MAX_FILES, LANGUAGE_VERSION }
 const all: FileSet = {
   path: 'shop.loadmap',
   files: { 'shop.loadmap': shop, 'shop.story.loadmap': story, 'platform.loadmap': platform },

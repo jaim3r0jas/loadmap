@@ -1,5 +1,5 @@
 import type { imports, Role } from '@loadmap/dsl'
-import type { relativePath, resolvePath } from '@loadmap/dsl/internal'
+import type { parse, relativePath, resolvePath } from '@loadmap/dsl/internal'
 
 /**
  * What these read of the language, handed in by the editor: the explorer's chunk then imports nothing of
@@ -9,6 +9,8 @@ export interface Dsl {
   imports: typeof imports
   resolvePath: typeof resolvePath
   relativePath: typeof relativePath
+  /** For the subsystems each file declares. */
+  parse: typeof parse
   MAX_FILES: number
   LANGUAGE_VERSION: string
 }
