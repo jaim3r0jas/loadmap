@@ -351,7 +351,7 @@ export function extent(kit: Kit, view: View, direction: Direction, o: Omit<Layou
   let size = sizes.get(key)
   if (!size) {
     size = (async () => {
-      const frame = kit.ordered(view, kit.reserve(view, direction, measure))
+      const frame = kit.ordered(view, kit.reserve(view, direction, measure), measure)
       const laid = await kit.laidOut(view, frame, o.elk)
       const { l } = rows > 1 ? foldLanes(laid, frame, view, measure, rows, kit) : kit.lanes(laid, frame, view, measure)
       return { width: l.width, height: l.height }

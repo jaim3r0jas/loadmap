@@ -10,7 +10,10 @@ export interface Collision {
 const overlap = (p: Box, q: Box, slack: number) =>
   p.x < q.x + q.w - slack && q.x < p.x + p.w - slack && p.y < q.y + q.h - slack && q.y < p.y + p.h - slack
 
-/** Every edge label or tier header that overlaps another label or a node. An empty list is the layout's promise. */
+/**
+ * Every edge label or tier header that overlaps another label or a node, every two boxes that overlap, and every
+ * subsystem's frame that does not hold its own boxes whole or reaches another's. An empty list is the layout's promise.
+ */
 export function collisions(scene: Scene, slack = 0.5): Collision[] {
   const labels = [
     ...scene.edges.filter((e) => e.label).map((e) => ({ id: `label ${e.id} (${e.from}→${e.to})`, box: e.label! })),
@@ -24,6 +27,23 @@ export function collisions(scene: Scene, slack = 0.5): Collision[] {
   scene.nodes.forEach((n, i) => {
     for (const m of scene.nodes.slice(i + 1))
       if (overlap(n, m, slack)) out.push({ a: `node ${n.id}`, b: `node ${m.id}` })
+  })
+  // a frame holds its own boxes and frames whole, and stands clear of every other box and frame
+  const holds = (p: Box, q: Box) =>
+    q.x >= p.x - slack && q.y >= p.y - slack && q.x + q.w <= p.x + p.w + slack && q.y + q.h <= p.y + p.h + slack
+  const inside = (id: string, s: { id: string; in?: string }) => {
+    for (let up = s.in; up != null; up = scene.subsystems.find((x) => x.id === up)?.in) if (up === id) return true
+    return false
+  }
+  scene.subsystems.forEach((s, i) => {
+    for (const n of scene.nodes) {
+      const mine = s.nodes.includes(n.id)
+      if (mine ? !holds(s, n) : overlap(s, n, slack)) out.push({ a: `subsystem ${s.id}`, b: `node ${n.id}` })
+    }
+    for (const t of scene.subsystems.slice(i + 1)) {
+      const nested = inside(s.id, t) ? holds(s, t) : inside(t.id, s) ? holds(t, s) : !overlap(s, t, slack)
+      if (!nested) out.push({ a: `subsystem ${s.id}`, b: `subsystem ${t.id}` })
+    }
   })
   return out
 }

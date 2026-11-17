@@ -117,6 +117,7 @@ describe('morph', () => {
       stageNode: {},
       flowFrom: {},
       tiers: [],
+      subsystems: [],
     })
     const [p, q, r] = edgeOf(
       morph(
@@ -198,6 +199,7 @@ describe('morph inside a box', () => {
     stageNode: {},
     flowFrom: {},
     tiers: [],
+    subsystems: [],
   })
 
   it('moves each flow name on its own member, when another flow joins between them', () => {
@@ -245,6 +247,7 @@ describe('morph of a tier', () => {
         vertical: false,
       },
     ],
+    subsystems: [],
   })
 
   it('fades a name broken in two in, and the one it was out, while the header grows', () => {

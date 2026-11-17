@@ -19,6 +19,7 @@ export {
   node,
   type PoolDef,
   pool,
+  type SubsystemDef,
   type TierDef,
   type View,
   type ViewDef,

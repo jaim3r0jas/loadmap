@@ -1105,11 +1105,19 @@ first and an edge from it starts at the box of the last. `tier:` on the subsyste
 names none. A subsystem written in a model is drawn as it is, and another may be `like` it; subsystems may hold
 subsystems, four deep, and a definition has at most 256 boxes once they are written out.
 
+On the board a subsystem is a frame around its boxes with its name at the top: its own, else that of the subsystem it
+is like, else its id. A subsystem in another is a frame in that one's frame. The frame's line takes the colour of the
+worst box inside once one is past its target, so a glance says which subsystem to look into. A frame cannot cross a
+lane: with tiers, a subsystem whose boxes stand in several tiers is drawn without one, and the subsystems in it keep
+theirs. A subsystem that holds no box draws nothing.
+
 A problem is reported in the file that can fix it: a library's own mistake in the library, a wrong or missing input
 at the box that sets it. `loadmap check` prints each with its file (`--format json` adds `file` to a diagnostic that
 is not in the checked file). `loadmap fmt` on a model sets its parts' `loadmap` lines to its own. `loadmap bundle
-shop.loadmap` writes the definition as one file that draws and computes the same, for a host that reads one file. A
-share link carries every file (`#v2.`); a definition in one file keeps making the `#v1.` link every page reads.
+shop.loadmap` writes the definition as one file that draws and computes the same, for a host that reads one file. What
+it keeps of a subsystem is its first line (`subsystem orderLine "Orders"`, no block): the frame around the boxes named
+`orderLine.…`. A share link carries every file (`#v2.`); a definition in one file keeps making the `#v1.` link every
+page reads.
 `docs/multi-file/` holds a model with a part, a library and a variant; `examples/checkout/split/` and
 `examples/alerts/split/` are the two examples in several files, each held to the same TypeScript model.
 

@@ -1,6 +1,6 @@
 import type { ComponentState } from '@loadmap/core'
 import { multiple, pct } from '@loadmap/core/format'
-import type { Scene, SceneEdge, SceneNode, SceneTier, TextSpot } from '@loadmap/layout'
+import type { Scene, SceneEdge, SceneNode, SceneSubsystem, SceneTier, TextSpot } from '@loadmap/layout'
 import {
   lazy,
   memo,
@@ -552,6 +552,9 @@ const Structure = memo(function Structure({
       {scene.tiers.map((t, i) => (
         <Tier key={t.id} t={t} i={i} striped={lm.view.def.lanes === 'striped'} />
       ))}
+      {scene.subsystems.map((s) => (
+        <Subsystem key={s.id} s={s} state={worst(scene.nodes.filter((n) => s.nodes.includes(n.id)).map(stateOf))} />
+      ))}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
         <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} lost={lost.has(e.to)} />
@@ -624,6 +627,45 @@ function Tier({ t, i, striped }: { t: SceneTier; i: number; striped: boolean }) 
           {text}
         </text>
       ))}
+    </g>
+  )
+}
+
+const SEVERITY: readonly (ComponentState | null)[] = [null, 'off', 'ok', 'warn', 'over']
+
+/** The state furthest along among these: what a frame says of the boxes it holds. */
+const worst = (states: (ComponentState | null)[]): ComponentState | null =>
+  states.reduce((a, b) => (SEVERITY.indexOf(b) > SEVERITY.indexOf(a) ? b : a), null)
+
+/**
+ * A subsystem's frame behind its boxes and edges: a tint that lets a lane show through and deepens where a frame stands
+ * in another, its name at its top, and its line in the colour of the worst box inside once one is past its target.
+ * Paint goes in attributes, as a tier's does.
+ */
+function Subsystem({ s, state }: { s: SceneSubsystem; state: ComponentState | null }) {
+  const past = state === 'warn' || state === 'over'
+  return (
+    <g
+      className="lm-subsystem"
+      data-subsystem-id={s.id}
+      data-state={state ?? undefined}
+      opacity={s.fade}
+      pointerEvents="none"
+    >
+      <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={10} fill="var(--lm-muted)" fillOpacity={0.07} />
+      <rect
+        x={s.x}
+        y={s.y}
+        width={s.w}
+        height={s.h}
+        rx={10}
+        fill="none"
+        stroke={past ? STATE_STROKE[state] : 'var(--lm-line)'}
+        strokeWidth={past ? 1.5 : 1}
+      />
+      <text x={s.title.x} y={s.title.y} fontSize={s.title.size} fontWeight={s.title.weight} fill="var(--lm-muted)">
+        {s.label}
+      </text>
     </g>
   )
 }

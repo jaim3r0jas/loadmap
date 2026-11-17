@@ -72,6 +72,11 @@ A view also takes `tiers` (bands across the flow, in the order the flow meets th
 scenario, story step or choice on its own and moves the boxes from one to the next, `'stable'` lays out every box at
 its largest anywhere the model reaches, so nothing but the load's dots moves. The load never moves a box either way.
 
+`subsystems` draws several boxes as one: `subsystems: { eu: { label: 'EU region' }, 'eu.orders': { label: 'Orders',
+in: 'eu' } }`, and each box names its own (`subsystem: 'eu.orders'`). Each is a frame around its boxes with its name, a
+subsystem `in` another a frame in that one's frame; the scene lists them as `scene.subsystems`. With tiers, a subsystem
+whose boxes stand in several tiers has no frame (a frame cannot cross a lane).
+
 ## The page (`@loadmap/react`)
 
 | Export                                                                                                                               | What                                                                            |

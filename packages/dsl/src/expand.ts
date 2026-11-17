@@ -94,6 +94,8 @@ interface Path {
 interface Content {
   stmts: Stmt[]
   inputs: Decl[]
+  /** Its name on the board: its own, else that of the subsystem it is like. */
+  label?: Expr
 }
 
 /**
@@ -459,6 +461,8 @@ export class Expander {
   /**
    * A subsystem written out: its boxes, components, connections, edges and lets as statements of the place it stands
    * in, each named `<id>.<name>`. Its route, when it has one, is kept for the routes and edges that name the subsystem.
+   * What stays of it is its first line, `subsystem <id> "<name>"` with no block: the frame the board draws around the
+   * boxes named `<id>.…`. A flat copy of a model (`loadmap bundle`) holds that line, and it is read back as it stands.
    */
   private subsystem(d: Decl, env: Env, depth: number, paths: Map<string, Path>): Stmt[] {
     const self = idOf(d)
@@ -469,6 +473,10 @@ export class Expander {
     if (depth >= MAX_NESTING) {
       this.report.error('too-large', d.keyword, `subsystems nest at most ${MAX_NESTING} deep`)
       return []
+    }
+    if (!d.body) {
+      paths.set(self, { stages: [] })
+      return [clone(d)]
     }
     const content = this.content(d, env, depth, [])
     if (!content) return []
@@ -500,7 +508,10 @@ export class Expander {
     })
     chains(stmts)
     const tier = propOf(d, 'tier')
-    const out: Stmt[] = []
+    const { body: _, bodySpan: __, ...head } = d
+    // one that holds no box leaves no line: nothing to draw a frame around, and nothing a few lines can multiply
+    const holds = stmts.some((s) => s.kind === 'decl' && (s.keyword.name === 'subsystem' || isBox(s)))
+    const out: Stmt[] = holds ? [clone({ ...head, args: [d.args[0]!, ...(content.label ? [content.label] : [])] })] : []
     let route: Property | undefined
     for (const s of stmts) {
       if (s.kind === 'prop') {
@@ -583,7 +594,7 @@ export class Expander {
     if (!like) {
       for (const w of withs)
         this.report.error('misplaced', w.keyword, '"with" sets the inputs of the subsystem this one is like')
-      return { stmts: clone(mine), inputs }
+      return { stmts: clone(mine), inputs, label: d.args[1] }
     }
     const name = like.value.t === 'id' ? like.value.name : undefined
     const found = name == null ? undefined : env.template(name)
@@ -610,7 +621,7 @@ export class Expander {
     const given = this.given(d, withs, base.inputs, found.env, `"${name}"`, env)
     const theirs =
       base.inputs.length || found.env !== env ? this.settle(base.stmts, 'subsystem', found.env, given) : base.stmts
-    return { stmts: [...theirs, ...clone(mine)], inputs }
+    return { stmts: [...theirs, ...clone(mine)], inputs, label: d.args[1] ?? base.label }
   }
 }
 
