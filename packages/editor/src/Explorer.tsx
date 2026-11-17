@@ -1,8 +1,19 @@
 import type { Role } from '@loadmap/dsl'
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { type FileMark, MARK_TEXT } from './FileTabs'
-import { type FileChange, type FileSet, type NewKind, newFile, removeFile, renameFile, roleOf } from './fileops'
+import { FICON, type FileMark, MARK_TEXT } from './filenames'
+import {
+  type Dsl,
+  type FileChange,
+  type FileSet,
+  headOf,
+  type NewKind,
+  newFile,
+  removeFile,
+  renameFile,
+  roleOf,
+} from './fileops'
 import { ICON, Icon, Menu, MenuItem } from './Menu'
+import { type FileHost, reshape } from './reshape'
 
 /** The explorer's own rules: they come with it, not in the editor's first load. */
 const CSS = `
@@ -49,6 +60,8 @@ const CSS = `
 `
 
 export interface ExplorerProps {
+  /** What the file operations read of the language. */
+  dsl: Dsl
   /** Every file as it is now: asked when the explorer draws and again when it changes one. */
   files: () => FileSet
   /** The file in the editor. */
@@ -60,8 +73,8 @@ export interface ExplorerProps {
   start?: NewKind | null
   onStarted: () => void
   onOpen: (path: string) => void
-  /** An operation, as the texts it leaves. */
-  onChange: (change: FileChange) => void
+  /** What an operation reaches of the editor. */
+  host: FileHost
   onHide: () => void
 }
 
@@ -121,6 +134,7 @@ function rowsOf(paths: readonly string[], entry: string, closed: ReadonlySet<str
  * that names a file is written, follows or goes with it. ↑ ↓ move, Enter opens, F2 renames, Delete removes.
  */
 export default function Explorer({
+  dsl,
   files,
   active,
   open,
@@ -128,7 +142,7 @@ export default function Explorer({
   start,
   onStarted,
   onOpen,
-  onChange,
+  host,
   onHide,
 }: ExplorerProps) {
   const all = files()
@@ -141,10 +155,11 @@ export default function Explorer({
   // each file's role, read from its head once per text
   const roles = useRef(new Map<string, { text: string; role: Role }>())
   const role = (path: string): Role => {
-    const text = all.files[path] ?? ''
+    // only the head says it: typing further down reads nothing again
+    const text = headOf(all.files[path] ?? '')
     const kept = roles.current.get(path)
     if (kept?.text === text) return kept.role
-    const r = roleOf(text, path)
+    const r = roleOf(dsl, text, path)
     roles.current.set(path, { text, role: r })
     return r
   }
@@ -173,7 +188,7 @@ export default function Explorer({
       return
     }
     setDoing(null)
-    onChange(r)
+    reshape(host, r)
     const to = r.add?.path ?? r.rename?.to ?? then
     if (to) setCursor(to)
     // what held the keyboard is gone (a field, a button): it goes to the row the change left
@@ -182,8 +197,13 @@ export default function Explorer({
   const commit = () => {
     if (!doing || doing.what === 'remove') return
     if (!doing.value.trim()) return cancel()
-    if (doing.what === 'new') done(newFile(files(), doing.kind, doing.value))
-    else done(renameFile(files(), doing.path, doing.value))
+    if (doing.what === 'new') done(newFile(dsl, files(), doing.kind, doing.value))
+    else {
+      const r = renameFile(dsl, files(), doing.path, doing.value)
+      // the name it has: nothing to do
+      if (!('error' in r) && !r.rename) cancel()
+      else done(r)
+    }
   }
   const cancel = () => {
     const back = doing && doing.what !== 'new' ? doing.path : at
@@ -268,7 +288,7 @@ export default function Explorer({
       <style>{CSS}</style>
       <div className="lme-files-head">
         <h3>Files</h3>
-        <Menu label="New file" icon={<Icon d={ICON.plus} />} className="lme-quiet lme-icon" title="New file">
+        <Menu label="New file" icon={<Icon d={FICON.plus} />} className="lme-quiet lme-icon" title="New file">
           {() =>
             (Object.keys(NEW) as NewKind[]).map((kind) => (
               <MenuItem key={kind} onSelect={() => setDoing({ what: 'new', kind, value: '' })}>
@@ -284,7 +304,7 @@ export default function Explorer({
           title="Hide the files"
           onClick={onHide}
         >
-          <Icon d={ICON.x} />
+          <Icon d={FICON.x} />
         </button>
       </div>
       <div className="lme-tree" role="tree" aria-label="Files" ref={tree}>
@@ -304,7 +324,7 @@ export default function Explorer({
                       // biome-ignore lint/a11y/noAutofocus: the question the reader just asked for; Escape takes it back
                       autoFocus
                       onKeyDown={(e) => e.key === 'Escape' && cancel()}
-                      onClick={() => done(removeFile(files(), r.path), entry)}
+                      onClick={() => done(removeFile(dsl, files(), r.path), entry)}
                     >
                       Remove
                     </button>
@@ -353,7 +373,7 @@ export default function Explorer({
                     tabIndex={-1}
                     onClick={() => setDoing({ what: 'rename', path: r.path, value: r.path.replace(/\.loadmap$/, '') })}
                   >
-                    <Icon d={ICON.pencil} />
+                    <Icon d={FICON.pencil} />
                   </button>
                   {r.path !== entry && (
                     <button
@@ -364,7 +384,7 @@ export default function Explorer({
                       tabIndex={-1}
                       onClick={() => setDoing({ what: 'remove', path: r.path })}
                     >
-                      <Icon d={ICON.bin} />
+                      <Icon d={FICON.bin} />
                     </button>
                   )}
                 </span>

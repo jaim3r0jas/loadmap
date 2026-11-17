@@ -60,27 +60,8 @@ export const EDITOR_CSS = `
 .lme-work > .lme-code { grid-column: 2; grid-row: 2; }
 .lme-work[data-files] { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; }
 .lme-work[data-files] > .lme-code { border: 0; border-radius: 0; }
-/* tabs as an editor has them: one snug row that scrolls, the open file's joined to the text under an accent line */
+/* the tabs' row: its room is kept while the tabs load (FileTabs.tsx has the rest) */
 .lme-ftabs { grid-column: 2; grid-row: 1; display: flex; box-sizing: border-box; height: 30px; min-width: 0; background: var(--lm-bg); box-shadow: inset 0 -1px 0 var(--lm-line); }
-.lme-ftoggle { flex: none; display: grid; place-items: center; width: 32px; padding: 0; color: var(--lm-muted); background: none; border: 0; border-right: 1px solid var(--lm-line); cursor: pointer; }
-.lme-ftoggle:hover, .lme-ftoggle[aria-pressed="true"] { color: var(--lm-fg); }
-.lme-ftoggle[aria-pressed="true"] { background: color-mix(in srgb, var(--lm-fg) 7%, transparent); }
-.lme-ftablist { flex: 1; display: flex; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-.lme-ftablist::-webkit-scrollbar { display: none; }
-.lme-ftab { flex: none; display: inline-flex; align-items: center; color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
-.lme-ftab:hover { color: var(--lm-fg); }
-.lme-ftab[data-active] { color: var(--lm-fg); background: var(--lm-surface); box-shadow: inset 0 2px 0 var(--lm-accent); }
-.lme-ftab [role="tab"] { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 12px; font: 12px var(--lm-mono); color: inherit; white-space: nowrap; background: none; border: 0; cursor: pointer; }
-.lme-ftab [role="tab"]:has(+ .lme-ftab-x) { padding-right: 4px; }
-.lme-fdir { color: var(--lm-muted); margin-right: -6px; }
-.lme-ftab-x { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; padding: 0; color: var(--lm-muted); background: none; border: 0; border-radius: 4px; cursor: pointer; opacity: 0; }
-.lme-ftab-x .lme-svg { width: 12px; height: 12px; }
-.lme-ftab[data-active] .lme-ftab-x, .lme-ftab:hover .lme-ftab-x, .lme-ftab:focus-within .lme-ftab-x { opacity: 1; }
-.lme-ftab-x:hover { color: var(--lm-fg); background: color-mix(in srgb, var(--lm-fg) 10%, transparent); }
-.lme-ftabs button:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; border-radius: 4px; }
-.lme-fdot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--lm-warn); }
-.lme-fdot[data-mark="error"] { background: var(--lm-drop); }
-@media (pointer: coarse) { .lme-ftab-x { opacity: 1; } }
 .lme-code { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; min-width: 0; }
 .lme-code .cm-editor { height: min(78vh, 900px); font: 13px/1.5 var(--lm-mono); color: var(--lm-fg); background: var(--lm-surface); }
 @container (max-width: 980px) { .lme-code .cm-editor { height: 55vh; } }
@@ -127,7 +108,7 @@ export const EDITOR_CSS = `
 .lme-inspector:focus { outline: none; }
 .lme-inspector:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: 2px; }
 .lme-inspector h3 { margin: 0; font: 600 1rem var(--lm-font); text-transform: none; letter-spacing: 0; color: var(--lm-fg); }
-.lme-tabs { display: flex; gap: 6px; }
+.lme-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 0 2px; scrollbar-width: thin; }
 .lme-tabs [aria-selected="true"] { background: var(--lm-accent); color: var(--lm-surface); border-color: var(--lm-accent); }
 .lme-hint { margin: 0; color: var(--lm-muted); }
 .lme-like { display: grid; gap: 4px; }
@@ -265,11 +246,8 @@ export const EDITOR_CSS = `
 .lme[data-narrow] > .lme-split { position: relative; display: block; overflow: hidden; }
 .lme[data-narrow] .lme-left { position: absolute; inset: 0; padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr) auto auto; }
 .lme[data-narrow] .lme-code, .lme[data-narrow] .lme-work { border: 0; border-radius: 0; }
-/* a thumb high, the names a size up */
+/* a thumb high */
 .lme[data-narrow] .lme-ftabs { height: 40px; }
-.lme[data-narrow] .lme-ftoggle { width: 44px; }
-.lme[data-narrow] .lme-ftab [role="tab"] { font-size: 14px; }
-.lme[data-narrow] .lme-ftab-x { width: 32px; height: 32px; margin-right: 2px; }
 /* 16 px: Safari zooms the page into a field whose text is smaller */
 .lme[data-narrow] .lme-code .cm-editor { height: 100%; font-size: 16px; }
 .lme[data-narrow] .lme-problems { max-height: 20dvh; padding: 6px; border-top: 1px solid var(--lm-line); }

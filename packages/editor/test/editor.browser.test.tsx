@@ -74,6 +74,7 @@ const tabNames = (host: HTMLElement) => [...host.querySelectorAll('.lme-ftabs [r
 const activeTab = (host: HTMLElement) => host.querySelector('.lme-ftab[data-active] [role="tab"]')?.textContent
 /** The files' explorer, shown: it loads when first asked for. */
 async function explorer(host: HTMLElement) {
+  await expect.poll(() => host.querySelector('.lme-ftoggle')).toBeTruthy()
   if (!host.querySelector('.lme-tree')) host.querySelector<HTMLElement>('.lme-ftoggle')!.click()
   await expect.poll(() => host.querySelector('.lme-tree'), { timeout: 5000 }).toBeTruthy()
 }
@@ -103,7 +104,7 @@ describe('the editor', () => {
     const all = ['db', 'gateway', 'orderLine.consumers', 'orderLine.kafka', 'phones']
     // the model first; its subsystem's boxes are drawn under its id
     // the model alone has a tab; the others open from the explorer
-    expect(tabs()).toEqual(['shop.loadmap'])
+    await expect.poll(tabs).toEqual(['shop.loadmap'])
     await expect.poll(status).toBe('No problems')
     expect(boxes()).toEqual(all)
     // the part in the editor: its own text, read through the model, the same diagram
@@ -198,7 +199,9 @@ describe('the editor', () => {
   it('opens files from the explorer as one row of tabs; a tab closed keeps its file', async () => {
     const { host, handle, view, edit } = await mount({ source: shop, several })
     const row = () => host.querySelector('.lme-ftabs')!.getBoundingClientRect()
-    expect(tabNames(host)).toEqual(['shop.loadmap'])
+    // the row has its room before the tabs have loaded
+    expect(row().height).toBe(30)
+    await expect.poll(() => tabNames(host)).toEqual(['shop.loadmap'])
     expect(row().height).toBe(30)
     // the model's tab has no way to close it
     expect(host.querySelector('.lme-ftab-x')).toBeNull()
