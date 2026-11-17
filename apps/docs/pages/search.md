@@ -21,6 +21,6 @@ with the loadmap extension for a live preview beside the text, or in Neovim or H
 
 `loadmap check search.loadmap` prints `search.loadmap: 2 expectations hold`, or fails the build that loses one:
 
-```
+```loadmap
 @include(examples/search/search.loadmap, "expect ", "step ")
 ```

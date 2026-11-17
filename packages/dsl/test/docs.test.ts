@@ -38,11 +38,22 @@ it('docs/dsl.md lists every diagnostic code', () => {
 
 it('every definition in docs/dsl.md and the README compiles', () => {
   const doc = readFileSync(file, 'utf8') + readFileSync(new URL('../../../README.md', import.meta.url), 'utf8')
-  const blocks = [...doc.matchAll(/```\n(loadmap \d+(?:\.\d+)?\n[\s\S]*?)```/g)]
+  const blocks = [...doc.matchAll(/```loadmap\n(loadmap \d+(?:\.\d+)?\n[\s\S]*?)```/g)]
     .map((m) => m[1]!)
     .filter((b) => !/^loadmap [\d.]+$/.test(b.trim()))
   expect(blocks.length).toBeGreaterThan(1)
   for (const b of blocks) expect(compile(b).diagnostics).toEqual([])
+})
+
+it('every fence in docs/dsl.md and the README names its language', () => {
+  // a definition in a bare fence would be left out of the check above and of format.test.ts
+  for (const f of [file, new URL('../../../README.md', import.meta.url)]) {
+    const fences = readFileSync(f, 'utf8')
+      .split('\n')
+      .filter((l) => /^ *```/.test(l))
+    const bare = fences.filter((l, i) => i % 2 === 0 && /^ *```$/.test(l))
+    expect(bare, f.pathname).toEqual([])
+  }
 })
 
 it('shows the error the checker gives', () => {

@@ -40,4 +40,3 @@ within ± 30 %.
 
 [Concepts](/concepts/) explains each of these. The same model can also be written as a `.loadmap` text and edited
 next to its diagram: see [the language](/language/) and [the editor](/editor/).
-```

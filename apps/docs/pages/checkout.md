@@ -28,6 +28,6 @@ loadmap record http://localhost:5173/examples/checkout/ --out checkout.gif --sto
 The model promises headroom in each scenario. `loadmap check checkout.loadmap` prints
 `checkout.loadmap: 2 expectations hold`, or fails the build that loses one, with its line:
 
-```
+```loadmap
 @include(examples/checkout/checkout.loadmap, "expect ", "# the walk")
 ```

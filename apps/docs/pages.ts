@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Marked, type Token } from 'marked'
 import { shippedReference } from '../../scripts/reference'
+import { highlight } from './highlight'
 import { HEAD } from './site/theme'
 import { themeSwitch } from './site/theme-switch'
 
@@ -129,9 +130,11 @@ export function render(page: Page): { title: string; html: string; headings: Hea
         return `<h${depth} id="${id}">${text}</h${depth}>\n`
       },
       code({ text, lang }) {
-        if (lang === 'loadmap live')
-          return `<div class="island" data-island="loadmap" data-editor="${up}editor/"><pre class="code">${esc(text)}</pre></div>\n`
-        return `<pre class="code"${lang ? ` data-lang="${esc(lang)}"` : ''}><code>${esc(text)}</code></pre>\n`
+        const live = lang === 'loadmap live'
+        const snip = snippet(text, live ? 'loadmap' : (lang ?? ''), page.file)
+        return live
+          ? `<div class="island" data-island="loadmap" data-editor="${up}editor/">${snip}</div>\n`
+          : `${snip}\n`
       },
       link({ href, title, tokens }) {
         const to = href.startsWith('/') && !href.startsWith('//') ? up + href.slice(1) : href
@@ -153,6 +156,16 @@ export function render(page: Page): { title: string; html: string; headings: Hea
     tokens.splice(h1, 0, mark(EYEBROW))
   }
   return { title, html: marked.parser(tokens), headings }
+}
+
+/**
+ * A fence: its text coloured, and the button that copies it (hidden until the page's script can make it work). The
+ * client puts a read-only CodeMirror view in the `<pre>`'s place; the `<pre>` stays, hidden, as the text's one source.
+ */
+function snippet(text: string, lang: string, file: string): string {
+  const { html, label } = highlight(text, lang, file)
+  const pre = `<pre class="code" data-lang="${esc(lang)}" data-label="${esc(label)}"><code>${html}</code></pre>`
+  return `<div class="snippet">${pre}<button type="button" class="copy" hidden>Copy</button></div>`
 }
 
 /** From a page's route back to the site's root: "" at the root, "../../" two levels down. */
@@ -407,7 +420,7 @@ export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
     '',
     'Every statement and top-level property of the language at least once, and an edge with a block and one without:',
     '',
-    '```',
+    '```loadmap',
     model,
     '```',
     '',
@@ -418,7 +431,7 @@ export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
     ...['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap', 'shop.big.loadmap'].flatMap((f) => [
       `\`docs/multi-file/${f}\`:`,
       '',
-      '```',
+      '```loadmap',
       readFileSync(join(repo, 'docs/multi-file', f), 'utf8').trimEnd(),
       '```',
       '',

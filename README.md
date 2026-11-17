@@ -4,7 +4,7 @@ Interactive capacity models for React. Declare the components of a system, the f
 that change it; loadmap draws the architecture with moving dots, ranks the components by when they run out, and
 writes the verdict.
 
-```
+```text
 model (pure TS)          view (pure data)            React
 params, flows,      →    nodes, clusters, pools,  →  <Loadmap model view />
 components, stages       edges, flow colours          scenarios · diagram · verdict · headroom · compare · live · limits · controls
@@ -146,7 +146,7 @@ story: [
 The same model and view can be written as a `.loadmap` definition and edited next to its live diagram (`pnpm dev`,
 then the editor page). `@loadmap/dsl` compiles it to what `<Loadmap>` takes:
 
-```
+```loadmap
 loadmap 1.4
 load "Users, × today" { max: 100; default: 10 }
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
