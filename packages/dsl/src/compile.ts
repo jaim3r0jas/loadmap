@@ -2676,11 +2676,13 @@ class Compiler {
   private apart(defs: Record<string, Record<string, unknown>>, subsystems: Block[]) {
     const label = new Map<string, string>()
     for (const b of subsystems) if (b.args.id) label.set(b.args.id.name, this.text(b.args.label) ?? b.args.id.name)
-    // the names of the subsystems around a component, the outermost first
+    // the subsystems around a component, the outermost first: each by its name, and by its own id in it
     const around = (id: string) => {
-      const out: string[] = []
-      for (let dot = id.lastIndexOf('.'); dot > 0; dot = id.lastIndexOf('.', dot - 1))
-        if (label.has(id.slice(0, dot))) out.unshift(label.get(id.slice(0, dot))!)
+      const out: { name: string; id: string }[] = []
+      for (let dot = id.lastIndexOf('.'); dot > 0; dot = id.lastIndexOf('.', dot - 1)) {
+        const s = id.slice(0, dot)
+        if (label.has(s)) out.unshift({ name: label.get(s)!, id: s.slice(s.lastIndexOf('.') + 1) })
+      }
       return out
     }
     const named = new Map<string, string[]>()
@@ -2689,14 +2691,22 @@ class Compiler {
     for (const [name, ids] of named) {
       if (ids.length < 2) continue
       const paths = ids.map(around)
-      // a place every copy has under the same name tells none of them apart
-      const same = (i: number) => paths.every((p) => p[i] != null && p[i] === paths[0]![i])
+      // a place every copy has alike tells none of them apart; copies that still read alike (one subsystem's name
+      // taken by both from the library) are told apart by their ids
+      const tags = (by: 'name' | 'id') =>
+        paths.map((path) =>
+          path
+            .filter((_, i) => !paths.every((p) => p[i] != null && p[i][by] === paths[0]![i]![by]))
+            .map((p) => p[by])
+            .join(' › '),
+        )
+      const byName = tags('name')
+      const tag = new Set(byName).size === ids.length ? byName : tags('id')
       for (const [k, id] of ids.entries()) {
-        const tag = paths[k]!.filter((_, i) => !same(i)).join(' › ')
-        if (!tag) continue
+        if (!tag[k]) continue
         const d = defs[id]!
-        d.short = `${typeof d.short === 'string' ? d.short : name} in ${tag}`
-        d.name = `${tag} › ${name}`
+        d.short = `${typeof d.short === 'string' ? d.short : name} in ${tag[k]}`
+        d.name = `${tag[k]} › ${name}`
       }
     }
   }

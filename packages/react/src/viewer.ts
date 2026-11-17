@@ -161,10 +161,21 @@ export class Viewer {
     if (!seen(v, this.viewport, r)) this.go(frame(r, this.viewport, v.k), true)
   }
 
-  /** Flies in to this part of the scene, as close as it fits the board: a subsystem's frame, from a click on it. */
-  enter(r: Rect): void {
-    this.go(frame({ x: r.x - ROOM, y: r.y - ROOM, w: r.w + 2 * ROOM, h: r.h + 2 * ROOM }, this.viewport), true)
+  /**
+   * Flies in to this part of the scene, as close as it fits the board: a subsystem's frame, from a click on it or on
+   * the path over the board. `id` names it: while the view stays where the flight ends, the path ends there.
+   */
+  enter(r: Rect, id?: string): void {
+    const to = frame({ x: r.x - ROOM, y: r.y - ROOM, w: r.w + 2 * ROOM, h: r.h + 2 * ROOM }, this.viewport)
+    this.go(to, true)
+    // where the flight ends: the view as `setView` keeps it, in the zoom's range
+    const fit = this.fit()
+    const at = fit && clamp(to, this.viewport, whole(this.engine.frame!), range(fit))
+    this.entered = id == null || !at ? null : { id, at }
   }
+
+  /** The frame the view last flew in to, and where it went. */
+  entered: { id: string; at: Viewpoint } | null = null
 
   /** The part of the scene the board shows now: its viewBox. */
   box(): Rect | null {

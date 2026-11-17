@@ -340,6 +340,11 @@ describe('a model in several files', () => {
     // the verdict says which copy runs out
     const ev = r.definition!.model.evaluate({ load: 8 })
     expect(ev.verdict.text).toContain('the workers in US region')
+    // copies without names of their own both read "Region": their ids tell them apart
+    const plain = model.replace(' "EU region"', '').replace(' "US region"', '')
+    const p = compile(plain, { path: 'm.loadmap', files: { 'm.loadmap': plain, 'regions.loadmap': lib } })
+    const c = p.definition!.model.def.components as Record<string, { name: string }>
+    expect([c['eu.orders.workers']!.name, c['us.orders.workers']!.name]).toEqual(['eu › Workers', 'us › Workers'])
   })
 
   it('writes a subsystem out under its id, and bounds how far that goes', () => {

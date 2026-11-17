@@ -171,9 +171,10 @@ describe('a subsystem on the board', () => {
     expect(rect.getAttribute('aria-label')).toBe('Orders: fly in to it')
     click(rect)
     await expect.poll(crumbs, { timeout: 5000 }).toBe('Whole diagram›EU region›Orders')
-    // a step back flies out to the region, and the whole diagram ends the path
+    // every step is a button, the last the place the view is; one back flies out to the region
     const back = [...host.querySelectorAll<HTMLButtonElement>('.lm-crumbs button')]
-    expect(back.map((b) => b.textContent)).toEqual(['Whole diagram', 'EU region'])
+    expect(back.map((b) => b.textContent)).toEqual(['Whole diagram', 'EU region', 'Orders'])
+    expect(back[2]!.getAttribute('aria-current')).toBe('location')
     back[1]!.click()
     await expect.poll(crumbs, { timeout: 5000 }).toBe('Whole diagram›EU region')
     host.querySelector<HTMLButtonElement>('.lm-crumbs button')!.click()

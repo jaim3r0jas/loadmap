@@ -22,6 +22,13 @@ const ZOOM_CSS = `
 .lm-zoom .lm-btn:nth-child(2) { min-width: 4.4em; }
 .lm-zoom [aria-disabled="true"] { opacity: .4; cursor: default; }
 @media (pointer: coarse) { .lm-zoom .lm-btn { min-width: 44px; min-height: 44px; } }
+.lm-crumbs { position: absolute; left: 8px; top: 8px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: calc(100% - 16px); padding: 3px 6px; font-size: 12px; background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / .12); cursor: auto; }
+.lm-crumbs button { font: inherit; color: var(--lm-accent); background: none; border: 0; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.lm-crumbs button:hover { text-decoration: underline; }
+.lm-crumbs [aria-current] { font-weight: 600; color: var(--lm-fg); }
+.lm-crumbs span { color: var(--lm-muted); }
+@media (pointer: coarse) { .lm-crumbs button { min-height: 44px; } }
+.lm-wrap[data-canvas] .lm-crumbs { left: calc(var(--lm-inset-left) + 12px); top: calc(var(--lm-inset-top) + 12px); }
 .lm-wrap[data-canvas] .lm-zoom { right: calc(var(--lm-inset-right) + 12px); bottom: calc(var(--lm-inset-bottom) + 12px); }
 .lm-wrap[data-canvas] > .lm-bar { position: absolute; left: calc(var(--lm-inset-left) + 12px); bottom: calc(var(--lm-inset-bottom) + 12px); z-index: 2; max-width: calc(100% - var(--lm-inset-left) - var(--lm-inset-right) - 260px); padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--lm-surface) 88%, transparent); pointer-events: none; }
 `
@@ -96,7 +103,7 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
   }
 
   const down = (e: PointerEvent) => {
-    if ((e.button !== 0 && e.button !== 1) || (e.target as Element).closest('.lm-zoom')) return
+    if ((e.button !== 0 && e.button !== 1) || (e.target as Element).closest('.lm-zoom, .lm-crumbs')) return
     if (!viewer.shownView()) return
     points.set(e.pointerId, at(e))
     if (points.size === 1) {
@@ -271,7 +278,12 @@ export function mountZoom(
   const corner = board.ownerDocument.createElement('div')
   board.appendChild(corner)
   const buttons = createRoot(corner)
-  buttons.render(<ZoomControls engine={engine} />)
+  buttons.render(
+    <>
+      <Crumbs engine={engine} />
+      <ZoomControls engine={engine} />
+    </>,
+  )
   return {
     measure,
     off: () => {
@@ -288,6 +300,54 @@ export function mountZoom(
       engine.draw()
     },
   }
+}
+
+/**
+ * Where the view is, as the path down the subsystems to it, over the top corner of the board while it shows only a
+ * part: the whole diagram, then each frame the view stands in, each a button that flies there. The frame the view last
+ * flew in to ends it while the view stays there; else the frames around the middle of the view. Not while a story
+ * plays: its camera and its title have the board.
+ */
+function Crumbs({ engine }: { engine: Engine }) {
+  useSyncExternalStore(engine.subscribe, () => engine.viewId)
+  const viewer = engine.viewer
+  const r = viewer?.box()
+  const f = engine.frame
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-3 * Math.max(1, Math.abs(b))
+  // the whole diagram shows (a fitted view holds it all, and more on a board of another shape): nothing to say
+  if (!viewer || !r || !f?.subsystems.length || engine.camera) return null
+  if (r.x <= 1 && r.y <= 1 && r.x + r.w >= f.width - 1 && r.y + r.h >= f.height - 1) return null
+  const frames = f.subsystems.filter((s) => (s.fade ?? 1) === 1)
+  const v = viewer.readerView
+  const e = viewer.entered
+  const at = e && v && near(v.x, e.at.x) && near(v.y, e.at.y) && near(v.k, e.at.k) ? e.id : undefined
+  const [cx, cy] = [r.x + r.w / 2, r.y + r.h / 2]
+  let s =
+    at != null
+      ? frames.find((x) => x.id === at)
+      : frames.findLast((x) => cx >= x.x && cx <= x.x + x.w && cy >= x.y && cy <= x.y + x.h)
+  const path: typeof frames = []
+  for (; s; s = frames.find((x) => x.id === s?.in)) path.unshift(s)
+  return (
+    <nav className="lm-crumbs" aria-label="Where the view is">
+      <button type="button" onClick={() => viewer.go(null, true)}>
+        Whole diagram
+      </button>
+      {path.map((x, i) => [
+        <span key={`${x.id}>`} aria-hidden="true">
+          ›
+        </span>,
+        <button
+          key={x.id}
+          type="button"
+          aria-current={i === path.length - 1 ? 'location' : undefined}
+          onClick={() => viewer.enter(x, x.id)}
+        >
+          {x.label}
+        </button>,
+      ])}
+    </nav>
+  )
 }
 
 /** − · the zoom · + · Fit, over a corner of the board. The zoom shown is a button too: one pixel a scene unit. */
