@@ -1,18 +1,23 @@
 # API
 
 Most pages install only `@loadmap/react`: it re-exports the model and view API below. The other packages add the
-language, the editor, media and the command line. Everything is ESM with TypeScript types; React is a peer (19).
+language, the editor, media, measured data and the command line. Everything is ESM with TypeScript types; React is a
+peer (19).
 
-| Package           | What                                                                   |
-| ----------------- | ---------------------------------------------------------------------- |
-| `@loadmap/react`  | `<Loadmap>` and its pieces, plus everything from core and the view API |
-| `@loadmap/core`   | the model: no dependencies, runs in Node                               |
-| `@loadmap/layout` | views and their ELK layout                                             |
-| `@loadmap/sim`    | the simulation behind the dots (used by react)                         |
-| `@loadmap/dsl`    | the `.loadmap` language                                                |
-| `@loadmap/editor` | `<LoadmapEditor>` and the templates                                    |
-| `@loadmap/export` | PNG, SVG, GIF, WebM, MP4 and `expose()` for the CLI                    |
-| `@loadmap/cli`    | `loadmap check` and `loadmap record`                                   |
+| Package              | What                                                                   |
+| -------------------- | ---------------------------------------------------------------------- |
+| `@loadmap/react`     | `<Loadmap>` and its pieces, plus everything from core and the view API |
+| `@loadmap/core`      | the model: no dependencies, runs in Node                               |
+| `@loadmap/layout`    | views and their ELK layout                                             |
+| `@loadmap/sim`       | the simulation behind the dots (used by react)                         |
+| `@loadmap/dsl`       | the `.loadmap` language                                                |
+| `@loadmap/editor`    | `<LoadmapEditor>` and the templates                                    |
+| `@loadmap/export`    | PNG, SVG, GIF, WebM, MP4 and `expose()` for the CLI                    |
+| `@loadmap/providers` | measured data from Prometheus and Elasticsearch, into a snapshot       |
+| `@loadmap/cli`       | `loadmap check`, `fmt`, `pull`, `drift`, `record`, `bundle` and `lsp`  |
+
+The VS Code extension (`jaim3r0jas.loadmap`, in the Marketplace and Open VSX) is not a library: [In your editor](/in-your-editor/)
+has what it does.
 
 ## The model (`@loadmap/core`)
 
@@ -28,6 +33,9 @@ language, the editor, media and the command line. Everything is ESM with TypeScr
 | `check(model)`, `assertHolds(model)`                                  | Test the model's `expect` lines on the pessimistic edge                      |
 | `fitLinear(points, { x, y, source })` (`/calibrate`)                  | `cost = a + b × x` from measurements, with r²                                |
 | `fmt`, `compact`, `pct`, `secs`, `multiple` (`/format`)               | The number formats the verdict uses, for labels of your own                  |
+| `published(component, conditions)`                                    | A capacity from the catalog: the figure a published run gives, or none       |
+| `cache`, `limit`, `split`, `lost`                                     | More stages: hits that stop, a rate limiter, a router, where the lost end    |
+| `compareDefinitions(base, head, { tolerance? })`                      | What a change of the model does to its limits (`loadmap check --base`)       |
 
 `model.evaluate(values)` returns everything the page shows: `verdict.text`, `components` (utilization, crossings and
 ranges), `ranked`, `firstLimit`, `target` and `full` (as ranges), `measure` (the capacity worth measuring),
@@ -36,6 +44,16 @@ ranges), `ranked`, `firstLimit`, `target` and `full` (as ranges), `measure` (the
 A `defineModel` definition takes, besides the required parts: `title`, `presets`, `scenarios`, `growth`, `expect`,
 `story`, `derived` (named formulas), `calibration` (fits to list), `thresholds` (`{ target: 0.5, full: 1 }`) and
 `searchMax`.
+
+`@loadmap/core` has entries of its own for what a page rarely loads:
+
+| Entry                     | What                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `@loadmap/core/calibrate` | `fitLinear`                                                                       |
+| `@loadmap/core/format`    | the number formats                                                                |
+| `@loadmap/core/measure`   | snapshots of measured data: see [Measured data](#measured-data-loadmap-providers) |
+| `@loadmap/core/catalog`   | the published figures: see [The catalog](#the-catalog-loadmap-core-catalog)       |
+| `@loadmap/core/drift`     | the tests behind `loadmap drift`: `changePoints`, `compareWindows`, `threshold`   |
 
 ## The view (`@loadmap/layout`, re-exported by react)
 
@@ -48,6 +66,11 @@ A `defineModel` definition takes, besides the required parts: `title`, `presets`
 | `edge(from, to, { label?, when? })`                | An edge; its label may be computed from the values     |
 
 Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layout(view, evaluation, { direction, rows })`returns the scene (`rows` folds a long diagram into that many rows, or columns running down);`collisions(scene)` lists labels that overlap, for a test.
+
+A view also takes `tiers` (bands across the flow, in the order the flow meets them; each box names its own with
+`tier`), `lanes` (`'filled'`, the default, or `'striped'`) and `layout`: `'compact'` (the default) lays out each
+scenario, story step or choice on its own and moves the boxes from one to the next, `'stable'` lays out every box at
+its largest anywhere the model reaches, so nothing but the load's dots moves. The load never moves a box either way.
 
 ## The page (`@loadmap/react`)
 
@@ -71,17 +94,28 @@ holds it, 1 never folds; below `narrowBelow` nothing folds), `narrowBelow`
 (the width under which the diagram runs down, default 640), `elk` (where ELK runs; default a shared Web Worker;
 `workerElk(() => new Worker(…))` for one the page starts, see [Without a bundler](/without-a-bundler/)),
 `onNodeClick` (a click or Enter on a box, by its id; every box is a button then), `selected` (the box drawn as
-selected), and `ref`.
+selected), `zoom` (the reader pans and zooms the diagram: drag, pinch, the keys + − 0 and the arrows, the wheel with
+Ctrl or ⌘ held), `transition` (seconds the diagram takes to move to a new structure, default 0.8; 0 cuts, and the
+load never moves it), `fullScreenMode` (what full screen opens with: the panels around the diagram, or mainly the
+diagram and the story), `fill` (the root fills its container, laid out as full screen is, for a page made to be
+framed: see [Embedding](/embedding/)), and `ref`.
 
 The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `storyStep()`, `ready()`, `pause()`,
-`resume()`, `step(dt)`, `reset(seed)`, `board()`, and `show(ids)`, which brings boxes into view on a board that zooms.
+`resume()`, `step(dt)`, `reset(seed)`, `board()`, `playStory()` (plays the story as Play does, and returns its length
+in seconds), and `show(ids)`, which brings boxes into view on a board that zooms.
 Export and recording drive the page through it.
+
+`<LoadmapSource>` takes every `<Loadmap>` prop but `model` and `view`, and for a definition in several files its own
+`path` and the other `files` by their path: it fetches nothing itself.
+
+`@loadmap/react/catalog` is `@loadmap/core/catalog` for a page that installs only react; `useCatalog(source)` (from
+`@loadmap/react/source`) loads the catalog when a text needs it, and is true while the text still waits for it.
 
 ## The language (`@loadmap/dsl`)
 
 | Export                                             | What                                                                      |
 | -------------------------------------------------- | ------------------------------------------------------------------------- |
-| `compile(source, { functions? })`                  | `{ ok, diagnostics, definition: { model, view, options }, expectations }` |
+| `compile(source, options?)`                        | `{ ok, diagnostics, definition: { model, view, options }, expectations }` |
 | `formatDiagnostic(d, source, file)`                | `file:line:col error: …` with the line and a caret                        |
 | `problems(result, severity?)`                      | The diagnostics with failing expectations added                           |
 | `format(source)`                                   | `{ ok, text, diagnostics }`: the definition laid out the one way          |
@@ -93,6 +127,15 @@ Export and recording drive the page through it.
 | `rename(source, offset, name)`                     | The name renamed everywhere, or why not                                   |
 | `encodeShare(source, values)`, `decodeShare(hash)` | Share links that carry the whole definition                               |
 
+`compile` takes `functions` (what formulas may call beyond the built-in ones), `snapshot` (measured data for the
+`measure` statements: `fromSnapshot(parseSnapshot(json))`), `catalog` (by default the one `loadCatalog()` loaded), and
+for a model in several files its own `path` and the other `files`, by their path from the project root: the compiler
+reads no disk and no network. The result also has `measures`: each `measure` as a query, for `pull`.
+
+A text with a `published` statement needs the catalog, which no first load carries: `await loadCatalogFor(source)`
+before `compile(source)` loads it only then (`needsCatalog(source)` says whether; `loadCatalog()` loads it anyway).
+`LANGUAGE_VERSION` is the language version this build reads.
+
 ## The editor (`@loadmap/editor`)
 
 `<LoadmapEditor initial values? functions? theme? onChange? onShare? actions? templates? fileName? layout? fill? ref? />`.
@@ -101,8 +144,17 @@ hidden); `fill` makes it a page of its own, the diagram a canvas between two pan
 (`split`, `onSplit`, `onLayout`) and the verdict and the rest on its right (`panel`: `'pinned'` or `'auto'`,
 `onPanel`, `panelWidth`, `onPanelWidth`); `track` (and `onTrack`) turns on Track live changes, the code panel's button:
 each edit brings the boxes it changed into view and marks them; off, the view stays where the reader left it; `theme` takes `'inherit'` as `<Loadmap>` does. Its `ref` has `source()`, `setSource(text)`, `loadmap()` (the preview's handle), `shareHash()` and
-`format()`. `TEMPLATES` (also from
+`format()`, and for a definition in several files `files()` and `setFiles(files)`. `TEMPLATES` (also from
 `@loadmap/editor/templates`, without CodeMirror) lists the starters.
+
+More props: `files` and `onFiles` (a definition in several files, `{ path, files }`: each file is a tab over the
+text), `embedLink` (with it, Share has "Embed in a page…"), `newItems` and `exportItems` (more sections in the New and
+Export menus), `start` (controls before the name: a way back, a brand) and `catalog` (**Add → From the catalog** in
+the New menu: a component's published figure as a new box, or as the capacity of the box selected; `false` leaves it
+out).
+
+For a CodeMirror editor of your own, `loadmapLanguage(options)` is the whole language as one extension (highlighting,
+errors, completion, hover, rename), and `loadmapStream` with `loadmapHighlight` the highlighting alone.
 
 ## Media (`@loadmap/export`)
 
@@ -113,4 +165,72 @@ each edit brings the boxes it changed into view and marks them; off, the view st
 | `recordVideo(handle, { format, seconds, script?, story?, caption?, fps?, seed? })` | GIF, WebM or MP4 on a fixed clock                                          |
 | `recordStill`, `recordPoster`                                                      | A PNG after a warm-up; a poster with the limits and the scenarios compared |
 | `expose(handle, name?)`                                                            | Lets `loadmap record` drive the page                                       |
+| `composeFrame(handle, options?)`                                                   | The board as one image on a canvas: the SVG with the dots painted on top   |
 | `download(blob, name)`                                                             | Saves a blob through the browser                                           |
+
+## Measured data (`@loadmap/providers`)
+
+A model reads measured data from a **snapshot**: a JSON file with each measurement's value over a window, its points
+and where they came from. Nothing in a definition or a shared link fetches anything: a pull is an explicit action, and
+the address and the credentials come from the environment, never from the text. `loadmap pull` is the usual way in;
+[the language guide](/language/#measured-data) has the statements, and [Live data](/live-data/) a shop to try it on.
+
+| Export                                                   | What                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `pull(measures, { from, to, step, fetched, providers })` | Reads every measurement and returns the snapshot                        |
+| `prometheus({ url, token? })`                            | A provider: a PromQL query over a range; the query must give one series |
+| `elasticsearch({ url, apiKey? })`                        | A provider: an index as a date histogram at the step (OpenSearch too)   |
+| `providersFromEnv(env)`                                  | The providers `LOADMAP_PROMETHEUS_URL` and the rest configure           |
+| `parseSnapshot(json)` (`@loadmap/core/measure`)          | The file checked: a snapshot, or an error that says what is wrong       |
+| `fromSnapshot(snapshot)` (`@loadmap/core/measure`)       | A reader: `capacity(name, fallback)`, `value`, `fit`, `unread(name)`    |
+| `MEASURES` (`@loadmap/core/measure`)                     | The standard measurements per kind of component                         |
+
+```ts
+import { fromSnapshot } from '@loadmap/core/measure'
+import { compile } from '@loadmap/dsl'
+import { providersFromEnv, pull } from '@loadmap/providers'
+
+const { measures } = compile(source)
+const snapshot = await pull(measures, {
+  from: '2026-11-01T00:00:00Z',
+  to: '2026-11-08T00:00:00Z',
+  step: 300,
+  fetched: new Date().toISOString(),
+  providers: providersFromEnv(process.env),
+})
+const { definition } = compile(source, { snapshot: fromSnapshot(snapshot) })
+```
+
+A provider is one adapter, `{ id, read({ query, from, to, step }) }`, that answers with the points or with why not:
+an error is data, so one failing query leaves that measurement missing and the model on the definition's own value,
+marked with why. Both providers take `user` and `password` in place of a token, and a `fetch` of your own (a proxy, a
+test); no error repeats the address or a credential. In a TypeScript model, `fromSnapshot(snapshot)` reads inside the
+model's functions: `capacity: read.capacity('gatewayCapacity', estimated(20_000, 'req/s', 'vendor benchmark'))`.
+
+## The catalog (`@loadmap/core/catalog`)
+
+Published benchmark figures, one entry per component (`kafka`, `postgresql`, `valkey`, `nginx` and the rest), each run
+with the conditions it was measured under and a link to its source. `published(kafka, { brokers: 3, replication: 3,
+acks: 'all', messageSize: '1 KB', producers: 4 })` takes the figure of the run that matches; a configuration no run
+matches gets no number, is not ranked, and the verdict says so. A figure is never scaled or interpolated. `EDITIONS`
+holds every released edition (a released one never changes), `CATALOG` the latest.
+
+## The simulation (`@loadmap/sim`)
+
+The fluid queue simulation behind the dots: `createSim(options)` and `rng(seed)`, its only source of randomness, so
+a recording is the same every time. It has no capacity numbers of its own: a stage drains what its flows carry at the
+load where its component is full. `<Loadmap>` runs it; a page rarely needs it directly.
+
+## The command line (`@loadmap/cli`)
+
+| Command                 | What                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `loadmap check <file>…` | Tests each definition's `expect` lines; `--pull`, `--snapshot`, `--base <ref>` |
+| `loadmap fmt <file>…`   | Lays each definition out the one way; `--check` for CI                         |
+| `loadmap pull <file>`   | Reads the measures from their providers and writes `x.snapshot.json`           |
+| `loadmap drift <file>`  | Finds what moved in the measured data that no change of the definition shows   |
+| `loadmap record <src>`  | GIF, WebM, MP4, PNG or SVG of a page or a `.loadmap`, on a fixed clock         |
+| `loadmap bundle <file>` | A model in several files written as one                                        |
+| `loadmap lsp`           | The language server, for any editor that speaks the protocol                   |
+
+[Recording and CI](/recording/) has each command's options; `loadmap --help` prints them.

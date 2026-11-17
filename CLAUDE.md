@@ -19,7 +19,9 @@ each also written as a `.loadmap` that must draw exactly what its TypeScript dra
 live (its rules: `apps/docs/CLAUDE.md`). `docs/dsl.md` is the language guide: the site includes it, the build writes it
 with `docs/every-statement.loadmap` into `llms-full.txt`, and the dsl build copies it into its `dist/REFERENCE.md`.
 `docs/every-statement.loadmap` must hold every statement of the schema (`docs.test.ts`); what one file cannot hold (a
-part, a library, a variant) is in `docs/multi-file/`. `examples/checkout/split/` and `examples/alerts/split/` are those
+part, a library, a variant) is in `docs/multi-file/`. `examples/shop-live` is a simulated shop with Prometheus and
+Grafana (compose) and a page that pulls its measures while open: the docs' Live data page, held by the `shop-live`
+workflow, which runs only when it changes. `examples/checkout/split/` and `examples/alerts/split/` are those
 examples in several files, held to the same `model.ts` and `view.ts` (`split.test.ts`). Recording a page or a `.loadmap` (`pnpm record`, `expose()`):
 the `record` skill.
 

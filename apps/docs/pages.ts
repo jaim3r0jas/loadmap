@@ -35,6 +35,7 @@ export const PAGES: readonly Page[] = [
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
   { route: 'recording', file: 'recording.md', nav: 'Recording and CI', group: 'Use it' },
+  { route: 'live-data', file: 'live-data.md', nav: 'Live data', group: 'Use it' },
   { route: 'embedding', file: 'embedding.md', nav: 'Embedding', group: 'Use it' },
   { route: 'examples', file: 'examples.md', nav: 'All examples', group: 'Examples' },
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },

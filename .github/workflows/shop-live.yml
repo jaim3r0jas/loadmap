@@ -1,0 +1,68 @@
+# examples/shop-live as its page tells a reader to run it: the compose stack up, `loadmap pull` against its
+# Prometheus, the model checked on what came back, Grafana serving its dashboard. Only when the example or what it
+# rests on changes; not one of the checks the rulesets require.
+name: shop-live
+on:
+  pull_request:
+    paths:
+      - examples/shop-live/**
+      # what the job builds and runs: the command line and the packages under it
+      - packages/cli/**
+      - packages/core/**
+      - packages/dsl/**
+      - packages/providers/**
+      - pnpm-lock.yaml
+      - .github/workflows/shop-live.yml
+
+permissions: {}
+
+jobs:
+  stack:
+    name: shop-live stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        # bash by name: with pipefail, so a pull that fails is not hidden by the tee after it
+        shell: bash
+        working-directory: examples/shop-live
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false # pnpm arrives after this step, through corepack
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      # the command line and the packages it is made of
+      - run: pnpm --filter '@loadmap/cli...' build
+      - run: docker compose up --detach --wait
+      - name: Wait until Prometheus has two minutes of the shop
+        run: |
+          for i in $(seq 1 60); do
+            n=$(curl -fsS --get http://localhost:9090/api/v1/query \
+              --data-urlencode 'query=count_over_time(shop_worker_cpu_cores[2m])' | jq -r '.data.result[0].value[1] // "0"')
+            echo "$n samples"
+            if [ "$n" -ge 20 ]; then exit 0; fi
+            sleep 5
+          done
+          exit 1
+      - name: Pull the measures and check the model on them
+        env:
+          LOADMAP_PROMETHEUS_URL: http://localhost:9090
+        run: |
+          node ../../packages/cli/dist/bin.js pull shop.loadmap --window 1m --step 5s | tee pull.txt
+          grep -q '4 of 4 measurements' pull.txt
+          node ../../packages/cli/dist/bin.js check shop.loadmap --snapshot shop.snapshot.json
+      - name: Grafana serves the dashboard to a visitor
+        run: |
+          curl -fsS http://localhost:3000/api/health
+          curl -fsS http://localhost:3000/api/dashboards/uid/shop | jq -e '.dashboard.title == "Shop"'
+      - if: failure()
+        run: docker compose logs --tail 80
+      - if: always()
+        run: docker compose down --volumes

@@ -1,0 +1,83 @@
+loadmap 1.4
+# A shop whose traffic is read from Prometheus: the rates and the workers' CPU are measures, so the diagram shows the
+# shop as it runs once a snapshot has them (loadmap pull, or the page in this folder, which pulls every few seconds).
+title: "Shop, live"
+view { speed: 10 }
+assume: "1× is the traffic of the window the snapshot was read over."
+
+load "Traffic, × now" { max: 20; default: 1 }
+
+param pods "Worker pods" { options: [2, 4, 8]; default: 4 }
+
+scenario "Now" {}
+scenario "More workers" { pods: 8 }
+
+expect "Now keeps 2×" { underTarget: 2 }
+
+# what the shop exports (simulator.ts); each measure is its fallback until a snapshot has it
+metric served "Requests served" {
+  prometheus { query: 'sum(rate(shop_requests_total{service="{{ args.service }}"}[1m]))' }
+  minSamples: 4
+}
+metric workerCpu "Worker CPU" {
+  prometheus { query: 'sum(shop_worker_cpu_cores)' }
+  minSamples: 4
+}
+metric dbQueries "Database queries" {
+  prometheus { query: 'sum(rate(shop_db_queries_total[1m]))' }
+  minSamples: 4
+}
+measure visitRate served { service: "web"; fallback: 200; unit: "visits/s" }
+measure orderRate served { service: "checkout"; fallback: 10; unit: "orders/s" }
+measure coresNow workerCpu { fallback: 0.6; unit: "cores" }
+measure queryRate dbQueries { fallback: 650; unit: "queries/s" }
+
+flow visits "visits" {
+  unit: "visit"
+  rate: visitRate * load
+  route: web -> db
+  from: shoppers
+}
+
+flow orders "orders" {
+  unit: "order"
+  rate: orderRate * load
+  route: web -> orderWorkers -> db
+  from: shoppers
+  color: accent
+}
+
+node shoppers "Shoppers"
+
+node web "Web" {
+  pass
+  short: "the web tier"
+  demand: flows.visits + flows.orders
+  capacity: estimated(3_000 ± 30%, "req/s", "vendor benchmark")
+  over: "pages time out"
+}
+
+pool orderWorkers "Order workers" `${pods} pods` {
+  workers { pods: pods; perPod: 4 }
+  short: "the workers"
+  plural: true
+  # the CPU the workers use now, growing with the traffic
+  demand: coresNow * load
+  capacity: measured(pods, "cores", "pod CPU limit")
+  over: "orders wait and confirmations arrive late"
+  describe: `${pods} pods, 1 core each`
+}
+
+node db "Database" {
+  shape: cylinder
+  store
+  short: "the database"
+  demand: queryRate * load
+  capacity: estimated(8_000 ± 30%, "queries/s")
+  over: "queries queue and every page slows down"
+}
+
+shoppers -> web
+web -> orderWorkers: `${compact(flows.orders)} orders/s`
+web -> db
+orderWorkers -> db
