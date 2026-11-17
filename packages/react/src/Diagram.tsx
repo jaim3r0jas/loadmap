@@ -1,6 +1,6 @@
 import type { ComponentState } from '@loadmap/core'
 import { multiple, pct } from '@loadmap/core/format'
-import type { Scene, SceneEdge, SceneNode, SceneSubsystem, SceneTier, TextSpot } from '@loadmap/layout'
+import type { Scene, SceneEdge, SceneNode, SceneTier, TextSpot } from '@loadmap/layout'
 import {
   lazy,
   memo,
@@ -21,6 +21,15 @@ import type { Insets } from './viewpoint'
 
 // a box's detail comes with the first one the reader asks for, in the chunk full screen's panels come in
 const Detail = lazy(() => import('./later').then((m) => ({ default: m.Detail })))
+
+/**
+ * What draws the subsystems' frames (frames.tsx): it comes with the first scene that has one, before that scene is
+ * shown, so a page without subsystems never loads it and a frame is never a moment late.
+ */
+let Frames: typeof import('./frames').Frames | undefined
+export const loadFrames = async () => {
+  Frames ??= (await import('./frames')).Frames
+}
 
 const STATE_STROKE: Record<ComponentState, string> = {
   off: 'var(--lm-line)',
@@ -552,9 +561,7 @@ const Structure = memo(function Structure({
       {scene.tiers.map((t, i) => (
         <Tier key={t.id} t={t} i={i} striped={lm.view.def.lanes === 'striped'} />
       ))}
-      {scene.subsystems.map((s) => (
-        <Subsystem key={s.id} s={s} states={scene.nodes.filter((n) => s.nodes.includes(n.id)).map(stateOf)} />
-      ))}
+      {Frames && scene.subsystems.length > 0 && <Frames scene={scene} stateOf={stateOf} />}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
         <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} lost={lost.has(e.to)} />
@@ -627,42 +634,6 @@ function Tier({ t, i, striped }: { t: SceneTier; i: number; striped: boolean }) 
           {text}
         </text>
       ))}
-    </g>
-  )
-}
-
-/**
- * A subsystem's frame behind its boxes and edges: a tint that lets a lane show through and deepens where a frame stands
- * in another, its name at its top, and its line in the colour of the worst box inside once one is past its target.
- * Paint goes in attributes, as a tier's does.
- */
-function Subsystem({ s, states }: { s: SceneSubsystem; states: (ComponentState | null)[] }) {
-  const past = states.includes('over') ? 'over' : states.includes('warn') ? 'warn' : undefined
-  const { x, y, size, weight } = s.title
-  return (
-    <g data-subsystem-id={s.id} data-state={past} opacity={s.fade}>
-      <rect
-        x={s.x}
-        y={s.y}
-        width={s.w}
-        height={s.h}
-        rx={10}
-        fill="var(--lm-muted)"
-        fillOpacity={0.07}
-        stroke={past ? STATE_STROKE[past] : 'var(--lm-line)'}
-        strokeWidth={past ? 1.5 : 1}
-      />
-      <text
-        x={x}
-        y={y}
-        fontSize={size}
-        fontWeight={weight}
-        fill="var(--lm-muted)"
-        textAnchor={s.vertical ? 'end' : undefined}
-        transform={s.vertical ? `rotate(-90 ${x} ${y})` : undefined}
-      >
-        {s.label}
-      </text>
     </g>
   )
 }

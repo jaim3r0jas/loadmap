@@ -298,7 +298,16 @@ type Subsystems = typeof import('./subsystems')
  * the first load of a page without one.
  */
 const subsystemsOf = (view: View): Promise<Subsystems> | undefined =>
-  Object.keys(view.def.subsystems ?? {}).length ? import('./subsystems') : undefined
+  Object.keys(view.def.subsystems ?? {}).length
+    ? import('./subsystems').then((m) => {
+        loaded = m
+        return m
+      })
+    : undefined
+let loaded: Subsystems | undefined
+
+/** How the frames move from one scene to the next (motion.ts): there once a scene with a frame was laid out. */
+export const frameMorph = () => loaded?.morph
 
 /**
  * How large this direction lays the view out, folded into `rows` or not, with every box at its largest anywhere the

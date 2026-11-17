@@ -156,3 +156,26 @@ export function framesOf(l: Laid, view: View, frame: Frame): SceneSubsystem[] {
     ]
   })
 }
+
+/**
+ * The frames a share of the way from one scene to the next: one that stays moves `k` of the way, one that is new is
+ * `enter` there, one that goes is `out` of what it was.
+ */
+export function morph(
+  from: SceneSubsystem[],
+  to: SceneSubsystem[],
+  k: number,
+  enter: number,
+  out: number,
+): SceneSubsystem[] {
+  const lerp = (a: number, b: number) => a + (b - a) * k
+  return [
+    ...to.map((s) => {
+      const a = from.find((x) => x.id === s.id)
+      if (!a) return { ...s, fade: enter }
+      const title = { ...s.title, x: lerp(a.title.x, s.title.x), y: lerp(a.title.y, s.title.y) }
+      return { ...s, x: lerp(a.x, s.x), y: lerp(a.y, s.y), w: lerp(a.w, s.w), h: lerp(a.h, s.h), title }
+    }),
+    ...from.filter((s) => !to.some((x) => x.id === s.id)).map((s) => ({ ...s, fade: (s.fade ?? 1) * out })),
+  ]
+}
