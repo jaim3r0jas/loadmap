@@ -366,7 +366,9 @@ pre.code code {
 /* a fence: the <pre> the build coloured, then a read-only CodeMirror view in its place (site/snippet.ts) */
 .snippet {
   position: relative;
-  margin: 0.84rem 0;
+  /* a paragraph's own, and only these two: the sides stay auto (main > *), in the prose's column */
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 .snippet > pre.code {

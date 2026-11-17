@@ -164,7 +164,8 @@ export function render(page: Page): { title: string; html: string; headings: Hea
  * client puts a read-only CodeMirror view in the `<pre>`'s place; the `<pre>` stays, hidden, as the text's one source.
  */
 function snippet(text: string, lang: string, file: string): string {
-  const { html, label } = highlight(text, lang, file)
+  // without the newlines it ends with: a <pre> draws none of them, the view a line for each, and the page would jump
+  const { html, label } = highlight(text.replace(/\n+$/, ''), lang, file)
   const pre = `<pre class="code" data-lang="${esc(lang)}" data-label="${esc(label)}"><code>${html}</code></pre>`
   return `<div class="snippet">${pre}<button type="button" class="copy" hidden>Copy</button></div>`
 }
