@@ -87,7 +87,9 @@ pool alertPipeline "Alert pipeline" `${alertPods} pods × 8 · high priority` {
   like: podPool
   with { pods: alertPods; need: alertCores(flows.alerts) }
   # a stage written here replaces the prototype's: this one has a name of its own
-  workers "alert pipeline" { pods: alertPods; perPod: 8 }
+  stageLabel: "alert pipeline"
+  pods: alertPods
+  perPod: 8
   short: "the alert pipeline"
   over: "alerts wait in their topic: the one lag that pages"
   describe: `${alertPods} pods × 8 threads, 1 core each`
@@ -96,7 +98,9 @@ pool alertPipeline "Alert pipeline" `${alertPods} pods × 8 · high priority` {
 pool positionConsumer "Position consumer" `${posPods} pods × 16` {
   like: podPool
   with { pods: posPods; cores: 2; need: flows.positions * 1.5ms }
-  workers "position consumer" { pods: posPods; perPod: 16 }
+  stageLabel: "position consumer"
+  pods: posPods
+  perPod: 16
   short: "the position consumer"
   over: "positions wait in their topic; under backlog only the newest per user is kept"
   describe: `${posPods} pods × 16 threads, 1.5 ms a position`

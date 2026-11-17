@@ -6,8 +6,8 @@ view {
   # full screen opens on the diagram and the story
   fullScreenMode: focus
   transition: 0.8
+  layout: compact
 }
-layout: compact
 assume: "Load scales linearly with users; 1× is the 5-minute peak of an ordinary day."
 
 load "Users, × today" { max: 100; default: 10 }
@@ -115,7 +115,8 @@ cluster kafka "Kafka" "orders and events" {
 node kafkaDropped "Too old" { lost { takes: [dropped] } }
 
 pool workerPool "Workers" `${pods} pods × ${threads} threads` {
-  workers { pods: pods; perPod: threads }
+  pods: pods
+  perPod: threads
   name: "Worker pool"
   short: "the worker pool"
   demand: workerCores(flows.orders + flows.events)

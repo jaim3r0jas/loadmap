@@ -84,6 +84,7 @@ import {
 } from './files'
 import { expandAlone, type Linked, link, stamp } from './link'
 import { parse } from './parser'
+import { modText } from './rewrite'
 import {
   type BlockSpec,
   BOXES,
@@ -93,8 +94,10 @@ import {
   EDGE_PROPS,
   type FULL_SCREEN_MODES,
   matchArgs,
+  ONE_SPELLING,
   own,
   type PANELS,
+  POOL_LINES,
   type PropSpec,
   propNamed,
   SCHEMA,
@@ -129,6 +132,8 @@ const STRICT_SUFFIXES: Version = [1, 2]
 const VIEW_BLOCK: Version = [1, 2]
 /** `30%+1`, the remainder where a share was likely meant: refused from 1.2. */
 const STRICT_PERCENT: Version = [1, 2]
+/** One spelling each: an old name, a view setting at the top, `%` as the remainder and what has `until` in the schema. */
+const ONE: Version = parseVersion(ONE_SPELLING)!
 
 /** The longest move to a new structure a definition may ask for, in seconds. */
 const MAX_TRANSITION = 5
@@ -525,6 +530,8 @@ interface Block {
   rows: Row[]
   /** Properties written as a statement (`rate = 40`): an error of their own, and not missing. */
   said: Set<string>
+  /** A pool read as its workers stage: its lines are the pool's own (from loadmap 1.5). */
+  pool?: true
 }
 
 interface Box {
@@ -614,6 +621,7 @@ class Compiler {
    */
   run(body: readonly Stmt[], namesOnly = false): Definition | undefined {
     this.gluedPercents(body)
+    this.spellings(body)
     const root = this.shape('', SCHEMA['']!, body, { from: 0, to: 0 })
 
     // names first: formulas and routes may refer to anything declared further down
@@ -1126,13 +1134,19 @@ class Compiler {
     // how the page looks and plays: in view { … } from 1.2, at the top before it
     const views = byKind('view')
     for (const extra of views.slice(1)) this.report.error('duplicate', extra.at, 'only one view block is allowed')
+    // the direction's old name, `layout: right`: it has its own message, below
+    const topLayout = this.prop(root, 'layout')
+    const oldWay = topLayout && (DIRECTIONS as readonly string[]).includes(this.word(topLayout) ?? '')
     for (const k of VIEW_KEYS) {
       const top = this.prop(root, k)
-      if (!top) continue
+      if (!top || (k === 'layout' && oldWay)) continue
+      const spec = SCHEMA['']!.props[k]!
       if (views[0]?.props.has(k))
         this.report.error('duplicate', top.key, `"${k}" is set here and in view`, 'remove one of them')
-      else if (!before(this.version, VIEW_BLOCK))
-        this.report.warning('deprecated', top.key, `${k} is now in view { … }`, 'loadmap fmt moves it', { view: k })
+      // gone from the view too (grid): the message that says so is the one to act on
+      else if (spec.until) continue
+      else if (!before(this.versionOf(top.key), parseVersion(spec.movedIn ?? versionText(VIEW_BLOCK))!))
+        this.strict(ONE, 'deprecated', top.key, `${k} is now in view { … }`, 'loadmap fmt moves it', { view: k })
     }
     const look = (k: string) => (views[0]?.props.has(k) ? views[0] : root)
     const speed = this.constProp<number>(look('speed'), 'speed')
@@ -1146,11 +1160,11 @@ class Compiler {
         `transition is ${transition} seconds; 0 to ${MAX_TRANSITION}`,
       )
     else if (transition != null) options.transition = transition
-    const direction = this.prop(root, 'direction')
+    const direction = this.prop(look('direction'), 'direction')
     const runs = direction && this.enumValue(direction, SCHEMA['']!.props.direction!)
     if (runs) options.direction = runs === 'auto' ? 'auto' : runs === 'down' ? 'DOWN' : 'RIGHT'
-    const rows = this.constProp<number>(root, 'rows')
-    const written = this.prop(root, 'rows')?.value
+    const rows = this.constProp<number>(look('rows'), 'rows')
+    const written = this.prop(look('rows'), 'rows')?.value
     // a count: not a share or a multiple that happens to come out whole (200%)
     const unit = written?.t === 'num' && written.unit
     if (rows != null && (unit || !(Number.isInteger(rows) && rows >= 1 && rows <= MAX_ROWS)))
@@ -1162,23 +1176,37 @@ class Compiler {
           : `rows is ${rows}; a whole number, 1 to ${MAX_ROWS}`,
       )
     else if (rows != null) options.rows = rows
-    const layout = this.prop(root, 'layout')
+    const layout = oldWay ? topLayout : this.prop(look('layout'), 'layout')
     const way = layout && this.word(layout)
     let arrange: 'compact' | 'stable' | undefined
     // the direction's old name: a definition written before keeps its direction, and `loadmap fmt` renames it
-    if (layout && (DIRECTIONS as readonly string[]).includes(way!)) {
+    if (layout && oldWay) {
+      const moved = !before(this.versionOf(layout.key), ONE)
       if (direction)
-        this.report.warning('deprecated', layout.key, `layout: ${way} is ignored: direction sets the direction`)
-      else {
-        this.report.warning(
+        this.strict(
+          ONE,
           'deprecated',
           layout.key,
-          `layout: ${way} is now direction: ${way}`,
+          `layout: ${way} is ignored: direction sets the direction`,
+          'remove it',
+          {
+            remove: 'layout',
+          },
+        )
+      else {
+        this.strict(
+          ONE,
+          'deprecated',
+          layout.key,
+          moved ? `layout: ${way} is now direction: ${way} in view { … }` : `layout: ${way} is now direction: ${way}`,
           'loadmap fmt rewrites it',
-          { to: 'direction' },
+          moved ? { view: 'layout' } : { to: 'direction' },
         )
         options.direction = way === 'down' ? 'DOWN' : 'RIGHT'
       }
+      // the view's own layout: line still says how the boxes are laid out
+      const own = views[0] && this.prop(views[0], 'layout')
+      if (own) arrange = this.enumValue(own, SCHEMA['']!.props.layout!) as typeof arrange
     } else if (layout) arrange = this.enumValue(layout, SCHEMA['']!.props.layout!) as typeof arrange
     const panels = this.prop(look('fullScreen'), 'fullScreen')
     if (panels)
@@ -1820,8 +1848,19 @@ class Compiler {
           // beside the new name a rename would set it twice: the error that says so is the one to act on
           const both = stmts.some((x) => x.kind === 'prop' && x.key.name === k)
           if (!before(this.versionOf(s.key), since) && !both)
-            this.report.warning('deprecated', s.key, `${s.key.name} is now ${k}`, 'loadmap fmt rewrites it', { to: k })
+            this.strict(ONE, 'deprecated', s.key, `${s.key.name} is now ${k}`, 'loadmap fmt rewrites it', { to: k })
         }
+        const gone = own(spec.props, k)
+        if (gone?.until)
+          this.removed(
+            gone,
+            s.key,
+            `"${k}" is no longer a property ${keyword ? `of ${keyword}` : 'of the top level'}`,
+            {
+              gone: k,
+              in: keyword,
+            },
+          )
         if (!spec.open && !own(spec.props, k)) {
           const hint = spec.children.includes(k)
             ? `write it as a block: ${k} { … }`
@@ -1865,6 +1904,8 @@ class Compiler {
           }
           continue
         }
+        if (childSpec.until)
+          this.removed(childSpec, s.keyword, `"${k}" is no longer a statement`, { gone: k, in: keyword })
         b.children.push(this.shape(k, childSpec, s.body ?? [], s.keyword, s))
       } else if (s.kind === 'edge') {
         if (!spec.edges) this.report.error('misplaced', s.chain[0]!, `an "a -> b" line cannot go ${here}`)
@@ -1984,6 +2025,44 @@ class Compiler {
   }
 
   /**
+   * One spelling each, from 1.5: `%` between two values was the remainder, which `mod(a, b)` says; `===` is `==`, and
+   * `derived.x` is `x`. The last two only warn: both still read as they always did.
+   */
+  private spellings(body: readonly Stmt[]) {
+    const text = (x: Span) => this.source.slice(x.from, x.to)
+    for (const e of formulasOf(body)) {
+      if (e.t === 'bin' && e.op === '%' && !e.glued) {
+        const mod = modText(this.source, e)
+        this.strict(
+          ONE,
+          'remainder',
+          { from: e.left.from, to: e.right.to },
+          `"%" between two values is the remainder: ${mod}`,
+          `write ${mod}`,
+          { mod },
+        )
+      } else if (e.t === 'bin' && e.triple) {
+        const to = e.op
+        this.report.warning('deprecated', e.triple, `${text(e.triple)} is now ${to}`, 'loadmap fmt rewrites it', { to })
+      } else if (e.t === 'member' && e.object.name === 'derived' && !e.flow) {
+        const to = text(e.prop)
+        this.report.warning('deprecated', e, `derived.${to} is now ${to}`, 'loadmap fmt rewrites it', { to })
+      }
+    }
+  }
+
+  /**
+   * A statement or property a version dropped (`until` in the schema): an error from that version, a warning that says
+   * so before it, while it still reads as it did.
+   */
+  private removed(spec: { until?: string; instead?: string }, at: Span, message: string, data: Record<string, string>) {
+    const until = parseVersion(spec.until!)!
+    if (!before(this.versionOf(at), until)) this.report.error('removed', at, message, spec.instead, data)
+    else
+      this.report.warning('removed', at, `${message} (an error from loadmap ${versionText(until)})`, spec.instead, data)
+  }
+
+  /**
    * A check a language version made strict: an error in a definition stamped with that version or later, a warning
    * that says so before it, so a file that compiled under its stamp still does (docs/dsl.md, "Versions").
    */
@@ -2036,8 +2115,32 @@ class Compiler {
     }
     if (b.keyword === 'cluster' && !stages.length)
       this.report.error('missing-part', b.at, 'a cluster needs a queue', 'queue topic { partitions { orders: 12 } }')
-    if (b.keyword === 'pool' && stages.length !== 1)
-      this.report.error('bad-box', b.at, 'a pool needs exactly one workers stage', 'workers { pods: 3; perPod: 8 }')
+    if (b.keyword === 'pool') {
+      // from 1.5 the pool is its workers stage: its lines are written on it
+      const direct =
+        POOL_LINES.find((k) => b.props.has(k)) ??
+        (b.children.some((c) => c.keyword === 'autoscale') ? 'autoscale' : undefined)
+      if (!stages.length && (direct || !before(this.versionOf(b.at), ONE)))
+        stages.push({
+          block: {
+            ...b,
+            keyword: 'workers',
+            args: b.props.has('stageLabel') ? { label: this.prop(b, 'stageLabel')!.value } : {},
+            children: b.children.filter((c) => c.keyword === 'autoscale'),
+            pool: true,
+          },
+          id,
+        })
+      else if (stages.length && direct)
+        this.report.error(
+          'duplicate',
+          (b.props.get(direct)?.[0]?.key ?? b.children.find((c) => c.keyword === direct)?.at)!,
+          `"${direct}" is set on the pool, which also has a workers block`,
+          'write every line of the workers block on the pool',
+        )
+      else if (stages.length !== 1)
+        this.report.error('bad-box', b.at, 'a pool needs exactly one workers stage', 'workers { pods: 3; perPod: 8 }')
+    }
     const ids = new Set<string>()
     for (const s of stages) {
       if (ids.has(s.id))
@@ -2056,9 +2159,7 @@ class Compiler {
     const sub = b.args.sub
     const noSub = (!sub || (sub.t === 'str' && sub.value === '')) && !b.props.has('sub')
     if (k === 'describe' && p.value.t === 'str' && noSub)
-      hint = b.args.label
-        ? `for a line under a plain box, put it on the first line: ${b.keyword} ${b.args.id!.name} ${this.slice(b.args.label)} ${this.slice(p.value)}`
-        : `for a line under a plain box, write sub: ${this.slice(p.value)}`
+      hint = `for a line under a plain box, put it on the first line: ${b.keyword} ${b.args.id!.name} ${b.args.label ? this.slice(b.args.label) : JSON.stringify(b.args.id!.name)} ${this.slice(p.value)}`
     this.report.error('misplaced', p.key, `"${k}" belongs to a component, and this box has no capacity`, hint)
   }
 
@@ -3190,6 +3291,8 @@ class Compiler {
         const perPod = this.dynProp<number>(b, 'perPod', 'number', this.count('perPod'))
         const placement = this.constProp<'round-robin' | 'in-order'>(b, 'placement')
         const rest = { ...base, perPod: perPod ?? 0, ...(placement ? { placement } : {}) }
+        if (b.pool && !this.prop(b, 'perPod'))
+          this.report.error('missing-property', b.at, '"pool" needs "perPod: …"', 'Workers per pod.', { key: 'perPod' })
         const scale = b.children.find((c) => c.keyword === 'autoscale')
         if (scale) {
           if (this.prop(b, 'pods'))
@@ -3210,7 +3313,7 @@ class Compiler {
           this.report.error(
             'missing-part',
             b.at,
-            'a workers stage needs pods, or autoscale',
+            b.pool ? 'a pool needs pods, or autoscale' : 'a workers stage needs pods, or autoscale',
             'pods: 3, or autoscale { min: 2; max: 10; target: 0.7 }',
           )
         return workers(component, { ...rest, pods: pods ?? 0 })
@@ -3393,23 +3496,30 @@ class Compiler {
         'colon-before-block',
         e.colon,
         'drop the ":" before a { … } block',
-        `${e.chain.map((c) => c.name).join(' -> ')} { ${e.chain.length > 2 ? '' : 'label: …; '}when: … }`,
+        `${e.chain.map((c) => c.name).join(' -> ')}${e.chain.length > 2 ? '' : ': "…"'} { when: … }`,
       )
     for (const n of e.chain)
       if (!boxes.has(n.name))
         this.report.error('unknown-name', n, `unknown node "${n.name}"`, didYouMean(n.name, boxes.keys()))
     const props = new Map<string, Property>()
+    // what its version's edge holds: `label` too, before 1.5
+    const held = Object.entries(EDGE_PROPS)
+      .filter(([, p]) => !p.until || before(this.versionOf(e.chain[0]!), parseVersion(p.until)!))
+      .map(([k]) => k)
     for (const s of e.body ?? []) {
       if (s.kind !== 'prop' || !own(EDGE_PROPS, s.key.name)) {
         const at = s.kind === 'prop' ? s.key : s.kind === 'decl' ? s.keyword : s
         this.report.error(
           'unknown-property',
           at,
-          'an edge holds only label and when',
-          didYouMean(this.slice(at), Object.keys(EDGE_PROPS)),
+          `an edge holds only ${held.join(' and ')}`,
+          didYouMean(this.slice(at), held),
         )
         continue
       }
+      const gone = own(EDGE_PROPS, s.key.name)!
+      if (gone.until)
+        this.removed(gone, s.key, `"${s.key.name}" is no longer a property of an edge`, { gone: s.key.name, in: '->' })
       if (props.has(s.key.name)) this.report.error('duplicate', s.key, `"${s.key.name}" is set twice on this edge`)
       props.set(s.key.name, s)
     }

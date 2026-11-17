@@ -29,7 +29,8 @@ subsystem pipeline "Queue and workers" {
     queue topic { partitions { main: 12 } }
   }
   pool consumers "Workers" `${pods} pods` {
-    workers { pods: pods; perPod: 8 }
+    pods: pods
+    perPod: 8
     short: "the workers"
     demand: flows.main * messageCost
     capacity: measured(pods * 1, "cores", "pod CPU limit")

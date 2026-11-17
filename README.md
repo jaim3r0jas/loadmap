@@ -161,7 +161,8 @@ node gateway "API gateway" {
   over: "clients get 429s"
 }
 pool workerPool "Workers" `${pods} pods × 8 threads` {
-  workers { pods: pods; perPod: 8 }
+  pods: pods
+  perPod: 8
   demand: flows.orders * 4ms
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "messages wait and the lag keeps growing"

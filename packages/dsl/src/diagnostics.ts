@@ -59,6 +59,8 @@ export const CODES = {
   'unused-component': 'a component no stage uses or holds',
   'tier-order': 'an edge that runs back against the tiers',
   deprecated: 'an old spelling: loadmap fmt rewrites it',
+  removed: 'a statement or a property a language version dropped: what to write is in the hint',
+  remainder: 'a "%" between two values, the remainder: mod(a, b) from loadmap 1.5',
   'catalog-not-loaded': 'the definition names the component catalog, and the host did not load it',
   'no-benchmark': 'no published run matches the configuration: the component is not ranked',
   'newer-edition': 'a later edition of the catalog has other figures for the component',

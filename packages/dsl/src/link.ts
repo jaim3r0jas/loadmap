@@ -547,7 +547,8 @@ class Linker {
           const routed =
             d.keyword.name === 'subsystem'
               ? body.some((s) => s.kind === 'prop' && s.key.name === 'route')
-              : body.some((s) => s.kind === 'decl' && (STAGES as readonly string[]).includes(s.keyword.name))
+              : d.keyword.name === 'pool' ||
+                body.some((s) => s.kind === 'decl' && (STAGES as readonly string[]).includes(s.keyword.name))
           if (routed) passes.push(name)
           flows.set(second.name, passes)
         } else if (first?.t === 'id' && !i.init) set.push(prop(first.name, num(1)))

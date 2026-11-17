@@ -28,7 +28,8 @@ node api "API" {
 }
 
 pool resizers "Resizers" `${pods} pods × 4 threads` {
-  workers { pods: pods; perPod: 4 }
+  pods: pods
+  perPod: 4
   demand: flows.photos * 0.03
   capacity: measured(pods * 2, "cores", "pod CPU limit")
   over: "photos wait and the lag grows"
@@ -62,9 +63,11 @@ tests check that each draws exactly what its TypeScript draws.
 A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things can live in a box:
 
 - **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink`, `fanout`,
-  `split`, `cache` or `limit` in a node, one or more `queue` in a cluster, one `workers` in a pool. Its id is the box's id unless you give it one.
-  A label after the keyword names it in the meters and the sentences: `queue topic "orders topic"`. Without one it takes
-  its component's `short` ("the gateway") when no other stage runs that component, and its id otherwise.
+  `split`, `cache` or `limit` in a node, one or more `queue` in a cluster. Its id is the box's id unless you give it
+  one. A label after the keyword names it in the meters and the sentences: `queue topic "orders topic"`. Without one it
+  takes its component's `short` ("the gateway") when no other stage runs that component, and its id otherwise. A pool
+  is its stage: its workers are lines of the pool (`pods`, `perPod`, `placement`, `autoscale { … }`), its id is the
+  pool's and `stageLabel: "…"` names it (from `loadmap 1.5`; before it they were a `workers { … }` block in the pool).
 - **A component:** what can run out. Write its lines on the box: `demand`, `capacity`, `over`, and optionally
   `name`, `short`, `plural`, `describe` and `when`. Its id is the box's id and its name is the box's label. A stage in
   the box uses this component unless it names another one with `component: …`. A component without a box is a
@@ -109,21 +112,22 @@ as it is.
   `×` (or `x`) marks a load multiple and leaves the number as it is. So `demand: flows.events * 2ms` reads as what it
   is, events a second times the CPU seconds each takes. The two are checked where a property says which it takes:
   `underTarget: 70%` (a load multiple goes there) and `thresholds { target: 7× }` (a share) are errors from
-  `loadmap 1.2`, and a warning in a file stamped before it. A `%` straight after a number is a share (`80% * x` is 0.8 × x);
-  between two values with spaces it is the remainder (`10 % 3`, `n % 2`), which `mod(10, 3)` says in words. Glued to a
-  number and before a value or a sign (`30%+1`) it would be the remainder where a share was likely meant: an error from
-  `loadmap 1.2` with both spellings as fixes, `30% + 1` and `mod(30, 1)`, and a warning in a file stamped before it.
+  `loadmap 1.2`, and a warning in a file stamped before it. A `%` straight after a number is always a share
+  (`80% * x` is 0.8 × x, `30%+1` is 1.3), and the remainder is `mod(10, 3)`. Before `loadmap 1.5` a `%` between two
+  values was also the remainder (`10 % 3`, and `30%+1` where a share was likely meant): from 1.5 that is an error,
+  which `loadmap fmt` and its quick fix write as `mod(a, b)`.
 - **Sizes** (from `loadmap 1.2`): `KB`, `MB`, `GB` and `TB` after a number count in bytes, decimal as a network counts
   (`1.5KB` is 1,500). A demand written with a size is brought to the size its capacity counts in, so
   `demand: flows.alerts * 1.5KB` against `estimated(20, "MB/s", …)` is megabytes a second, with no `/ 1000` to forget (a capacity in `"bytes/s"` or `"B/s"` takes the bytes as they are).
   A size against a capacity that names none (`"req/s"`, or `"Mb/s"`: megabits), a size added to a plain number, and a
   size in the capacity's number instead of its unit are errors.
-- **Operators:** `+ - * / %`, `< <= > >= == != === !==`, `&& || !`, `? :` and parentheses.
+- **Operators:** `+ - * /`, `< <= > >= == !=`, `&& || !`, `? :` and parentheses (`===` and `!==` are old
+  spellings of `==` and `!=`: they warn, and `loadmap fmt` rewrites them).
 - **Names:**
   - `load` and the parameters by their id;
   - `let` names;
-  - `flows.x`, `at.stage.x`, `demand.x`, `util.x` and `derived.x` for the model's tables (`at.stage` alone is every
-    flow reaching that stage);
+  - `flows.x`, `at.stage.x`, `demand.x` and `util.x` for the model's tables (`at.stage` alone is every flow reaching
+    that stage). `derived.x` is an old spelling of the let `x`: it warns, and `loadmap fmt` writes `x`;
   - `out.stage` for what a fan-out sends, a second: what reaches it of each flow times that branch's copies. A box that
     runs a fan-out says `demand: out.push` instead of repeating the copies (from `loadmap 1.2`);
   - `i` inside `memberLabel` and `podLabel`, and `value` inside `format`.
@@ -702,7 +706,8 @@ the ones it does not run now, and a meter counts them:
 
 ```loadmap
 pool api "API" {
-  workers { perPod: 4; autoscale { min: 2; max: maxPods; target: 0.7 } }
+  perPod: 4
+  autoscale { min: 2; max: maxPods; target: 0.7 }
   demand: flows.requests * 5ms
   capacity: measured(maxPods * 1, "cores", "1 core a pod, at most pods")
   over: "the pool is at its maximum and requests queue"
@@ -917,7 +922,7 @@ board and the step's text below it; the same options give the same file. A step'
 A step that changes the structure (more pods, another scenario) is laid out on its own and the boxes move to their new
 places: what stays slides and resizes, what is new fades in. Each step, scenario, preset and choice of a select or
 switch takes only the room it needs, over every load and every value of the range controls, so dragging a slider never
-moves a box, and a step looks the same whichever came before. `layout: stable` gives every box one place instead, the largest it needs anywhere the model
+moves a box, and a step looks the same whichever came before. `view { layout: stable }` gives every box one place instead, the largest it needs anywhere the model
 reaches (its scenarios, steps, presets and controls): no step moves a box, a pool that gains pods grows where it
 stands, and every step pays for the room of the largest. `view { transition: 1.2 }` makes a change take 1.2 seconds (0.8 by
 default; 0 cuts, and so does a reader who asked for reduced motion). A recording shows it too.
@@ -927,13 +932,13 @@ default; 0 cuts, and so does a reader who asked for reduced motion). A recording
 The diagram runs the way that fits the room it is drawn in larger: a long chain runs right in a wide frame and down in
 a tall one. Where both fit about as well it runs right, or down when it fans out wider than it is long: when its
 widest layer has more boxes than its longest chain. Every edge counts, whatever its `when`. Only the room and the
-structure turn it, never the values. `direction: right` or `direction: down` holds it (`layout: right` and `layout:
-down`, its old name, still work, and `loadmap fmt` rewrites them), `direction: auto` says the default out loud, and
-narrow screens always run down.
+structure turn it, never the values. `view { direction: right }` or `direction: down` holds it, `direction: auto`
+says the default out loud, and narrow screens always run down. (`layout: right` and `layout: down` at the top, its old
+name, are errors from `loadmap 1.5` and warn before it; `loadmap fmt` rewrites them.)
 
 A long diagram is folded where its titles would be hard to read in one row: into two or three rows one under the
 other (columns side by side, running down), cut between two tiers where it can, each row with its own lanes, an edge
-to the next row going round the end of its row. `rows: 1` never folds, and `rows: 2` draws two wherever there is
+to the next row going round the end of its row. `view { rows: 1 }` never folds, and `rows: 2` draws two wherever there is
 room: a narrow screen never folds, and a diagram with one layer has one row.
 
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
@@ -945,7 +950,7 @@ tier services "Services"
 tier data "Data"
 
 node gateway "Gateway" { tier: edge; pass }
-pool api "API" { tier: services; workers { pods: pods; perPod: 8 } }
+pool api "API" { tier: services; pods: pods; perPod: 8 }
 node db "Database" { tier: data; store }
 ```
 
@@ -966,14 +971,17 @@ tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }
 
 In TypeScript: `lanes: 'striped'` in the view, `fill` and `fillDark` beside a tier's `label`. The page's theme sets
 the shades: `--lm-tier-base` for the first, third… lanes, `--lm-tier` for the others. In the editor, **View** switches
-the lanes' fills and the dot grid behind the diagram (`view { grid: false }`), and the model's tab gives each lane its colours.
+the lanes' fills (a line of the text) and the dot grid behind the diagram (the editor's own setting, kept in the
+browser: before `loadmap 1.5` a file could say `view { grid: false }`), and the model's tab gives each lane its colours.
 
 ### The view block
 
-What only changes how the page looks and plays stands in one block, `view { … }`: `speed`, `transition`, `fullScreen`,
-`fullScreenMode`, `lanes` and `grid`. Nothing in it changes a number, so a reviewer of a change to the model can skip
-it. The block is from `loadmap 1.2`; a file stamped before it writes the same settings at the top, as it always did.
-In a 1.2 file a setting at the top still works and warns, and `loadmap fmt` moves it into the block.
+What only changes how the page looks and plays stands in one block, `view { … }`: `direction`, `rows`, `layout`,
+`speed`, `transition`, `fullScreen`, `fullScreenMode` and `lanes`. Nothing in it changes a number, so a reviewer of a
+change to the model can skip it. The block is from `loadmap 1.2`, and `direction`, `rows` and `layout` joined it in
+`loadmap 1.5`; a file stamped before writes those settings at the top, as it always did. A setting at the top of a
+file whose version has it in the block warns (an error from `loadmap 1.5`), and `loadmap fmt` moves it there, with
+`layout: right` as `direction: right`.
 
 ### Full screen
 
@@ -1083,7 +1091,8 @@ subsystem pipeline "Queue and workers" {
   input pods = 3
   cluster kafka "Kafka" { members: 3; queue topic { partitions { main: 12 } } }
   pool consumers "Workers" {
-    workers { pods: pods; perPod: 8 }
+    pods: pods
+    perPod: 8
     demand: flows.main * 2ms
     capacity: measured(pods * 1, "cores", "pod CPU limit")
   }
@@ -1201,6 +1210,8 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `unused-component` | a component no stage uses or holds |
 | `tier-order` | an edge that runs back against the tiers |
 | `deprecated` | an old spelling: loadmap fmt rewrites it |
+| `removed` | a statement or a property a language version dropped: what to write is in the hint |
+| `remainder` | a "%" between two values, the remainder: mod(a, b) from loadmap 1.5 |
 | `catalog-not-loaded` | the definition names the component catalog, and the host did not load it |
 | `no-benchmark` | no published run matches the configuration: the component is not ranked |
 | `newer-edition` | a later edition of the catalog has other figures for the component |
@@ -1244,7 +1255,7 @@ with no warning first; none is planned.
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 | 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
 | 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
-| 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box | |
+| 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 
 ## In code
 
@@ -1344,21 +1355,12 @@ A loadmap definition.
 | Property | Value | |
 | --- | --- | --- |
 | `title` | string, constant | The heading above the diagram. |
-| `direction` | `right` \| `down` \| `auto` | Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down. |
-| `rows` | number, constant | The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds. From loadmap 1.4. |
-| `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. |
-| `speed` | number, constant | Simulated seconds per real second. Default 10. From loadmap 1.2 in `view { … }`. |
-| `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. From loadmap 1.2 in `view { … }`. |
-| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. From loadmap 1.2 in `view { … }`. |
-| `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. From loadmap 1.2 in `view { … }`. |
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
-| `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. From loadmap 1.2 in `view { … }`. |
-| `grid` | boolean, constant | The editor's dot grid. Default true. From loadmap 1.2 in `view { … }`. |
 
 Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`, `view`, `include`, `part`, `library`, `import`, `extends`, `subsystem`.
 
-Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
+Holds edges: `a -> b`, `a -> b: label`, `a -> b: label { when: … }`.
 
 ### include
 
@@ -1450,14 +1452,14 @@ After the keyword: id [label].
 
 Holds: `input`, `with`, `node`, `cluster`, `pool`, `component`, `connection`, `let`, `subsystem`.
 
-Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
+Holds edges: `a -> b`, `a -> b: label`, `a -> b: label { when: … }`.
 
 ### view
 
 How the page looks and plays: nothing in here changes a number. Once in a definition. From loadmap 1.2.
 
 ```loadmap
-view { speed: 10; fullScreen: [verdict, controls]; grid: false }
+view { direction: right; speed: 10; fullScreen: [verdict, controls] }
 ```
 
 | Property | Value | |
@@ -1467,7 +1469,9 @@ view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 | `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |
 | `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
-| `grid` | boolean, constant | The editor's dot grid. Default true. |
+| `direction` | `right` \| `down` \| `auto` | Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down. From loadmap 1.5. |
+| `rows` | number, constant | The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds. From loadmap 1.5. |
+| `layout` | `compact` \| `stable` | compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one. From loadmap 1.5. |
 | `closed` | subsystems, constant | The subsystems drawn closed at first, each as one box: `closed: [eu, us]`. Default none. From loadmap 1.5. |
 
 ### loadmap
@@ -1515,7 +1519,6 @@ After the keyword: id [label].
 | `step` | number, constant | The step of a slider. Default 1. |
 | `default` (required) | value, constant | The starting value. |
 | `hint` | string, constant | One line under the control. |
-| `tag` | string, constant | A short tag next to the label, e.g. "estimate". |
 | `enabled` | boolean, formula of parameters | Greys the control out while this is false; it reads only parameters. |
 | `format` | string, formula of `value` | How a value is shown, from `value`: `${value} pods`. |
 
@@ -1860,7 +1863,6 @@ After the keyword: id [label] [sub].
 
 | Property | Value | |
 | --- | --- | --- |
-| `sub` | string, formula | The second line of the box. |
 | `shape` | `box` \| `cylinder` | box (the default) or cylinder. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
@@ -1890,7 +1892,6 @@ After the keyword: id [label] [sub].
 
 | Property | Value | |
 | --- | --- | --- |
-| `sub` | string, formula | The second line of the box. |
 | `members` (required) | number, formula | How many members. |
 | `memberLabel` | string, formula of `i` | Each member's label, from its index i: `broker ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
@@ -1911,17 +1912,21 @@ Holds: `queue`, `component`, `held`, `input`, `with`.
 
 ### pool
 
-A workers stage drawn as pods holding a grid of workers.
+A pool of workers, pods × workers per pod, drawn as pods holding a grid of workers. Flows are worked off here; a route names the pool.
 
 ```loadmap
-pool workerPool "Workers" { workers { pods: pods; perPod: 8 } }
+pool workerPool "Workers" { pods: pods; perPod: 8 }
 ```
 
 After the keyword: id [label] [sub].
 
 | Property | Value | |
 | --- | --- | --- |
-| `sub` | string, formula | The second line of the box. |
+| `pods` | number, formula | How many pods; an autoscaled pool has autoscale instead. From loadmap 1.5. |
+| `perPod` | number, formula | Workers per pod. From loadmap 1.5. |
+| `placement` | `round-robin` \| `in-order` | round-robin spreads work across pods (the default); in-order fills pod 0 first. From loadmap 1.5; `fill` before. |
+| `stageLabel` | string, constant | The name of its work inside a sentence: "alert pipeline". Defaults to the id. From loadmap 1.5. |
+| `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. From loadmap 1.5. |
 | `podLabel` | string, formula of `i` | Each pod's label, from its index i: `pod ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
@@ -1937,7 +1942,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `workers`, `component`, `held`, `input`, `with`.
+Holds: `autoscale`, `component`, `held`, `input`, `with`.
 
 ### pass
 
@@ -2046,25 +2051,6 @@ partitions { orders: 12; events: 24 }
 
 Its properties are named by flows.
 
-### workers
-
-A pool of workers: pods × workers per pod.
-
-```loadmap
-workers { pods: pods; perPod: 8 }
-```
-
-After the keyword: [id] [label].
-
-| Property | Value | |
-| --- | --- | --- |
-| `pods` | number, formula | How many pods; an autoscaled pool has autoscale instead. |
-| `perPod` (required) | number, formula | Workers per pod. |
-| `placement` | `round-robin` \| `in-order` | round-robin spreads work across pods (the default); in-order fills pod 0 first. From loadmap 1.1; `fill` before. |
-| `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
-
-Holds: `autoscale`.
-
 ### autoscale
 
 Pods are added and removed to hold each running pod near target, between min and max. The component's capacity is the pool at max pods: it runs out when the pool cannot grow further.
@@ -2159,7 +2145,6 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 
 | Property | Value | |
 | --- | --- | --- |
-| `label` | string, formula | The text on the edge. |
 | `when` | boolean, formula | The edge is left out while this is false. |
 
 ### Functions

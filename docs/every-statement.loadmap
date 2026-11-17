@@ -3,16 +3,15 @@ loadmap 1.5
 # made-up shop: orders go through a gateway, a rate limiter, an API and a cache to the database; events go through a
 # topic to an autoscaled pool and a push broker. docs.test.ts fails when a statement of the schema is missing here.
 title: "A shop, every statement once"
-direction: right
-rows: 1
-layout: compact
 view {
   speed: 10
   transition: 0.8
   fullScreen: [verdict, live, limits, controls]
   fullScreenMode: focus
   lanes: filled
-  grid: true
+  direction: right
+  rows: 1
+  layout: compact
 }
 searchMax: 120
 assume: "1× is today's busiest hour; the numbers are made up."
@@ -139,7 +138,8 @@ node tooMany "Turned away" { lost { takes: [rejected] } }
 
 pool api "API" `${pods} pods` {
   tier: services
-  workers { pods: pods; perPod: 8 }
+  pods: pods
+  perPod: 8
   short: "the API"
   demand: apiCores(at.api.orders + flows.signups)
   capacity: measured(pods * 1, "cores", "pod CPU limit")
@@ -188,7 +188,8 @@ cluster kafka "Kafka" "events" {
 node kafkaDropped "Too old" { lost { takes: [dropped] } }
 
 pool eventWorkers "Event workers" "2 to 6 pods" {
-  workers { perPod: 4; autoscale { min: 2; max: 6; target: 0.7 } }
+  perPod: 4
+  autoscale { min: 2; max: 6; target: 0.7 }
   short: "the event workers"
   plural: true
   demand: flows.events * 2ms
@@ -231,7 +232,7 @@ gateway -> kafka
 gateway -> api
 limiter -> api
 limiter -> tooMany
-api -> resultCache { label: `${compact(at.db.orders)} misses/s`; when: hit < 1 }
+api -> resultCache: `${compact(at.db.orders)} misses/s` { when: hit < 1 }
 resultCache -> db
 kafka -> eventWorkers
 kafka -> kafkaDropped

@@ -1,4 +1,6 @@
 import { Reporter, type Span } from './diagnostics'
+import { ONE_SPELLING } from './schema'
+import { before, parseVersion, stampVersion } from './stamp'
 
 export type TokenKind = 'ident' | 'number' | 'string' | 'template' | 'punct' | 'newline' | 'comment' | 'eof'
 
@@ -50,24 +52,70 @@ const SCALE: Record<Suffix, [exp: number, factor: bigint]> = {
 /**
  * The token kinds and marks an editor needs to highlight the language like the parser reads it. `unit` is a regular
  * expression for what may follow a number as its unit; the lexer reads units with it too, so the two never differ.
- * A `%` is a share only when no value follows it on the line (`80%`, `80% * x`, `80% - x`); before a value, or with a
- * sign right after it (`10%-3`), it stays modulo.
+ * A `%` straight after a number is a share (`80%`, `80% * x`, `30%+1`): the remainder is `mod(a, b)`.
  */
 export const LEXICON = {
   punct: PUNCT,
   comment: '#',
-  unit: `(?:(?:${WORDS.join('|')})(?![A-Za-z0-9_])|×|%(?![-+!]|[ \\t]*(?:[A-Za-z0-9_(\\['"\`]|\\.\\d)))`,
+  unit: `(?:(?:${WORDS.join('|')})(?![A-Za-z0-9_])|×|%)`,
 } as const
 const UNIT = new RegExp(LEXICON.unit, 'y')
+/**
+ * Before loadmap 1.5 `%` was also the remainder, and a `%` after a number a share only when no value followed it on
+ * the line (`80%`, `80% * x`, `80% - x`): before a value, or with a sign right after it (`10%-3`), it was the
+ * remainder. A file stamped before 1.5 is still read that way.
+ */
+const UNIT_BEFORE_1_5 = new RegExp(
+  `(?:(?:${WORDS.join('|')})(?![A-Za-z0-9_])|×|%(?![-+!]|[ \\t]*(?:[A-Za-z0-9_(\\['"\`]|\\.\\d)))`,
+  'y',
+)
+const ONE = parseVersion(ONE_SPELLING)!
+
+/**
+ * The text after `loadmap` on a file's first line that is not blank or a comment, from `at` to `end`: a scan, one
+ * pass, since a shared link is untrusted input (a pattern for it backtracks on a long run of spaces).
+ */
+function stampAt(source: string, at: number, end: number): string | undefined {
+  const blank = (c: string | undefined) => c === ' ' || c === '\t' || c === '\r'
+  let i = at
+  while (i < end) {
+    while (i < end && blank(source[i])) i++
+    if (source[i] === '#') i = source.indexOf('\n', i) < 0 ? end : source.indexOf('\n', i)
+    if (source[i] !== '\n') break
+    i++
+  }
+  if (!source.startsWith('loadmap', i)) return undefined
+  i += 'loadmap'.length
+  const gap = i
+  while (i < end && blank(source[i])) i++
+  const from = i
+  while (i < end && /[0-9A-Za-z_.+-]/.test(source[i]!)) i++
+  return i > gap && from > gap && /[0-9]/.test(source[from] ?? '') ? source.slice(from, i) : undefined
+}
+
+/**
+ * Whether the file that holds `from` is stamped before loadmap 1.5, where `%` was also the remainder. The lexer reads
+ * the `loadmap` line itself: what a `%` is decides the tokens, before any statement is parsed. A file without the
+ * line is read at the newest version.
+ */
+function remainderPercent(source: string, report: Reporter, from: number): boolean {
+  const file = report.source === source ? report.fileAt(from) : undefined
+  const first = report.source === source ? (report.files[0]?.base ?? source.length + 1) - 1 : source.length
+  const text = stampAt(source, file?.base ?? 0, file?.end ?? first)
+  // read as the compiler reads the stamp (versions.ts): a text that is no version is its error to name
+  const version = text == null ? undefined : stampVersion(text, Number(text))
+  return version != null && before(version, ONE)
+}
 
 /**
  * The unit glued to the number that ends at `i`: undefined for none, null for a word that is not one. After a `±` a
  * `%` is the ± form's own mark (`± 30%`), read by the parser as it always was.
  */
-function suffixAt(src: string, i: number, to: number, afterPm: boolean): Suffix | null | undefined {
+function suffixAt(src: string, i: number, to: number, afterPm: boolean, old: boolean): Suffix | null | undefined {
   if (i >= to || (afterPm && src[i] === '%')) return undefined
-  UNIT.lastIndex = i
-  const m = UNIT.exec(src)
+  const unit = old ? UNIT_BEFORE_1_5 : UNIT
+  unit.lastIndex = i
+  const m = unit.exec(src)
   if (m && i + m[0].length <= to) return m[0] as Suffix
   return isIdStart(src[i]!) ? null : undefined
 }
@@ -97,6 +145,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
   const out: Token[] = []
   let depth = 0
   let i = from
+  const old = remainderPercent(source, report, from)
   const push = (t: Token) => out.push(t)
   while (i < to) {
     const c = source[i]!
@@ -130,7 +179,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
         report.error('syntax', { from: s, to: i }, `"${digits}" is not a number`)
       const written = Number(digits.replaceAll('_', ''))
       const prev = out.at(-1)
-      const unit = suffixAt(source, i, to, prev?.kind === 'punct' && (prev.text === '±' || prev.text === '+/-'))
+      const unit = suffixAt(source, i, to, prev?.kind === 'punct' && (prev.text === '±' || prev.text === '+/-'), old)
       if (unit === null) {
         // a glued word is never a name: "5sec" is one mistake, not a number and a stray name
         const w = i

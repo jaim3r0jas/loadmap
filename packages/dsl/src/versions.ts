@@ -2,6 +2,7 @@ import { childrenOf, type Decl, type Expr, type Stmt } from './ast'
 import type { Span } from './diagnostics'
 import { isSize } from './lexer'
 import { COMPONENT_PROPS, EDGE_PROPS, own, SCHEMA } from './schema'
+import { before, parseVersion, stampVersion, type Version } from './stamp'
 
 /**
  * The language version this package reads, the newest: what a new definition starts with. A minor version stays open
@@ -9,23 +10,7 @@ import { COMPONENT_PROPS, EDGE_PROPS, own, SCHEMA } from './schema'
  */
 export const LANGUAGE_VERSION = '1.5'
 
-/** `loadmap 1.1` is [1, 1]; `loadmap 1` is 1.0. */
-export type Version = readonly [major: number, minor: number]
-
-/** The version a `loadmap` line says, read from its text: `1.10` is ten, not `1.1`. Undefined when it is not one. */
-export function parseVersion(text: string): Version | undefined {
-  const m = /^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$/.exec(text)
-  return m ? [Number(m[1]), Number(m[2] ?? 0)] : undefined
-}
-
-export function versionText(v: Version): string {
-  return `${v[0]}.${v[1]}`
-}
-
-/** Whether `a` comes before `b`. */
-export function before(a: Version, b: Version): boolean {
-  return a[0] !== b[0] ? a[0] < b[0] : a[1] < b[1]
-}
+export { before, parseVersion, type Version, versionText } from './stamp'
 
 export const CURRENT = parseVersion(LANGUAGE_VERSION)!
 
@@ -41,9 +26,7 @@ export function stampOf(
   const v = head?.kind === 'decl' && head.keyword.name === 'loadmap' ? head.args[0] : undefined
   if (v?.t !== 'num') return undefined
   const text = source.slice(v.from, v.to)
-  const parsed = parseVersion(text)
-  const version = parsed && parsed[0] >= 1 ? parsed : !v.unit && v.value === 1 ? ([1, 0] as const) : undefined
-  return { at: { from: v.from, to: v.to }, text, version }
+  return { at: { from: v.from, to: v.to }, text, version: v.unit ? parseVersion(text) : stampVersion(text, v.value) }
 }
 
 /** What the language reads that is not a statement or a property, and the version that added it. */
@@ -56,6 +39,7 @@ const SYNTAX = {
   scenarioId: { since: '1.2', what: "a scenario's id" },
   sizes: { since: '1.2', what: 'a size (1.5KB, 20MB)' },
   autoDirection: { since: '1.4', what: 'direction: auto' },
+  poolScale: { since: '1.5', what: 'autoscale on the pool' },
 } as const
 
 /** A use of something a version added: where, what, and the version. */
@@ -95,6 +79,8 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
         add(`statement ${s.keyword.name}`, spec?.since, `"${s.keyword.name}"`, s.keyword)
         if (s.keyword.name === 'scenario' && s.args[0]?.t === 'id')
           add('scenarioId', SYNTAX.scenarioId.since, SYNTAX.scenarioId.what, s.args[0])
+        if (s.keyword.name === 'autoscale' && parent === 'pool')
+          add('poolScale', SYNTAX.poolScale.since, SYNTAX.poolScale.what, s.keyword)
         decl(s)
       } else if (s.kind === 'prop') {
         const spec =

@@ -34,14 +34,15 @@ export function reference(): string {
     if (!Object.keys(props).length) return
     out.push('| Property | Value | |', '| --- | --- | --- |')
     for (const [k, p] of Object.entries(props)) {
+      // gone from the language as it is written now: an older stamp still reads it (Versions)
+      if (p.until || p.movedTo) continue
       const words = p.values?.map((v) => `\`${v}\``)
       const value = !words
         ? `${p.unit === 'share' ? 'share' : p.unit === 'multiple' ? 'load multiple' : p.unit ? `number ${PROPERTY_UNITS[p.unit].words}` : p.value}, ${SCOPE[p.scope]}`
         : p.value === 'names'
           ? `a list of ${words.join(', ')}`
           : words.join(' \\| ')
-      const moved = p.movedTo ? ` From loadmap 1.2 in \`${p.movedTo} { … }\`.` : ''
-      const since = p.since ? ` From loadmap ${p.since}${p.was ? `; \`${p.was}\` before` : ''}.` : moved
+      const since = p.since ? ` From loadmap ${p.since}${p.was ? `; \`${p.was}\` before` : ''}.` : ''
       out.push(`| \`${k}\`${p.required ? ' (required)' : ''} | ${value} | ${p.doc.replaceAll('|', '\\|')}${since} |`)
     }
     out.push('')
@@ -60,13 +61,13 @@ export function reference(): string {
         '',
       )
     table(spec.props)
-    const holds = spec.children.filter((c) => c !== 'loadmap')
+    const holds = spec.children.filter((c) => c !== 'loadmap' && !SCHEMA[c]?.until)
     if (holds.length) out.push(`Holds: ${holds.map((c) => `\`${c}\``).join(', ')}.`, '')
     if (spec.open) out.push(`Its properties are named by ${OPEN[spec.open.names]}.`, '')
-    if (spec.edges === 'edges') out.push('Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.', '')
+    if (spec.edges === 'edges') out.push('Holds edges: `a -> b`, `a -> b: label`, `a -> b: label { when: … }`.', '')
     if (spec.edges === 'branches') out.push(`Holds branches: ${spec.branch}.`, '')
   }
-  for (const [name, spec] of Object.entries(SCHEMA)) block(name, spec)
+  for (const [name, spec] of Object.entries(SCHEMA)) if (!spec.until) block(name, spec)
   out.push(
     '### Edges',
     '',

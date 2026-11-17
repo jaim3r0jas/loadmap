@@ -56,8 +56,13 @@ describe('the grammar', () => {
       [read('docs/every-statement.loadmap'), ...several.map((f) => read(`docs/multi-file/${f}`))].join('\n'),
     )
     const seen = new Set(every.filter((t) => t.scope === 'keyword.other.statement').map((t) => t.text))
-    // the file holds every statement of the schema (docs.test.ts)
-    expect([...seen].sort()).toEqual(Object.keys(SCHEMA).filter(Boolean).sort())
+    // the file holds every statement of the schema (docs.test.ts), but what the language dropped (workers, before 1.5)
+    expect([...seen].sort()).toEqual(
+      Object.keys(SCHEMA)
+        .filter((k) => k && !SCHEMA[k]!.until)
+        .sort(),
+    )
+    expect(scopeOf('pool p "P" {\n  workers { pods: 3; perPod: 8 }\n}', 'workers')).toBe('keyword.other.statement')
   })
 
   it('reads the examples without a stray mark', () => {
@@ -121,14 +126,15 @@ describe('the grammar', () => {
     expect(at('phones', 12)).toBe('variable.other')
   })
 
-  it('reads a unit after a number as part of it, and a "%" before a value as modulo', () => {
-    const t = tokens('node a "A" { held: 20ms; hit: 80%; demand: flows.x * 1.5min + 7× + n % 2 }')
+  it('reads a unit after a number as part of it, a "%" after a number always a share, and one between two values (before loadmap 1.5) as an operator', () => {
+    const t = tokens('node a "A" { held: 20ms; hit: 80%; demand: flows.x * 1.5min + 7× + n % 2 + 30%+1 }')
     const at = (word: string) => t.find((x) => x.text === word)?.scope
     expect(at('20ms')).toBe('constant.numeric')
     expect(at('80%')).toBe('constant.numeric')
     expect(at('1.5min')).toBe('constant.numeric')
     expect(at('7×')).toBe('constant.numeric')
     expect(at('%')).toBe('keyword.operator')
+    expect(at('30%')).toBe('constant.numeric')
     expect(scopeOf('node a "A" { demand: flows.x * 0.002 as "cores" }', 'as')).toBe('keyword.operator.as')
   })
 

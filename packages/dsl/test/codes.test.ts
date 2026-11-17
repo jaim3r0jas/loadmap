@@ -8,6 +8,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 const cache = read('../../editor/src/templates/cache.loadmap')
 const checkout = read('../../../examples/checkout/checkout.loadmap')
 const search = read('../../../examples/search/search.loadmap')
+// as released with language 1.4: what 1.5 refuses, a file stamped before it still writes
+const cache14 = read('corpus/0.36.0/template-cache.loadmap')
 
 /** For each code a quick fix keys on, a text that reports it. */
 const BROKEN: Record<string, string> = {
@@ -17,7 +19,9 @@ const BROKEN: Record<string, string> = {
     'capacity: 50_000',
   ),
   'colon-before-block': cache.replace('clients -> api', 'clients -> api: { when: true }'),
-  'glued-percent': cache.replace('2_000 * load', '2_000 * load * (30%+1)'),
+  'glued-percent': cache14.replace('2_000 * load', '2_000 * load * (30%+1)'),
+  removed: cache.replace('clients -> api', 'clients -> api { label: "HTTPS" }'),
+  remainder: cache.replace('2_000 * load', '2_000 * load * (1 + pods % 2)'),
   // an old name under a stamp that has the new one
   deprecated: checkout.replace('{ underTarget: 7 }', '{ target: 7 }'),
   'missing-edge': checkout.replace('\nkafka -> workerPool\n', '\n'),

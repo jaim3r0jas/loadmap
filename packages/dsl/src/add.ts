@@ -84,7 +84,9 @@ export function addPublished(source: string, pick: CatalogPick, options?: Compil
     else {
       // a box without a component gains one: its capacity, and what happens past it
       // without a stage nothing reaches it: a demand to fill in, as a new box has
-      const staged = d.body?.some((s) => s.kind === 'decl' && (STAGES as readonly string[]).includes(s.keyword.name))
+      const staged =
+        d.keyword.name === 'pool' ||
+        d.body?.some((s) => s.kind === 'decl' && (STAGES as readonly string[]).includes(s.keyword.name))
       const add = [
         ...(prop('demand') || staged ? [] : ['demand: 0']),
         `capacity: ${id}`,

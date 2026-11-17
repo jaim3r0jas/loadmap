@@ -35,7 +35,8 @@ node limiter "Rate limiter" `${compact(rateLimit)} req/s` {
 node limiterRejected "Turned away" { lost { takes: [rejected] } }
 
 pool service "Service" `${pods} pods` {
-  workers { pods: pods; perPod: 8 }
+  pods: pods
+  perPod: 8
   short: "the service"
   demand: at.service.requests * 2ms
   capacity: measured(pods * 2, "cores", "pod CPU limit")

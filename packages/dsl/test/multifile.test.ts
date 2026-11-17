@@ -452,6 +452,39 @@ describe('a model in several files', () => {
 })
 
 describe('a box like another', () => {
+  it('lets a pool of 1.5 like a pool of a 1.4 library write its own workers, and flattens it to 1.5', () => {
+    const lib = [
+      'loadmap 1.4',
+      'library "L"',
+      'pool workersT "W" {',
+      '  workers "the work" { pods: 3; perPod: 8; placement: in-order }',
+      '  demand: 1',
+      '  capacity: measured(2, "cores")',
+      '  over: "lag"',
+      '}',
+      '',
+    ].join('\n')
+    const model = (pool: string) =>
+      `loadmap 1.5\nimport "./lib.loadmap" { workersT }\nload { max: 2 }\nflow f { rate: load; route: w; from: a }\nnode a "A"\n${pool}\na -> w\n`
+    const o = { path: 'm.loadmap', files: { 'lib.loadmap': lib } }
+    const stage = (pool: string) => {
+      const r = compile(model(pool), o)
+      expect(r.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+      return r.definition!.model.evaluate().stages.w
+    }
+    // the block's lines are pool lines here: one written here replaces the same one there
+    expect(stage('pool w { like: workersT; pods: 6 }')).toMatchObject({ label: 'the work', perPod: 8, pods: 6 })
+    expect(stage('pool w { like: workersT; autoscale { min: 1; max: 4; target: 0.7 } }')).toMatchObject({
+      autoscale: { min: 1, max: 4, target: 0.7 },
+    })
+    expect(stage('pool w { like: workersT }')).toMatchObject({ pods: 3, placement: 'in-order' })
+    // its flat copy is written in 1.5: the workers on the pool
+    const flat = flatten(model('pool w { like: workersT }'), o)
+    if ('error' in flat) throw new Error(flat.error)
+    expect(flat.text).toContain('  stageLabel: "the work"\n  pods: 3\n  perPod: 8\n')
+    expect(compile(flat.text).diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+  })
+
   const twins = [
     'loadmap 1.5',
     'load "L" { max: 2 }',

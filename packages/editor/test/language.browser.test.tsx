@@ -235,7 +235,7 @@ describe('quick fixes, definitions and rename in the editor', () => {
     expect(text).toContain('capacity: measured(apiPods * 1')
     expect(text).toContain('`${apiPods} pods`')
     expect(text).toContain('param apiPods "API pods"')
-    expect(text).toContain('workers { pods: apiPods; perPod: 8 }')
+    expect(text).toContain('\n  pods: apiPods\n')
   })
 })
 

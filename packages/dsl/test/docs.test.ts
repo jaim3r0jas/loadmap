@@ -110,7 +110,10 @@ it('docs/every-statement.loadmap and docs/multi-file hold every statement and to
   walk(parse(src).doc.body)
   // what a single file cannot hold (a part, a library, a variant) is in the multi-file example
   for (const text of Object.values(multi)) walk(parse(text).doc.body)
-  const top = Object.keys(SCHEMA['']!.props).map((k) => `${k}:`)
-  const want = [...Object.keys(SCHEMA).filter((k) => k), ...top, 'a -> b', 'a -> b { … }']
+  // what the language no longer writes (`until`: workers, grid) only an older stamp holds
+  const top = Object.entries(SCHEMA['']!.props)
+    .filter(([, p]) => !p.until)
+    .map(([k]) => `${k}:`)
+  const want = [...Object.keys(SCHEMA).filter((k) => k && !SCHEMA[k]!.until), ...top, 'a -> b', 'a -> b { … }']
   expect(want.filter((k) => !seen.has(k))).toEqual([])
 })

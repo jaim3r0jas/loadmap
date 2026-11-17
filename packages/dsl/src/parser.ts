@@ -404,13 +404,23 @@ class Parser {
       const t = this.peek()
       const prec = t.kind === 'punct' ? PREC[t.text] : undefined
       if (prec == null || prec < min) return left
-      // "30%+1": the lexer reads the remainder, and the writer most likely a share
+      // "30%+1" in a file stamped before 1.5: the lexer reads the remainder, and the writer most likely a share
       const before = this.toks[this.i - 1]
       const glued = t.text === '%' && before?.kind === 'number' && before.to === t.from
       this.next()
       const right = this.binary(prec + 1)
       const op = (t.text === '===' ? '==' : t.text === '!==' ? '!=' : t.text) as BinOp
-      left = { t: 'bin', op, left, right, from: left.from, to: right.to, ...(glued && { glued }) }
+      const triple = op !== t.text ? { from: t.from, to: t.to } : undefined
+      left = {
+        t: 'bin',
+        op,
+        left,
+        right,
+        from: left.from,
+        to: right.to,
+        ...(glued && { glued }),
+        ...(triple && { triple }),
+      }
     }
   }
 

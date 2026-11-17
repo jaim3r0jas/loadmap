@@ -6,7 +6,7 @@ import { type Suffix, unitScale } from './lexer'
 import { likeness } from './names'
 import { parse } from './parser'
 import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, propNamed, SCHEMA } from './schema'
-import { before, stampOf } from './versions'
+import { CURRENT, stampOf } from './versions'
 import { isViewKey, viewOf } from './viewblock'
 
 /**
@@ -245,10 +245,7 @@ export function setProperty(
   const stamp = stampOf(source, doc.body)?.version
   const view = viewOf(doc.body)
   const inView =
-    path === '' &&
-    isViewKey(name) &&
-    !doc.body.some((x) => x.kind === 'prop' && x.key.name === name) &&
-    (!!view || !stamp || !before(stamp, [1, 2]))
+    path === '' && isViewKey(name, stamp ?? CURRENT) && !doc.body.some((x) => x.kind === 'prop' && x.key.name === name)
   const [keyword = '', id] = inView ? ['view'] : path.split(':')
   const d = inView
     ? view

@@ -1,8 +1,7 @@
 loadmap 1.5
 # A small definition to start from. Change a number, a label or a route; the diagram follows.
 title: "Photo uploads"
-direction: right
-
+view { direction: right }
 load "Uploads, × today" { max: 50; default: 5 }
 param pods "Resizer pods" { options: [2, 4, 8]; default: 4 }
 param webp "Also make WebP copies" { default: true }
@@ -36,7 +35,8 @@ cluster broker "Broker" "3 nodes" {
 node brokerDropped "Too old" { lost { takes: [dropped] } }
 
 pool resizers "Resizers" `${pods} pods × 4 threads` {
-  workers { pods: pods; perPod: 4 }
+  pods: pods
+  perPod: 4
   short: "the resizers"
   plural: true
   demand: flows.photos * files * 5ms # CPU per file

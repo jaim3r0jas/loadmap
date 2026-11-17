@@ -29,15 +29,15 @@ flow lookups "lookups" {
 node users "Users"
 
 pool service "Your service" `${pods} pods` {
-  workers { pods: pods; perPod: 8 }
+  pods: pods
+  perPod: 8
   short: "your service"
   demand: flows.lookups * 10ms
   capacity: measured(pods * 1, "cores", "pod CPU limit")
   over: "requests queue in your service"
 }
 
-node responseCache "Cache" {
-  sub: hit > 0 ? `${hit * 100} % hits` : "off"
+node responseCache "Cache" `${hit > 0 ? `${hit * 100} % hits` : "off"}` {
   cache { hit: hit }
 }
 

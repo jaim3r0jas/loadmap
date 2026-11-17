@@ -4,6 +4,7 @@ import { walk } from './complete'
 import { type Code, type Diagnostic, Reporter } from './diagnostics'
 import type { TextChange } from './edit'
 import { parse } from './parser'
+import { cut, edgeLabels, foldWorkers, mods, subsUp } from './rewrite'
 import { BOXES, COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
 import { CURRENT, lowest, needs, before as older, stampOf, versionText } from './versions'
 import { intoView } from './viewblock'
@@ -78,13 +79,31 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
   },
 
   // target is now underTarget   layout: right is now direction: right
-  // speed is now in view { … }
-  deprecated: ({ source, data, replace, doc }) =>
-    data.to
-      ? [{ title: `Rename to "${data.to}"`, changes: replace(data.to) }]
-      : data.view
-        ? [{ title: 'Move the view settings into view { … }', changes: intoView(source, doc().body) }]
-        : [],
+  // speed is now in view { … }   layout: down is ignored: direction sets the direction
+  deprecated: ({ source, d, data, replace, doc }) => {
+    if (data.to) return [{ title: `Rename to "${data.to}"`, changes: replace(data.to) }]
+    if (data.view) return [{ title: 'Move the view settings into view { … }', changes: intoView(source, doc().body) }]
+    const line = data.remove ? lineOf(source, doc().body, d.from) : undefined
+    return line ? [{ title: `Remove "${data.remove}"`, changes: [line] }] : []
+  },
+
+  // "workers" is no longer a statement   "sub" is no longer a property of node   … of an edge   … of param
+  removed: ({ source, d, data, doc }) => {
+    const body = doc().body
+    const fix = (title: string, changes: TextChange[]) => (changes.length ? [{ title, changes }] : [])
+    if (data.gone === 'workers') return fix('Write its lines on the pool', foldWorkers(source, body, d.from))
+    if (data.gone === 'sub') return fix('Write it on the first line', subsUp(source, body, d.from))
+    if (data.gone === 'label' && data.in === '->')
+      return fix('Write it after the edge', edgeLabels(source, body, d.from))
+    const line = lineOf(source, body, d.from)
+    return line ? [{ title: `Remove "${data.gone}"`, changes: [line] }] : []
+  },
+
+  // "%" between two values is the remainder
+  remainder: ({ source, d, doc }) => {
+    const changes = mods(source, doc().body, d.from)
+    return changes.length ? [{ title: 'Write it as mod(a, b)', changes }] : []
+  },
 
   // "30%+1" is the remainder of 30 divided by +1, not a share
   'glued-percent': ({ data, replace }) => [
@@ -124,6 +143,23 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
       },
     ]
   },
+}
+
+/** The change that takes the property at `at` out of its block. */
+function lineOf(source: string, body: readonly Stmt[], at: number): TextChange | undefined {
+  const inside = (owner: Decl | undefined, list: readonly Stmt[]): TextChange | undefined => {
+    for (const s of list) {
+      if (s.from > at || s.to < at) continue
+      // the last line of a view block takes the block with it: a bare `view` is no statement
+      if (s.kind === 'prop')
+        return owner?.keyword.name === 'view' && owner.body?.length === 1
+          ? cut(source, {}, owner)
+          : cut(source, owner ?? {}, s)
+      if (s.kind === 'decl' && s.body) return inside(s, s.body)
+    }
+    return undefined
+  }
+  return inside(undefined, body)
 }
 
 /** The codes that have a quick fix (besides a did-you-mean, which any code can carry). */

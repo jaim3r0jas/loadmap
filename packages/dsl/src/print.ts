@@ -1,4 +1,6 @@
 import type { Expr, Stmt } from './ast'
+import { ONE_SPELLING } from './schema'
+import { before, CURRENT, parseVersion, stampOf } from './versions'
 
 /**
  * Statements as text the parser reads back to the same statements: what `loadmap bundle` writes, a model's files as
@@ -19,6 +21,10 @@ export function print(stmts: readonly Stmt[], source: string): string {
     }
   }
   collect(stmts)
+  // from 1.5 the remainder is mod(a, b); a flat copy of an older stamp keeps "%", which its version reads (and where
+  // a fit of its own may be called mod)
+  const version = stampOf(source, stmts)?.version ?? CURRENT
+  const modulo = !before(version, parseVersion(ONE_SPELLING)!)
   const name = (n: string): string => {
     if (!n.includes('@')) return n
     let out = hidden.get(n)
@@ -65,6 +71,7 @@ export function print(stmts: readonly Stmt[], source: string): string {
       case 'unary':
         return `${e.op}${expr(e.arg, 7)}`
       case 'bin': {
+        if (e.op === '%' && modulo) return `mod(${expr(e.left)}, ${expr(e.right)})`
         const p = PREC[e.op] ?? 0
         // a "%" between two values has spaces around it: glued to a number it would be a share
         const text = `${expr(e.left, p)} ${e.op} ${expr(e.right, p + 1)}`

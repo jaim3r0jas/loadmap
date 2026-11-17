@@ -86,6 +86,18 @@ describe('hover', () => {
     })
   })
 
+  it('says where a property 1.5 dropped or moved went', () => {
+    const sub = checkout.replace('node phones "Phones" "app checkout"', 'node phones "Phones" { sub: "apps" }')
+    expect(at(put(sub, 'sub: "apps"'))?.body).toEqual([
+      'The second line of the box.',
+      'Gone from loadmap 1.5: write it as the second text on the first line: node db "Database" "primary".',
+    ])
+    const top = checkout.replace('\ntitle:', '\ndirection: down\ntitle:')
+    expect(at(put(top, 'direction: down'))?.body?.at(-1)).toBe(
+      'In `view { … }` from loadmap 1.5; `loadmap fmt` moves it there.',
+    )
+  })
+
   it('describes parameters, the load, lets, fits and builtins where formulas name them', () => {
     expect(at(put(cache, 'pods * 1', 1))).toEqual(
       expect.objectContaining({ head: 'param pods "API pods"', body: ['A select: 2, 4 or 6. Default 2.'] }),

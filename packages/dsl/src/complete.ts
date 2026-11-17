@@ -8,6 +8,7 @@ import { BUILTINS } from './expr'
 import type { Token } from './lexer'
 import { parse } from './parser'
 import { type BlockSpec, BOXES, COLORS, EDGE_PROPS, own, type PropSpec, propNamed, SCHEMA, type Scope } from './schema'
+import { before, CURRENT, parseVersion, stampOf, type Version } from './versions'
 
 export interface Completion {
   label: string
@@ -72,7 +73,11 @@ class Help {
     readonly offset: number,
   ) {
     ;({ spec: this.spec, edgeBody: this.edgeBody, path: this.path } = blockAt(body, offset))
+    this.version = stampOf(source, body)?.version ?? CURRENT
   }
+
+  /** The definition's language version: what completion offers is what it writes. */
+  readonly version: Version
 
   options(): Completion[] {
     const { cur } = this
@@ -118,7 +123,7 @@ class Help {
         s.kind === 'prop' && !(s.from <= this.offset && this.offset <= s.to) ? [s.key.name] : [],
       ),
     )
-    if (this.edgeBody) return props(EDGE_PROPS, written)
+    if (this.edgeBody) return props(EDGE_PROPS, written, this.version)
     const { spec } = this
     // an old name written (`target` in expect) sets the property it is now
     for (const k of [...written]) {
@@ -128,7 +133,7 @@ class Help {
     // a whole statement only on a line of its own: not before what the line already holds
     const end = this.source.indexOf('\n', this.offset)
     const alone = !this.source.slice(this.offset, end < 0 ? undefined : end).trim()
-    const list: Completion[] = [...props(spec.props, written), ...statements(spec, alone)]
+    const list: Completion[] = [...props(spec.props, written, this.version), ...statements(spec, this.version, alone)]
     const open = (names: string[]) =>
       names
         .filter((n) => !written.has(n))
@@ -573,9 +578,20 @@ function capacityForms(boost = 4): Completion[] {
   }))
 }
 
-function props(p: Readonly<Record<string, PropSpec>>, written: ReadonlySet<string>): Completion[] {
+/**
+ * Whether the definition's version writes it: from its `since`, and before its `until` or the version that moved it
+ * elsewhere (`movedTo`). A newer stamp still reads what it no longer writes; completion offers only what it writes.
+ */
+function writes(version: Version, s: { since?: string; until?: string; movedTo?: string; movedIn?: string }) {
+  const at = (v: string) => parseVersion(v)!
+  if (s.since && before(version, at(s.since))) return false
+  if (s.until && !before(version, at(s.until))) return false
+  return !(s.movedTo && !before(version, at(s.movedIn ?? '1.2')))
+}
+
+function props(p: Readonly<Record<string, PropSpec>>, written: ReadonlySet<string>, version: Version): Completion[] {
   return Object.entries(p).flatMap(([label, s]) =>
-    written.has(label) && !s.repeat
+    (written.has(label) && !s.repeat) || !writes(version, s)
       ? []
       : [
           {
@@ -590,14 +606,14 @@ function props(p: Readonly<Record<string, PropSpec>>, written: ReadonlySet<strin
   )
 }
 
-function statements(spec: BlockSpec, snippets = true): Completion[] {
+function statements(spec: BlockSpec, version: Version, snippets = true): Completion[] {
   return spec.children
-    .filter((k) => k !== 'loadmap')
+    .filter((k) => k !== 'loadmap' && writes(version, SCHEMA[k]!))
     .map((k) => ({
       label: k,
       type: 'keyword',
       info: `${SCHEMA[k]!.doc}\n\n${SCHEMA[k]!.example}`,
-      snippet: snippets ? statementSnippet(k) : undefined,
+      snippet: snippets ? statementSnippet(k, version) : undefined,
     }))
 }
 
@@ -605,9 +621,9 @@ function statements(spec: BlockSpec, snippets = true): Completion[] {
 const STARTS: Readonly<Record<string, readonly string[]>> = {
   node: ['#{pass}', 'capacity: #{capacity}'],
   cluster: ['queue #{topic} { partitions { #{flow}: #{12} } }', 'capacity: #{capacity}'],
-  pool: ['workers { pods: #{2}; perPod: #{8} }', 'capacity: #{capacity}'],
+  pool: ['pods: #{2}', 'perPod: #{8}', 'capacity: #{capacity}'],
   component: ['demand: #{demand}', 'capacity: #{capacity}'],
-  expect: ['target: #{2}'],
+  expect: ['underTarget: #{2}'],
   step: ['load: #{10}'],
   scenario: ['#{param}: #{value}'],
   preset: ['load: #{10}'],
@@ -615,11 +631,20 @@ const STARTS: Readonly<Record<string, readonly string[]>> = {
   fit: ['points #{x} #{y} {', '  #{1} #{1}', '  #{2} #{2}', '}'],
 }
 
+/** The same, as an older version writes it: a pool's workers in their block before 1.5, `target` before 1.1. */
+const STARTS_BEFORE: Readonly<Record<string, readonly [since: Version, lines: readonly string[]]>> = {
+  pool: [
+    [1, 5],
+    ['workers { pods: #{2}; perPod: #{8} }', 'capacity: #{capacity}'],
+  ],
+  expect: [[1, 1], ['target: #{2}']],
+}
+
 /**
  * A whole statement as a snippet, from the schema: its id and label, its required properties with a value of their
  * kind, and for a box a stage and a capacity. Statements with nothing to fill in (`pass`, `store`) have none.
  */
-function statementSnippet(k: string): string | undefined {
+function statementSnippet(k: string, version: Version): string | undefined {
   const s = SCHEMA[k]!
   let n = 0
   const field = (name: string) => `\${${++n}:${name}}`
@@ -643,7 +668,9 @@ function statementSnippet(k: string): string | undefined {
         ([key, p]) =>
           `${key}: ${(values[p.value] ?? `#{${p.values?.[0] ?? (key === 'default' ? 1 : key)}}`).replace('KEY', key)}`,
       ),
-    ...(STARTS[k] ?? []).map((l) => l.replace('#{capacity}', 'estimated(#{value}, "#{unit}", "#{source}")')),
+    ...(own(STARTS_BEFORE, k) && before(version, STARTS_BEFORE[k]![0]) ? STARTS_BEFORE[k]![1] : (STARTS[k] ?? [])).map(
+      (l) => l.replace('#{capacity}', 'estimated(#{value}, "#{unit}", "#{source}")'),
+    ),
   ]
   // #{…} in the lines are fields too, numbered after the words
   const body = lines.map((l) => l.replace(/#\{([^}]*)\}/g, (_, name: string) => field(name)))

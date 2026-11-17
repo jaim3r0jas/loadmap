@@ -2,7 +2,7 @@ import { childrenOf, type Decl, type Edge, type Expr, type Ident, type Property,
 import { didYouMean, type Reporter, type Span } from './diagnostics'
 import { BUILTINS, RESERVED } from './expr'
 import { type NameVisitor, walkFormula, walkNames } from './names'
-import { BOXES, COMPONENT_PROPS, own, propNamed, SCHEMA, STAGES } from './schema'
+import { BOXES, COMPONENT_PROPS, own, POOL_LINES, propNamed, SCHEMA, STAGES } from './schema'
 
 /** Subsystems inside subsystems, this deep at most, and this many boxes in one definition once they are written out. */
 export const MAX_NESTING = 4
@@ -217,16 +217,30 @@ export class Expander {
     const theirs = (base.body ?? []).filter(isInput)
     const rest = (base.body ?? []).filter((s) => !isInput(s))
     const given = this.given(d, withs, theirs, found.env, `"${name}"`, env)
-    const lines = theirs.length || found.env !== env ? this.settle(rest, proto.keyword.name, found.env, given) : rest
+    const settled = theirs.length || found.env !== env ? this.settle(rest, proto.keyword.name, found.env, given) : rest
     const mine = stripped.body
+    // a pool that writes its workers on itself (1.5) like one that wrote them in a block: the block's lines are pool
+    // lines, so a line written here replaces the same line there
+    const direct = mine.some(
+      (st) =>
+        (st.kind === 'prop' && POOL_LINES.includes(st.key.name)) ||
+        (st.kind === 'decl' && st.keyword.name === 'autoscale'),
+    )
+    const lines = direct && proto.keyword.name === 'pool' ? settled.flatMap(poolLines) : settled
     const props = new Set(mine.flatMap((st) => (st.kind === 'prop' ? [st.key.name] : [])))
     const kinds = new Set(mine.flatMap((st) => (st.kind === 'decl' ? [st.keyword.name] : [])))
     const stages: readonly string[] = STAGES
     const ownStage = [...kinds].some((k) => stages.includes(k))
+    // a pool's pods are fixed or autoscaled: either written here replaces the other there
+    const scaled = (st: Stmt) =>
+      (st.kind === 'prop' && st.key.name === 'pods' && kinds.has('autoscale')) ||
+      (st.kind === 'decl' && st.keyword.name === 'autoscale' && props.has('pods'))
     const taken = lines.filter((st) =>
-      st.kind === 'prop'
-        ? st.key.name !== 'like' && !props.has(st.key.name)
-        : st.kind !== 'decl' || !(kinds.has(st.keyword.name) || (ownStage && stages.includes(st.keyword.name))),
+      scaled(st)
+        ? false
+        : st.kind === 'prop'
+          ? st.key.name !== 'like' && !props.has(st.key.name)
+          : st.kind !== 'decl' || !(kinds.has(st.keyword.name) || (ownStage && stages.includes(st.keyword.name))),
     )
     // an id of its own on a stage or a component there would be declared again here
     const named = taken.find((st): st is Decl => st.kind === 'decl' && st.args[0]?.t === 'id')
@@ -741,4 +755,30 @@ function stageNames(stmts: readonly Stmt[]) {
     }
   }
   walk(stmts)
+}
+
+/**
+ * A pool's `workers { … }` block as the lines a pool writes from loadmap 1.5: its label as `stageLabel`, its lines
+ * under their names now (`fill` is `placement`), its `autoscale { … }`. A block with an id of its own stays.
+ */
+function poolLines(st: Stmt): Stmt[] {
+  if (st.kind !== 'decl' || st.keyword.name !== 'workers' || st.args.some((a) => a.t === 'id')) return [st]
+  const label = st.args.find((a) => a.t === 'str' || a.t === 'tpl')
+  const workers = SCHEMA.workers!.props
+  return [
+    ...(label
+      ? [
+          {
+            kind: 'prop',
+            key: { name: 'stageLabel', from: label.from, to: label.from },
+            value: label,
+            from: label.from,
+            to: label.to,
+          } as Property,
+        ]
+      : []),
+    ...(st.body ?? []).map((x) =>
+      x.kind === 'prop' ? { ...x, key: { ...x.key, name: propNamed(workers, x.key.name)?.name ?? x.key.name } } : x,
+    ),
+  ]
 }
