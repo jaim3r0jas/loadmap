@@ -82,8 +82,6 @@ export interface LoadmapHandle {
   step(dtReal: number): void
   /** Shows a story step (its values and the box it points at), or leaves the story with null. */
   setStoryStep(i: number | null): void
-  /** Draws these subsystems closed, each as one box, and every other one open. */
-  setClosed(ids: readonly string[]): void
   /** The story step shown; null outside the story. */
   storyStep(): number | null
   /**
@@ -337,7 +335,6 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     show: (ids) => engine.viewer?.show(ids),
     setValues: (v) => lm.setValues(v),
     setStoryStep: (i) => lm.setStep(i),
-    setClosed: (ids) => lm.setClosed(ids),
     storyStep: () => engine.storyStep,
     playStory: () => {
       const start = engine.ev

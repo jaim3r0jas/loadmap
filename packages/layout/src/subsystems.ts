@@ -1,3 +1,4 @@
+import type { LooseValues } from '@loadmap/core'
 import { pct } from '@loadmap/core/format'
 import type { Frame, Laid, SceneSubsystem } from './layout'
 import type { TextMeasure } from './text'
@@ -207,7 +208,7 @@ export function closedView(view: View, closed: readonly string[]): View {
   const stageDefs = view.model.def.stages as Record<string, { component?: string }>
   const names = view.model.def.components as Record<string, { name: string }>
   const nodes: Record<string, AnyNodeDef> = {}
-  const held = new Map<string, { stages: string[]; tier?: string }>()
+  const held = new Map<string, { stages: string[]; tiers: Set<string | undefined> }>()
   for (const [id, n] of Object.entries(view.def.nodes as Record<string, AnyNodeDef>)) {
     const c = into(id)
     if (c == null) {
@@ -216,15 +217,16 @@ export function closedView(view: View, closed: readonly string[]): View {
     }
     let h = held.get(c)
     if (!h) {
-      h = { stages: [] }
+      h = { stages: [], tiers: new Set() }
       held.set(c, h)
       // where its first box stood
       nodes[c] = n
     }
     h.stages.push(...(n.stage == null ? [] : typeof n.stage === 'string' ? [n.stage] : n.stage))
-    h.tier ??= n.tier
+    h.tiers.add(n.tier)
   }
   for (const [c, h] of held) {
+    const [tier] = h.tiers
     const components = [...new Set(h.stages.flatMap((s) => stageDefs[s]?.component ?? []))]
     nodes[c] = {
       kind: 'node',
@@ -242,18 +244,23 @@ export function closedView(view: View, closed: readonly string[]): View {
       },
       stage: h.stages,
       subsystem: c,
-      ...(h.tier != null ? { tier: h.tier } : {}),
+      // the tier its boxes share; one across several tiers stands where what feeds it does
+      ...(h.tiers.size === 1 && tier != null ? { tier } : {}),
     }
   }
-  const seen = new Set<string>()
-  const never = () => false
-  const edges = (view.def.edges as readonly EdgeDef[]).map((e) => {
-    const [from, to] = [into(e.from) ?? e.from, into(e.to) ?? e.to]
+  // the edges that come to run between the same two boxes are one: drawn where any of them is, under the first's
+  // place and label. One that ran inside the box is never drawn
+  const all = view.def.edges as readonly EdgeDef[]
+  const ends = (e: EdgeDef) => [into(e.from) ?? e.from, into(e.to) ?? e.to] as const
+  const pair = (e: EdgeDef) => ends(e).join('\n')
+  const first = new Map<string, EdgeDef>()
+  const edges = all.map((e) => {
+    const [from, to] = ends(e)
     if (from === e.from && to === e.to) return e
-    // inside the box, or a second edge between the same two: not drawn
-    const drawn = from !== to && !seen.has(`${from}\n${to}`)
-    seen.add(`${from}\n${to}`)
-    return drawn ? { ...e, from, to } : { ...e, from, to, when: never }
+    if (from === to || first.has(pair(e))) return { ...e, from, to, when: () => false }
+    first.set(pair(e), e)
+    const same = all.filter((x) => pair(x) === pair(e))
+    return { ...e, from, to, when: (ctx: LooseValues) => same.some((x) => !x.when || x.when(ctx)) }
   })
   const flows = Object.fromEntries(
     Object.entries(view.def.flows as Record<string, FlowView>).map(([f, fv]) => [

@@ -130,17 +130,21 @@ const DUE = { w: 0, h: 0 }
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
-  // the subsystems drawn closed: the page's, until the reader or a story step says otherwise. They stay through an
-  // edit of the text (a new view): one the new view lacks closes nothing. What closes them and draws their frames
-  // comes with the first view that has a subsystem, before it is laid out
-  const [shut, setShut] = useState<readonly string[] | null>(null)
-  const closed = shut ?? o.closed ?? []
+  // the subsystems drawn closed: the page's, until the reader or a story step says otherwise; a new view (the text
+  // edited, another definition) starts from the page's again. What closes them and draws their frames comes with the
+  // first view that has a subsystem, before it is laid out
+  const [shut, setShut] = useState<{ view: View; ids: readonly string[] } | null>(null)
+  const closed = shut?.view === whole ? shut.ids : (o.closed ?? [])
   // one function for every view: once it is there it stays
   const [close, setClose] = useState<((view: View, closed: readonly string[]) => View) | null>(null)
   useEffect(() => {
     let live = true
     const loading = closing(whole)
-    if (loading) Promise.all([loading, loadFrames()]).then(([f]) => live && setClose(() => f), console.error)
+    if (loading)
+      Promise.all([loading, loadFrames()]).then(
+        ([f]) => live && setClose(() => f),
+        (err) => console.error('loadmap: layout failed', err),
+      )
     return () => {
       live = false
     }
@@ -148,7 +152,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const unready = !close && Object.keys(whole.def.subsystems ?? {}).length > 0
   // closed, the diagram is another view: it moves there as it moves to an edited one
   const view = close && closed.length ? close(whole, closed) : whole
-  const setClosed = setShut as (ids: readonly string[]) => void
+  const setClosed = useCallback((ids: readonly string[]) => setShut({ view: whole, ids }), [whole])
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
   // setValues evaluates once for the engine; the render reuses that evaluation. It also holds the values set last
@@ -172,10 +176,13 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const engineRef = useRef<Engine | null>(null)
   engineRef.current ??= new Engine(model, view, ev, o)
   const engine = engineRef.current
-  // a new model or view (the text edited) keeps the engine: what is drawn moves to the new structure, the view stays.
-  // Once committed, with the newest numbers: it tells the board, which must not hear of it while this renders
+  // a new model (the text edited) keeps the engine: what is drawn moves to the new structure, the view stays.
+  // Once committed, with the newest numbers: it tells the board, which must not hear of it while this renders.
+  // Another view of the same model (a subsystem closed or opened) is only drawn another way: the story plays on and
+  // the dots keep running, every stage still has its box
   useLayoutEffect(() => {
-    if (engine.model !== model || engine.view !== view) engine.setModel(model, view, evaluated.current?.ev ?? ev, o)
+    if (engine.model !== model) engine.setModel(model, view, evaluated.current?.ev ?? ev, o)
+    else engine.view = view
   })
   engine.transition = o.transition ?? 0.8
 
@@ -338,9 +345,9 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
       engine.storyStep = st ? i : null
       setStepState({ model, i: st ? i : null })
       // a step says what it shows closed; without it, and outside the story, the page's own
-      setShut(st?.closed ?? null)
+      setShut(st?.closed ? { view: whole, ids: st.closed } : null)
     },
-    [model, apply, engine],
+    [model, apply, engine, whole],
   )
   const setStep = useCallback(
     (i: number | null) => {

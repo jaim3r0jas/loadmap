@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { boxComponent } from './camera'
+import { boxComponent, showsComponent } from './camera'
 import type { Handover } from './engine'
 import { edge, rankLabels } from './ranks'
 import type { LoadmapController } from './useLoadmap'
@@ -539,12 +539,7 @@ const Structure = memo(function Structure({
   const ranks = rankLabels(ev, lm.model)
   const staying = lm.scene && new Set(lm.scene.nodes.map((n) => n.id))
   // a closed subsystem's box stands for every component inside it
-  const boxes = (c: string) =>
-    scene.nodes.filter(
-      (n) =>
-        (n.subsystem != null && sub ? sub.holds(ev, n, c) : componentOf(lm, n) === c) &&
-        (!staying || staying.has(n.id)),
-    )
+  const boxes = (c: string) => scene.nodes.filter((n) => showsComponent(ev, n, c) && (!staying || staying.has(n.id)))
   const first = ev.firstLimit
   const was = hand && hand.from !== first?.id && ev.components[hand.from] ? ev.components[hand.from] : null
   const wasBoxes = was ? boxes(was.id) : []
@@ -585,7 +580,7 @@ const Structure = memo(function Structure({
           title={labels.nodes[n.id]?.title}
           sub={labels.nodes[n.id]?.sub}
           lm={lm}
-          focused={!!lm.focus && componentOf(lm, n) === lm.focus}
+          focused={!!lm.focus && showsComponent(ev, n, lm.focus)}
           selected={selected === n.id}
           handlers={handlers(n)}
         />
@@ -597,9 +592,9 @@ const Structure = memo(function Structure({
           <Halo key={n.id} n={n} kind="limit" component={first.id} tag={i ? undefined : ranks.get(first.id)?.text} />
         ))}
       {[...ranks].map(([c, r]) => {
-        const n = r.rank > 1 && c !== was?.id ? boxes(c)[0] : undefined
         // one badge a box: a closed subsystem wears that of the first of its components to run out
-        if (!n || worn.has(n)) return null
+        const n = r.rank > 1 && c !== was?.id ? boxes(c).find((x) => !worn.has(x)) : undefined
+        if (!n) return null
         worn.add(n)
         return <Badge key={c} n={n} text={r.text} />
       })}
@@ -656,7 +651,12 @@ const pathOf = (pts: readonly [number, number][]) => pts.map(([x, y], i) => `${i
 
 /** The lost boxes: their look, and the edges into them, say that what goes there is lost. */
 function lostBoxes(lm: LoadmapController, scene: { nodes: readonly SceneNode[] }): Set<string> {
-  return new Set(scene.nodes.filter((n) => n.stages.some((s) => lm.ev.stages[s]?.kind === 'lost')).map((n) => n.id))
+  // a closed subsystem's box is none, whatever it holds
+  return new Set(
+    scene.nodes
+      .filter((n) => n.subsystem == null && n.stages.some((s) => lm.ev.stages[s]?.kind === 'lost'))
+      .map((n) => n.id),
+  )
 }
 
 function Edge({ e, text, marker, lost }: { e: SceneEdge; text?: string; marker: string; lost?: boolean }) {

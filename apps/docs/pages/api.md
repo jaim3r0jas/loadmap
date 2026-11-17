@@ -79,8 +79,9 @@ that one's frame; the scene lists them as `scene.subsystems`. With tiers, a subs
 has no frame (a frame cannot cross a lane).
 
 A subsystem can be drawn closed, as one box that stands for everything inside: `<Loadmap closed={['us']}>` says which
-the page starts with, a story step its own (`closed: ['us']` in the step, `[]` for every one open), and the handle's
-`setClosed(ids)` sets them from code. The reader opens one with a click on it and closes one with a click on its name.
+the page starts with, and a story step its own (`closed: ['us']` in the step, `[]` for every one open). The reader
+opens one with a click on it and closes one with a click on its name; `setClosed(ids)` on the controller
+(`useLoadmap`) sets them from code.
 
 ## The page (`@loadmap/react`)
 

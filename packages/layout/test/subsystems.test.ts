@@ -266,6 +266,42 @@ describe('a closed subsystem', () => {
     expect(collisions(s)).toEqual([])
   })
 
+  it('draws the edges that come to join the same two boxes as one, where any of them is drawn', async () => {
+    const two = defineView(m, {
+      nodes: { in: node({ label: 'In', stage: 'b' }), 'eu.a': node({ label: 'A' }), 'eu.b': node({ label: 'B' }) },
+      edges: [edge('in', 'eu.a', { when: ({ load }) => Number(load) > 5 }), edge('in', 'eu.b')],
+      flows,
+      subsystems: { eu: { label: 'EU region' } },
+    })
+    const close = (await closing(two))!
+    // at this load only the second is drawn open: closed, the one edge is there, in the first's place
+    const s = await layout(close(two, ['eu']), m.evaluate({ load: 1 }))
+    expect(s.edges.map((e) => [e.id, e.from, e.to])).toEqual([['e0', 'in', 'eu']])
+  })
+
+  it('stands in the tier its boxes share, and in none of its own when they stand in several', async () => {
+    const tiered = (a: string, b: string) => {
+      const nodes: Record<string, AnyNodeDef<'b', string>> = {
+        in: node({ label: 'In', stage: 'b', tier: 'front' }),
+        'eu.a': node({ label: 'A', tier: a }),
+        'eu.b': node({ label: 'B', tier: b }),
+      }
+      return defineView(m, {
+        nodes,
+        edges: [edge('in', 'eu.a'), edge('eu.a', 'eu.b')],
+        flows,
+        subsystems: { eu: { label: 'EU region' } },
+        tiers: TIERS,
+      })
+    }
+    const one = tiered('app', 'app')
+    expect((await closing(one))!(one, ['eu']).def.nodes.eu).toMatchObject({ tier: 'app' })
+    const several = tiered('app', 'data')
+    const shut = (await closing(several))!(several, ['eu'])
+    expect(shut.def.nodes.eu).not.toHaveProperty('tier')
+    expect(collisions(await layout(shut, m.evaluate()))).toEqual([])
+  })
+
   it('gives the same view for the same subsystems, and the view itself when none of its own is closed', async () => {
     const close = (await closing(v))!
     expect(close(v, [])).toBe(v)

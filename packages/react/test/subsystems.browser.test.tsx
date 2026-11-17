@@ -125,8 +125,34 @@ describe('a subsystem on the board', () => {
     await expect.poll(() => box('eu.line'), { timeout: 5000 }).toBeTruthy()
     // the frame that goes fades out with its boxes: gone once the move is over
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu'])
-    // and the handle closes and opens them
-    ref.current!.setClosed(['eu'])
-    await expect.poll(() => box('eu'), { timeout: 5000 }).toBeTruthy()
+  })
+
+  it('plays a story through a step that closes a subsystem: the story goes on, and so do the dots', async () => {
+    const def = compile(
+      `${SOURCE}step "The region as one box." { closed: [eu]; seconds: 1 }\nstep "Every box." { closed: []; seconds: 1 }\n`,
+    ).definition!
+    host = document.createElement('div')
+    host.style.width = '1200px'
+    document.body.appendChild(host)
+    root = createRoot(host)
+    const ref = createRef<LoadmapHandle>()
+    root.render(<Loadmap ref={ref} model={def.model} view={def.view} transition={0} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    const handle = ref.current!
+    await handle.ready()
+    handle.pause()
+    const engine = handle.engine
+    const sim = engine.sim
+    const seconds = handle.playStory()
+    const seen = new Set<number | null>()
+    for (let t = 0; t < seconds + 2; t += 0.1) {
+      handle.step(0.1)
+      await handle.ready()
+      seen.add(handle.storyStep())
+    }
+    // both steps were shown, the first with the region closed
+    expect(seen.has(0) && seen.has(1)).toBe(true)
+    // closing and opening drew the same model another way: the sim was never started over
+    expect(engine.sim).toBe(sim)
   })
 })
