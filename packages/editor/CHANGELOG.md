@@ -1,5 +1,27 @@
 # @loadmap/editor
 
+## 0.37.0
+
+### Minor Changes
+
+- 894e762: The dot grid behind the diagram is the reader's own setting, kept in the browser: **View → Dot grid** no longer writes
+  `grid: false` into the definition (language 1.5 dropped it; a file from before that says it still starts with it off).
+  The templates are written in language 1.5.
+- 1604f87: The files' explorer lists under each file the subsystems it declares, one in another indented under it, each by its
+  name; a click (or Enter) opens the file at that subsystem's line. The board picks the box under the cursor there, as a
+  click in the text does. A file shown already opens at a place in it too (go to definition within one file).
+
+### Patch Changes
+
+- Updated dependencies [894e762]
+- Updated dependencies [10197af]
+- Updated dependencies [10197af]
+- Updated dependencies [2e0108e]
+- Updated dependencies [9105983]
+  - @loadmap/dsl@0.37.0
+  - @loadmap/core@0.37.0
+  - @loadmap/react@0.37.0
+
 ## 0.36.0
 
 ### Minor Changes
