@@ -1,5 +1,6 @@
 import type { Capacity, ConditionValue, Published, PublishedConfig } from '@loadmap/core'
-import type { AddResult, CatalogPick } from '@loadmap/dsl/internal'
+import type { CompileOptions } from '@loadmap/dsl'
+import { type AddResult, addPublished, type CatalogPick } from '@loadmap/dsl/add'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 /** The picker's own rules: they come with it, not in the editor's first load. */
@@ -40,15 +41,17 @@ export interface CatalogPickerProps {
 
 /**
  * Add → From the catalog: a component, the conditions of one of its published runs, and the figure they give, with
- * its source. It writes text only (a `published` statement, and a new box or a box's capacity), through the dsl.
- * Loaded the first time it opens, with the catalog.
+ * its source. It writes text only (a `published` statement, and a new box or a box's capacity), through the dsl's
+ * `add` entry, which comes with it. Loaded the first time it opens, with the catalog.
  */
 export interface CatalogApi {
   components: () => Promise<readonly Published[]>
   figure: (c: Published, config: PublishedConfig) => Capacity
   condition: (c: Published, key: string, v: ConditionValue) => string
   number: (n: number) => string
-  add: (pick: CatalogPick) => AddResult
+  /** The text as it is now, and how the editor compiles it: what a pick is added to and checked against. */
+  source: () => string
+  options: () => CompileOptions
 }
 
 export default function CatalogPicker({ box, api, onPick, onClose }: CatalogPickerProps) {
@@ -94,7 +97,11 @@ export default function CatalogPicker({ box, api, onPick, onClose }: CatalogPick
   const pick = (into: CatalogPick['into']) => {
     if (!chosen) return
     // worked out from the text as it is now, refused when the definition would gain an error
-    const r = api.add({ component: chosen, conditions, ...(version ? { version } : {}), into })
+    const r = addPublished(
+      api.source(),
+      { component: chosen, conditions, ...(version ? { version } : {}), into },
+      api.options(),
+    )
     if ('error' in r) return setError(r.error)
     onPick(r, into === 'new' ? `Added ${chosen.name}` : `${chosen.name}'s published figure is in use`)
     dialog.current?.close()

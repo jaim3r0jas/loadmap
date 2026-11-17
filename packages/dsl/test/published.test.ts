@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compile, completions, format, hover, loadCatalog, loadedCatalog, needsCatalog, rename } from '../src'
-import { addPublished, catalogBox, edit, inspect } from '../src/internal'
+import { addPublished, catalogBox } from '../src/add'
+import { edit, inspect } from '../src/internal'
 
 const SRC = `loadmap 1
 title: "Events"

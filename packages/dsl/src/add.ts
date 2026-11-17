@@ -1,3 +1,4 @@
+// For loadmap's own editors, an entry of its own so it loads with the catalog picker: no promise between versions
 import { type CatalogComponent, type ConditionValue, type Published, published } from '@loadmap/core'
 import type { Decl, Edge, Ident, Property, Stmt } from './ast'
 import { boxOf } from './boxes'

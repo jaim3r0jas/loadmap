@@ -21,7 +21,8 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./internal": "./src/internal.ts"
+    "./internal": "./src/internal.ts",
+    "./add": "./src/add.ts"
   },
   "publishConfig": {
     "exports": {
@@ -32,6 +33,10 @@
       "./internal": {
         "types": "./dist/internal.d.ts",
         "import": "./dist/internal.js"
+      },
+      "./add": {
+        "types": "./dist/add.d.ts",
+        "import": "./dist/add.js"
       }
     }
   },
