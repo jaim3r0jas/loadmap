@@ -37,9 +37,12 @@ async function mount() {
   return { handle: ref.current!, el, clicks, board }
 }
 
-/** A canvas 1000 × 600 with 300 px floating over its left and 200 px over its right. */
-function Canvas({ ref, left = 300 }: { ref: Ref<LoadmapHandle>; left?: number }) {
-  const lm = useLoadmap(checkout, view, { speed: 10 })
+/**
+ * A canvas 1000 × 600 with 300 px floating over its left and 200 px over its right. `still` holds the arrangement: a
+ * room that changes then re-arranges nothing, which `auto` may do a moment later, moving the view with the boxes.
+ */
+function Canvas({ ref, left = 300, still = false }: { ref: Ref<LoadmapHandle>; left?: number; still?: boolean }) {
+  const lm = useLoadmap(checkout, view, still ? { speed: 10, direction: 'RIGHT', rows: 1 } : { speed: 10 })
   useImperativeHandle(ref, () => handleOf(lm), [lm])
   return (
     <LoadmapRoot lm={lm}>
@@ -48,14 +51,14 @@ function Canvas({ ref, left = 300 }: { ref: Ref<LoadmapHandle>; left?: number })
   )
 }
 
-async function mountCanvas() {
+async function mountCanvas(still = false) {
   await page.viewport(1280, 900)
   host = document.createElement('div')
   host.style.cssText = 'position: fixed; top: 0; left: 0; width: 1000px; height: 600px'
   document.body.appendChild(host)
   const ref = createRef<LoadmapHandle>()
   root = createRoot(host)
-  root.render(<Canvas ref={ref} />)
+  root.render(<Canvas ref={ref} still={still} />)
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
   const el = host.querySelector<HTMLElement>('.lm')!
@@ -258,16 +261,16 @@ describe('a canvas', () => {
   })
 
   it('keeps the reader’s view when what floats over it changes, and fits the new room while it has none', async () => {
-    const { handle, ref } = await mountCanvas()
+    const { handle, ref } = await mountCanvas(true)
     const fit = handle.engine.viewer!.fit()!
-    root!.render(<Canvas ref={ref} left={100} />)
+    root!.render(<Canvas ref={ref} left={100} still />)
     await expect.poll(() => handle.engine.viewer!.viewport.inset.left).toBe(100)
     // fitted, it follows the room
     expect(handle.engine.viewer!.fit()!.k).toBeGreaterThan(fit.k)
     expect(handle.engine.viewer!.readerView).toBeNull()
     handle.engine.viewer!.setView({ ...handle.engine.viewer!.fit()!, k: 2 })
     const mine = handle.engine.viewer!.readerView
-    root!.render(<Canvas ref={ref} left={300} />)
+    root!.render(<Canvas ref={ref} left={300} still />)
     await expect.poll(() => handle.engine.viewer!.viewport.inset.left).toBe(300)
     expect(handle.engine.viewer!.readerView).toEqual(mine)
   })
