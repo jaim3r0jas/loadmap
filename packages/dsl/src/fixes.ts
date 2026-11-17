@@ -1,11 +1,12 @@
 import type { Decl, Stmt } from './ast'
+import { boxOf } from './boxes'
 import { declarations } from './compile'
 import { walk } from './complete'
 import { type Code, type Diagnostic, Reporter } from './diagnostics'
 import type { TextChange } from './edit'
 import { parse } from './parser'
 import { cut, edgeLabels, foldWorkers, mods, subsUp } from './rewrite'
-import { BOXES, COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
+import { COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
 import { CURRENT, lowest, needs, before as older, stampOf, versionText } from './versions'
 import { intoView } from './viewblock'
 
@@ -212,20 +213,6 @@ function edgeFixes({ source, text, data, doc, replace }: FixContext): QuickFix[]
       changes: replace([ends[1], ...via, ends[3]].join(ends[2])),
     })
   return fixes
-}
-
-/** The box that runs a stage: its own id, or the id of a stage written inside it. */
-function boxOf(body: readonly Stmt[], stage: string): Decl | undefined {
-  for (const s of body) {
-    if (s.kind !== 'decl' || !(BOXES as readonly string[]).includes(s.keyword.name)) continue
-    const id = s.args[0]
-    const inner = (s.body ?? []).filter(
-      (c): c is Decl => c.kind === 'decl' && (STAGES as readonly string[]).includes(c.keyword.name),
-    )
-    if (inner.some((c) => c.args[0]?.t === 'id' && (c.args[0] as { name: string }).name === stage)) return s
-    if (id?.t === 'id' && id.name === stage && inner.length) return s
-  }
-  return undefined
 }
 
 /** `a -> b` on a line of its own, after the last edge that leaves a (else after the last edge, else at the end). */

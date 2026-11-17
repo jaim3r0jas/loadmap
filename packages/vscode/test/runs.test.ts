@@ -1,7 +1,8 @@
 import { type Published, published } from '@loadmap/core'
 import { fmt } from '@loadmap/core/format'
 import { loadCatalog } from '@loadmap/dsl'
-import { addPublished, latestEdition } from '@loadmap/dsl/internal'
+import { addPublished } from '@loadmap/dsl/add'
+import { latestEdition } from '@loadmap/dsl/internal'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { componentRows, runs } from '../src/runs'
 

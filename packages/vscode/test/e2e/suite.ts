@@ -246,7 +246,9 @@ test('Add from the Catalog writes a published figure and a box that compile; a b
       return /^published \w+Figure \w+ \{/m.test(doc.getText()) ? true : undefined
     }, 'the published statement')
     await done
-    assert.match(doc.getText(), /^node \w+ "[^"]+" \{\n {2}(shape: cylinder\n {2})?# what reaches it/m)
+    // the generic box its kind needs: a cluster for a queue, else a node
+    assert.match(doc.getText(), /^(node|cluster) \w+ "[^"]+" \{$/m)
+    assert.match(doc.getText(), /^ {2}capacity: \w+Figure$/m)
     // compiled here, as the server does: its diagnostics could still be those of the text before
     await loadCatalog()
     const errors = compile(doc.getText()).diagnostics.filter((d) => d.severity === 'error')

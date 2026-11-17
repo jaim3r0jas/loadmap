@@ -1,6 +1,7 @@
 import type { Published } from '@loadmap/core'
 import { loadCatalog } from '@loadmap/dsl'
-import { addPublished, BOXES, type Decl, latestEdition, parse } from '@loadmap/dsl/internal'
+import { addPublished } from '@loadmap/dsl/add'
+import { BOXES, type Decl, latestEdition, parse } from '@loadmap/dsl/internal'
 import {
   env,
   type QuickInputButton,

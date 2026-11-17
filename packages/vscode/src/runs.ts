@@ -1,7 +1,7 @@
 import { type ConditionValue, type Published, published } from '@loadmap/core'
 import { fmt } from '@loadmap/core/format'
 import { conditionText } from '@loadmap/core/internal'
-import type { CatalogPick } from '@loadmap/dsl/internal'
+import type { CatalogPick } from '@loadmap/dsl/add'
 
 /** A published run as a row to pick: the figure, its conditions, who ran it, and what it writes. */
 export interface Run {

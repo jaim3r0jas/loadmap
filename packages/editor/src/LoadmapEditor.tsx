@@ -37,9 +37,8 @@ import {
   problems,
   sharedValues,
 } from '@loadmap/dsl'
+import type { AddResult } from '@loadmap/dsl/add'
 import {
-  type AddResult,
-  addPublished,
   changedBoxes,
   type Drawn,
   type EditValue,
@@ -820,7 +819,8 @@ export function LoadmapEditor({
     figure: published,
     condition: conditionText,
     number: fmt,
-    add: (pick) => addPublished(view.current?.state.doc.toString() ?? '', pick, { functions, ...beside() }),
+    source: () => view.current?.state.doc.toString() ?? '',
+    options: () => ({ functions, ...beside() }),
   }
   /** A pick from the catalog: its text added (a published statement, a box or its capacity), the box selected. */
   const addFromCatalog = (r: Extract<AddResult, { box: string }>, note: string) => {

@@ -73,7 +73,7 @@ describe('published', () => {
     const c = published(kafka, { ...config, version: '4.4' })
     expect(c).toMatchObject({ value: 605, unit: 'MB/s', provenance: 'published', ceiling: true })
     expect(c.source).toBe('Apache Kafka, run by Confluent, 2020-08-21')
-    expect(c.ref).toMatchObject({ component: 'kafka', figure: 'omb-2020', edition: '2026-12', version: '4.4' })
+    expect(c.ref).toMatchObject({ component: 'kafka', figure: 'omb-2020', edition: '2027-01', version: '4.4' })
     expect(c.ref?.conditions.slice(0, 5)).toEqual([
       '3 brokers',
       'replication factor 3',
@@ -124,7 +124,7 @@ describe('published', () => {
     expect(published(postgresql, { figure: 'max-connections', version: '12' }).missing).toBe(
       'for version 12: the default is documented for 18',
     )
-    expect(c.ref).toMatchObject({ measure: 'limit', figure: 'max-connections', edition: '2026-12' })
+    expect(c.ref).toMatchObject({ measure: 'limit', figure: 'max-connections', edition: '2027-01' })
     expect(c.ceiling).toBeUndefined()
     // never matched to a configuration: PostgreSQL still publishes no benchmark
     expect(published(postgresql).missing).toBe('(nothing is published for PostgreSQL with its conditions)')

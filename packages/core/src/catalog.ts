@@ -1018,6 +1018,25 @@ const WITH_CONNECTIONS: readonly CatalogComponent[] = COMPONENTS.map((c) => ({
   ...(DEFAULTS[c.id] && { defaults: DEFAULTS[c.id] }),
 }))
 
+/**
+ * The box each component is drawn as, corrected in 2027-01 to the box its stage needs: a queue lives only in a
+ * cluster (RabbitMQ), a store in a node (etcd, CockroachDB, OpenSearch, MongoDB), a cluster holds nothing but queues
+ * (Kubernetes runs no stage), and a pool is its own workers, which Istio has none of. The figures are 2026-12's.
+ */
+const BOXES_2027: Readonly<Record<string, CatalogComponent['box']>> = {
+  rabbitmq: 'cluster',
+  etcd: 'node',
+  cockroachdb: 'node',
+  opensearch: 'node',
+  mongodb: 'node',
+  kubernetes: 'node',
+  istio: 'node',
+}
+
+const BOXED: readonly CatalogComponent[] = WITH_CONNECTIONS.map((c) =>
+  BOXES_2027[c.id] ? { ...c, box: BOXES_2027[c.id]! } : c,
+)
+
 /** Frozen all the way down: a released edition cannot change under a page that uses it. */
 const frozen = <T>(o: T): T => {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -1037,10 +1056,11 @@ const edition = (name: string, list: readonly CatalogComponent[]): Catalog =>
 export const EDITIONS: Readonly<Record<string, Catalog>> = Object.freeze({
   '2026-11': edition('2026-11', COMPONENTS),
   '2026-12': edition('2026-12', WITH_CONNECTIONS),
+  '2027-01': edition('2027-01', BOXED),
 })
 
 /** The latest edition. */
-export const CATALOG: Catalog = EDITIONS['2026-12']!
+export const CATALOG: Catalog = EDITIONS['2027-01']!
 
 const latest = (id: string) => CATALOG.components[id]!
 
