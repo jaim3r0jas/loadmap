@@ -5,12 +5,13 @@ import {
   defineView,
   type EdgeDef,
   edge,
+  labelsAt,
   layout,
   node,
   type Scene,
   type TierDef,
 } from '@loadmap/layout'
-import { morph } from '@loadmap/layout/internal'
+import { closing, morph } from '@loadmap/layout/internal'
 import { describe, expect, it } from 'vitest'
 import { expectEdgesOnBoxes } from '../../../examples/phases'
 
@@ -199,5 +200,82 @@ describe('a subsystem on the board', () => {
     expect(frame(back, 'us.orders').fade).toBeGreaterThan(0)
     expect(frame(back, 'us.orders').fade).toBeLessThan(1)
     expect(morph(from, to)(1)).toBe(to)
+  })
+})
+
+describe('a closed subsystem', () => {
+  // in -> [eu: lb -> [orders: work] -> db] -> out; the balancer and the workers are stages with a component each
+  const m2 = defineModel({
+    load: p.load({ max: 10 }),
+    flows: { f: { rate: ({ load }) => load } },
+    components: {
+      c1: { name: 'Balancer', demand: ({ flows }) => flows.f, capacity: measured(100, 'req/s'), over: 'x' },
+      c2: { name: 'Workers', demand: ({ flows }) => flows.f, capacity: measured(10, 'req/s'), over: 'x' },
+    },
+    stages: { lb: pass('c1'), work: pass('c2') },
+    routes: { f: ['lb', 'work'] },
+  })
+  const v = defineView(m2, {
+    nodes: {
+      in: node({ label: 'In' }),
+      'eu.lb': node({ label: 'LB', stage: 'lb' }),
+      'eu.orders.work': node({ label: 'Workers', stage: 'work' }),
+      'eu.db': node({ label: 'Database' }),
+      out: node({ label: 'Out' }),
+    },
+    edges: [
+      edge('in', 'eu.lb'),
+      edge('eu.lb', 'eu.orders.work'),
+      edge('eu.orders.work', 'eu.db'),
+      edge('eu.db', 'out'),
+    ],
+    flows: { f: { from: 'in', color: 'accent' } },
+    subsystems: { eu: { label: 'EU region' }, 'eu.orders': { label: 'Orders' } },
+  })
+  const ev = m2.evaluate({ load: 5 })
+
+  it('is one box that stands for everything inside it', async () => {
+    const close = (await closing(v))!
+    const shut = close(v, ['eu'])
+    const s = await layout(shut, ev)
+    expect(s.nodes.map((n) => n.id)).toEqual(['in', 'eu', 'out'])
+    expect(s.subsystems).toEqual([])
+    const eu = s.nodes.find((n) => n.id === 'eu')!
+    // every stage inside is shown by the box: dots pass through it, and a limit inside is its limit
+    expect(eu).toMatchObject({ subsystem: 'eu', stages: ['lb', 'work'], kind: 'node' })
+    expect(s.stageNode).toEqual({ lb: 'eu', work: 'eu' })
+    // an edge keeps its id open and closed; the ones that ran inside are not drawn
+    expect(s.edges.map((e) => [e.id, e.from, e.to])).toEqual([
+      ['e0', 'in', 'eu'],
+      ['e3', 'eu', 'out'],
+    ])
+    // its name wears the mark of a closed folder, and its second line names the busiest component inside
+    const { title, sub } = labelsAt(shut, ev).nodes.eu!
+    expect(title).toBe('\u25B8 EU region')
+    expect(sub).toMatch(/^Workers 50\s?%$/)
+    expect(collisions(s)).toEqual([])
+    expectEdgesOnBoxes(s)
+  })
+
+  it('closes one inside another on its own, in the frame of the one around it', async () => {
+    const close = (await closing(v))!
+    const s = await layout(close(v, ['eu.orders']), ev)
+    expect(s.nodes.map((n) => n.id)).toEqual(['in', 'eu.lb', 'eu.orders', 'eu.db', 'out'])
+    expect(s.subsystems.map((x) => [x.id, x.nodes])).toEqual([['eu', ['eu.lb', 'eu.orders', 'eu.db']]])
+    expect(s.stageNode).toEqual({ lb: 'eu.lb', work: 'eu.orders' })
+    expect(collisions(s)).toEqual([])
+  })
+
+  it('gives the same view for the same subsystems, and the view itself when none of its own is closed', async () => {
+    const close = (await closing(v))!
+    expect(close(v, [])).toBe(v)
+    expect(close(v, ['nowhere'])).toBe(v)
+    expect(close(v, ['eu'])).toBe(close(v, ['eu']))
+    // one in a closed one is closed with it
+    expect(close(v, ['eu.orders', 'eu'])).toBe(close(v, ['eu']))
+    expect(close(v, ['eu.orders'])).not.toBe(close(v, ['eu']))
+    // a view without subsystems has nothing to close, and loads nothing
+    const plain = defineView(m, { nodes: { in: node({ label: 'In', stage: 'b' }) }, edges: [], flows })
+    expect(closing(plain)).toBeUndefined()
   })
 })

@@ -255,6 +255,39 @@ describe('a model in several files', () => {
     expect(plain.definition!.view.def).not.toHaveProperty('subsystems')
   })
 
+  it('reads the subsystems drawn closed, in view and in a step, from loadmap 1.5', () => {
+    const src = (extra = '', version = '1.5') =>
+      [
+        `loadmap ${version}`,
+        'view { closed: [eu, eu.line] }',
+        'load "x" { max: 10; default: 1 }',
+        'flow f "f" { rate: load; route: eu.gw -> eu.line.a; from: s }',
+        'node s "S"',
+        'subsystem eu "EU" {',
+        '  node gw "G" { pass; capacity: estimated(10, "req/s"); over: "x" }',
+        '  subsystem line "Line" { node a "A" { pass; capacity: estimated(10, "req/s"); over: "x" } }',
+        '  gw -> line.a',
+        '}',
+        's -> eu.gw',
+        'step "one" { load: 2; closed: [eu.line] }',
+        'step "two" { load: 3; closed: [] }',
+        'step "three" { load: 3 }',
+        extra,
+        '',
+      ].join('\n')
+    const r = compile(src())
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.options.closed).toEqual(['eu', 'eu.line'])
+    // a step says its own, an empty list for every one open; without the line it has none of its own
+    expect(r.definition!.model.story.map((st) => st.closed)).toEqual([['eu.line'], [], undefined])
+    const said = (extra: string, version?: string) => compile(src(extra, version)).diagnostics.map((d) => d.message)
+    expect(said('step "bad" { closed: [nope, eu, eu] }')).toEqual(['unknown subsystem "nope"', '"eu" is listed twice'])
+    expect(said('step "bad" { closed: eu }')).toEqual(['a list of subsystems: [eu, us]'])
+    // a file stamped before 1.5 has to say 1.5 to use it
+    expect(said('', '1.4').every((m) => m.includes('"closed:" is from loadmap 1.5'))).toBe(true)
+    expect(said('', '1.4')).toHaveLength(2)
+  })
+
   it('writes a subsystem out under its id, and bounds how far that goes', () => {
     const r = run(MODEL)
     expect(r.definition!.model.stageIds).toEqual(['gateway', 'orderLine.topic', 'orderLine.consumers', 'db'])

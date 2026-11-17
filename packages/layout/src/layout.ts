@@ -40,6 +40,8 @@ export interface SceneNode extends Box, Fading {
   /** The stages this node shows: one, or several queues for a cluster that holds several topics. */
   stages: string[]
   component?: string
+  /** The subsystem this box stands for, closed (`closedView`). */
+  subsystem?: string
   title: TextSpot
   sub?: TextSpot
   /** Cluster members (brokers) and pods, with their own small labels. */
@@ -308,6 +310,12 @@ let loaded: Subsystems | undefined
 
 /** How the frames move from one scene to the next (motion.ts): there once a scene with a frame was laid out. */
 export const frameMorph = () => loaded?.morph
+
+/**
+ * What closes subsystems, for a view that has some: `(view, closed)` gives the view with those drawn as one box each
+ * (`closedView` in subsystems.ts). Undefined for a view without subsystems: nothing to close, nothing to load.
+ */
+export const closing = (view: View) => subsystemsOf(view)?.then((m) => m.closedView)
 
 /**
  * How large this direction lays the view out, folded into `rows` or not, with every box at its largest anywhere the
@@ -875,6 +883,7 @@ function place(
         shape: def.kind === 'node' ? def.shape : 'box',
         stages: stagesOf(def),
         component: def.kind === 'node' ? def.component : undefined,
+        ...(def.kind === 'node' && def.subsystem != null ? { subsystem: def.subsystem } : {}),
         ...inner,
         x: 0,
         y: 0,

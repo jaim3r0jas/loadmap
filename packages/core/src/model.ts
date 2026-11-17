@@ -191,6 +191,11 @@ export interface StoryStepDef<P = any, C extends string = string> {
   set?: Partial<Values<P>>
   /** The component to point at: its box is outlined. */
   focus?: C
+  /**
+   * The subsystems the page draws closed while it shows the step, each as one box, by the ids the view gives them.
+   * Without it, the ones the page starts with.
+   */
+  closed?: readonly string[]
   /** How long a recording holds the step. Default 4. */
   seconds?: number
 }
@@ -202,6 +207,7 @@ export interface StoryStep<P = any, C extends string = string> {
   values: Values<P>
   scenario?: string
   focus?: C
+  closed?: readonly string[]
   seconds: number
 }
 
@@ -541,6 +547,7 @@ export function defineModel<
       values: { ...defaults(), ...from?.values, ...st.set } as Values<P>,
       ...(st.scenario != null ? { scenario: st.scenario } : {}),
       ...(st.focus != null ? { focus: st.focus } : {}),
+      ...(st.closed ? { closed: [...st.closed] } : {}),
       seconds: st.seconds ?? 4,
     }
   })

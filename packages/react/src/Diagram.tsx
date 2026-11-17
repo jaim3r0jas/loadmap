@@ -23,12 +23,13 @@ import type { Insets } from './viewpoint'
 const Detail = lazy(() => import('./later').then((m) => ({ default: m.Detail })))
 
 /**
- * What draws the subsystems' frames (frames.tsx): it comes with the first scene that has one, before that scene is
- * shown, so a page without subsystems never loads it and a frame is never a moment late.
+ * What draws the subsystems (frames.tsx): their frames, and what a closed one's box says and does. It comes with the
+ * first view that has a subsystem, before that view is laid out, so a page without subsystems never loads it and a
+ * frame is never a moment late.
  */
-let Frames: typeof import('./frames').Frames | undefined
+let sub: typeof import('./frames') | undefined
 export const loadFrames = async () => {
-  Frames ??= (await import('./frames')).Frames
+  sub ??= await import('./frames')
 }
 
 const STATE_STROKE: Record<ComponentState, string> = {
@@ -478,6 +479,8 @@ const Structure = memo(function Structure({
   const marker = useId().replace(/:/g, '')
   const { labels, ev } = lm
   const stateOf = (n: SceneNode): ComponentState | null => {
+    // a closed subsystem's box is in the state of the worst component inside
+    if (n.subsystem != null && sub) return sub.stateIn(ev, n)
     const c = componentOf(lm, n)
     return c ? (ev.components[c]?.state ?? null) : null
   }
@@ -487,6 +490,7 @@ const Structure = memo(function Structure({
     const cid = componentOf(lm, n)
     const c = cid ? ev.components[cid] : undefined
     const title = labels.nodes[n.id]?.title
+    if (n.subsystem != null && sub) return sub.opener(lm, n.subsystem, title ?? n.id)
     if (!c) {
       if (!onClick) return {}
       return {
@@ -534,7 +538,13 @@ const Structure = memo(function Structure({
   // A component drawn as several boxes is ringed on each but tagged once, and a box that is leaving wears nothing
   const ranks = rankLabels(ev, lm.model)
   const staying = lm.scene && new Set(lm.scene.nodes.map((n) => n.id))
-  const boxes = (c: string) => scene.nodes.filter((n) => componentOf(lm, n) === c && (!staying || staying.has(n.id)))
+  // a closed subsystem's box stands for every component inside it
+  const boxes = (c: string) =>
+    scene.nodes.filter(
+      (n) =>
+        (n.subsystem != null ? n.stages.some((s) => ev.stages[s]?.component === c) : componentOf(lm, n) === c) &&
+        (!staying || staying.has(n.id)),
+    )
   const first = ev.firstLimit
   const was = hand && hand.from !== first?.id && ev.components[hand.from] ? ev.components[hand.from] : null
   const wasBoxes = was ? boxes(was.id) : []
@@ -542,6 +552,7 @@ const Structure = memo(function Structure({
   const wasRank = was && ranks.get(was.id)
   const note = was && (wasRank ? wasRank.text : `now ${multiple(edge(was), lm.model.searchMax)}`)
   const lost = lostBoxes(lm, scene)
+  const worn = new Set(first ? boxes(first.id).map((n) => n.id) : [])
   return (
     // biome-ignore lint/a11y/useSemanticElements: an <svg> cannot be a <fieldset>
     <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="group" aria-label={`Diagram: ${summary}`}>
@@ -561,7 +572,7 @@ const Structure = memo(function Structure({
       {scene.tiers.map((t, i) => (
         <Tier key={t.id} t={t} i={i} striped={lm.view.def.lanes === 'striped'} />
       ))}
-      {Frames && scene.subsystems.length > 0 && <Frames scene={scene} stateOf={stateOf} />}
+      {sub && scene.subsystems.length > 0 && <sub.Frames scene={scene} stateOf={stateOf} lm={lm} />}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
         <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} lost={lost.has(e.to)} />
@@ -587,7 +598,10 @@ const Structure = memo(function Structure({
         ))}
       {[...ranks].map(([c, r]) => {
         const n = r.rank > 1 && c !== was?.id ? boxes(c)[0] : undefined
-        return n && <Badge key={c} n={n} text={r.text} />
+        // one badge a box: a closed subsystem wears that of the first of its components to run out
+        if (!n || worn.has(n.id)) return null
+        worn.add(n.id)
+        return <Badge key={c} n={n} text={r.text} />
       })}
       {note && wasBoxes[0] && <Badge n={wasBoxes[0]} text={note} was={!wasRank} />}
     </svg>
