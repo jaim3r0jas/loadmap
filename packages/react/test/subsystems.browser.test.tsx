@@ -47,8 +47,8 @@ describe('a subsystem on the board', () => {
     document.body.appendChild(host)
     root = createRoot(host)
     root.render(<LoadmapSource source={SOURCE} />)
-    await expect.poll(() => host!.querySelectorAll('.lm-subsystem').length, { timeout: 5000 }).toBe(2)
-    const frame = (id: string) => host!.querySelector<SVGGElement>(`.lm-subsystem[data-subsystem-id="${id}"]`)!
+    await expect.poll(() => host!.querySelectorAll('[data-subsystem-id]').length, { timeout: 5000 }).toBe(2)
+    const frame = (id: string) => host!.querySelector<SVGGElement>(`[data-subsystem-id="${id}"]`)!
     expect(frame('eu').querySelector('text')?.textContent).toBe('EU region')
     expect(frame('eu.line').querySelector('text')?.textContent).toBe('Orders')
     // the frames are drawn before the boxes: behind them

@@ -92,13 +92,12 @@ export function morph(from: Scene, to: Scene): (t: number) => Scene {
       return { ...box(a, t, k), head: box(a.head, t.head, k), lines }
     })
     // a frame moves with the boxes it holds; one that is new comes in with the new boxes, one that goes leaves with them
-    const framesTo = new Set(to.subsystems.map((s) => s.id))
     const subsystems = [
       ...to.subsystems.map((s) => {
         const a = from.subsystems.find((x) => x.id === s.id)
-        return a ? { ...box(a, s, k), title: spot(a.title, s.title, k), ...stays(a, f) } : { ...s, fade: f.enter }
+        return a ? { ...box(a, s, k), title: spot(a.title, s.title, k) } : { ...s, fade: f.enter }
       }),
-      ...from.subsystems.filter((s) => !framesTo.has(s.id)).map((s) => goes(s, f)),
+      ...from.subsystems.filter((s) => !to.subsystems.some((x) => x.id === s.id)).map((s) => goes(s, f)),
     ]
     return {
       ...to,

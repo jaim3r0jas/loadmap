@@ -1092,27 +1092,10 @@ class Compiler {
       const tier = this.named(box.block, 'tier', [...tierNames.keys()], 'tier')
       if (tier) nodes[box.id]!.tier = tier
     }
-    // what is left of a subsystem written out is its first line: the frame around the boxes named `<id>.…`, each box
-    // in the innermost one, each frame in the one around it
-    const framesById = new Map<string, string>()
-    for (const b of byKind('subsystem'))
-      if (b.args.id) framesById.set(b.args.id.name, this.text(b.args.label) ?? b.args.id.name.split('.').at(-1)!)
-    const frameOf = (id: string): string | undefined => {
-      for (let dot = id.lastIndexOf('.'); dot > 0; dot = id.lastIndexOf('.', dot - 1))
-        if (framesById.has(id.slice(0, dot))) return id.slice(0, dot)
-      return undefined
-    }
+    // what is left of a subsystem written out is its first line: the frame around the boxes named `<id>.…`
     const subsystems: Record<string, SubsystemDef> = {}
-    for (const box of boxes) {
-      const frame = frameOf(box.id)
-      if (frame == null) continue
-      nodes[box.id]!.subsystem = frame
-      // only the subsystems that hold a box, with the ones around them
-      for (let s: string | undefined = frame; s != null && !Object.hasOwn(subsystems, s); s = frameOf(s)) {
-        const up = frameOf(s)
-        subsystems[s] = { label: framesById.get(s)!, ...(up != null ? { in: up } : {}) }
-      }
-    }
+    for (const b of byKind('subsystem'))
+      if (b.args.id) subsystems[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
     const edges: EdgeDef[] = []
     for (const e of root.edges) edges.push(...this.edges(e, boxById))
     // the flow runs through the tiers in their order: an edge back is drawn against it

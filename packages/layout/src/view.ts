@@ -18,8 +18,6 @@ export interface NodeDef<S extends string = string, T extends string = string> {
   shape: 'box' | 'cylinder'
   /** The tier (`ViewDef.tiers`) the box stands in. */
   tier?: T
-  /** The subsystem (`ViewDef.subsystems`) whose frame the box stands in. */
-  subsystem?: string
 }
 
 /**
@@ -34,7 +32,6 @@ export interface ClusterDef<S extends string = string, T extends string = string
   members: Dyn<number>
   memberLabel?: (i: number) => string
   tier?: T
-  subsystem?: string
 }
 
 /** A workers stage drawn as pods holding a grid of workers. */
@@ -45,7 +42,6 @@ export interface PoolDef<S extends string = string, T extends string = string> {
   stage: S
   podLabel?: (i: number) => string
   tier?: T
-  subsystem?: string
 }
 
 export type AnyNodeDef<S extends string = string, T extends string = string> =
@@ -77,13 +73,9 @@ export interface TierDef {
   fillDark?: string
 }
 
-/**
- * Several boxes as one on the board: a frame around the boxes that name it, with its name. A subsystem `in` another
- * stands inside that one's frame.
- */
+/** Several boxes as one on the board: a frame around them, with its name. */
 export interface SubsystemDef {
   label: string
-  in?: string
 }
 
 export interface ViewDef<F extends string, S extends string, N extends string, T extends string = string> {
@@ -97,8 +89,9 @@ export interface ViewDef<F extends string, S extends string, N extends string, T
    */
   tiers?: { readonly [K in T]: TierDef }
   /**
-   * The subsystems, by id: each is drawn as a frame around its boxes (`subsystem` on a box) and the subsystems `in` it.
-   * With tiers, a subsystem is framed where its boxes stand in one tier: a frame cannot cross a lane.
+   * The subsystems, by id: each is drawn as a frame around its boxes. What a subsystem holds is named `<id>.<name>`, as
+   * in a definition's text: the box `eu.orders.topic` stands in the subsystem `eu.orders`, which stands in `eu`. With
+   * tiers, a subsystem is framed where its boxes stand in one tier: a frame cannot cross a lane.
    */
   subsystems?: Readonly<Record<string, SubsystemDef>>
   /**
@@ -150,19 +143,6 @@ function checked<F extends string, S extends string, N extends string, T extends
   for (const [id, n] of Object.entries(nodes))
     if (n.tier != null && !Object.hasOwn(tiers, n.tier))
       throw new Error(`loadmap: node "${id}" stands in unknown tier "${n.tier}"`)
-  const subsystems: Readonly<Record<string, SubsystemDef>> = def.subsystems ?? {}
-  for (const [id, n] of Object.entries(nodes))
-    if (n.subsystem != null && !Object.hasOwn(subsystems, n.subsystem))
-      throw new Error(`loadmap: node "${id}" stands in unknown subsystem "${n.subsystem}"`)
-  for (const [id, s] of Object.entries(subsystems)) {
-    if (s.in != null && !Object.hasOwn(subsystems, s.in))
-      throw new Error(`loadmap: subsystem "${id}" stands in unknown subsystem "${s.in}"`)
-    const seen = new Set([id])
-    for (let up = s.in; up != null; up = subsystems[up]?.in) {
-      if (seen.has(up)) throw new Error(`loadmap: subsystem "${id}" stands in itself`)
-      seen.add(up)
-    }
-  }
   if (def.layout != null && def.layout !== 'compact' && def.layout !== 'stable')
     throw new Error(`loadmap: layout "${def.layout}" is not compact or stable`)
   for (const s of model.stageIds)
@@ -302,7 +282,6 @@ export function node<const S extends string = never, const T extends string = ne
   component?: string
   shape?: NodeDef['shape']
   tier?: T
-  subsystem?: string
 }): NodeDef<S, NoInfer<T>> {
   return { kind: 'node', shape: 'box', ...o }
 }

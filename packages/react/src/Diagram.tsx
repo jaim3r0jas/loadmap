@@ -553,7 +553,7 @@ const Structure = memo(function Structure({
         <Tier key={t.id} t={t} i={i} striped={lm.view.def.lanes === 'striped'} />
       ))}
       {scene.subsystems.map((s) => (
-        <Subsystem key={s.id} s={s} state={worst(scene.nodes.filter((n) => s.nodes.includes(n.id)).map(stateOf))} />
+        <Subsystem key={s.id} s={s} states={scene.nodes.filter((n) => s.nodes.includes(n.id)).map(stateOf)} />
       ))}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
@@ -631,39 +631,36 @@ function Tier({ t, i, striped }: { t: SceneTier; i: number; striped: boolean }) 
   )
 }
 
-const SEVERITY: readonly (ComponentState | null)[] = [null, 'off', 'ok', 'warn', 'over']
-
-/** The state furthest along among these: what a frame says of the boxes it holds. */
-const worst = (states: (ComponentState | null)[]): ComponentState | null =>
-  states.reduce((a, b) => (SEVERITY.indexOf(b) > SEVERITY.indexOf(a) ? b : a), null)
-
 /**
  * A subsystem's frame behind its boxes and edges: a tint that lets a lane show through and deepens where a frame stands
  * in another, its name at its top, and its line in the colour of the worst box inside once one is past its target.
  * Paint goes in attributes, as a tier's does.
  */
-function Subsystem({ s, state }: { s: SceneSubsystem; state: ComponentState | null }) {
-  const past = state === 'warn' || state === 'over'
+function Subsystem({ s, states }: { s: SceneSubsystem; states: (ComponentState | null)[] }) {
+  const past = states.includes('over') ? 'over' : states.includes('warn') ? 'warn' : undefined
+  const { x, y, size, weight } = s.title
   return (
-    <g
-      className="lm-subsystem"
-      data-subsystem-id={s.id}
-      data-state={state ?? undefined}
-      opacity={s.fade}
-      pointerEvents="none"
-    >
-      <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={10} fill="var(--lm-muted)" fillOpacity={0.07} />
+    <g data-subsystem-id={s.id} data-state={past} opacity={s.fade}>
       <rect
         x={s.x}
         y={s.y}
         width={s.w}
         height={s.h}
         rx={10}
-        fill="none"
-        stroke={past ? STATE_STROKE[state] : 'var(--lm-line)'}
+        fill="var(--lm-muted)"
+        fillOpacity={0.07}
+        stroke={past ? STATE_STROKE[past] : 'var(--lm-line)'}
         strokeWidth={past ? 1.5 : 1}
       />
-      <text x={s.title.x} y={s.title.y} fontSize={s.title.size} fontWeight={s.title.weight} fill="var(--lm-muted)">
+      <text
+        x={x}
+        y={y}
+        fontSize={size}
+        fontWeight={weight}
+        fill="var(--lm-muted)"
+        textAnchor={s.vertical ? 'end' : undefined}
+        transform={s.vertical ? `rotate(-90 ${x} ${y})` : undefined}
+      >
         {s.label}
       </text>
     </g>

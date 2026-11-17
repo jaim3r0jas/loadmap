@@ -230,14 +230,8 @@ describe('a model in several files', () => {
   it('gives the view each subsystem that holds a box, for the frame around its boxes', () => {
     const view = run(MODEL).definition!.view.def
     expect(view.subsystems).toEqual({ orderLine: { label: 'Orders' } })
-    expect(Object.entries(view.nodes).map(([id, n]) => [id, n.subsystem])).toEqual([
-      ['phones', undefined],
-      ['gateway', undefined],
-      ['orderLine.kafka', 'orderLine'],
-      ['orderLine.consumers', 'orderLine'],
-      ['db', undefined],
-    ])
-    // one without a name of its own takes that of the one it is like; one in another stands in it; an empty one is none
+    // one without a name of its own takes that of the one it is like; one in another is named after it; an empty one
+    // is none
     const nested = run(
       MODEL,
       set({
@@ -250,9 +244,9 @@ describe('a model in several files', () => {
     expect(nested.definition!.view.def.subsystems).toEqual({
       orderLine: { label: 'Queue and workers' },
       outer: { label: 'Outer' },
-      'outer.inner': { label: 'Queue and workers', in: 'outer' },
+      'outer.inner': { label: 'Queue and workers' },
     })
-    expect(nested.definition!.view.def.nodes).toMatchObject({ 'outer.inner.kafka': { subsystem: 'outer.inner' } })
+    expect(Object.keys(nested.definition!.view.def.nodes)).toContain('outer.inner.kafka')
     // a model without subsystems says nothing of them
     const plain = compile(
       'loadmap 1.4\nload "x" { max: 10 }\nflow f "f" { rate: load; route: a; from: s }\nnode s "S"\nnode a "A" { pass; capacity: estimated(10, "req/s"); over: "x" }\ns -> a\n',
@@ -398,7 +392,6 @@ describe('a model in several files', () => {
     expect(one.diagnostics).toEqual([])
     const several = run(MODEL)
     expect(one.definition!.view.def.subsystems).toEqual(several.definition!.view.def.subsystems)
-    expect(one.definition!.view.def.nodes).toMatchObject({ 'orderLine.consumers': { subsystem: 'orderLine' } })
     const [a, b] = [one.definition!.model, several.definition!.model]
     expect([a.flowIds, a.componentIds, a.stageIds]).toEqual([b.flowIds, b.componentIds, b.stageIds])
     expect([a.scenarios, a.expectations, a.story]).toEqual([b.scenarios, b.expectations, b.story])

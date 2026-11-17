@@ -51,7 +51,10 @@ function turned(l: Laid): Laid {
   }
 }
 
-/** The layers as ELK drew them: the boxes whose spans along the flow overlap stand in one. */
+/**
+ * The layers as ELK drew them: the boxes whose spans along the flow overlap stand in one. A subsystem's frame is a slot
+ * too and spans every layer inside it, so a fold never cuts a frame in two: a board that is one frame stays one row.
+ */
 function layersOf(l: Laid): { from: number; to: number; ids: string[] }[] {
   const layers: { from: number; to: number; ids: string[] }[] = []
   for (const [id, b] of [...l.slots].sort((a, b) => a[1].x - b[1].x || (a[0] < b[0] ? -1 : 1))) {
@@ -309,7 +312,7 @@ export function foldLanes(
   const parts = bounds.slice(1).flatMap((to, row) => {
     const from = bounds[row]!
     const span = (id: string) => {
-      const b = flat.slots.get(id)!
+      const b = flat.slots.get(frame.outer?.[id] ?? id)!
       return rowAt(b.x) === row ? ([b.x, b.x + b.w] as const) : null
     }
     return kit.tierParts(view, frame, span, from, to, measure).map((part) => ({ ...part, row, from, to }))
@@ -351,8 +354,9 @@ export function extent(kit: Kit, view: View, direction: Direction, o: Omit<Layou
   let size = sizes.get(key)
   if (!size) {
     size = (async () => {
-      const frame = kit.ordered(view, kit.reserve(view, direction, measure), measure)
-      const laid = await kit.laidOut(view, frame, o.elk)
+      const sub = await kit.subsystemsOf(view)
+      const frame = kit.ordered(view, kit.reserve(view, direction, measure), measure, sub)
+      const laid = await kit.laidOut(view, frame, o.elk, sub)
       const { l } = rows > 1 ? foldLanes(laid, frame, view, measure, rows, kit) : kit.lanes(laid, frame, view, measure)
       return { width: l.width, height: l.height }
     })()
