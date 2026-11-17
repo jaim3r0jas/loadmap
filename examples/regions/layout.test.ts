@@ -10,6 +10,10 @@ describe('regions layout', () => {
     it(`never moves with the load, and lays out each phase on its own (${direction})`, () =>
       expectCompact(view, regions, direction))
 
+    // as the page opens: both regions closed, each box's second line sized for every load
+    it(`closed as the page opens, never moves with the load either (${direction})`, async () =>
+      expectCompact((await closing(view))!(view, ['eu', 'us']), regions, direction))
+
     it(`frames each region and its orders, and draws them closed without a collision (${direction})`, async () => {
       const ev = regions.evaluate(regions.defaults())
       const open = await layout(view, ev, { direction })

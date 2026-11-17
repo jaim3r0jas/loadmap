@@ -22,5 +22,7 @@ export const regionsFiles = {
 }
 
 const flat = flatten(source, regionsFiles)
+// the model alone imports what it cannot find: a download of it would not compile
+if ('error' in flat) throw new Error(`examples/regions: ${flat.error}`)
 /** The model and its files as one text that draws and computes the same (`loadmap bundle`): for a host that reads one. */
-export const regionsOne = 'text' in flat ? flat.text : source
+export const regionsOne = flat.text

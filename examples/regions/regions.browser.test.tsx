@@ -43,7 +43,7 @@ it('plays its story into the US region, where the order workers run out', async 
   handle.setStoryStep(2)
   await expect.poll(() => nodes(el), { timeout: 5000 }).toContain('us.orders.workers')
   expect(nodes(el)).toContain('eu')
-  expect(el.querySelector('.lm-verdict')?.textContent).toContain('US region › Workers')
+  expect(el.querySelector('.lm-verdict')?.textContent).toContain('the workers in US region')
 })
 
 for (const theme of ['light', 'dark'] as const)

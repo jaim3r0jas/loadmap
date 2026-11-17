@@ -18,8 +18,8 @@ its frame to fly in, and the path over the board says where you are · **▶ Pla
   limit's tag sits on it when the first limit is inside. A click opens it.
 - **Open, a region is a frame** with its name; a frame's line turns the colour of the worst box inside once one is past
   its target. A click on the name closes it again, a click on the frame flies in, and **Whole diagram** flies out.
-- **The two copies are told apart** by where they stand: the verdict says "limited by US region › Workers", while the
-  box itself reads "Workers" in its frame.
+- **The two copies are told apart** by where they stand: the limits and the scenarios say "US region › Workers", the
+  verdict "the workers in US region", while the box itself reads "Workers" in its frame.
 
 ## In several files
 

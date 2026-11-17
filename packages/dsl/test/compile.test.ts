@@ -216,9 +216,12 @@ describe('compile', () => {
 
   it('compiles every example and the starter without a warning', () => {
     const dir = new URL('../../../examples/', import.meta.url)
-    for (const ex of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()))
-      for (const f of readdirSync(new URL(`${ex.name}/`, dir)).filter((f) => f.endsWith('.loadmap')))
-        expect(compile(readFileSync(new URL(`${ex.name}/${f}`, dir), 'utf8')).diagnostics, f).toEqual([])
+    for (const ex of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory())) {
+      // an example in several files compiles each of them with the others (regions: a model, a part, libraries)
+      const names = readdirSync(new URL(`${ex.name}/`, dir)).filter((f) => f.endsWith('.loadmap'))
+      const files = Object.fromEntries(names.map((f) => [f, readFileSync(new URL(`${ex.name}/${f}`, dir), 'utf8')]))
+      for (const f of names) expect(compile(files[f]!, { path: f, files }).diagnostics, f).toEqual([])
+    }
     const starter = new URL('../../../apps/docs/site/uploads.loadmap', import.meta.url)
     expect(compile(readFileSync(starter, 'utf8')).diagnostics).toEqual([])
   })

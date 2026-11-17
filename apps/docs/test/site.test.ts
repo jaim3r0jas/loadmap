@@ -97,6 +97,8 @@ describe('the pages', () => {
       'docs/dsl.md',
       'react/README.md',
       'react/package.json',
+      'regions/region.loadmap',
+      'regions/regions.loadmap',
       'search/search.loadmap',
       'shop-live/live.tsx',
       'shop-live/shop.loadmap',
@@ -269,6 +271,8 @@ describe('the built site', () => {
         ['examples/checkout/', 6],
         ['examples/alerts/', 10],
         ['examples/search/', 8],
+        // both regions closed, each one box
+        ['examples/regions/', 4],
         ['examples/', 4],
         ['getting-started/', 3],
         ['concepts/', 3 + 8],

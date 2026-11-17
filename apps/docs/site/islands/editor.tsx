@@ -43,8 +43,8 @@ const SHOP = {
   path: 'shop.loadmap',
   files: { 'shop.loadmap': shopSource, 'shop.story.loadmap': storySource, 'platform.loadmap': platformSource },
 }
-/** The regions example in its files: the model, its story, two libraries and a variant. */
-const REGIONS = regionsFiles
+/** The examples in several files, by name: `?example=` opens each file as a tab. */
+const SEVERAL: Readonly<Record<string, typeof regionsFiles>> = { regions: regionsFiles }
 const DRAFT = 'loadmap-editor-draft'
 /** The draft's files when it has several: `{ path, files }`, the model's text also under the key above. */
 const DRAFT_FILES = 'loadmap-editor-draft-files'
@@ -79,7 +79,7 @@ function write(key: string, value: string) {
 const WHOLE = new Set<string>([
   ...TEMPLATES.map((t) => t.source),
   ...Object.values(SOURCES),
-  REGIONS.files['regions.loadmap'],
+  ...Object.values(SEVERAL).map((s) => s.files[s.path as keyof typeof s.files]),
 ])
 
 const readDraft = () => read(DRAFT)
@@ -113,11 +113,17 @@ const fromLink = () => location.hash.startsWith('#v1.') || location.hash.startsW
 const template = () => TEMPLATES.find((t) => t.id === query().get('template'))
 const example = () => {
   const name = query().get('example')
+  if (name && Object.hasOwn(SEVERAL, name)) return SEVERAL[name]!.files[SEVERAL[name]!.path as 'regions.loadmap']
   return name && Object.hasOwn(SOURCES, name) ? SOURCES[name as keyof typeof SOURCES] : undefined
+}
+const exampleFiles = () => {
+  const name = query().get('example')
+  return name && Object.hasOwn(SEVERAL, name) ? SEVERAL[name] : undefined
 }
 /** What the editor opens with when no link says: a template, an example, else the draft when it is in several files. */
 const startFrom = (): Shared | undefined => {
-  if (query().get('example') === 'regions') return { source: REGIONS.files['regions.loadmap'], values: {}, ...REGIONS }
+  const several = exampleFiles()
+  if (several) return { source: example()!, values: {}, ...several }
   const whole = template()?.source ?? example()
   if (whole != null) return { source: whole, values: {} }
   const files = readDraftFiles()
@@ -292,7 +298,7 @@ function Editor({ root }: { root: URL }) {
           onSelect: () => editor.current?.setSource(SOURCES[n]),
         })),
         { label: 'A shop in several files', onSelect: () => editor.current?.setFiles(SHOP) },
-        { label: 'Two regions, in several files', onSelect: () => editor.current?.setFiles(REGIONS) },
+        { label: 'Two regions, in several files', onSelect: () => editor.current?.setFiles(regionsFiles) },
         ...(earlier != null
           ? [{ label: 'Your earlier draft', onSelect: () => editor.current?.setSource(earlier) }]
           : []),

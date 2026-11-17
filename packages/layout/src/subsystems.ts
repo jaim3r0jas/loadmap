@@ -235,17 +235,18 @@ export function closedView(view: View, closed: readonly string[]): View {
       label: `\u25B8 ${defs[c]!.label}`,
       // the busiest component inside, by name
       sub: (ctx) => {
+        // nothing reaches any stage inside: no part of it is busy
+        const at = ctx.at as Record<string, Record<string, number>>
+        if (!h.stages.some((st) => Object.values(at[st] ?? {}).some((x) => x > 0))) return 'no traffic'
         const util = ctx.util as Record<string, number | null>
         const worst = components.reduce<string | undefined>(
           (a, b) => (util[b] != null && (a == null || util[b] > util[a]!) ? b : a),
           undefined,
         )
         if (worst == null) return ''
-        if (!util[worst]) return 'no traffic'
-        // "EU region › Workers" reads "Workers" in the box that is the EU region
+        // its name as the box says it: "EU region › Workers" (copies told apart) is "Workers" in the box of its region
         const name = names[worst]?.name ?? worst
-        const own = `${defs[c]!.label} › `
-        return `${name.startsWith(own) ? name.slice(own.length) : name} ${pct(util[worst]!)}`
+        return `${name.split(' › ').at(-1)} ${pct(util[worst]!)}`
       },
       stage: h.stages,
       subsystem: c,
