@@ -1,4 +1,4 @@
-loadmap 1.4
+loadmap 1.5
 library "Alerts platform"
 # The pod every pool of the team runs on: its CPU limit is the capacity; how many, how big and what they must handle
 # is each pool's to say.

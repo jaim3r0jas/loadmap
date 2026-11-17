@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```loadmap
-loadmap 1.4
+loadmap 1.5
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -43,7 +43,7 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.4`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.5`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -1031,7 +1031,7 @@ straight under `loadmap`, before any other statement:
 
 ```loadmap
 # shop.loadmap
-loadmap 1.4
+loadmap 1.5
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
@@ -1209,7 +1209,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.4`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.5`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1237,6 +1237,7 @@ with no warning first; none is planned.
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 | 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
 | 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
+| 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box | |
 
 ## In code
 
@@ -1466,7 +1467,7 @@ view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```loadmap
-loadmap 1.4
+loadmap 1.5
 ```
 
 After the keyword: version.

@@ -1,4 +1,4 @@
-loadmap 1.4
+loadmap 1.5
 # Files are uploaded, stored, parsed into rows and loaded into a warehouse in batches. Bigger batches cost the
 # warehouse less per row; more parsers only help until the warehouse is the limit.
 title: "Batch import"

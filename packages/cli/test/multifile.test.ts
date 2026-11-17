@@ -92,13 +92,13 @@ describe('the cli on a definition in several files', () => {
   })
 
   it('sets the parts of a model to its version', async () => {
-    const { at } = await shop({ 'shop.story.loadmap': (t) => t.replace('loadmap 1.4', 'loadmap 1.2') })
+    const { at } = await shop({ 'shop.story.loadmap': (t) => t.replace('loadmap 1.5', 'loadmap 1.2') })
     const only = await run(fmt, [at('shop.loadmap'), '--check'])
     expect(only.code).toBe(1)
     expect(only.out).toContain('says loadmap 1.2')
     const done = await run(fmt, [at('shop.loadmap')])
     expect(done.code).toBe(0)
-    expect((await readFile(at('shop.story.loadmap'), 'utf8')).split('\n')[0]).toBe('loadmap 1.4')
+    expect((await readFile(at('shop.story.loadmap'), 'utf8')).split('\n')[0]).toBe('loadmap 1.5')
     expect((await run(fmt, [at('shop.loadmap'), '--check'])).code).toBe(0)
   })
 })

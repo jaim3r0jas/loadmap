@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // a region that holds a gateway and its orders line; at the default load the consumers are past their capacity
-const SOURCE = `loadmap 1.4
+const SOURCE = `loadmap 1.5
 load { max: 100; default: 10 }
 
 flow orders "orders" { rate: 100 * load; from: shop; route: eu.gw -> eu.line.topic -> eu.line.pool }

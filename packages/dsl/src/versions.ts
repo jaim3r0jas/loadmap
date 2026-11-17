@@ -7,7 +7,7 @@ import { COMPONENT_PROPS, EDGE_PROPS, own, SCHEMA } from './schema'
  * The language version this package reads, the newest: what a new definition starts with. A minor version stays open
  * until the release that ships it; from then on it never changes (docs/dsl.md, "Versions").
  */
-export const LANGUAGE_VERSION = '1.4'
+export const LANGUAGE_VERSION = '1.5'
 
 /** `loadmap 1.1` is [1, 1]; `loadmap 1` is 1.0. */
 export type Version = readonly [major: number, minor: number]

@@ -1,4 +1,4 @@
-loadmap 1.4
+loadmap 1.5
 # A shop whose traffic is read from Prometheus: the rates and the workers' CPU are measures, so the diagram shows the
 # shop as it runs once a snapshot has them (loadmap pull, or the page in this folder, which pulls every few seconds).
 title: "Shop, live"

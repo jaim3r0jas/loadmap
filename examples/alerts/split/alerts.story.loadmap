@@ -1,4 +1,4 @@
-loadmap 1.4
+loadmap 1.5
 part of "./alerts.loadmap"
 
 step "An ordinary peak: the position consumer is already past the 50 % target, and runs out first." {

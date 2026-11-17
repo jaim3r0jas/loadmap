@@ -426,7 +426,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
-    example: 'loadmap 1.4',
+    example: 'loadmap 1.5',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],

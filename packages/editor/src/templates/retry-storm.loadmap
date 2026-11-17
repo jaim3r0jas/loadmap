@@ -1,4 +1,4 @@
-loadmap 1.4
+loadmap 1.5
 # Clients retry what a busy service turns away. Below capacity that costs nothing; past it every failed attempt comes
 # back, and the gateway in front sees several times the traffic. A retry budget keeps it in bounds.
 title: "Retry storm"
