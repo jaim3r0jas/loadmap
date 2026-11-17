@@ -1,5 +1,14 @@
 # @loadmap/dsl
 
+## 0.36.0
+
+### Patch Changes
+
+- a5811ae: `REFERENCE.md` fences every loadmap example as ` ```loadmap ` and what a command prints as ` ```text `, so a reader
+  (or a model) knows what each block is. The `published` example is laid out as `loadmap fmt` writes it.
+- @loadmap/core@0.36.0
+  - @loadmap/layout@0.36.0
+
 ## 0.35.0
 
 ### Minor Changes
