@@ -18,3 +18,12 @@ pages in Chromium. The build also writes `llms.txt` (the pages) and
 
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
+
+A fence names its language, one of `FENCES` (`apps/docs/highlight.ts`): the build colours it there (Lezer, the
+editor's loadmap highlighter) into `<span class="tok-…">` inside `<pre class="code">`, and refuses a fence without
+one. In the browser `site/snippet.ts` (CodeMirror's state and view only, loaded once a snippet nears the window) puts
+a read-only view after the `<pre>` and hides it: the view's tokens are the spans, so no parser ships, and the `<pre>`
+stays the text the copy button and an island read. The token colours are `--tok-*` in `docs.css`, the editor's by
+value (`site.test.ts` compares them in light and dark). Vite loads the config with `--configLoader runner` (the
+scripts, and `configLoader: 'runner'` wherever a test builds or serves the site): the config imports the editor's
+highlighter, whose workspace imports the default loader hands to Node as TypeScript.

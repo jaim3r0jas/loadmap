@@ -6,8 +6,9 @@ import { Loadmap } from '@loadmap/react'
 import { createRoot } from 'react-dom/client'
 
 export async function mount(el: HTMLElement) {
-  const pre = el.querySelector('pre')!
-  const source = pre.textContent ?? ''
+  // the fence as the page wrote it: the <pre> (the text, whether or not a view took its place) and its copy button
+  const snippet = el.querySelector<HTMLElement>('.snippet')!
+  const source = snippet.querySelector('pre')?.textContent ?? ''
   await loadCatalogFor(source)
   const r = compile(source)
   const host = document.createElement('div')
@@ -22,8 +23,8 @@ export async function mount(el: HTMLElement) {
   }
   const details = document.createElement('details')
   details.innerHTML = '<summary>The definition</summary>'
-  pre.replaceWith(details)
-  details.append(pre)
+  snippet.replaceWith(details)
+  details.append(snippet)
   const editor = el.dataset.editor
   if (editor)
     encodeShare(source).then((hash) => {

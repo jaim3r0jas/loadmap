@@ -53,7 +53,7 @@ export function reference(): string {
       spec.since ? `${spec.doc} From loadmap ${spec.since}.` : spec.doc,
       '',
     )
-    if (spec.example) out.push('```', spec.example, '```', '')
+    if (spec.example) out.push('```loadmap', spec.example, '```', '')
     if (spec.args.length)
       out.push(
         `After the keyword: ${spec.args.map((a) => (a.optional ? `[${a.name}]` : a.name)).join(' ')}${spec.init === 'optional' ? ' [= formula]' : spec.init ? ' = formula' : ''}.`,

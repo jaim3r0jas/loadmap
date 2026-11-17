@@ -5,7 +5,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 `view` that `defineModel` and `defineView` build in TypeScript, so `<Loadmap>` draws it the same way. The editor
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
-```
+```loadmap
 loadmap 1.4
 title: "Photo uploads"
 
@@ -83,7 +83,7 @@ checker warns.
 
 **A box like another** (from `loadmap 1.2`) says `like:` and the other box's id, and writes only what differs:
 
-```
+```loadmap
 node db "Index shard 1" {
   store
   capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
@@ -164,7 +164,7 @@ drawing are capped too: at most 64 members, 256 pods, 256 workers a pod and 1,02
 A **scenario** is a design to compare: the defaults plus some parameter values, never the load. The first one is the
 baseline the others are measured against, so name today's design first:
 
-```
+```loadmap
 scenario "Today" {}
 scenario "Proposed" { gateways: 2; pods: 6 }
 growth { rate: 0.06; per: month; asOf: "2026-11-01" }
@@ -187,7 +187,7 @@ with that scenario's button pressed.
 A capacity says how sure it is with a `±` in its value, as a share (`30%`) or in its unit (`± 1`). `+/-` is the same
 for a keyboard without `±`:
 
-```
+```loadmap
 capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")
 capacity: measured(pods * 2 +/- 5%, "cores", "pod CPU limit")
 ```
@@ -200,7 +200,7 @@ capacity whose measurement would change or narrow the answer most. Fits stay exa
 
 An **expect** line is something that must keep holding, as minimum load multiples on that pessimistic edge:
 
-```
+```loadmap
 expect "Today keeps 7×" { underTarget: 7 }
 expect "Proposed keeps 14×" { scenario: Proposed; underTarget: 14 }
 expect { component: db; notFull: 100 }
@@ -215,7 +215,7 @@ draws the diagram. `loadmap check` fails on it, so a change that loses headroom 
 loadmap check examples/checkout/checkout.loadmap      # exits 1 when an expectation fails or the file has an error
 ```
 
-```
+```text
 checkout.loadmap:29:1 error[expect-failed]: "Today keeps 12×" fails: expected at least 12×, but the 50 % target holds up to between 7.4× and 10×, limited by the API gateway (capacity estimated ±30 %)
   29 | expect "Today keeps 12×" { underTarget: 12 }
      | ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -228,7 +228,7 @@ component has no published benchmark, or measured data it reads is missing or to
 `loadmap check` reports it as a warning; `--inconclusive fail` makes it fail the run. `severity: warn` makes an
 expectation a warning whatever it finds: it is reported, and never fails the run.
 
-```
+```loadmap
 expect "Black Friday keeps 3×" { scenario: Proposed; underTarget: 3; severity: warn }
 ```
 
@@ -348,7 +348,7 @@ cost per request that grew. `loadmap drift` looks for it in a snapshot, against 
 loadmap drift capacity.loadmap --pull --window 1d --history history/ --markers deploys.json --issue issue.md
 ```
 
-```
+```text
 capacity.loadmap: 3 drifts, 2026-11-12T04:00:00Z to 2026-11-13T04:00:00Z, against 30 past runs
   ✗ dbWrites shifted +23 % from the run of 2026-11-09T04:17:00Z: 410 → 504 writes/s (p 4.1e-12), after deploy 4f2a1c
   ✗ API CPU per request: a slope of 0.003, above the band of the last 30 runs (0.00191 to 0.00209)
@@ -471,7 +471,7 @@ the conditions its run was made with. One entry per component, whoever runs it: 
 (Redis-compatible), etcd, CockroachDB, ClickHouse, OpenSearch (Elasticsearch-compatible), NGINX, HAProxy, CoreDNS,
 Kubernetes and Istio, and PostgreSQL, MySQL, MongoDB and Envoy, for which nothing is published with its conditions.
 
-```
+```loadmap
 published brokersRef kafka {
   edition: "2026-11"
   version: "4.4"
@@ -541,7 +541,7 @@ A **metric** is the query that measures something, written once; a **measure** i
 arguments and its **fallback**: the value the definition uses until a snapshot has one. Its id is a capacity or a
 number, as its fallback is, and names the measurement in the snapshot:
 
-```
+```loadmap
 metric served "Requests served" {
   prometheus { query: 'max_over_time(sum(rate(http_requests_total{job="{{ args.job }}"}[5m]))[7d:5m])' }
   stat: max
@@ -565,7 +565,7 @@ each step of the window. `agg: rate` (the default) is documents per second, `cou
 inside its texts (filled in escaped, so a measure's word never changes the query's shape), and `time` names the time
 field (`@timestamp` by default). A window where nothing matches is missing, not zero:
 
-```
+```loadmap
 metric logins "Logins" {
   elasticsearch { index: "auth-*"; query: '{"term": {"service": "{{ args.service }}"}}'; agg: rate }
   stat: p95
@@ -582,7 +582,7 @@ export LOADMAP_PROMETHEUS_URL=https://prometheus.example:9090 LOADMAP_PROMETHEUS
 loadmap pull shop.loadmap --window 7d --step 5m        # writes shop.snapshot.json
 ```
 
-```
+```text
 shop.snapshot.json: 1 of 2 measurements, 2026-11-01T06:00:00Z to 2026-11-08T06:00:00Z
   ✓ apiCapacity: 1,200 req/s (2,016 samples, max)
   ✗ orderRate: the query returned 3 series: sum them into one
@@ -677,10 +677,10 @@ is the flow's rate, less what a cache answered and what a rate limiter turned aw
 does not cut it, so each component's limit stays the one it has if what is in front keeps up. A component without a
 `demand` line handles what reaches its stages, in units per second:
 
-```
+```loadmap
 node db "Database" {
   store
-  capacity: estimated(3_000 ± 30%, "queries/s")   # no demand: the misses the cache lets through
+  capacity: estimated(3_000 ± 30%, "queries/s") # no demand: the misses the cache lets through
   over: "queries queue on the primary"
 }
 ```
@@ -688,7 +688,7 @@ node db "Database" {
 **A cache** answers a share of the units and sends them back where they came from; the rest carry on. With capacity
 lines it is a component too, and past capacity it rejects like a `pass`:
 
-```
+```loadmap
 node sessionCache "Cache" {
   cache { hit: hit }
   capacity: estimated(50_000, "ops/s")
@@ -700,7 +700,7 @@ node sessionCache "Cache" {
 the pool at `max` pods, so it runs out where it cannot grow further; the box draws every pod it may run and dashes
 the ones it does not run now, and a meter counts them:
 
-```
+```loadmap
 pool api "API" {
   workers { perPod: 4; autoscale { min: 2; max: maxPods; target: 0.7 } }
   demand: flows.requests * 5ms
@@ -717,7 +717,7 @@ only what got through, so the service behind a limit may never run out.
 more times. A `budget` caps the extra attempts at that share of the flow. A retry rule reads only the load and the
 parameters: retries change every other number, so they cannot depend on one.
 
-```
+```loadmap
 flow requests "requests" {
   rate: 1_000 * load
   retry { times: 3; budget: 0.1 }
@@ -739,7 +739,7 @@ way leaves the diagram there; with a lost box, its dot goes along the edge into 
 into a lost box sends what that box loses there, and `takes` keeps only some losses (`rejected`, `dropped`,
 `timedOut`; all three without one):
 
-```
+```loadmap
 node tooMany "Turned away" { lost { takes: [rejected] } }
 limiter -> tooMany
 ```
@@ -762,7 +762,7 @@ failover. One line per way, the flow, the stages it goes through and its share; 
 flow the split names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any
 other goes on with the route after the split, so reads can return through the API they came from:
 
-```
+```loadmap
 node router "DB router" {
   split {
     orders -> primary: 1 - reads
@@ -781,7 +781,7 @@ how many seconds each unit holds one, and the demand is then the slots in use, b
 stages each second times `held`. Its capacity counts slots. A pool beside the limit that runs a stage names the stage
 with `on`:
 
-```
+```loadmap
 component conns "Postgres connections" {
   on: db
   held: 20ms
@@ -800,7 +800,7 @@ group each partition is read by one consumer only: `assign: exclusive` deals the
 the workers of the pool after it, in turn, alternating pods. Workers beyond the partitions read nothing, and the
 component runs out when its busiest member does:
 
-```
+```loadmap
 connection group {
   hop: topic -> pool
   assign: exclusive
@@ -826,7 +826,7 @@ the other side (per pod with `owner: pod`), and `accepts` the most that side acc
 they make a limit of their own, named by the connection, "Connections to db": the members running times what each
 keeps open, added up over every connection into the stage:
 
-```
+```loadmap
 connection dbPool {
   hop: api -> db
   owner: pod
@@ -846,7 +846,7 @@ of a flow on its hottest key, measured or estimated, and on the board that share
 estimated for the whole stage; a published figure keeps its number, since its run spread the work its own way, and
 the limits list says what the key would have done:
 
-```
+```loadmap
 connection produce {
   hop: gateway -> topic
   assign: key
@@ -867,7 +867,7 @@ no end at 100 %. A flow's time through is the sum of its stages (a cache's hits 
 share), and `ev.latency.orders` gives its mean, p50, p95 and p99. The limits still say when a box runs out; the
 latency says how slow it gets on the way, and the Live panel shows each flow's p99.
 
-```
+```loadmap
 node api "API" {
   pass
   capacity: measured(2_000, "req/s")
@@ -897,7 +897,7 @@ timeout needs a latency: a `service` on the flow's way.
 from the defaults (or from its `scenario`), then takes its own values, so it looks the same whichever step came before.
 `focus` outlines a component's box:
 
-```
+```loadmap
 step "An ordinary peak: every box is under half its capacity." { load: 1; title: "An ordinary peak" }
 step "At 20×, the gateway and the workers are near full." { load: 20; focus: gateway }
 step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workerPool }
@@ -939,7 +939,7 @@ room: a narrow screen never folds, and a diagram with one layer has one row.
 The boxes nothing feeds stand first and the sinks and stores that feed nothing stand last. To cut the diagram into
 bands across the flow (edge, services, data), declare tiers in the order the flow meets them and put a box in one:
 
-```
+```loadmap
 tier edge "Edge"
 tier services "Services"
 tier data "Data"
@@ -980,7 +980,7 @@ In a 1.2 file a setting at the top still works and warns, and `loadmap fmt` move
 The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, and below it the panels
 of the page in a compact form, each of which opens whole. `fullScreen` keeps only the ones it lists:
 
-```
+```loadmap
 view { fullScreen: [verdict, live, controls] }
 ```
 
@@ -1029,14 +1029,14 @@ straight under `loadmap`, before any other statement:
   lines it writes of that parameter, a `let`, `fit`, `measure`, `metric` or `published` replaces the one of its name,
   and presets, scenarios, expectations and steps are added. The flows, the boxes and the edges are the model's.
 
-```
+```loadmap
 # shop.loadmap
 loadmap 1.4
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
 title: "A shop in several files"
-…
+# …
 ```
 
 **A path** is relative to the file that writes it (`./`, `../`) or starts at the project root (`/lib/x.loadmap`), and
@@ -1052,7 +1052,7 @@ model. Libraries may import libraries, never in a loop.
 **A box with inputs** is a prototype. In a library, a box says what it needs from the model with `input`, and a box of
 the model says `like:` and sets them in `with { … }`:
 
-```
+```loadmap
 # platform.loadmap
 node postgres "Postgres" "primary" {
   input writes
@@ -1076,7 +1076,7 @@ line written here replaces the same line there.
 
 **A subsystem** is several boxes as one: boxes, components, connections, the edges between them and `let`s.
 
-```
+```loadmap
 # platform.loadmap
 subsystem pipeline "Queue and workers" {
   input flow main
@@ -1120,7 +1120,7 @@ mistake is marked once, where it is: what it breaks further on (the uses of a na
 property whose value does not parse, a list with a wrong word) is not marked again. Names that are almost right get a
 suggestion:
 
-```
+```text
 checkout.loadmap:104:17 error[unknown-name]: unknown flow "order"
   104 |   demand: flows.order + flows.events
       |                 ^^^^^ did you mean "orders"?
@@ -1348,7 +1348,7 @@ Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
 A part of this model: another file whose statements join this one, as if written here. In the head, before anything else. The part says `part of` and this file. From loadmap 1.3.
 
-```
+```loadmap
 include "./checkout.story.loadmap"
 ```
 
@@ -1358,7 +1358,7 @@ After the keyword: path.
 
 The second line of a part: the model this file belongs to, which includes it. A part holds anything a model does but its load, its view, its title and its head, and says its model's version. From loadmap 1.3.
 
-```
+```loadmap
 part of "./checkout.loadmap"
 ```
 
@@ -1368,7 +1368,7 @@ After the keyword: of path.
 
 The second line of a library: a file of values (let, fit, metric, measure, tier, published), box prototypes and subsystems that models import by name. It is checked on its own, draws nothing, and reads nothing of who imports it. From loadmap 1.3.
 
-```
+```loadmap
 library "Platform building blocks"
 ```
 
@@ -1378,7 +1378,7 @@ After the keyword: [label].
 
 Names of a library, used here as if declared here: `a`, or `local: theirs` to give one another name. In the head. The path is relative to this file (`./`, `../`) or starts at the project root (`/`), and ends in .loadmap. From loadmap 1.3.
 
-```
+```loadmap
 import "./lib/platform.loadmap" { postgres; pool: podPool }
 ```
 
@@ -1390,7 +1390,7 @@ Its properties are named by this file: each a name of the library, `local: their
 
 The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure or published figure replaces the one of its name; presets, scenarios, expectations and steps are added. From loadmap 1.3.
 
-```
+```loadmap
 extends "./checkout.loadmap"
 ```
 
@@ -1400,7 +1400,7 @@ After the keyword: path.
 
 A value a prototype or a subsystem takes from the box that is like it, set there in `with { … }`; with `= …` it has a default. `input flow main` takes the name of a flow instead, for `flows.main`, `at.topic.main` and `partitions { main: 12 }`. From loadmap 1.3.
 
-```
+```loadmap
 input pods = 3
 ```
 
@@ -1410,7 +1410,7 @@ After the keyword: id [name] [= formula].
 
 The inputs of the prototype or subsystem this one is like, each by its name. A value is a formula of this file. From loadmap 1.3.
 
-```
+```loadmap
 with { pods: pods; need: flows.orders }
 ```
 
@@ -1420,7 +1420,7 @@ Its properties are named by the inputs of the prototype or the subsystem it is l
 
 Several boxes as one: its boxes, components, connections, the edges between them and its lets, each named `<id>.<name>` outside it. In a library it takes inputs; `like:` makes one from another. With `route:`, a flow or an edge may name the subsystem itself. From loadmap 1.3.
 
-```
+```loadmap
 subsystem orderLine "Orders" { like: pipeline; with { main: orders } }
 ```
 
@@ -1440,7 +1440,7 @@ Holds edges: `a -> b`, `a -> b: label`, `a -> b { label: …; when: … }`.
 
 How the page looks and plays: nothing in here changes a number. Once in a definition. From loadmap 1.2.
 
-```
+```loadmap
 view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 ```
 
@@ -1457,7 +1457,7 @@ view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
-```
+```loadmap
 loadmap 1.4
 ```
 
@@ -1467,7 +1467,7 @@ After the keyword: version.
 
 The load, as a multiple of today. It drives the limits.
 
-```
+```loadmap
 load "Users, × today" { max: 100; default: 10 }
 ```
 
@@ -1484,7 +1484,7 @@ After the keyword: [label].
 
 A control: options make a select, min and max a slider, a true or false default a switch.
 
-```
+```loadmap
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
 ```
 
@@ -1506,7 +1506,7 @@ After the keyword: id [label].
 
 A named set of values, offered as a button.
 
-```
+```loadmap
 preset "Black Friday" { load: 40; pods: 6 }
 ```
 
@@ -1518,7 +1518,7 @@ Its properties are named by parameters (and `load`).
 
 A named design to compare: the defaults plus these values, never the load. The first is the baseline. An id before the label (from loadmap 1.2) is what a step or an expect names it by, so the button can be reworded.
 
-```
+```loadmap
 scenario proposed "Proposed" { pods: 6; gateways: 2 }
 ```
 
@@ -1530,7 +1530,7 @@ Its properties are named by parameters (not `load`).
 
 How fast the load grows, compounded from asOf, where it is 1×: load multiples become dates.
 
-```
+```loadmap
 growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 ```
 
@@ -1544,7 +1544,7 @@ growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
 What must keep holding, on the pessimistic edge (every capacity at its low bound): `loadmap check` fails when it does not.
 
-```
+```loadmap
 expect "Today keeps 7×" { underTarget: 7× }
 ```
 
@@ -1566,7 +1566,7 @@ After the keyword: [label].
 
 A step of the story the page walks through, in order: its text, and the values to show it at. Play (and `loadmap record --story`) shows the whole diagram, closes in on what the step changes, changes it, and steps back.
 
-```
+```loadmap
 step "At 30×, the workers run out first." { load: 30; focus: workerPool; title: "Users to 30×" }
 ```
 
@@ -1585,7 +1585,7 @@ Its properties are named by parameters (and `load`).
 
 A named formula other formulas can use by its name.
 
-```
+```loadmap
 let perPosition = watchOnly ? 0.3 : 1.2
 ```
 
@@ -1595,7 +1595,7 @@ After the keyword: id = formula.
 
 cost = a + b × x, fitted from measured points. Call it like a function: workerCores(rate).
 
-```
+```loadmap
 fit workerCores "Worker CPU per request" { source: "load test"; points rate cores { 200 0.26 } }
 ```
 
@@ -1614,7 +1614,7 @@ Holds: `points`.
 
 A mapping written once: the query that measures something, how its window becomes one value, and how many samples it needs. Each `measure` that uses it fills `{{ args.name }}` in the query. Nothing is read until `loadmap pull`, which takes the address and the credentials from the environment, never from the text.
 
-```
+```loadmap
 metric served "Requests served" {
   prometheus { query: "sum(rate(http_requests_total{job=\"{{ args.job }}\"}[5m]))" }
   stat: max
@@ -1635,7 +1635,7 @@ Holds: `prometheus`, `elasticsearch`.
 
 A metric read from Prometheus: a PromQL query over a range, at the address `LOADMAP_PROMETHEUS_URL` gives `loadmap pull`. The query is data sent to Prometheus, never code loadmap runs; it must return one series.
 
-```
+```loadmap
 prometheus { query: "sum(rate(http_requests_total[5m]))" }
 ```
 
@@ -1647,7 +1647,7 @@ prometheus { query: "sum(rate(http_requests_total[5m]))" }
 
 A metric read from Elasticsearch or OpenSearch: an index, counted or aggregated at each step, from `LOADMAP_ELASTICSEARCH_URL`.
 
-```
+```loadmap
 elasticsearch { index: "logs-*"; query: '{"term": {"service": "{{ args.service }}"}}'; agg: rate }
 ```
 
@@ -1663,7 +1663,7 @@ elasticsearch { index: "logs-*"; query: '{"term": {"service": "{{ args.service }
 
 One use of a metric: its arguments, and the value the definition uses until a snapshot has one. Its id is a capacity or a number, as its fallback is (`capacity: apiPeak`), and names the measurement in the snapshot `loadmap pull` writes. Read from a snapshot, the value is today's system's: it does not change with the parameters.
 
-```
+```loadmap
 measure apiPeak served { job: "api"; fallback: estimated(1_000, "req/s", "vendor benchmark") }
 ```
 
@@ -1680,8 +1680,15 @@ Its properties are named by the arguments its metric's query names (`{{ args.job
 
 A figure from the component catalog, as published for a configuration: its id is a capacity (`capacity: brokersRef`). It applies only when every condition its run was made under matches; otherwise the component has no published benchmark and is not ranked. Nothing is scaled.
 
-```
-published brokersRef kafka { edition: "2026-11"; brokers: 3; replication: 3; acks: "all"; messageSize: "1 KB"; producers: 4 }
+```loadmap
+published brokersRef kafka {
+  edition: "2026-11"
+  brokers: 3
+  replication: 3
+  acks: "all"
+  messageSize: "1 KB"
+  producers: 4
+}
 ```
 
 After the keyword: id component.
@@ -1699,7 +1706,7 @@ Its properties are named by the catalog component's conditions (its runs' broker
 
 The measured points of a fit: the names of x and y, then one "x y" row per line.
 
-```
+```loadmap
 points rate cores {
   200 0.2599
   350 0.3061
@@ -1712,7 +1719,7 @@ After the keyword: x y.
 
 Something that moves through the system, with its rate and its route.
 
-```
+```loadmap
 flow orders "orders" { unit: "order"; rate: 40 * load; route: gateway -> topic -> workerPool }
 ```
 
@@ -1734,7 +1741,7 @@ Holds: `drop`, `merge`, `retry`.
 
 Units older than olderThan simulated seconds are dropped before they are handled.
 
-```
+```loadmap
 drop { olderThan: 60; reason: "too old" }
 ```
 
@@ -1748,7 +1755,7 @@ drop { olderThan: 60; reason: "too old" }
 
 Under backlog, this share of what is handled is superseded by a newer unit: keep the newest per key.
 
-```
+```loadmap
 merge { share: 0.37; reason: "newest kept" }
 ```
 
@@ -1762,7 +1769,7 @@ merge { share: 0.37; reason: "newest kept" }
 
 A unit turned away on the route (by a pass, limit or cache stage past capacity) is sent again, up to times more times. The attempts settle where the retries they cause are the ones assumed.
 
-```
+```loadmap
 retry { times: 3; budget: 0.1 }
 ```
 
@@ -1776,7 +1783,7 @@ retry { times: 3; budget: 0.1 }
 
 Something that can run out: its demand against its capacity. On a box, write these lines on the box.
 
-```
+```loadmap
 component cache "Cache" { demand: flows.reads; capacity: estimated(9000, "req/s") }
 ```
 
@@ -1802,7 +1809,7 @@ Holds: `held`.
 
 How long a unit of each flow holds one of the component's slots, in seconds; a flow it does not name holds none.
 
-```
+```loadmap
 held { orders: 0.02; sessions: 3600 }
 ```
 
@@ -1812,7 +1819,7 @@ Its properties are named by flows.
 
 A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.
 
-```
+```loadmap
 tier data "Data"
 ```
 
@@ -1827,7 +1834,7 @@ After the keyword: id [label].
 
 A box. It may run a stage (pass, store, sink, lost, fanout) and own a component (demand and capacity lines).
 
-```
+```loadmap
 node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }
 ```
 
@@ -1857,7 +1864,7 @@ Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `split`, `cache`, `limit`, `co
 
 Members (brokers) holding the partitions of one or more queues (topics).
 
-```
+```loadmap
 cluster kafka "Kafka" { members: 3; queue topic { partitions { orders: 12 } } }
 ```
 
@@ -1888,7 +1895,7 @@ Holds: `queue`, `component`, `held`, `input`, `with`.
 
 A workers stage drawn as pods holding a grid of workers.
 
-```
+```loadmap
 pool workerPool "Workers" { workers { pods: pods; perPod: 8 } }
 ```
 
@@ -1918,7 +1925,7 @@ Holds: `workers`, `component`, `held`, `input`, `with`.
 
 Flows pass through; past capacity the share above 100 % is rejected.
 
-```
+```loadmap
 pass "the gateway"
 ```
 
@@ -1932,7 +1939,7 @@ After the keyword: [id] [label].
 
 A share of the units (hit) is answered here and goes no further; the rest carry on to the next stage. Past capacity the share above 100 % is rejected.
 
-```
+```loadmap
 cache { hit: 0.8 }
 ```
 
@@ -1947,7 +1954,7 @@ After the keyword: [id] [label].
 
 A rate limiter: its component's capacity is the limit. Above it the share over is turned away, and the stages after it see only what got through.
 
-```
+```loadmap
 limit
 ```
 
@@ -1961,7 +1968,7 @@ After the keyword: [id] [label].
 
 Where a flow ends: written to its component.
 
-```
+```loadmap
 store
 ```
 
@@ -1975,7 +1982,7 @@ After the keyword: [id] [label].
 
 Where a flow ends without a component: a receiver, a viewer.
 
-```
+```loadmap
 sink "contacts"
 ```
 
@@ -1985,7 +1992,7 @@ After the keyword: [id] [label].
 
 Where what other boxes lose goes, counted: an edge from a box into this one sends what that box turns away, drops as too old or times out here, after every retry. It is on no route. From loadmap 1.1.
 
-```
+```loadmap
 lost { takes: [rejected] }
 ```
 
@@ -1999,7 +2006,7 @@ After the keyword: [id] [label].
 
 Flows wait here; the next stage of each route drains it.
 
-```
+```loadmap
 queue topic "orders topic" { partitions { orders: 12 } }
 ```
 
@@ -2015,7 +2022,7 @@ Holds: `partitions`.
 
 Partitions per flow, drawn as cells across the members.
 
-```
+```loadmap
 partitions { orders: 12; events: 24 }
 ```
 
@@ -2025,7 +2032,7 @@ Its properties are named by flows.
 
 A pool of workers: pods × workers per pod.
 
-```
+```loadmap
 workers { pods: pods; perPod: 8 }
 ```
 
@@ -2044,7 +2051,7 @@ Holds: `autoscale`.
 
 Pods are added and removed to hold each running pod near target, between min and max. The component's capacity is the pool at max pods: it runs out when the pool cannot grow further.
 
-```
+```loadmap
 autoscale { min: 2; max: 10; target: 0.7 }
 ```
 
@@ -2058,7 +2065,7 @@ autoscale { min: 2; max: 10; target: 0.7 }
 
 Each unit goes on one way of several, by share: a read/write split, shards, regions, an A/B test, failover. One "flow -> stage -> …: share" line per way; a flow's shares add up to 1, and a flow it names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any other goes on with the route after the split.
 
-```
+```loadmap
 split "DB router" {
   orders -> primary: 0.2
   orders -> replica: 0.8
@@ -2077,7 +2084,7 @@ Holds branches: `flow -> stage -> …: share`.
 
 Each unit is copied to several stages; one "flow -> stage: copies" line per branch. Last on a route.
 
-```
+```loadmap
 fanout "push broker" {
   alerts -> contacts: 1
 }
@@ -2095,7 +2102,7 @@ Holds branches: `flow -> stage: copies per unit`.
 
 How a stage reaches the next one on a route. exclusive gives each part one owner: a Kafka consumer group. The component runs out when its busiest member does.
 
-```
+```loadmap
 connection group { hop: topic -> workerPool; assign: exclusive }
 ```
 
@@ -2119,7 +2126,7 @@ After the keyword: id.
 
 The utilization of the target and of "runs out".
 
-```
+```loadmap
 thresholds { target: 0.5; full: 1 }
 ```
 

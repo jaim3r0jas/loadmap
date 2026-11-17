@@ -7,6 +7,12 @@
   --accent: #1f6feb;
   --code: #eef2f6;
   --error: #b7392e;
+  /* a snippet's tokens: the board's and the editor's --lm-accent, -alt, -ok, -warn and -muted */
+  --tok-accent: #0b6b8f;
+  --tok-alt: #7a4f9a;
+  --tok-ok: #2a7f5a;
+  --tok-warn: #b86e00;
+  --tok-muted: #5d6d7c;
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   /* the top bar's height: what the sticky sidebar, contents and headings sit under */
@@ -28,6 +34,11 @@
     --accent: #58a6ff;
     --code: #18232e;
     --error: #ff7b72;
+    --tok-accent: #5fb7d6;
+    --tok-alt: #c39be0;
+    --tok-ok: #5fc08f;
+    --tok-warn: #e2a24a;
+    --tok-muted: #93a3b3;
   }
 }
 
@@ -40,6 +51,11 @@
   --accent: #58a6ff;
   --code: #18232e;
   --error: #ff7b72;
+  --tok-accent: #5fb7d6;
+  --tok-alt: #c39be0;
+  --tok-ok: #5fc08f;
+  --tok-warn: #e2a24a;
+  --tok-muted: #93a3b3;
   color-scheme: dark;
 }
 
@@ -345,6 +361,92 @@ pre.code code {
   background: none;
   padding: 0;
   font: inherit;
+}
+
+/* a fence: the <pre> the build coloured, then a read-only CodeMirror view in its place (site/snippet.ts) */
+.snippet {
+  position: relative;
+  margin: 0.84rem 0;
+}
+
+.snippet > pre.code {
+  margin: 0;
+}
+
+.snippet > .copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font: 500 0.72rem var(--font);
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.snippet:hover > .copy,
+.snippet:focus-within > .copy {
+  opacity: 1;
+}
+
+/* no pointer to hover with: always there */
+@media (hover: none) {
+  .snippet > .copy {
+    opacity: 1;
+  }
+}
+
+.snippet > .copy:hover,
+.snippet > .copy:focus-visible {
+  color: var(--fg);
+}
+
+.snippet > .copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the editor's colours (loadmapHighlight in @loadmap/editor), for every language */
+.tok-keyword {
+  color: var(--tok-accent);
+  font-weight: 600;
+}
+
+.tok-def {
+  font-weight: 600;
+}
+
+.tok-property {
+  color: var(--tok-alt);
+}
+
+.tok-string {
+  color: var(--tok-ok);
+}
+
+.tok-number {
+  color: var(--tok-warn);
+}
+
+.tok-comment {
+  color: var(--tok-muted);
+  font-style: italic;
+}
+
+.tok-accent {
+  color: var(--tok-accent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 pre.error {

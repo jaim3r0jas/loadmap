@@ -86,6 +86,7 @@ describe('recording the docs site', () => {
   beforeAll(async () => {
     server = await createServer({
       configFile: join(import.meta.dirname, '../../../apps/docs/vite.config.ts'),
+      configLoader: 'runner',
       server: { port: 0, host: '127.0.0.1' },
       logLevel: 'error',
     })

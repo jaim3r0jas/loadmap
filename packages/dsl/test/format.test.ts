@@ -17,10 +17,8 @@ const definitions: [string, string][] = [
 ].flatMap((f): [string, string][] => {
   const src = read(f)
   if (f.endsWith('.loadmap')) return [[f, src]]
-  const fences = [
-    ...src.matchAll(/```loadmap[^\n]*\n([\s\S]*?)```/g),
-    ...src.matchAll(/```\n(loadmap \d+(?:\.\d+)?\n[\s\S]*?)```/g),
-  ]
+  // an @include is lines of a file that is already in the list
+  const fences = [...src.matchAll(/```loadmap[^\n]*\n([\s\S]*?)```/g)].filter((m) => !m[1]!.startsWith('@include('))
   return fences.map((m, i): [string, string] => [`${f} #${i + 1}`, m[1]!])
 })
 
