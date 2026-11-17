@@ -169,7 +169,7 @@ describe('connections in the language', () => {
     // its id is a limit's: expect and formulas read it
     const held = src.replace(
       'shop -> kafka',
-      'expect "The brokers take the consumers" { component: brokerPool; full: 100 }\nlet open = demand.brokerPool\n\nshop -> kafka',
+      'expect "The brokers take the consumers" { component: brokerPool; notFull: 100 }\nlet open = demand.brokerPool\n\nshop -> kafka',
     )
     expect(errors(held)).toEqual([])
     // and a rename follows it there

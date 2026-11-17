@@ -385,7 +385,7 @@ describe('setProperty', () => {
     const v15 = src.replace('loadmap 1.2', 'loadmap 1.5')
     expect(set(v15, '', 'layout', 'stable')).toBe(v15.replace('load {', 'view { layout: stable }\nload {'))
     expect(set(v15, '', 'direction', 'down')).toBe(v15.replace('load {', 'view { direction: down }\nload {'))
-    expect(setProperty(v15, '', 'grid', false)).toEqual({ error: '"grid" is no longer a property of view' })
+    expect(setProperty(v15, '', 'grid', false)).toEqual({ error: '"grid" is no longer a property of the top level' })
   })
 
   it('gives a tier a block for its fill, adds to it, and drops it with its last line', () => {

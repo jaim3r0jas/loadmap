@@ -29,6 +29,7 @@ describe('completions', () => {
       'lanes',
       'direction',
       'rows',
+      'closed',
     ])
     expect(at(`${checkout}\nphones -> db {\n  |\n}\n`).labels).toEqual(['when'])
     // a file of 1.4 is offered what 1.4 writes: the direction at the top, a pool's workers in their block

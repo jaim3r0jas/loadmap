@@ -1338,7 +1338,7 @@ hits -> db: \`\${compact(at.db.reads)} misses/s\`
   })
 
   it('compile an autoscaled pool', () => {
-    const dsl = model(`loadmap 1.1
+    const dsl = model(`loadmap 1.5
 load "Load" { max: 10; default: 1 }
 param most "Most pods" { options: [6, 10]; default: 10 }
 flow req "requests" { rate: 300 * load; route: topic -> api; from: client }
@@ -1348,10 +1348,8 @@ cluster broker "Broker" {
   queue topic { partitions { req: 4 } }
 }
 pool api "API" {
-  workers {
-    perPod: 4
-    autoscale { min: 2; max: most; target: 0.7 }
-  }
+  perPod: 4
+  autoscale { min: 2; max: most; target: 0.7 }
   demand: flows.req * 0.01
   capacity: measured(most * 1, "cores")
   over: "requests queue"

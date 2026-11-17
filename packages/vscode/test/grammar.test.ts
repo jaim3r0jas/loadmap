@@ -56,8 +56,13 @@ describe('the grammar', () => {
       [read('docs/every-statement.loadmap'), ...several.map((f) => read(`docs/multi-file/${f}`))].join('\n'),
     )
     const seen = new Set(every.filter((t) => t.scope === 'keyword.other.statement').map((t) => t.text))
-    // the file holds every statement of the schema (docs.test.ts)
-    expect([...seen].sort()).toEqual(Object.keys(SCHEMA).filter(Boolean).sort())
+    // the file holds every statement of the schema (docs.test.ts), but what the language dropped (workers, before 1.5)
+    expect([...seen].sort()).toEqual(
+      Object.keys(SCHEMA)
+        .filter((k) => k && !SCHEMA[k]!.until)
+        .sort(),
+    )
+    expect(scopeOf('pool p "P" {\n  workers { pods: 3; perPod: 8 }\n}', 'workers')).toBe('keyword.other.statement')
   })
 
   it('reads the examples without a stray mark', () => {

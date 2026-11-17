@@ -64,20 +64,29 @@ describe('lex', () => {
     expect(toks[0]).toMatchObject({ kind: 'number', text: '20ms', unit: 'ms', written: 20 })
   })
 
-  it('reads "%" as a share only where no value follows it', () => {
+  it('reads a "%" after a number as a share, and before loadmap 1.5 only where no value follows it', () => {
     const texts = (src: string) => lex(src, new Reporter(src)).map((t) => t.text)
+    // a file without a loadmap line reads as the newest version: the "%" is part of its number, whatever follows
     expect(texts('x: 80%')).toEqual(['x', ':', '80%', ''])
     expect(texts('x: 80% * y')).toEqual(['x', ':', '80%', '*', 'y', ''])
     expect(texts('x: 80% - y')).toEqual(['x', ':', '80%', '-', 'y', ''])
     expect(texts('f(80%, 2)')).toEqual(['f', '(', '80%', ',', '2', ')', ''])
-    // before a value it stays modulo
+    expect(texts('x: 10%3')).toEqual(['x', ':', '10%', '3', ''])
+    expect(texts('x: 30%+1')).toEqual(['x', ':', '30%', '+', '1', ''])
+    // between two values it is the operator, which the checker refuses from 1.5
     expect(texts('x: 10 % 3')).toEqual(['x', ':', '10', '%', '3', ''])
-    expect(texts('x: 10%3')).toEqual(['x', ':', '10', '%', '3', ''])
-    expect(texts('x: 10% y')).toEqual(['x', ':', '10', '%', 'y', ''])
-    expect(texts('x: 10% (y)')).toEqual(['x', ':', '10', '%', '(', 'y', ')', ''])
-    // a sign right after it is a value's: 10 mod -3, as before
-    expect(texts('x: 10%-3')).toEqual(['x', ':', '10', '%', '-', '3', ''])
     expect(texts('x: n%+1')).toEqual(['x', ':', 'n', '%', '+', '1', ''])
+    // a file of 1.4 reads it as it always did: before a value, or with a sign right after it, it is the remainder
+    const head = 'loadmap 1.4\n'
+    const old = (src: string) =>
+      lex(head + src, new Reporter(head + src))
+        .filter((t) => t.from >= head.length)
+        .map((t) => t.text)
+    expect(old('x: 80% * y')).toEqual(['x', ':', '80%', '*', 'y', ''])
+    expect(old('x: 10%3')).toEqual(['x', ':', '10', '%', '3', ''])
+    expect(old('x: 10% y')).toEqual(['x', ':', '10', '%', 'y', ''])
+    expect(old('x: 10% (y)')).toEqual(['x', ':', '10', '%', '(', 'y', ')', ''])
+    expect(old('x: 10%-3')).toEqual(['x', ':', '10', '%', '-', '3', ''])
     // after a ± the "%" is the ± form's own, read by the parser as it always was
     expect(texts('estimated(1 ± 30%, "x")')).toEqual(['estimated', '(', '1', '±', '30', '%', ',', '"x"', ')', ''])
     expect(texts('estimated(1 +/- 30%)')).toEqual(['estimated', '(', '1', '+/-', '30', '%', ')', ''])

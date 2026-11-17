@@ -69,8 +69,29 @@ const UNIT_BEFORE_1_5 = new RegExp(
   `(?:(?:${WORDS.join('|')})(?![A-Za-z0-9_])|×|%(?![-+!]|[ \\t]*(?:[A-Za-z0-9_(\\['"\`]|\\.\\d)))`,
   'y',
 )
-const STAMP = /(?:[ \t\r]*(?:#[^\n]*)?\n)*[ \t\r]*loadmap[ \t]+([0-9][0-9A-Za-z_.+-]*)/y
 const ONE = parseVersion(ONE_SPELLING)!
+
+/**
+ * The text after `loadmap` on a file's first line that is not blank or a comment, from `at` to `end`: a scan, one
+ * pass, since a shared link is untrusted input (a pattern for it backtracks on a long run of spaces).
+ */
+function stampAt(source: string, at: number, end: number): string | undefined {
+  const blank = (c: string | undefined) => c === ' ' || c === '\t' || c === '\r'
+  let i = at
+  while (i < end) {
+    while (i < end && blank(source[i])) i++
+    if (source[i] === '#') i = source.indexOf('\n', i) < 0 ? end : source.indexOf('\n', i)
+    if (source[i] !== '\n') break
+    i++
+  }
+  if (!source.startsWith('loadmap', i)) return undefined
+  i += 'loadmap'.length
+  const gap = i
+  while (i < end && blank(source[i])) i++
+  const from = i
+  while (i < end && /[0-9A-Za-z_.+-]/.test(source[i]!)) i++
+  return i > gap && from > gap && /[0-9]/.test(source[from] ?? '') ? source.slice(from, i) : undefined
+}
 
 /**
  * Whether the file that holds `from` is stamped before loadmap 1.5, where `%` was also the remainder. The lexer reads
@@ -78,9 +99,9 @@ const ONE = parseVersion(ONE_SPELLING)!
  * line is read at the newest version.
  */
 function remainderPercent(source: string, report: Reporter, from: number): boolean {
-  const base = report.source === source ? (report.fileAt(from)?.base ?? 0) : 0
-  STAMP.lastIndex = base
-  const text = STAMP.exec(source)?.[1]
+  const file = report.source === source ? report.fileAt(from) : undefined
+  const first = report.source === source ? (report.files[0]?.base ?? source.length + 1) - 1 : source.length
+  const text = stampAt(source, file?.base ?? 0, file?.end ?? first)
   // read as the compiler reads the stamp (versions.ts): a text that is no version is its error to name
   const version = text == null ? undefined : stampVersion(text, Number(text))
   return version != null && before(version, ONE)
