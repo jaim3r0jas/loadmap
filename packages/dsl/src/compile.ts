@@ -1044,6 +1044,7 @@ class Compiler {
       if (fit) calibration[this.text(f.args.label) ?? f.args.id!.name] = fit
     }
 
+    this.apart(componentDefs, byKind('subsystem'))
     const model: Record<string, unknown> = {
       load,
       params: paramDefs,
@@ -2665,6 +2666,39 @@ class Compiler {
     }
     // a list with a mistake in it is left out, as if not written: what it would have left out raises nothing more
     return broken ? undefined : out
+  }
+
+  /**
+   * Copies of one subsystem name their components alike ("Workers" in each region): each such name takes the names of
+   * the subsystems around it that tell the copies apart, "EU region › Workers", and its short form "the workers in EU
+   * region", so the verdict and the limits say which copy runs out. A name no other component has stays as written.
+   */
+  private apart(defs: Record<string, Record<string, unknown>>, subsystems: Block[]) {
+    const label = new Map<string, string>()
+    for (const b of subsystems) if (b.args.id) label.set(b.args.id.name, this.text(b.args.label) ?? b.args.id.name)
+    // the names of the subsystems around a component, the outermost first
+    const around = (id: string) => {
+      const out: string[] = []
+      for (let dot = id.lastIndexOf('.'); dot > 0; dot = id.lastIndexOf('.', dot - 1))
+        if (label.has(id.slice(0, dot))) out.unshift(label.get(id.slice(0, dot))!)
+      return out
+    }
+    const named = new Map<string, string[]>()
+    for (const [id, d] of Object.entries(defs))
+      if (typeof d.name === 'string') named.set(d.name, [...(named.get(d.name) ?? []), id])
+    for (const [name, ids] of named) {
+      if (ids.length < 2) continue
+      const paths = ids.map(around)
+      // a place every copy has under the same name tells none of them apart
+      const same = (i: number) => paths.every((p) => p[i] != null && p[i] === paths[0]![i])
+      for (const [k, id] of ids.entries()) {
+        const tag = paths[k]!.filter((_, i) => !same(i)).join(' › ')
+        if (!tag) continue
+        const d = defs[id]!
+        d.short = `${typeof d.short === 'string' ? d.short : name} in ${tag}`
+        d.name = `${tag} › ${name}`
+      }
+    }
   }
 
   /**

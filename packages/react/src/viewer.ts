@@ -161,6 +161,11 @@ export class Viewer {
     if (!seen(v, this.viewport, r)) this.go(frame(r, this.viewport, v.k), true)
   }
 
+  /** Flies in to this part of the scene, as close as it fits the board: a subsystem's frame, from a click on it. */
+  enter(r: Rect): void {
+    this.go(frame({ x: r.x - ROOM, y: r.y - ROOM, w: r.w + 2 * ROOM, h: r.h + 2 * ROOM }, this.viewport), true)
+  }
+
   /** The part of the scene the board shows now: its viewBox. */
   box(): Rect | null {
     const v = this.shownView()

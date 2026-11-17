@@ -156,4 +156,37 @@ describe('a subsystem on the board', () => {
     // closing and opening drew the same model another way: the sim was never started over
     expect(engine.sim).toBe(sim)
   })
+
+  it('flies in to a frame on a click, and says where the view is over the board', async () => {
+    host = document.createElement('div')
+    host.style.width = '1200px'
+    document.body.appendChild(host)
+    root = createRoot(host)
+    root.render(<LoadmapSource source={SOURCE} zoom transition={0} />)
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
+    const crumbs = () => host!.querySelector('.lm-crumbs')?.textContent ?? null
+    // the whole diagram shows: no path to say
+    expect(crumbs()).toBeNull()
+    const rect = host.querySelector('[data-subsystem-id="eu.line"] rect')!
+    expect(rect.getAttribute('aria-label')).toBe('Orders: fly in to it')
+    click(rect)
+    await expect.poll(crumbs, { timeout: 5000 }).toBe('Whole diagram›EU region›Orders')
+    // a step back flies out to the region, and the whole diagram ends the path
+    const back = [...host.querySelectorAll<HTMLButtonElement>('.lm-crumbs button')]
+    expect(back.map((b) => b.textContent)).toEqual(['Whole diagram', 'EU region'])
+    back[1]!.click()
+    await expect.poll(crumbs, { timeout: 5000 }).toBe('Whole diagram›EU region')
+    host.querySelector<HTMLButtonElement>('.lm-crumbs button')!.click()
+    await expect.poll(crumbs, { timeout: 5000 }).toBeNull()
+  })
+
+  it('leaves a frame still on a board that does not zoom', async () => {
+    host = document.createElement('div')
+    host.style.width = '1200px'
+    document.body.appendChild(host)
+    root = createRoot(host)
+    root.render(<LoadmapSource source={SOURCE} />)
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
+    expect(host.querySelector('[data-subsystem-id="eu"] rect')!.getAttribute('role')).toBeNull()
+  })
 })
