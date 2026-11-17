@@ -106,6 +106,9 @@ phones -> gateway
 gateway -> consumers
 `
 
+/** The lines the picker shows it will write, before it adds them. */
+const written = () => document.querySelector('.lme-catalog-text pre')?.textContent ?? ''
+
 describe('how flows use a box from the catalog', () => {
   it('puts a Kafka topic on a route, in front of the pool that drains it as a consumer group', async () => {
     const { host, view } = await mount(SHOP)
@@ -120,7 +123,7 @@ describe('how flows use a box from the catalog', () => {
     expect(dialog.querySelector('.lme-catalog-demand')?.textContent).toBe(
       'Demand: what reaches it × 1KB, the message size of the published run, in MB/s.',
     )
-    await expect.element(page.getByLabelText('The text it writes')).toHaveTextContent('demand: at.kafka * 1KB')
+    await expect.poll(written).toContain('demand: at.kafka * 1KB')
     // the edge it now stands in goes
     expect([...dialog.querySelectorAll('.lme-catalog-text del')].map((d) => d.textContent)).toContain(
       'gateway -> consumers',
@@ -145,7 +148,7 @@ describe('how flows use a box from the catalog', () => {
     await userEvent.click(page.getByRole('button', { name: /^Valkey/ }))
     await userEvent.fill(page.getByRole('spinbutton', { name: 'Hit ratio, %' }), '90')
     await userEvent.click(page.getByRole('checkbox', { name: 'orders' }))
-    await expect.element(page.getByLabelText('The text it writes')).toHaveTextContent('cache { hit: 0.9 }')
+    await expect.poll(written).toContain('cache { hit: 0.9 }')
     await page.screenshot({ path: 'catalog-valkey.png', element: page.getByRole('dialog').element() })
     await userEvent.click(page.getByRole('button', { name: /^CockroachDB/ }))
     await userEvent.click(page.getByRole('checkbox', { name: 'orders' }))
@@ -155,7 +158,7 @@ describe('how flows use a box from the catalog', () => {
     await expect.element(page.getByRole('radio', { name: 'Flows go on' })).toBeChecked()
     // tpmC is no rate of units: what one is worth
     await userEvent.fill(page.getByRole('spinbutton', { name: 'What one unit a second is, in tpmC' }), '60')
-    await expect.element(page.getByLabelText('The text it writes')).toHaveTextContent('demand: at.cockroachdb * 60')
+    await expect.poll(written).toContain('demand: at.cockroachdb * 60')
     await userEvent.click(page.getByRole('button', { name: 'Add as a new box' }))
     expect(view.state.doc.toString()).toContain('route: gateway -> cockroachdb -> consumers }')
   })
