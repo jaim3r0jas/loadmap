@@ -127,32 +127,28 @@ export interface LoadmapController<P = any> {
 const FOLDS = [1, 2, 3]
 /** Stands for a room that is still to come. */
 const DUE = { w: 0, h: 0 }
-const NONE: readonly string[] = []
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
-  // the subsystems drawn closed: the page's, until the reader or a story step says otherwise; a new view starts over.
-  // What closes them and draws their frames comes with the first view that has a subsystem, before it is laid out
-  const [shut, setShut] = useState<{ view: View; ids: readonly string[] } | null>(null)
-  const closed = shut?.view === whole ? shut.ids : (o.closed ?? NONE)
-  const [kit, setKit] = useState<{ view: View; close: (view: View, closed: readonly string[]) => View } | null>(null)
+  // the subsystems drawn closed: the page's, until the reader or a story step says otherwise. They stay through an
+  // edit of the text (a new view): one the new view lacks closes nothing. What closes them and draws their frames
+  // comes with the first view that has a subsystem, before it is laid out
+  const [shut, setShut] = useState<readonly string[] | null>(null)
+  const closed = shut ?? o.closed ?? []
+  // one function for every view: once it is there it stays
+  const [close, setClose] = useState<((view: View, closed: readonly string[]) => View) | null>(null)
   useEffect(() => {
     let live = true
     const loading = closing(whole)
-    if (loading)
-      Promise.all([loading, loadFrames()]).then(
-        ([close]) => live && setKit({ view: whole, close }),
-        (err) => console.error('loadmap: layout failed', err),
-      )
+    if (loading) Promise.all([loading, loadFrames()]).then(([f]) => live && setClose(() => f), console.error)
     return () => {
       live = false
     }
   }, [whole])
-  const close = kit?.view === whole ? kit.close : null
   const unready = !close && Object.keys(whole.def.subsystems ?? {}).length > 0
   // closed, the diagram is another view: it moves there as it moves to an edited one
   const view = close && closed.length ? close(whole, closed) : whole
-  const setClosed = useCallback((ids: readonly string[]) => setShut({ view: whole, ids }), [whole])
+  const setClosed = setShut as (ids: readonly string[]) => void
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
   // setValues evaluates once for the engine; the render reuses that evaluation. It also holds the values set last
@@ -342,9 +338,9 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
       engine.storyStep = st ? i : null
       setStepState({ model, i: st ? i : null })
       // a step says what it shows closed; without it, and outside the story, the page's own
-      setShut(st?.closed ? { view: whole, ids: st.closed } : null)
+      setShut(st?.closed ?? null)
     },
-    [model, apply, engine, whole],
+    [model, apply, engine],
   )
   const setStep = useCallback(
     (i: number | null) => {

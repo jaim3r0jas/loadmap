@@ -83,8 +83,12 @@ export function stateIn(ev: Evaluation, n: SceneNode): ComponentState | null {
   return past(states) ?? (states.includes('ok') ? 'ok' : states.includes('off') ? 'off' : null)
 }
 
+/** Whether a closed subsystem's box stands for this component: it does for every component inside. */
+export const holds = (ev: Evaluation, n: SceneNode, component: string) =>
+  n.stages.some((s) => ev.stages[s]?.component === component)
+
 /** A closed subsystem's box is a button that opens it; one closed inside it stays closed. */
-export function opener(lm: LoadmapController, id: string, title: string) {
+export function opener(lm: LoadmapController, id: string, title = id) {
   const open = () => lm.setClosed(lm.closed.filter((c) => c !== id))
   return {
     tabIndex: 0,

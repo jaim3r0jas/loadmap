@@ -123,7 +123,8 @@ describe('a subsystem on the board', () => {
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
     ref.current!.setStoryStep(null)
     await expect.poll(() => box('eu.line'), { timeout: 5000 }).toBeTruthy()
-    expect(frames()).toEqual(['eu'])
+    // the frame that goes fades out with its boxes: gone once the move is over
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu'])
     // and the handle closes and opens them
     ref.current!.setClosed(['eu'])
     await expect.poll(() => box('eu'), { timeout: 5000 }).toBeTruthy()

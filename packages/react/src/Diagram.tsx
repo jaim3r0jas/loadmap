@@ -490,7 +490,7 @@ const Structure = memo(function Structure({
     const cid = componentOf(lm, n)
     const c = cid ? ev.components[cid] : undefined
     const title = labels.nodes[n.id]?.title
-    if (n.subsystem != null && sub) return sub.opener(lm, n.subsystem, title ?? n.id)
+    if (n.subsystem != null && sub) return sub.opener(lm, n.subsystem, title)
     if (!c) {
       if (!onClick) return {}
       return {
@@ -542,7 +542,7 @@ const Structure = memo(function Structure({
   const boxes = (c: string) =>
     scene.nodes.filter(
       (n) =>
-        (n.subsystem != null ? n.stages.some((s) => ev.stages[s]?.component === c) : componentOf(lm, n) === c) &&
+        (n.subsystem != null && sub ? sub.holds(ev, n, c) : componentOf(lm, n) === c) &&
         (!staying || staying.has(n.id)),
     )
   const first = ev.firstLimit
@@ -552,7 +552,7 @@ const Structure = memo(function Structure({
   const wasRank = was && ranks.get(was.id)
   const note = was && (wasRank ? wasRank.text : `now ${multiple(edge(was), lm.model.searchMax)}`)
   const lost = lostBoxes(lm, scene)
-  const worn = new Set(first ? boxes(first.id).map((n) => n.id) : [])
+  const worn = new Set(first && boxes(first.id))
   return (
     // biome-ignore lint/a11y/useSemanticElements: an <svg> cannot be a <fieldset>
     <svg ref={svgRef} viewBox={`0 0 ${scene.width} ${scene.height}`} role="group" aria-label={`Diagram: ${summary}`}>
@@ -599,8 +599,8 @@ const Structure = memo(function Structure({
       {[...ranks].map(([c, r]) => {
         const n = r.rank > 1 && c !== was?.id ? boxes(c)[0] : undefined
         // one badge a box: a closed subsystem wears that of the first of its components to run out
-        if (!n || worn.has(n.id)) return null
-        worn.add(n.id)
+        if (!n || worn.has(n)) return null
+        worn.add(n)
         return <Badge key={c} n={n} text={r.text} />
       })}
       {note && wasBoxes[0] && <Badge n={wasBoxes[0]} text={note} was={!wasRank} />}
