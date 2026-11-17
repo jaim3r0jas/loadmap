@@ -13,6 +13,7 @@ import {
 import { type Arrangement, arrange, shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { loadFrames } from './Diagram'
 import { pageElk } from './elk'
 import { type Cue, Engine } from './engine'
 
@@ -244,7 +245,9 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     if (!measure || !key || waits) return
     let live = true
     layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk() }).then(
-      (s) => {
+      async (s) => {
+        // what draws a subsystem's frame comes before the first scene that has one
+        if (s.subsystems.length) await loadFrames()
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
         if (live) setLaid({ view, scene: s })
       },

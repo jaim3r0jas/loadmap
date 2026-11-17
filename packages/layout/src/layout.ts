@@ -78,6 +78,23 @@ export interface Scene {
   flowFrom: Readonly<Record<string, string>>
   /** The bands across the flow, in their order; empty without tiers. */
   tiers: SceneTier[]
+  /** The subsystems' frames, an outer one before those in it; empty without subsystems. */
+  subsystems: SceneSubsystem[]
+}
+
+/** A subsystem's frame: around its boxes and the frames in it, its name at its top. */
+export interface SceneSubsystem extends Box, Fading {
+  id: string
+  /** The subsystem whose frame this one stands in. */
+  in?: string
+  /** How many frames it stands in. */
+  depth: number
+  label: string
+  title: TextSpot
+  /** Running down, the name reads up the frame's left side, ending at its spot, as a tier's does. */
+  vertical: boolean
+  /** Every box inside, those of the frames in it too. */
+  nodes: string[]
 }
 
 /** A tier's lane: its band, the whole board across the flow, and a header with its name before the boxes. */
@@ -200,12 +217,19 @@ export interface Frame {
   /** Each box's tier, as an index into `tiers`, or the layer it is held to without tiers. */
   order?: Record<string, number | 'FIRST' | 'LAST'>
   tiers?: string[]
+  /** The subsystems that are framed, an outer one before those in it, each at least as wide as its name. */
+  subsystems?: { id: string; in?: string; minW: number }[]
+  /** Each box's subsystem: the innermost that is framed. */
+  within?: Record<string, string>
+  /** For a box in a frame, the slot of the outermost frame around it: what its tier's lane must hold. */
+  outer?: Record<string, string>
 }
 
 /** A frame laid out: each box's slot and each edge's route, whatever the values. */
 export interface Laid {
   width: number
   height: number
+  /** By box id, and each subsystem's frame under its `frameKey` (subsystems.ts). */
   slots: Map<string, Box>
   routes: Map<string, { points: [number, number][]; label?: Box }>
 }
@@ -243,19 +267,17 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   scenes.set(measure, byView)
   const cache = byView.get(view) ?? new Map<string, Promise<Scene>>()
   byView.set(view, cache)
-  return kept(cache, key, 32, () => {
+  return kept(cache, key, 32, async () => {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
-    const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep))
-    return laidOut(view, frame, o.elk).then(async (l) =>
-      // the fold comes with the first diagram that asks for one: never in a page's first load
-      place(
-        prep,
-        rows > 1
-          ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, foldKit)
-          : lanes(l, frame, view, measure),
-        key,
-      ),
-    )
+    const sub = await subsystemsOf(view)
+    const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep), measure, sub)
+    const l = await laidOut(view, frame, o.elk, sub)
+    // the fold comes with the first diagram that asks for one: never in a page's first load
+    const board =
+      rows > 1
+        ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, foldKit)
+        : lanes(l, frame, view, measure)
+    return place(prep, board, key, sub?.framesOf(board.l, view, frame) ?? [])
   })
 }
 
@@ -263,11 +285,29 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
 const rowsOf = (o: LayoutOptions) => (o.rows != null && o.rows >= 1 ? Math.floor(o.rows) : 1)
 
 /** A frame laid out by ELK, once per view and frame. */
-function laidOut(view: View, frame: Frame, elk?: ElkEngine): Promise<Laid> {
+function laidOut(view: View, frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid> {
   const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
   frames.set(view, byFrame)
-  return kept(byFrame, frame.key, 32, () => run(frame, elk))
+  return kept(byFrame, frame.key, 32, () => run(frame, elk, sub))
 }
+
+type Subsystems = typeof import('./subsystems')
+
+/**
+ * What frames the subsystems (subsystems.ts), for a view that has some: it comes with the first such diagram, never in
+ * the first load of a page without one.
+ */
+const subsystemsOf = (view: View): Promise<Subsystems> | undefined =>
+  Object.keys(view.def.subsystems ?? {}).length
+    ? import('./subsystems').then((m) => {
+        loaded = m
+        return m
+      })
+    : undefined
+let loaded: Subsystems | undefined
+
+/** How the frames move from one scene to the next (motion.ts): there once a scene with a frame was laid out. */
+export const frameMorph = () => loaded?.morph
 
 /**
  * How large this direction lays the view out, folded into `rows` or not, with every box at its largest anywhere the
@@ -580,7 +620,7 @@ function widen(frame: Frame, ...adds: Pick<Prepared, 'nodes' | 'edges'>[]): Fram
  * boxes that feed it, else the earliest of those it feeds: every layer then belongs to one tier. Without tiers, the
  * boxes nothing feeds come first, and a sink or store that feeds nothing comes last.
  */
-function ordered(view: View, frame: Frame): Frame {
+function ordered(view: View, frame: Frame, measure: TextMeasure = estimateText, sub?: Subsystems): Frame {
   const defs = view.def.nodes as Record<string, AnyNodeDef>
   const ids = frame.nodes.map((n) => n.id)
   const into = new Map(ids.map((id) => [id, [] as string[]]))
@@ -618,7 +658,14 @@ function ordered(view: View, frame: Frame): Frame {
       else if (!outOf.get(id)!.length && endsFlow(view, id)) order[id] = 'LAST'
     }
   }
-  const out = { direction: frame.direction, nodes: frame.nodes, edges: frame.edges, order, tiers }
+  const out = {
+    direction: frame.direction,
+    nodes: frame.nodes,
+    edges: frame.edges,
+    order,
+    tiers,
+    ...sub?.framed(view, ids, order, tiers.length > 0, measure),
+  }
   return { key: JSON.stringify(out), ...out }
 }
 
@@ -700,44 +747,52 @@ function widestOver(contexts: LooseValues[], widths: Sampled['widths'], measure:
   }
 }
 
-async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
+async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid> {
   const [out, into] = frame.direction === 'DOWN' ? ['SOUTH', 'NORTH'] : ['EAST', 'WEST']
   const port = (id: string, side: string) => ({ id, width: 0, height: 0, layoutOptions: { 'elk.port.side': side } })
+  // what the board and every subsystem's frame are laid out with
+  const layered = {
+    'elk.algorithm': 'layered',
+    'elk.direction': frame.direction,
+    'elk.edgeRouting': 'ORTHOGONAL',
+    'elk.spacing.nodeNode': '28',
+    'elk.spacing.edgeNode': '16',
+    'elk.spacing.edgeEdge': '12',
+    'elk.spacing.edgeLabel': '4',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '48',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '16',
+    'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+    'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+    'elk.layered.edgeLabels.sideSelection': 'ALWAYS_UP',
+  }
+  // every edge leaves on the side the flow runs to and arrives on the other, its ends gathered at the middle; a
+  // partition holds on the board itself (a frame takes its boxes'), a first or last layer inside a frame too
+  const box = (n: Frame['nodes'][number], top: boolean): ElkNode => ({
+    id: n.id,
+    width: n.w,
+    height: n.h,
+    layoutOptions: {
+      'elk.portConstraints': 'FIXED_SIDE',
+      'elk.portAlignment.default': 'CENTER',
+      'elk.spacing.portPort': String(PORT_GAP),
+      ...(top || typeof frame.order?.[n.id] !== 'number' ? layerOf(frame.order?.[n.id]) : {}),
+    },
+    ports: frame.edges.flatMap((e) => [
+      ...(e.from === n.id ? [port(`${e.id}:out`, out)] : []),
+      ...(e.to === n.id ? [port(`${e.id}:in`, into)] : []),
+    ]),
+  })
+  const nested = sub && frame.subsystems?.length
   const graph: ElkNode = {
     id: 'root',
     layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': frame.direction,
-      'elk.edgeRouting': 'ORTHOGONAL',
+      ...layered,
       // tier headers stand in the margin before the boxes: above them running right, to their left running down
       'elk.padding': padding(frame),
       ...(frame.tiers?.length ? { 'elk.partitioning.activate': 'true' } : {}),
-      'elk.spacing.nodeNode': '28',
-      'elk.spacing.edgeNode': '16',
-      'elk.spacing.edgeEdge': '12',
-      'elk.spacing.edgeLabel': '4',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '48',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '16',
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-      'elk.layered.edgeLabels.sideSelection': 'ALWAYS_UP',
+      ...(nested ? sub.NESTED : {}),
     },
-    children: frame.nodes.map((n) => ({
-      id: n.id,
-      width: n.w,
-      height: n.h,
-      // every edge leaves on the side the flow runs to and arrives on the other, its ends gathered at the middle
-      layoutOptions: {
-        'elk.portConstraints': 'FIXED_SIDE',
-        'elk.portAlignment.default': 'CENTER',
-        'elk.spacing.portPort': String(PORT_GAP),
-        ...layerOf(frame.order?.[n.id]),
-      },
-      ports: frame.edges.flatMap((e) => [
-        ...(e.from === n.id ? [port(`${e.id}:out`, out)] : []),
-        ...(e.to === n.id ? [port(`${e.id}:in`, into)] : []),
-      ]),
-    })),
+    children: nested ? (sub.nest(frame, box, layered, layerOf) as ElkNode[]) : frame.nodes.map((n) => box(n, true)),
     edges: frame.edges.map(
       (e): ElkExtendedEdge => ({
         id: e.id,
@@ -759,12 +814,14 @@ async function run(frame: Frame, elk?: ElkEngine): Promise<Laid> {
   }
   const done = (await (elk ?? (await localElk())).layout(graph as ElkGraph)) as ElkNode
 
-  const slots = new Map(
-    (done.children ?? []).map((c): [string, Box] => [
-      c.id,
-      { x: c.x ?? 0, y: c.y ?? 0, w: c.width ?? 0, h: c.height ?? 0 },
-    ]),
-  )
+  const slots = new Map<string, Box>()
+  const take = (list: ElkNode[] | undefined) => {
+    for (const c of list ?? []) {
+      slots.set(c.id, { x: c.x ?? 0, y: c.y ?? 0, w: c.width ?? 0, h: c.height ?? 0 })
+      take(c.children)
+    }
+  }
+  take(done.children)
   const routes: Laid['routes'] = new Map()
   for (const e of (done.edges ?? []) as ElkExtendedEdge[]) {
     const points: [number, number][] = []
@@ -792,7 +849,12 @@ function layerOf(o: number | 'FIRST' | 'LAST' | undefined): Record<string, strin
  * The scene at these values on a laid-out frame with its lanes: each box at its own size in the middle of its slot, each edge drawn
  * at these values, its ends moved along their last straight run to the sides of the boxes as drawn.
  */
-function place(prep: Prepared, { l, tiers }: { l: Laid; tiers: SceneTier[] }, key: string): Scene {
+function place(
+  prep: Prepared,
+  { l, tiers }: { l: Laid; tiers: SceneTier[] },
+  key: string,
+  subsystems: SceneSubsystem[],
+): Scene {
   const down = prep.direction === 'DOWN'
   const across = (p: [number, number]) => (down ? p[0] : p[1])
   const ends = new Map<string, number[]>()
@@ -861,6 +923,7 @@ function place(prep: Prepared, { l, tiers }: { l: Laid; tiers: SceneTier[] }, ke
     stageNode: prep.stageNode,
     flowFrom: prep.flowFrom,
     tiers,
+    subsystems,
   }
 }
 
@@ -875,7 +938,8 @@ function lanes(laid: Laid, frame: Frame, view: View, measure: TextMeasure): { l:
     view,
     frame,
     (id) => {
-      const b = laid.slots.get(id)!
+      // a box in a frame takes its frame's room: the lane holds the frame whole
+      const b = laid.slots.get(frame.outer?.[id] ?? id)!
       return down ? [b.y, b.y + b.h] : [b.x, b.x + b.w]
     },
     0,
@@ -933,7 +997,19 @@ export interface TierPart {
 const headOf = (parts: TierPart[]) => HEAD + (Math.max(...parts.map((t) => t.lines.length)) - 1) * HEAD_LINE
 
 /** What the fold (fold.ts) needs of the layout: it imports nothing from here but types. */
-export const foldKit = { PADDING, tierParts, headOf, lane, lanes, ordered, reserve, laidOut, rowsOf, estimateText }
+export const foldKit = {
+  PADDING,
+  tierParts,
+  headOf,
+  lane,
+  lanes,
+  ordered,
+  reserve,
+  laidOut,
+  rowsOf,
+  estimateText,
+  subsystemsOf,
+}
 
 /**
  * A tier's lane, named `id` on the board: its band `along` the flow and `across` it, its header `head` deep at the

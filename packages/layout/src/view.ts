@@ -73,6 +73,11 @@ export interface TierDef {
   fillDark?: string
 }
 
+/** Several boxes as one on the board: a frame around them, with its name. */
+export interface SubsystemDef {
+  label: string
+}
+
 export interface ViewDef<F extends string, S extends string, N extends string, T extends string = string> {
   nodes: { [K in N]: AnyNodeDef<NoInfer<S>, NoInfer<T>> }
   edges: readonly EdgeDef<NoInfer<N>>[]
@@ -83,6 +88,12 @@ export interface ViewDef<F extends string, S extends string, N extends string, T
    * stores that feed nothing come last.
    */
   tiers?: { readonly [K in T]: TierDef }
+  /**
+   * The subsystems, by id: each is drawn as a frame around its boxes. What a subsystem holds is named `<id>.<name>`, as
+   * in a definition's text: the box `eu.orders.topic` stands in the subsystem `eu.orders`, which stands in `eu`. With
+   * tiers, a subsystem is framed where its boxes stand in one tier: a frame cannot cross a lane.
+   */
+  subsystems?: Readonly<Record<string, SubsystemDef>>
   /**
    * `compact` (the default) lays out each phase (a scenario, story step, preset or choice of a select or switch) on its
    * own, over every load and every point of the range controls, and moves the boxes from one phase to the next;

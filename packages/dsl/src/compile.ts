@@ -38,6 +38,7 @@ import {
   type EdgeDef,
   type FlowView,
   labelsAt,
+  type SubsystemDef,
   type TierDef,
   type View,
 } from '@loadmap/layout'
@@ -1091,6 +1092,10 @@ class Compiler {
       const tier = this.named(box.block, 'tier', [...tierNames.keys()], 'tier')
       if (tier) nodes[box.id]!.tier = tier
     }
+    // what is left of a subsystem written out is its first line: the frame around the boxes named `<id>.…`
+    const subsystems: Record<string, SubsystemDef> = {}
+    for (const b of byKind('subsystem'))
+      if (b.args.id) subsystems[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
     const edges: EdgeDef[] = []
     for (const e of root.edges) edges.push(...this.edges(e, boxById))
     // the flow runs through the tiers in their order: an edge back is drawn against it
@@ -1192,6 +1197,7 @@ class Compiler {
       edges,
       flows: flowViews,
       ...(Object.keys(tiers).length ? { tiers } : {}),
+      ...(Object.keys(subsystems).length ? { subsystems } : {}),
       ...(arrange ? { layout: arrange } : {}),
       ...(lanes ? { lanes } : {}),
     }
@@ -1206,6 +1212,7 @@ class Compiler {
       edges: EdgeDef[]
       flows: Record<string, FlowView>
       tiers?: Record<string, TierDef>
+      subsystems?: Record<string, SubsystemDef>
       layout?: 'compact' | 'stable'
       lanes?: 'filled' | 'striped'
     },

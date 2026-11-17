@@ -227,6 +227,34 @@ describe('a model in several files', () => {
     expect(local.map((d) => d.code)).toContain('bad-input')
   })
 
+  it('gives the view each subsystem that holds a box, for the frame around its boxes', () => {
+    const view = run(MODEL).definition!.view.def
+    expect(view.subsystems).toEqual({ orderLine: { label: 'Orders' } })
+    // one without a name of its own takes that of the one it is like; one in another is named after it; an empty one
+    // is none
+    const nested = run(
+      MODEL,
+      set({
+        [MODEL]: swap(MODEL, 'subsystem orderLine "Orders" {', 'subsystem orderLine {').concat(
+          'subsystem outer "Outer" {\n  subsystem inner { like: pipeline; with { main: orders } }\n  subsystem empty "Empty" {}\n}\n',
+        ),
+      }),
+    )
+    expect(errors(nested)).toEqual([])
+    expect(nested.definition!.view.def.subsystems).toEqual({
+      orderLine: { label: 'Queue and workers' },
+      outer: { label: 'Outer' },
+      'outer.inner': { label: 'Queue and workers' },
+    })
+    expect(Object.keys(nested.definition!.view.def.nodes)).toContain('outer.inner.kafka')
+    // a model without subsystems says nothing of them
+    const plain = compile(
+      'loadmap 1.4\nload "x" { max: 10 }\nflow f "f" { rate: load; route: a; from: s }\nnode s "S"\nnode a "A" { pass; capacity: estimated(10, "req/s"); over: "x" }\ns -> a\n',
+    )
+    expect(errors(plain)).toEqual([])
+    expect(plain.definition!.view.def).not.toHaveProperty('subsystems')
+  })
+
   it('writes a subsystem out under its id, and bounds how far that goes', () => {
     const r = run(MODEL)
     expect(r.definition!.model.stageIds).toEqual(['gateway', 'orderLine.topic', 'orderLine.consumers', 'db'])
@@ -355,11 +383,15 @@ describe('a model in several files', () => {
   it('flattens to one file that computes the same', () => {
     const flat = flatten(base[MODEL]!, { path: MODEL, files: set() })
     if ('error' in flat) throw new Error(`${flat.error}: ${flat.diagnostics.map((d) => d.message).join('; ')}`)
-    expect(flat.text).not.toMatch(/^(include|import|subsystem)\b/m)
+    expect(flat.text).not.toMatch(/^(include|import)\b/m)
     expect(flat.text).toContain('pool orderLine.consumers')
+    // what stays of the subsystem is its first line, for the frame around its boxes
+    expect(flat.text).toMatch(/^subsystem orderLine "Orders"$/m)
+    expect(flat.text).not.toMatch(/^subsystem .*\{/m)
     const one = compile(flat.text)
     expect(one.diagnostics).toEqual([])
     const several = run(MODEL)
+    expect(one.definition!.view.def.subsystems).toEqual(several.definition!.view.def.subsystems)
     const [a, b] = [one.definition!.model, several.definition!.model]
     expect([a.flowIds, a.componentIds, a.stageIds]).toEqual([b.flowIds, b.componentIds, b.stageIds])
     expect([a.scenarios, a.expectations, a.story]).toEqual([b.scenarios, b.expectations, b.story])

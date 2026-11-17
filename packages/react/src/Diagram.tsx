@@ -22,6 +22,15 @@ import type { Insets } from './viewpoint'
 // a box's detail comes with the first one the reader asks for, in the chunk full screen's panels come in
 const Detail = lazy(() => import('./later').then((m) => ({ default: m.Detail })))
 
+/**
+ * What draws the subsystems' frames (frames.tsx): it comes with the first scene that has one, before that scene is
+ * shown, so a page without subsystems never loads it and a frame is never a moment late.
+ */
+let Frames: typeof import('./frames').Frames | undefined
+export const loadFrames = async () => {
+  Frames ??= (await import('./frames')).Frames
+}
+
 const STATE_STROKE: Record<ComponentState, string> = {
   off: 'var(--lm-line)',
   ok: 'var(--lm-ok)',
@@ -552,6 +561,7 @@ const Structure = memo(function Structure({
       {scene.tiers.map((t, i) => (
         <Tier key={t.id} t={t} i={i} striped={lm.view.def.lanes === 'striped'} />
       ))}
+      {Frames && scene.subsystems.length > 0 && <Frames scene={scene} stateOf={stateOf} />}
       {rates && <RateStrokes lm={lm} scene={scene} />}
       {scene.edges.map((e) => (
         <Edge key={e.id} e={e} text={labels.edges[e.id]} marker={marker} lost={lost.has(e.to)} />

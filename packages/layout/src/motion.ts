@@ -1,5 +1,14 @@
 import type { Point } from './geometry'
-import type { Box, Cell, Fading, Scene, SceneEdge, SceneNode, TextSpot } from './layout'
+import {
+  type Box,
+  type Cell,
+  type Fading,
+  frameMorph,
+  type Scene,
+  type SceneEdge,
+  type SceneNode,
+  type TextSpot,
+} from './layout'
 
 /**
  * When each part of a move happens, as shares of it: what leaves fades out first, what stays moves, what is new fades
@@ -91,6 +100,8 @@ export function morph(from: Scene, to: Scene): (t: number) => Scene {
       ]
       return { ...box(a, t, k), head: box(a.head, t.head, k), lines }
     })
+    // a frame moves with the boxes it holds; one that is new comes in with the new boxes, one that goes leaves with them
+    const subsystems = frameMorph()?.(from.subsystems, to.subsystems, k, f.enter, f.out) ?? to.subsystems
     return {
       ...to,
       width: lerp(from.width, to.width, k),
@@ -98,6 +109,7 @@ export function morph(from: Scene, to: Scene): (t: number) => Scene {
       nodes,
       edges,
       tiers,
+      subsystems,
     }
   }
 }
