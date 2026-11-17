@@ -230,7 +230,8 @@ describe('the editor', () => {
     await openFile(host, 'shop.story.loadmap')
     expect(view.state.doc.toString()).toBe(story)
     await openFile(host, 'platform.loadmap')
-    expect(tabNames(host)).toEqual(['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap'])
+    // the library's tab came first, from its subsystem's row
+    expect(tabNames(host)).toEqual(['shop.loadmap', 'platform.loadmap', 'shop.story.loadmap'])
     // one snug row, however many: every tab on one line, the row no taller
     const tops = [...host.querySelectorAll('.lme-ftab')].map((t) => Math.round(t.getBoundingClientRect().top))
     expect(new Set(tops).size).toBe(1)
