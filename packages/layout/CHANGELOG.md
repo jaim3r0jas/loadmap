@@ -1,5 +1,35 @@
 # @loadmap/layout
 
+## 0.37.0
+
+### Minor Changes
+
+- 10197af: A subsystem can be drawn closed: one box that stands for everything inside it. The box takes the colour of the worst
+  component inside, names the busiest one on its second line, and wears the limit when the first limit is inside, so a
+  board of closed subsystems says which one to open. The reader opens one with a click on it and closes one with a click
+  on its name (the frame's name is a button now, with the mark of an open folder). Language 1.5 reads `closed` in `view`
+  (`view { closed: [eu, us] }`: the ones the page starts with) and in a `step` (its own; `closed: []` for every one open).
+  In code: `<Loadmap closed={[…]}>`, `closed` on a story step, `setClosed(ids)` on the controller, and
+  `closed` among the options of a compiled definition, which `pageOptions()` passes on. Closing changes no number: the
+  dots still pass every stage inside. What closes and draws them is loaded with the first diagram that has a subsystem.
+- 2e0108e: A subsystem is drawn: a frame around its boxes with its name at the top, a subsystem in another as a frame in that
+  one's frame, its line in the colour of the worst box inside once one is past its target. Until now a subsystem's boxes
+  stood loose on the board and its name showed nowhere. A view takes `subsystems` (`{ eu: { label: 'EU region' },
+  'eu.orders': { label: 'Orders' } }`) and what one holds is named `<id>.<name>`, as in a definition's text (the box
+  `eu.orders.topic` stands in `eu.orders`, which stands in `eu`); the scene lists the frames as `scene.subsystems`, and `collisions()` also reports a frame that does not hold its boxes or reaches another's.
+  A `.loadmap` needs nothing new: every `subsystem` gets its frame, in any language version, and the boxes inside are
+  laid out together. With tiers, a subsystem whose boxes stand in several tiers has no frame (a frame cannot cross a
+  lane); the subsystems in it keep theirs. `loadmap bundle` keeps a subsystem's first line (`subsystem orderLine
+  "Orders"`) so the flat copy draws the same frames.
+
+### Patch Changes
+
+- 4f43e29: A closed subsystem's box names its busiest component without its own name before it: "Workers 15 %" in the box that
+  is the EU region, where the verdict says "EU region › Workers". A closed box nothing reaches says "no traffic". The docs have a new walkthrough, Two regions: each
+  region a copy of one subsystem from a library, in several files, opened with both regions closed.
+- Updated dependencies [10197af]
+  - @loadmap/core@0.37.0
+
 ## 0.36.0
 
 ### Patch Changes
