@@ -904,6 +904,20 @@ describe('the built site', () => {
       expect(looks.keyword).not.toBe(looks.text)
       expect(looks).toMatchObject({ views: 0, copy: 0 })
       const before = await boxes(plain)
+      // in the prose's column: a snippet's box has the edges of the paragraph it follows
+      const edges = await plain.evaluate(() => {
+        const sides = (el: Element) => {
+          const box = el.getBoundingClientRect()
+          return [Math.round(box.left), Math.round(box.right)]
+        }
+        const text = sides(document.querySelector('main > p:not(.eyebrow)')!)
+        const main = sides(document.querySelector('main')!)
+        return { text, main, snippets: [...document.querySelectorAll('main > .snippet')].map(sides) }
+      })
+      // the window is wide enough for the column to sit inside main, or the left edge alone would prove nothing
+      expect(edges.text[0]).toBeGreaterThan(edges.main[0]! + 40)
+      expect(edges.snippets.length).toBeGreaterThan(0)
+      for (const snippet of edges.snippets) expect(snippet).toEqual(edges.text)
       await still.close()
 
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
@@ -929,6 +943,22 @@ describe('the built site', () => {
         }),
       ).toBe(true)
       expect(errors).toEqual([])
+      await page.close()
+    })
+
+    it('keeps its height under a view when its fence ended with a newline', async () => {
+      // Live data includes whole files, which end with one: a <pre> draws no line for it, a view would
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}live-data/`)
+      await page.locator('.snippet > .copy:not([hidden])').first().waitFor({ state: 'attached' })
+      expect(
+        await page
+          .locator('.snippet pre')
+          .evaluateAll((all) => all.filter((el) => el.textContent?.endsWith('\n')).length),
+      ).toBe(0)
+      const before = await boxes(page)
+      await mounted(page)
+      expect((await boxes(page)).heights).toEqual(before.heights)
       await page.close()
     })
 
