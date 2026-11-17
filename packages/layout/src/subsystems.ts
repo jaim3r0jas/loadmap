@@ -1,6 +1,8 @@
+import type { LooseValues } from '@loadmap/core'
+import { pct } from '@loadmap/core/format'
 import type { Frame, Laid, SceneSubsystem } from './layout'
 import type { TextMeasure } from './text'
-import type { View } from './view'
+import type { AnyNodeDef, EdgeDef, FlowView, View } from './view'
 
 // Nothing here is imported from the layout but types, as in fold.ts: a page loads this file with the first diagram that
 // has a subsystem, and a page without one never does.
@@ -52,7 +54,8 @@ export function framed(
     .sort((a, b) => chain(a).length - chain(b).length || (a < b ? -1 : 1))
     .map((id) => {
       const around = innermost(chain(id))
-      const minW = Math.ceil(measure(defs[id]!.label, T_FRAME.size, T_FRAME.weight)) + 2 * FRAME_PAD
+      // with the mark the board draws before it (frames.tsx)
+      const minW = Math.ceil(measure(`\u25BE ${defs[id]!.label}`, T_FRAME.size, T_FRAME.weight)) + 2 * FRAME_PAD
       return { id, ...(around != null ? { in: around } : {}), minW }
     })
   const within: Record<string, string> = {}
@@ -178,4 +181,95 @@ export function morph(
     }),
     ...from.filter((s) => !to.some((x) => x.id === s.id)).map((s) => ({ ...s, fade: (s.fade ?? 1) * out })),
   ]
+}
+
+const closedViews = new WeakMap<View, Map<string, View>>()
+
+/**
+ * The view with these subsystems closed: each drawn as one box that stands for everything inside it, a subsystem in a
+ * closed one closed with it. The box shows every stage inside (dots pass through it, a limit inside is its limit), its
+ * second line names the busiest component inside, and the edges that ended at a box inside end at it. An edge keeps
+ * its place in the list, so it is the same edge open and closed; one that ran inside is never drawn. The same view
+ * comes back for the same subsystems, and `view` itself when none of them is one of its own.
+ */
+export function closedView(view: View, closed: readonly string[]): View {
+  const defs = view.def.subsystems ?? {}
+  const known = [...new Set(closed)].filter((id) => Object.hasOwn(defs, id)).sort()
+  // the outermost: one in a closed one is closed with it
+  const ids = known.filter((id) => !known.some((o) => id.startsWith(`${o}.`)))
+  if (!ids.length) return view
+  const byKey = closedViews.get(view) ?? new Map<string, View>()
+  closedViews.set(view, byKey)
+  const key = ids.join('\n')
+  const hit = byKey.get(key)
+  if (hit) return hit
+
+  const into = (id: string) => ids.find((c) => id.startsWith(`${c}.`))
+  const stageDefs = view.model.def.stages as Record<string, { component?: string }>
+  const names = view.model.def.components as Record<string, { name: string }>
+  const nodes: Record<string, AnyNodeDef> = {}
+  const held = new Map<string, { stages: string[]; tiers: Set<string | undefined> }>()
+  for (const [id, n] of Object.entries(view.def.nodes as Record<string, AnyNodeDef>)) {
+    const c = into(id)
+    if (c == null) {
+      nodes[id] = n
+      continue
+    }
+    let h = held.get(c)
+    if (!h) {
+      h = { stages: [], tiers: new Set() }
+      held.set(c, h)
+      // where its first box stood
+      nodes[c] = n
+    }
+    h.stages.push(...(n.stage == null ? [] : typeof n.stage === 'string' ? [n.stage] : n.stage))
+    h.tiers.add(n.tier)
+  }
+  for (const [c, h] of held) {
+    const [tier] = h.tiers
+    const components = [...new Set(h.stages.flatMap((s) => stageDefs[s]?.component ?? []))]
+    nodes[c] = {
+      kind: 'node',
+      shape: 'box',
+      // the mark a closed folder wears: a click opens it
+      label: `\u25B8 ${defs[c]!.label}`,
+      // the busiest component inside, by name
+      sub: (ctx) => {
+        const util = ctx.util as Record<string, number | null>
+        const worst = components.reduce<string | undefined>(
+          (a, b) => (util[b] != null && (a == null || util[b] > util[a]!) ? b : a),
+          undefined,
+        )
+        return worst == null ? '' : `${names[worst]?.name ?? worst} ${pct(util[worst]!)}`
+      },
+      stage: h.stages,
+      subsystem: c,
+      // the tier its boxes share; one across several tiers stands where what feeds it does
+      ...(h.tiers.size === 1 && tier != null ? { tier } : {}),
+    }
+  }
+  // the edges that come to run between the same two boxes are one: drawn where any of them is, under the first's
+  // place and label. One that ran inside the box is never drawn
+  const all = view.def.edges as readonly EdgeDef[]
+  const ends = (e: EdgeDef) => [into(e.from) ?? e.from, into(e.to) ?? e.to] as const
+  const pair = (e: EdgeDef) => ends(e).join('\n')
+  const first = new Map<string, EdgeDef>()
+  const edges = all.map((e) => {
+    const [from, to] = ends(e)
+    if (from === e.from && to === e.to) return e
+    if (from === to || first.has(pair(e))) return { ...e, from, to, when: () => false }
+    first.set(pair(e), e)
+    const same = all.filter((x) => pair(x) === pair(e))
+    return { ...e, from, to, when: (ctx: LooseValues) => same.some((x) => !x.when || x.when(ctx)) }
+  })
+  const flows = Object.fromEntries(
+    Object.entries(view.def.flows as Record<string, FlowView>).map(([f, fv]) => [
+      f,
+      { ...fv, from: into(fv.from) ?? fv.from },
+    ]),
+  )
+  const subsystems = Object.fromEntries(Object.entries(defs).filter(([id]) => !ids.includes(id) && into(id) == null))
+  const out: View = { model: view.model, def: { ...view.def, nodes, edges, flows, subsystems } }
+  byKey.set(key, out)
+  return out
 }

@@ -84,6 +84,9 @@ class Walk {
           case 'flows':
             if (s.value.t === 'array') for (const e of s.value.items) if (e.t === 'id') this.add('flow', e, e.name)
             break
+          case 'subsystems':
+            if (s.value.t === 'array') for (const e of s.value.items) if (e.t === 'id') this.add('node', e, e.name)
+            break
           case 'measure':
             if (s.value.t === 'id') this.add('formula', s.value, s.value.name)
             break

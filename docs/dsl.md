@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```loadmap
-loadmap 1.4
+loadmap 1.5
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -43,7 +43,7 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.4`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.5`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -1031,7 +1031,7 @@ straight under `loadmap`, before any other statement:
 
 ```loadmap
 # shop.loadmap
-loadmap 1.4
+loadmap 1.5
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
@@ -1110,6 +1110,13 @@ is like, else its id. A subsystem in another is a frame in that one's frame. The
 worst box inside once one is past its target, so a glance says which subsystem to look into. A frame cannot cross a
 lane: with tiers, a subsystem whose boxes stand in several tiers is drawn without one, and the subsystems in it keep
 theirs. A subsystem that holds no box draws nothing.
+
+A subsystem can be drawn closed (from `loadmap 1.5`): one box that stands for everything inside it. The box takes the
+colour of the worst component inside, names the busiest one on its second line, and wears the limit when the first
+limit is inside ("LIMIT · 12×"), so a board of closed subsystems says which one to open. The reader opens one with a
+click on it and closes one with a click on its name; a subsystem in a closed one is closed with it. `view { closed:
+[eu, us] }` says which the page starts with, and a step says its own: `step "…" { closed: [us] }`, or `closed: []` for
+every one open. Closing changes no number: the dots still pass every stage inside.
 
 A problem is reported in the file that can fix it: a library's own mistake in the library, a wrong or missing input
 at the box that sets it. `loadmap check` prints each with its file (`--format json` adds `file` to a diagnostic that
@@ -1209,7 +1216,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.4`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.5`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1237,6 +1244,7 @@ with no warning first; none is planned.
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 | 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
 | 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
+| 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box | |
 
 ## In code
 
@@ -1460,13 +1468,14 @@ view { speed: 10; fullScreen: [verdict, controls]; grid: false }
 | `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
 | `grid` | boolean, constant | The editor's dot grid. Default true. |
+| `closed` | subsystems, constant | The subsystems drawn closed at first, each as one box: `closed: [eu, us]`. Default none. From loadmap 1.5. |
 
 ### loadmap
 
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```loadmap
-loadmap 1.4
+loadmap 1.5
 ```
 
 After the keyword: version.
@@ -1585,6 +1594,7 @@ After the keyword: label.
 | `scenario` | scenario, constant | Start from this scenario's values; without one, from the defaults. |
 | `title` | string, constant | The few words the diagram shows while Play shows the step. Default: what the step changes. |
 | `focus` | component, constant | The component to point at: its box is outlined. |
+| `closed` | subsystems, constant | The subsystems drawn closed during the step: `closed: [us]`, `[]` for none. Default: as `view` says. From loadmap 1.5. |
 | `seconds` | number, constant | How long Play holds the whole diagram after the step changes it: the time to read it. Default 4. |
 
 Its properties are named by parameters (and `load`).

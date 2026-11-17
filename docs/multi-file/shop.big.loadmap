@@ -1,4 +1,4 @@
-loadmap 1.4
+loadmap 1.5
 extends "./shop.loadmap"
 # A variant: the same shop where it runs on more pods. It writes only what differs from its model.
 title: "A shop, on the big cluster"

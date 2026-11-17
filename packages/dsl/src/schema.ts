@@ -28,6 +28,8 @@ export type ValueKind =
   | 'flow'
   /** A list of flow ids: `flows: [orders, events]`. */
   | 'flows'
+  /** A list of subsystem ids: `closed: [eu, us.orders]`. */
+  | 'subsystems'
   /** A scenario's label, bare or quoted: `scenario: Proposed`. */
   | 'scenario'
   /** The id of a tier: `tier: data`. */
@@ -253,6 +255,12 @@ const VIEW_PROPS: Readonly<Record<string, PropSpec>> = {
     scope: 'const',
     doc: "The editor's dot grid. Default true.",
   },
+  closed: {
+    value: 'subsystems',
+    scope: 'const',
+    since: '1.5',
+    doc: 'The subsystems drawn closed at first, each as one box: `closed: [eu, us]`. Default none.',
+  },
 }
 
 export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
@@ -426,7 +434,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
-    example: 'loadmap 1.4',
+    example: 'loadmap 1.5',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],
@@ -600,6 +608,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'The few words the diagram shows while Play shows the step. Default: what the step changes.',
       },
       focus: { value: 'component', scope: 'const', doc: 'The component to point at: its box is outlined.' },
+      closed: {
+        value: 'subsystems',
+        scope: 'const',
+        since: '1.5',
+        doc: 'The subsystems drawn closed during the step: `closed: [us]`, `[]` for none. Default: as `view` says.',
+      },
       seconds: {
         value: 'number',
         scope: 'const',

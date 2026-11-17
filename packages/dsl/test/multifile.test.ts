@@ -78,9 +78,9 @@ describe('a model in several files', () => {
     // a part alone: its model is not among the files
     expect(errors(compile(base[STORY]!, { path: STORY }))[0]).toMatchObject({ code: 'missing-file' })
     // one namespace, one version
-    const older = run(MODEL, set({ [STORY]: swap(STORY, 'loadmap 1.4', 'loadmap 1.1') }))
+    const older = run(MODEL, set({ [STORY]: swap(STORY, 'loadmap 1.5', 'loadmap 1.1') }))
     expect(errors(older).map((d) => d.message)).toContain(
-      `a part says its model's version: "${MODEL}" says loadmap 1.4`,
+      `a part says its model's version: "${MODEL}" says loadmap 1.5`,
     )
     // what there is one of stays in the model's own file
     const twice = run(MODEL, set({ [STORY]: `${base[STORY]}title: "Mine"\nload "L" { max: 2 }\n` }))
@@ -148,8 +148,8 @@ describe('a model in several files', () => {
   })
 
   it('refuses libraries that import each other', () => {
-    const a = 'loadmap 1.4\nlibrary "A"\nimport "./b.loadmap" { y }\nlet x = y\n'
-    const b = 'loadmap 1.4\nlibrary "B"\nimport "./a.loadmap" { x }\nlet y = x\n'
+    const a = 'loadmap 1.5\nlibrary "A"\nimport "./b.loadmap" { y }\nlet x = y\n'
+    const b = 'loadmap 1.5\nlibrary "B"\nimport "./a.loadmap" { x }\nlet y = x\n'
     const r = compile(a, { path: 'a.loadmap', files: { 'a.loadmap': a, 'b.loadmap': b } })
     const loop = errors(r).find((d) => d.code === 'import-loop')
     expect(loop?.message).toBe('libraries import each other in a loop: a.loadmap → b.loadmap → a.loadmap')
@@ -249,10 +249,43 @@ describe('a model in several files', () => {
     expect(Object.keys(nested.definition!.view.def.nodes)).toContain('outer.inner.kafka')
     // a model without subsystems says nothing of them
     const plain = compile(
-      'loadmap 1.4\nload "x" { max: 10 }\nflow f "f" { rate: load; route: a; from: s }\nnode s "S"\nnode a "A" { pass; capacity: estimated(10, "req/s"); over: "x" }\ns -> a\n',
+      'loadmap 1.5\nload "x" { max: 10 }\nflow f "f" { rate: load; route: a; from: s }\nnode s "S"\nnode a "A" { pass; capacity: estimated(10, "req/s"); over: "x" }\ns -> a\n',
     )
     expect(errors(plain)).toEqual([])
     expect(plain.definition!.view.def).not.toHaveProperty('subsystems')
+  })
+
+  it('reads the subsystems drawn closed, in view and in a step, from loadmap 1.5', () => {
+    const src = (extra = '', version = '1.5') =>
+      [
+        `loadmap ${version}`,
+        'view { closed: [eu, eu.line] }',
+        'load "x" { max: 10; default: 1 }',
+        'flow f "f" { rate: load; route: eu.gw -> eu.line.a; from: s }',
+        'node s "S"',
+        'subsystem eu "EU" {',
+        '  node gw "G" { pass; capacity: estimated(10, "req/s"); over: "x" }',
+        '  subsystem line "Line" { node a "A" { pass; capacity: estimated(10, "req/s"); over: "x" } }',
+        '  gw -> line.a',
+        '}',
+        's -> eu.gw',
+        'step "one" { load: 2; closed: [eu.line] }',
+        'step "two" { load: 3; closed: [] }',
+        'step "three" { load: 3 }',
+        extra,
+        '',
+      ].join('\n')
+    const r = compile(src())
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.options.closed).toEqual(['eu', 'eu.line'])
+    // a step says its own, an empty list for every one open; without the line it has none of its own
+    expect(r.definition!.model.story.map((st) => st.closed)).toEqual([['eu.line'], [], undefined])
+    const said = (extra: string, version?: string) => compile(src(extra, version)).diagnostics.map((d) => d.message)
+    expect(said('step "bad" { closed: [nope, eu, eu] }')).toEqual(['unknown subsystem "nope"', '"eu" is listed twice'])
+    expect(said('step "bad" { closed: eu }')).toEqual(['a list of subsystems: [eu, us]'])
+    // a file stamped before 1.5 has to say 1.5 to use it
+    expect(said('', '1.4').every((m) => m.includes('"closed:" is from loadmap 1.5'))).toBe(true)
+    expect(said('', '1.4')).toHaveLength(2)
   })
 
   it('writes a subsystem out under its id, and bounds how far that goes', () => {
@@ -261,7 +294,7 @@ describe('a model in several files', () => {
     // its boxes are found in the library, where they are written
     expect(r.symbols.find((s) => s.kind === 'node' && s.id === 'orderLine.consumers')).toMatchObject({ file: LIB })
     // subsystems inside subsystems, at most four deep
-    const deep = ['loadmap 1.4', 'library "Deep"', 'subsystem s0 "S" { node n "N" }']
+    const deep = ['loadmap 1.5', 'library "Deep"', 'subsystem s0 "S" { node n "N" }']
     for (let i = 1; i <= 5; i++) deep.push(`subsystem s${i} "S" { subsystem inner "I" { like: s${i - 1} } }`)
     const files = set({
       [`${DIR}/deep.loadmap`]: `${deep.join('\n')}\n`,
@@ -277,7 +310,7 @@ describe('a model in several files', () => {
     const crowd = errors(run(MODEL, set({ [MODEL]: `${base[MODEL]}${many}\n` })))
     expect(crowd.find((d) => d.code === 'too-large')?.message).toContain('at most 256 boxes')
     // and past that nothing more is written out: a few lines cannot make millions of boxes
-    const wide3 = ['loadmap 1.4', 'library "Wide"', 'subsystem w0 "W" { node n "N" }']
+    const wide3 = ['loadmap 1.5', 'library "Wide"', 'subsystem w0 "W" { node n "N" }']
     for (let i = 1; i <= 3; i++)
       wide3.push(
         `subsystem w${i} "W" {\n${Array.from({ length: 150 }, (_, k) => `  subsystem x${k} "X" { like: w${i - 1} }`).join('\n')}\n}`,
@@ -301,7 +334,7 @@ describe('a model in several files', () => {
     const parts: Record<string, string> = {}
     let head = ''
     for (let i = 0; i < 70; i++) {
-      parts[`${DIR}/p${i}.loadmap`] = 'loadmap 1.4\npart of "./shop.loadmap"\n'
+      parts[`${DIR}/p${i}.loadmap`] = 'loadmap 1.5\npart of "./shop.loadmap"\n'
       head += `include "./p${i}.loadmap"\n`
     }
     const wide = run(
@@ -420,7 +453,7 @@ describe('a model in several files', () => {
 
 describe('a box like another', () => {
   const twins = [
-    'loadmap 1.4',
+    'loadmap 1.5',
     'load "L" { max: 2 }',
     'flow f "f" { rate: load; route: a; from: start }',
     'node start "Start"',
@@ -563,7 +596,7 @@ describe('the help across the files of a model', () => {
     expect(after).toContain('{ postgres; pipeline; messageCost }')
     expect(compile(after, { path: MODEL, files }).diagnostics).toEqual([])
     // a library that is not imported yet: a line of its own in the head
-    const fresh = addImport('loadmap 1.4\nload "L" { max: 2 }\n', 'messageCost', LIB, { path: `${DIR}/new.loadmap` })!
+    const fresh = addImport('loadmap 1.5\nload "L" { max: 2 }\n', 'messageCost', LIB, { path: `${DIR}/new.loadmap` })!
     expect(fresh.insert).toBe('\nimport "./platform.loadmap" { messageCost }')
     // a rename in the library: every importer keeps its own name for it
     expect(importersOf(LIB, 'postgres', 'pg', o)).toEqual([

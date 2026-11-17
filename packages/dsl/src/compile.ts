@@ -201,6 +201,8 @@ export interface DefinitionOptions {
   fullScreenMode?: (typeof FULL_SCREEN_MODES)[number]
   /** The editor's dot grid; only the editor reads it. */
   grid?: boolean
+  /** The subsystems the page draws closed at first. */
+  closed?: string[]
 }
 
 /** The page options as `<Loadmap>` props, leaving out the unset ones so it keeps its defaults. */
@@ -213,6 +215,7 @@ export function pageOptions(o: DefinitionOptions) {
     ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
     ...(o.fullScreen ? { fullScreen: o.fullScreen } : {}),
     ...(o.fullScreenMode ? { fullScreenMode: o.fullScreenMode } : {}),
+    ...(o.closed ? { closed: o.closed } : {}),
   }
 }
 
@@ -547,6 +550,8 @@ class Compiler {
   private fits = new Map<string, LinearFit | null>()
   private lets = new Map<string, Type>()
   private measureIds = new Set<string>()
+  /** The subsystems that hold a box: what `closed` may name. */
+  private subsystemIds = new Set<string>()
   /** The measures whose fallback is a number. */
   private numbers = new Set<string>()
   /** The language version the model says it is written in; a library's lines are read under its own. */
@@ -628,6 +633,7 @@ class Compiler {
       .filter((b) => (BOXES as readonly string[]).includes(b.keyword) && b.args.id)
       .map((b) => this.box(b))
     const loose = byKind('component')
+    for (const b of byKind('subsystem')) if (b.args.id) this.subsystemIds.add(b.args.id.name)
 
     const formulaNames = new Map<string, Span>()
     const own = (kind: DslSymbol['kind'], b: Block, taken: Map<string, Span>) => {
@@ -1185,6 +1191,8 @@ class Compiler {
       ) as DefinitionOptions['fullScreenMode']
     const grid = this.constProp<boolean>(look('grid'), 'grid')
     if (grid != null) options.grid = grid
+    const closed = views[0] && this.closed(views[0])
+    if (closed) options.closed = closed
     const lanes = this.constProp<'filled' | 'striped'>(look('lanes'), 'lanes')
     for (const a of root.props.get('assume') ?? []) {
       const v = this.constant(a.value, 'string')
@@ -1623,24 +1631,15 @@ class Compiler {
     }
     const flows = this.prop(b, 'flows')
     if (flows) {
-      if (flows.value.t !== 'array') this.report.error('wrong-type', flows.value, 'a list of flows: [orders, events]')
-      else {
-        const list: string[] = []
-        if (!flows.value.items.length)
-          this.report.error(
-            'bad-value',
-            flows.value,
-            'an empty list covers no flow',
-            'leave flows out for every flow on the hop',
-          )
-        for (const e of flows.value.items) {
-          const name = e.t === 'id' ? e.name : this.slice(e)
-          if (list.includes(name)) this.report.error('duplicate', e, `"${name}" is listed twice`)
-          else if (e.t === 'id' && flowNames.has(name)) list.push(name)
-          else this.report.error('unknown-name', e, `unknown flow "${name}"`, didYouMean(name, flowNames.keys()))
-        }
-        def.flows = list
-      }
+      if (flows.value.t === 'array' && !flows.value.items.length)
+        this.report.error(
+          'bad-value',
+          flows.value,
+          'an empty list covers no flow',
+          'leave flows out for every flow on the hop',
+        )
+      const list = this.listed(flows, flowNames, 'flow', '[orders, events]')
+      if (list) def.flows = list.names
     }
     return def
   }
@@ -2567,6 +2566,45 @@ class Compiler {
     return broken ? undefined : out
   }
 
+  /**
+   * `closed: [eu, us.orders]`: the subsystems drawn closed, each by its id. Undefined without the line, and for a list
+   * with a mistake in it, which is left out as if not written.
+   */
+  private closed(b: Block): string[] | undefined {
+    const p = this.prop(b, 'closed')
+    const list = p && this.listed(p, this.subsystemIds, 'subsystem', '[eu, us]')
+    return list?.whole ? list.names : undefined
+  }
+
+  /**
+   * A list of names of one kind (`[orders, events]`): the ones it knows, each once, and whether that is every one
+   * written. Undefined, with an error, for what is no list.
+   */
+  private listed(
+    p: Property,
+    known: { has(name: string): boolean; keys(): Iterable<string> },
+    what: string,
+    example: string,
+  ): { names: string[]; whole: boolean } | undefined {
+    if (p.value.t !== 'array') {
+      this.report.error('wrong-type', p.value, `a list of ${what}s: ${example}`)
+      return undefined
+    }
+    const names: string[] = []
+    let whole = true
+    for (const e of p.value.items) {
+      const name = e.t === 'id' ? e.name : this.slice(e)
+      if (e.t === 'id' && known.has(name) && !names.includes(name)) {
+        names.push(name)
+        continue
+      }
+      whole = false
+      if (names.includes(name)) this.report.error('duplicate', e, `"${name}" is listed twice`)
+      else this.report.error('unknown-name', e, `unknown ${what} "${name}"`, didYouMean(name, known.keys()))
+    }
+    return { names, whole }
+  }
+
   /** A CSS colour in quotes, or with `themes` a theme colour by name; undefined (and an error) for anything else. */
   private color(e: Expr, themes = true): string | undefined {
     const or = themes ? ' or a theme colour' : ''
@@ -2839,6 +2877,7 @@ class Compiler {
     }
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const focus = this.named(b, 'focus', [...components.keys()], 'component')
+    const closed = this.closed(b)
     const title = this.constProp<string>(b, 'title')
     if (title != null && !title.trim())
       this.report.error('bad-value', this.prop(b, 'title')!.value, 'a title needs a few words')
@@ -2855,6 +2894,7 @@ class Compiler {
       ...(title?.trim() ? { title } : {}),
       ...(scenario != null ? { scenario } : {}),
       ...(focus != null ? { focus } : {}),
+      ...(closed ? { closed } : {}),
       ...(seconds != null && seconds > 0 ? { seconds } : {}),
       ...(Object.keys(set).length ? { set } : {}),
     }

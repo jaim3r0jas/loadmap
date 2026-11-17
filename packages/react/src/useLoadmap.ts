@@ -10,7 +10,7 @@ import {
   type TextMeasure,
   type View,
 } from '@loadmap/layout'
-import { type Arrangement, arrange, shapesOf } from '@loadmap/layout/internal'
+import { type Arrangement, arrange, closing, shapesOf } from '@loadmap/layout/internal'
 import type { SimOptions } from '@loadmap/sim'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { loadFrames } from './Diagram'
@@ -53,6 +53,12 @@ export interface LoadmapOptions<P> extends SimOptions {
    */
   zoom?: boolean
   /**
+   * The subsystems drawn closed at first, each as one box that stands for everything inside it, by the ids the view
+   * gives them. The reader opens one with a click on it and closes one with a click on its name; a story step says
+   * its own (`closed` in the step). Default none.
+   */
+  closed?: readonly string[]
+  /**
    * Seconds the diagram takes to move to a new structure (a scenario, a story step or a control that adds pods): what
    * stays moves, what is new fades in. 0 cuts. Default 0.8; with reduced motion it always cuts. The load never moves it.
    */
@@ -79,6 +85,10 @@ export interface LoadmapController<P = any> {
   setStep: (i: number | null) => void
   /** The component the story points at now. */
   focus: string | null
+  /** The subsystems drawn closed now. */
+  closed: readonly string[]
+  /** Draws these subsystems closed, and every other one open. */
+  setClosed: (ids: readonly string[]) => void
   /**
    * The story plays: the whole diagram, then for each step a close-up on what it changes, the change, and the whole
    * diagram again for its seconds, until the last.
@@ -119,7 +129,30 @@ const FOLDS = [1, 2, 3]
 const DUE = { w: 0, h: 0 }
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
-export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
+export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
+  // the subsystems drawn closed: the page's, until the reader or a story step says otherwise; a new view (the text
+  // edited, another definition) starts from the page's again. What closes them and draws their frames comes with the
+  // first view that has a subsystem, before it is laid out
+  const [shut, setShut] = useState<{ view: View; ids: readonly string[] } | null>(null)
+  const closed = shut?.view === whole ? shut.ids : (o.closed ?? [])
+  // one function for every view: once it is there it stays
+  const [close, setClose] = useState<((view: View, closed: readonly string[]) => View) | null>(null)
+  useEffect(() => {
+    let live = true
+    const loading = closing(whole)
+    if (loading)
+      Promise.all([loading, loadFrames()]).then(
+        ([f]) => live && setClose(() => f),
+        (err) => console.error('loadmap: layout failed', err),
+      )
+    return () => {
+      live = false
+    }
+  }, [whole])
+  const unready = !close && Object.keys(whole.def.subsystems ?? {}).length > 0
+  // closed, the diagram is another view: it moves there as it moves to an edited one
+  const view = close && closed.length ? close(whole, closed) : whole
+  const setClosed = useCallback((ids: readonly string[]) => setShut({ view: whole, ids }), [whole])
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
   // setValues evaluates once for the engine; the render reuses that evaluation. It also holds the values set last
@@ -143,10 +176,13 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   const engineRef = useRef<Engine | null>(null)
   engineRef.current ??= new Engine(model, view, ev, o)
   const engine = engineRef.current
-  // a new model or view (the text edited) keeps the engine: what is drawn moves to the new structure, the view stays.
-  // Once committed, with the newest numbers: it tells the board, which must not hear of it while this renders
+  // a new model (the text edited) keeps the engine: what is drawn moves to the new structure, the view stays.
+  // Once committed, with the newest numbers: it tells the board, which must not hear of it while this renders.
+  // Another view of the same model (a subsystem closed or opened) is only drawn another way: the story plays on and
+  // the dots keep running, every stage still has its box
   useLayoutEffect(() => {
-    if (engine.model !== model || engine.view !== view) engine.setModel(model, view, evaluated.current?.ev ?? ev, o)
+    if (engine.model !== model) engine.setModel(model, view, evaluated.current?.ev ?? ev, o)
+    else engine.view = view
   })
   engine.transition = o.transition ?? 0.8
 
@@ -230,7 +266,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
   // out before its first pick, so it never shows one arrangement and then another; without a board the shape decides
   // The same after its room narrows past `narrowBelow` or the page holds another direction or row count
   const pending = due || (chooses && (picked?.view !== view || picked.among !== among))
-  const waits = due || (chooses && !picked)
+  const waits = due || unready || (chooses && !picked)
   // a board that has no room to tell (a small screen it fills) runs as its shape says, in one row
   const chosen = chooses ? picked : null
   const direction: Direction = held ?? chosen?.direction ?? shape
@@ -245,9 +281,7 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     if (!measure || !key || waits) return
     let live = true
     layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk() }).then(
-      async (s) => {
-        // what draws a subsystem's frame comes before the first scene that has one
-        if (s.subsystems.length) await loadFrames()
+      (s) => {
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
         if (live) setLaid({ view, scene: s })
       },
@@ -310,8 +344,10 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
       engine.wantFocus = st?.focus ?? null
       engine.storyStep = st ? i : null
       setStepState({ model, i: st ? i : null })
+      // a step says what it shows closed; without it, and outside the story, the page's own
+      setShut(st?.closed ? { view: whole, ids: st.closed } : null)
     },
-    [model, apply, engine],
+    [model, apply, engine, whole],
   )
   const setStep = useCallback(
     (i: number | null) => {
@@ -425,6 +461,8 @@ export function useLoadmap<P>(model: Model<P>, view: View, o: LoadmapOptions<P> 
     stepChanged,
     setStep,
     focus,
+    closed,
+    setClosed,
     storyPlaying,
     setStoryPlaying,
     cue: storyPlaying ? cue : null,

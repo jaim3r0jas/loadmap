@@ -46,7 +46,7 @@ const errors = (set: FileSet) =>
 describe('the explorer’s file operations', () => {
   it('reads what a file is from its head', () => {
     expect(Object.entries(all.files).map(([p, text]) => roleOf(dsl, text, p))).toEqual(['model', 'part', 'library'])
-    expect(roleOf(dsl, 'loadmap 1.4\nextends "./shop.loadmap"\n', 'shop.big.loadmap')).toBe('variant')
+    expect(roleOf(dsl, 'loadmap 1.5\nextends "./shop.loadmap"\n', 'shop.big.loadmap')).toBe('variant')
   })
 
   it('reads a typed name as a path, and refuses what is not one', () => {

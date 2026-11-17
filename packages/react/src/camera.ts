@@ -54,6 +54,10 @@ export function boxComponent(ev: Evaluation, n: SceneNode): string | undefined {
   return n.stages.map((s) => ev.stages[s]?.component).find(Boolean) ?? n.component ?? undefined
 }
 
+/** Whether a box stands for a component: its own, and for a closed subsystem's box every component inside. */
+export const showsComponent = (ev: Evaluation, n: SceneNode, c: string): boolean =>
+  n.subsystem != null ? n.stages.some((s) => ev.stages[s]?.component === c) : boxComponent(ev, n) === c
+
 /**
  * The boxes a step's change is about, from the values before (`a`) to the step's (`b`): the box it points at and any box
  * the change reshapes; else the boxes it reshapes or an edge that comes or goes ends at; else those whose component
@@ -73,7 +77,7 @@ export function targets(
   const edgesB = new Set(shapes.b.edges.map((e) => e.id))
   for (const e of [...shapes.a.edges, ...shapes.b.edges])
     if (edgesA.has(e.id) !== edgesB.has(e.id)) for (const end of [e.from, e.to]) if (ids.has(end)) reshaped.add(end)
-  const of = (c: string | undefined) => scene.nodes.filter((n) => c && boxComponent(b, n) === c).map((n) => n.id)
+  const of = (c: string | undefined) => scene.nodes.filter((n) => c && showsComponent(b, n, c)).map((n) => n.id)
   const order = (s: Set<string>) => scene.nodes.filter((n) => s.has(n.id)).map((n) => n.id)
   if (focus) return order(new Set([...of(focus), ...reshaped]))
   if (reshaped.size) return order(reshaped)

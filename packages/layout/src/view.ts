@@ -11,13 +11,18 @@ export interface NodeDef<S extends string = string, T extends string = string> {
   kind: 'node'
   label: Label
   sub?: Label
-  /** The stage this node shows: dots stop here, and it takes its component's state colour. */
-  stage?: S
+  /**
+   * The stage this node shows: dots stop here, and it takes its component's state colour. Several for the box a closed
+   * subsystem is drawn as: every stage inside.
+   */
+  stage?: S | readonly S[]
   /** A component to colour by, for a node that is not a stage. */
   component?: string
   shape: 'box' | 'cylinder'
   /** The tier (`ViewDef.tiers`) the box stands in. */
   tier?: T
+  /** The subsystem this box stands for, closed: set by `closedView`, never written in a view. */
+  subsystem?: string
 }
 
 /**
@@ -163,7 +168,7 @@ function withLostCounts<D extends ViewDef<any, any, any, any>>(model: Model, def
   const stages = model.def.stages as Record<string, StageDef>
   let nodes: Record<string, AnyNodeDef> | undefined
   for (const [id, n] of Object.entries(def.nodes as Record<string, AnyNodeDef>)) {
-    const st = n.kind === 'node' && n.stage != null ? stages[n.stage] : undefined
+    const st = n.kind === 'node' && typeof n.stage === 'string' ? stages[n.stage] : undefined
     if (st?.kind !== 'lost' || n.sub != null) continue
     const stage = n.stage as string
     const takes = st.takes ?? []
