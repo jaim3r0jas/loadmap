@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // 6 partitions on 4 pods of 4 workers, one consumer per worker: 10 workers read none
-const SOURCE = `loadmap 1
+const SOURCE = `loadmap 1.5
 load { max: 100 }
 
 flow orders "orders" { rate: 100 * load; from: shop; route: topic -> pool }
@@ -14,7 +14,8 @@ cluster kafka "Kafka" {
   queue topic { partitions { orders: 6 } }
 }
 pool pool "Consumers" {
-  workers { pods: 4; perPod: 4 }
+  pods: 4
+  perPod: 4
   demand: flows.orders * 0.01
   capacity: measured(4, "cores", "pod CPU limit")
   over: "orders wait in their topic"

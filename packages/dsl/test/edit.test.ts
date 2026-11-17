@@ -72,7 +72,7 @@ describe('inspect', () => {
       kind: 'formula',
       parts: ['`${pods} pods × ${threads} threads`'],
     })
-    expect(f.get('pool:workerPool/workers/perPod')).toMatchObject({ kind: 'formula', parts: ['threads'] })
+    expect(f.get('pool:workerPool/perPod')).toMatchObject({ kind: 'formula', parts: ['threads'] })
     expect([...f.keys()].filter((k) => k.endsWith('/options'))).toEqual(['param:pods/options', 'param:threads/options'])
     const uploads = fieldsOf(read('apps/docs/site/uploads.loadmap'), { node: 'resizers' })
     // demand: flows.photos * files * 0.005, and files = webp ? 6 : 3
@@ -108,8 +108,8 @@ describe('inspect', () => {
     expect(cache.get('node:readCache/cache/hit')).toMatchObject({ kind: 'formula', parts: ['hit'], more: false })
     expect(cache.get('param:hit/options')).toMatchObject({ kind: 'options' })
     const api = fieldsOf(read('packages/editor/src/templates/autoscale.loadmap'), { node: 'api' })
-    expect(api.get('pool:api/workers/perPod')).toMatchObject({ kind: 'number', value: 4, more: false })
-    expect(api.get('pool:api/workers/autoscale/min')).toMatchObject({ kind: 'number', value: 2, more: false })
+    expect(api.get('pool:api/perPod')).toMatchObject({ kind: 'number', value: 4, more: false })
+    expect(api.get('pool:api/autoscale/min')).toMatchObject({ kind: 'number', value: 2, more: false })
     const limiter = fieldsOf(read('packages/editor/src/templates/rate-limit.loadmap'), { node: 'limiter' })
     expect(limiter.get('node:limiter/capacity')).toMatchObject({
       kind: 'capacity',
@@ -256,9 +256,9 @@ describe('edit', () => {
 
   it('changes the building blocks', () => {
     const api = read('packages/editor/src/templates/autoscale.loadmap')
-    expect(diff(api, 'pool:api/workers/autoscale/min', 3)).toEqual([
-      '-  workers { perPod: 4; autoscale { min: 2; max: maxPods; target: scaleAt } }',
-      '+  workers { perPod: 4; autoscale { min: 3; max: maxPods; target: scaleAt } }',
+    expect(diff(api, 'pool:api/autoscale/min', 3)).toEqual([
+      '-  autoscale { min: 2; max: maxPods; target: scaleAt }',
+      '+  autoscale { min: 3; max: maxPods; target: scaleAt }',
     ])
     const limit = read('packages/editor/src/templates/rate-limit.loadmap')
     expect(diff(limit, 'node:limiter/capacity.unit', 'calls/s')[1]).toBe(
@@ -379,8 +379,13 @@ describe('setProperty', () => {
     // one still written at the top is changed where it is
     const top = src.replace('load {', 'grid: false\nload {')
     expect(set(top, '', 'grid', true)).toBe(src.replace('load {', 'grid: true\nload {'))
-    // what is no view setting stays at the top
+    // what is no view setting under its stamp stays at the top
     expect(set(src, '', 'layout', 'stable')).toBe(src.replace('load {', 'layout: stable\nload {'))
+    // from 1.5 the direction and the layout are view settings, and the grid is the editor's, not the text's
+    const v15 = src.replace('loadmap 1.2', 'loadmap 1.5')
+    expect(set(v15, '', 'layout', 'stable')).toBe(v15.replace('load {', 'view { layout: stable }\nload {'))
+    expect(set(v15, '', 'direction', 'down')).toBe(v15.replace('load {', 'view { direction: down }\nload {'))
+    expect(setProperty(v15, '', 'grid', false)).toEqual({ error: '"grid" is no longer a property of view' })
   })
 
   it('gives a tier a block for its fill, adds to it, and drops it with its last line', () => {

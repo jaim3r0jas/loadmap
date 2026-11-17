@@ -141,7 +141,8 @@ node gateway "API gateway" {
   over: "clients get 429s"
 }
 pool workerPool "Workers" `${pods} pods × 8 threads` {
-  workers { pods: pods; perPod: 8 }
+  pods: pods
+  perPod: 8
   short: "the workers"
   plural: true
   demand: flows.orders * 4ms

@@ -2,7 +2,7 @@ import { type ComponentResult, defineModel, measured, p, queue, workers } from '
 import { describe, expect, it } from 'vitest'
 import { compile, completions, format, hover, loadCatalog, needsCatalog, quickFixes, rename } from '../src'
 
-const SRC = `loadmap 1
+const SRC = `loadmap 1.5
 load { max: 100 }
 param parts "Partitions" { options: [6, 12, 16]; default: 12 }
 
@@ -15,7 +15,8 @@ cluster kafka "Kafka" {
   queue topic { partitions { orders: parts; events: 4 } }
 }
 pool consumers "Consumers" {
-  workers { pods: 4; perPod: 4 }
+  pods: 4
+  perPod: 4
   demand: (flows.orders + flows.events) * 0.01
   capacity: measured(4, "cores", "pod CPU limit")
   over: "orders wait in their topic"
@@ -124,15 +125,19 @@ describe('connections in the language', () => {
   })
 
   it("reads a pool's fill and a connection's max under their new names from 1.1, which fmt writes", () => {
-    const v11 = SRC.replace('loadmap 1\n', 'loadmap 1.1\n')
-      .replace('workers { pods: 4; perPod: 4 }', 'workers { pods: 4; perPod: 4; fill: "in-order" }')
+    // a pool of 1.1 writes its workers in a workers block
+    const v11 = SRC.replace('loadmap 1.5\n', 'loadmap 1.1\n')
+      .replace('  pods: 4\n  perPod: 4\n', '  workers { pods: 4; perPod: 4; fill: "in-order" }\n')
       .replace(
         '  flows: [orders]\n}',
         '  flows: [orders]\n  open: 2\n  max: configured(100, "connections", "max.connections")\n}',
       )
+    const block =
+      'warning: "workers" is no longer a statement (an error from loadmap 1.5) | write its lines on the pool: pool workerPool { pods: 3; perPod: 8 }'
     expect(errors(v11)).toEqual([
-      'warning: fill is now placement | loadmap fmt rewrites it',
-      'warning: max is now accepts | loadmap fmt rewrites it',
+      block,
+      'warning: fill is now placement (an error from loadmap 1.5) | loadmap fmt rewrites it',
+      'warning: max is now accepts (an error from loadmap 1.5) | loadmap fmt rewrites it',
     ])
     const ev = compile(v11).definition!.model.evaluate({ load: 1 })
     expect(ev.stages.consumers).toMatchObject({ placement: 'in-order' })
@@ -141,17 +146,17 @@ describe('connections in the language', () => {
     const text = format(v11).text
     expect(text).toContain('workers { pods: 4; perPod: 4; placement: "in-order" }')
     expect(text).toContain('  accepts: configured(100, "connections", "max.connections")\n')
-    expect(errors(text)).toEqual([])
+    expect(errors(text)).toEqual([block])
     // a definition of 1.0 has only the old names: fmt leaves them
     const v1 = v11.replace('loadmap 1.1\n', 'loadmap 1\n')
-    expect(errors(v1)).toEqual([])
+    expect(errors(v1)).toEqual([block])
     expect(format(v1).text).toBe(v1)
   })
 
   it('counts what a connection holds open against the most the other side accepts', () => {
     const src = SRC.replace(
       'connection group {',
-      'connection brokerPool {\n  hop: topic -> consumers\n  owner: pod\n  open: 3\n  max: configured(100, "connections", "max.connections")\n  flows: [events]\n}\n\nconnection group {',
+      'connection brokerPool {\n  hop: topic -> consumers\n  owner: pod\n  open: 3\n  accepts: configured(100, "connections", "max.connections")\n  flows: [events]\n}\n\nconnection group {',
     )
     expect(format(src).text).toBe(src)
     const r = compile(src)
@@ -231,10 +236,10 @@ gateway -> kafka
     )
     expect(labels).toContain('kafka/consumer-group')
     expect(labels).toContain('valkey/cluster-slots')
-    // a documented default as a connection's max
+    // a documented default as the most a connection's other side accepts
     const counted = src.replace(
       'connection group {',
-      'published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }\n\nconnection brokerPool {\n  hop: topic -> consumers\n  owner: pod\n  open: 3\n  max: dbMax\n  flows: [events]\n}\n\nconnection group {',
+      'published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }\n\nconnection brokerPool {\n  hop: topic -> consumers\n  owner: pod\n  open: 3\n  accepts: dbMax\n  flows: [events]\n}\n\nconnection group {',
     )
     expect(errors(counted)).toEqual([])
     const limit = (compile(counted).definition!.model.evaluate().components as Record<string, ComponentResult>)

@@ -88,25 +88,83 @@ describe('quick fixes', () => {
     expect(fix?.text).toBe(cache.replace('clients -> api', 'clients -> api { when: true }'))
   })
 
-  it('write a "%" glued to a number as the share or as the remainder', () => {
-    const glued = cache.replace('2_000 * load', '2_000 * load * (30%+1)')
+  it('write a "%" glued to a number as the share or as the remainder, in a file from before 1.5', () => {
+    const cache14 = readFileSync(new URL('corpus/0.36.0/template-cache.loadmap', import.meta.url), 'utf8')
+    const glued = cache14.replace('2_000 * load', '2_000 * load * (30%+1)')
     expect(fixes(glued).map((f) => f.title)).toEqual(['Make it the share: 30% + 1', 'Keep the remainder: mod(30, +1)'])
     const [share, mod] = fixes(glued)
-    expect(share!.text).toBe(cache.replace('2_000 * load', '2_000 * load * (30% + 1)'))
-    expect(mod!.text).toBe(cache.replace('2_000 * load', '2_000 * load * (mod(30, +1))'))
-    for (const f of [share, mod]) expect(compile(f!.text).diagnostics).toEqual([])
+    expect(share!.text).toBe(cache14.replace('2_000 * load', '2_000 * load * (30% + 1)'))
+    expect(mod!.text).toBe(cache14.replace('2_000 * load', '2_000 * load * (mod(30, +1))'))
+    // the template as 1.4 shipped it still has its workers block, which warns
+    for (const f of [share, mod]) expect(compile(f!.text).diagnostics.filter((d) => d.code !== 'removed')).toEqual([])
     // in a file from before mod(), the fix brings the version it needs
     const top = (src: string) => src.replace('view { speed: 10 }', 'speed: 10')
-    const old = top(glued).replace('loadmap 1.5', 'loadmap 1.1')
-    expect(fixes(old)[1]!.text).toBe(top(mod!.text).replace('loadmap 1.5', 'loadmap 1.2'))
+    const old = top(glued).replace('loadmap 1.4', 'loadmap 1.1')
+    expect(fixes(old)[1]!.text).toBe(top(mod!.text).replace('loadmap 1.4', 'loadmap 1.2'))
+  })
+
+  it('write what 1.5 left one spelling of the way that is left', () => {
+    const fixed = (from: string, to: string) => {
+      const src = cache.replace(from, to)
+      expect(src).not.toBe(cache)
+      const [fix] = fixes(src)
+      expect(compile(fix!.text).diagnostics).toEqual([])
+      return { title: fix!.title, text: fix!.text }
+    }
+    expect(fixed('  pods: pods\n  perPod: 8\n', '  workers { pods: pods; perPod: 8 }\n')).toEqual({
+      title: 'Write its lines on the pool',
+      text: cache.replace('  pods: pods\n  perPod: 8\n', '  pods: pods; perPod: 8\n'),
+    })
+    expect(
+      fixed('node clients "Clients" "web and mobile"', 'node clients "Clients" { sub: "web and mobile" }'),
+    ).toEqual({
+      title: 'Write it on the first line',
+      text: cache,
+    })
+    expect(fixed('clients -> api', 'clients -> api { label: "HTTPS" }')).toEqual({
+      title: 'Write it after the edge',
+      text: cache.replace('clients -> api', 'clients -> api: "HTTPS"'),
+    })
+    const hit = 'param hit "Cache hit ratio" { options: [0.5, 0.8, 0.95]; default: 0.8 }'
+    const tagged = 'param hit "Cache hit ratio" {\n  options: [0.5, 0.8, 0.95]\n  default: 0.8\n  tag: "estimate"\n}'
+    expect(fixed(hit, tagged)).toEqual({
+      title: 'Remove "tag"',
+      text: cache.replace(hit, 'param hit "Cache hit ratio" {\n  options: [0.5, 0.8, 0.95]\n  default: 0.8\n}'),
+    })
+    expect(fixed('2_000 * load', '2_000 * load * (1 + pods % 2)')).toEqual({
+      title: 'Write it as mod(a, b)',
+      text: cache.replace('2_000 * load', '2_000 * load * (1 + mod(pods, 2))'),
+    })
+    expect(fixed('2_000 * load', '2_000 * load * (pods === 2 ? 1 : 2)')).toEqual({
+      title: 'Rename to "=="',
+      text: cache.replace('2_000 * load', '2_000 * load * (pods == 2 ? 1 : 2)'),
+    })
+    expect(fixed('view { speed: 10 }', 'view { speed: 10 }\nlayout: down')).toEqual({
+      title: 'Move the view settings into view { … }',
+      text: cache.replace('view { speed: 10 }', 'view { speed: 10; direction: down }'),
+    })
+    // beside a direction the old name sets nothing: it goes
+    expect(fixed('view { speed: 10 }', 'view { speed: 10; direction: down }\nlayout: right')).toEqual({
+      title: 'Remove "layout"',
+      text: cache.replace('view { speed: 10 }', 'view { speed: 10; direction: down }'),
+    })
+    // the grid goes from its line, and a view block it was the last line of goes with it
+    expect(fixed('view { speed: 10 }', 'view { speed: 10; grid: false }')).toEqual({
+      title: 'Remove "grid"',
+      text: cache,
+    })
+    expect(fixed('view { speed: 10 }\n', 'view { grid: false }\n')).toEqual({
+      title: 'Remove "grid"',
+      text: cache.replace('view { speed: 10 }\n', ''),
+    })
   })
 
   it('move the view settings at the top into view { … }', () => {
-    const top = cache.replace('view { speed: 10 }', 'speed: 10\ngrid: false')
+    const top = cache.replace('view { speed: 10 }', 'speed: 10\nlanes: striped')
     expect(top).not.toBe(cache)
     const [fix] = fixes(top)
     expect(fix!.title).toBe('Move the view settings into view { … }')
-    expect(fix!.text).toBe(cache.replace('view { speed: 10 }', 'view { speed: 10; grid: false }'))
+    expect(fix!.text).toBe(cache.replace('view { speed: 10 }', 'view { speed: 10; lanes: striped }'))
     expect(compile(fix!.text).diagnostics).toEqual([])
   })
 

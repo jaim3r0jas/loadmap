@@ -3,9 +3,12 @@ loadmap 1.5
 # cache and clients that retry: the four building blocks in one system, and an index of two shards behind a
 # coordinator that sends each miss to one.
 title: "Product search"
-view { speed: 10; transition: 0.8 }
-# no box moves between phases: the pool already draws every pod it may run
-layout: stable
+view {
+  speed: 10
+  transition: 0.8
+  # no box moves between phases: the pool already draws every pod it may run
+  layout: stable
+}
 assume: "1× is the busiest hour of an ordinary week."
 assume: "A client retries a search the limiter turns away, at once."
 
@@ -75,7 +78,8 @@ node limiterRejected "Turned away" { lost { takes: [rejected] } }
 
 pool api "Search API" `2 to ${maxPods} pods` {
   tier: services
-  workers { perPod: 4; autoscale { min: 2; max: maxPods; target: 0.7 } }
+  perPod: 4
+  autoscale { min: 2; max: maxPods; target: 0.7 }
   short: "the search API"
   demand: at.api.searches * 1ms
   capacity: measured(maxPods * 1, "cores", "1 core a pod")

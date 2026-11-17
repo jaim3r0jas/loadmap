@@ -58,7 +58,8 @@ node web "Web" {
 }
 
 pool orderWorkers "Order workers" `${pods} pods` {
-  workers { pods: pods; perPod: 4 }
+  pods: pods
+  perPod: 4
   short: "the workers"
   plural: true
   # the CPU the workers use now, growing with the traffic

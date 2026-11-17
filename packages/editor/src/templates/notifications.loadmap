@@ -44,7 +44,8 @@ cluster broker "Queue" "events topic" {
 }
 
 pool senders "Senders" `${pods} pods × 8` {
-  workers { pods: pods; perPod: 8 }
+  pods: pods
+  perPod: 8
   short: "the senders"
   plural: true
   demand: flows.events * (1 + emailShare + 5%) * 3ms

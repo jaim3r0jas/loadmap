@@ -64,11 +64,23 @@ export interface PropSpec {
    */
   was?: string
   /**
-   * The block it lives in from loadmap 1.2 (`view`), for a property of the top level: from then on it warns there and
-   * `loadmap fmt` moves it; a definition stamped before still writes it at the top.
+   * The block it lives in from `movedIn` (`view`), for a property of the top level: from then on it warns there and
+   * `loadmap fmt` moves it; a definition stamped before still writes it at the top. From loadmap 1.5 it is an error
+   * at the top.
    */
   movedTo?: string
+  /** The version that moved it. Default 1.2, the version of the view block. */
+  movedIn?: string
+  /**
+   * The version it is gone from (`'1.5'`): an error from then on, a warning that says so before it. The reference,
+   * completion and the inspector leave it out. `instead` says what to write.
+   */
+  until?: string
+  instead?: string
 }
+
+/** The version from which one spelling is left: an old name (`was`) and a view setting at the top are errors. */
+export const ONE_SPELLING = '1.5'
 
 /** A property of `props` by its name or by its old one (`was`): its spec, and the name it has now. */
 export function propNamed(
@@ -139,6 +151,9 @@ export interface BlockSpec {
   inspector?: 'model'
   /** The language version that added it (`'1.1'`); none for 1.0. A definition stamped before cannot use it. */
   since?: string
+  /** The version it is gone from, and what to write: as for a property. */
+  until?: string
+  instead?: string
 }
 
 const STAGE_LABEL: ArgSpec[] = [
@@ -150,6 +165,28 @@ const STAGE_COMPONENT: PropSpec = {
   scope: 'const',
   doc: "The component whose capacity this stage uses. Defaults to its box's component.",
 }
+
+/** What a pool of workers is made of: on the pool from loadmap 1.5, in its `workers { … }` block before. */
+const WORKERS_PROPS: Readonly<Record<string, PropSpec>> = {
+  pods: {
+    inspector: 'main',
+    value: 'number',
+    scope: 'ctx',
+    doc: 'How many pods; an autoscaled pool has autoscale instead.',
+  },
+  perPod: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
+  placement: {
+    value: 'enum',
+    scope: 'const',
+    since: '1.1',
+    was: 'fill',
+    values: ['round-robin', 'in-order'],
+    doc: 'round-robin spreads work across pods (the default); in-order fills pod 0 first.',
+  },
+}
+
+/** The lines of a pool that are its workers stage's, from loadmap 1.5 (`autoscale { … }` too, as a statement). */
+export const POOL_LINES: readonly string[] = ['pods', 'perPod', 'placement', 'stageLabel', 'component']
 
 /** A component's properties: on a box, or in a `component` block. */
 export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
@@ -195,7 +232,13 @@ const BOX_ARGS: ArgSpec[] = [
   { name: 'label', kind: 'text', optional: true, dynamic: true },
   { name: 'sub', kind: 'text', optional: true, dynamic: true },
 ]
-const SUB: PropSpec = { value: 'string', scope: 'ctx', doc: 'The second line of the box.' }
+const SUB: PropSpec = {
+  value: 'string',
+  scope: 'ctx',
+  doc: 'The second line of the box.',
+  until: '1.5',
+  instead: 'write it as the second text on the first line: node db "Database" "primary"',
+}
 const TIER: PropSpec = {
   value: 'tier',
   scope: 'const',
@@ -254,6 +297,28 @@ const VIEW_PROPS: Readonly<Record<string, PropSpec>> = {
     value: 'boolean',
     scope: 'const',
     doc: "The editor's dot grid. Default true.",
+    until: '1.5',
+    instead: 'the dot grid is a setting of the editor, kept in the browser: remove the line',
+  },
+  direction: {
+    value: 'enum',
+    scope: 'const',
+    since: '1.5',
+    values: [...DIRECTIONS, 'auto'],
+    doc: 'Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down.',
+  },
+  rows: {
+    value: 'number',
+    scope: 'const',
+    since: '1.5',
+    doc: 'The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds.',
+  },
+  layout: {
+    value: 'enum',
+    scope: 'const',
+    since: '1.5',
+    values: ['compact', 'stable'],
+    doc: 'compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one.',
   },
   closed: {
     value: 'subsystems',
@@ -271,24 +336,9 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     args: [],
     props: {
       title: { inspector: 'main', value: 'string', scope: 'const', doc: 'The heading above the diagram.' },
-      direction: {
-        value: 'enum',
-        scope: 'const',
-        values: [...DIRECTIONS, 'auto'],
-        doc: 'Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down.',
-      },
-      rows: {
-        value: 'number',
-        scope: 'const',
-        since: '1.4',
-        doc: 'The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds.',
-      },
-      layout: {
-        value: 'enum',
-        scope: 'const',
-        values: ['compact', 'stable'],
-        doc: 'compact (the default) lays out each scenario, story step, preset and choice of a select or switch on its own and moves the boxes from one to the next; stable gives every box one place, the largest it needs anywhere, so none of them moves a box. Neither the load nor a range moves one.',
-      },
+      direction: { ...VIEW_PROPS.direction!, since: undefined, movedTo: 'view', movedIn: '1.5' },
+      rows: { ...VIEW_PROPS.rows!, since: '1.4', movedTo: 'view', movedIn: '1.5' },
+      layout: { ...VIEW_PROPS.layout!, since: undefined, movedTo: 'view', movedIn: '1.5' },
       speed: { ...VIEW_PROPS.speed!, movedTo: 'view' },
       transition: { ...VIEW_PROPS.transition!, movedTo: 'view' },
       fullScreen: { ...VIEW_PROPS.fullScreen!, movedTo: 'view' },
@@ -427,7 +477,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     inspector: 'model',
     since: '1.2',
     doc: 'How the page looks and plays: nothing in here changes a number. Once in a definition.',
-    example: 'view { speed: 10; fullScreen: [verdict, controls]; grid: false }',
+    example: 'view { direction: right; speed: 10; fullScreen: [verdict, controls] }',
     args: [],
     props: VIEW_PROPS,
     children: [],
@@ -485,7 +535,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       step: { inspector: 'main', value: 'number', scope: 'const', doc: 'The step of a slider. Default 1.' },
       default: { inspector: 'main', value: 'value', scope: 'const', doc: 'The starting value.', required: true },
       hint: { value: 'string', scope: 'const', doc: 'One line under the control.' },
-      tag: { value: 'string', scope: 'const', doc: 'A short tag next to the label, e.g. "estimate".' },
+      tag: {
+        value: 'string',
+        scope: 'const',
+        doc: 'A short tag next to the label, e.g. "estimate".',
+        until: '1.5',
+        instead: 'say it in the label or the hint: remove the line',
+      },
       enabled: {
         value: 'boolean',
         scope: 'values',
@@ -980,17 +1036,27 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: ['queue', 'component', 'held', 'input', 'with'],
   },
   pool: {
-    doc: 'A workers stage drawn as pods holding a grid of workers.',
-    example: 'pool workerPool "Workers" { workers { pods: pods; perPod: 8 } }',
+    doc: 'A pool of workers, pods × workers per pod, drawn as pods holding a grid of workers. Flows are worked off here; a route names the pool.',
+    example: 'pool workerPool "Workers" { pods: pods; perPod: 8 }',
     args: BOX_ARGS,
     props: {
       sub: SUB,
+      pods: { ...WORKERS_PROPS.pods!, since: '1.5' },
+      perPod: { ...WORKERS_PROPS.perPod!, required: false, since: '1.5' },
+      placement: { ...WORKERS_PROPS.placement!, since: '1.5' },
+      stageLabel: {
+        value: 'string',
+        scope: 'const',
+        since: '1.5',
+        doc: 'The name of its work inside a sentence: "alert pipeline". Defaults to the id.',
+      },
+      component: { ...STAGE_COMPONENT, since: '1.5' },
       podLabel: { value: 'string', scope: 'i', doc: "Each pod's label, from its index i: `pod ${i}`." },
       tier: TIER,
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['workers', 'component', 'held', 'input', 'with'],
+    children: ['autoscale', 'workers', 'component', 'held', 'input', 'with'],
   },
   pass: {
     doc: 'Flows pass through; past capacity the share above 100 % is rejected.',
@@ -1071,25 +1137,10 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     doc: 'A pool of workers: pods × workers per pod.',
     example: 'workers { pods: pods; perPod: 8 }',
     args: STAGE_LABEL,
-    props: {
-      pods: {
-        inspector: 'main',
-        value: 'number',
-        scope: 'ctx',
-        doc: 'How many pods; an autoscaled pool has autoscale instead.',
-      },
-      perPod: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'Workers per pod.', required: true },
-      placement: {
-        value: 'enum',
-        scope: 'const',
-        since: '1.1',
-        was: 'fill',
-        values: ['round-robin', 'in-order'],
-        doc: 'round-robin spreads work across pods (the default); in-order fills pod 0 first.',
-      },
-      component: STAGE_COMPONENT,
-    },
+    props: { ...WORKERS_PROPS, component: STAGE_COMPONENT },
     children: ['autoscale'],
+    until: '1.5',
+    instead: 'write its lines on the pool: pool workerPool { pods: 3; perPod: 8 }',
   },
   autoscale: {
     doc: "Pods are added and removed to hold each running pod near target, between min and max. The component's capacity is the pool at max pods: it runs out when the pool cannot grow further.",
@@ -1207,9 +1258,15 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
 }
 
-/** The properties of an edge's block: `a -> b { label: …; when: … }`. */
+/** The properties of an edge's block: `a -> b { when: … }`. */
 export const EDGE_PROPS: Readonly<Record<string, PropSpec>> = {
-  label: { value: 'string', scope: 'ctx', doc: 'The text on the edge.' },
+  label: {
+    value: 'string',
+    scope: 'ctx',
+    doc: 'The text on the edge.',
+    until: '1.5',
+    instead: 'write it after the edge: a -> b: "label" { when: … }',
+  },
   when: { value: 'boolean', scope: 'ctx', doc: 'The edge is left out while this is false.' },
 }
 

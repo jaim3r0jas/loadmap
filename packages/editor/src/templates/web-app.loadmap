@@ -41,7 +41,8 @@ node lb "Load balancer" {
 }
 
 pool app "App" `${pods} pods × 4 workers` {
-  workers { pods: pods; perPod: 4 }
+  pods: pods
+  perPod: 4
   short: "the app pods"
   plural: true
   demand: flows.requests * 4ms

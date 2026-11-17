@@ -2,9 +2,10 @@ import { childrenOf, type Decl, type Expr, type Stmt } from './ast'
 import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
-import { DIRECTIONS, own, propNamed, SCHEMA } from './schema'
+import { cut, edgeLabels, foldWorkers, mods, oneSpelling, subsUp } from './rewrite'
+import { ONE_SPELLING, own, propNamed, SCHEMA } from './schema'
 import { before, CURRENT, lowest, needs, parseVersion, stampOf, type Version, versionText } from './versions'
-import { applied, intoView } from './viewblock'
+import { applied, intoView, oldDirection, viewOf } from './viewblock'
 
 /** A line longer than this has its one-line blocks split, a statement a line. */
 export const FORMAT_WIDTH = 120
@@ -21,7 +22,9 @@ export interface FormatResult {
  * around operators. It works on the tokens, so numbers, texts, templates and parentheses stay exactly as written and
  * a formula never changes. A block written on one line stays on one line while it fits. A text with a syntax error is
  * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`, and a property's old
- * name (`target` in `expect`) its new one where the `loadmap` line has it. The `loadmap` line is
+ * name (`target` in `expect`) its new one where the `loadmap` line has it. `===` becomes `==` and `derived.x` the bare
+ * `x`. Where the line says 1.5 or later, every view setting moves into `view { … }`, a `workers` block onto its pool,
+ * `sub:` and an edge's `label:` onto their first line, and `a % b` becomes `mod(a, b)`. The `loadmap` line is
  * raised to the lowest version that has everything the definition uses, never lowered: an older stamp keeps what it
  * allows, and a reader of it would not know the rest.
  */
@@ -29,8 +32,12 @@ export function format(source: string): FormatResult {
   const { doc, report } = parse(source)
   if (report.failed) return { ok: false, text: source, diagnostics: report.list }
   // a definition that also says direction keeps the old line as written: renamed, it would set the direction twice
-  const named = doc.body.some((st) => st.kind === 'prop' && st.key.name === 'direction')
-  const retext = new Map(doc.body.flatMap((st) => (!named && oldDirection(st) ? [[st.key.from, 'direction']] : [])))
+  const named = [...doc.body, ...(viewOf(doc.body)?.body ?? [])].some(
+    (st) => st.kind === 'prop' && st.key.name === 'direction',
+  )
+  const retext = new Map(
+    doc.body.flatMap((st) => (!named && st.kind === 'prop' && oldDirection(st) ? [[st.key.from, 'direction']] : [])),
+  )
   const stamp = raised(source, doc.body)
   if (stamp) retext.set(stamp.from, stamp.text)
   // without a loadmap line a definition is read at the newest version; a text that is no version is the compiler's
@@ -38,9 +45,28 @@ export function format(source: string): FormatResult {
   const version = stamp ? parseVersion(stamp.text) : said ? said.version : CURRENT
   // the view settings written at the top go into view { … }, where the stamp has it
   if (version && !before(version, VIEW_BLOCK)) {
-    const moves = intoView(source, doc.body)
+    const moves = intoView(source, doc.body, version)
     if (moves.length) return format(applied(source, moves))
   }
+  // what 1.5 left one spelling of, a kind at a time: each is worked out from the text the one before left
+  if (version && !before(version, ONE)) {
+    // the direction's old name beside a direction sets nothing: written so, it is only an error
+    const idle = named ? doc.body.filter((st) => st.kind === 'prop' && oldDirection(st)) : []
+    if (idle.length)
+      return format(
+        applied(
+          source,
+          idle.map((st) => cut(source, {}, st)),
+        ),
+      )
+  }
+  if (version && !before(version, ONE))
+    for (const rewrite of [foldWorkers, subsUp, edgeLabels, mods]) {
+      const changes = rewrite(source, doc.body)
+      if (changes.length) return format(applied(source, changes))
+    }
+  const spelled = oneSpelling(source, doc.body)
+  if (spelled.length) return format(applied(source, spelled))
   if (version) for (const [from, name] of renames(doc.body, version)) retext.set(from, name)
   const toks = lex(source, new Reporter(source), 0, source.length, true)
     .filter((t) => t.kind !== 'eof')
@@ -82,6 +108,9 @@ export function format(source: string): FormatResult {
 
 /** The version from which the view settings live in `view { … }`. */
 const VIEW_BLOCK: Version = [1, 2]
+
+/** The version from which one spelling is left: `workers` on its pool, `mod(a, b)`, a box's second text on its line. */
+const ONE: Version = parseVersion(ONE_SPELLING)!
 
 /** The version that reads a text continued on the next line. */
 const CONTINUED: Version = [1, 2]
@@ -371,12 +400,4 @@ function renames(body: readonly Stmt[], version: Version): Map<number, string> {
   }
   block('', body)
   return out
-}
-
-/** `layout: right` or `layout: down` at the top: the direction, under the name it had before `layout: compact`. */
-function oldDirection(st: Stmt): st is Extract<Stmt, { kind: 'prop' }> {
-  if (st.kind !== 'prop' || st.key.name !== 'layout') return false
-  const v = st.value
-  const word = v.t === 'id' ? v.name : v.t === 'str' ? v.value : undefined
-  return word != null && (DIRECTIONS as readonly string[]).includes(word)
 }

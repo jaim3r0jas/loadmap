@@ -21,7 +21,8 @@ subsystem eu "EU region" {
       queue topic { partitions { orders: 6 } }
     }
     pool pool "Consumers" {
-      workers { pods: 4; perPod: 4 }
+      pods: 4
+      perPod: 4
       demand: flows.orders * 0.01
       capacity: measured(4, "cores", "pod CPU limit")
       over: "orders wait in their topic"

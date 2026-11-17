@@ -203,7 +203,12 @@ export function likeness(body: readonly Stmt[], id: string): { from: string; tak
     const other = like?.value.t === 'id' ? box(like.value.name) : undefined
     if (!other || seen.includes(other) || other.keyword.name !== d.keyword.name) return own
     const ownStage = own.some((k) => stages.includes(k))
-    const theirs = full(other, [...seen, d]).filter((k) => !own.includes(k) && !(ownStage && stages.includes(k)))
+    // a pool's pods are fixed or autoscaled: either written here replaces the other there
+    const scaled = (k: string) =>
+      (k === 'pods' && own.includes('autoscale')) || (k === 'autoscale' && own.includes('pods'))
+    const theirs = full(other, [...seen, d]).filter(
+      (k) => !own.includes(k) && !(ownStage && stages.includes(k)) && !scaled(k),
+    )
     return [...theirs, ...own]
   }
   const mine = box(id)

@@ -43,7 +43,8 @@ node bucket "Object store" {
 }
 
 pool parserPool "Parsers" `${parsers} pods` {
-  workers { pods: parsers; perPod: 2 }
+  pods: parsers
+  perPod: 2
   short: "the parsers"
   plural: true
   demand: flows.files * 0.1

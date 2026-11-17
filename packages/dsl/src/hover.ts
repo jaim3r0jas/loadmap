@@ -233,6 +233,10 @@ class Lookup {
               `Named \`${named.name}\` from loadmap ${prop.since}; \`loadmap fmt\` renames it in a definition of that version.`,
             ]
           : []),
+        ...(prop.until ? [`Gone from loadmap ${prop.until}: ${prop.instead}.`] : []),
+        ...(prop.movedTo
+          ? [`In \`${prop.movedTo} { … }\` from loadmap ${prop.movedIn ?? '1.2'}; \`loadmap fmt\` moves it there.`]
+          : []),
       ])
     }
     // the open names of a preset, scenario, step or partitions

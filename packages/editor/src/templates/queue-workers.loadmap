@@ -46,7 +46,8 @@ cluster broker "Queue" "jobs topic" {
 }
 
 pool workerPool "Workers" `${pods} pods × ${threads} threads` {
-  workers { pods: pods; perPod: threads }
+  pods: pods
+  perPod: threads
   short: "the workers"
   plural: true
   demand: flows.jobs * 10ms

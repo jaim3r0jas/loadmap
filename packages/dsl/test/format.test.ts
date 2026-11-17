@@ -79,7 +79,7 @@ describe('format', () => {
           'pass',
           '        demand:flows.x*(2+1)',
           ' capacity:measured( 10_000 ±20 % ,"req/s",  "a  test")',
-          '   sub: `${ pods }  pods`',
+          '   describe: `${ pods }  pods`',
           '}',
         ].join('\n'),
       ),
@@ -89,7 +89,7 @@ describe('format', () => {
         '  pass',
         '  demand: flows.x * (2 + 1)',
         '  capacity: measured(10_000 ± 20%, "req/s", "a  test")',
-        '  sub: `${ pods }  pods`',
+        '  describe: `${ pods }  pods`',
         '}',
         '',
       ].join('\n'),
@@ -97,11 +97,21 @@ describe('format', () => {
   })
 
   it('renames the direction from its old name, layout, and leaves a layout of the boxes alone', () => {
-    expect(fmt('layout: down\nlayout: "right"\nlayout: stable\nnode layout "Layout" { sub: "layout: down" }\n')).toBe(
-      'direction: down\ndirection: "right"\nlayout: stable\nnode layout "Layout" { sub: "layout: down" }\n',
+    const old =
+      'loadmap 1.4\nlayout: down\nlayout: "right"\nlayout: stable\nnode layout "Layout" { sub: "layout: down" }\n'
+    expect(fmt(old)).toBe(
+      'loadmap 1.4\ndirection: down\ndirection: "right"\nlayout: stable\nnode layout "Layout" { sub: "layout: down" }\n',
     )
     // beside a direction, the old line sets nothing: renamed, it would set the direction twice
-    expect(fmt('direction: right\nlayout: down\n')).toBe('direction: right\nlayout: down\n')
+    expect(fmt('loadmap 1.4\ndirection: right\nlayout: down\n')).toBe('loadmap 1.4\ndirection: right\nlayout: down\n')
+    // from 1.5 they live in view { … }: the old name goes there as direction, and beside one, where it sets nothing, goes
+    expect(
+      fmt('loadmap 1.5\nlayout: down\nlayout: stable\nrows: 2\nnode layout "Layout" { sub: "layout: down" }\n'),
+    ).toBe('loadmap 1.5\nview { direction: down; layout: stable; rows: 2 }\nnode layout "Layout" "layout: down"\n')
+    expect(fmt('loadmap 1.5\ndirection: right\nlayout: down\n')).toBe('loadmap 1.5\nview { direction: right }\n')
+    expect(fmt('loadmap 1.5\nlayout: right\nview { direction: down }\n')).toBe(
+      'loadmap 1.5\nview { direction: down }\n',
+    )
   })
 
   it("renames a property's old name where the loadmap line has the new one, not beside it", () => {
@@ -121,12 +131,18 @@ describe('format', () => {
   })
 
   it('tells signs, "%" and "?:" by what the parser read', () => {
-    expect(fmt('x: - 2 * load\ny: a?b:c\nz: a %b\nw: !(a)\nv: estimated(1 +/- 5 %, "x")\nq: Math . min(1,2)')).toBe(
-      'x: -2 * load\ny: a ? b : c\nz: a % b\nw: !(a)\nv: estimated(1 +/- 5%, "x")\nq: Math.min(1, 2)\n',
+    // before 1.5 a "%" between two values is the remainder, and one glued to a number before a value too
+    const old =
+      'loadmap 1.4\nx: - 2 * load\ny: a?b:c\nz: a %b\nw: !(a)\nv: estimated(1 +/- 5 %, "x")\nq: Math . min(1,2)'
+    expect(fmt(old)).toBe(
+      'loadmap 1.4\nx: -2 * load\ny: a ? b : c\nz: a % b\nw: !(a)\nv: estimated(1 +/- 5%, "x")\nq: Math.min(1, 2)\n',
     )
-    // a unit is part of its number; a "%" glued to one before a value is modulo
-    expect(fmt('a: 20ms*b\nc: estimated(1 ± 30%,"x")\nd: 10%3\ne: 80%  -  b\nf: 7×')).toBe(
-      'a: 20ms * b\nc: estimated(1 ± 30%, "x")\nd: 10 % 3\ne: 80% - b\nf: 7×\n',
+    expect(fmt('loadmap 1.4\na: 20ms*b\nc: estimated(1 ± 30%,"x")\nd: 10%3\ne: 80%  -  b\nf: 7×')).toBe(
+      'loadmap 1.4\na: 20ms * b\nc: estimated(1 ± 30%, "x")\nd: 10 % 3\ne: 80% - b\nf: 7×\n',
+    )
+    // from 1.5 a unit is part of its number, a "%" one too, and the remainder is mod(a, b)
+    expect(fmt('loadmap 1.5\nz: a %b\nd: 30%+1\ne: (a % b) % c\nf: (a * (b)) % (c)\ng: (a) * (b) % c\n')).toBe(
+      'loadmap 1.5\nz: mod(a, b)\nd: 30% + 1\ne: mod(mod(a, b), c)\nf: mod(a * (b), c)\ng: mod((a) * (b), c)\n',
     )
     // in a row, "-2" is a second value, never a subtraction
     expect(fmt('fit f {\npoints a b {\n1 -2\n- 3 4\n}\n}')).toBe(
@@ -156,7 +172,9 @@ describe('format', () => {
     expect(fmt('load { max: 10;  default: 2; }\nscenario "A" {  }\nscenario "B" {\n}\ntitle: "x"; speed: 5')).toBe(
       'load { max: 10; default: 2 }\nscenario "A" {}\nscenario "B" {}\nview { speed: 5 }\ntitle: "x"\n',
     )
-    expect(fmt('node a { pass\n  sub: "x"; short: "y" }')).toBe('node a {\n  pass\n  sub: "x"\n  short: "y"\n}\n')
+    expect(fmt('node a { pass\n  describe: "x"; short: "y" }')).toBe(
+      'node a {\n  pass\n  describe: "x"\n  short: "y"\n}\n',
+    )
   })
 
   it('splits a one-line block that runs past 120 columns, the outermost first', () => {
@@ -209,6 +227,46 @@ describe('format', () => {
     expect(fmt(old)).toBe(old)
   })
 
+  it('writes what 1.5 left one spelling of, where the stamp says 1.5', () => {
+    const pools = [
+      'loadmap 1.5',
+      'pool a "A" {',
+      '  workers "the work" { pods: 2; perPod: 8 }',
+      '  over: "lag"',
+      '}',
+      'pool b { workers { perPod: 4; autoscale { min: 1; max: 3; target: 0.7 } } }',
+      'pool c {\n  workers {\n    pods: 2\n    perPod: 8\n  }\n}',
+      'pool d { workers w { pods: 2; perPod: 8 } }',
+      '',
+    ].join('\n')
+    expect(fmt(pools)).toBe(
+      [
+        'loadmap 1.5',
+        'pool a "A" {',
+        '  stageLabel: "the work"',
+        '  pods: 2',
+        '  perPod: 8',
+        '  over: "lag"',
+        '}',
+        'pool b { perPod: 4; autoscale { min: 1; max: 3; target: 0.7 } }',
+        'pool c {\n  pods: 2\n  perPod: 8\n}',
+        // a stage with an id of its own: routes name it, and the pool has one id
+        'pool d { workers w { pods: 2; perPod: 8 } }',
+        '',
+      ].join('\n'),
+    )
+    const lines =
+      'node n { sub: "x" }\nnode m "M" { sub: `${p} pods`; pass }\na -> b { label: "x" }\nc -> d {\n  label: "y"\n  when: z\n}\n'
+    expect(fmt(`loadmap 1.5\n${lines}`)).toBe(
+      'loadmap 1.5\nnode n "n" "x"\nnode m "M" `${p} pods` { pass }\na -> b: "x"\nc -> d: "y" {\n  when: z\n}\n',
+    )
+    // an older stamp keeps them: its readers read them so
+    const old = 'loadmap 1.4\npool a { workers { pods: 2; perPod: 8 } }\nz: a % b\nnode n { sub: "x" }\n'
+    expect(fmt(old)).toBe(old)
+    // === and derived.x read the same in every version: rewritten in each
+    expect(fmt('loadmap 1.4\nf: a === b\ng: derived.x !== 2\n')).toBe('loadmap 1.4\nf: a == b\ng: x != 2\n')
+  })
+
   it('moves the view settings written at the top into view { … }, where the stamp has it', () => {
     expect(fmt('loadmap 1.2\ntitle: "x"\nspeed: 5\nlayout: stable\ngrid: false\n')).toBe(
       'loadmap 1.2\ntitle: "x"\nview { speed: 5; grid: false }\nlayout: stable\n',
@@ -236,6 +294,8 @@ describe('format', () => {
     expect(fmt(old)).toBe(old)
     const moved = fmt('loadmap 1.2\nspeed: 5\ngrid: false\n')
     expect(fmt(moved)).toBe(moved)
+    // from 1.5 the grid is no view setting: moved, it would be an error there too
+    expect(fmt('loadmap 1.5\nspeed: 5\ngrid: false\n')).toBe('loadmap 1.5\nview { speed: 5 }\ngrid: false\n')
   })
 
   it('re-indents a formula wrapped inside parentheses', () => {

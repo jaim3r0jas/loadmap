@@ -1,13 +1,44 @@
 import type { Decl, Property, Stmt } from './ast'
 import type { TextChange } from './edit'
+import { DIRECTIONS, SCHEMA } from './schema'
+import { before, CURRENT, parseVersion, stampOf, type Version } from './versions'
 
 /**
  * What only changes how the page looks and plays, never a number: from loadmap 1.2 these live in a `view { … }` block.
- * Before it they stood at the top beside what the model computes from (`assume`, `searchMax`).
+ * Before it they stood at the top beside what the model computes from (`assume`, `searchMax`). `direction`, `rows` and
+ * `layout` followed in 1.5, from where every one of them is an error at the top.
  */
-export const VIEW_KEYS = ['speed', 'transition', 'fullScreen', 'fullScreenMode', 'lanes', 'grid'] as const
+export const VIEW_KEYS = [
+  'direction',
+  'rows',
+  'layout',
+  'speed',
+  'transition',
+  'fullScreen',
+  'fullScreenMode',
+  'lanes',
+  'grid',
+] as const
 
-export const isViewKey = (key: string): boolean => (VIEW_KEYS as readonly string[]).includes(key)
+/**
+ * Whether `key` is a view setting; with a version, one that lives in the view block under that stamp, and that the
+ * stamp still has (`grid` is gone from 1.5: moved, it would be an error there too).
+ */
+export const isViewKey = (key: string, version?: Version): boolean => {
+  if (!(VIEW_KEYS as readonly string[]).includes(key)) return false
+  if (!version) return true
+  const spec = SCHEMA['']!.props[key]!
+  if (spec.until && !before(version, parseVersion(spec.until)!)) return false
+  return !before(version, parseVersion(spec.movedIn ?? '1.2')!)
+}
+
+/** `layout: right` or `layout: down` at the top: the direction, under the name it had before `layout: compact`. */
+export function oldDirection(st: Stmt): boolean {
+  if (st.kind !== 'prop' || st.key.name !== 'layout') return false
+  const v = st.value
+  const word = v.t === 'id' ? v.name : v.t === 'str' ? v.value : undefined
+  return word != null && (DIRECTIONS as readonly string[]).includes(word)
+}
 
 /** The definition's `view` block, the first when it has several (the checker refuses the rest). */
 export function viewOf(body: readonly Stmt[]): Decl | undefined {
@@ -17,19 +48,30 @@ export function viewOf(body: readonly Stmt[]): Decl | undefined {
 /**
  * The changes that move every view setting written at the top into the `view` block, making one where the first of
  * them stood. A setting the block already has stays where it is: the checker says it is set twice. No change when
- * nothing is to move.
+ * nothing is to move. Only the settings that live in the block under `version` (the file's stamp, unless given) move;
+ * the direction's old name, `layout: right`, moves as `direction: right` unless the definition also says direction.
  */
-export function intoView(source: string, body: readonly Stmt[]): TextChange[] {
+export function intoView(
+  source: string,
+  body: readonly Stmt[],
+  version: Version = stampOf(source, body)?.version ?? CURRENT,
+): TextChange[] {
   const view = viewOf(body)
   const has = new Set((view?.body ?? []).flatMap((s) => (s.kind === 'prop' ? [s.key.name] : [])))
-  const tops = body.filter((s): s is Property => s.kind === 'prop' && isViewKey(s.key.name) && !has.has(s.key.name))
+  const directed = has.has('direction') || body.some((s) => s.kind === 'prop' && s.key.name === 'direction')
+  const renamed = (s: Property) => oldDirection(s) && isViewKey('direction', version)
+  const tops = body.filter(
+    (s): s is Property =>
+      s.kind === 'prop' &&
+      (renamed(s) ? !directed : isViewKey(s.key.name, version) && !oldDirection(s) && !has.has(s.key.name)),
+  )
   if (!tops.length) return []
   const lineStart = (i: number) => source.lastIndexOf('\n', i - 1) + 1
   const lineEnd = (i: number) => source.indexOf('\n', i) + 1 || source.length
   const header = body[0]?.kind === 'decl' && body[0].keyword.name === 'loadmap' ? lineEnd(body[0].to) : 0
   const moved = tops.map((s) => {
     const [a, b] = [lineStart(s.from), lineEnd(s.to)]
-    const text = source.slice(s.from, s.to)
+    const text = renamed(s) ? `direction${source.slice(s.key.to, s.to)}` : source.slice(s.from, s.to)
     // alone on its lines it goes with them; beside others, with its ";"; a comment after it stays
     if (source.slice(a, s.from).trim() || source.slice(s.to, b).trim()) {
       const after = /^[ \t]*;[ \t]*/.exec(source.slice(s.to))
@@ -82,12 +124,11 @@ export function intoView(source: string, body: readonly Stmt[]): TextChange[] {
       const at = lineStart(close)
       changes.push({ from: at, to: at, insert: rows })
     } else if (tall) changes.push({ from: close, to: close, insert: `\n${rows}` })
-    else
-      changes.push({
-        from: close,
-        to: close,
-        insert: `${inner.trim() ? `${inner.endsWith(' ') ? '' : ' '}; ` : ' '}${lines.join('; ')} `,
-      })
+    else if (inner.trim()) {
+      // after its last setting, before the space that closes it
+      const end = view.bodySpan.from + 1 + inner.trimEnd().length
+      changes.push({ from: end, to: end, insert: `; ${lines.join('; ')}` })
+    } else changes.push({ from: close, to: close, insert: ` ${lines.join('; ')} ` })
   } else if (view)
     changes.push({ from: view.to, to: view.to, insert: tall ? ` {\n${rows}}` : ` { ${lines.join('; ')} }` })
   else {

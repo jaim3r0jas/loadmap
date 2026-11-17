@@ -17,6 +17,30 @@ function at(src: string) {
 const inside = (opener: string, line: string) => checkout.replace(opener, `${opener}\n  ${line}`)
 
 describe('completions', () => {
+  it('offers what the language writes now: a pool its workers, view its direction, nothing 1.5 dropped', () => {
+    const pool = at(inside('pool workerPool "Workers" `${pods} pods × ${threads} threads` {', '|')).labels
+    expect(pool).toEqual(expect.arrayContaining(['placement', 'stageLabel', 'autoscale']))
+    // pods and perPod are written already; the workers block and sub: are gone
+    for (const gone of ['pods', 'perPod', 'workers', 'sub']) expect(pool).not.toContain(gone)
+    const top = at(checkout.replace('\ntitle:', '\n|\ntitle:')).labels
+    for (const moved of ['direction', 'rows', 'layout', 'grid', 'speed']) expect(top).not.toContain(moved)
+    expect(at(checkout.replace('view {\n  speed: 10', 'view {\n  |\n  speed: 10')).labels).toEqual([
+      'fullScreen',
+      'lanes',
+      'direction',
+      'rows',
+    ])
+    expect(at(`${checkout}\nphones -> db {\n  |\n}\n`).labels).toEqual(['when'])
+    // a file of 1.4 is offered what 1.4 writes: the direction at the top, a pool's workers in their block
+    const v14 = checkout.replace('loadmap 1.5', 'loadmap 1.4')
+    expect(at(v14.replace('\ntitle:', '\n|\ntitle:')).labels).toContain('direction')
+    const snippet = (src: string) =>
+      at(src.replace('\ntitle:', '\npo|\ntitle:')).c.options.find((o) => o.label === 'pool')?.snippet
+    expect(snippet(v14)).toContain('workers { pods: ')
+    expect(snippet(checkout)).not.toContain('workers')
+    expect(snippet(checkout)).toContain('perPod: ')
+  })
+
   it('offers the entries of a table after its dot', () => {
     expect(at(inside('flow orders "orders" {', 'rate: flows.ev|')).labels).toEqual(['orders', 'events'])
     expect(at(inside('flow orders "orders" {', 'rate: util.|')).labels).toEqual([

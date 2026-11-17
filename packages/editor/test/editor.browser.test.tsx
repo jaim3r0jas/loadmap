@@ -688,6 +688,7 @@ describe('the editor filling its container', () => {
   })
 
   it('switches the lanes’ fills and the dot grid from the View menu, and gives a lane its own colour', async () => {
+    localStorage.removeItem('loadmap:editor:grid')
     const { host, handle } = await fill(1400, { layout: 'reader' })
     const lanes = () =>
       [...host.querySelectorAll('.lme-preview .lm-tier')].map((g) => g.querySelector<SVGRectElement>('[data-lane]'))
@@ -704,12 +705,14 @@ describe('the editor filling its container', () => {
     await expect.element(item('Lane fills')).toHaveAttribute('aria-checked', 'true')
     await expect.element(item('Dot grid')).toHaveAttribute('aria-checked', 'true')
     await userEvent.keyboard('{Escape}')
-    // each switch writes a line of the text, and switched back takes it out
+    // the grid is the reader's, kept in this browser: the text stays as it is
     const before = handle.source()
     await view('Dot grid')
-    expect(handle.source()).toContain('\n  grid: false\n')
+    expect(handle.source()).toBe(before)
+    expect(localStorage.getItem('loadmap:editor:grid')).toBe('off')
     await expect.poll(() => host.querySelector('.lme-canvas')!.getAttribute('data-grid')).toBe('off')
     expect(getComputedStyle(lanes()[0]!).fillOpacity).toBe('1')
+    // the lanes' fills write a line of the text, and switched back take it out
     await view('Lane fills')
     expect(handle.source()).toContain('\n  lanes: striped\n')
     await expect.poll(() => lanes().map((r) => !!r)).toEqual([false, true, false])

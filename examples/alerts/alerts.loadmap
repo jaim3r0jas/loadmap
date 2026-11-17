@@ -131,7 +131,9 @@ cluster brokers "Brokers" "two topics, three brokers" {
 }
 
 pool alertPipeline "Alert pipeline" `${alertPods} pods × 8 · high priority` {
-  workers "alert pipeline" { pods: alertPods; perPod: 8 }
+  stageLabel: "alert pipeline"
+  pods: alertPods
+  perPod: 8
   short: "the alert pipeline"
   demand: alertCores(flows.alerts)
   capacity: measured(alertPods * 1, "cores", "pod CPU limit")
@@ -140,7 +142,9 @@ pool alertPipeline "Alert pipeline" `${alertPods} pods × 8 · high priority` {
 }
 
 pool positionConsumer "Position consumer" `${posPods} pods × 16` {
-  workers "position consumer" { pods: posPods; perPod: 16 }
+  stageLabel: "position consumer"
+  pods: posPods
+  perPod: 16
   short: "the position consumer"
   demand: flows.positions * 1.5ms
   capacity: measured(posPods * 2, "cores", "pod CPU limit")

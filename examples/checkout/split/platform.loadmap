@@ -8,7 +8,8 @@ pool podPool "Workers" {
   input threads = 8
   input cores = 1
   input need
-  workers { pods: pods; perPod: threads }
+  pods: pods
+  perPod: threads
   demand: need
   capacity: measured(pods * cores, "cores", "pod CPU limit")
   describe: `${pods} pods × ${threads} threads, ${cores} cores each`

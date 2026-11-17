@@ -45,6 +45,8 @@ const HOVER = { open: 150, close: 400 } as const
 
 export interface EditorCanvasProps {
   def: Definition
+  /** The dot grid behind the diagram: the reader's own setting, not the definition's. */
+  grid: boolean
   look: 'auto' | 'light' | 'dark'
   initial: Partial<Values<any>>
   onNodeClick: (id: string) => void
@@ -72,6 +74,7 @@ export interface EditorCanvasProps {
  */
 export function EditorCanvas({
   def,
+  grid,
   look,
   initial,
   onNodeClick,
@@ -117,7 +120,7 @@ export function EditorCanvas({
   } as React.CSSProperties
   return (
     <LoadmapRoot lm={lm} theme={look}>
-      <div className="lme-canvas" style={free} data-grid={def.options.grid === false ? 'off' : undefined}>
+      <div className="lme-canvas" style={free} data-grid={grid ? undefined : 'off'}>
         <Diagram lm={lm} canvas={{ top, bottom }} onNodeClick={onNodeClick} selected={selected} />
         {note && <div className="lme-over lme-over-note">{note}</div>}
         {phone ? (

@@ -127,13 +127,15 @@ describe('compile', () => {
     expect(r.diagnostics).toEqual([
       expect.objectContaining({
         severity: 'warning',
-        message: 'layout: down is now direction: down',
+        message: 'layout: down is now direction: down (an error from loadmap 1.5)',
         hint: 'loadmap fmt rewrites it',
       }),
     ])
     const both = compile(def({ top: 'direction: right\nlayout: down' }))
     expect(both.definition!.options.direction).toBe('RIGHT')
-    expect(both.diagnostics.map((d) => d.message)).toEqual(['layout: down is ignored: direction sets the direction'])
+    expect(both.diagnostics.map((d) => d.message)).toEqual([
+      'layout: down is ignored: direction sets the direction (an error from loadmap 1.5)',
+    ])
   })
 
   it('reads an overloaded word under its old name: a warning from 1.1, the spelling of 1.0', () => {
@@ -146,11 +148,16 @@ describe('compile', () => {
     expect(r.diagnostics.map((d) => ({ code: d.code, message: d.message, hint: d.hint, data: d.data }))).toEqual([
       {
         code: 'deprecated',
-        message: 'target is now underTarget',
+        message: 'target is now underTarget (an error from loadmap 1.5)',
         hint: 'loadmap fmt rewrites it',
         data: { to: 'underTarget' },
       },
-      { code: 'deprecated', message: 'full is now notFull', hint: 'loadmap fmt rewrites it', data: { to: 'notFull' } },
+      {
+        code: 'deprecated',
+        message: 'full is now notFull (an error from loadmap 1.5)',
+        hint: 'loadmap fmt rewrites it',
+        data: { to: 'notFull' },
+      },
     ])
     // in a definition of 1.0 the old name is the only one: nothing to say, and the new one is from 1.1
     const v1 = (top: string) => def({ top }).replace('loadmap 1.1', 'loadmap 1')
@@ -693,32 +700,30 @@ push -> desks
 
   it('read how the page looks and plays from view { … }, and from the top in a file from before it', () => {
     const at = (top: string, version = '1.2') => compile(def({ top }).replace('loadmap 1.1', `loadmap ${version}`))
-    const block = at('view { speed: 4; transition: 0; fullScreen: [verdict]; fullScreenMode: focus; grid: false }')
+    const block = at('view { speed: 4; transition: 0; fullScreen: [verdict]; fullScreenMode: focus }')
     expect(block.diagnostics).toEqual([])
     expect(block.definition!.options).toMatchObject({
       speed: 4,
       transition: 0,
       fullScreen: ['verdict'],
       fullScreenMode: 'focus',
-      grid: false,
     })
     // the same settings at the top, as 1.1 wrote them: silent there, an old spelling from 1.2
-    const top = 'speed: 4\ntransition: 0\nfullScreen: [verdict]\nfullScreenMode: focus\ngrid: false'
+    const top = 'speed: 4\ntransition: 0\nfullScreen: [verdict]\nfullScreenMode: focus'
     const old = at(top, '1.1')
     expect(old.diagnostics).toEqual([])
     expect(old.definition!.options).toEqual(block.definition!.options)
     const now = at(top)
     expect(now.definition!.options).toEqual(block.definition!.options)
     expect(now.diagnostics.map((d) => `${d.severity}[${d.code}] ${d.message}`)).toEqual([
-      'warning[deprecated] speed is now in view { … }',
-      'warning[deprecated] transition is now in view { … }',
-      'warning[deprecated] fullScreen is now in view { … }',
-      'warning[deprecated] fullScreenMode is now in view { … }',
-      'warning[deprecated] grid is now in view { … }',
+      'warning[deprecated] speed is now in view { … } (an error from loadmap 1.5)',
+      'warning[deprecated] transition is now in view { … } (an error from loadmap 1.5)',
+      'warning[deprecated] fullScreen is now in view { … } (an error from loadmap 1.5)',
+      'warning[deprecated] fullScreenMode is now in view { … } (an error from loadmap 1.5)',
     ])
     const messages = (t: string, version?: string) => at(t, version).diagnostics.map((d) => d.message)
     expect(messages('speed: 4\nview { speed: 5 }')).toEqual(['"speed" is set here and in view'])
-    expect(messages('view { speed: 5 }\nview { grid: false }')).toEqual(['only one view block is allowed'])
+    expect(messages('view { speed: 5 }\nview { lanes: striped }')).toEqual(['only one view block is allowed'])
     expect(messages('view { transition: 9 }')).toEqual(['transition is 9 seconds; 0 to 5'])
     expect(messages('view { title: "x" }')[0]).toBe('unknown property "title" in view')
     expect(messages('view { speed: 5 }', '1.1')).toEqual([
@@ -1063,7 +1068,9 @@ describe('the checker', () => {
       '"describe" belongs to a component, and this box has no capacity | give the box capacity and over lines, or drop it',
     ])
     expect(hint('node users "Users" { describe: fast ? "a" : "b" }')[0]).toContain('or drop it')
-    expect(hint('node users { describe: "people" }')[0]).toContain('write sub: "people"')
+    expect(hint('node users { describe: "people" }')[0]).toContain(
+      'put it on the first line: node users "users" "people"',
+    )
     // with a stage, the same slip: one error
     expect(
       errors(
@@ -1092,7 +1099,7 @@ describe('the checker', () => {
     expect(errors(def().replace('client -> api', 'client -> api: { label: "HTTPS"; when: load > 1 }'))).toEqual([
       {
         message: 'drop the ":" before a { … } block',
-        hint: 'client -> api { label: …; when: … }',
+        hint: 'client -> api: "…" { when: … }',
         text: ':',
       },
     ])
@@ -1578,7 +1585,7 @@ users -> gw -> api -> db
   it('warn only where nothing else carries the dots: a twin edge shown, or a way no unit takes', () => {
     const twin = SRC.replace(
       'users -> gw -> api -> db',
-      'users -> gw -> api\napi -> db { label: "sync"; when: fast }\napi -> db { label: "async"; when: !fast }',
+      'users -> gw -> api\napi -> db: "sync" { when: fast }\napi -> db: "async" { when: !fast }',
     )
     expect(all(twin)).toEqual([])
     const way = SRC.replace('route: gw -> api -> db', 'route: gw -> router -> db')
@@ -1733,7 +1740,7 @@ api -> failed
 })
 
 describe('losses no lost box counts', () => {
-  const SRC = `loadmap 1.1
+  const SRC = `loadmap 1.5
 load { max: 10 }
 flow req "requests" { rate: 100 * load; route: limiter -> api; from: users }
 flow ev "events" {
@@ -1748,7 +1755,8 @@ node limiter "Limiter" { limit; capacity: configured(1_500, "req/s", "gateway co
 node api "API" { pass; capacity: measured(1_000, "req/s"); over: "503s" }
 cluster kafka "Kafka" { members: 3; queue topic { partitions { ev: 3 } } }
 pool crew "Pool" {
-  workers { pods: 2; perPod: 2 }
+  pods: 2
+  perPod: 2
   capacity: measured(100, "ev/s")
   service: 0.01
   over: "lag"
@@ -2123,5 +2131,143 @@ describe('strict formulas', () => {
     ])
       expect(marks(def({ top })), top).toEqual([])
     expect(marks(def({ extra: 'preset "big" { load: 10; pods: 3 }' }))).toEqual([])
+  })
+})
+
+describe('loadmap 1.5: one spelling each', () => {
+  const at = (v: string, o: Parameters<typeof def>[0] = {}) => def(o).replace('loadmap 1.1', `loadmap ${v}`)
+  const said = (src: string) =>
+    compile(src).diagnostics.map((d) => `${d.severity}[${d.code}] ${d.message} | ${src.slice(d.from, d.to)}`)
+  const x = (src: string) => (compile(src).definition?.model.evaluate({}).ctx.derived as { x?: unknown } | undefined)?.x
+  // a pool with nothing flowing through it, enough to read its stage
+  const POOL = (lines: string) =>
+    `pool w "W" {\n${lines}\n  demand: 1\n  capacity: measured(2, "cores")\n  over: "lag"\n}`
+
+  it('reads direction, rows and layout in view { … }, and refuses them at the top', () => {
+    const view = compile(at('1.5', { top: 'view { direction: down; rows: 2; layout: stable }' }))
+    expect(view.diagnostics).toEqual([])
+    expect(view.definition!.options).toMatchObject({ direction: 'DOWN', rows: 2 })
+    expect(view.definition!.view.def.layout).toBe('stable')
+    // a file of 1.4 writes them at the top, as it did: no word about it, and the same page
+    const old = compile(at('1.4', { top: 'direction: down\nrows: 2\nlayout: stable' }))
+    expect(old.diagnostics).toEqual([])
+    expect(old.definition!.options).toEqual(view.definition!.options)
+    expect(old.definition!.view.def.layout).toBe('stable')
+    expect(said(at('1.5', { top: 'direction: down\nrows: 2\nlayout: stable' }))).toEqual([
+      'error[deprecated] direction is now in view { … } | direction',
+      'error[deprecated] rows is now in view { … } | rows',
+      'error[deprecated] layout is now in view { … } | layout',
+    ])
+    expect(said(at('1.4', { top: 'view { direction: down }' }))).toEqual([
+      'error[language-version] "direction:" is from loadmap 1.5; this definition says loadmap 1.4 | direction',
+    ])
+  })
+
+  it('refuses the direction under its old name, layout: down, from 1.5, and moves it into view', () => {
+    expect(said(at('1.5', { top: 'layout: down' }))).toEqual([
+      'error[deprecated] layout: down is now direction: down in view { … } | layout',
+    ])
+    expect(compile(at('1.5', { top: 'layout: down' })).diagnostics[0]!.data).toEqual({ view: 'layout' })
+    expect(said(at('1.4', { top: 'layout: down' }))).toEqual([
+      'warning[deprecated] layout: down is now direction: down (an error from loadmap 1.5) | layout',
+    ])
+  })
+
+  it('reads a "%" after a number as a share, and refuses the remainder between two values', () => {
+    expect(x(at('1.5', { top: 'let x = 30%+1' }))).toBe(1.3)
+    expect(x(at('1.5', { top: 'let x = mod(10, 3)' }))).toBe(1)
+    expect(said(at('1.5', { top: 'let x = pods % 2' }))).toEqual([
+      'error[remainder] "%" between two values is the remainder: mod(pods, 2) | pods % 2',
+    ])
+    // before 1.5 it is the remainder still, and says what to write
+    expect(x(at('1.4', { top: 'let x = 10 % 3' }))).toBe(1)
+    expect(said(at('1.4', { top: 'let x = 10 % 3' }))).toEqual([
+      'warning[remainder] "%" between two values is the remainder: mod(10, 3) (an error from loadmap 1.5) | 10 % 3',
+    ])
+    expect(compile(at('1.4', { top: 'let x = 10 % 3' })).diagnostics[0]!.data).toEqual({ mod: 'mod(10, 3)' })
+    // what it says to write has no "%" left, nor parentheses mod() makes needless
+    expect(compile(at('1.5', { top: 'let x = pods % 3 % 2' })).diagnostics.map((d) => d.hint)).toEqual([
+      'write mod(mod(pods, 3), 2)',
+      'write mod(pods, 3)',
+    ])
+    expect(compile(at('1.5', { top: 'let x = (pods + 1) % 2' })).diagnostics[0]!.hint).toBe('write mod(pods + 1, 2)')
+  })
+
+  it('warns at === and !==, and at derived.x, which read as they always did', () => {
+    for (const v of ['1.4', '1.5']) {
+      expect(x(at(v, { top: 'let x = pods === 2 ? 1 : 0' }))).toBe(1)
+      expect(said(at(v, { top: 'let x = pods !== 2' }))).toEqual(['warning[deprecated] !== is now != | !=='])
+      expect(x(at(v, { top: 'let y = 4\nlet x = derived.y + 1' }))).toBe(5)
+      expect(said(at(v, { top: 'let y = 4\nlet x = derived.y + 1' }))).toEqual([
+        'warning[deprecated] derived.y is now y | derived.y',
+      ])
+    }
+  })
+
+  it('refuses sub:, an edge block’s label:, a param’s tag and the view’s grid from 1.5, and warns before', () => {
+    const edge = (v: string) => at(v).replace('client -> api', 'client -> api { label: "HTTPS"; when: pods > 1 }')
+    const cases: [(v: string) => string, string][] = [
+      [(v) => at(v, { extra: 'node n "N" { sub: "two" }' }), '"sub" is no longer a property of node | sub'],
+      [edge, '"label" is no longer a property of an edge | label'],
+      [
+        (v) => at(v, { top: 'param t "T" { default: true; tag: "estimate" }' }),
+        '"tag" is no longer a property of param | tag',
+      ],
+      [(v) => at(v, { top: 'view { grid: false }' }), '"grid" is no longer a property of view | grid'],
+    ]
+    for (const [src, message] of cases) {
+      expect(said(src('1.5'))).toEqual([`error[removed] ${message}`])
+      expect(said(src('1.4'))).toEqual([`warning[removed] ${message.replace(' |', ' (an error from loadmap 1.5) |')}`])
+    }
+    // what an edge's block holds is what its version reads
+    const lable = (v: string) => at(v).replace('client -> api', 'client -> api { lable: "x" }')
+    expect(compile(lable('1.5')).diagnostics[0]!.message).toBe('an edge holds only when')
+    expect(compile(lable('1.4')).diagnostics[0]!.message).toBe('an edge holds only label and when')
+  })
+
+  it('reads a pool’s workers from the pool, as its workers block read them', () => {
+    const stage = (v: string, lines: string) =>
+      (compile(at(v, { extra: POOL(lines) })).definition?.model as { def?: { stages?: Record<string, unknown> } })?.def
+        ?.stages?.w
+    const block = stage('1.4', '  workers "the work" { pods: 2; perPod: 4; placement: in-order }')
+    expect(block).toEqual({
+      kind: 'workers',
+      component: 'w',
+      label: 'the work',
+      perPod: 4,
+      pods: 2,
+      placement: 'in-order',
+    })
+    expect(stage('1.5', '  stageLabel: "the work"\n  pods: 2\n  perPod: 4\n  placement: in-order')).toEqual(block)
+    expect(stage('1.5', '  perPod: 4\n  autoscale { min: 1; max: 3; target: 0.7 }')).toMatchObject({
+      perPod: 4,
+      autoscale: { min: 1, max: 3, target: 0.7 },
+    })
+    const removed = (v: string) => said(at(v, { extra: POOL('  workers { pods: 2; perPod: 4 }') }))
+    expect(removed('1.5').filter((m) => m.includes('[removed]'))).toEqual([
+      'error[removed] "workers" is no longer a statement | workers',
+    ])
+    expect(removed('1.4').filter((m) => m.includes('[removed]'))).toEqual([
+      'warning[removed] "workers" is no longer a statement (an error from loadmap 1.5) | workers',
+    ])
+    expect(removed('1.4').filter((m) => m.startsWith('error'))).toEqual([])
+  })
+
+  it('says what a pool of 1.5 lacks, and refuses its lines in a file of 1.4', () => {
+    const errs = (v: string, lines: string) =>
+      compile(at(v, { extra: POOL(lines) }))
+        .diagnostics.filter((d) => d.severity === 'error')
+        .map((d) => d.message)
+    expect(errs('1.5', '  pods: 2')).toEqual(['"pool" needs "perPod: …"'])
+    expect(errs('1.5', '  perPod: 2')).toEqual(['a pool needs pods, or autoscale'])
+    expect(errs('1.5', '  pods: 2\n  perPod: 4\n  workers { pods: 2; perPod: 4 }')).toEqual([
+      '"pods" is set on the pool, which also has a workers block',
+      '"workers" is no longer a statement',
+    ])
+    expect(errs('1.4', '  pods: 2\n  perPod: 4')).toEqual([
+      '"pods:" is from loadmap 1.5; this definition says loadmap 1.4',
+      '"perPod:" is from loadmap 1.5; this definition says loadmap 1.4',
+    ])
+    expect(errs('1.4', '')).toEqual(['a pool needs exactly one workers stage'])
   })
 })

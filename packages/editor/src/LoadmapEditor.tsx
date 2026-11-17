@@ -111,6 +111,8 @@ export interface EditorFiles {
 
 /** The path a text has when nothing says another: a definition in one file. */
 const ONE = 'input.loadmap'
+/** Where this browser keeps the reader's choice of the canvas's dot grid. */
+const GRID_KEY = 'loadmap:editor:grid'
 
 /** `code`: the text beside the diagram. `reader`: the diagram with an inspector, the text hidden. */
 export type EditorLayout = 'code' | 'reader'
@@ -265,6 +267,14 @@ export function LoadmapEditor({
     const a = around()
     return a ? { path: a.path, files: a.files } : {}
   }
+  const [gridChoice, setGridChoice] = useState<boolean | null>(() => {
+    try {
+      const said = localStorage.getItem(GRID_KEY)
+      return said == null ? null : said !== 'off'
+    } catch {
+      return null
+    }
+  })
   const [tabs, setTabs] = useState(() => [set.current.entry, ...Object.keys(set.current.others).sort()])
   const [active, setActive] = useState(set.current.entry)
   // the files with a tab, in the order they were opened: what shows, never what the definition is. The model's is
@@ -1103,9 +1113,18 @@ export function LoadmapEditor({
       <Starters templates={templates || undefined} sheet={sheet} onPick={startFrom} />
     </Suspense>
   )
-  // the lanes' fills and the canvas's grid: a line of the text each, written only when it differs from the default
+  // the lanes' fills: a line of the text, written only when it differs from the default
   const filled = def?.view.def.lanes !== 'striped'
-  const grid = def?.options.grid !== false
+  // the canvas's grid is the reader's, kept in this browser; a definition from before 1.5 that says grid: false starts it
+  const grid = gridChoice ?? def?.options.grid !== false
+  const toggleGrid = () => {
+    setGridChoice(!grid)
+    try {
+      localStorage.setItem(GRID_KEY, grid ? 'off' : 'on')
+    } catch {
+      // a private window: the choice lasts as long as the page
+    }
+  }
   // while the text has errors, as the inspector, they change nothing: no line can be written then
   const lookItems = (sheet?: boolean) =>
     !errors && (
@@ -1119,7 +1138,7 @@ export function LoadmapEditor({
           Lane fills
         </MenuItem>
         {canvas && (
-          <MenuItem sheet={sheet} toggle checked={grid} onSelect={() => setOwn(['', 'grid', grid ? false : null])}>
+          <MenuItem sheet={sheet} toggle checked={grid} onSelect={toggleGrid}>
             Dot grid
           </MenuItem>
         )}
@@ -1518,6 +1537,7 @@ export function LoadmapEditor({
                 key={state.doc}
                 ref={preview}
                 def={def}
+                grid={grid}
                 look={look}
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
