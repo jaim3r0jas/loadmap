@@ -268,6 +268,8 @@ class Help {
       if (k === 'component' && boxKind) return !has.has(k) && !ownComponent
       // with sets the inputs of what this one is like
       if (k === 'with') return written.has('like') && !has.has(k)
+      // an input goes at the top of a library's box or subsystem, never in a model
+      if (k === 'input') return head.role === 'library' && this.path.length === 1
       return true
     }
     const fields = props(spec.props, written, this.version).filter((p) =>

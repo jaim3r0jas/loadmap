@@ -374,6 +374,11 @@ describe('completions that leave out what would not compile', () => {
     for (const k of ['capacity', 'demand', 'over']) expect(owned).not.toContain(k)
     // a cluster holds several queues
     expect(at(checkout.replace('  members: 3', '  members: 3\n  |')).labels).toContain('queue')
+    // an input only at the top of a library's box or subsystem
+    expect(fresh).not.toContain('input')
+    const library = `loadmap ${LANGUAGE_VERSION}\nlibrary\nsubsystem s {\n  |\n  node n "N" {\n    pass\n  }\n}\n`
+    expect(at(library).labels).toContain('input')
+    expect(at(library.replace('|\n', '').replace('    pass\n', '    pass\n    |\n')).labels).not.toContain('input')
     // with sets the inputs of what the box is like: only after a like
     expect(fresh).not.toContain('with')
     expect(at(`${checkout}\nnode x "X" {\n  like: db\n  |\n}`).labels).toContain('with')
