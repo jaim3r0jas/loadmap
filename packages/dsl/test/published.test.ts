@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { compile, completions, format, hover, loadCatalog, loadedCatalog, needsCatalog, rename } from '../src'
-import { addPublished, catalogBox } from '../src/add'
+import { addPublished, catalogBox, catalogStage } from '../src/add'
 import { edit, inspect } from '../src/internal'
 
 const SRC = `loadmap 1
@@ -219,6 +219,17 @@ gateway -> consumers
 
     it("draws every component in the box its kind's stage lives in", () => {
       for (const c of Object.values(latest())) expect(catalogBox(c).box, c.id).toBe(c.box)
+    })
+
+    it("runs a store where every route ends at it, a pass where one goes on, its kind's stage otherwise", () => {
+      const db = latest().cockroachdb!
+      expect([catalogStage(db, []), catalogStage(db, [true, true]), catalogStage(db, [true, false])]).toEqual([
+        'store',
+        'store',
+        'pass',
+      ])
+      expect(catalogStage(latest().kafka!, [false])).toBe('queue')
+      expect(catalogStage(latest().kubernetes!, [])).toBeUndefined()
     })
 
     it('puts a Kafka topic between two stages: route, edges, partitions, the consumer group, bytes in MB/s', () => {

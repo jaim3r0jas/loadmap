@@ -40,6 +40,15 @@ export function catalogBox(c: Pick<CatalogComponent, 'kind'>): {
   }
 }
 
+/**
+ * The stage a new box runs when none is picked: a store where every route it is on ends at it (a store ends a flow),
+ * else a pass for a database; its kind's one stage otherwise. `ends`: for each route, whether it ends at the box.
+ */
+export function catalogStage(c: Pick<CatalogComponent, 'kind'>, ends: readonly boolean[]): CatalogStage | undefined {
+  const { stages } = catalogBox(c)
+  return stages.includes('store') && !ends.every(Boolean) ? 'pass' : stages[0]
+}
+
 /** Where a new box goes on a flow's route: at an index of it, 0 before its first stage, its length after its last. */
 export interface CatalogRoute {
   flow: string
@@ -187,6 +196,9 @@ export function catalogFlows(source: string): CatalogFlow[] {
   })
 }
 
+/** The errors of the text a pick was last added to, with the options it compiled under. */
+let known: { source: string; options: CompileOptions | undefined; errors: string[] } | undefined
+
 /**
  * The text with a `published` statement added, and a new box that uses it or a box's capacity set to it: text only,
  * the smallest change, refused (with the reason) when the definition would gain an error. A new box is the generic
@@ -282,7 +294,9 @@ export function addPublished(source: string, pick: CatalogPick, options?: Compil
     compile(src, options)
       .diagnostics.filter((x) => x.severity === 'error')
       .map((x) => x.message)
-  const before = errors(source)
+  // a picker asks again on every change to the pick, of the same text: its own errors are worked out once
+  if (known?.source !== source || known.options !== options) known = { source, options, errors: errors(source) }
+  const before = known.errors
   const attempt = (all: TextChange[]) => {
     // from the end back; at one offset the later change first, so the box's own lines come before the statement
     const order = new Map(all.map((ch, i) => [ch, i]))
@@ -358,7 +372,10 @@ function newBox(
   // a store ends a flow: it stands only where every route ends
   const stage =
     use.stage ??
-    (kind.stages.includes('store') && !placed.every((p) => p.at === p.chain.length) ? 'pass' : kind.stages[0])
+    catalogStage(
+      c,
+      placed.map((p) => p.at === p.chain.length),
+    )
   if (stage && !kind.stages.includes(stage))
     return { error: `${c.name} runs ${kind.stages.length ? kind.stages.join(' or ') : 'no stage'}, not ${stage}` }
   if (stage === 'cache' && use.hit != null && !(use.hit >= 0 && use.hit <= 1))

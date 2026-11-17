@@ -506,7 +506,10 @@ A demand in bytes is brought to the figure's unit, as to any capacity's: `demand
 Count each unit at the size the run was made with (its `messageSize`); a size of your own is a condition no run
 matches. **Add → From the catalog** (the editor, and the command in VS Code) writes the statement and a box of the
 component's kind running its stage: a cluster with a queue for Kafka and RabbitMQ, a node with a cache for Valkey, a
-store for a database (a pass where a route goes on), a pass for a proxy. Its demand is in the figure's unit.
+store for a database (a pass where a route goes on), a pass for a proxy. Its demand is in the figure's unit. In the
+editor it asks how flows use the box: the flows that pass it and where on each route (the edges each hop needs come
+with it), a queue's partitions and the rule the pool after it reads by (`kafka/consumer-group`), a cache's hit ratio,
+and shows the text it writes before it adds it.
 
 A published figure is a best case elsewhere, not a measurement of your system: the verdict says "(capacity
 published, a best case)", and the assumptions name its conditions, who ran it and link its source. Autocomplete

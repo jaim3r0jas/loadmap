@@ -29,13 +29,13 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-async function mount() {
+async function mount(initial = SOURCE) {
   await page.viewport(1440, 1000)
   const host = document.createElement('div')
   document.body.appendChild(host)
   const ref = createRef<LoadmapEditorHandle>()
   root = createRoot(host)
-  root.render(<LoadmapEditor ref={ref} initial={SOURCE} />)
+  root.render(<LoadmapEditor ref={ref} initial={initial} />)
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
   await ref.current!.loadmap()!.ready()
   const view = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!
@@ -88,5 +88,87 @@ describe('the catalog picker', () => {
         timeout: 5000,
       })
       .toBeTruthy()
+  })
+})
+
+// a shop with a gateway in front of a pool: where a topic, a cache or a database goes on a route
+const SHOP = `loadmap 1.5
+title: "Shop"
+load { max: 10 }
+
+flow orders "orders" { from: phones; rate: 100 * load; route: gateway -> consumers }
+
+node phones "Phones"
+node gateway "Gateway" { pass; capacity: estimated(1000, "req/s"); over: "phones wait" }
+pool consumers "Consumers" { pods: 2; perPod: 4; capacity: estimated(1000, "req/s"); over: "a backlog grows" }
+
+phones -> gateway
+gateway -> consumers
+`
+
+describe('how flows use a box from the catalog', () => {
+  it('puts a Kafka topic on a route, in front of the pool that drains it as a consumer group', async () => {
+    const { host, view } = await mount(SHOP)
+    await open()
+    await userEvent.click(page.getByRole('button', { name: /^Apache Kafka/ }))
+    await userEvent.click(page.getByRole('checkbox', { name: 'orders' }))
+    await expect.element(page.getByRole('combobox', { name: 'Where on the route of orders' })).toHaveValue('1')
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'Partitions per flow' }), '12')
+    await userEvent.selectOptions(page.getByRole('combobox', { name: 'Read by the next pool' }), 'kafka/consumer-group')
+    const dialog = page.getByRole('dialog').element()
+    // the demand in the figure's unit, at the message size of its run, and the text before it is added
+    expect(dialog.querySelector('.lme-catalog-demand')?.textContent).toBe(
+      'Demand: what reaches it × 1KB, the message size of the published run, in MB/s.',
+    )
+    await expect.element(page.getByLabelText('The text it writes')).toHaveTextContent('demand: at.kafka * 1KB')
+    // the edge it now stands in goes
+    expect([...dialog.querySelectorAll('.lme-catalog-text del')].map((d) => d.textContent)).toContain(
+      'gateway -> consumers',
+    )
+    await page.screenshot({ path: 'catalog-kafka.png', element: dialog })
+    await userEvent.click(page.getByRole('button', { name: 'Add as a new box' }))
+    const text = view.state.doc.toString()
+    expect(text).toContain('route: gateway -> kafka -> consumers }')
+    expect(text).toContain('queue { partitions { orders: 12 } }')
+    expect(text).toContain('connection kafkaConsumers {\n  hop: kafka -> consumers\n  rule: "kafka/consumer-group"\n}')
+    // the board ranks it by its published figure
+    await expect
+      .poll(() => host.querySelector('.lm-lim[data-component="kafka"] .lm-tag[data-kind="published"]'), {
+        timeout: 5000,
+      })
+      .toBeTruthy()
+  })
+
+  it('a cache answers its hit ratio; a database ends a flow, or lets it go on', async () => {
+    const { view } = await mount(SHOP)
+    await open()
+    await userEvent.click(page.getByRole('button', { name: /^Valkey/ }))
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'Hit ratio, %' }), '90')
+    await userEvent.click(page.getByRole('checkbox', { name: 'orders' }))
+    await expect.element(page.getByLabelText('The text it writes')).toHaveTextContent('cache { hit: 0.9 }')
+    await page.screenshot({ path: 'catalog-valkey.png', element: page.getByRole('dialog').element() })
+    await userEvent.click(page.getByRole('button', { name: /^CockroachDB/ }))
+    await userEvent.click(page.getByRole('checkbox', { name: 'orders' }))
+    // last on the route: flows end there
+    await expect.element(page.getByRole('radio', { name: 'Flows end here' })).toBeChecked()
+    await userEvent.selectOptions(page.getByRole('combobox', { name: 'Where on the route of orders' }), '1')
+    await expect.element(page.getByRole('radio', { name: 'Flows go on' })).toBeChecked()
+    // tpmC is no rate of units: what one is worth
+    await userEvent.fill(page.getByRole('spinbutton', { name: 'What one unit a second is, in tpmC' }), '60')
+    await expect.element(page.getByLabelText('The text it writes')).toHaveTextContent('demand: at.cockroachdb * 60')
+    await userEvent.click(page.getByRole('button', { name: 'Add as a new box' }))
+    expect(view.state.doc.toString()).toContain('route: gateway -> cockroachdb -> consumers }')
+  })
+
+  it('says why it cannot add, and adds nothing', async () => {
+    const { view } = await mount(SHOP)
+    const before = view.state.doc.toString()
+    await open()
+    await userEvent.click(page.getByRole('button', { name: /^Apache Kafka/ }))
+    await userEvent.fill(page.getByRole('textbox', { name: 'Id' }), 'gateway')
+    await expect.element(page.getByRole('alert')).toHaveTextContent('Not added: the text has a "gateway" already.')
+    // aria-disabled: a DOM click, as a Playwright click waits for an enabled button
+    ;(page.getByRole('button', { name: 'Add as a new box' }).element() as HTMLButtonElement).click()
+    expect(view.state.doc.toString()).toBe(before)
   })
 })
