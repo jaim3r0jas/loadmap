@@ -250,7 +250,8 @@ describe('the editor', () => {
     await expect.poll(() => host.querySelector('.lme-fdot'), { timeout: 5000 }).toBeNull()
     // the arrows, Home and End move between the tabs, the keyboard with them
     host.querySelector<HTMLElement>('.lme-ftab[data-active] [role="tab"]')!.focus()
-    await userEvent.keyboard('{ArrowRight}')
+    // the story's tab is the last: the library's is before it
+    await userEvent.keyboard('{ArrowLeft}')
     await expect.poll(() => activeTab(host)).toBe('platform.loadmap')
     await expect.poll(() => document.activeElement?.textContent).toBe('platform.loadmap')
     expect(view.state.doc.toString()).toBe(platform)
