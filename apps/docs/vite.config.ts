@@ -20,7 +20,15 @@ function pages(): Plugin {
       server.watcher.add([pages, ...files])
       server.watcher.on('change', (file) => {
         if (!file.startsWith(pages) && !files.has(file)) return
-        writePages(base)
+        // a page saved half written (a fence with no language yet) says so in the browser, and the server stays up
+        try {
+          writePages(base)
+        } catch (err) {
+          const { message, stack = '' } = err as Error
+          server.config.logger.error(message)
+          server.ws.send({ type: 'error', err: { message, stack } })
+          return
+        }
         server.ws.send({ type: 'full-reload' })
       })
       // llms.txt and llms-full.txt, read fresh on each request

@@ -9,6 +9,7 @@ import { type Browser, chromium, type Frame, type Page } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
+import { FENCES, highlight } from '../highlight'
 import { included, MOVED, PAGES, relative, render } from '../pages'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
@@ -30,6 +31,18 @@ function expectLinks(html: string, route: string, label: string) {
     }
   }
 }
+
+/** The text a piece of the build's own HTML shows: what is between its tags, the three entities the build writes read. */
+const textOf = (html: string) =>
+  html
+    .split(/<[^>]*>/)
+    .join('')
+    .split('&lt;')
+    .join('<')
+    .split('&gt;')
+    .join('>')
+    .split('&amp;')
+    .join('&')
 
 describe('the pages', () => {
   const rendered = PAGES.map((p) => ({ page: p, ...render(p) }))
@@ -90,9 +103,45 @@ describe('the pages', () => {
 
   it("show checkout's promises as its text writes them", () => {
     const html = rendered.find((r) => r.page.route === 'examples/checkout')!.html
-    expect(html).toContain(
-      'expect &quot;Today keeps 7×&quot; { underTarget: 7 }\nexpect &quot;Proposed keeps 14×&quot;',
-    )
+    // without the spans that colour it
+    expect(textOf(html)).toContain('expect "Today keeps 7×" { underTarget: 7 }\nexpect "Proposed keeps 14×"')
+  })
+
+  it('colour every fence at build time, each in a language it names, its text unchanged', () => {
+    const loadmap =
+      'node db "Database" {\n  store # the <primary> & its replicas\n  capacity: estimated(3_000, "queries/s")\n}'
+    const out = highlight(loadmap, 'loadmap', 'x.md')
+    expect(textOf(out.html)).toBe(loadmap)
+    expect(out.label).toBe('loadmap')
+    for (const [cls, token] of [
+      ['tok-keyword', 'node'],
+      ['tok-def', 'db'],
+      ['tok-string', '"Database"'],
+      ['tok-comment', '# the &lt;primary&gt; &amp; its replicas'],
+      ['tok-property', 'capacity'],
+      ['tok-accent', 'estimated'],
+      ['tok-number', '3_000'],
+    ])
+      expect(out.html).toContain(`<span class="${cls}">${token}</span>`)
+    const sample = 'const a = { "b": [1, true], c: "<d>" } // e\n'
+    for (const lang of FENCES) {
+      const { html } = highlight(sample, lang, 'x.md')
+      expect(textOf(html), lang).toBe(sample)
+      // every language but plain text finds something to colour
+      expect(html.includes('<span class="tok-'), lang).toBe(lang !== 'text')
+    }
+    expect(() => highlight('x', '', 'x.md')).toThrow('x.md has a fence with no language')
+    expect(() => highlight('x', 'rust', 'x.md')).toThrow('a fence in "rust"')
+    let fences = 0
+    for (const p of PAGES) {
+      const { html } = render(p)
+      const pres = [...html.matchAll(/<pre class="code"([^>]*)>/g)]
+      fences += pres.length
+      for (const [, attrs] of pres) expect(attrs, p.file).toMatch(/ data-lang="\w+" data-label="[\w ]+"$/)
+      // each with the button that copies it, hidden until the page's script makes it work
+      expect(html.match(/<button type="button" class="copy" hidden>/g)?.length ?? 0, p.file).toBe(pres.length)
+    }
+    expect(fences).toBeGreaterThan(80)
   })
 
   it('find the site root from any depth', () => {
@@ -107,10 +156,17 @@ describe('the built site', () => {
 
   beforeAll(async () => {
     out = await mkdtemp(join(tmpdir(), 'loadmap-docs-'))
-    await build({ configFile: config, logLevel: 'error', build: { outDir: out, emptyOutDir: true } })
+    // the runner: the config reads the editor's highlighter, a workspace package in TypeScript (apps/docs/CLAUDE.md)
+    await build({
+      configFile: config,
+      configLoader: 'runner',
+      logLevel: 'error',
+      build: { outDir: out, emptyOutDir: true },
+    })
     // GitHub Pages answers any origin (Access-Control-Allow-Origin: *): a sandboxed frame loads the scripts there too
     server = await preview({
       configFile: config,
+      configLoader: 'runner',
       logLevel: 'error',
       build: { outDir: out },
       preview: { port: 0, cors: true },
@@ -197,8 +253,10 @@ describe('the built site', () => {
     const first = [...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]!)
     expect(first.length).toBeGreaterThan(0)
     const kb = first.reduce((s, f) => s + gzipSync(readFileSync(join(out, f))).length, 0) / 1024
-    // with the light and dark switch, on every page (0.6 kB); an island is tens
-    expect(kb).toBeLessThan(5.5)
+    // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.7 kB): an
+    // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window
+    expect(kb).toBeLessThan(6.2)
+    expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
   it('draws the live parts in Chromium: examples, the quick start, a definition, the editor', async () => {
@@ -798,6 +856,229 @@ describe('the built site', () => {
     }
   }, 120_000)
 
+  describe('a snippet', () => {
+    let browser: Browser
+    beforeAll(async () => {
+      browser = await chromium.launch()
+    })
+    afterAll(() => browser?.close())
+
+    /** The text of a view as its lines draw it. */
+    const drawnText = (page: Page, nth = 0) =>
+      page
+        .locator('.snippet .cm-content')
+        .nth(nth)
+        .evaluate((el) => [...el.querySelectorAll('.cm-line')].map((l) => l.textContent).join('\n'))
+    /** Every snippet of the page with its view in place: each mounts when the pointer reaches it. */
+    async function mounted(page: Page) {
+      const snippets = page.locator('.snippet:not(details:not([open]) .snippet)')
+      const n = await snippets.count()
+      for (let i = 0; i < n; i++) {
+        // the snippet, not its <pre>: the view takes the <pre>'s place under the pointer as it arrives
+        await snippets.nth(i).hover()
+        await snippets.nth(i).locator('.cm-editor').waitFor()
+      }
+      return n
+    }
+    const boxes = (page: Page) =>
+      page.evaluate(() => ({
+        heights: [...document.querySelectorAll('.snippet')].map((el) => Math.round(el.getBoundingClientRect().height)),
+        page: document.documentElement.scrollHeight,
+      }))
+
+    it('is coloured and readable without scripts, and a view takes its place without moving the page', async () => {
+      const still = await browser.newContext({ viewport: { width: 1280, height: 900 }, javaScriptEnabled: false })
+      const plain = await still.newPage()
+      await plain.goto(`${url}language/`)
+      const looks = await plain.evaluate(() => {
+        const color = (s: string) => getComputedStyle(document.querySelector(s)!).color
+        return {
+          keyword: color('pre.code .tok-keyword'),
+          text: color('pre.code'),
+          views: document.querySelectorAll('.cm-editor').length,
+          copy: [...document.querySelectorAll<HTMLElement>('.snippet > .copy')].filter((b) => !b.hidden).length,
+        }
+      })
+      expect(looks.keyword).not.toBe(looks.text)
+      expect(looks).toMatchObject({ views: 0, copy: 0 })
+      const before = await boxes(plain)
+      await still.close()
+
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      const errors: string[] = []
+      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+      page.on('pageerror', (e) => errors.push(e.message))
+      await page.goto(`${url}language/`)
+      // untouched, every snippet stays the <pre>: all of its text in the page, for the browser's find and for print
+      await page.locator('.snippet > .copy:not([hidden])').first().waitFor({ state: 'attached' })
+      expect(await page.locator('.cm-editor').count()).toBe(0)
+      expect(await page.locator('.snippet pre[hidden]').count()).toBe(0)
+      const n = await mounted(page)
+      expect(n).toBe(before.heights.length)
+      expect(await boxes(page)).toEqual(before)
+      // the <pre> stays, hidden, as the text; the view shows the same text with the same tokens
+      const first = page.locator('.snippet').first()
+      expect(await first.locator('pre').isHidden()).toBe(true)
+      expect(await drawnText(page)).toBe(await first.locator('pre').evaluate((el) => el.textContent))
+      expect(
+        await first.evaluate((el) => {
+          const tokens = (s: string) => [...el.querySelectorAll(s)].map((t) => `${t.className}:${t.textContent}`)
+          return tokens('.cm-content [class^="tok-"]').join('|') === tokens('pre [class^="tok-"]').join('|')
+        }),
+      ).toBe(true)
+      expect(errors).toEqual([])
+      await page.close()
+    })
+
+    it('lets the cursor in, to select with the keyboard and to select all of it alone, and nothing edits', async () => {
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 900 },
+        permissions: ['clipboard-read', 'clipboard-write'],
+      })
+      const page = await context.newPage()
+      await page.goto(`${url}language/`)
+      const content = page.locator('.snippet .cm-content').first()
+      await page.locator('.snippet').first().hover()
+      await content.waitFor()
+      const text = (await page
+        .locator('.snippet pre')
+        .first()
+        .evaluate((el) => el.textContent))!
+      expect(text.split('\n').length).toBeGreaterThan(1)
+      expect(await content.getAttribute('aria-label')).toBe('loadmap snippet')
+      expect(await content.getAttribute('aria-readonly')).toBe('true')
+      expect(await content.getAttribute('role')).toBe('textbox')
+      // a phone keeps its keyboard down
+      expect(await content.getAttribute('inputmode')).toBe('none')
+
+      await content.click()
+      const focused = () => page.evaluate(() => document.activeElement?.className ?? '')
+      expect(await focused()).toContain('cm-content')
+      const selected = () => page.evaluate(() => getSelection()!.toString().replace(/\r/g, ''))
+      await page.keyboard.press('ControlOrMeta+a')
+      expect(await selected()).toBe(text)
+      // the caret moves and selects as in any text
+      await page.keyboard.press('ArrowLeft')
+      for (let i = 0; i < 4; i++) await page.keyboard.press('Shift+ArrowRight')
+      expect(await selected()).toBe(text.slice(0, 4))
+
+      await page.evaluate(() => navigator.clipboard.writeText('pasted'))
+      for (const key of ['x', 'Backspace', 'Delete', 'Enter', 'ControlOrMeta+x', 'ControlOrMeta+v'])
+        await page.keyboard.press(key)
+      await page.keyboard.type('typed')
+      // two frames: what a browser changed in the page would be drawn back by now
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      expect(await drawnText(page)).toBe(text)
+      await context.close()
+    })
+
+    it('copies all of it from a button the keyboard reaches, and says so until the focus leaves', async () => {
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 900 },
+        permissions: ['clipboard-read', 'clipboard-write'],
+      })
+      const page = await context.newPage()
+      await page.goto(`${url}recording/`)
+      const snippet = page.locator('.snippet').first()
+      const text = await snippet.locator('pre').evaluate((el) => el.textContent)
+      // the keyboard reaches the <pre>, and is in the view that takes its place
+      await snippet.locator('pre').focus()
+      await expect
+        .poll(() => snippet.locator('.cm-content').evaluate((el) => el === document.activeElement), { timeout: 5000 })
+        .toBe(true)
+      // a part selected: the button still copies the whole
+      await page.keyboard.press('Shift+ArrowRight')
+      // Tab is not the snippet's: it moves on, to its button
+      await page.keyboard.press('Tab')
+      const copy = snippet.getByRole('button', { name: 'Copy' })
+      expect(await copy.evaluate((el) => el === document.activeElement)).toBe(true)
+      expect(await copy.evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => snippet.locator('.copy').textContent(), { timeout: 5000 }).toBe('Copied')
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(text)
+      expect(await page.getByRole('status').textContent()).toBe('Copied')
+      // a press anywhere else takes it back, as a finger does (no pointer leaves, no focus moves)
+      await page.locator('h1').click()
+      expect(await snippet.locator('.copy').textContent()).toBe('Copy')
+      await snippet.locator('.copy').click()
+      await expect.poll(() => snippet.locator('.copy').textContent(), { timeout: 5000 }).toBe('Copied')
+      await snippet.locator('.copy').focus()
+      await page.keyboard.press('Tab')
+      expect(await snippet.locator('.copy').textContent()).toBe('Copy')
+      expect(await page.getByRole('status').textContent()).toBe('')
+      await context.close()
+    })
+
+    it("wears the editor's colours, light and dark", async () => {
+      for (const colorScheme of ['light', 'dark'] as const) {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme })
+        const editor = await context.newPage()
+        await editor.goto(`${url}editor/`)
+        await editor.waitForSelector('.lme .cm-content .cm-line span')
+        // the editor's tokens have no names: each kind by a text only it has
+        const want = await editor.evaluate(() => {
+          const spans = [...document.querySelectorAll<HTMLElement>('.lme .cm-content .cm-line span')]
+          const look = (is: (text: string) => boolean) => {
+            const style = getComputedStyle(spans.find((el) => is(el.textContent ?? ''))!)
+            return [style.color, style.fontWeight, style.fontStyle].join(' ')
+          }
+          return {
+            keyword: look((t) => t === 'loadmap'),
+            string: look((t) => t.startsWith('"')),
+            number: look((t) => /^\d/.test(t)),
+            comment: look((t) => t.startsWith('#')),
+            property: look((t) => t === 'title'),
+          }
+        })
+        const page = await context.newPage()
+        await page.goto(`${url}language/`)
+        await page.waitForSelector('.snippet .tok-keyword')
+        const got = await page.evaluate(() => {
+          // in a view or in a <pre> further down that has none yet: the same classes
+          const look = (kind: string) => {
+            const style = getComputedStyle(document.querySelector(`.snippet .tok-${kind}`)!)
+            return [style.color, style.fontWeight, style.fontStyle].join(' ')
+          }
+          return {
+            keyword: look('keyword'),
+            string: look('string'),
+            number: look('number'),
+            comment: look('comment'),
+            property: look('property'),
+          }
+        })
+        expect(got, colorScheme).toEqual(want)
+        await context.close()
+      }
+    })
+
+    it('fits a phone: a long line scrolls inside it, the page stays put, the button is always there', async () => {
+      const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+      const page = await phone.newPage()
+      await page.goto(`${url}language/`)
+      await mounted(page)
+      const fit = await page.evaluate(() => ({
+        page: document.documentElement.scrollWidth <= innerWidth,
+        inside: [...document.querySelectorAll('.snippet .cm-scroller')].some((el) => el.scrollWidth > el.clientWidth),
+        copy: [...document.querySelectorAll('.snippet > .copy')].every((el) => getComputedStyle(el).opacity === '1'),
+      }))
+      expect(fit).toEqual({ page: true, inside: true, copy: true })
+      await phone.close()
+    })
+
+    it('is the same under a live definition, once its text is opened', async () => {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await page.goto(`${url}concepts/`)
+      const island = page.locator('[data-island="loadmap"]').first()
+      await island.locator('summary').click()
+      await island.locator('.snippet').hover()
+      await island.locator('.snippet .cm-editor').waitFor()
+      expect(await island.locator('.snippet .cm-content').getAttribute('aria-label')).toBe('loadmap snippet')
+      expect(await island.locator('.snippet .tok-keyword').count()).toBeGreaterThan(0)
+      await page.close()
+    })
+  })
+
   describe('the light and dark switch', () => {
     let browser: Browser
     beforeAll(async () => {
@@ -818,7 +1099,7 @@ describe('the built site', () => {
           page: dark(document.body),
           boards: scheme('.lm:not(.lme)'),
           editor: scheme('.lme'),
-          code: [...document.querySelectorAll('.cm-editor')].map(dark),
+          code: [...document.querySelectorAll('.lme .cm-editor')].map(dark),
           picked: [...document.querySelectorAll<HTMLInputElement>('.theme input:checked')].map((i) => i.value),
         }
       })
