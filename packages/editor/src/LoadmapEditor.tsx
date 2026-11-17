@@ -27,6 +27,7 @@ import {
   encodeShare,
   format,
   type HostFunctions,
+  imports,
   LANGUAGE_VERSION,
   type Located,
   loadCatalog,
@@ -46,8 +47,11 @@ import {
   fingerprint,
   inspect,
   latestEdition,
+  MAX_FILES,
   pageOptions,
   type Range,
+  relativePath,
+  resolvePath,
   setProperty,
   takeLine,
 } from '@loadmap/dsl/internal'
@@ -59,6 +63,7 @@ import {
   type RefObject,
   Suspense,
   useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -69,10 +74,15 @@ import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
+import type { ExplorerProps } from './Explorer'
+import type { FileTabsProps } from './FileTabs'
+import type { FileMark } from './filenames'
+import type { Dsl, NewKind } from './fileops'
 import type { InspectorProps, InspectorTab } from './Inspector'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
+import type { FileHost } from './reshape'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
 
@@ -117,7 +127,8 @@ export interface LoadmapEditorProps {
   onChange?: (source: string) => void
   /**
    * A definition in several files (from a `#v2.` link): the path of `initial`, its model, and every file by its path.
-   * Each file is a tab over the text; with one file there are no tabs.
+   * The model opens in the editor; the others open from the files' explorer, each a tab over the text. With one file
+   * there are no tabs.
    */
   files?: EditorFiles
   /** Every change of any file, a file added or removed: all of them, for a page that keeps a draft. */
@@ -256,6 +267,13 @@ export function LoadmapEditor({
   }
   const [tabs, setTabs] = useState(() => [set.current.entry, ...Object.keys(set.current.others).sort()])
   const [active, setActive] = useState(set.current.entry)
+  // the files with a tab, in the order they were opened: what shows, never what the definition is. The model's is
+  // always there
+  const [open, setOpen] = useState(() => [set.current.entry])
+  // the files' explorer beside the text, and a new file it asks the name of as it opens
+  const [explorer, setExplorer] = useState(false)
+  const [startNew, setStartNew] = useState<NewKind | null>(null)
+  const panelId = useId()
   // each file's own editor state while another is in the editor: its text, its cursor, its undo history
   const states = useRef(new Map<string, EditorState>())
   const exts = useRef<Extension[]>([])
@@ -549,7 +567,9 @@ export function LoadmapEditor({
   const switchTo = (path: string) => {
     const v = view.current
     const f = set.current
-    if (!v || path === f.active || !Object.hasOwn(f.others, path)) return false
+    if (!v || (path !== f.active && !Object.hasOwn(f.others, path))) return false
+    setOpen((o) => (o.includes(path) ? o : [...o, path]))
+    if (path === f.active) return false
     states.current.set(f.active, v.state)
     const next = states.current.get(path) ?? EditorState.create({ doc: f.others[path]!, extensions: exts.current })
     const others = { ...f.others, [f.active]: v.state.doc.toString() }
@@ -657,74 +677,48 @@ export function LoadmapEditor({
         .sort(),
     ])
     setActive(f.active)
+    setOpen((o) => o.filter((p) => p === f.active || p === f.entry || Object.hasOwn(f.others, p)))
     if (view.current) forceLinting(view.current)
     latest.current.onFiles?.(filesNow())
   }
-  /** A new file beside the model, and the line in the model's head that names it. */
-  const addFile = (kind: 'part' | 'library') => {
-    const f = set.current
-    const name = window.prompt(kind === 'part' ? 'A name for the part: story, data, …' : 'A name for the library', '')
-    if (!name) return
-    if (!/^[\w-]+$/.test(name)) {
-      setNote('A file name is letters, digits, - and _')
-      return
-    }
-    // its line goes in the model's head
-    if (f.active !== f.entry) switchTo(f.entry)
-    const v = view.current
-    if (!v) return
-    const folder = f.entry.split('/').slice(0, -1)
-    const base = f.entry
-      .split('/')
-      .at(-1)!
-      .replace(/\.loadmap$/, '')
-    const file = kind === 'part' ? `${base}.${name}.loadmap` : `${name}.loadmap`
-    const path = [...folder, file].join('/')
-    if (path === f.entry || Object.hasOwn(set.current.others, path)) {
-      setNote(`There is a ${file} already`)
-      return
-    }
-    const doc = v.state.doc.toString()
-    const version = /^loadmap (\d+(?:\.\d+)?)/.exec(doc)?.[1] ?? LANGUAGE_VERSION
-    // under the last line of the head: the "loadmap" line, then every include and import
-    const lines = doc.split('\n')
-    let last = 0
-    for (let i = 1; i < lines.length; i++) {
-      if (!/^(include|import)\b/.test(lines[i]!)) break
-      while (
-        i < lines.length - 1 &&
-        lines[i]!.includes('{') &&
-        !lines
-          .slice(last + 1, i + 1)
-          .join('')
-          .includes('}')
-      )
-        i++
-      last = i
-    }
-    const at = lines.slice(0, last + 1).join('\n').length
-    const text =
-      kind === 'part'
-        ? `loadmap ${version}\npart of "./${base}.loadmap"\n`
-        : `loadmap ${LANGUAGE_VERSION}\nlibrary "${name}"\n`
-    set.current = { ...set.current, others: { ...set.current.others, [path]: text }, version: set.current.version + 1 }
-    v.dispatch({
-      changes: { from: at, insert: `\n${kind === 'part' ? `include "./${file}"` : `import "./${file}" { }`}` },
-      annotations: isolateHistory.of('full'),
-    })
-    switchTo(path)
-    filesChanged()
-    setNote(`Added ${file}`)
+  // what the explorer's operations reach of the editor (reshape.ts applies them, in the explorer's chunk)
+  const fileHost: FileHost = {
+    view,
+    set,
+    states,
+    renamed,
+    setOpen,
+    setNote,
+    state: (doc) => EditorState.create({ doc, extensions: exts.current }),
+    // never a step of the history: an undo could bring a line back, not the file it names
+    edit: (was, text) => ({ changes: between(was, text), annotations: Transaction.addToHistory.of(false) }),
+    show: (next) => {
+      // what tracking and the cursor read are about the file that was open
+      before.current = null
+      edits.current = []
+      view.current?.setState(next)
+      setText(next.doc.toString())
+      setCanUndo(undoDepth(next) > 0)
+    },
+    changed: () => filesChanged(),
+    open: (path) => switchTo(path),
   }
-  /** A file taken out of the definition; the line that names it stays for the reader to remove, and says so. */
-  const removeFile = (path: string) => {
-    if (path === set.current.entry || !window.confirm(`Remove ${path.split('/').at(-1)}?`)) return
-    if (set.current.active === path) switchTo(set.current.entry)
-    const others = { ...set.current.others }
-    delete others[path]
-    states.current.delete(path)
-    set.current = { ...set.current, others, version: set.current.version + 1 }
-    filesChanged()
+  /** A new file: the explorer opens and asks its name. */
+  const addFile = (kind: NewKind) => {
+    if (layout === 'reader') setLayout('code')
+    setPane('text')
+    setExplorer(true)
+    setStartNew(kind)
+  }
+  /** A tab closed: the file stays one of the definition's, in the explorer. The model's tab stays. */
+  const closeTab = (path: string) => {
+    const f = set.current
+    if (path === f.entry) return
+    if (f.active === path) {
+      const i = open.indexOf(path)
+      switchTo(open[i + 1] ?? open[i - 1] ?? f.entry)
+    }
+    setOpen((o) => o.filter((p) => p !== path))
   }
 
   /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
@@ -739,6 +733,7 @@ export function LoadmapEditor({
     set.current = { entry, active: entry, others, version: set.current.version + 1 }
     setTabs([entry, ...Object.keys(others).sort()])
     setActive(entry)
+    setOpen([entry])
     loaded.current = source
     shown.current = {}
     fresh.current = true
@@ -1000,7 +995,11 @@ export function LoadmapEditor({
   const codeMost = Math.max(CODE.min, Math.min(CODE.max * width, width - right - CODE.room))
   const codePx = (share: number) =>
     Math.round(Math.max(CODE.min, Math.min(codeMost, Number.isFinite(share) ? share * width : CODE.start)))
-  const resizeCode = (px: number, done: boolean) => {
+  // the explorer's column is added to the code's panel, as far as the canvas keeps its room: the text keeps its width
+  const filesPx =
+    explorer && !reader ? Math.max(0, Math.min(FILES, Math.round(width - right - CODE.room - codePx(ratio)))) : 0
+  const resizeCode = (all: number, done: boolean) => {
+    const px = all - filesPx
     setRatio(px / width)
     if (done) onSplit?.(px / width)
   }
@@ -1010,6 +1009,20 @@ export function LoadmapEditor({
   }
 
   const list = problems(state.result)
+  const several = tabs.length > 1
+  // the worst each file has, for its tab and its row in the explorer
+  const marks = new Map<string, FileMark>()
+  for (const d of list) {
+    const p = d.file ?? state.given
+    if (d.severity === 'error' || !marks.has(p)) marks.set(p, d.severity === 'error' ? 'error' : 'warning')
+  }
+  /** The explorer hidden; the keyboard, which may be in it, goes to its button on the tabs' row, or to the text. */
+  const hideFiles = () => {
+    setExplorer(false)
+    requestAnimationFrame(() =>
+      (root.current?.querySelector<HTMLElement>('.lme-ftoggle') ?? view.current?.contentDOM)?.focus(),
+    )
+  }
   const errors = list.filter((d) => d.severity === 'error').length
   const warnings = list.length - errors
   const stale = !state.result.ok && !!def
@@ -1141,7 +1154,25 @@ export function LoadmapEditor({
       <MenuItem sheet={sheet} onSelect={() => addFile('library')}>
         A library…
       </MenuItem>
+      <MenuItem sheet={sheet} onSelect={() => addFile('variant')}>
+        A variant of this model…
+      </MenuItem>
     </MenuGroup>
+  )
+  /** The files' explorer, shown beside the text or hidden. */
+  const filesShown = explorer && !textHidden
+  const toggleFiles = () => {
+    // hidden with the text counts as hidden: asking for the files shows the text they sit beside
+    if (!filesShown) {
+      if (reader) setLayout('code')
+      setPane('text')
+    }
+    setExplorer(!filesShown)
+  }
+  const filesItem = (sheet?: boolean) => (
+    <MenuItem sheet={sheet} toggle checked={filesShown} onSelect={toggleFiles}>
+      Files
+    </MenuItem>
   )
   // the same groups in the phone's sheet and in a narrow column's menu
   const viewGroup = (sheet?: boolean) => (
@@ -1154,6 +1185,7 @@ export function LoadmapEditor({
           Format
         </MenuItem>
       )}
+      {filesItem(sheet)}
       {lookItems(sheet)}
     </MenuGroup>
   )
@@ -1216,7 +1248,7 @@ export function LoadmapEditor({
       style={
         canvas
           ? ({
-              '--lme-start': `${reader ? RAIL : codePx(ratio)}px`,
+              '--lme-start': `${reader ? RAIL : codePx(ratio) + filesPx}px`,
               '--lme-panel': `${panelAt}px`,
               '--lme-rail': `${RAIL}px`,
             } as CSSProperties)
@@ -1285,11 +1317,14 @@ export function LoadmapEditor({
                   Format
                 </button>
               )}
-              {!errors && (
-                <Menu label="View" className="lme-wide">
-                  {() => lookItems()}
-                </Menu>
-              )}
+              <Menu label="View" className="lme-wide">
+                {() => (
+                  <>
+                    {filesItem()}
+                    {lookItems()}
+                  </>
+                )}
+              </Menu>
               {(hasTemplates || catalog || !!newItems?.length) && (
                 <Menu label="New" className="lme-wide">
                   {() => (
@@ -1368,38 +1403,54 @@ export function LoadmapEditor({
               </button>
             </PanelHead>
           )}
-          {tabs.length > 1 && (
-            <div className="lme-tabs" role="tablist" aria-label="Files">
-              {tabs.map((p) => {
-                const name = p.split('/').at(-1)!
-                return (
-                  <span key={p} className="lme-tab" data-active={p === active || undefined}>
-                    <button type="button" role="tab" aria-selected={p === active} title={p} onClick={() => switchTo(p)}>
-                      {name}
-                    </button>
-                    {p !== tabs[0] && (
-                      <button
-                        type="button"
-                        className="lme-tab-x"
-                        aria-label={`Remove ${name}`}
-                        onClick={() => removeFile(p)}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                )
-              })}
-            </div>
-          )}
-          <div className="lme-code" ref={host} />
+          <div className="lme-work" data-files={several || explorer || undefined}>
+            {explorer && (
+              <Suspense fallback={null}>
+                <Explorer
+                  dsl={DSL}
+                  files={filesNow}
+                  active={active}
+                  open={open}
+                  marks={marks}
+                  start={startNew}
+                  onStarted={() => setStartNew(null)}
+                  onOpen={(p) => {
+                    switchTo(p)
+                    // on a phone the files are over the text: a pick shows it
+                    if (phone) setExplorer(false)
+                    view.current?.focus()
+                  }}
+                  host={fileHost}
+                  onHide={hideFiles}
+                />
+              </Suspense>
+            )}
+            {(several || explorer) && (
+              // the row's room is kept while they load: the text does not move
+              <Suspense fallback={<div className="lme-ftabs" />}>
+                <FileTabs
+                  open={open}
+                  all={tabs}
+                  active={active}
+                  entry={tabs[0]!}
+                  marks={marks}
+                  panel={panelId}
+                  explorer={explorer}
+                  onExplorer={() => (explorer ? hideFiles() : setExplorer(true))}
+                  onPick={switchTo}
+                  onClose={closeTab}
+                />
+              </Suspense>
+            )}
+            <div className="lme-code" id={panelId} role={several || explorer ? 'tabpanel' : undefined} ref={host} />
+          </div>
           {list.length > 0 && (
             <ul className="lme-problems">
               {list.map((d) => (
                 <li key={`${d.file ?? ''}:${d.from}:${d.message}`} data-severity={d.severity}>
                   <button type="button" onClick={() => goTo(d)}>
                     <span className="lme-at">
-                      {tabs.length > 1 && `${(d.file ?? state.given).split('/').at(-1)}:`}
+                      {several && `${(d.file ?? state.given).split('/').at(-1)}:`}
                       {d.line}:{d.column}
                     </span>{' '}
                     {d.message}
@@ -1449,11 +1500,11 @@ export function LoadmapEditor({
             <Resize
               side="start"
               label="Resize the code"
-              value={codePx(ratio)}
-              min={CODE.min}
-              max={Math.round(codeMost)}
+              value={codePx(ratio) + filesPx}
+              min={CODE.min + filesPx}
+              max={Math.round(codeMost) + filesPx}
               onChange={resizeCode}
-              onReset={() => resizeCode(codePx(split ?? Number.NaN), true)}
+              onReset={() => resizeCode(codePx(split ?? Number.NaN) + filesPx, true)}
             />
           )}
         </div>
@@ -1575,6 +1626,10 @@ export function between(a: string, b: string): { from: number; to: number; inser
  * canvas always keeps between the panels.
  */
 const CODE = { start: 440, min: 360, max: 0.6, room: 320 } as const
+/** What the explorer's file operations read of the language: handed over, so its chunk imports none of it. */
+const DSL: Dsl = { imports, resolvePath, relativePath, MAX_FILES, LANGUAGE_VERSION }
+/** The width of the files' explorer, in pixels (its rule is in Explorer.tsx). */
+const FILES = 220
 /** Below this width the canvas's bar is short: a page's controls in it take their short form. */
 const SHORT = 1000
 /** From this width the side panel starts pinned. */
@@ -1646,6 +1701,8 @@ const MAC = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform
 const Starters = later(() => import('./Starters'), 'The templates did not load: reload the page.')
 const Actions = later(() => import('./Actions'))
 const CatalogPicker = later(() => import('./CatalogPicker'), 'The catalog did not load: reload the page.')
+const FileTabs = later<FileTabsProps>(() => import('./FileTabs'))
+const Explorer = later<ExplorerProps>(() => import('./Explorer'), 'The files did not load: reload the page.')
 const Inspector = later<InspectorProps>(
   () => import('./Inspector').then((m) => ({ default: m.Inspector })),
   'The inspector did not load: reload the page.',
