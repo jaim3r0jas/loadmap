@@ -25,16 +25,16 @@ export interface Linked {
 
 const VALUES = ['let', 'fit', 'metric', 'measure', 'tier', 'published'] as const
 const TEMPLATES = [...BOXES, 'subsystem'] as const
-const isValue = (k: string) => (VALUES as readonly string[]).includes(k)
-const isTemplate = (k: string) => (TEMPLATES as readonly string[]).includes(k)
+export const isValue = (k: string) => (VALUES as readonly string[]).includes(k)
+export const isTemplate = (k: string) => (TEMPLATES as readonly string[]).includes(k)
 const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0] : undefined)
 
 /** What a part leaves to its model, and what a variant may write. */
-const MODEL_ONLY = new Set(['load', 'view'])
-const VARIANT_PROPS = new Set(['title', 'assume', 'searchMax'])
-const VARIANT_REPLACES = new Set(['let', 'fit', 'metric', 'measure', 'published'])
-const VARIANT_ADDS = new Set(['preset', 'scenario', 'expect', 'step'])
-const VARIANT_ONCE = new Set(['growth', 'thresholds'])
+export const MODEL_ONLY = new Set(['load', 'view'])
+export const VARIANT_PROPS = new Set(['title', 'assume', 'searchMax'])
+export const VARIANT_REPLACES = new Set(['let', 'fit', 'metric', 'measure', 'published'])
+export const VARIANT_ADDS = new Set(['preset', 'scenario', 'expect', 'step'])
+export const VARIANT_ONCE = new Set(['growth', 'thresholds'])
 
 interface Library {
   file: SourceFile

@@ -542,7 +542,7 @@ interface Box {
   component?: { block: Block; id: string; own: boolean }
 }
 
-class Compiler {
+export class Compiler {
   readonly symbols: DslSymbol[] = []
   /** Where each expectation of the model is written, in order. */
   readonly expectSpans: Span[] = []
