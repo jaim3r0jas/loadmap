@@ -1,0 +1,15 @@
+{
+  "name": "@loadmap/example-regions",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@loadmap/core": "workspace:*",
+    "@loadmap/dsl": "workspace:*",
+    "@loadmap/layout": "workspace:*",
+    "@loadmap/react": "workspace:*",
+    "@loadmap/sim": "workspace:*"
+  }
+}

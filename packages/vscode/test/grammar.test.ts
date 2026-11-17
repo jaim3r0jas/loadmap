@@ -71,6 +71,10 @@ describe('the grammar', () => {
       'examples/alerts/alerts.loadmap',
       // a limiter, a cache, an autoscaled pool and retries
       'examples/search/search.loadmap',
+      // subsystems in libraries: input, like, with
+      'examples/regions/regions.loadmap',
+      'examples/regions/region.loadmap',
+      'examples/regions/platform.loadmap',
       'docs/every-statement.loadmap',
       'docs/multi-file/shop.loadmap',
       'docs/multi-file/platform.loadmap',

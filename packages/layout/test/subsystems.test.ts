@@ -302,6 +302,28 @@ describe('a closed subsystem', () => {
     expect(collisions(await layout(shut, m.evaluate()))).toEqual([])
   })
 
+  it("names the busiest component inside without the box's own name before it", async () => {
+    const named = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { f: { rate: ({ load }) => load } },
+      components: {
+        w: { name: 'EU region › Workers', demand: ({ flows }) => flows.f, capacity: measured(10, 'req/s'), over: 'x' },
+      },
+      stages: { work: pass('w') },
+      routes: { f: ['work'] },
+    })
+    const one = defineView(named, {
+      nodes: { in: node({ label: 'In' }), 'eu.work': node({ label: 'Workers', stage: 'work' }) },
+      edges: [edge('in', 'eu.work')],
+      flows: { f: { from: 'in', color: 'accent' } },
+      subsystems: { eu: { label: 'EU region' } },
+    })
+    const shut = (await closing(one))!(one, ['eu'])
+    expect(labelsAt(shut, named.evaluate({ load: 5 })).nodes.eu!.sub).toMatch(/^Workers 50\s?%$/)
+    // and nothing at all when nothing reaches it
+    expect(labelsAt(shut, named.evaluate({ load: 0 })).nodes.eu!.sub).toBe('no traffic')
+  })
+
   it('gives the same view for the same subsystems, and the view itself when none of its own is closed', async () => {
     const close = (await closing(v))!
     expect(close(v, [])).toBe(v)

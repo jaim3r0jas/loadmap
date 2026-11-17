@@ -6,6 +6,7 @@ import { pageOptions } from '@loadmap/dsl/internal'
 import { TEMPLATES } from '@loadmap/editor/templates'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
+import { regionsOne } from '@loadmap/example-regions'
 import { searchSource } from '@loadmap/example-search'
 import { Loadmap } from '@loadmap/react'
 import { useMemo, useState } from 'react'
@@ -43,6 +44,13 @@ const WALKTHROUGHS: readonly Walkthrough[] = [
     summary: 'Clients that retry, a rate limiter, an autoscaled API and a cache.',
     source: searchSource,
     from: ['cache', 'rate-limit', 'autoscale', 'retry-storm'],
+  },
+  {
+    id: 'regions',
+    title: 'Two regions',
+    summary: 'Each region a subsystem, in several files: what happens to one when the other is lost.',
+    source: regionsOne,
+    from: ['queue-workers'],
   },
 ]
 

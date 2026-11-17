@@ -1,0 +1,25 @@
+loadmap 1.5
+part of "./regions.loadmap"
+
+step "An ordinary peak, each region closed into one box: each says how busy the busiest part in it is." {
+  closed: [eu, us]
+  title: "Today, at a glance"
+}
+step "The EU region is lost: every order goes to the US, and the US region wears the limit at 1×: today." {
+  euLost: true
+  closed: [eu, us]
+  title: "The EU region lost"
+}
+step "Open the US region: its order workers run out first, at their target already." {
+  euLost: true
+  closed: [eu]
+  focus: us.orders.workers
+  title: "Inside the US region"
+}
+step "Twice the order workers in the US, and losing the EU region holds again." {
+  euLost: true
+  usPods: 4
+  closed: [eu]
+  focus: us.orders.workers
+  title: "Proposed: four pods"
+}
