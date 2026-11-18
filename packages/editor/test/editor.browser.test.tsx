@@ -648,6 +648,13 @@ describe('the editor', () => {
       await expect
         .poll(() => host.querySelector('.lme-note')?.textContent, { timeout: 5000 })
         .toBe("Gone Mono did not load: the system's font stands in")
+      // and gives way: the system's is picked again, and the font is not kept
+      expect(localStorage.getItem('loadmap:editor:font')).toBeNull()
+      await page.getByRole('button', { name: 'View' }).click()
+      await expect
+        .element(page.getByRole('menuitemradio', { name: 'System', exact: true }))
+        .toHaveAttribute('aria-checked', 'true')
+      await userEvent.keyboard('{Escape}')
       // a page that offers no fonts: only the system's
       root?.unmount()
       document.body.replaceChildren()

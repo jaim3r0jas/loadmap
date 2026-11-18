@@ -124,6 +124,8 @@ export interface EditorFiles {
 const ONE = 'input.loadmap'
 /** Where this browser keeps the reader's choice of the canvas's dot grid. */
 const GRID_KEY = 'loadmap:editor:grid'
+/** The least size of the code on a phone: below it, iOS zooms the page as the text takes the keyboard. */
+const PHONE_SIZE = 16
 /** And of the code's font, its size and its ligatures. */
 const FONT_KEY = 'loadmap:editor:font'
 const SIZE_KEY = 'loadmap:editor:fontSize'
@@ -325,12 +327,8 @@ export function LoadmapEditor({
     return a ? { path: a.path, files: a.files } : {}
   }
   const [gridChoice, setGridChoice] = useState<boolean | null>(() => {
-    try {
-      const said = localStorage.getItem(GRID_KEY)
-      return said == null ? null : said !== 'off'
-    } catch {
-      return null
-    }
+    const said = stored(GRID_KEY)
+    return said == null ? null : said !== 'off'
   })
   // the code's look, the reader's own, kept in this browser: a font of `fonts` (null: the system's), a size, ligatures
   const [fontName, setFontName] = useState(() => stored(FONT_KEY))
@@ -385,22 +383,28 @@ export function LoadmapEditor({
   }, [])
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  // a font is fetched once a reader picks it; the text measures its lines again once it draws in it
+  // a font is fetched once a reader picks it; the text measures its lines again once it draws in it. One that does
+  // not load gives way to the system's: picked just now, it is not kept either (a font kept from before is tried again
+  // on the next visit, as the network may be back)
   const fontUrl = codeFont?.url
+  const pickedNow = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the font's file, not the object a page may write anew
   useEffect(() => {
-    view.current?.requestMeasure()
     if (!codeFont) return
     let live = true
     loadFont(codeFont).then((ok) => {
       if (!live) return
-      if (ok) view.current?.requestMeasure()
-      else setNote(`${codeFont.name} did not load: the system's font stands in`)
+      if (ok) return view.current?.requestMeasure()
+      setNote(`${codeFont.name} did not load: the system's font stands in`)
+      setFontName(null)
+      if (pickedNow.current) keep(FONT_KEY, null)
     })
     return () => {
       live = false
     }
-  }, [fontUrl, fontSize, ligatures])
+  }, [fontUrl])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new size or ligatures change every line's measure
+  useEffect(() => view.current?.requestMeasure(), [fontSize, ligatures])
   const preview = useRef<LoadmapHandle>(null)
   // the values the preview shows, carried across versions so an edit does not reset the sliders
   const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
@@ -1246,13 +1250,10 @@ export function LoadmapEditor({
   const grid = gridChoice ?? def?.options.grid !== false
   const toggleGrid = () => {
     setGridChoice(!grid)
-    try {
-      localStorage.setItem(GRID_KEY, grid ? 'off' : 'on')
-    } catch {
-      // a private window: the choice lasts as long as the page
-    }
+    keep(GRID_KEY, grid ? 'off' : 'on')
   }
   const pickFont = (font: CodeFont | undefined) => {
+    pickedNow.current = true
     setFontName(font?.name ?? null)
     keep(FONT_KEY, font?.name ?? null)
   }
@@ -1277,16 +1278,17 @@ export function LoadmapEditor({
           </MenuItem>
         ))}
       </MenuGroup>
-      <MenuGroup label="Text size">
+      <MenuGroup label="Text size, px">
         <div className="lme-sizes">
-          {CODE_SIZES.map((px) => (
+          {/* a phone draws the text at 16 px at least, so its keyboard does not zoom the page */}
+          {CODE_SIZES.filter((px) => !phone || px >= PHONE_SIZE).map((px) => (
             // biome-ignore lint/a11y/useAriaPropsSupportedByRole: in a menu it is a menuitemradio, which has it
             <button
               key={px}
               type="button"
               className="lme-size"
               role={sheet ? undefined : 'menuitemradio'}
-              aria-checked={px === fontSize}
+              aria-checked={px === (phone ? Math.max(fontSize, PHONE_SIZE) : fontSize)}
               aria-label={`${px} px`}
               tabIndex={sheet ? undefined : -1}
               onClick={() => pickSize(px)}

@@ -25,17 +25,21 @@ const LATIN =
 export const CODE_SIZES: readonly number[] = [11, 12, 13, 14, 16, 18, 20]
 export const CODE_SIZE = 13
 
-// one face per file, however many editors ask for it
+// one face per name and file, however many editors ask for it
 const loading = new Map<string, Promise<boolean>>()
+
+/** A CSS string: JSON's escapes are not CSS's, so only a quote, a backslash and a line break are escaped, CSS's way. */
+const cssString = (s: string) => `"${s.replace(/["\\\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `)}"`
 
 /**
  * Adds a font to the page, once, and loads it: only when a reader picks it, so no first load carries it. False when
  * its file did not load: the code keeps the system's monospace, and a later pick tries again.
  */
 export function loadFont(font: CodeFont): Promise<boolean> {
-  const known = loading.get(font.url)
+  const key = `${font.name}\n${font.url}`
+  const known = loading.get(key)
   if (known) return known
-  const face = new FontFace(font.name, `url(${JSON.stringify(font.url)}) format("woff2")`, {
+  const face = new FontFace(font.name, `url(${cssString(font.url)}) format("woff2")`, {
     weight: '300 700',
     display: 'swap',
     unicodeRange: LATIN,
@@ -45,14 +49,14 @@ export function loadFont(font: CodeFont): Promise<boolean> {
     () => true,
     () => {
       document.fonts.delete(face)
-      loading.delete(font.url)
+      loading.delete(key)
       return false
     },
   )
-  loading.set(font.url, loaded)
+  loading.set(key, loaded)
   return loaded
 }
 
 /** The code's `font-family`: the font picked, then the system's monospace for what it lacks. */
 export const fontStack = (font: CodeFont | undefined) =>
-  font ? `${JSON.stringify(font.name)}, var(--lm-mono)` : 'var(--lm-mono)'
+  font ? `${cssString(font.name)}, var(--lm-mono)` : 'var(--lm-mono)'
