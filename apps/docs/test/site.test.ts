@@ -357,8 +357,9 @@ describe('the built site', () => {
     const kb = first.reduce((s, f) => s + gzipSync(readFileSync(join(out, f))).length, 0) / 1024
     // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.7 kB): an
     // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window. The client holds the names
-    // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB)
-    expect(kb).toBeLessThan(6.25)
+    // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB). The
+    // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB
+    expect(kb).toBeLessThan(6.4)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
