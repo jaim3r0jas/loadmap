@@ -78,14 +78,14 @@ export function client(o: ClientOptions = {}): Client {
     }
     const s = res.status
     const left = res.headers.get('x-ratelimit-remaining')
-    if (s === 429 || ((s === 403 || s === 429) && left === '0') || /rate limit/i.test(said)) {
+    if (s === 429 || (s === 403 && (left === '0' || /rate limit/i.test(said)))) {
       const reset = Number(res.headers.get('x-ratelimit-reset')) * 1000
       const mins = Number.isFinite(reset) && reset > 0 ? Math.max(1, Math.ceil((reset - now()) / 60_000)) : 0
       const when = mins ? ` It resets in ${mins} minute${mins === 1 ? '' : 's'}.` : ''
       return new GitHubError(
         signed
           ? `GitHub's hourly limit for your token is used up.${when}`
-          : `GitHub's hourly limit for reading without a token is used up.${when} A token raises it.`,
+          : `GitHub's hourly limit for reading without signing in is used up.${when}`,
         'rate',
         s,
       )

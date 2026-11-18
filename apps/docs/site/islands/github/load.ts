@@ -42,6 +42,9 @@ export interface Opened {
   missing: string[]
 }
 
+/** The files under the folder an address named, else all of them. */
+export const inFolder = (l: Listing) => (l.folder ? l.files.filter((f) => f.path.startsWith(`${l.folder}/`)) : l.files)
+
 const SHA = /^[0-9a-f]{40}$/
 /** A file larger than this cannot fit MAX_TOTAL characters, whatever its encoding (UTF-8 is at most 4 bytes each). */
 const MAX_BYTES = MAX_TOTAL * 4
@@ -51,6 +54,21 @@ const repoPath = (t: { owner: string; name: string }) => `/repos/${seg(t.owner)}
 
 /** The repository's commit and its `.loadmap` files. Throws an error whose message the reader can act on. */
 export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
+  /** The commit a ref names; undefined when there is no such ref (an address's next split may be the one). */
+  const commit = async (ref: string) => {
+    let sha: string
+    try {
+      sha = (await gh.text(`${repoPath(target)}/commits/${filePath(ref)}`, 'application/vnd.github.sha')).trim()
+    } catch (e) {
+      if (e instanceof GitHubError && (e.failure === 'missing' || e.failure === 'invalid')) return undefined
+      throw e
+    }
+    if (!SHA.test(sha)) throw new GitHubError(`GitHub answered no commit for "${ref}".`, 'other')
+    return sha
+  }
+  // a ref named outright is looked up beside the repository: one round trip less before the first file
+  const named = !target.rest && target.ref != null ? commit(target.ref) : undefined
+  named?.catch(() => {})
   let info: { default_branch: string; private: boolean }
   try {
     info = await gh.json(repoPath(target))
@@ -59,7 +77,7 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
       throw new GitHubError(
         gh.signed()
           ? `${where(target)} was not found, or your token may not read it.`
-          : `${where(target)} was not found. If it is private, give a token to read it.`,
+          : `${where(target)} was not found, or it is private.`,
         'missing',
         404,
       )
@@ -68,16 +86,9 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
   const splits = target.rest
     ? refSplits(target.rest)
     : [{ ref: target.ref ?? info.default_branch, path: target.path ? target.path.split('/') : [] }]
-  for (const { ref, path } of splits) {
-    let sha: string
-    try {
-      sha = (await gh.text(`${repoPath(target)}/commits/${filePath(ref)}`, 'application/vnd.github.sha')).trim()
-    } catch (e) {
-      // a ref that is not there: an address's next split may be the one
-      if (e instanceof GitHubError && (e.failure === 'missing' || e.failure === 'invalid')) continue
-      throw e
-    }
-    if (!SHA.test(sha)) throw new GitHubError(`GitHub answered no commit for "${ref}".`, 'other')
+  for (const [i, { ref, path }] of splits.entries()) {
+    const sha = i === 0 && named ? await named : await commit(ref)
+    if (!sha) continue
     const t = await gh.json<{
       sha: string
       truncated?: boolean
@@ -88,8 +99,9 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
       .filter((e) => e.type === 'blob' && e.mode !== '120000' && cleanPath(e.path) === e.path)
       .map((e) => ({ path: e.path, size: e.size ?? 0 }))
       .sort((a, b) => a.path.localeCompare(b.path))
-    const named = path.join('/')
-    const kind = target.rest?.kind ?? (named ? 'blob' : 'tree')
+    const file = path.join('/')
+    const kind = target.rest?.kind ?? (file ? 'blob' : 'tree')
+    // past a cut tree, a file the reader names may be there all the same: open() asks for it
     return {
       owner: target.owner,
       name: target.name,
@@ -100,38 +112,53 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
       private: info.private,
       files,
       truncated: !!t.truncated,
-      ...(kind === 'blob' && named && files.some((f) => f.path === named) ? { want: named } : {}),
-      ...(kind === 'tree' && named ? { folder: named } : {}),
+      ...(kind === 'blob' && file && (files.some((f) => f.path === file) || (t.truncated && cleanPath(file) === file))
+        ? { want: file }
+        : {}),
+      ...(kind === 'tree' && file ? { folder: file } : {}),
     }
   }
-  const named = target.rest ? target.rest.segments.join('/') : (target.ref ?? info.default_branch)
-  throw new GitHubError(`${where(target)} has no branch, tag or commit "${named}".`, 'missing', 404)
+  const wanted = target.rest ? target.rest.segments.join('/') : (target.ref ?? info.default_branch)
+  throw new GitHubError(`${where(target)} has no branch, tag or commit "${wanted}".`, 'missing', 404)
 }
 
 /** The model at `path` and every file it reaches, from the listing's commit. */
 export async function open(gh: Client, listing: Listing, path: string): Promise<Opened> {
   const sizes = new Map(listing.files.map((f) => [f.path, f.size]))
-  if (!sizes.has(path)) throw new Error(`${path} is not a .loadmap file of ${where(listing)}.`)
-  const read = (p: string) =>
-    listing.private
-      ? gh.text(`${repoPath(listing)}/contents/${filePath(p)}?ref=${listing.sha}`, 'application/vnd.github.raw+json')
-      : gh.raw(listing.owner, listing.name, listing.sha, p)
+  // a cut tree lists only some files: one it lacks may be there, and is asked for (its size is checked once read)
+  const askable = (p: string) => sizes.has(p) || (listing.truncated && cleanPath(p) === p)
+  if (!askable(path)) throw new Error(`${path} is not a .loadmap file of ${where(listing)}.`)
+  const read = async (p: string): Promise<string | undefined> => {
+    try {
+      return await (listing.private
+        ? gh.text(`${repoPath(listing)}/contents/${filePath(p)}?ref=${listing.sha}`, 'application/vnd.github.raw+json')
+        : gh.raw(listing.owner, listing.name, listing.sha, p))
+    } catch (e) {
+      if (!sizes.has(p) && e instanceof GitHubError && e.failure === 'missing') return undefined
+      throw e
+    }
+  }
   const files: Record<string, string> = {}
   const missing: string[] = []
   let total = 0
   let level = [path]
   while (level.length) {
     const fresh = [...new Set(level)].filter((p) => !Object.hasOwn(files, p) && !missing.includes(p))
-    const known = fresh.filter((p) => sizes.has(p))
-    missing.push(...fresh.filter((p) => !sizes.has(p)))
+    const known = fresh.filter(askable)
+    missing.push(...fresh.filter((p) => !askable(p)))
     if (Object.keys(files).length + known.length > MAX_FILES)
       throw new Error(`The model reaches more than ${MAX_FILES} files; the editor opens at most ${MAX_FILES}.`)
     for (const p of known)
-      if (sizes.get(p)! > MAX_BYTES) throw new Error(`${p} is larger than a definition may be (1,000,000 characters).`)
+      if ((sizes.get(p) ?? 0) > MAX_BYTES)
+        throw new Error(`${p} is larger than a definition may be (1,000,000 characters).`)
     const texts = await Promise.all(known.map(read))
     const next: string[] = []
     for (const [i, p] of known.entries()) {
-      const text = texts[i]!
+      const text = texts[i]
+      if (text === undefined) {
+        missing.push(p)
+        continue
+      }
       total += text.length
       if (total > MAX_TOTAL)
         throw new Error('The files the model reaches hold more than 1,000,000 characters, more than a definition may.')

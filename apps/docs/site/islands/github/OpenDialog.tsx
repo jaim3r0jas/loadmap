@@ -1,8 +1,7 @@
 // "Open from GitHub": a repository's name or address, then its `.loadmap` files to pick the model from. Loaded the
 // first time it opens, with its own rules, so the editor's page lacks it until then.
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { type Listing, list, type Opened, open } from './load'
+import { inFolder, type Listing, list, type Opened, open } from './load'
 import { parseRepo, type RepoTarget } from './parse'
 import { gh } from './session'
 import { missedFile } from './start'
@@ -10,6 +9,7 @@ import { missedFile } from './start'
 const CSS = `
 .lmg-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(640px, calc(100dvh - 32px)); padding: 0; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 12px; box-shadow: 0 12px 40px rgb(0 0 0 / .25); font: 400 .9rem var(--lm-font); }
 .lmg-dialog[open] { display: flex; flex-direction: column; }
+.lmg-dialog:not([open]) { display: none; }
 .lmg-dialog::backdrop { background: rgb(0 0 0 / .35); }
 .lmg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--lm-line); }
 .lmg-head h2 { margin: 0; font-size: 1rem; }
@@ -60,6 +60,13 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
     dialog.current?.showModal()
     if (!start?.listing) input.current?.focus()
   }, [start?.listing])
+  // closed (Close, Esc) while GitHub is still answering: that answer opens nothing
+  useEffect(
+    () => () => {
+      turn.current++
+    },
+    [],
+  )
 
   const look = async (target: RepoTarget) => {
     const mine = ++turn.current
@@ -73,7 +80,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
       const missed = missedFile(target, l)
       if (missed) setError(`${missed}. Pick the model here.`)
       else if (l.want) await pick(l, l.want, mine)
-      else if (l.files.length === 1 && !l.folder) await pick(l, l.files[0]!.path, mine)
+      else if (inFolder(l).length === 1) await pick(l, inFolder(l)[0]!.path, mine)
     } catch (e) {
       if (mine === turn.current) setError(message(e))
     } finally {
@@ -108,8 +115,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
   const shown = useMemo(() => {
     if (!listing) return []
     const q = filter.trim().toLowerCase()
-    const under = listing.folder ? `${listing.folder}/` : ''
-    return listing.files.filter((f) => f.path.startsWith(under) && (!q || f.path.toLowerCase().includes(q)))
+    return inFolder(listing).filter((f) => !q || f.path.toLowerCase().includes(q))
   }, [listing, filter])
 
   // the first look only: what the address named
@@ -118,9 +124,11 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
     if (first && !start?.listing) void look(first)
   }, [])
 
-  // inside the editor's root: its colours, its theme and its buttons' rules are scoped there
-  return createPortal(
-    <dialog ref={dialog} className="lmg-dialog" aria-labelledby={`${id}h`} onClose={onClose}>
+  // a loadmap root of its own (its colours), in the theme the editor shows: the editor's bar is behind the backdrop,
+  // so the theme cannot change while it is open
+  const [theme] = useState(() => document.querySelector('.lm.lme')?.getAttribute('data-theme') ?? undefined)
+  return (
+    <dialog ref={dialog} className="lm lmg-dialog" data-theme={theme} aria-labelledby={`${id}h`} onClose={onClose}>
       <style>{CSS}</style>
       <div className="lmg-head">
         <h2 id={`${id}h`}>Open from GitHub</h2>
@@ -143,6 +151,8 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
                   turn.current++
                   setBusy(null)
                   setListing(undefined)
+                  setError('')
+                  setFilter('')
                   setText(named(listing))
                   setTimeout(() => input.current?.focus())
                 }}
@@ -150,14 +160,16 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
                 Another repository
               </button>
             </div>
-            {listing.files.length === 0 ? (
-              <p className="lmg-hint">There is no .loadmap file at {listing.ref}.</p>
+            {inFolder(listing).length === 0 ? (
+              <p className="lmg-hint">
+                There is no .loadmap file {listing.folder ? `in ${listing.folder}/ ` : ''}at {listing.ref}.
+              </p>
             ) : (
               <>
                 <p className="lmg-hint" id={`${id}l`}>
                   Pick the model to open: the files it names open with it.
                 </p>
-                {listing.files.length > 8 && (
+                {inFolder(listing).length > 8 && (
                   <input
                     type="search"
                     placeholder="Filter the files"
@@ -223,8 +235,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
           </p>
         )}
       </div>
-    </dialog>,
-    document.querySelector('.lm.lme') ?? document.body,
+    </dialog>
   )
 }
 

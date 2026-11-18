@@ -16,6 +16,8 @@ export interface FakeRepo {
   /** Each ref (a branch with "/" too) and its commit's files. */
   refs: Record<string, Record<string, FakeFile | string>>
   truncated?: boolean
+  /** Files past the cut of a truncated tree: there, but not listed. */
+  hidden?: string[]
   /** The token a private repository answers to. */
   token?: string
 }
@@ -102,13 +104,15 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
       return json(200, {
         sha: shaOf(`tree:${ref}`),
         truncated: !!repo.truncated,
-        tree: files(ref).map((f) => ({
-          path: f.path,
-          mode: f.mode,
-          type: 'blob',
-          sha: shaOf(`blob:${f.text}`),
-          size: new TextEncoder().encode(f.text).length,
-        })),
+        tree: files(ref)
+          .filter((f) => !repo.hidden?.includes(f.path))
+          .map((f) => ({
+            path: f.path,
+            mode: f.mode,
+            type: 'blob',
+            sha: shaOf(`blob:${f.text}`),
+            size: new TextEncoder().encode(f.text).length,
+          })),
       })
     }
     if (rest.startsWith('/contents/')) {

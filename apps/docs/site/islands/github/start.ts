@@ -1,6 +1,6 @@
 // The editor opened with `?repo=…`: the model it names, or the list to pick one from when it names none. Loaded only
 // when the address asks for a repository.
-import { type Listing, list, type Opened, open } from './load'
+import { inFolder, type Listing, list, type Opened, open } from './load'
 import { type RepoTarget, targetFromQuery } from './parse'
 import { gh } from './session'
 
@@ -18,9 +18,13 @@ export async function fromQuery(q: URLSearchParams): Promise<Started> {
     const listing = await list(gh, target)
     const missed = missedFile(target, listing)
     if (missed) return { error: missed }
-    const path = listing.want ?? (listing.files.length === 1 && !listing.folder ? listing.files[0]!.path : undefined)
+    const here = inFolder(listing)
+    const path = listing.want ?? (here.length === 1 ? here[0]!.path : undefined)
     if (path) return { opened: await open(gh, listing, path) }
-    if (!listing.files.length) return { error: `${target.owner}/${target.name} has no .loadmap file at ${listing.ref}` }
+    if (!here.length) {
+      const folder = listing.folder ? `in ${listing.folder}/ ` : ''
+      return { error: `${target.owner}/${target.name} has no .loadmap file ${folder}at ${listing.ref}` }
+    }
     return { listing, target }
   } catch (e) {
     return { error: e instanceof Error ? e.message.replace(/\.$/, '') : 'GitHub could not be read' }

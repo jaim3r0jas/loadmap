@@ -121,7 +121,7 @@ describe('opening a repository', () => {
     const fake = fakeGitHub({ ...REPO, private: true, token: 'github_pat_x' })
     const without = client({ fetch: fake.fetch })
     await expect(list(without, { owner: 'acme', name: 'capacity' })).rejects.toThrow(
-      'acme/capacity was not found. If it is private, give a token to read it.',
+      'acme/capacity was not found, or it is private.',
     )
     const gh = client({ fetch: fake.fetch, token: () => 'github_pat_x' })
     const l = await list(gh, { owner: 'acme', name: 'capacity' })
@@ -141,6 +141,17 @@ describe('opening a repository', () => {
     const l = await list(gh, { owner: 'acme', name: 'capacity' })
     const o = await open(gh, l, 'a.loadmap')
     expect(o.missing.sort()).toEqual(['platform.loadmap', 'shop.story.loadmap'])
+  })
+
+  it('asks for a file a cut tree does not list, when the model or the address names it', async () => {
+    const fake = fakeGitHub({ ...REPO, truncated: true, hidden: ['models/platform.loadmap', 'models/shop.loadmap'] })
+    const gh = client({ fetch: fake.fetch })
+    const t = parseRepo('https://github.com/acme/capacity/blob/main/models/shop.loadmap')
+    const l = await list(gh, t as Exclude<typeof t, { error: string }>)
+    expect(l).toMatchObject({ truncated: true, want: 'models/shop.loadmap' })
+    const o = await open(gh, l, 'models/shop.loadmap')
+    expect(Object.keys(o.files).sort()).toEqual(Object.keys(SHOP).sort())
+    expect(o.missing).toEqual([])
   })
 
   it("holds a definition's limits: too many files, or too much text, is refused before or after reading", async () => {
@@ -165,7 +176,7 @@ describe('opening a repository', () => {
     const e = await list(limited, { owner: 'acme', name: 'capacity' }).catch((x: unknown) => x)
     expect(e).toBeInstanceOf(GitHubError)
     expect((e as GitHubError).message).toBe(
-      "GitHub's hourly limit for reading without a token is used up. It resets in 14 minutes. A token raises it.",
+      "GitHub's hourly limit for reading without signing in is used up. It resets in 14 minutes.",
     )
     const gh = client({ fetch: fakeGitHub(REPO).fetch })
     await expect(list(gh, { owner: 'acme', name: 'capacity', ref: 'nope' })).rejects.toThrow(

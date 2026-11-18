@@ -282,8 +282,9 @@ describe('the built site', () => {
     expect(first.length).toBeGreaterThan(0)
     const kb = first.reduce((s, f) => s + gzipSync(readFileSync(join(out, f))).length, 0) / 1024
     // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.7 kB): an
-    // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window
-    expect(kb).toBeLessThan(6.2)
+    // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window. The client holds the names
+    // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB)
+    expect(kb).toBeLessThan(6.25)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
@@ -773,7 +774,7 @@ describe('the built site', () => {
       await routeGitHub(page, fake.fetch)
       await page.goto(`${url}editor/?repo=acme/capacity&path=models/shop.loadmap`)
       await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'A shop in several files')
-      expect(await page.getByRole('tab', { name: /^shop\.loadmap/ }).count()).toBe(1)
+      expect(await page.locator('[role=tab][title="models/shop.loadmap"]').count()).toBe(1)
       // the files come from the commit the branch named when the page asked, by its sha
       const raws = fake.calls.filter((c) => c.url.startsWith('https://raw.githubusercontent.com/'))
       expect(raws.map((c) => c.url.split('/').slice(5).join('/')).sort()).toEqual([
@@ -793,7 +794,7 @@ describe('the built site', () => {
 
       // a repository that is not there, in a sentence; the draft stays
       await page.goto(`${url}editor/?repo=acme/nothing`)
-      await page.getByText('acme/nothing was not found. If it is private, give a token to read it').waitFor()
+      await page.getByText('acme/nothing was not found, or it is private').waitFor()
       await page.waitForSelector('.lme-title')
     } finally {
       await browser.close()

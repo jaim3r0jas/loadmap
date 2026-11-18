@@ -116,7 +116,7 @@ function embedLink(hash: string, o: EmbedOptions): string {
 const fromLink = () => location.hash.startsWith('#v1.') || location.hash.startsWith('#v2.')
 const fromRepo = () => !fromLink() && query().has('repo')
 /** The GitHub dialog, loaded the first time it opens. */
-const OpenDialog = lazy(() => import('./github/OpenDialog'))
+const OpenDialog = lazy(() => import('./github').then((m) => ({ default: m.OpenDialog })))
 const template = () => TEMPLATES.find((t) => t.id === query().get('template'))
 const example = () => {
   const name = query().get('example')
@@ -239,7 +239,7 @@ function Editor({ root }: { root: URL }) {
   const [help, setHelp] = useHelp()
   const [close] = useState(() => closeTo(root))
   // a link's definition (or a repository's) wins over the draft; reading it is async, so the editor waits for it
-  const [start, setStart] = useState<Shared | null>(() =>
+  const [start, setStart] = useState<Start | null>(() =>
     fromLink() || fromRepo() ? null : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
   )
   const [github, setGithub] = useState<{ target?: RepoTarget; listing?: Listing } | null>(null)
@@ -250,13 +250,15 @@ function Editor({ root }: { root: URL }) {
       return
     }
     let gone = false
-    import('./github/start')
+    import('./github')
       .then((m) => m.fromQuery(query()))
       .catch(() => ({ error: 'The GitHub part of the page could not load' }))
       .then((r) => {
         if (gone) return
         if ('opened' in r) setStart(fromOpened(r.opened))
-        else if ('error' in r) setStart({ error: `${r.error}` })
+        // the draft as it would open without the address, in all its files; the error said above it
+        else if ('error' in r)
+          setStart({ ...(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }), error: r.error })
         else {
           // several models and none named: the reader picks one, the draft behind
           setStart(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} })
@@ -432,6 +434,9 @@ function Editor({ root }: { root: URL }) {
     </>
   )
 }
+
+/** What the editor opens with: a link's, a repository's or the draft's; a draft can come with why the rest did not. */
+type Start = Shared | (Extract<Shared, { source: string }> & { error: string })
 
 /** What the editor opens with for a repository's model: its files, the model's text first. */
 const fromOpened = (o: Opened): Shared => ({ source: o.files[o.path] ?? '', values: {}, path: o.path, files: o.files })
