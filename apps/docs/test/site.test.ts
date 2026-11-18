@@ -879,13 +879,20 @@ describe('the built site', () => {
       await routeGitHub(page, fake.fetch)
       await page.goto(`${url}editor/?repo=acme/capacity&path=shop.loadmap`)
       await page.getByRole('button', { name: 'acme/capacity: nothing changed' }).waitFor()
+      const dialog = page.getByRole('dialog', { name: 'Save to GitHub' })
+      // nothing changed: nothing to save, and no token asked for it
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+s')
+      await dialog.getByText('Nothing changed since the files were opened: there is nothing to save.').waitFor()
+      expect(await dialog.getByLabel('Token', { exact: true }).count()).toBe(0)
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+
       await page.locator('.cm-content').click()
       await page.keyboard.press('ControlOrMeta+End')
       await page.keyboard.type('\n# edited here')
       await page.getByRole('button', { name: 'acme/capacity: 1 file changed' }).waitFor()
       await page.keyboard.press('ControlOrMeta+s')
 
-      const dialog = page.getByRole('dialog', { name: 'Save to GitHub' })
       await dialog.getByText('Saving writes to acme/capacity: give a token that may write to it.').waitFor()
       const make = new URL((await dialog.getByRole('link', { name: /Make a token on GitHub/ }).getAttribute('href'))!)
       expect([make.searchParams.get('contents'), make.searchParams.get('pull_requests')]).toEqual(['write', 'write'])

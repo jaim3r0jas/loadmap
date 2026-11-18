@@ -2,7 +2,7 @@
 // (on the commit's own tree), one commit on the commit the files were read from, then a new branch at it (or the
 // branch this tab made, moved on), and a pull request when the reader asks. Every call is the reader's, with their
 // token, after they press Save.
-import { type Client, GitHubError, seg } from './api'
+import { type Client, filePath, GitHubError, repoApi, repoWeb } from './api'
 import type { Change } from './changes'
 import { goodRef } from './parse'
 import type { RepoOrigin } from './tab'
@@ -31,11 +31,9 @@ export interface Saved {
 /** The steps a save goes through, for the dialog to say where it is. */
 export type SaveStep = 'tree' | 'commit' | 'branch' | 'pull'
 
-const repoPath = (o: RepoOrigin) => `/repos/${seg(o.owner)}/${seg(o.name)}`
-const web = (o: RepoOrigin) => `https://github.com/${encodeURIComponent(o.owner)}/${encodeURIComponent(o.name)}`
-
-/** A ref that names a commit by its sha, not a branch a pull request could go into. */
-export const isSha = (ref: string) => /^[0-9a-f]{40}$/.test(ref)
+/** Whether this save opens a pull request: asked for, on a new branch, into the branch the files came from. */
+export const wantsPull = (origin: RepoOrigin, onto: SaveRequest['onto'], asked: boolean) =>
+  asked && onto === 'new' && origin.pullable
 
 /** What the reader saves: refused before any call when there is nothing to save or the branch is no branch name. */
 export function saveProblem(list: Change[], r: SaveRequest): string | undefined {
@@ -54,7 +52,7 @@ export async function save(
 ): Promise<Saved> {
   const wrong = saveProblem(list, r)
   if (wrong) throw new Error(wrong)
-  const at = repoPath(origin)
+  const at = repoApi(origin)
   step('tree')
   const tree = await gh.json<{ sha: string }>(`${at}/git/trees`, {
     method: 'POST',
@@ -66,7 +64,7 @@ export async function save(
           ? { path: c.path, mode: '100644', type: 'blob', sha: null }
           : {
               path: c.path,
-              mode: '100644',
+              mode: origin.exec.includes(c.path) ? '100755' : '100644',
               type: 'blob',
               // a file that came with "\r\n" goes back with it: the diff on GitHub shows only what the reader changed
               content: origin.crlf.includes(c.path) ? c.after.replace(/\n/g, '\r\n') : c.after,
@@ -85,12 +83,18 @@ export async function save(
   else {
     // only forward: a branch someone else moved meanwhile is not overwritten
     try {
-      await gh.json(`${at}/git/refs/heads/${r.branch.split('/').map(seg).join('/')}`, {
+      await gh.json(`${at}/git/refs/heads/${filePath(r.branch)}`, {
         method: 'PATCH',
         body: { sha: commit.sha, force: false },
       })
     } catch (e) {
-      if (e instanceof GitHubError && e.failure === 'invalid')
+      if (e instanceof GitHubError && e.failure === 'invalid' && /does not exist/i.test(e.said))
+        throw new GitHubError(
+          `${r.branch} is no longer on GitHub (deleted once its pull request was merged?): save as a new branch.`,
+          'conflict',
+          422,
+        )
+      if (e instanceof GitHubError && e.failure === 'invalid' && /fast.?forward/i.test(e.said))
         throw new GitHubError(
           `${r.branch} moved on GitHub since the files were read: save as a new branch instead.`,
           'conflict',
@@ -99,10 +103,10 @@ export async function save(
       throw e
     }
   }
-  const branchUrl = `${web(origin)}/tree/${r.branch.split('/').map(encodeURIComponent).join('/')}`
-  const compare = `${web(origin)}/compare/${encodeURIComponent(origin.base)}...${encodeURIComponent(r.branch)}?expand=1`
+  const branchUrl = `${repoWeb(origin)}/tree/${filePath(r.branch)}`
+  const compare = `${repoWeb(origin)}/compare/${filePath(origin.base)}...${filePath(r.branch)}?expand=1`
   const saved: Saved = { branch: r.branch, commit: commit.sha, tree: tree.sha, url: branchUrl, compare }
-  if (r.pull && r.onto === 'new' && !isSha(origin.base)) {
+  if (r.pull && wantsPull(origin, r.onto, true)) {
     step('pull')
     try {
       const pr = await gh.json<{ number: number; html_url: string }>(`${at}/pulls`, {

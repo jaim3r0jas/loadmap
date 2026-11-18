@@ -10,8 +10,9 @@ export interface RepoOrigin {
   owner: string
   name: string
   ref: string
-  /** The branch the files first came from: a pull request goes into it. */
+  /** The ref the files first came from, and whether it is a branch a pull request can go into. */
   base: string
+  pullable: boolean
   /** The ref is a branch this tab saved: a save can add a commit to it. */
   made: boolean
   /** The commit the files were read from, and its tree. */
@@ -22,8 +23,9 @@ export interface RepoOrigin {
   originals: Record<string, string>
   /** The model that was opened: what an undo of everything opens again. */
   model: string
-  /** The files the commit holds with "\r\n" line endings. */
+  /** The files the commit holds with "\r\n" line endings, and the executable ones: a save keeps both so. */
   crlf: string[]
+  exec: string[]
 }
 
 export interface RepoTab {
@@ -67,11 +69,18 @@ function unpack(raw: string | null): RepoTab | undefined {
     const t = JSON.parse(raw ?? 'null') as Partial<Stored> | null
     const o = t?.origin
     if (!t || !o || typeof t.path !== 'string' || !isFiles(t.files) || !Object.hasOwn(t.files, t.path)) return undefined
-    for (const k of ['owner', 'name', 'ref', 'base', 'sha', 'tree', 'model'] as const)
-      if (typeof o[k] !== 'string') return undefined
-    if (typeof o.private !== 'boolean' || typeof o.made !== 'boolean' || !Array.isArray(o.paths) || !isFiles(o.changed))
-      return undefined
-    if (!Array.isArray(o.crlf) || !o.crlf.every((p) => typeof p === 'string')) return undefined
+    for (const k of ['owner', 'name', 'ref', 'sha', 'tree'] as const) if (typeof o[k] !== 'string') return undefined
+    if (typeof o.private !== 'boolean' || !Array.isArray(o.paths) || !isFiles(o.changed)) return undefined
+    const paths = (v: unknown) => (Array.isArray(v) && v.every((p) => typeof p === 'string') ? (v as string[]) : [])
+    // a tab kept by an earlier version of the page lacks what came since: the defaults it had then, never its edits lost
+    const later = {
+      base: typeof o.base === 'string' ? o.base : o.ref,
+      pullable: typeof o.pullable === 'boolean' ? o.pullable : !/^[0-9a-f]{40}$/.test(o.ref),
+      made: o.made === true,
+      model: typeof o.model === 'string' ? o.model : t.path,
+      crlf: paths(o.crlf),
+      exec: paths(o.exec),
+    }
     const originals: Record<string, string> = {}
     for (const p of o.paths) {
       const text = typeof p === 'string' && cleanPath(p) === p ? (own(o.changed, p) ?? own(t.files, p)) : undefined
@@ -79,7 +88,7 @@ function unpack(raw: string | null): RepoTab | undefined {
       originals[p] = text
     }
     const { paths: _, changed: __, ...origin } = o
-    return { origin: { ...origin, originals } as RepoOrigin, path: t.path, files: t.files }
+    return { origin: { ...origin, ...later, originals } as RepoOrigin, path: t.path, files: t.files }
   } catch {
     return undefined
   }

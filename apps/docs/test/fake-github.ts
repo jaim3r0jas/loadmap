@@ -131,6 +131,10 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
         private: !!repo.private,
         default_branch: repo.defaultBranch ?? 'main',
       })
+    if (rest.startsWith('/branches/')) {
+      const b = rest.slice('/branches/'.length)
+      return repo.refs[b] || made.has(b) ? json(200, { name: b }) : json(404, { message: 'Branch not found' })
+    }
     if (rest.startsWith('/commits/')) {
       const ref = at(rest.slice('/commits/'.length))
       if (!repo.refs[ref]) return json(404, { message: `No commit found for SHA: ${ref}` })

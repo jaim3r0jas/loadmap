@@ -119,7 +119,10 @@ describe('opening a repository', () => {
     const gh = client({ fetch: fakeGitHub(REPO).fetch })
     const t = parseRepo('https://github.com/acme/capacity/blob/feat/new-cache/shop.loadmap')
     const l = await list(gh, t as Exclude<typeof t, { error: string }>)
-    expect(l).toMatchObject({ ref: 'feat/new-cache', want: 'shop.loadmap' })
+    expect(l).toMatchObject({ ref: 'feat/new-cache', want: 'shop.loadmap', branch: true })
+    // a commit by its sha is no branch: no pull request can go into it
+    const at = await list(gh, { owner: 'acme', name: 'capacity', ref: shaOf('commit:main') })
+    expect(at.branch).toBe(false)
   })
 
   it('reads a private repository through the API with the token, never through raw.githubusercontent.com', async () => {
@@ -251,6 +254,8 @@ describe('what a tab keeps of a repository', () => {
       crlf: [],
       base: 'main',
       made: false,
+      pullable: true,
+      exec: [],
     },
     path: 'm.loadmap',
     files,
@@ -269,6 +274,21 @@ describe('what a tab keeps of a repository', () => {
       // a path that leaves the root, or names no .loadmap file, is no tab
       store.set('loadmap-editor-repo', JSON.stringify({ ...stored, files: { ...stored.files, '../x.loadmap': '' } }))
       expect(readTab()).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+      store.clear()
+    }
+  })
+
+  it('reads a tab an earlier version of the page kept, with the defaults it had then', () => {
+    vi.stubGlobal('sessionStorage', fake)
+    try {
+      const t = tab({ 'm.loadmap': 'edited', 'lib/x.loadmap': 'two' })
+      writeTab(t)
+      const stored = JSON.parse(store.get('loadmap-editor-repo')!)
+      for (const k of ['base', 'made', 'pullable', 'model', 'crlf', 'exec']) delete stored.origin[k]
+      store.set('loadmap-editor-repo', JSON.stringify(stored))
+      expect(readTab()).toEqual(t)
     } finally {
       vi.unstubAllGlobals()
       store.clear()
@@ -308,6 +328,8 @@ describe('what changed', () => {
         crlf: [],
         base: 'main',
         made: false,
+        pullable: true,
+        exec: [],
       },
       path: 'm.loadmap',
       files,
@@ -388,6 +410,8 @@ describe('saving to GitHub', () => {
     originals: {},
     model: 'shop.loadmap',
     crlf: ['win.loadmap'],
+    pullable: true,
+    exec: [],
     ...o,
   })
   const list = [
@@ -436,6 +460,20 @@ describe('saving to GitHub', () => {
     // every call went to the API, with the token
     for (const c of fake.calls)
       expect([c.url.startsWith('https://api.github.com/'), c.authorization]).toEqual([true, `Bearer ${token}`])
+  })
+
+  it('keeps an executable file so, and says when the branch it made is gone', async () => {
+    const fake = fakeGitHub({ ...REPO, token })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    await save(gh, origin({ exec: ['shop.loadmap'] }), list.slice(0, 1), { branch: 'b1', onto: 'new', message: 'x' })
+    expect(posts(fake)[0]![2]).toMatchObject({ tree: [{ path: 'shop.loadmap', mode: '100755' }] })
+    await expect(
+      save(gh, origin({ ref: 'merged-and-deleted', made: true }), list, {
+        branch: 'merged-and-deleted',
+        onto: 'same',
+        message: 'x',
+      }),
+    ).rejects.toThrow('merged-and-deleted is no longer on GitHub (deleted once its pull request was merged?)')
   })
 
   it('adds a commit to the branch it made, only forward, and says when the branch moved', async () => {

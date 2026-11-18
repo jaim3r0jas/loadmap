@@ -285,6 +285,7 @@ function Editor({ root }: { root: URL }) {
     setChanged(0)
     setShowChanges(false)
     setShowSave(false)
+    settle(new Error('the repository was left'))
     setUnkept(false)
   }
   // a file, or every file, back as the commit holds it
@@ -301,7 +302,20 @@ function Editor({ root }: { root: URL }) {
     editor.current?.setFiles({ path: model, files })
   }
   // saved: the files are now what the new commit holds, on the branch this tab made
+  // ⌘S waits for the dialog: the editor says "Saved" only once GitHub has the commit, "Not saved" when it closes first
+  const pending = useRef<{ resolve: () => void; reject: (e: Error) => void } | null>(null)
+  const settle = (e?: Error) => {
+    if (e) pending.current?.reject(e)
+    else pending.current?.resolve()
+    pending.current = null
+  }
+  const saveKey = () =>
+    new Promise<void>((resolve, reject) => {
+      pending.current = { resolve, reject }
+      setShowSave(true)
+    })
   const saved = (s: Saved) => {
+    settle()
     const t = repo.current
     if (!t) return
     const origin = { ...t.origin, ref: s.branch, made: true, sha: s.commit, tree: s.tree, model: t.path }
@@ -509,7 +523,10 @@ function Editor({ root }: { root: URL }) {
             path={repo.current.path}
             list={changes(repo.current)}
             onSaved={saved}
-            onClose={() => setShowSave(false)}
+            onClose={() => {
+              setShowSave(false)
+              settle(new Error(changed ? 'the dialog closed first' : 'nothing changed'))
+            }}
           />
         </Suspense>
       )}
@@ -524,7 +541,7 @@ function Editor({ root }: { root: URL }) {
         }
         onFiles={saveFiles}
         // ⌘S with a repository open saves to it; without one the editor says the draft is kept
-        onSave={from ? () => setShowSave(true) : undefined}
+        onSave={from ? saveKey : undefined}
         layout={layout}
         onChange={save}
         embedLink={embedLink}
@@ -615,13 +632,14 @@ const draftStart = (): Shared => startFrom() ?? { source: readDraft() ?? SOURCES
 
 /** A repository's model as this tab keeps it: where it came from, and its files, as they came and as they are. */
 function tabOf(o: Opened): RepoTab {
-  const { owner, name, ref, sha, tree, private: shut } = o.listing
+  const { owner, name, ref, sha, tree, private: shut, branch } = o.listing
   return {
     origin: {
       owner,
       name,
       ref,
       base: ref,
+      pullable: branch,
       made: false,
       sha,
       tree,
@@ -629,6 +647,7 @@ function tabOf(o: Opened): RepoTab {
       originals: o.files,
       model: o.path,
       crlf: o.crlf,
+      exec: o.exec,
     },
     path: o.path,
     files: o.files,

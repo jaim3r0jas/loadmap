@@ -8,7 +8,7 @@ import { DIALOG_CSS, editorTheme } from './dialog'
 import { gh, hasToken } from './session'
 import TokenForm from './TokenForm'
 import type { RepoOrigin } from './tab'
-import { branchFor, isSha, messageFor, type Saved, type SaveStep, save, saveProblem } from './write'
+import { branchFor, messageFor, type Saved, type SaveStep, save, saveProblem, wantsPull } from './write'
 
 const CSS = `${DIALOG_CSS}
 .lmg-save { display: grid; gap: 12px; }
@@ -36,6 +36,8 @@ const STEPS: { step: SaveStep; text: string }[] = [
   { step: 'branch', text: 'Making the branch' },
   { step: 'pull', text: 'Opening the pull request' },
 ]
+/** A save onto the branch this tab made moves it on: none is made. */
+const MOVING = 'Moving the branch on'
 
 /** A failure a token that may write would mend: none yet, a refused one, one without the permission or the reach. */
 const writeMends = (e: unknown) =>
@@ -50,7 +52,10 @@ export interface SaveDialogProps {
   onClose: () => void
 }
 
-export default function SaveDialog({ origin, path, list, onSaved, onClose }: SaveDialogProps) {
+export default function SaveDialog(props: SaveDialogProps) {
+  // what the reader saves from, as it was when the dialog opened: a save moves the page's own on
+  const [{ origin, path, list }] = useState(() => props)
+  const { onSaved, onClose } = props
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
   const [theme] = useState(editorTheme)
@@ -58,10 +63,11 @@ export default function SaveDialog({ origin, path, list, onSaved, onClose }: Sav
   const [onto, setOnto] = useState<'new' | 'same'>(origin.made ? 'same' : 'new')
   const [branch, setBranch] = useState(() => branchFor(path))
   const [message, setMessage] = useState(() => messageFor(list))
-  const canPull = !isSha(origin.base)
+  const canPull = origin.pullable
   const [pull, setPull] = useState(canPull)
+  // a token is asked for only when there is something to save
   const [ask, setAsk] = useState<string | null>(() =>
-    hasToken() ? null : `Saving writes to ${repo}: give a token that may write to it.`,
+    hasToken() || !list.length ? null : `Saving writes to ${repo}: give a token that may write to it.`,
   )
   const [step, setStep] = useState<SaveStep | null>(null)
   const [error, setError] = useState('')
@@ -73,13 +79,15 @@ export default function SaveDialog({ origin, path, list, onSaved, onClose }: Sav
     if (saved) done.current?.focus()
   }, [saved])
 
+  // one place says whether a pull request is opened: the steps shown and the save agree
+  const pulls = wantsPull(origin, onto, pull)
   const go = async () => {
     const target = onto === 'same' ? origin.ref : branch.trim()
     const request = {
       branch: target,
       onto,
       message,
-      ...(pull && onto === 'new' && canPull
+      ...(pulls
         ? {
             pull: {
               title: message.trim().split('\n')[0]!,
@@ -99,7 +107,11 @@ export default function SaveDialog({ origin, path, list, onSaved, onClose }: Sav
     } catch (e) {
       const said = e instanceof Error ? e.message : 'GitHub would not take the save. Try again.'
       if (writeMends(e)) setAsk(`${said} Saving needs a token that may write to ${repo}: Contents, read and write.`)
-      else setError(said)
+      else {
+        setError(said)
+        // the branch this tab made moved or is gone: a new one is what is left
+        if (e instanceof GitHubError && e.failure === 'conflict') setOnto('new')
+      }
     } finally {
       setStep(null)
     }
@@ -155,6 +167,8 @@ export default function SaveDialog({ origin, path, list, onSaved, onClose }: Sav
             )}
             <p className="lmg-hint">The next save adds a commit to this branch, or makes another.</p>
           </div>
+        ) : !list.length ? (
+          <p className="lmg-hint">Nothing changed since the files were opened: there is nothing to save.</p>
         ) : ask ? (
           <TokenForm
             reason={ask}
@@ -215,9 +229,9 @@ export default function SaveDialog({ origin, path, list, onSaved, onClose }: Sav
             )}
             {step && (
               <ol className="lmg-steps" aria-live="polite">
-                {STEPS.filter((s) => s.step !== 'pull' || (pull && onto === 'new' && canPull)).map((s, i) => (
+                {STEPS.filter((s) => s.step !== 'pull' || pulls).map((s, i) => (
                   <li key={s.step} data-state={i < at ? 'done' : i === at ? 'now' : 'later'}>
-                    {s.text}
+                    {s.step === 'branch' && onto === 'same' ? MOVING : s.text}
                   </li>
                 ))}
               </ol>
