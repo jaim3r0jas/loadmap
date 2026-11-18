@@ -425,7 +425,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   extends: {
     since: '1.3',
-    doc: 'The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure, metric or published figure replaces the one of its name; presets, scenarios, expectations and steps are added.',
+    doc: 'The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure or published figure replaces the one of its name; presets, scenarios, expectations and steps are added.',
     example: 'extends "./checkout.loadmap"',
     args: [{ name: 'path', kind: 'text' }],
     props: {},
@@ -999,7 +999,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   node: {
-    doc: 'A box. It may run a stage (pass, store, sink, lost, fanout, split, cache or limit) and own a component (demand and capacity lines).',
+    doc: 'A box. It may run a stage (pass, store, sink, lost, fanout) and own a component (demand and capacity lines).',
     example: 'node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }',
     args: BOX_ARGS,
     props: {

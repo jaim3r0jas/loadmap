@@ -39,9 +39,8 @@ phones -> api: "POST /photos"
 api -> resizers
 ```
 
-Every example of the repository is written this way too: `examples/checkout/checkout.loadmap`,
-`examples/alerts/alerts.loadmap`, `examples/search/search.loadmap`, `examples/regions/regions.loadmap` (in several
-files) and `examples/shop-live/shop.loadmap`. Their tests check that each draws exactly what its TypeScript draws.
+`examples/checkout/checkout.loadmap` and `examples/alerts/alerts.loadmap` are the two examples written this way. Their
+tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
@@ -56,16 +55,15 @@ files) and `examples/shop-live/shop.loadmap`. Their tests check that each draws 
 - **An edge is `a -> b`**, with an optional label after `:`.
 - **A text is `"…"` on one line.** A long one continues on the next line as another text (from `loadmap 1.2`): the
   pieces are one text, joined as written, so the space goes inside a piece. `loadmap fmt` breaks a text that runs past
-  120 columns this way. `'…'` is a text too, for one that holds a `"`. A text in backticks may run over lines, and
-  keeps its line breaks.
+  120 columns this way. A text in backticks may run over lines, and keeps its line breaks.
 - **`#` starts a comment.**
 
 ### Boxes, stages and components
 
 A **box** (`node`, `cluster`, `pool`) is what the diagram shows. Two more things can live in a box:
 
-- **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink`, `lost`,
-  `fanout`, `split`, `cache` or `limit` in a node, one or more `queue` in a cluster. Its id is the box's id unless you give it
+- **A stage:** what the dots do there. Write it as a statement inside the box: `pass`, `store`, `sink`, `fanout`,
+  `split`, `cache` or `limit` in a node, one or more `queue` in a cluster. Its id is the box's id unless you give it
   one. A label after the keyword names it in the meters and the sentences: `queue topic "orders topic"`. Without one it
   takes its component's `short` ("the gateway") when no other stage runs that component, and its id otherwise. A pool
   is its stage: its workers are lines of the pool (`pods`, `perPod`, `placement`, `autoscale { … }`), its id is the
@@ -178,7 +176,7 @@ growth { rate: 0.06; per: month; asOf: "2026-11-01" }
 
 A scenario may have an id before its label (from `loadmap 1.2`): `scenario proposed "Proposed" { … }`. A step or an
 expect then says `scenario: proposed`, and the button's text can be reworded without touching them; naming it by its
-label, `scenario: "Proposed"`, still works, and so does the label bare when it is one word (`scenario: Proposed`).
+label, `scenario: "Proposed"`, still works.
 
 The page shows a button per scenario above the diagram, a table of where each one first runs out, and a headroom
 chart with one line per scenario. **Growth** turns load multiples into dates: the load is 1× on `asOf` and grows by
@@ -482,7 +480,7 @@ Kubernetes and Istio, and PostgreSQL, MySQL, MongoDB and Envoy, for which nothin
 
 ```loadmap
 published brokersRef kafka {
-  edition: "2027-01"
+  edition: "2026-11"
   version: "4.4"
   brokers: brokers
   replication: 3
@@ -506,14 +504,6 @@ say so. Nothing is scaled or interpolated. `edition` pins the numbers, so a file
 newer edition (the checker says when one has other figures). `version` is kept beside the figure, and decides only for
 a component whose published figures change with it (RabbitMQ, Valkey, CockroachDB, OpenSearch, Istio). `figure`
 picks one when several match; `margin: 0.3` reads a best case from 70 % of the figure up to it, never above.
-
-The editions, newest first (`EDITIONS` in `@loadmap/core/catalog`; a new statement names the newest):
-
-| Edition | What it changed |
-| ------- | --------------- |
-| 2027-01 | the box each component is added as: RabbitMQ a cluster (its queue lives in one); etcd, CockroachDB, OpenSearch, MongoDB, Kubernetes and Istio a node. The figures are 2026-12's |
-| 2026-12 | how callers connect to each component (the `rule` a connection takes, `kafka/consumer-group`) and the documented defaults of its connection settings (`max_connections`). The figures are 2026-11's |
-| 2026-11 | the first: the components above with their published runs |
 
 A demand in bytes is brought to the figure's unit, as to any capacity's: `demand: at.topic * 1KB` against Kafka's MB/s.
 Count each unit at the size the run was made with (its `messageSize`); a size of your own is a condition no run
@@ -695,9 +685,8 @@ yet (the wait for a slot) is read and listed, and nothing uses it.
 
 ### Building blocks
 
-The shapes real systems take have statements of their own, so a model says what they do instead of working it out in
-formulas: a cache, an autoscaled pool, a rate limiter, retries, a box where units are lost, a merge, a split, slots
-held for a while, connections, latency and timeouts. The first four have a template to start from.
+Four shapes of real systems have statements of their own, so a model says what they do instead of working it out in
+formulas. Each has a template to start from.
 
 **What reaches a stage.** `at.db.reads` is the rate of `reads` reaching the stage `db`, and `at.db` every flow's. It
 is the flow's rate, less what a cache answered and what a rate limiter turned away before it; an overloaded `pass`
@@ -1289,7 +1278,7 @@ with no warning first; none is planned.
 | 1.2 | `mod(a, b)`, sizes (`1.5KB`, `20MB`), `like:` on a box, `out.<stage>`, a text continued on the next line, a scenario's id, the `view { … }` block (its settings at the top warn) | a `%` where a load multiple goes, a `×` where a share goes (`unit-mismatch`); a `%` glued to a number before a value, `30%+1` (`glued-percent`); `mod` and `out` as names |
 | 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
 | 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
-| 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
+| 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 
 ## In code
@@ -1313,8 +1302,8 @@ defaults: a flow's rate, what reaches a stage, a component's utilization and whe
 offset)` names the arguments of the builtin or fit the cursor is in. `quickFixes(source, diagnostics)` gives each
 diagnostic's fixes as text changes (the did-you-mean, a missing property, a bare number made a capacity).
 `definition` and `references(source, offset)` find where a name is declared and every place it is written, and
-`rename(source, offset, name)` renames it everywhere: a box's id with the stage and the component that take it. `encodeShare` and `decodeShare` (async) write and read
-share links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
+`rename(source, offset, name)` renames it everywhere: a box's id with the stage and the component that take it. `encodeShare` and `decodeShare` write and read share
+links: `#v1.` followed by the text deflated and base64url-encoded, then the values that differ from the defaults
 (`&load=30`). The link carries everything, so nothing goes to a server.
 
 A definition in several files is compiled with them: `compile(source, { path, files })`, `path` being the text's own
@@ -1442,7 +1431,7 @@ Its properties are named by this file: each a name of the library, `local: their
 
 ### extends
 
-The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure, metric or published figure replaces the one of its name; presets, scenarios, expectations and steps are added. From loadmap 1.3.
+The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure or published figure replaces the one of its name; presets, scenarios, expectations and steps are added. From loadmap 1.3.
 
 ```loadmap
 extends "./checkout.loadmap"
@@ -1889,7 +1878,7 @@ After the keyword: id [label].
 
 ### node
 
-A box. It may run a stage (pass, store, sink, lost, fanout, split, cache or limit) and own a component (demand and capacity lines).
+A box. It may run a stage (pass, store, sink, lost, fanout) and own a component (demand and capacity lines).
 
 ```loadmap
 node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }
