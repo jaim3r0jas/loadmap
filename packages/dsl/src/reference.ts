@@ -1,5 +1,6 @@
 import { CODES } from './diagnostics'
 import { BUILTINS } from './expr'
+import { callLabel } from './hover'
 import { type BlockSpec, EDGE_PROPS, type PropSpec, SCHEMA } from './schema'
 import { PROPERTY_UNITS } from './units'
 
@@ -75,12 +76,15 @@ export function reference(): string {
     '',
   )
   table(EDGE_PROPS)
+  // each with its arguments and what it gives, as the editors' help says it
   out.push(
     '### Functions',
     '',
-    Object.keys(BUILTINS)
-      .map((f) => `\`${f}\``)
-      .join(', '),
+    '| Function | |',
+    '| --- | --- |',
+    ...Object.entries(BUILTINS).map(
+      ([name, f]) => `| \`${callLabel(name, f.params, !!f.variadic)}\` | ${f.doc.replaceAll('|', '\\|')} |`,
+    ),
     '',
   )
   return out.join('\n')

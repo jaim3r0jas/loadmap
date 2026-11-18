@@ -87,6 +87,40 @@ or, when other edges already join the two boxes, to route the flow through them.
 `when`, but where it hides the edge (at the defaults, in a preset or a scenario) and the flow still goes that way, the
 checker warns.
 
+A component's optional lines name it for the reader, and `when` switches it off (no utilization, no limit) while a
+formula is false; an edge takes a `when` in a block after its label, and a flow names its `unit` for the sentences and
+picks its dots' `color` (a theme colour: `accent`, `alt`, `ok`, `warn`, `drop`, `muted`, or a CSS colour in quotes):
+
+```loadmap
+param cdn "CDN in front" { default: true }
+
+flow assets "assets" {
+  unit: "request"
+  rate: 500 * load
+  route: cdnEdge -> api
+  from: browsers
+  color: alt
+}
+
+node cdnEdge "CDN" {
+  pass
+  demand: flows.assets
+  capacity: estimated(100_000, "req/s")
+  over: "requests go straight to the origin"
+  name: "CDN edge nodes"
+  short: "the CDN"
+  plural: true
+  describe: "the provider's published limit"
+  when: cdn
+}
+
+cdnEdge -> api: "GET /assets" { when: cdn }
+```
+
+`name` is its name in the limits list (the box's label otherwise), `short` the name inside a sentence with its
+article, `plural` makes it "are past capacity", and `describe` is one line under its name. `shape: cylinder` draws a
+node as a cylinder, for a box that stores data.
+
 **A box like another** (from `loadmap 1.2`) says `like:` and the other box's id, and writes only what differs:
 
 ```loadmap
@@ -103,6 +137,96 @@ and a stage written here replaces its stages. A line taken that reads the other 
 `out.db`, `util.db`) reads this box here. The id, the label and the edges are each box's own. The other box is of
 the same kind (a pool is like a pool), may itself be like a third, and gives its stage and its component no id of
 their own, since each would then be declared twice.
+
+### Controls and values
+
+#### The load
+
+The load is the one slider every model has: a multiple of today's load, which every flow's `rate` reads as
+`load`. It starts at `default` (`min` unless said) and runs from `min` (1 unless said) to `max` in steps of `step` (1). The limits are
+searched past the slider's end, up to `searchMax` at the top level (2000× by default).
+
+```loadmap
+load "Orders, × today" { min: 1; max: 40; step: 0.5; default: 4 }
+```
+
+#### Parameters
+
+A parameter is a control the reader changes, read in formulas by its id. What it is follows from what it says:
+`options` make a select, `min` and `max` a slider, a `true` or `false` default a switch.
+
+```loadmap
+param pods "Worker pods" { options: [2, 4, 8]; default: 4; hint: "Each pod runs 4 workers" }
+param hitRatio "Cache hit ratio" { min: 0; max: 0.95; step: 0.05; default: 0.8; format: pct(value) }
+param readReplica "Read replica" { default: false }
+param replicas "Replicas" { options: [1, 2, 3]; default: 1; enabled: readReplica }
+```
+
+`hint` is one line under the control, `format` how its value is shown (a formula of `value`), and `enabled` greys it
+out while a formula of the other parameters is false. A text option (`options: ["eu", "us"]`) compares as a text:
+`region == "eu"`.
+
+#### Presets
+
+A preset is a button that sets several values at once, the load among them: the reader's shortcut to a moment worth
+looking at. On the load bar its load is a mark.
+
+```loadmap
+preset "Black Friday" { load: 12; pods: 8; hitRatio: 0.6 }
+```
+
+A scenario ([Scenarios and growth](#scenarios-and-growth)) is another thing: a design to set beside another, and
+picking one keeps the load where it is.
+
+#### Named formulas
+
+A `let` names a formula, so the others read it by its name and hover shows its value at the defaults:
+
+```loadmap
+let ordersPerSecond = 120 * load
+let workersNeeded = ceil(ordersPerSecond / 50)
+```
+
+#### Fitted costs
+
+A fit is a cost that grows with the load, `a + b × x`, fitted from measured points; call it like a function. With
+`through: origin` it has no idle part (`a` is 0). With `x` and `y` naming two measures, a snapshot fits it from live
+data and the points are what it falls back to (see [Measured data](#measured-data)).
+
+```loadmap
+fit workerCores "Worker CPU per request" {
+  source: "load test, 2026-10"
+  points rate cores {
+    200 0.26
+    400 0.47
+    800 0.9
+  }
+}
+
+pool consumers "Consumers" {
+  pods: pods
+  perPod: 4
+  demand: workerCores(flows.orders)
+  capacity: measured(pods * 2, "cores", "pod CPU limit")
+  over: "orders wait for a consumer"
+}
+```
+
+#### Target and full
+
+Thresholds say where the target and "runs out" are, as a share of a component's capacity: by default a component
+reaches its target at 50 % and runs out at 100 %. A team that runs hotter moves the target:
+
+```loadmap
+thresholds { target: 0.7; full: 1 }
+```
+
+The limits, the verdict, the load bar's marks and `underTarget` in an expectation read them. At the top level,
+`assume: "…"` adds a line of your own to the assumptions the page lists:
+
+```loadmap
+assume: "1× is today's busiest hour."
+```
 
 ### Formulas
 
@@ -134,7 +258,8 @@ as it is.
   - `out.stage` for what a fan-out sends, a second: what reaches it of each flow times that branch's copies. A box that
     runs a fan-out says `demand: out.push` instead of repeating the copies (from `loadmap 1.2`);
   - `i` inside `memberLabel` and `podLabel`, and `value` inside `format`.
-- **Calls:** the built-in functions (listed at the end), the fits by their id, and the functions a host page provides.
+- **Calls:** the built-in functions ([Functions](#functions) lists each), the fits by their id, and the functions a
+  host page provides.
 - **Capacities** come only from `measured(value, unit, source)`, `estimated(value, unit, source)` or, for a limit
   someone set, `configured(value, unit, source)`. A bare number is an error, so every capacity says where it came
   from.
@@ -472,10 +597,12 @@ yet (the wait for a slot) is read and listed, and nothing uses it.
 ### Building blocks
 
 The shapes real systems take have statements of their own, so a model says what they do instead of working it out in
-formulas: a cache, an autoscaled pool, a rate limiter, retries, a box where units are lost, a merge, a split, slots
-held for a while, connections, latency and timeouts. The first four have a template to start from.
+formulas: a cache, an autoscaled pool, a rate limiter, retries, a box where units are lost, queues, a fan-out, a split,
+slots held for a while, connections, latency and timeouts. The first four have a template to start from.
 
-**What reaches a stage.** `at.db.reads` is the rate of `reads` reaching the stage `db`, and `at.db` every flow's. It
+#### What reaches a stage
+
+`at.db.reads` is the rate of `reads` reaching the stage `db`, and `at.db` every flow's. It
 is the flow's rate, less what a cache answered and what a rate limiter turned away before it; an overloaded `pass`
 does not cut it, so each component's limit stays the one it has if what is in front keeps up. A component without a
 `demand` line handles what reaches its stages, in units per second:
@@ -488,7 +615,9 @@ node db "Database" {
 }
 ```
 
-**A cache** answers a share of the units and sends them back where they came from; the rest carry on. With capacity
+#### Caches
+
+A cache answers a share of the units and sends them back where they came from; the rest carry on. With capacity
 lines it is a component too, and past capacity it rejects like a `pass`:
 
 ```loadmap
@@ -499,7 +628,9 @@ node sessionCache "Cache" {
 }
 ```
 
-**An autoscaled pool** adds pods while the running ones are above `target`, between `min` and `max`. Its capacity is
+#### Autoscaling
+
+An autoscaled pool adds pods while the running ones are above `target`, between `min` and `max`. Its capacity is
 the pool at `max` pods, so it runs out where it cannot grow further; the box draws every pod it may run and dashes
 the ones it does not run now, and a meter counts them:
 
@@ -513,11 +644,15 @@ pool api "API" {
 }
 ```
 
-**A rate limiter** is a `limit` stage. Its capacity is the limit, `configured(…)`: a number someone set, exact, so it
+#### Rate limits
+
+A rate limiter is a `limit` stage. Its capacity is the limit, `configured(…)`: a number someone set, exact, so it
 takes no `±`. Above it the share over is turned away ("17 % rejected at the limiter"), and the stages after it see
 only what got through, so the service behind a limit may never run out.
 
-**Retries** send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
+#### Retries
+
+Retries send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
 more times. A `budget` caps the extra attempts at that share of the flow. A retry rule reads only the load and the
 parameters: retries change every other number, so they cannot depend on one.
 
@@ -537,7 +672,9 @@ tries) but multiply what everything in front sees: with 3 retries a gateway of 2
 1,000 runs out at 1,067 req/s instead of 2,000. `flows.requests` is the attempts; the meters show the attempts per
 request and the share failing after every retry, and the retries are drawn as rings.
 
-**A lost box** is where what other boxes lose goes, counted. A unit a stage turns away (a limiter above its limit, a
+#### Lost units
+
+A lost box is where what other boxes lose goes, counted. A unit a stage turns away (a limiter above its limit, a
 pass, cache or split past capacity), one a queue drops as too old, or one too slow for its client at the end of its
 way leaves the diagram there; with a lost box, its dot goes along the edge into it and fades inside. An edge from a box
 into a lost box sends what that box loses there, and `takes` keeps only some losses (`rejected`, `dropped`,
@@ -561,7 +698,64 @@ split past capacity warns nothing: any of them could, and the bars and their `ov
 A `merge` loses nothing: the newer unit of the key carries it. On the board a merged dot shrinks into a ripple of its
 flow's colour where it waited, so a queue that keeps only the newest shows it.
 
-**A split** sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
+#### Queues
+
+A queue is where units wait for the stage after it on their route, which drains it. It lives in a cluster (brokers
+holding its partitions), and `partitions` says how many each flow has, drawn as cells in the box. When the reader
+behind it falls behind, the flow with the lower `priority` is drained first (1 before 2), and flows of the same
+priority share.
+
+```loadmap
+cluster kafka "Kafka" {
+  members: brokers
+  queue topic "orders topic" { partitions { orders: 12; events: 6 } }
+}
+
+flow orders "orders" {
+  rate: 40 * load
+  priority: 1
+  route: gateway -> topic -> consumers
+  from: shop
+  drop { olderThan: 60; reason: "too old to ship" }
+}
+
+flow events "events" {
+  rate: 400 * load
+  priority: 2
+  route: gateway -> topic -> consumers
+  from: shop
+  merge { share: 0.4; reason: "newest per device kept" }
+}
+```
+
+A `drop` rule in a flow throws away the units that waited longer than `olderThan` seconds, before they are handled:
+they are lost as `dropped`, which a lost box can count. A `merge` says that under a backlog this `share` of what is
+handled is superseded by a newer unit of the same key, so the queue keeps only the newest: nothing is lost. Each takes
+a `reason` for its meter and a `when` that switches it on and off.
+
+#### Fan-out and sinks
+
+A fan-out copies each unit to several stages, one line per branch: the flow, the stage, and the copies of each
+unit. It ends a route. **A sink** is where a flow ends without a component: a receiver, a viewer, a phone.
+
+```loadmap
+node push "Push broker" {
+  fanout {
+    alerts -> phones: 3
+    alerts -> watches: 1
+  }
+}
+
+node phones "Phones" { sink }
+node watches "Watches" { sink }
+```
+
+Each alert reaches three phones and one watch. The copies are a formula and may be below 1: `alerts -> responders: 0.4`
+reaches a responder for two alerts in five ([Alerts](/examples/alerts/) has both).
+
+#### Splits
+
+A split sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
 failover. One line per way, the flow, the stages it goes through and its share; a flow's shares add up to 1, and a
 flow the split names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any
 other goes on with the route after the split, so reads can return through the API they came from:
@@ -580,7 +774,9 @@ With `route: gateway -> app -> router -> respond`, writes end at the primary and
 replica past capacity turns away only the reads. In TypeScript, `split({ to: [{ stages: ['primary'], share: 0.2 },
 …] })`, and `ev.paths` lists each flow's ways with their shares.
 
-**A pool of slots** runs out of slots, not of rate: connections, sessions, threads, requests in flight. `held` says
+#### Slots held for a while
+
+A pool of slots runs out of slots, not of rate: connections, sessions, threads, requests in flight. `held` says
 how many seconds each unit holds one, and the demand is then the slots in use, by Little's law: what reaches its
 stages each second times `held`. Its capacity counts slots. A pool beside the limit that runs a stage names the stage
 with `on`:
@@ -599,7 +795,9 @@ different times take a block, `held { orders: 20ms; sessions: 1h }`, and a flow 
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
 
-**A connection** says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
+#### Connections
+
+A connection says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
 group each partition is read by one consumer only: `assign: exclusive` deals the partitions of the queue in front to
 the workers of the pool after it, in turn, alternating pods. Workers beyond the partitions read nothing, and the
 component runs out when its busiest member does:
@@ -665,7 +863,9 @@ its name only, never matched to a configuration: PostgreSQL's 97 connections (it
 superusers) are `published dbMax postgresql { edition: "2026-12"; figure: "max-connections" }`, for `accepts: dbMax`. In TypeScript, `rule(kafka, 'kafka/consumer-group')` and
 `published(postgresql, { figure: 'max-connections' })`.
 
-**Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
+#### Latency and timeouts
+
+Latency comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
 share), and `ev.latency.orders` gives its mean, p50, p95 and p99. The limits still say when a box runs out; the
@@ -683,7 +883,8 @@ expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 150ms; underTa
 ```
 
 The expect holds when the p99 stays under 150 ms up to 10× on the pessimistic edge (every capacity at its low
-bound); without `underTarget`, at the values. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
+bound); without `underTarget`, at the values. An expectation holds one percentile: `p50` (the median) or `p95` in place of
+`p99` work the same way. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
 the shape, not a measurement. To set a service time from data, take a measured p99 at today's utilization: a single
 queue's p99 is `service × ln 100 ÷ (1 − utilization)`, so `service: latencyP99 / 1_000 * (1 - 0.4) / 4.6` for a p99
 in ms at 40 %.
@@ -781,6 +982,25 @@ change to the model can skip it. The block is from `loadmap 1.2`, and `direction
 `loadmap 1.5`; a file stamped before writes those settings at the top, as it always did. A setting at the top of a
 file whose version has it in the block warns (an error from `loadmap 1.5`), and `loadmap fmt` moves it there, with
 `layout: right` as `direction: right`.
+
+```loadmap
+view {
+  direction: auto
+  layout: stable
+  lanes: striped
+  speed: 20
+  transition: 1.2
+  fullScreen: [verdict, limits, headroom]
+  fullScreenMode: focus
+  closed: [eu]
+}
+```
+
+`speed` is the simulated seconds the dots run per real second (10 by default), `transition` the seconds a change of
+structure takes to draw (0.8; 0 cuts), `lanes` the tiers' shading, `fullScreen` the panels full screen shows below
+the diagram and `fullScreenMode` what it opens with (`panels`, or `focus`: the diagram, the story, the verdict and the
+load), and `closed` the subsystems drawn closed at first. The sections above say what `direction`, `rows` and `layout`
+do.
 
 ### Full screen
 
@@ -2204,6 +2424,25 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 
 ### Functions
 
-`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `mod`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`, `configured`
+| Function | |
+| --- | --- |
+| `min(a, b, …)` | The smallest of the values. |
+| `max(a, b, …)` | The largest of the values. |
+| `round(x)` | To the nearest whole number. |
+| `floor(x)` | Down to a whole number. |
+| `ceil(x)` | Up to a whole number: ceil(rate / 500) pods. |
+| `abs(x)` | Without its sign. |
+| `sqrt(x)` | The square root. |
+| `log(x)` | The natural logarithm. |
+| `exp(x)` | e to the power of x. |
+| `pow(x, y)` | x to the power of y. |
+| `mod(a, b)` | The remainder of a divided by b: mod(7, 3) is 1. |
+| `fmt(x)` | A number for a reader: 1,234 / 12.3 / 0.4. |
+| `compact(x)` | A compact number: 980 / 1.2k / 34k / 1.5M. |
+| `pct(x)` | A share from 0 to 1 as a percentage: 50 %. |
+| `secs(x)` | A duration in seconds: 42 s / 3 min / > 1 h. |
+| `measured(value, unit, source)` | A capacity read off a dashboard or a load test. `value +- 30%` (±) says how sure it is. |
+| `estimated(value, unit, source)` | A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value +- 30%` (±) says how sure it is. |
+| `configured(value, unit, source)` | A limit someone set, such as a rate limiter's: exact, so it takes no +- (±). |
 
 <!-- end of reference -->
