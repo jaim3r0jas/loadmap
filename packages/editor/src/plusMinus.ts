@@ -1,8 +1,9 @@
-import { type Extension, RangeSetBuilder, StateEffect } from '@codemirror/state'
+import { EditorSelection, type Extension, Prec, RangeSetBuilder, StateEffect } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
-  type EditorView,
+  EditorView,
+  keymap,
   ViewPlugin,
   type ViewUpdate,
   WidgetType,
@@ -52,8 +53,8 @@ function signs(view: EditorView): DecorationSet {
 
 /**
  * Draws a capacity's `+-` as `±` while `on()` says ligatures are on, the way a font joins `->`: the text keeps its
- * marks (copy, undo and the file are as written), the cursor steps over the sign as over one character, and
- * Backspace takes one mark at a time, as in a ligature.
+ * marks (copy, undo and the file are as written), the cursor steps over the sign as over one character (an atomic
+ * range), and Backspace and Delete take one mark at a time, as in a ligature.
  */
 export function plusMinusSigns(on: () => boolean): Extension {
   const plugin = ViewPlugin.fromClass(
@@ -67,7 +68,48 @@ export function plusMinusSigns(on: () => boolean): Extension {
           this.decorations = on() ? signs(u.view) : Decoration.none
       }
     },
-    { decorations: (v) => v.decorations },
+    {
+      decorations: (v) => v.decorations,
+      provide: (p) => EditorView.atomicRanges.of((view) => view.plugin(p)?.decorations ?? Decoration.none),
+    },
   )
-  return plugin
+  /**
+   * Backspace after a sign, Delete before it: one mark, as in a ligature, where the atomic range would take them all.
+   * Only empty cursors, each at a sign's edge; anything else is CodeMirror's.
+   */
+  const oneMark =
+    (back: boolean) =>
+    (view: EditorView): boolean => {
+      const set = view.plugin(plugin)?.decorations
+      if (!set?.size) return false
+      const at = (pos: number) => {
+        let edge: { from: number; to: number } | undefined
+        set.between(pos, pos, (from, to) => {
+          if ((back ? to : from) === pos) edge = { from, to }
+        })
+        return edge
+      }
+      const signs = view.state.selection.ranges.map((r) => (r.empty ? at(r.head) : undefined))
+      if (!signs.every((s) => s)) return false
+      const marks = signs.map((s) => (back ? { from: s!.to - 1, to: s!.to } : { from: s!.from, to: s!.from + 1 }))
+      view.dispatch({
+        changes: marks,
+        selection: EditorSelection.create(
+          marks.map((m) => EditorSelection.cursor(m.from)),
+          view.state.selection.mainIndex,
+        ),
+        userEvent: back ? 'delete.backward' : 'delete.forward',
+        scrollIntoView: true,
+      })
+      return true
+    }
+  return [
+    plugin,
+    Prec.high(
+      keymap.of([
+        { key: 'Backspace', run: oneMark(true) },
+        { key: 'Delete', run: oneMark(false) },
+      ]),
+    ),
+  ]
 }
