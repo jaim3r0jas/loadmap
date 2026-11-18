@@ -1,8 +1,9 @@
 # Using the editor
 
 A `.loadmap` definition and its live diagram. Errors show under the line as you type, and the diagram keeps the
-last version that compiled. Your text is kept in this browser as a draft. [Open the editor](/editor/): this page is
-also its **Help**.
+last version that compiled. Your text is kept in this browser as a draft.
+
+[Open the editor](/editor/): this page is also its **Help**.
 
 ## The canvas and the panels
 
@@ -18,10 +19,15 @@ has Suggest, Format, Undo, an indent, braces, quotes, Rename, Find and Done; **�
 A click on a box selects its lines in the text, and the cursor in a box's lines rings the box. **Format**
 (Shift+Alt+F) lays the text out the one way, as `loadmap fmt` does.
 
+## New and Export
+
+**New** starts from a template or an example, opens a model from GitHub (below) and adds a component from the
+catalog (below); **Export** downloads the text or an image.
+
 ## Files and tabs
 
 A model in several files opens on its model, each file in a tab of one row: close a tab and the file stays, and a dot
-marks a file with errors. The files' explorer beside the text is a tree by folder: it opens a file as a tab, and adds,
+marks a file with errors or warnings. The files' explorer beside the text is a tree by folder: it opens a file as a tab, and adds,
 renames and removes files, the `include`, `import`, `part of` and `extends` lines that name them following. Under
 each file it lists the subsystems the file declares, one in another indented under it; a click (or Enter) opens the
 file at that subsystem's line. Rename reaches every file of the model, and Undo takes a rename back in all of them.
@@ -38,6 +44,8 @@ defaults, a published figure with its conditions and source. Inside a call, the 
 them. An error's tooltip offers its quick fixes (the name meant, a missing property, a capacity for a bare number, a
 lost box for a loss nothing counts), and the other uses of the name under the cursor are marked.
 
+## Keys, saving and View
+
 Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it. **View → Keyboard shortcuts**
 lists every key; Esc then Tab leaves the text. There is nothing to save: the page keeps your draft as you type, so ⌘S
 (Ctrl+S) only says so, unless the files came from GitHub (below). **View** also sets the code's font (the system's,
@@ -46,7 +54,8 @@ drawn as one arrow, a capacity's `+-` as `±`, the text as written); this browse
 
 ## Tracking live changes
 
-**Track live changes**, a button in the code panel, follows your edits on the board: once an edit is drawn and the
+**Track live changes**, a button at the head of the code panel on a wide screen (not on a phone), follows your edits
+on the board: once an edit is drawn and the
 text rests half a second, the board brings the boxes it changed into view and marks them with a short glow (a box
 whose lines the edit is in, one a changed line names, one that is new or another size, the ends of an edge that came
 or went). Off, the view stays where you left it.
@@ -62,8 +71,7 @@ takes out before it adds them. [Published figures](/language/published/) has the
 
 ## Opening and saving on GitHub
 
-**New** starts from a template or an example, and **Export** downloads the text or an image. **New → Open from
-GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
+**New → Open from GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
 the files it names. A public repository opens as it is; a private one asks for a token in place: the dialog links
 to GitHub's form, filled in, and the token stays in the page (or this tab, if you say so), never in a link or this
 browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
@@ -89,5 +97,3 @@ an inspector in the panel. Click a box to change its label, its capacity and the
 **Model** for the title, the load, growth and the flows. Each change is a small edit of the text, so **Undo** takes it
 back, the link carries it, and **Show code** shows what changed. For a box `like` another, the inspector lists each
 line it takes from the other, as written there; **Write here** puts it in the box, to change it there.
-
-[The language](/language/) · [Reference](/reference/) · [Examples](/examples/)

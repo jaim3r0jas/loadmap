@@ -962,6 +962,11 @@ body.app main > .island {
   font-size: 1rem;
 }
 
+/* the help is several sections: room above each but the first */
+.help h2 ~ h2 {
+  margin-top: 20px;
+}
+
 .help p {
   margin: 0 0 10px;
 }
