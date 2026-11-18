@@ -26,6 +26,7 @@ import shopSource from '../../../../docs/multi-file/shop.loadmap?raw'
 import storySource from '../../../../docs/multi-file/shop.story.loadmap?raw'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
+import { changedText, changes } from './github/changes'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
 import { clearAside, leave as leaveTab, type RepoTab, readAside, readTab, writeTab } from './github/tab'
@@ -118,6 +119,16 @@ const fromLink = () => location.hash.startsWith('#v1.') || location.hash.startsW
 const fromRepo = () => !fromLink() && query().has('repo')
 /** The GitHub dialog, loaded the first time it opens. */
 const OpenDialog = lazy(() => import('./github').then((m) => ({ default: m.OpenDialog })))
+const ChangesDialog = lazy(() => import('./github').then((m) => ({ default: m.ChangesDialog })))
+/** The button's own rules, with it: docs.css is every page's first load. */
+const REPO_CSS = `
+.app-repo { max-width: 260px; font-family: var(--lm-mono); font-size: .78rem; }
+.app-repo .app-label { overflow: hidden; text-overflow: ellipsis; }
+.app-changed { min-width: 18px; padding: 0 5px; border-radius: 999px; color: var(--lm-accent); background: var(--lm-accent-soft); font: 600 .72rem var(--lm-font); text-align: center; }
+`
+/** A branch, for the button that says which repository the files came from. */
+const BRANCH =
+  'M5 4v6.5M11 6c0 3-6 2.5-6 5M6.5 2.75a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM12.5 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM6.5 12.75a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z'
 const template = () => TEMPLATES.find((t) => t.id === query().get('template'))
 const example = () => {
   const name = query().get('example')
@@ -249,16 +260,44 @@ function Editor({ root }: { root: URL }) {
   })
   const repo = useRef<RepoTab | undefined>(tab)
   const [aside, setAside] = useState(readAside)
+  // the repository the files came from, and how many the reader changed: the bar's button says both
+  const [from, setFrom] = useState(() => tab && `${tab.origin.owner}/${tab.origin.name}`)
+  const [changed, setChanged] = useState(() => (tab ? changes(tab).length : 0))
+  const [showChanges, setShowChanges] = useState(false)
   // the tab could not keep a private repository's files: a reload would lose the edits, and the page says so
   const [unkept, setUnkept] = useState(false)
   const keep = (t: RepoTab) => {
     repo.current = t
+    setFrom(`${t.origin.owner}/${t.origin.name}`)
+    setChanged(changes(t).length)
     if (!writeTab(t) && t.origin.private) setUnkept(true)
   }
+  // the start from an address hears of a repository after the first render
+  const keeping = useRef(keep)
+  keeping.current = keep
   const leaveRepo = () => {
     if (repo.current && leaveTab(repo.current)) setAside(readAside())
     repo.current = undefined
+    setFrom(undefined)
+    setChanged(0)
+    setShowChanges(false)
     setUnkept(false)
+  }
+  // a file, or every file, back as the commit holds it
+  const undo = (path?: string) => {
+    const t = repo.current
+    if (!t) return
+    const { originals } = t.origin
+    const back = new Set(path ? [path] : [...Object.keys(originals), ...Object.keys(t.files)])
+    const files = Object.fromEntries(
+      [...new Set([...Object.keys(t.files), ...back])].flatMap((p): [string, string][] => {
+        const text = back.has(p) ? (Object.hasOwn(originals, p) ? originals[p] : undefined) : t.files[p]
+        return text === undefined ? [] : [[p, text]]
+      }),
+    )
+    const model = Object.hasOwn(files, t.path) ? t.path : (Object.keys(originals)[0] ?? t.path)
+    keep({ ...t, path: model, files })
+    editor.current?.setFiles({ path: model, files })
   }
   /** A menu's own text in the editor's place: the repository is left first. */
   const leaving = (put: () => void) => () => {
@@ -287,8 +326,7 @@ function Editor({ root }: { root: URL }) {
       .then((r) => {
         if (gone) return
         if ('opened' in r) {
-          repo.current = tabOf(r.opened)
-          if (!writeTab(repo.current) && r.opened.listing.private) setUnkept(true)
+          keeping.current(tabOf(r.opened))
           setStart(fromOpened(r.opened))
         }
         // the draft as it would open without the address, in all its files; the error said above it
@@ -441,6 +479,17 @@ function Editor({ root }: { root: URL }) {
           <OpenDialog start={github} onOpen={opened} onClose={() => setGithub(null)} />
         </Suspense>
       )}
+      {from && <style>{REPO_CSS}</style>}
+      {showChanges && repo.current && (
+        <Suspense fallback={null}>
+          <ChangesDialog
+            tab={repo.current}
+            list={changes(repo.current)}
+            onUndo={undo}
+            onClose={() => setShowChanges(false)}
+          />
+        </Suspense>
+      )}
       <LoadmapEditor
         ref={editor}
         fill
@@ -491,6 +540,19 @@ function Editor({ root }: { root: URL }) {
         exportItems={images}
         actions={
           <>
+            {from && (
+              <button
+                type="button"
+                className="lm-btn lme-quiet app-repo"
+                aria-label={`${from}: ${changed ? changedText(changed) : 'nothing changed'}`}
+                title={`Opened from ${from}: what changed`}
+                onClick={() => setShowChanges(true)}
+              >
+                <Icon d={BRANCH} />
+                <span className="app-label">{from}</span>
+                {changed > 0 && <span className="app-changed">{changed}</span>}
+              </button>
+            )}
             <ThemeMenu />
             <button
               type="button"

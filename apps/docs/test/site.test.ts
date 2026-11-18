@@ -804,6 +804,59 @@ describe('the built site', () => {
     }
   }, 120_000)
 
+  it("shows what changed of a repository's files, each file's diff, and puts them back", async () => {
+    const shop = (f: string) => readFileSync(join(import.meta.dirname, '../../../docs/multi-file', f), 'utf8')
+    const fake = fakeGitHub({
+      owner: 'acme',
+      name: 'capacity',
+      refs: {
+        main: {
+          'shop.loadmap': shop('shop.loadmap'),
+          'shop.story.loadmap': shop('shop.story.loadmap'),
+          'platform.loadmap': shop('platform.loadmap'),
+        },
+      },
+    })
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await routeGitHub(page, fake.fetch)
+      page.on('dialog', (d) => d.accept())
+      await page.goto(`${url}editor/?repo=acme/capacity&path=shop.loadmap`)
+      const button = page.getByRole('button', { name: /^acme\/capacity: / })
+      await button.waitFor()
+      expect(await button.getAttribute('aria-label')).toBe('acme/capacity: nothing changed')
+
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.type('\n# edited here')
+      await page.getByRole('button', { name: 'acme/capacity: 1 file changed' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Changes' })
+      await dialog.getByRole('button', { name: 'shop.loadmap', exact: true }).click()
+      // the diff: the line added, marked, with the unchanged lines around it folded
+      await dialog.locator('.lmg-diff tr[data-kind="new"]', { hasText: '# edited here' }).waitFor()
+      expect(await dialog.locator('.lmg-diff tr[data-kind="fold"]').first().textContent()).toMatch(
+        /^\d+ unchanged lines$/,
+      )
+
+      await dialog.getByRole('button', { name: 'Undo the changes to shop.loadmap' }).click()
+      await dialog.getByText('Nothing changed: the files are as main holds them.').waitFor()
+      await page.getByRole('button', { name: 'acme/capacity: nothing changed' }).waitFor()
+      expect(await page.locator('.cm-content').textContent()).not.toContain('# edited here')
+
+      // every file at once, after a confirm
+      await dialog.getByRole('button', { name: 'Close' }).click()
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.type('\n# again')
+      await page.getByRole('button', { name: 'acme/capacity: 1 file changed' }).click()
+      await dialog.getByRole('button', { name: 'Undo all changes' }).click()
+      await page.getByRole('button', { name: 'acme/capacity: nothing changed' }).waitFor()
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
   it('asks for a token in place for a private repository, and keeps its text and the token out of lasting storage', async () => {
     const token = `github_pat_${'A'.repeat(40)}`
     const secret = readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8').replace(

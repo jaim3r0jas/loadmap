@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { compile } from '@loadmap/dsl'
 import { describe, expect, it, vi } from 'vitest'
 import { client, GitHubError } from '../site/islands/github/api'
+import { changedText, changes } from '../site/islands/github/changes'
+import { lineDiff } from '../site/islands/github/Diff'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
 import { takeToken, tokenPage } from '../site/islands/github/session'
@@ -272,5 +274,75 @@ describe('what a tab keeps of a repository', () => {
       vi.unstubAllGlobals()
       store.clear()
     }
+  })
+})
+
+describe('what changed', () => {
+  it('lists each file whose text differs from the commit, changed, added or removed, by path', () => {
+    const originals = { 'm.loadmap': 'one', 'lib/x.loadmap': 'two', 'old.loadmap': 'three' }
+    const files = { 'm.loadmap': 'one, edited', 'lib/x.loadmap': 'two', 'new.loadmap': 'four' }
+    const t: RepoTab = {
+      origin: {
+        owner: 'acme',
+        name: 'p',
+        ref: 'main',
+        sha: 'a'.repeat(40),
+        tree: 'b'.repeat(40),
+        private: false,
+        originals,
+      },
+      path: 'm.loadmap',
+      files,
+    }
+    expect(changes(t)).toEqual([
+      { path: 'm.loadmap', kind: 'changed', before: 'one', after: 'one, edited' },
+      { path: 'new.loadmap', kind: 'added', after: 'four' },
+      { path: 'old.loadmap', kind: 'removed', before: 'three' },
+    ])
+    expect(changes({ ...t, files: originals })).toEqual([])
+    expect([changedText(1), changedText(3)]).toEqual(['1 file changed', '3 files changed'])
+  })
+})
+
+describe('a line diff', () => {
+  const marks = (a: string, b: string) =>
+    lineDiff(a, b)!.map((l) => `${{ same: ' ', gone: '-', new: '+' }[l.kind]}${l.text}`)
+
+  it('marks the lines gone and new, the rest as it is, with each side numbered', () => {
+    expect(marks('a\nb\nc\nd', 'a\nx\nc\nd\ne')).toEqual([' a', '-b', '+x', ' c', ' d', '+e'])
+    expect(lineDiff('a\nb', 'a\nb')!.every((l) => l.kind === 'same')).toBe(true)
+    const [, gone, added, after] = lineDiff('a\nb\nc', 'a\nB\nc')!
+    expect([gone, added, after]).toEqual([
+      { kind: 'gone', text: 'b', before: 2 },
+      { kind: 'new', text: 'B', after: 2 },
+      { kind: 'same', text: 'c', before: 3, after: 3 },
+    ])
+  })
+
+  it('finds the shortest edit, and rebuilds both texts from it', () => {
+    const a = Array.from({ length: 300 }, (_, i) => `line ${i % 7} ${i % 3}`).join('\n')
+    const b = a
+      .split('\n')
+      .filter((_, i) => i % 11 !== 0)
+      .map((l, i) => (i % 13 ? l : `${l}!`))
+      .join('\n')
+    const d = lineDiff(a, b)!
+    expect(
+      d
+        .filter((l) => l.kind !== 'new')
+        .map((l) => l.text)
+        .join('\n'),
+    ).toBe(a)
+    expect(
+      d
+        .filter((l) => l.kind !== 'gone')
+        .map((l) => l.text)
+        .join('\n'),
+    ).toBe(b)
+  })
+
+  it("gives up on texts too long and too different to compare at a reader's pace", () => {
+    const many = (c: string) => Array.from({ length: 4000 }, (_, i) => `${c}${i}`).join('\n')
+    expect(lineDiff(many('a'), many('b'))).toBeUndefined()
   })
 })
