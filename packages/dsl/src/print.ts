@@ -1,6 +1,6 @@
 import type { Expr, Stmt } from './ast'
 import { ONE_SPELLING } from './schema'
-import { before, CURRENT, parseVersion, stampOf } from './versions'
+import { before, CURRENT, parseVersion, plusMinusMark, stampOf } from './versions'
 
 /**
  * Statements as text the parser reads back to the same statements: what `loadmap bundle` writes, a model's files as
@@ -25,6 +25,8 @@ export function print(stmts: readonly Stmt[], source: string): string {
   // a fit of its own may be called mod)
   const version = stampOf(source, stmts)?.version ?? CURRENT
   const modulo = !before(version, parseVersion(ONE_SPELLING)!)
+  // and from 1.6 a capacity's ± is written "+-"
+  const plusMinus = plusMinusMark(version)
   const name = (n: string): string => {
     if (!n.includes('@')) return n
     let out = hidden.get(n)
@@ -84,7 +86,7 @@ export function print(stmts: readonly Stmt[], source: string): string {
       case 'array':
         return `[${e.items.map((x) => expr(x)).join(', ')}]`
       case 'pm':
-        return `${expr(e.value, 7)} ± ${expr(e.within, 7)}${e.percent ? '%' : ''}`
+        return `${expr(e.value, 7)} ${plusMinus} ${expr(e.within, 7)}${e.percent ? '%' : ''}`
       case 'error':
         return source.slice(e.from, e.to)
     }

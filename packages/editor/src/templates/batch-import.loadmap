@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # Files are uploaded, stored, parsed into rows and loaded into a warehouse in batches. Bigger batches cost the
 # warehouse less per row; more parsers only help until the warehouse is the limit.
 title: "Batch import"
@@ -58,7 +58,7 @@ node warehouse "Warehouse" {
   store
   short: "the warehouse"
   demand: flows.files * 5_000 / rows
-  capacity: estimated(200 ± 30%, "inserts/s", "a test on a smaller instance")
+  capacity: estimated(200 +- 30%, "inserts/s", "a test on a smaller instance")
   over: "inserts queue and the import misses its window"
 }
 

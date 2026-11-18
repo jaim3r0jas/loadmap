@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # Reads go to replicas, writes to the primary, and the primary also ships every write to each replica. More replicas
 # take reads off each other but add replication work on the primary.
 title: "Reads on replicas"
@@ -50,7 +50,7 @@ node replicaPool "Read replicas" `${replicas} replicas` {
   short: "the read replicas"
   plural: true
   demand: flows.reads
-  capacity: estimated(replicas * 4_000 ± 30%, "queries/s", "about 4,000 reads/s per replica")
+  capacity: estimated(replicas * 4_000 +- 30%, "queries/s", "about 4,000 reads/s per replica")
   over: "reads slow down and fall behind the primary"
 }
 
@@ -60,7 +60,7 @@ node primary "Primary" "writes" {
   short: "the primary"
   # every write is applied here and shipped to each replica
   demand: flows.writes * (1 + 0.25 * replicas)
-  capacity: estimated(1_500 ± 30%, "writes/s", "vendor sizing for this instance")
+  capacity: estimated(1_500 +- 30%, "writes/s", "vendor sizing for this instance")
   over: "writes queue and replication lag grows"
   describe: `${replicas} replicas to ship to`
 }

@@ -108,7 +108,7 @@ the parts to the end from the session (Verification) before wrapping it up.
 
 - **No DOM or React in core, sim or layout.** They run in Node tests; React is only the binding.
 - **Every capacity says where it came from**: `measured(...)`, `estimated(...)` or a `fitLinear(...)` result. The
-  verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`± 30%` in the
+  verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`+- 30%` in the
   language) makes every crossing a range; the ranking, the first limit, presets, `compare()` and expectations use
   its pessimistic edge (every capacity at its low bound), and without a ± every text reads as before. An expectation
   that holds only at the high edge, or rests on measured data that is missing, is inconclusive: `loadmap check` warns

@@ -112,6 +112,9 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
     ...(data.mod ? [{ title: `Keep the remainder: ${data.mod}`, changes: replace(data.mod) }] : []),
   ],
 
+  // "+-" is a plus and a minus here (before 1.6)
+  'plus-minus': ({ replace }) => [{ title: 'Keep the sum: write "+ -"', changes: replace('+ -') }],
+
   // a -> b: { … }
   'colon-before-block': ({ replace }) => [{ title: 'Drop the ":"', changes: replace('') }],
 

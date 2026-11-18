@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # An API that scales its pods with the load: the autoscaler adds a pod whenever the running ones pass their target,
 # up to a maximum. It runs out only when it cannot grow further.
 title: "Autoscaled API"
@@ -48,7 +48,7 @@ node db "Database" {
   store
   short: "the database"
   demand: flows.requests * 2
-  capacity: estimated(12_000 ± 30%, "queries/s", "vendor sizing")
+  capacity: estimated(12_000 +- 30%, "queries/s", "vendor sizing")
   over: "queries queue on the primary"
 }
 

@@ -105,7 +105,7 @@ checkout.evaluate().measure?.text
 it('keeps its headroom', () => assertHolds(checkout))   // throws, listing every failed expectation
 ```
 
-The headroom chart draws a band per scenario. In a `.loadmap` it reads `estimated(20_000 ± 30%, …)` and
+The headroom chart draws a band per scenario. In a `.loadmap` it reads `estimated(20_000 +- 30%, …)` and
 `expect "Today keeps 7×" { underTarget: 7 }`; `loadmap check checkout.loadmap` exits 1 when one fails, with its line and
 column, and writes GitHub annotations under Actions.
 
@@ -147,7 +147,7 @@ The same model and view can be written as a `.loadmap` definition and edited nex
 then the editor page). `@loadmap/dsl` compiles it to what `<Loadmap>` takes:
 
 ```loadmap
-loadmap 1.5
+loadmap 1.6
 load "Users, × today" { max: 100; default: 10 }
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
 

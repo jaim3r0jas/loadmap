@@ -1,6 +1,6 @@
 import type { BinOp, Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 import { type Code, Reporter, type Span } from './diagnostics'
-import { lex, type Token } from './lexer'
+import { isPlusMinus, lex, type Token } from './lexer'
 import { SCHEMA } from './schema'
 
 /** Deeper formulas are refused: a shared link must not be able to exhaust the stack. */
@@ -379,7 +379,7 @@ class Parser {
       this.fail(this.peek(), `the formula is nested more than ${MAX_DEPTH} deep`, undefined, 'too-large')
     try {
       const test = this.binary(1)
-      if (this.is('±') || this.is('+/-')) return this.pm(test)
+      if (isPlusMinus(this.peek())) return this.pm(test)
       if (!this.eat('?')) return test
       const then = this.expr()
       this.expect(':', '":" of the "?"')
@@ -392,10 +392,11 @@ class Parser {
 
   /** `value ± within` or `value ± within%`: parsed anywhere, so the checker can say where it belongs. */
   pm(value: Expr): Expr {
-    this.next()
+    const m = this.next()
     const within = this.unary()
     const percent = this.is('%') ? this.next() : null
-    return { t: 'pm', value, within, percent: !!percent, from: value.from, to: percent?.to ?? within.to }
+    const mark = { from: m.from, to: m.to }
+    return { t: 'pm', value, within, percent: !!percent, mark, from: value.from, to: percent?.to ?? within.to }
   }
 
   binary(min: number): Expr {
@@ -408,6 +409,9 @@ class Parser {
       const before = this.toks[this.i - 1]
       const glued = t.text === '%' && before?.kind === 'number' && before.to === t.from
       this.next()
+      // "a +- b" in a file stamped before 1.6: the lexer reads a plus and a minus, the writer perhaps a ±
+      const sign = this.peek()
+      const plusMinus = t.text === '+' && sign.kind === 'punct' && sign.text === '-' && sign.from === t.to
       const right = this.binary(prec + 1)
       const op = (t.text === '===' ? '==' : t.text === '!==' ? '!=' : t.text) as BinOp
       const triple = op !== t.text ? { from: t.from, to: t.to } : undefined
@@ -420,6 +424,7 @@ class Parser {
         to: right.to,
         ...(glued && { glued }),
         ...(triple && { triple }),
+        ...(plusMinus && { plusMinus: { from: t.from, to: sign.to } }),
       }
     }
   }

@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 include "./checkout.data.loadmap"
 include "./checkout.story.loadmap"
 import "./platform.loadmap" { podPool; postgres }
@@ -63,7 +63,7 @@ node gateway "API gateway" {
   pass
   short: "the API gateway"
   demand: flows.orders + flows.events
-  capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")
+  capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")
   over: "clients get 429s"
 }
 

@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # The checkout pipeline, as a definition: the same model and view as model.ts and view.ts.
 title: "Checkout pipeline"
 view {
@@ -102,7 +102,7 @@ node gateway "API gateway" {
   pass
   short: "the API gateway"
   demand: flows.orders + flows.events
-  capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")
+  capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")
   over: "clients get 429s"
 }
 
@@ -132,7 +132,7 @@ node db "Postgres" "primary" {
   name: "Postgres primary"
   short: "the database"
   demand: batch ? flows.orders / rows : flows.orders
-  capacity: estimated(4_000 ± 30%, "commits/s")
+  capacity: estimated(4_000 +- 30%, "commits/s")
   over: "commits queue on the primary"
 }
 

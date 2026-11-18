@@ -88,7 +88,7 @@ describe('format', () => {
         'node a "A" {',
         '  pass',
         '  demand: flows.x * (2 + 1)',
-        '  capacity: measured(10_000 ± 20%, "req/s", "a  test")',
+        '  capacity: measured(10_000 +- 20%, "req/s", "a  test")',
         '  describe: `${ pods }  pods`',
         '}',
         '',
@@ -139,6 +139,13 @@ describe('format', () => {
     )
     expect(fmt('loadmap 1.4\na: 20ms*b\nc: estimated(1 ± 30%,"x")\nd: 10%3\ne: 80%  -  b\nf: 7×')).toBe(
       'loadmap 1.4\na: 20ms * b\nc: estimated(1 ± 30%, "x")\nd: 10 % 3\ne: 80% - b\nf: 7×\n',
+    )
+    // from 1.6 a capacity's ± is written "+-"; before, "+-" is a plus and a minus, and spaced so
+    expect(fmt('loadmap 1.6\nc: estimated(1 ± 30%,"x")\nd: measured(2+/-1,"x")\ne: estimated(3 +-5%,"x")')).toBe(
+      'loadmap 1.6\nc: estimated(1 +- 30%, "x")\nd: measured(2 +- 1, "x")\ne: estimated(3 +- 5%, "x")\n',
+    )
+    expect(fmt('loadmap 1.5\nx: a +- b\nc: estimated(1 ± 30%, "x")\n')).toBe(
+      'loadmap 1.5\nx: a + -b\nc: estimated(1 ± 30%, "x")\n',
     )
     // from 1.5 a unit is part of its number, a "%" one too, and the remainder is mod(a, b)
     expect(fmt('loadmap 1.5\nz: a %b\nd: 30%+1\ne: (a % b) % c\nf: (a * (b)) % (c)\ng: (a) * (b) % c\n')).toBe(

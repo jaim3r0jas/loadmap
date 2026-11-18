@@ -18,13 +18,17 @@ export type Expr = Span &
     | { t: 'unary'; op: '-' | '+' | '!'; arg: Expr }
     /**
      * `glued`: a `%` written straight after a number (`30%+1`) in a file stamped before 1.5, where a share was likely
-     * meant. `triple`: where it was written `===` or `!==`, the old spelling of `==` and `!=`.
+     * meant. `triple`: where it was written `===` or `!==`, the old spelling of `==` and `!=`. `plusMinus`: a `+`
+     * and a `-` written as one `+-` (`a +- b`) in a file stamped before 1.6, where it became `±`.
      */
-    | { t: 'bin'; op: BinOp; left: Expr; right: Expr; glued?: true; triple?: Span }
+    | { t: 'bin'; op: BinOp; left: Expr; right: Expr; glued?: true; triple?: Span; plusMinus?: Span }
     | { t: 'cond'; test: Expr; then: Expr; else: Expr }
     | { t: 'array'; items: Expr[] }
-    /** `value ± within`, `value ± within%`: only as the first value of measured(…) or estimated(…). */
-    | { t: 'pm'; value: Expr; within: Expr; percent: boolean }
+    /**
+     * `value +- within`, `value +- within%`: only as the first value of measured(…) or estimated(…). `mark` is where the
+     * `+-` is written, or `±` or `+/-`.
+     */
+    | { t: 'pm'; value: Expr; within: Expr; percent: boolean; mark: Span }
     | { t: 'error' }
   )
 

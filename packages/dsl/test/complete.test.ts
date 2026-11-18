@@ -181,13 +181,17 @@ describe('completions that know where they are', () => {
 
   it('offer ± after a capacity value, not for a configured limit, not twice', () => {
     expect(at(inDb('capacity: estimated(3000 |)')).c.options).toMatchObject([
-      { label: '± 30%', snippet: '± ${1:30}%${0}' },
+      { label: '+- 30%', snippet: '+- ${1:30}%${0}' },
     ])
-    expect(at(inDb('capacity: measured(pods * (1 + 2) |)')).labels).toEqual(['± 30%'])
+    expect(at(inDb('capacity: measured(pods * (1 + 2) |)')).labels).toEqual(['+- 30%'])
+    // a file stamped before 1.6 writes it "±": "+-" is a plus and a minus there
+    expect(at(inDb('capacity: estimated(3000 |)').replace('loadmap 1.6', 'loadmap 1.5')).labels).toEqual(['± 30%'])
     expect(at(inDb('capacity: configured(3000 |)')).labels).toEqual([])
+    expect(at(inDb('capacity: estimated(3000 +- 30% |)')).labels).toEqual([])
     expect(at(inDb('capacity: estimated(3000 ± 30% |)')).labels).toEqual([])
     expect(at(inDb('capacity: estimated(3000 +/- 30% |)')).labels).toEqual([])
     // after the ± only a number fits
+    expect(at(inDb('capacity: estimated(3000 +- |)')).labels).toEqual([])
     expect(at(inDb('capacity: estimated(3000 ± |)')).labels).toEqual([])
     // after a whole operand anywhere else only an operator fits
     expect(at(cache.replace('rate: 2_000 * load', 'rate: 2_000 |')).labels).toEqual([])

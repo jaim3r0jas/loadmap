@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # Requests are accepted fast and done later: an API puts jobs on a queue, a pool of workers drains it, and each job
 # ends in the database. Past capacity the queue grows instead of requests failing.
 title: "Queue and workers"
@@ -61,7 +61,7 @@ node db "Database" {
   store
   short: "the database"
   demand: flows.jobs * 3
-  capacity: estimated(5_000 ± 30%, "writes/s")
+  capacity: estimated(5_000 +- 30%, "writes/s")
   over: "writes queue and the workers stall on them"
 }
 

@@ -1,6 +1,6 @@
 import { Reporter, type Span } from './diagnostics'
-import { ONE_SPELLING } from './schema'
-import { before, parseVersion, stampVersion } from './stamp'
+import { ONE_SPELLING, PLUS_MINUS } from './schema'
+import { before, parseVersion, stampVersion, type Version } from './stamp'
 
 export type TokenKind = 'ident' | 'number' | 'string' | 'template' | 'punct' | 'newline' | 'comment' | 'eof'
 
@@ -20,8 +20,9 @@ export interface Token extends Span {
   parts?: Span[]
 }
 
-// "+/-" is "±" for a keyboard without it; "a +/- b" means nothing else
-const PUNCT = ['===', '!==', '+/-', '->', '==', '!=', '<=', '>=', '&&', '||', ...'{}()[],;:.?+-*/%<>!=±']
+// "+-" is "±" for a keyboard without it, from 1.6 (before, "a +- b" was "a + -b"); so is "+/-", which means nothing
+// else
+const PUNCT = ['===', '!==', '+/-', '+-', '->', '==', '!=', '<=', '>=', '&&', '||', ...'{}()[],;:.?+-*/%<>!=±']
 
 /**
  * A unit written straight after a number. Durations become seconds and `%` a share, the units every property and
@@ -70,6 +71,13 @@ const UNIT_BEFORE_1_5 = new RegExp(
   'y',
 )
 const ONE = parseVersion(ONE_SPELLING)!
+const PM = parseVersion(PLUS_MINUS)!
+
+/** The marks of a capacity's `±`: `+-` (the one `format()` writes from 1.6), `±` and `+/-`. */
+export const PLUS_MINUS_MARKS: readonly string[] = ['+-', '±', '+/-']
+
+/** Whether a token is the `±` of a capacity's value, however it is spelled. */
+export const isPlusMinus = (t: Token | undefined): boolean => t?.kind === 'punct' && PLUS_MINUS_MARKS.includes(t.text)
 
 /**
  * The text after `loadmap` on a file's first line that is not blank or a comment, from `at` to `end`: a scan, one
@@ -94,17 +102,16 @@ function stampAt(source: string, at: number, end: number): string | undefined {
 }
 
 /**
- * Whether the file that holds `from` is stamped before loadmap 1.5, where `%` was also the remainder. The lexer reads
- * the `loadmap` line itself: what a `%` is decides the tokens, before any statement is parsed. A file without the
- * line is read at the newest version.
+ * The version the file that holds `from` is stamped with: before loadmap 1.5 `%` was also the remainder, and before 1.6
+ * `+-` a plus and a minus. The lexer reads the `loadmap` line itself: what a `%` or a `+-` is decides the tokens,
+ * before any statement is parsed. A file without the line (undefined) is read at the newest version.
  */
-function remainderPercent(source: string, report: Reporter, from: number): boolean {
+function stamped(source: string, report: Reporter, from: number): Version | undefined {
   const file = report.source === source ? report.fileAt(from) : undefined
   const first = report.source === source ? (report.files[0]?.base ?? source.length + 1) - 1 : source.length
   const text = stampAt(source, file?.base ?? 0, file?.end ?? first)
   // read as the compiler reads the stamp (versions.ts): a text that is no version is its error to name
-  const version = text == null ? undefined : stampVersion(text, Number(text))
-  return version != null && before(version, ONE)
+  return text == null ? undefined : stampVersion(text, Number(text))
 }
 
 /**
@@ -145,7 +152,9 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
   const out: Token[] = []
   let depth = 0
   let i = from
-  const old = remainderPercent(source, report, from)
+  const version = stamped(source, report, from)
+  const old = version != null && before(version, ONE)
+  const plusMinus = version == null || !before(version, PM)
   const push = (t: Token) => out.push(t)
   while (i < to) {
     const c = source[i]!
@@ -179,7 +188,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
         report.error('syntax', { from: s, to: i }, `"${digits}" is not a number`)
       const written = Number(digits.replaceAll('_', ''))
       const prev = out.at(-1)
-      const unit = suffixAt(source, i, to, prev?.kind === 'punct' && (prev.text === '±' || prev.text === '+/-'), old)
+      const unit = suffixAt(source, i, to, isPlusMinus(prev), old)
       if (unit === null) {
         // a glued word is never a name: "5sec" is one mistake, not a number and a stray name
         const w = i
@@ -228,7 +237,9 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
       i = t.end
       push({ kind: 'template', text: source.slice(s, i), quasis: t.quasis, parts: t.parts, from: s, to: i })
     } else {
-      const p = PUNCT.find((m) => source.startsWith(m, i))
+      const found = PUNCT.find((m) => source.startsWith(m, i))
+      // before 1.6, "a +- b" is a + -b: the parser marks it, for the warning
+      const p = found === '+-' && !plusMinus ? '+' : found
       if (!p) {
         report.error('syntax', { from: i, to: i + 1 }, `unexpected character "${c}"`)
         i++

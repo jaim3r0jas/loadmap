@@ -15,7 +15,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
-import { compile, type Diagnostic } from '../src'
+import { compile, type Diagnostic, quickFixes } from '../src'
 import { failure, placed } from '../src/expr'
 import { pageOptions } from '../src/internal'
 
@@ -1214,14 +1214,56 @@ describe('uncertainty and expectations', () => {
     expect(api('measured(800 ± 200, "req/s")')).toMatchObject({ value: 800, within: 0.25 })
   })
 
+  it('read "+-" as ± from 1.6, and as a plus and a minus before it, with a warning and its fix', () => {
+    const at16 = (src: string) => def({ api: src }).replace('loadmap 1.1', 'loadmap 1.6')
+    const capacity16 = (src: string) => compile(at16(src)).definition!.model.evaluate().components.api!.capacity
+    expect(capacity16('estimated(800 +- 30%, "req/s", "vendor")')).toEqual(
+      estimated(800, 'req/s', { source: 'vendor', within: 0.3 }),
+    )
+    // "±" and "+/-" read as they always did
+    expect(capacity16('estimated(800 ± 30%, "req/s")')).toMatchObject({ value: 800, within: 0.3 })
+    expect(capacity16('measured(pods * 400 +/- 10%, "req/s")')).toMatchObject({ value: 800, within: 0.1 })
+    // without a loadmap line: the newest version
+    const bare = compile(at16('estimated(800 +- 200, "req/s")').replace('loadmap 1.6\n', ''))
+    expect(bare.definition!.model.evaluate().components.api!.capacity).toMatchObject({ value: 800, within: 0.25 })
+    // from 1.6 a "+-" outside a capacity's value is an error that says how to write the sum
+    expect(errors(def({ top: 'let x = 3 +- 1' }).replace('loadmap 1.1', 'loadmap 1.6'))).toEqual([
+      {
+        message: '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
+        hint: 'write "+ -" for a plus and a minus',
+        text: '3 +- 1',
+      },
+    ])
+    // before 1.6 it is the sum it always was, and says what it is from 1.6
+    for (const stamp of ['loadmap 1.1', 'loadmap 1.5']) {
+      const old = def({ top: 'let x = 3 +- 1' }).replace('loadmap 1.1', stamp)
+      const r = compile(old)
+      expect(r.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+      expect(r.definition!.model.evaluate().ctx.derived.x).toBe(2)
+      const warned = r.diagnostics.filter((d) => d.code === 'plus-minus')
+      expect(warned.map((d) => [d.message, d.hint, old.slice(d.from, d.to)])).toEqual([
+        ['"+-" is a plus and a minus here: 3 + -1', 'from loadmap 1.6 "+-" is ±; write "+ -" to keep the sum', '+-'],
+      ])
+      const fix = quickFixes(old, warned)[0]?.[0]
+      expect(fix?.title).toBe('Keep the sum: write "+ -"')
+      expect(fix?.changes).toEqual([{ from: warned[0]!.from, to: warned[0]!.to, insert: '+ -' }])
+    }
+    // spaced, it was never one mark
+    expect(compile(def({ top: 'let x = 3 + -1' })).diagnostics.filter((d) => d.code === 'plus-minus')).toEqual([])
+  })
+
   it('refuse a ± anywhere else, or one of 100 % or more', () => {
     expect(errors(def({ top: 'let x = 3 ± 1' }))).toEqual([
-      { message: '"±" only goes in the first value of measured(…) or estimated(…)', hint: undefined, text: '3 ± 1' },
+      {
+        message: '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
+        hint: 'write "+ -" for a plus and a minus',
+        text: '3 ± 1',
+      },
     ])
     expect(errors(def({ api: 'estimated(800, "req/s" ± 3)' }))).toEqual([
       {
-        message: '"±" only goes in the first value of measured(…) or estimated(…)',
-        hint: undefined,
+        message: '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
+        hint: 'write "+ -" for a plus and a minus',
         text: '"req/s" ± 3',
       },
     ])
@@ -1492,7 +1534,7 @@ client -> x
       ),
     ).toContain('an autoscaled pool has no fixed pods')
     expect(at('node x "X" {\n  pass\n  capacity: configured(1 ± 10%, "req/s")\n  over: ""\n}')).toContain(
-      '"±" only goes in the first value of measured(…) or estimated(…)',
+      '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
     )
     expect(errors(def({ flow: 'retry { times: 3; when: util.api > 0.8 }' })).map((e) => e.message)).toContain(
       'this formula reads only parameters; it cannot read util.api',

@@ -1,9 +1,9 @@
-import { childrenOf, type Decl, type Expr, type Stmt } from './ast'
+import { childrenOf, type Decl, type Expr, formulasOf, type Stmt } from './ast'
 import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
 import { cut, edgeLabels, foldWorkers, mods, oneSpelling, subsUp } from './rewrite'
-import { ONE_SPELLING, own, propNamed, SCHEMA } from './schema'
+import { ONE_SPELLING, own, PLUS_MINUS, propNamed, SCHEMA } from './schema'
 import { before, CURRENT, lowest, needs, parseVersion, stampOf, type Version, versionText } from './versions'
 import { applied, intoView, oldDirection, viewOf } from './viewblock'
 
@@ -23,7 +23,8 @@ export interface FormatResult {
  * a formula never changes. A block written on one line stays on one line while it fits. A text with a syntax error is
  * left alone. The direction's old name, `layout: right` or `layout: down`, becomes `direction:`, and a property's old
  * name (`target` in `expect`) its new one where the `loadmap` line has it. `===` becomes `==` and `derived.x` the bare
- * `x`. Where the line says 1.5 or later, every view setting moves into `view { … }`, a `workers` block onto its pool,
+ * `x`. A capacity's `±` and `+/-` become `+-` where the line says 1.6 or later (or there is none); before, a `+-` is
+ * a plus and a minus and is written `+ -`. Where the line says 1.5 or later, every view setting moves into `view { … }`, a `workers` block onto its pool,
  * `sub:` and an edge's `label:` onto their first line, and `a % b` becomes `mod(a, b)`. The `loadmap` line is
  * raised to the lowest version that has everything the definition uses, never lowered: an older stamp keeps what it
  * allows, and a reader of it would not know the rest.
@@ -68,6 +69,9 @@ export function format(source: string): FormatResult {
   const spelled = oneSpelling(source, doc.body)
   if (spelled.length) return format(applied(source, spelled))
   if (version) for (const [from, name] of renames(doc.body, version)) retext.set(from, name)
+  // from 1.6 a capacity's ± is written "+-", for "±" and "+/-" too; an older stamp keeps what it wrote
+  if (version && !before(version, PLUS_MINUS_FROM))
+    for (const e of formulasOf(doc.body)) if (e.t === 'pm') retext.set(e.mark.from, '+-')
   const toks = lex(source, new Reporter(source), 0, source.length, true)
     .filter((t) => t.kind !== 'eof')
     .map((t) => (retext.has(t.from) ? { ...t, text: retext.get(t.from)! } : t))
@@ -111,6 +115,9 @@ const VIEW_BLOCK: Version = [1, 2]
 
 /** The version from which one spelling is left: `workers` on its pool, `mod(a, b)`, a box's second text on its line. */
 const ONE: Version = parseVersion(ONE_SPELLING)!
+
+/** The version from which a capacity's ± is written `+-`. */
+const PLUS_MINUS_FROM: Version = parseVersion(PLUS_MINUS)!
 
 /** The version that reads a text continued on the next line. */
 const CONTINUED: Version = [1, 2]
@@ -304,7 +311,7 @@ function layout(toks: Token[], match: Map<number, number>, multi: (i: number) =>
   return out
 }
 
-/** Which marks the syntax gives a role the tokens alone do not tell: a sign, a "%" after "±", a "?:" colon. */
+/** Which marks the syntax gives a role the tokens alone do not tell: a sign, a "%" after "+-", a "?:" colon. */
 interface Marks {
   unary: Set<number>
   percent: Set<number>

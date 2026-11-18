@@ -6,7 +6,7 @@ import { type Suffix, unitScale } from './lexer'
 import { likeness } from './names'
 import { parse } from './parser'
 import { type ArgSpec, type BlockSpec, BOXES, matchArgs, own, type PropSpec, propNamed, SCHEMA } from './schema'
-import { CURRENT, stampOf } from './versions'
+import { CURRENT, plusMinusMark, stampOf } from './versions'
 import { isViewKey, viewOf } from './viewblock'
 
 /**
@@ -386,6 +386,8 @@ function walk(source: string) {
   const entries = new Map<string, Entry>()
   const owners: Owner[] = []
   const { parts, number, quote, slot, slotsOnly } = writer(source)
+  // a capacity's ± as the definition's version writes it
+  const plusMinus = plusMinusMark(stampOf(source, doc.body)?.version ?? CURRENT)
 
   const add = (o: Owner, field: InspectField, apply: Entry['apply']) => {
     o.fields.push(field)
@@ -610,7 +612,7 @@ function walk(source: string) {
           if (v === null) return pm ? [{ from: pm.value.to, to: pm.to, insert: '' }] : []
           if (typeof v !== 'number' || !(v > 0)) return 'a number above 0'
           if (call.callee.name === 'configured') return 'a configured capacity is exact: it takes no ±'
-          if (!pm) return [{ from: value.to, to: value.to, insert: ` ± ${number(v)}%` }]
+          if (!pm) return [{ from: value.to, to: value.to, insert: ` ${plusMinus} ${number(v)}%` }]
           if (within === 'formula') return 'the ± is a formula here: change it in the text'
           return [replace(pm.within, number(v, pm.within))]
         }

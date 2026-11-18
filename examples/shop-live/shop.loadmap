@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # A shop whose traffic is read from Prometheus: the rates and the workers' CPU are measures, so the diagram shows the
 # shop as it runs once a snapshot has them (loadmap pull, or the page in this folder, which pulls every few seconds).
 title: "Shop, live"
@@ -53,7 +53,7 @@ node web "Web" {
   pass
   short: "the web tier"
   demand: flows.visits + flows.orders
-  capacity: estimated(3_000 ± 30%, "req/s", "vendor benchmark")
+  capacity: estimated(3_000 +- 30%, "req/s", "vendor benchmark")
   over: "pages time out"
 }
 
@@ -74,7 +74,7 @@ node db "Database" {
   store
   short: "the database"
   demand: queryRate * load
-  capacity: estimated(8_000 ± 30%, "queries/s")
+  capacity: estimated(8_000 +- 30%, "queries/s")
   over: "queries queue and every page slows down"
 }
 

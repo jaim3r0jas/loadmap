@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { compile, formatDiagnostic } from '../src'
+import type { Decl, Expr } from '../src/ast'
 import { lex, parse, Reporter } from '../src/internal'
 
 const examples = ['checkout/checkout.loadmap', 'alerts/alerts.loadmap'].map((f) =>
@@ -90,6 +91,28 @@ describe('lex', () => {
     // after a ± the "%" is the ± form's own, read by the parser as it always was
     expect(texts('estimated(1 ± 30%, "x")')).toEqual(['estimated', '(', '1', '±', '30', '%', ',', '"x"', ')', ''])
     expect(texts('estimated(1 +/- 30%)')).toEqual(['estimated', '(', '1', '+/-', '30', '%', ')', ''])
+  })
+
+  it('reads "+-" as one mark, the ±, from loadmap 1.6, and as a plus and a minus before it', () => {
+    const texts = (src: string) => lex(src, new Reporter(src)).map((t) => t.text)
+    expect(texts('estimated(1 +- 30%)')).toEqual(['estimated', '(', '1', '+-', '30', '%', ')', ''])
+    expect(texts('loadmap 1.6\nx: a +-b')).toEqual(['loadmap', '1.6', '\n', 'x', ':', 'a', '+-', 'b', ''])
+    expect(texts('loadmap 1.5\nx: a +-b')).toEqual(['loadmap', '1.5', '\n', 'x', ':', 'a', '+', '-', 'b', ''])
+    // the parser keeps where the mark is written, however it is spelled
+    for (const mark of ['+-', '±', '+/-']) {
+      const src = `let x = estimated(1 ${mark} 30%, "x")`
+      const { doc } = parse(src)
+      const call = (doc.body[0] as Decl).init as Extract<Expr, { t: 'call' }>
+      const pm = call.args[0] as Extract<Expr, { t: 'pm' }>
+      expect(src.slice(pm.mark.from, pm.mark.to)).toBe(mark)
+    }
+    // before 1.6 the parser marks a "+" glued to a "-", for the warning; spaced it was never one mark
+    const sum = (src: string) => {
+      const d = parse(src).doc.body[1] as Decl
+      return d.init?.t === 'bin' ? d.init.plusMinus : undefined
+    }
+    expect(sum('loadmap 1.5\nlet x = a +- b')).toEqual({ from: 22, to: 24 })
+    expect(sum('loadmap 1.5\nlet x = a + -b')).toBeUndefined()
   })
 
   it('says which word glued to a number is not a unit', () => {
