@@ -1,4 +1,4 @@
-import { cursorCharRight, redo, undo } from '@codemirror/commands'
+import { cursorCharRight, deleteCharBackward, redo, undo } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { decodeShare } from '@loadmap/dsl'
@@ -695,6 +695,11 @@ describe('the editor', () => {
       cursorCharRight(view)
       expect(view.state.selection.main.head).toBe(mark + 2)
       expect(view.state.sliceDoc(mark, mark + 2)).toBe('+-')
+      // Backspace takes one mark, as in a ligature: what is left is drawn as written
+      deleteCharBackward(view)
+      expect(view.state.sliceDoc(mark, mark + 2)).toBe('+ ')
+      undo(view)
+      expect(handle.source()).toBe(source)
 
       // ligatures off: the marks as written
       await page.getByRole('button', { name: 'View' }).click()

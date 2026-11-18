@@ -408,10 +408,14 @@ export function LoadmapEditor({
     }
   }, [fontUrl])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new size or ligatures change every line's measure
+  useEffect(() => view.current?.requestMeasure(), [fontSize, ligatures])
+  // the signs drawn again when the reader turns ligatures on or off; a new text draws its own
+  const drawnWith = useRef(ligatures)
   useEffect(() => {
+    if (drawnWith.current === ligatures) return
+    drawnWith.current = ligatures
     view.current?.dispatch({ effects: redrawMarks.of(null) })
-    view.current?.requestMeasure()
-  }, [fontSize, ligatures])
+  }, [ligatures])
   const preview = useRef<LoadmapHandle>(null)
   // the values the preview shows, carried across versions so an edit does not reset the sliders
   const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
