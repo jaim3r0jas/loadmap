@@ -175,8 +175,8 @@ looking at. On the load bar its load is a mark.
 preset "Black Friday" { load: 12; pods: 8; hitRatio: 0.6 }
 ```
 
-A preset sets values, the load among them; a scenario (next page) is a design to set beside another, and picking one
-keeps the load where it is.
+A scenario ([Scenarios and growth](#scenarios-and-growth)) is another thing: a design to set beside another, and
+picking one keeps the load where it is.
 
 #### Named formulas
 
