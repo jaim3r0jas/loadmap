@@ -857,6 +857,77 @@ describe('the built site', () => {
     }
   }, 120_000)
 
+  it('saves the changes as a branch with a pull request on ⌘S, a token that may write asked for in place', async () => {
+    const token = `github_pat_${'W'.repeat(40)}`
+    const shop = (f: string) => readFileSync(join(import.meta.dirname, '../../../docs/multi-file', f), 'utf8')
+    const fake = fakeGitHub({
+      owner: 'acme',
+      name: 'capacity',
+      token,
+      refs: {
+        main: {
+          'shop.loadmap': shop('shop.loadmap'),
+          'shop.story.loadmap': shop('shop.story.loadmap'),
+          'platform.loadmap': shop('platform.loadmap'),
+        },
+      },
+    })
+    const writes = () => fake.calls.filter((c) => c.method !== 'GET')
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await routeGitHub(page, fake.fetch)
+      await page.goto(`${url}editor/?repo=acme/capacity&path=shop.loadmap`)
+      await page.getByRole('button', { name: 'acme/capacity: nothing changed' }).waitFor()
+      const dialog = page.getByRole('dialog', { name: 'Save to GitHub' })
+      // nothing changed: nothing to save, and no token asked for it
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+s')
+      await dialog.getByText('Nothing changed since the files were opened: there is nothing to save.').waitFor()
+      expect(await dialog.getByLabel('Token', { exact: true }).count()).toBe(0)
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.type('\n# edited here')
+      await page.getByRole('button', { name: 'acme/capacity: 1 file changed' }).waitFor()
+      await page.keyboard.press('ControlOrMeta+s')
+
+      await dialog.getByText('Saving writes to acme/capacity: give a token that may write to it.').waitFor()
+      const make = new URL((await dialog.getByRole('link', { name: /Make a token on GitHub/ }).getAttribute('href'))!)
+      expect([make.searchParams.get('contents'), make.searchParams.get('pull_requests')]).toEqual(['write', 'write'])
+      // nothing is written before the reader says so
+      expect(writes()).toEqual([])
+      await dialog.getByLabel('Token', { exact: true }).fill(token)
+      await dialog.getByRole('button', { name: 'Use it' }).click()
+      await dialog.getByRole('link', { name: 'Pull request #7 ↗' }).waitFor()
+      expect(writes().map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+        'POST /repos/acme/capacity/git/trees',
+        'POST /repos/acme/capacity/git/commits',
+        'POST /repos/acme/capacity/git/refs',
+        'POST /repos/acme/capacity/pulls',
+      ])
+      expect(writes()[0]!.body).toMatchObject({ tree: [{ path: 'shop.loadmap', type: 'blob' }] })
+      expect(writes()[2]!.body).toMatchObject({ ref: 'refs/heads/loadmap/shop' })
+      expect(writes()[3]!.body).toMatchObject({ head: 'loadmap/shop', base: 'main' })
+      await page.getByRole('button', { name: 'acme/capacity: nothing changed' }).waitFor()
+
+      // the next save adds a commit to the branch this tab made
+      await dialog.getByRole('button', { name: 'Done' }).click()
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.type('\n# and again')
+      await page.keyboard.press('ControlOrMeta+s')
+      expect(await dialog.getByRole('radio', { name: 'One more commit on loadmap/shop' }).isChecked()).toBe(true)
+      await dialog.getByRole('button', { name: 'Save to GitHub' }).click()
+      await dialog.getByText('Saved as').waitFor()
+      expect(writes().at(-1)).toMatchObject({ method: 'PATCH', body: { force: false } })
+      expect(new URL(writes().at(-1)!.url).pathname).toBe('/repos/acme/capacity/git/refs/heads/loadmap/shop')
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
   it('asks for a token in place for a private repository, and keeps its text and the token out of lasting storage', async () => {
     const token = `github_pat_${'A'.repeat(40)}`
     const secret = readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8').replace(

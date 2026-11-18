@@ -23,6 +23,8 @@ export class GitHubError extends Error {
     message: string,
     readonly failure: GitHubFailure,
     readonly status = 0,
+    /** GitHub's own words, when it said any: for telling one refusal from another, never shown as they are. */
+    readonly said = '',
   ) {
     super(message)
     this.name = 'GitHubError'
@@ -39,8 +41,11 @@ export interface ClientOptions {
 
 /** One segment of an API path: a name from the reader or a repository never adds a "/" or a "?" of its own. */
 export const seg = (s: string) => encodeURIComponent(s)
-/** A path in a repository, each folder encoded on its own. */
+/** A path in a repository (or a branch with "/"), each part encoded on its own. */
 export const filePath = (path: string) => path.split('/').map(seg).join('/')
+/** A repository's API path, and its page on github.com. */
+export const repoApi = (r: { owner: string; name: string }) => `/repos/${seg(r.owner)}/${seg(r.name)}`
+export const repoWeb = (r: { owner: string; name: string }) => `https://github.com/${seg(r.owner)}/${seg(r.name)}`
 
 export interface Client {
   /** A JSON call to the API: `path` from the API's root (`/repos/o/r`). */
@@ -92,15 +97,15 @@ export function client(o: ClientOptions = {}): Client {
       )
     }
     if (s === 401)
-      return new GitHubError('GitHub refused the token: it may be wrong or expired. Give a new one.', 'auth', s)
-    if (s === 403) return new GitHubError('GitHub refused: the token may not do this here.', 'forbidden', s)
-    if (s === 404) return new GitHubError('GitHub has nothing there.', 'missing', s)
+      return new GitHubError('GitHub refused the token: it may be wrong or expired. Give a new one.', 'auth', s, said)
+    if (s === 403) return new GitHubError('GitHub refused: the token may not do this here.', 'forbidden', s, said)
+    if (s === 404) return new GitHubError('GitHub has nothing there.', 'missing', s, said)
     if (s === 409)
-      return new GitHubError('GitHub refused: the repository is empty or changed meanwhile.', 'conflict', s)
+      return new GitHubError('GitHub refused: the repository is empty or changed meanwhile.', 'conflict', s, said)
     if (s === 422 && /already exists/i.test(said))
-      return new GitHubError('A branch with that name is there already. Pick another name.', 'exists', s)
-    if (s === 422) return new GitHubError(`GitHub refused what was sent: ${short(said)}`, 'invalid', s)
-    return new GitHubError(`GitHub answered ${s}. Try again in a moment.`, 'other', s)
+      return new GitHubError('A branch with that name is there already. Pick another name.', 'exists', s, said)
+    if (s === 422) return new GitHubError(`GitHub refused what was sent: ${short(said)}`, 'invalid', s, said)
+    return new GitHubError(`GitHub answered ${s}. Try again in a moment.`, 'other', s, said)
   }
 
   const headers = (accept: string): Record<string, string> => {

@@ -8,7 +8,8 @@ import { lineDiff } from '../site/islands/github/Diff'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
 import { takeToken, tokenPage } from '../site/islands/github/session'
-import { edited, leave, type RepoTab, readAside, readTab, writeTab } from '../site/islands/github/tab'
+import { edited, leave, type RepoOrigin, type RepoTab, readAside, readTab, writeTab } from '../site/islands/github/tab'
+import { branchFor, messageFor, save, saveProblem } from '../site/islands/github/write'
 import { type FakeRepo, fakeGitHub, shaOf } from './fake-github'
 
 const read = (f: string) => readFileSync(join(import.meta.dirname, '../../../docs/multi-file', f), 'utf8')
@@ -118,7 +119,10 @@ describe('opening a repository', () => {
     const gh = client({ fetch: fakeGitHub(REPO).fetch })
     const t = parseRepo('https://github.com/acme/capacity/blob/feat/new-cache/shop.loadmap')
     const l = await list(gh, t as Exclude<typeof t, { error: string }>)
-    expect(l).toMatchObject({ ref: 'feat/new-cache', want: 'shop.loadmap' })
+    expect(l).toMatchObject({ ref: 'feat/new-cache', want: 'shop.loadmap', branch: true })
+    // a commit by its sha is no branch: no pull request can go into it
+    const at = await list(gh, { owner: 'acme', name: 'capacity', ref: shaOf('commit:main') })
+    expect(at.branch).toBe(false)
   })
 
   it('reads a private repository through the API with the token, never through raw.githubusercontent.com', async () => {
@@ -248,6 +252,10 @@ describe('what a tab keeps of a repository', () => {
       originals: { 'm.loadmap': 'one', 'lib/x.loadmap': 'two' },
       model: 'm.loadmap',
       crlf: [],
+      base: 'main',
+      made: false,
+      pullable: true,
+      exec: [],
     },
     path: 'm.loadmap',
     files,
@@ -266,6 +274,21 @@ describe('what a tab keeps of a repository', () => {
       // a path that leaves the root, or names no .loadmap file, is no tab
       store.set('loadmap-editor-repo', JSON.stringify({ ...stored, files: { ...stored.files, '../x.loadmap': '' } }))
       expect(readTab()).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+      store.clear()
+    }
+  })
+
+  it('reads a tab an earlier version of the page kept, with the defaults it had then', () => {
+    vi.stubGlobal('sessionStorage', fake)
+    try {
+      const t = tab({ 'm.loadmap': 'edited', 'lib/x.loadmap': 'two' })
+      writeTab(t)
+      const stored = JSON.parse(store.get('loadmap-editor-repo')!)
+      for (const k of ['base', 'made', 'pullable', 'model', 'crlf', 'exec']) delete stored.origin[k]
+      store.set('loadmap-editor-repo', JSON.stringify(stored))
+      expect(readTab()).toEqual(t)
     } finally {
       vi.unstubAllGlobals()
       store.clear()
@@ -303,6 +326,10 @@ describe('what changed', () => {
         originals,
         model: 'm.loadmap',
         crlf: [],
+        base: 'main',
+        made: false,
+        pullable: true,
+        exec: [],
       },
       path: 'm.loadmap',
       files,
@@ -366,5 +393,141 @@ describe('a line diff', () => {
   it("gives up on texts too long and too different to compare at a reader's pace", () => {
     const many = (c: string) => Array.from({ length: 4000 }, (_, i) => `${c}${i}`).join('\n')
     expect(lineDiff(many('a'), many('b'))).toBeUndefined()
+  })
+})
+
+describe('saving to GitHub', () => {
+  const token = `github_pat_${'W'.repeat(40)}`
+  const origin = (o: Partial<RepoOrigin> = {}): RepoOrigin => ({
+    owner: 'acme',
+    name: 'capacity',
+    ref: 'main',
+    base: 'main',
+    made: false,
+    sha: shaOf('commit:main'),
+    tree: shaOf('tree:main'),
+    private: false,
+    originals: {},
+    model: 'shop.loadmap',
+    crlf: ['win.loadmap'],
+    pullable: true,
+    exec: [],
+    ...o,
+  })
+  const list = [
+    { path: 'shop.loadmap', kind: 'changed' as const, before: 'a', after: 'a\nb' },
+    { path: 'win.loadmap', kind: 'changed' as const, before: 'x', after: 'x\ny' },
+    { path: 'gone.loadmap', kind: 'removed' as const, before: 'z' },
+  ]
+  const posts = (fake: ReturnType<typeof fakeGitHub>) =>
+    fake.calls.filter((c) => c.method !== 'GET').map((c) => [c.method, new URL(c.url).pathname, c.body])
+
+  it("writes one tree on the commit's, one commit on the commit read, a new branch, and a pull request", async () => {
+    const fake = fakeGitHub({ ...REPO, token })
+    const steps: string[] = []
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    const pull = { title: 'Change shop.loadmap', body: 'Made in the loadmap editor.' }
+    const saved = await save(
+      gh,
+      origin(),
+      list,
+      { branch: 'loadmap/shop', onto: 'new', message: 'Change it', pull },
+      (s) => steps.push(s),
+    )
+    expect(steps).toEqual(['tree', 'commit', 'branch', 'pull'])
+    const [tree, commit, ref, pr] = posts(fake)
+    expect(tree).toEqual([
+      'POST',
+      '/repos/acme/capacity/git/trees',
+      {
+        base_tree: shaOf('tree:main'),
+        tree: [
+          { path: 'shop.loadmap', mode: '100644', type: 'blob', content: 'a\nb' },
+          // it came with "\r\n": it goes back with it
+          { path: 'win.loadmap', mode: '100644', type: 'blob', content: 'x\r\ny' },
+          { path: 'gone.loadmap', mode: '100644', type: 'blob', sha: null },
+        ],
+      },
+    ])
+    expect(commit![2]).toMatchObject({ message: 'Change it', tree: saved.tree, parents: [shaOf('commit:main')] })
+    expect(ref![2]).toEqual({ ref: 'refs/heads/loadmap/shop', sha: saved.commit })
+    expect(pr![2]).toEqual({ ...pull, head: 'loadmap/shop', base: 'main' })
+    expect(saved).toMatchObject({
+      branch: 'loadmap/shop',
+      url: 'https://github.com/acme/capacity/tree/loadmap/shop',
+      pull: { number: 7, url: 'https://github.com/acme/capacity/pull/7' },
+    })
+    // every call went to the API, with the token
+    for (const c of fake.calls)
+      expect([c.url.startsWith('https://api.github.com/'), c.authorization]).toEqual([true, `Bearer ${token}`])
+  })
+
+  it('keeps an executable file so, and says when the branch it made is gone', async () => {
+    const fake = fakeGitHub({ ...REPO, token })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    await save(gh, origin({ exec: ['shop.loadmap'] }), list.slice(0, 1), { branch: 'b1', onto: 'new', message: 'x' })
+    expect(posts(fake)[0]![2]).toMatchObject({ tree: [{ path: 'shop.loadmap', mode: '100755' }] })
+    await expect(
+      save(gh, origin({ ref: 'merged-and-deleted', made: true }), list, {
+        branch: 'merged-and-deleted',
+        onto: 'same',
+        message: 'x',
+      }),
+    ).rejects.toThrow('merged-and-deleted is no longer on GitHub (deleted once its pull request was merged?)')
+  })
+
+  it('adds a commit to the branch it made, only forward, and says when the branch moved', async () => {
+    const fake = fakeGitHub({ ...REPO, token })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    const first = await save(gh, origin(), list, { branch: 'loadmap/shop', onto: 'new', message: 'One' })
+    const next = origin({ ref: 'loadmap/shop', made: true, sha: first.commit, tree: first.tree })
+    const second = await save(gh, next, list.slice(0, 1), { branch: 'loadmap/shop', onto: 'same', message: 'Two' })
+    expect(posts(fake).at(-1)).toEqual([
+      'PATCH',
+      '/repos/acme/capacity/git/refs/heads/loadmap/shop',
+      { sha: second.commit, force: false },
+    ])
+    fake.push('loadmap/shop', 'f'.repeat(40))
+    await expect(
+      save(gh, origin({ ref: 'loadmap/shop', made: true, sha: second.commit }), list, {
+        branch: 'loadmap/shop',
+        onto: 'same',
+        message: 'Three',
+      }),
+    ).rejects.toThrow('loadmap/shop moved on GitHub since the files were read: save as a new branch instead.')
+  })
+
+  it('says what stops a save: a branch that is there, a token that may not write, a pull request refused', async () => {
+    const fake = fakeGitHub({ ...REPO, token, refusePull: 'No commits between main and loadmap/shop' })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    await expect(save(gh, origin(), list, { branch: 'main', onto: 'new', message: 'x' })).rejects.toThrow(
+      'A branch with that name is there already. Pick another name.',
+    )
+    const reader = client({ fetch: fake.fetch, token: () => `github_pat_${'R'.repeat(40)}` })
+    const refused = (await save(reader, origin(), list, { branch: 'b', onto: 'new', message: 'x' }).catch(
+      (e) => e,
+    )) as GitHubError
+    expect(refused.failure).toBe('forbidden')
+    const saved = await save(gh, origin(), list, {
+      branch: 'loadmap/shop',
+      onto: 'new',
+      message: 'x',
+      pull: { title: 'x', body: '' },
+    })
+    expect(saved.pull).toBeUndefined()
+    expect(saved.pullError).toBe('GitHub refused what was sent: No commits between main and loadmap/shop')
+    expect(saved.compare).toBe('https://github.com/acme/capacity/compare/main...loadmap/shop?expand=1')
+  })
+
+  it('refuses before any call what cannot be saved, and names the branch and the message from the files', () => {
+    expect(saveProblem([], { branch: 'b', onto: 'new', message: 'm' })).toBe(
+      'Nothing changed: there is nothing to save.',
+    )
+    expect(saveProblem(list, { branch: 'a..b', onto: 'new', message: 'm' })).toMatch('not a branch name')
+    expect(saveProblem(list, { branch: 'b', onto: 'new', message: '  ' })).toMatch('Say in the message')
+    expect(branchFor('models/Shop Front.loadmap')).toBe('loadmap/shop-front')
+    expect(messageFor(list.slice(0, 1))).toBe('Change shop.loadmap')
+    expect(messageFor(list.slice(2))).toBe('Remove gone.loadmap')
+    expect(messageFor(list)).toBe('Change shop.loadmap, win.loadmap, gone.loadmap')
   })
 })

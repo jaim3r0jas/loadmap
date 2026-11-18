@@ -29,10 +29,12 @@ export interface ChangesDialogProps {
   list: Change[]
   /** Puts a file (or every file, with no path) back as the commit holds it. */
   onUndo: (path?: string) => void
+  /** Opens "Save to GitHub". */
+  onSave: () => void
   onClose: () => void
 }
 
-export default function ChangesDialog({ tab, list, onUndo, onClose }: ChangesDialogProps) {
+export default function ChangesDialog({ tab, list, onUndo, onSave, onClose }: ChangesDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
   const [open, setOpen] = useState<string | null>(null)
@@ -125,6 +127,9 @@ export default function ChangesDialog({ tab, list, onUndo, onClose }: ChangesDia
             }}
           >
             Undo all changes
+          </button>
+          <button type="button" className="lm-btn" onClick={onSave}>
+            Save to GitHub…
           </button>
         </div>
       )}

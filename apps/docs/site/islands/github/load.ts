@@ -4,7 +4,7 @@
 // definition (MAX_FILES, MAX_TOTAL) hold before a file is downloaded where the tree's sizes can tell.
 import { imports } from '@loadmap/dsl'
 import { MAX_FILES, MAX_TOTAL } from '@loadmap/dsl/internal'
-import { type Client, filePath, GitHubError, seg } from './api'
+import { type Client, filePath, GitHubError, repoApi } from './api'
 import { cleanPath, type RepoTarget, refSplits } from './parse'
 
 /** A `.loadmap` file of the tree, as GitHub lists it. */
@@ -12,6 +12,8 @@ export interface RepoFile {
   path: string
   /** Bytes; a text holds at most as many characters. */
   size: number
+  /** Executable (100755): a save keeps it so. */
+  exec?: true
 }
 
 /** A repository at one commit, and its `.loadmap` files. */
@@ -21,6 +23,8 @@ export interface Listing {
   /** What the reader named (or the default branch): a save offers a pull request into it. */
   ref: string
   defaultBranch: string
+  /** The ref is a branch (not a tag or a commit): a pull request can go into it. */
+  branch: boolean
   /** The commit every file is read from, and its tree: a save starts from both. */
   sha: string
   tree: string
@@ -43,6 +47,8 @@ export interface Opened {
   missing: string[]
   /** The files the commit holds with "\r\n": a save writes them back that way. */
   crlf: string[]
+  /** The executable files (100755) among them. */
+  exec: string[]
 }
 
 /** The files under the folder an address named, else all of them. */
@@ -53,7 +59,7 @@ const SHA = /^[0-9a-f]{40}$/
 const MAX_BYTES = MAX_TOTAL * 4
 
 const where = (t: { owner: string; name: string }) => `${t.owner}/${t.name}`
-const repoPath = (t: { owner: string; name: string }) => `/repos/${seg(t.owner)}/${seg(t.name)}`
+const repoPath = repoApi
 
 /** The repository's commit and its `.loadmap` files. Throws an error whose message the reader can act on. */
 export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
@@ -100,16 +106,19 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
     const files = t.tree
       // a symlink (120000) could point anywhere; a submodule is another repository
       .filter((e) => e.type === 'blob' && e.mode !== '120000' && cleanPath(e.path) === e.path)
-      .map((e) => ({ path: e.path, size: e.size ?? 0 }))
+      .map((e) => ({ path: e.path, size: e.size ?? 0, ...(e.mode === '100755' && { exec: true as const }) }))
       .sort((a, b) => a.path.localeCompare(b.path))
     const file = path.join('/')
     const kind = target.rest?.kind ?? (file ? 'blob' : 'tree')
+    // a pull request goes into a branch: the default one is, another ref is asked about (a tag or a sha is not)
+    const branch = ref === info.default_branch || (await isBranch(gh, target, ref))
     // past a cut tree, a file the reader names may be there all the same: open() asks for it
     return {
       owner: target.owner,
       name: target.name,
       ref,
       defaultBranch: info.default_branch,
+      branch,
       sha,
       tree: t.sha,
       private: info.private,
@@ -174,5 +183,17 @@ export async function open(gh: Client, listing: Listing, path: string): Promise<
     }
     level = next
   }
-  return { listing, path, files, missing, crlf }
+  const exec = listing.files.filter((f) => f.exec && Object.hasOwn(files, f.path)).map((f) => f.path)
+  return { listing, path, files, missing, crlf, exec }
+}
+
+/** Whether a ref is a branch of the repository. */
+async function isBranch(gh: Client, r: { owner: string; name: string }, ref: string): Promise<boolean> {
+  try {
+    await gh.json(`${repoApi(r)}/branches/${filePath(ref)}`)
+    return true
+  } catch (e) {
+    if (e instanceof GitHubError && e.failure === 'missing') return false
+    throw e
+  }
 }

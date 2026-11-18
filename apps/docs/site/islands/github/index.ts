@@ -3,4 +3,5 @@
 
 export { default as ChangesDialog } from './ChangesDialog'
 export { default as OpenDialog } from './OpenDialog'
+export { default as SaveDialog } from './SaveDialog'
 export { fromQuery } from './start'
