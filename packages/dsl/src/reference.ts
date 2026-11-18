@@ -1,5 +1,6 @@
 import { CODES } from './diagnostics'
 import { BUILTINS } from './expr'
+import { callLabel } from './hover'
 import { type BlockSpec, EDGE_PROPS, type PropSpec, SCHEMA } from './schema'
 import { PROPERTY_UNITS } from './units'
 
@@ -81,11 +82,9 @@ export function reference(): string {
     '',
     '| Function | |',
     '| --- | --- |',
-    ...Object.entries(BUILTINS).map(([name, f]) => {
-      const optional = (i: number) => f.min != null && i >= f.min && !f.variadic
-      const args = f.params.map((p, i) => (optional(i) ? `${p}?` : p)).join(', ')
-      return `| \`${name}(${args}${f.variadic ? ', …' : ''})\` | ${f.doc.replaceAll('|', '\\|')} |`
-    }),
+    ...Object.entries(BUILTINS).map(
+      ([name, f]) => `| \`${callLabel(name, f.params, !!f.variadic)}\` | ${f.doc.replaceAll('|', '\\|')} |`,
+    ),
     '',
   )
   return out.join('\n')

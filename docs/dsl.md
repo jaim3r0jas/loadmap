@@ -142,8 +142,8 @@ their own, since each would then be declared twice.
 
 #### The load
 
-**The load** is the one slider every model has: a multiple of today's load, which every flow's `rate` reads as
-`load`. It starts at `default` and runs from `min` (1 unless said) to `max` in steps of `step` (1). The limits are
+The load is the one slider every model has: a multiple of today's load, which every flow's `rate` reads as
+`load`. It starts at `default` (`min` unless said) and runs from `min` (1 unless said) to `max` in steps of `step` (1). The limits are
 searched past the slider's end, up to `searchMax` at the top level (2000× by default).
 
 ```loadmap
@@ -152,7 +152,7 @@ load "Orders, × today" { min: 1; max: 40; step: 0.5; default: 4 }
 
 #### Parameters
 
-**A parameter** is a control the reader changes, read in formulas by its id. What it is follows from what it says:
+A parameter is a control the reader changes, read in formulas by its id. What it is follows from what it says:
 `options` make a select, `min` and `max` a slider, a `true` or `false` default a switch.
 
 ```loadmap
@@ -168,7 +168,7 @@ out while a formula of the other parameters is false. A text option (`options: [
 
 #### Presets
 
-**A preset** is a button that sets several values at once, the load among them: the reader's shortcut to a moment worth
+A preset is a button that sets several values at once, the load among them: the reader's shortcut to a moment worth
 looking at. On the load bar its load is a mark.
 
 ```loadmap
@@ -180,7 +180,7 @@ picking one keeps the load where it is.
 
 #### Named formulas
 
-**A `let`** names a formula, so the others read it by its name and hover shows its value at the defaults:
+A `let` names a formula, so the others read it by its name and hover shows its value at the defaults:
 
 ```loadmap
 let ordersPerSecond = 120 * load
@@ -189,7 +189,7 @@ let workersNeeded = ceil(ordersPerSecond / 50)
 
 #### Fitted costs
 
-**A fit** is a cost that grows with the load, `a + b × x`, fitted from measured points; call it like a function. With
+A fit is a cost that grows with the load, `a + b × x`, fitted from measured points; call it like a function. With
 `through: origin` it has no idle part (`a` is 0). With `x` and `y` naming two measures, a snapshot fits it from live
 data and the points are what it falls back to (see [Measured data](#measured-data)).
 
@@ -212,9 +212,9 @@ pool consumers "Consumers" {
 }
 ```
 
-#### Thresholds
+#### Target and full
 
-**Thresholds** say where the target and "runs out" are, as a share of a component's capacity: by default a component
+Thresholds say where the target and "runs out" are, as a share of a component's capacity: by default a component
 reaches its target at 50 % and runs out at 100 %. A team that runs hotter moves the target:
 
 ```loadmap
@@ -602,7 +602,7 @@ slots held for a while, connections, latency and timeouts. The first four have a
 
 #### What reaches a stage
 
-**What reaches a stage.** `at.db.reads` is the rate of `reads` reaching the stage `db`, and `at.db` every flow's. It
+`at.db.reads` is the rate of `reads` reaching the stage `db`, and `at.db` every flow's. It
 is the flow's rate, less what a cache answered and what a rate limiter turned away before it; an overloaded `pass`
 does not cut it, so each component's limit stays the one it has if what is in front keeps up. A component without a
 `demand` line handles what reaches its stages, in units per second:
@@ -617,7 +617,7 @@ node db "Database" {
 
 #### Caches
 
-**A cache** answers a share of the units and sends them back where they came from; the rest carry on. With capacity
+A cache answers a share of the units and sends them back where they came from; the rest carry on. With capacity
 lines it is a component too, and past capacity it rejects like a `pass`:
 
 ```loadmap
@@ -630,7 +630,7 @@ node sessionCache "Cache" {
 
 #### Autoscaling
 
-**An autoscaled pool** adds pods while the running ones are above `target`, between `min` and `max`. Its capacity is
+An autoscaled pool adds pods while the running ones are above `target`, between `min` and `max`. Its capacity is
 the pool at `max` pods, so it runs out where it cannot grow further; the box draws every pod it may run and dashes
 the ones it does not run now, and a meter counts them:
 
@@ -646,13 +646,13 @@ pool api "API" {
 
 #### Rate limits
 
-**A rate limiter** is a `limit` stage. Its capacity is the limit, `configured(…)`: a number someone set, exact, so it
+A rate limiter is a `limit` stage. Its capacity is the limit, `configured(…)`: a number someone set, exact, so it
 takes no `±`. Above it the share over is turned away ("17 % rejected at the limiter"), and the stages after it see
 only what got through, so the service behind a limit may never run out.
 
 #### Retries
 
-**Retries** send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
+Retries send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
 more times. A `budget` caps the extra attempts at that share of the flow. A retry rule reads only the load and the
 parameters: retries change every other number, so they cannot depend on one.
 
@@ -674,7 +674,7 @@ request and the share failing after every retry, and the retries are drawn as ri
 
 #### Lost units
 
-**A lost box** is where what other boxes lose goes, counted. A unit a stage turns away (a limiter above its limit, a
+A lost box is where what other boxes lose goes, counted. A unit a stage turns away (a limiter above its limit, a
 pass, cache or split past capacity), one a queue drops as too old, or one too slow for its client at the end of its
 way leaves the diagram there; with a lost box, its dot goes along the edge into it and fades inside. An edge from a box
 into a lost box sends what that box loses there, and `takes` keeps only some losses (`rejected`, `dropped`,
@@ -700,7 +700,7 @@ flow's colour where it waited, so a queue that keeps only the newest shows it.
 
 #### Queues
 
-**A queue** is where units wait for the stage after it on their route, which drains it. It lives in a cluster (brokers
+A queue is where units wait for the stage after it on their route, which drains it. It lives in a cluster (brokers
 holding its partitions), and `partitions` says how many each flow has, drawn as cells in the box. When the reader
 behind it falls behind, the flow with the lower `priority` is drained first (1 before 2), and flows of the same
 priority share.
@@ -735,7 +735,7 @@ a `reason` for its meter and a `when` that switches it on and off.
 
 #### Fan-out and sinks
 
-**A fan-out** copies each unit to several stages, one line per branch: the flow, the stage, and the copies of each
+A fan-out copies each unit to several stages, one line per branch: the flow, the stage, and the copies of each
 unit. It ends a route. **A sink** is where a flow ends without a component: a receiver, a viewer, a phone.
 
 ```loadmap
@@ -755,7 +755,7 @@ reaches a responder for two alerts in five ([Alerts](/examples/alerts/) has both
 
 #### Splits
 
-**A split** sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
+A split sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
 failover. One line per way, the flow, the stages it goes through and its share; a flow's shares add up to 1, and a
 flow the split names on no line goes straight on. A way that ends in a store, a sink or a fan-out ends there; any
 other goes on with the route after the split, so reads can return through the API they came from:
@@ -776,7 +776,7 @@ replica past capacity turns away only the reads. In TypeScript, `split({ to: [{ 
 
 #### Slots held for a while
 
-**A pool of slots** runs out of slots, not of rate: connections, sessions, threads, requests in flight. `held` says
+A pool of slots runs out of slots, not of rate: connections, sessions, threads, requests in flight. `held` says
 how many seconds each unit holds one, and the demand is then the slots in use, by Little's law: what reaches its
 stages each second times `held`. Its capacity counts slots. A pool beside the limit that runs a stage names the stage
 with `on`:
@@ -797,7 +797,7 @@ slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves t
 
 #### Connections
 
-**A connection** says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
+A connection says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
 group each partition is read by one consumer only: `assign: exclusive` deals the partitions of the queue in front to
 the workers of the pool after it, in turn, alternating pods. Workers beyond the partitions read nothing, and the
 component runs out when its busiest member does:
@@ -865,7 +865,7 @@ superusers) are `published dbMax postgresql { edition: "2026-12"; figure: "max-c
 
 #### Latency and timeouts
 
-**Latency** comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
+Latency comes from service times. `service` on a component is the seconds a unit takes there when nothing waits;
 each stage it runs is then a queue whose time grows as `service ÷ (1 − utilization)`, so it doubles at half and has
 no end at 100 %. A flow's time through is the sum of its stages (a cache's hits leave there, a split's ways mix by
 share), and `ev.latency.orders` gives its mean, p50, p95 and p99. The limits still say when a box runs out; the
@@ -882,10 +882,9 @@ node api "API" {
 expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 150ms; underTarget: 10 }
 ```
 
-`p50` or `p95` in its place holds the median or the 95th percentile the same way: one of the three an expectation.
-
 The expect holds when the p99 stays under 150 ms up to 10× on the pessimistic edge (every capacity at its low
-bound); without `underTarget`, at the values. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
+bound); without `underTarget`, at the values. An expectation holds one percentile: `p50` (the median) or `p95` in place of
+`p99` work the same way. It is a single queue per stage (M/M/1) fitted over the way, an estimate of
 the shape, not a measurement. To set a service time from data, take a measured p99 at today's utilization: a single
 queue's p99 is `service × ln 100 ÷ (1 − utilization)`, so `service: latencyP99 / 1_000 * (1 - 0.4) / 4.6` for a p99
 in ms at 40 %.
@@ -2442,8 +2441,8 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 | `compact(x)` | A compact number: 980 / 1.2k / 34k / 1.5M. |
 | `pct(x)` | A share from 0 to 1 as a percentage: 50 %. |
 | `secs(x)` | A duration in seconds: 42 s / 3 min / > 1 h. |
-| `measured(value, unit, source?)` | A capacity read off a dashboard or a load test. `value +- 30%` (±) says how sure it is. |
-| `estimated(value, unit, source?)` | A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value +- 30%` (±) says how sure it is. |
-| `configured(value, unit, source?)` | A limit someone set, such as a rate limiter's: exact, so it takes no +- (±). |
+| `measured(value, unit, source)` | A capacity read off a dashboard or a load test. `value +- 30%` (±) says how sure it is. |
+| `estimated(value, unit, source)` | A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value +- 30%` (±) says how sure it is. |
+| `configured(value, unit, source)` | A limit someone set, such as a rate limiter's: exact, so it takes no +- (±). |
 
 <!-- end of reference -->

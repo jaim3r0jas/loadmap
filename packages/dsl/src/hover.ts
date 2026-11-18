@@ -605,7 +605,8 @@ const lineEnd = (source: string, from: number) => {
 }
 
 /** `max(a, b, …)`. */
-function callLabel(name: string, params: readonly string[], variadic: boolean): string {
+/** A call as the help shows it, `name(a, b, …)`: the reference's table of functions writes it so too. */
+export function callLabel(name: string, params: readonly string[], variadic: boolean): string {
   return `${name}(${params.join(', ')}${variadic ? ', …' : ''})`
 }
 

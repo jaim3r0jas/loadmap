@@ -1,4 +1,4 @@
-@include(docs/dsl.md, "# The .loadmap language", "### Formulas")
+@include(docs/dsl.md, "# The .loadmap language", "### Controls and values")
 
 ## The guide, page by page
 
