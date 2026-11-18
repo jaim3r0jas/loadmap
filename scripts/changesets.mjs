@@ -3,6 +3,8 @@
 // versions and one it does not ("mixed changeset"), and then no "Version Packages" pull request is made. Private
 // packages (@loadmap/vscode, the examples, the docs) are not versioned (.changeset/config.json, privatePackages), so
 // a changeset names none of them: what changes in the extension goes in the words of the changeset, not its head.
+// Fails too when a feature (a minor or major bump) does not say where the docs tell of it (DOCS_LINE): the docs site is
+// published with each release, and its What's new links every feature to its section.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -24,15 +26,27 @@ function packages() {
   return out
 }
 
-/** The problems of the changesets in `dir`, as lines to print: none when a release can be made of them. */
+/**
+ * A changeset's `Docs:` line: the docs site's page and section that tell of the change (`Docs: /language/#versions`),
+ * or `Docs: none`. What's new links it (apps/docs/changelog.ts), and the docs tests check that the section exists.
+ */
+export const DOCS_LINE = /^Docs:[ \t]*(\S+)[ \t]*$/m
+
+/**
+ * The problems of the changesets in `dir`, as lines to print: none when a release can be made of them and each
+ * feature (a minor or major bump) says where the docs tell of it.
+ */
 export function changesetProblems(dir = join(root, '.changeset'), known = packages()) {
   const problems = []
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md')) {
-    const head = /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(dir, file), 'utf8'))?.[1]
-    if (head == null) {
+    const text = readFileSync(join(dir, file), 'utf8')
+    const parts = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text)
+    if (parts == null) {
       problems.push(`.changeset/${file}: no "---" head with the packages it bumps`)
       continue
     }
+    const [, head, body] = parts
+    let feature = false
     for (const line of head.split('\n').filter((l) => l.trim())) {
       const m = /^['"]?([^'":]+)['"]?:\s*(major|minor|patch|none)\s*$/.exec(line.trim())
       if (!m) problems.push(`.changeset/${file}: "${line.trim()}" is not "'@loadmap/name': minor"`)
@@ -41,7 +55,17 @@ export function changesetProblems(dir = join(root, '.changeset'), known = packag
         problems.push(
           `.changeset/${file}: ${m[1]} is private, so it is not versioned: take its line out (say what changed for it in the text)`,
         )
+      else if (m[2] === 'minor' || m[2] === 'major') feature = true
     }
+    const docs = DOCS_LINE.exec(body)?.[1]
+    if (feature && docs == null)
+      problems.push(
+        `.changeset/${file}: a feature says where the docs tell of it, on a line of its own: "Docs: /<page>/#<section>", or "Docs: none"`,
+      )
+    else if (docs != null && docs !== 'none' && !/^\/[^\s#]*#[\w-]+$/.test(docs))
+      problems.push(
+        `.changeset/${file}: "Docs: ${docs}" is not a page of the site with a section, "/<page>/#<section>"`,
+      )
   }
   return problems
 }
@@ -49,9 +73,6 @@ export function changesetProblems(dir = join(root, '.changeset'), known = packag
 if (process.argv[1] === import.meta.filename) {
   const problems = changesetProblems()
   for (const p of problems) console.error(p)
-  if (problems.length) {
-    console.error('changeset version would fail on these ("mixed changeset"): no release could be made')
-    process.exit(1)
-  }
-  console.log('changesets: each names only packages that are versioned')
+  if (problems.length) process.exit(1)
+  console.log('changesets: each names only packages that are versioned, and each feature its docs')
 }

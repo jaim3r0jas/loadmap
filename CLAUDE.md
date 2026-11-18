@@ -99,6 +99,8 @@ Work lands on `main` only through a pull request: rulesets on GitHub require the
 deletion, with no bypass. Push the branch, `gh pr create`, `gh pr merge --auto --squash`: it merges once green. Watch
 the parts to the end from the session (Verification) before wrapping it up.
 
+- A feature's changeset (a `minor` or `major` bump) ends with `Docs: /<page>/#<section>`, the docs section that tells of it, or
+  `Docs: none` (`.changeset/README.md`): the docs site is published with each release, not from main.
 - Workflows: their rules are in `.github/CLAUDE.md`.
 - `pnpm-workspace.yaml` refuses a dependency younger than 3 days, one whose trust dropped (lost provenance), one that
   wants an install script (`allowBuilds` after reading what it runs) and git or tarball dependencies deep in the tree.

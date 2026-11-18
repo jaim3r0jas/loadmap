@@ -1,16 +1,20 @@
 # Changesets
 
 Every change a user of the packages would notice gets a changeset: `pnpm changeset`, pick the bump, write one line
-for the changelog. All `@loadmap/*` packages share one version. A changeset names only packages that are published:
-`@loadmap/vscode`, the examples and the docs are private and not versioned, and `changeset version` refuses a
-changeset that names one beside a published package ("mixed changeset"), which stops the release. Say what changed
-for the extension in the text. `node scripts/changesets.mjs` (in the `static` part of `check`) fails on one. A release is `pnpm changeset version` (bumps the
-versions, writes the changelogs), `pnpm check`, a commit, then `pnpm release` (builds and publishes what npm does not
-have yet).
+for the changelog. A feature (a `minor` or `major` bump) ends with a line of its own naming the docs site's page and
+section that tell of it, `Docs: /language/#versions`, or `Docs: none` when there is nothing for a reader: What's new
+links it, and the docs tests check that the section exists, so the feature's pages land with it.
+
+All `@loadmap/*` packages share one version. A changeset names only packages that are published: `@loadmap/vscode`,
+the examples and the docs are private and not versioned, and `changeset version` refuses a changeset that names one
+beside a published package ("mixed changeset"), which stops the release. Say what changed for the extension in the
+text. `node scripts/changesets.mjs` (in the `static` part of `check`) fails on either. A release is `pnpm changeset
+version` (bumps the versions, writes the changelogs), `pnpm check`, a commit, then `pnpm release` (builds and
+publishes what npm does not have yet).
 
 On GitHub, `.github/workflows/release.yml` runs the same two steps with `changesets/action`: a pull request that
 bumps the versions ("Version Packages"), then the publish once it is merged. A release is that one merge, once its
-`check` is green. Three jobs:
+`check` is green. Four jobs:
 
 - `version` opens and updates the pull request with a token of the GitHub App `loadmap-release` (Contents and Pull
   requests, read and write, installed on this repository only). A pull request that `GITHUB_TOKEN` opens gets its
@@ -20,6 +24,9 @@ bumps the versions ("Version Packages"), then the publish once it is merged. A r
   releases (with the App's token). It is the only job with `id-token: write`, and it runs in the `release`
   environment, which only `main` may use and which holds the App's client id (`RELEASE_APP_CLIENT_ID`, a variable)
   and key (`RELEASE_APP_PRIVATE_KEY`, a secret).
+- `docs` publishes the docs site (`docs.yml`, called once `publish` is done), so the site documents what npm has: at
+  each release, and after a push with no changeset waiting (a fix of the docs alone). While a changeset waits, the
+  site stays at the last release; its header, its footer and What's new name that version.
 
 It holds no npm token: each package's settings on npmjs.com name `release.yml` and the environment `release` as its
 trusted publisher (GitHub Actions, `jaim3r0jas/loadmap`), and npm signs the provenance. Publishing access on each

@@ -16,6 +16,12 @@ pages in Chromium. The build also writes `llms.txt` (the pages) and
 `llms-full.txt` (`docs/dsl.md` and `docs/every-statement.loadmap`, which must hold every statement of the schema:
 `docs.test.ts`); the dsl build copies `docs/dsl.md` into its `dist/REFERENCE.md`.
 
+The site documents the latest release, not main: `release.yml` calls `docs.yml` once npm has the packages (never
+while a changeset waits), the header's badge and every page's footer name the packages' version and the language's
+(`packagesVersion()`, `LANGUAGE_VERSION`), and What's new (`@changelog` in `pages/whats-new.md`, `changelog.ts`) is
+every release read from the packages' changelogs, each feature linked to the section its changeset's `Docs:` line
+names (`test/whats-new.test.ts` checks that the section exists).
+
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
 
