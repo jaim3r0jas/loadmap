@@ -225,6 +225,7 @@ describe('the pages', () => {
       'multi-file/shop.big.loadmap',
       'multi-file/shop.loadmap',
       'multi-file/shop.story.loadmap',
+      'pages/using-the-editor.md',
       'providers/CHANGELOG.md',
       'react/CHANGELOG.md',
       'react/README.md',
