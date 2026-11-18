@@ -1,5 +1,5 @@
 import type { ConditionValue, Published } from '@loadmap/core'
-import { childrenOf, type Decl, type Edge, type Expr, type Stmt } from './ast'
+import type { Decl, Edge, Stmt } from './ast'
 import { catalogRules, componentOf, latestEdition, loadedCatalog } from './catalog'
 import { type DslSymbol, declarations, templateArgs } from './compile'
 import { type Cursor, callAt, cursorAt } from './cursor'
@@ -22,6 +22,7 @@ import {
   type Scope,
   STAGES,
 } from './schema'
+import { blockAt, propOf, walk } from './tree'
 import { before, CURRENT, LANGUAGE_VERSION, parseVersion, stampOf, type Version } from './versions'
 
 export interface Completion {
@@ -40,6 +41,8 @@ export interface Completion {
   snippet?: string
   /** Higher first among the matches, from -99 to 99: what fits this place best. */
   boost?: number
+  /** Other changes made with it, in the same text: the edge a route's next stage needs. */
+  edits?: { from: number; to: number; insert: string }[]
 }
 
 export interface Completions {
@@ -94,6 +97,8 @@ export interface Context {
   /** The boxes and subsystems this file imports, by the name they have here. */
   imported?: readonly { name: string; keyword: string; from: string; inputs: boolean; route: boolean }[]
   inputsOf?: (name: string) => Input[]
+  /** The part of the text that is this file's own, where an edge it adds goes: all of it, alone. */
+  range?: { from: number; to: number }
 }
 
 /** The one-file help, with what `ctx` says of the files around: for `completionsAcross`. */
@@ -293,7 +298,9 @@ class Help {
         .map((label) => ({ label, type: 'variable' as const, apply: `${label}: `, boost: 1 }))
     if (spec.open?.names === 'values') list.push(...open(['load', ...this.ids('param')]))
     if (spec.open?.names === 'params') list.push(...open(this.ids('param')))
-    if (spec.open?.names === 'flows') list.push(...open(this.flows()))
+    if (spec.open?.names === 'flows')
+      for (const f of this.flowsHere(this.passing()))
+        if (!written.has(f.label)) list.push({ ...f, apply: `${f.label}: ` })
     if (spec.open?.names === 'inputs')
       for (const i of this.prototypeInputs())
         if (!written.has(i.name))
@@ -380,13 +387,19 @@ class Help {
       if (cur.in !== 'code') return []
       if (dotted != null && (names.length === 2 || punct(names.at(-3), '->'))) return this.inside(dotted, 'stage')
       if (names.length && !punct(names.at(-1), '->')) return []
-      return this.stages(names.at(-2)?.text)
+      // a flow's hops need edges: from its from node to its first stage, and between its stages
+      const flow =
+        key === 'route' && this.path.at(-1)?.kind === 'decl' && (this.path.at(-1) as Decl).keyword.name === 'flow'
+      const from = flow ? propOf(this.path.at(-1) as Decl, 'from') : undefined
+      const prev = names.at(-2)?.text ?? (from?.t === 'id' ? from.name : undefined)
+      return this.stages(prev, flow)
     }
     if (key === 'like' && !this.edgeBody) return cur.in === 'code' ? this.prototypes() : []
+    if (kind === 'node' && key === 'from' && dotted == null) return cur.in === 'code' ? this.sources() : []
     if (kind === 'node') return cur.in !== 'code' ? [] : dotted != null ? this.inside(dotted, 'node') : this.nodes()
     if (kind === 'component' && dotted != null) return this.inside(dotted, 'component')
     if (kind === 'flow' || kind === 'flows')
-      return cur.in === 'code' ? this.flows().map((label) => ({ label, type: 'variable' })) : []
+      return cur.in === 'code' ? this.flowsHere(this.spec === SCHEMA.connection ? this.hopFlows() : undefined) : []
     if (kind === 'component')
       return cur.in === 'code' ? this.ids('component').map((label) => ({ label, type: 'variable' })) : []
     // with { main: | }: a flow for a flow input, else a formula of this file
@@ -667,17 +680,17 @@ class Help {
     return [...new Set(this.symbols.filter((s) => s.kind === kind).map((s) => s.id))]
   }
 
-  /** Stages, and boxes with a single stage of their own name; those right after `prev` along an edge first. */
-  stages(prev?: string): Completion[] {
-    const next = new Set<string>()
-    if (prev) {
-      const boxOf = new Map(this.symbols.filter((s) => s.kind === 'stage').map((s) => [s.id, s.detail ?? s.id]))
-      const from = boxOf.get(prev) ?? prev
-      for (const s of this.body)
-        if (s.kind === 'edge')
-          for (let i = 0; i + 1 < s.chain.length; i++) if (s.chain[i]!.name === from) next.add(s.chain[i + 1]!.name)
-      for (const [stage, box] of boxOf) if (next.has(box)) next.add(stage)
-    }
+  /**
+   * Stages, boxes with one stage of their own name and the subsystems a route may name; after `prev`, not `prev`. Those
+   * an edge joins to `prev` first; in a flow's route (`flow`), the others last, each drawing the edge it needs.
+   */
+  stages(prev?: string, flow = false): Completion[] {
+    const box = this.boxOf()
+    const edges = this.edgePairs()
+    const from = prev == null ? undefined : (box.get(prev) ?? prev)
+    // an edge to a subsystem ends at one of its boxes, one from it starts at one
+    const joins = (a: string, b: string) =>
+      [...edges].some(([x, y]) => (x === a || a.startsWith(`${x}.`)) && (y === b || b.startsWith(`${y}.`)))
     // a lost box is on no route: it takes what the stages on one lose
     const lost = new Set<string>()
     for (const s of this.body) {
@@ -688,15 +701,123 @@ class Help {
     }
     const all = [
       ...this.ids('stage').map((label) => ({ label, detail: 'stage' })),
-      ...singleStageBoxes(this.symbols).map((label) => ({ label, detail: 'box' })),
+      // a box whose one stage has another name is offered by that stage, not twice
       ...this.subsystems(true).map((label) => ({ label, detail: 'subsystem' })),
-    ].filter(({ label }) => !lost.has(label))
-    return all.map(({ label, detail }) => ({
-      label,
-      type: 'variable' as const,
-      detail: next.has(label) ? `${detail}, next along an edge` : detail,
-      boost: next.has(label) ? 2 : undefined,
-    }))
+    ].filter(({ label }) => {
+      const to = box.get(label) ?? label
+      // a subsystem and its own boxes are one place on a route
+      const inner = from != null && (to.startsWith(`${from}.`) || from.startsWith(`${to}.`))
+      return !lost.has(label) && label !== prev && !inner
+    })
+    return all.map(({ label, detail }): Completion => {
+      const to = box.get(label) ?? label
+      if (from == null || to === from) return { label, type: 'variable', detail }
+      if (joins(from, to)) return { label, type: 'variable', detail: `${detail}, next along an edge`, boost: 2 }
+      if (!flow) return { label, type: 'variable', detail }
+      return {
+        label,
+        type: 'variable',
+        detail: `${detail}, draws ${from} -> ${to}`,
+        boost: -1,
+        edits: [this.edgeEdit(from, to)],
+      }
+    })
+  }
+
+  /** Each stage's box (a box with one stage stands for it, as the compiler reads a route). */
+  boxOf(): Map<string, string> {
+    const out = new Map<string, string>()
+    for (const s of this.symbols) if (s.kind === 'stage') out.set(s.id, s.detail ?? s.id)
+    for (const b of singleStageBoxes(this.symbols)) out.set(b, b)
+    return out
+  }
+
+  /** Every edge drawn, by the ids its ends have outside (a subsystem's own edges under its id). */
+  edgePairs(): Set<[string, string]> {
+    const out = new Set<[string, string]>()
+    const visit = (list: readonly Stmt[], prefix: string) => {
+      for (const s of list) {
+        if (s.kind === 'edge')
+          for (let i = 0; i + 1 < s.chain.length; i++)
+            out.add([`${prefix}${s.chain[i]!.name}`, `${prefix}${s.chain[i + 1]!.name}`])
+        if (s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id')
+          visit(s.body ?? [], `${prefix}${s.args[0].name}.`)
+      }
+    }
+    visit(this.body, '')
+    return out
+  }
+
+  /** The change that draws `from -> to`: after the file's last edge, or at its end. */
+  edgeEdit(from: string, to: string): { from: number; to: number; insert: string } {
+    const range = this.ctx.range ?? { from: 0, to: this.source.length }
+    const last = this.body.findLast((s) => s.kind === 'edge' && range.from <= s.from && s.to <= range.to)
+    if (last) return { from: last.to, to: last.to, insert: `\n${from} -> ${to}` }
+    const end = range.to
+    return { from: end, to: end, insert: `${this.source[end - 1] === '\n' ? '' : '\n'}${from} -> ${to}\n` }
+  }
+
+  /** The nodes a flow may come from: those that run no stage first. */
+  sources(): Completion[] {
+    const running = new Set(this.boxOf().values())
+    return this.nodes().map((n) => (running.has(n.label) ? n : { ...n, detail: 'node, runs no stage', boost: 2 }))
+  }
+
+  /** The flows, those in `near` first. */
+  flowsHere(near?: ReadonlySet<string>): Completion[] {
+    return this.flows().map((label) =>
+      near?.has(label)
+        ? { label, type: 'variable', detail: 'passes here', boost: 2 }
+        : { label, type: 'variable', detail: 'flow' },
+    )
+  }
+
+  /** The flows that pass the queue or the box whose block the cursor is in (partitions, held). */
+  passing(): Set<string> | undefined {
+    const queue = this.path.findLast((d): d is Decl => d.kind === 'decl' && d.keyword.name === 'queue')
+    if (queue) {
+      const id = queue.args[0]
+      const stage = id?.t === 'id' ? id.name : this.box()
+      const routes = this.routes()
+      return new Set(this.ids('flow').filter((f) => stage != null && routes.get(f)?.has(stage)))
+    }
+    const box = this.box()
+    if (box) return new Set(this.reaching(box))
+    // a component of its own: the stages it is on
+    const d = this.path.findLast((x): x is Decl => x.kind === 'decl' && x.keyword.name === 'component')
+    const on = d?.body?.find((x) => x.kind === 'prop' && x.key.name === 'on')
+    if (on?.kind !== 'prop') return undefined
+    const stages = new Set((on.chain ?? [on.value]).flatMap((n) => ('name' in n ? [n.name] : [])))
+    const routes = this.routes()
+    return new Set(this.ids('flow').filter((f) => [...(routes.get(f) ?? [])].some((st) => stages.has(st))))
+  }
+
+  /** The flows whose route takes the connection's hop, a -> b. */
+  hopFlows(): Set<string> | undefined {
+    const d = this.path.at(-1)
+    const hop = d?.kind === 'decl' ? d.body?.find((s) => s.kind === 'prop' && s.key.name === 'hop') : undefined
+    const chain = hop?.kind === 'prop' ? hop.chain : undefined
+    const [a, b] = (chain ?? []).map((n) => ('name' in n ? n.name : ''))
+    if (!a || !b) return undefined
+    const out = new Set<string>()
+    for (const [flow, route] of this.routeChains())
+      for (let i = 0; i + 1 < route.length; i++) if (route[i] === a && route[i + 1] === b) out.add(flow)
+    return out
+  }
+
+  /** Each flow's route as written, by the names of its stages. */
+  routeChains(): Map<string, string[]> {
+    const out = new Map<string, string[]>()
+    for (const s of this.body) {
+      if (s.kind !== 'decl' || s.keyword.name !== 'flow' || s.args[0]?.t !== 'id') continue
+      const route = s.body?.find((p) => p.kind === 'prop' && p.key.name === 'route')
+      if (route?.kind === 'prop')
+        out.set(
+          s.args[0].name,
+          (route.chain ?? [route.value]).flatMap((n) => ('name' in n ? [n.name] : [])),
+        )
+    }
+    return out
   }
 
   /** Every node; after `a ->`, not `a` itself. In a subsystem, its own boxes, by the ids they have there. */
@@ -721,7 +842,24 @@ class Help {
       : [...this.ids('node'), ...this.subsystems(false)]
     // not the box itself, nor its own boxes: an edge leaves a subsystem from its last box
     const mine = (id: string) => prev != null && (id === prev || id.startsWith(`${prev}.`))
-    return ids.flatMap((label) => (mine(label) ? [] : [{ label, type: 'variable' as const, detail: 'node' }]))
+    if (prev == null || sub)
+      return ids.flatMap((label) => (mine(label) ? [] : [{ label, type: 'variable' as const, detail: 'node' }]))
+    // not an edge drawn already; first, where a flow's route goes next
+    const drawn = new Set([...this.edgePairs()].flatMap(([a, b]) => (a === prev ? [b] : [])))
+    const box = this.boxOf()
+    const next = new Set<string>()
+    for (const route of this.routeChains().values())
+      for (let i = 0; i + 1 < route.length; i++)
+        if ((box.get(route[i]!) ?? route[i]) === prev) next.add(box.get(route[i + 1]!) ?? route[i + 1]!)
+    return ids.flatMap((label) =>
+      mine(label) || drawn.has(label)
+        ? []
+        : [
+            next.has(label)
+              ? { label, type: 'variable' as const, detail: 'node, a route goes here', boost: 2 }
+              : { label, type: 'variable' as const, detail: 'node' },
+          ],
+    )
   }
 
   /**
@@ -895,11 +1033,6 @@ const HEAD_SNIPPETS: Readonly<Record<string, string>> = {
   extends: 'extends "${1:./model.loadmap}"',
 }
 
-export function propOf(d: Decl, key: string): Expr | undefined {
-  const p = d.body?.find((s) => s.kind === 'prop' && s.key.name === key)
-  return p?.kind === 'prop' ? p.value : undefined
-}
-
 function booleans(boost?: number): Completion[] {
   return [
     { label: 'true', type: 'constant', boost },
@@ -1024,47 +1157,4 @@ function singleStageBoxes(symbols: readonly DslSymbol[]): string[] {
   for (const s of symbols) if (s.kind === 'stage' && s.detail) count.set(s.detail, (count.get(s.detail) ?? 0) + 1)
   const stages = new Set(symbols.filter((s) => s.kind === 'stage').map((s) => s.id))
   return [...count].filter(([box, n]) => n === 1 && !stages.has(box)).map(([box]) => box)
-}
-
-/** Every formula in the statements, and every formula inside it. */
-export function walk(list: readonly Stmt[], visit: (e: Expr) => void) {
-  const expr = (e: Expr) => {
-    visit(e)
-    for (const c of childrenOf(e, true)) expr(c)
-  }
-  for (const s of list) {
-    if (s.kind === 'prop') expr(s.value)
-    else if (s.kind === 'row') s.values.forEach(expr)
-    else {
-      if (s.kind === 'decl') {
-        s.args.forEach(expr)
-        if (s.init) expr(s.init)
-      } else if (s.value) expr(s.value)
-      if (s.body) walk(s.body, visit)
-    }
-  }
-}
-
-/** The innermost block whose braces hold `offset`, and the statements whose blocks lead to it. */
-export function blockAt(
-  body: readonly Stmt[],
-  offset: number,
-): { spec: BlockSpec; edgeBody: boolean; path: (Decl | Edge)[] } {
-  let spec = SCHEMA['']!
-  let list = body
-  const path: (Decl | Edge)[] = []
-  for (;;) {
-    const inside = list.find(
-      (s): s is Decl | Edge =>
-        (s.kind === 'decl' || s.kind === 'edge') && !!s.bodySpan && s.bodySpan.from < offset && offset < s.bodySpan.to,
-    )
-    if (!inside?.body) return { spec, edgeBody: false, path }
-    path.push(inside)
-    // an edge's block holds label and when
-    if (inside.kind === 'edge') return { spec, edgeBody: true, path }
-    const next = own(SCHEMA, inside.keyword.name)
-    if (!next) return { spec, edgeBody: false, path }
-    spec = next
-    list = inside.body
-  }
 }
