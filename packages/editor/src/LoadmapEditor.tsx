@@ -1,4 +1,4 @@
-import { hasNextSnippetField, nextSnippetField } from '@codemirror/autocomplete'
+import { hasNextSnippetField, nextSnippetField, startCompletion } from '@codemirror/autocomplete'
 import {
   defaultKeymap,
   history,
@@ -13,7 +13,14 @@ import {
 import { bracketMatching, indentOnInput } from '@codemirror/language'
 import { forceLinting } from '@codemirror/lint'
 import { EditorState, type Extension, Transaction } from '@codemirror/state'
-import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
+import {
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+  placeholder,
+} from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { published } from '@loadmap/core'
 import { fmt } from '@loadmap/core/format'
@@ -83,6 +90,7 @@ import { type Around, loadmapLanguage, renameMark, startRename } from './languag
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import type { FileHost } from './reshape'
+import { lazySearch, openSearch } from './search'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
 
@@ -401,6 +409,7 @@ export function LoadmapEditor({
   // the phone's sheet of actions, drawn while it is open
   const [sheet, setSheet] = useState(false)
   const [picking, setPicking] = useState(false)
+  const [shortcuts, setShortcuts] = useState(false)
   const shareGroup = useRef<HTMLSpanElement>(null)
   const embed = useRef<EmbedHandle>(null)
 
@@ -478,6 +487,9 @@ export function LoadmapEditor({
         ...historyKeymap,
         indentWithTab,
       ]),
+      lazySearch,
+      // an empty text says how to start, and where the keys are
+      placeholder(`${MAC ? '⌃Space or ⌥I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
       EditorState.tabSize.of(2),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': 'loadmap definition' }),
@@ -1195,6 +1207,23 @@ export function LoadmapEditor({
       Files
     </MenuItem>
   )
+  const shortcutsItem = (sheet?: boolean) => (
+    <MenuItem sheet={sheet} onSelect={() => setShortcuts(true)}>
+      Keyboard shortcuts…
+    </MenuItem>
+  )
+  const shortcutsSheet = shortcuts && (
+    <Suspense fallback={null}>
+      <Shortcuts
+        mac={MAC}
+        onClose={() => {
+          setShortcuts(false)
+          // back to the text, where the keys work
+          view.current?.focus()
+        }}
+      />
+    </Suspense>
+  )
   // the same groups in the phone's sheet and in a narrow column's menu
   const viewGroup = (sheet?: boolean) => (
     <MenuGroup label="View">
@@ -1208,6 +1237,7 @@ export function LoadmapEditor({
       )}
       {filesItem(sheet)}
       {lookItems(sheet)}
+      {shortcutsItem(sheet)}
     </MenuGroup>
   )
   const exportGroups = (sheet?: boolean) => (
@@ -1343,6 +1373,7 @@ export function LoadmapEditor({
                   <>
                     {filesItem()}
                     {lookItems()}
+                    {shortcutsItem()}
                   </>
                 )}
               </Menu>
@@ -1486,6 +1517,13 @@ export function LoadmapEditor({
           {phone && typing && (
             // over the keyboard: what a phone's keyboard lacks, pressed without taking the text's focus (and so the keyboard)
             <div className="lme-keys" role="toolbar" aria-label="Keys" onPointerDown={(e) => e.preventDefault()}>
+              <button
+                type="button"
+                className="lm-btn"
+                onClick={key(() => view.current && startCompletion(view.current))}
+              >
+                Suggest
+              </button>
               <button type="button" className="lm-btn" onClick={key(formatText)}>
                 Format
               </button>
@@ -1512,6 +1550,9 @@ export function LoadmapEditor({
                 onClick={() => view.current && startRename(view.current, aroundRef.current)}
               >
                 Rename
+              </button>
+              <button type="button" className="lm-btn" onClick={key(() => view.current && openSearch(view.current))}>
+                Find
               </button>
               <span className="lme-grow" />
               <button type="button" className="lm-btn" onClick={() => view.current?.contentDOM.blur()}>
@@ -1630,6 +1671,7 @@ export function LoadmapEditor({
         </div>
       )}
       {picker}
+      {shortcutsSheet}
     </div>
   )
 }
@@ -1723,6 +1765,7 @@ const REST = 500
 const MARK = 1600
 const MAC = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform)
 const Starters = later(() => import('./Starters'), 'The templates did not load: reload the page.')
+const Shortcuts = later(() => import('./Shortcuts'), 'The list of keys did not load: reload the page.')
 const Actions = later(() => import('./Actions'))
 const CatalogPicker = later(() => import('./CatalogPicker'), 'The catalog did not load: reload the page.')
 const FileTabs = later<FileTabsProps>(() => import('./FileTabs'))
