@@ -53,7 +53,7 @@ A `defineModel` definition takes, besides the required parts: `title`, `presets`
 | `@loadmap/core/format`    | the number formats                                                                |
 | `@loadmap/core/measure`   | snapshots of measured data: see [Measured data](#measured-data-loadmap-providers) |
 | `@loadmap/core/catalog`   | the published figures: see [The catalog](#the-catalog-loadmap-core-catalog)       |
-| `@loadmap/core/drift`     | the tests behind `loadmap drift`: `changePoints`, `compareWindows`, `threshold`   |
+| `@loadmap/core/drift`     | the tests behind `loadmap drift`: `changePoints`, `compareWindows`, `threshold`, `mannWhitney`, `welch` |
 
 ## The view (`@loadmap/layout`, re-exported by react)
 
@@ -65,7 +65,9 @@ A `defineModel` definition takes, besides the required parts: `title`, `presets`
 | `pool({ label, stage, podLabel? })`                | A workers stage drawn as pods holding workers          |
 | `edge(from, to, { label?, when? })`                | An edge; its label may be computed from the values     |
 
-Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `layout(view, evaluation, { direction, rows })`returns the scene (`rows` folds a long diagram into that many rows, or columns running down);`collisions(scene)` lists labels that overlap, for a test.
+Labels can be functions of the values (`({ pods }) => \`${pods} pods\``). `await layout(view, evaluation, { direction, rows })`
+resolves to the scene (`rows` folds a long diagram into that many rows, or columns running down); `collisions(scene)`
+lists labels that overlap, for a test.
 
 A view also takes `tiers` (bands across the flow, in the order the flow meets them; each box names its own with
 `tier`), `lanes` (`'filled'`, the default, or `'striped'`) and `layout`: `'compact'` (the default) lays out each
@@ -111,7 +113,8 @@ selected), `zoom` (the reader pans and zooms the diagram: drag, pinch, the keys 
 Ctrl or ⌘ held), `transition` (seconds the diagram takes to move to a new structure, default 0.8; 0 cuts, and the
 load never moves it), `fullScreenMode` (what full screen opens with: the panels around the diagram, or mainly the
 diagram and the story), `fill` (the root fills its container, laid out as full screen is, for a page made to be
-framed: see [Embedding](/embedding/)), and `ref`.
+framed: see [Embedding](/embedding/)), `fullScreen` (the panels full screen shows below the diagram, `LOADMAP_PANELS`
+by name; default every one the page shows), `closed` (the subsystems the page starts with closed), and `ref`.
 
 The `ref` is a `LoadmapHandle`: `values()`, `setValues(v)`, `setStoryStep(i)`, `storyStep()`, `ready()`, `pause()`,
 `resume()`, `step(dt)`, `reset(seed)`, `board()`, `playStory()` (plays the story as Play does, and returns its length
@@ -137,7 +140,7 @@ Export and recording drive the page through it.
 | `quickFixes(source, diagnostics)`                  | The fixes of each diagnostic, as text changes                             |
 | `definition`, `references(source, offset)`         | Where a name is declared; every place it is written                       |
 | `rename(source, offset, name)`                     | The name renamed everywhere, or why not                                   |
-| `encodeShare(source, values)`, `decodeShare(hash)` | Share links that carry the whole definition                               |
+| `encodeShare(source, values)`, `decodeShare(hash)` | Share links that carry the whole definition (both async: they deflate)    |
 
 `compile` takes `functions` (what formulas may call beyond the built-in ones), `snapshot` (measured data for the
 `measure` statements: `fromSnapshot(parseSnapshot(json))`), `catalog` (by default the one `loadCatalog()` loaded), and
@@ -181,7 +184,7 @@ errors, completion, hover, rename), and `loadmapStream` with `loadmapHighlight` 
 | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `exportPng(handle, { scale?, caption? })`                                          | The board as it is now                                                     |
 | `exportSvg(handle, { caption? })`                                                  | The board as an SVG file, dots included                                    |
-| `recordVideo(handle, { format, seconds, script?, story?, caption?, fps?, seed? })` | GIF, WebM or MP4 on a fixed clock                                          |
+| `recordVideo(handle, { seconds or story, format?, script?, caption?, fps?, seed? })` | GIF, WebM or MP4 on a fixed clock                                          |
 | `recordStill`, `recordPoster`                                                      | A PNG after a warm-up; a poster with the limits and the scenarios compared |
 | `expose(handle, name?)`                                                            | Lets `loadmap record` drive the page                                       |
 | `composeFrame(handle, options?)`                                                   | The board as one image on a canvas: the SVG with the dots painted on top   |
@@ -236,7 +239,8 @@ holds every released edition (a released one never changes), `CATALOG` the lates
 
 ## The simulation (`@loadmap/sim`)
 
-The fluid queue simulation behind the dots: `createSim(options)` and `rng(seed)`, its only source of randomness, so
+The fluid queue simulation behind the dots: `createSim(model, evaluation, options?)` and `rng(seed)`, its only source
+of randomness, so
 a recording is the same every time. It has no capacity numbers of its own: a stage drains what its flows carry at the
 load where its component is full. `<Loadmap>` runs it; a page rarely needs it directly.
 

@@ -12,7 +12,8 @@ and a live preview of the diagram.
   **Export → Download .loadmap** there gives you the file back.
 
 To try it on a model that uses most of the language, take one from an example: **.loadmap ↓** over the board of
-[Checkout](/examples/checkout/), [Alerts](/examples/alerts/) or [Search](/examples/search/).
+[Checkout](/examples/checkout/), [Alerts](/examples/alerts/) or [Search](/examples/search/), or a model in several files
+from [Two regions](/examples/regions/).
 
 ## Setup
 
