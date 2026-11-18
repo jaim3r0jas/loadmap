@@ -28,7 +28,7 @@ stages a route can take next. Ctrl+F (⌘F) finds and replaces, F12 goes to wher
 **View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text. There is nothing to save: the page keeps
 your draft as you type, so ⌘S (Ctrl+S) only says so, unless the files came from GitHub (below). **View** also sets the
 code's font (the system's, Fira Code, JetBrains Mono or Cascadia Code, each fetched only when you pick it), its size,
-and its ligatures (`->` drawn as one arrow); this browser keeps them.
+and its ligatures (`->` drawn as one arrow, a capacity's `+-` as `±`, the text as written); this browser keeps them.
 
 **New** starts from a template or an example, and **Export** downloads the text or an image. **New → Open from
 GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with

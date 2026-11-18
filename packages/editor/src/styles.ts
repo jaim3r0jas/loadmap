@@ -76,6 +76,8 @@ export const EDITOR_CSS = `
 .lme-code .cm-scroller { font-family: var(--lme-code-font, var(--lm-mono)); }
 /* the reader's ligatures off: -> and != as their two marks, in any font */
 .lme-code[data-ligatures="off"] .cm-scroller { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+/* a capacity's +- drawn as ±, in the room of its marks */
+.lme-code .lme-pm { display: inline-block; text-align: center; }
 .lme-code .cm-gutters { background: var(--lm-surface); color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
 .lme-code .cm-activeLine { background: color-mix(in srgb, var(--lm-accent-soft) 45%, transparent); }
 .lme-code .cm-activeLineGutter { background: var(--lm-accent-soft); }
