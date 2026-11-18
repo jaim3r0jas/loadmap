@@ -140,6 +140,8 @@ their own, since each would then be declared twice.
 
 ### Controls and values
 
+#### The load
+
 **The load** is the one slider every model has: a multiple of today's load, which every flow's `rate` reads as
 `load`. It starts at `default` and runs from `min` (1 unless said) to `max` in steps of `step` (1). The limits are
 searched past the slider's end, up to `searchMax` at the top level (2000× by default).
@@ -147,6 +149,8 @@ searched past the slider's end, up to `searchMax` at the top level (2000× by de
 ```loadmap
 load "Orders, × today" { min: 1; max: 40; step: 0.5; default: 4 }
 ```
+
+#### Parameters
 
 **A parameter** is a control the reader changes, read in formulas by its id. What it is follows from what it says:
 `options` make a select, `min` and `max` a slider, a `true` or `false` default a switch.
@@ -162,6 +166,8 @@ param replicas "Replicas" { options: [1, 2, 3]; default: 1; enabled: readReplica
 out while a formula of the other parameters is false. A text option (`options: ["eu", "us"]`) compares as a text:
 `region == "eu"`.
 
+#### Presets
+
 **A preset** is a button that sets several values at once, the load among them: the reader's shortcut to a moment worth
 looking at. On the load bar its load is a mark.
 
@@ -172,12 +178,16 @@ preset "Black Friday" { load: 12; pods: 8; hitRatio: 0.6 }
 A preset sets values, the load among them; a scenario (next page) is a design to set beside another, and picking one
 keeps the load where it is.
 
+#### Named formulas
+
 **A `let`** names a formula, so the others read it by its name and hover shows its value at the defaults:
 
 ```loadmap
 let ordersPerSecond = 120 * load
 let workersNeeded = ceil(ordersPerSecond / 50)
 ```
+
+#### Fitted costs
 
 **A fit** is a cost that grows with the load, `a + b × x`, fitted from measured points; call it like a function. With
 `through: origin` it has no idle part (`a` is 0). With `x` and `y` naming two measures, a snapshot fits it from live
@@ -201,6 +211,8 @@ pool consumers "Consumers" {
   over: "orders wait for a consumer"
 }
 ```
+
+#### Thresholds
 
 **Thresholds** say where the target and "runs out" are, as a share of a component's capacity: by default a component
 reaches its target at 50 % and runs out at 100 %. A team that runs hotter moves the target:
