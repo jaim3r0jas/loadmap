@@ -1,5 +1,6 @@
 export type { PanelMode } from './Canvas'
 export type { EmbedOptions } from './Embed'
+export { CODE_FONTS, type CodeFont } from './fonts'
 export {
   type EditorFiles,
   type EditorLayout,

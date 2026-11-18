@@ -26,7 +26,9 @@ A click on a box selects its lines in the text, and the cursor in a box's lines 
 what can go at the cursor: the statements and properties of the block it is in, the names a formula can read, the
 stages a route can take next. Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it.
 **View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text. There is nothing to save: the page keeps
-your draft as you type, so ⌘S (Ctrl+S) only says so, unless the files came from GitHub (below).
+your draft as you type, so ⌘S (Ctrl+S) only says so, unless the files came from GitHub (below). **View** also sets the
+code's font (the system's, Fira Code, JetBrains Mono or Cascadia Code, each fetched only when you pick it), its size,
+and its ligatures (`->` drawn as one arrow); this browser keeps them.
 
 **New** starts from a template or an example, and **Export** downloads the text or an image. **New → Open from
 GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with

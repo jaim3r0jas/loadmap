@@ -44,6 +44,13 @@ export const EDITOR_CSS = `
 .lme-mh { padding: 8px 10px 4px; font: 700 .68rem var(--lm-font); letter-spacing: .07em; text-transform: uppercase; color: var(--lm-muted); }
 .lme-menu > [role="group"] + *, .lme-menu > * + [role="group"] { margin-top: 4px; padding-top: 2px; border-top: 1px solid var(--lm-line); }
 @media (pointer: coarse) { .lme-item { min-height: 44px; } }
+/* the code's text size, one row of choices: a pick closes the menu, as any item's */
+.lme-sizes { display: flex; gap: 3px; padding: 2px 8px 6px; }
+.lme-size { flex: 1 1 0; min-width: 26px; height: 28px; padding: 0; font: 500 .78rem var(--lm-mono); font-variant-numeric: tabular-nums; color: var(--lm-fg); background: none; border: 1px solid var(--lm-line); border-radius: 6px; cursor: pointer; }
+.lme-size:hover, .lme-size:focus { background: var(--lm-accent-soft); outline: none; }
+.lme-size:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
+.lme-size[aria-checked="true"] { color: var(--lm-accent); border-color: var(--lm-accent); background: var(--lm-accent-soft); font-weight: 700; }
+@media (pointer: coarse) { .lme-size { height: 40px; } }
 @media (pointer: coarse) {
   :is(.lme-bar, .lme-tools, .lme-share) > .lm-btn { height: 44px; min-width: 44px; }
 }
@@ -63,10 +70,12 @@ export const EDITOR_CSS = `
 /* the tabs' row: its room is kept while the tabs load (FileTabs.tsx has the rest) */
 .lme-ftabs { grid-column: 2; grid-row: 1; display: flex; box-sizing: border-box; height: 30px; min-width: 0; background: var(--lm-bg); box-shadow: inset 0 -1px 0 var(--lm-line); }
 .lme-code { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 8px; overflow: hidden; min-width: 0; }
-.lme-code .cm-editor { height: min(78vh, 900px); font: 13px/1.5 var(--lm-mono); color: var(--lm-fg); background: var(--lm-surface); }
+.lme-code .cm-editor { height: min(78vh, 900px); font: var(--lme-code-size, 13px)/1.5 var(--lme-code-font, var(--lm-mono)); color: var(--lm-fg); background: var(--lm-surface); }
 @container (max-width: 980px) { .lme-code .cm-editor { height: 55vh; } }
 .lme-code .cm-editor.cm-focused { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
-.lme-code .cm-scroller { font-family: var(--lm-mono); }
+.lme-code .cm-scroller { font-family: var(--lme-code-font, var(--lm-mono)); }
+/* the reader's ligatures off: -> and != as their two marks, in any font */
+.lme-code[data-ligatures="off"] .cm-scroller { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 .lme-code .cm-gutters { background: var(--lm-surface); color: var(--lm-muted); border-right: 1px solid var(--lm-line); }
 .lme-code .cm-activeLine { background: color-mix(in srgb, var(--lm-accent-soft) 45%, transparent); }
 .lme-code .cm-activeLineGutter { background: var(--lm-accent-soft); }
@@ -249,7 +258,7 @@ export const EDITOR_CSS = `
 /* a thumb high */
 .lme[data-narrow] .lme-ftabs { height: 40px; }
 /* 16 px: Safari zooms the page into a field whose text is smaller */
-.lme[data-narrow] .lme-code .cm-editor { height: 100%; font-size: 16px; }
+.lme[data-narrow] .lme-code .cm-editor { height: 100%; font-size: max(16px, var(--lme-code-size, 16px)); }
 .lme[data-narrow] .lme-problems { max-height: 20dvh; padding: 6px; border-top: 1px solid var(--lm-line); }
 .lme[data-narrow] .lme-preview { position: absolute; inset: 0; padding: 0; overflow: hidden; }
 .lme[data-narrow] .lme-preview[hidden] { display: none; }

@@ -7,6 +7,7 @@
 import { decodeShare, type Shared } from '@loadmap/dsl'
 import {
   type BarSection,
+  type CodeFont,
   type EditorLayout,
   type EmbedOptions,
   LoadmapEditor,
@@ -24,6 +25,9 @@ import { createRoot } from 'react-dom/client'
 import platformSource from '../../../../docs/multi-file/platform.loadmap?raw'
 import shopSource from '../../../../docs/multi-file/shop.loadmap?raw'
 import storySource from '../../../../docs/multi-file/shop.story.loadmap?raw'
+import cascadiaCode from '../fonts/cascadia-code.woff2?url'
+import firaCode from '../fonts/fira-code.woff2?url'
+import jetbrainsMono from '../fonts/jetbrains-mono.woff2?url'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { changedCount, changedText, changes } from './github/changes'
@@ -52,6 +56,13 @@ const SHOP = {
 }
 /** The examples in several files, by name: `?example=` opens each file as a tab. */
 const SEVERAL: Readonly<Record<string, typeof regionsFiles>> = { regions: regionsFiles }
+/** The code's fonts from the site's own files (OFL, beside them), not a CDN: fetched only when the reader picks one. */
+const FONTS: readonly CodeFont[] = [
+  { name: 'Fira Code', url: firaCode },
+  { name: 'JetBrains Mono', url: jetbrainsMono },
+  { name: 'Cascadia Code', url: cascadiaCode },
+]
+
 const DRAFT = 'loadmap-editor-draft'
 /** The draft's files when it has several: `{ path, files }`, the model's text also under the key above. */
 const DRAFT_FILES = 'loadmap-editor-draft-files'
@@ -533,6 +544,7 @@ function Editor({ root }: { root: URL }) {
       <LoadmapEditor
         ref={editor}
         fill
+        fonts={FONTS}
         theme="inherit"
         initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
         values={'values' in start ? start.values : undefined}

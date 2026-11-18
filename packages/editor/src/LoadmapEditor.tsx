@@ -86,6 +86,7 @@ import type { ExplorerProps } from './Explorer'
 import type { FileTabsProps } from './FileTabs'
 import type { FileMark } from './filenames'
 import type { Dsl, NewKind } from './fileops'
+import { CODE_FONTS, CODE_SIZE, CODE_SIZES, type CodeFont, fontStack, loadFont } from './fonts'
 import type { InspectorProps, InspectorTab } from './Inspector'
 import { editorKeys, isSaveKey } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
@@ -123,6 +124,31 @@ export interface EditorFiles {
 const ONE = 'input.loadmap'
 /** Where this browser keeps the reader's choice of the canvas's dot grid. */
 const GRID_KEY = 'loadmap:editor:grid'
+/** The least size of the code on a phone: below it, iOS zooms the page as the text takes the keyboard. */
+const PHONE_SIZE = 16
+/** And of the code's font, its size and its ligatures. */
+const FONT_KEY = 'loadmap:editor:font'
+const SIZE_KEY = 'loadmap:editor:fontSize'
+const LIGATURES_KEY = 'loadmap:editor:ligatures'
+
+/** A setting this browser keeps for the reader; null when it has none, or keeps nothing (a private window). */
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+/** Keeps a setting (null takes it out): in a private window it lasts as long as the page. */
+function keep(key: string, value: string | null) {
+  try {
+    if (value == null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // a private window
+  }
+}
 
 /**
  * What ⌘S does on a page: its own save, or nothing but saying what keeps the text (a draft the page keeps, or none).
@@ -217,6 +243,11 @@ export interface LoadmapEditorProps {
    * selected. Default true; false leaves it out.
    */
   catalog?: boolean
+  /**
+   * The fonts the reader can pick for the code in View, beside the system's monospace. Default `CODE_FONTS`: Fira
+   * Code, JetBrains Mono and Cascadia Code from jsDelivr, each loaded only when picked; `[]` offers none.
+   */
+  fonts?: readonly CodeFont[]
   /** The name the downloaded file takes, without ".loadmap". Default: the title. */
   fileName?: string
   /**
@@ -268,6 +299,7 @@ export function LoadmapEditor({
   track: initialTrack = false,
   onTrack,
   fileName,
+  fonts = CODE_FONTS,
   templates,
   catalog = true,
   layout: initialLayout = 'code',
@@ -295,13 +327,18 @@ export function LoadmapEditor({
     return a ? { path: a.path, files: a.files } : {}
   }
   const [gridChoice, setGridChoice] = useState<boolean | null>(() => {
-    try {
-      const said = localStorage.getItem(GRID_KEY)
-      return said == null ? null : said !== 'off'
-    } catch {
-      return null
-    }
+    const said = stored(GRID_KEY)
+    return said == null ? null : said !== 'off'
   })
+  // the code's look, the reader's own, kept in this browser: a font of `fonts` (null: the system's), a size, ligatures
+  const [fontName, setFontName] = useState(() => stored(FONT_KEY))
+  const [fontSize, setFontSize] = useState(() => {
+    const said = Number(stored(SIZE_KEY))
+    return CODE_SIZES.includes(said) ? said : CODE_SIZE
+  })
+  const [ligatures, setLigatures] = useState(() => stored(LIGATURES_KEY) !== 'off')
+  // a font the page no longer offers is the system's
+  const codeFont = fonts.find((f) => f.name === fontName)
   const [tabs, setTabs] = useState(() => [set.current.entry, ...Object.keys(set.current.others).sort()])
   const [active, setActive] = useState(set.current.entry)
   // the files with a tab, in the order they were opened: what shows, never what the definition is. The model's is
@@ -346,6 +383,28 @@ export function LoadmapEditor({
   }, [])
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
+  // a font is fetched once a reader picks it; the text measures its lines again once it draws in it. One that does
+  // not load gives way to the system's: picked just now, it is not kept either (a font kept from before is tried again
+  // on the next visit, as the network may be back)
+  const fontUrl = codeFont?.url
+  const pickedNow = useRef(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the font's file, not the object a page may write anew
+  useEffect(() => {
+    if (!codeFont) return
+    let live = true
+    loadFont(codeFont).then((ok) => {
+      if (!live) return
+      if (ok) return view.current?.requestMeasure()
+      setNote(`${codeFont.name} did not load: the system's font stands in`)
+      setFontName(null)
+      if (pickedNow.current) keep(FONT_KEY, null)
+    })
+    return () => {
+      live = false
+    }
+  }, [fontUrl])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new size or ligatures change every line's measure
+  useEffect(() => view.current?.requestMeasure(), [fontSize, ligatures])
   const preview = useRef<LoadmapHandle>(null)
   // the values the preview shows, carried across versions so an edit does not reset the sliders
   const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
@@ -1191,12 +1250,59 @@ export function LoadmapEditor({
   const grid = gridChoice ?? def?.options.grid !== false
   const toggleGrid = () => {
     setGridChoice(!grid)
-    try {
-      localStorage.setItem(GRID_KEY, grid ? 'off' : 'on')
-    } catch {
-      // a private window: the choice lasts as long as the page
-    }
+    keep(GRID_KEY, grid ? 'off' : 'on')
   }
+  const pickFont = (font: CodeFont | undefined) => {
+    pickedNow.current = true
+    setFontName(font?.name ?? null)
+    keep(FONT_KEY, font?.name ?? null)
+  }
+  const pickSize = (px: number) => {
+    setFontSize(px)
+    keep(SIZE_KEY, px === CODE_SIZE ? null : String(px))
+  }
+  const toggleLigatures = () => {
+    setLigatures(!ligatures)
+    keep(LIGATURES_KEY, ligatures ? 'off' : null)
+  }
+  // the code's font, its size and its ligatures: the reader's, whatever the text says
+  const textItems = (sheet?: boolean) => (
+    <>
+      <MenuGroup label="Font">
+        <MenuItem sheet={sheet} checked={!codeFont} onSelect={() => pickFont(undefined)}>
+          System
+        </MenuItem>
+        {fonts.map((f) => (
+          <MenuItem key={f.name} sheet={sheet} checked={codeFont === f} onSelect={() => pickFont(f)}>
+            {f.name}
+          </MenuItem>
+        ))}
+      </MenuGroup>
+      <MenuGroup label="Text size, px">
+        <div className="lme-sizes">
+          {/* a phone draws the text at 16 px at least, so its keyboard does not zoom the page */}
+          {CODE_SIZES.filter((px) => !phone || px >= PHONE_SIZE).map((px) => (
+            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: in a menu it is a menuitemradio, which has it
+            <button
+              key={px}
+              type="button"
+              className="lme-size"
+              role={sheet ? undefined : 'menuitemradio'}
+              aria-checked={px === (phone ? Math.max(fontSize, PHONE_SIZE) : fontSize)}
+              aria-label={`${px} px`}
+              tabIndex={sheet ? undefined : -1}
+              onClick={() => pickSize(px)}
+            >
+              {px}
+            </button>
+          ))}
+        </div>
+      </MenuGroup>
+      <MenuItem sheet={sheet} toggle checked={ligatures} hint="-> and != drawn joined" onSelect={toggleLigatures}>
+        Ligatures
+      </MenuItem>
+    </>
+  )
   // while the text has errors, as the inspector, they change nothing: no line can be written then
   const lookItems = (sheet?: boolean) =>
     !errors && (
@@ -1296,6 +1402,7 @@ export function LoadmapEditor({
       )}
       {filesItem(sheet)}
       {lookItems(sheet)}
+      {textItems(sheet)}
       {shortcutsItem(sheet)}
     </MenuGroup>
   )
@@ -1437,6 +1544,7 @@ export function LoadmapEditor({
                   <>
                     {filesItem()}
                     {lookItems()}
+                    {textItems()}
                     {shortcutsItem()}
                   </>
                 )}
@@ -1560,7 +1668,14 @@ export function LoadmapEditor({
                 />
               </Suspense>
             )}
-            <div className="lme-code" id={panelId} role={several || explorer ? 'tabpanel' : undefined} ref={host} />
+            <div
+              className="lme-code"
+              id={panelId}
+              role={several || explorer ? 'tabpanel' : undefined}
+              ref={host}
+              data-ligatures={ligatures ? undefined : 'off'}
+              style={{ '--lme-code-font': fontStack(codeFont), '--lme-code-size': `${fontSize}px` } as CSSProperties}
+            />
           </div>
           {list.length > 0 && (
             <ul className="lme-problems">
