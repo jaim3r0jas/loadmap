@@ -10,6 +10,10 @@ export interface RepoOrigin {
   owner: string
   name: string
   ref: string
+  /** The branch the files first came from: a pull request goes into it. */
+  base: string
+  /** The ref is a branch this tab saved: a save can add a commit to it. */
+  made: boolean
   /** The commit the files were read from, and its tree. */
   sha: string
   tree: string
@@ -63,9 +67,10 @@ function unpack(raw: string | null): RepoTab | undefined {
     const t = JSON.parse(raw ?? 'null') as Partial<Stored> | null
     const o = t?.origin
     if (!t || !o || typeof t.path !== 'string' || !isFiles(t.files) || !Object.hasOwn(t.files, t.path)) return undefined
-    for (const k of ['owner', 'name', 'ref', 'sha', 'tree', 'model'] as const)
+    for (const k of ['owner', 'name', 'ref', 'base', 'sha', 'tree', 'model'] as const)
       if (typeof o[k] !== 'string') return undefined
-    if (typeof o.private !== 'boolean' || !Array.isArray(o.paths) || !isFiles(o.changed)) return undefined
+    if (typeof o.private !== 'boolean' || typeof o.made !== 'boolean' || !Array.isArray(o.paths) || !isFiles(o.changed))
+      return undefined
     if (!Array.isArray(o.crlf) || !o.crlf.every((p) => typeof p === 'string')) return undefined
     const originals: Record<string, string> = {}
     for (const p of o.paths) {

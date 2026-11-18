@@ -30,6 +30,7 @@ import { changedCount, changedText, changes } from './github/changes'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
 import { clearAside, leave as leaveTab, type RepoTab, readAside, readTab, writeTab } from './github/tab'
+import type { Saved } from './github/write'
 import { useRecorder } from './recorder'
 
 const SOURCES = {
@@ -120,6 +121,7 @@ const fromRepo = () => !fromLink() && query().has('repo')
 /** The GitHub dialog, loaded the first time it opens. */
 const OpenDialog = lazy(() => import('./github').then((m) => ({ default: m.OpenDialog })))
 const ChangesDialog = lazy(() => import('./github').then((m) => ({ default: m.ChangesDialog })))
+const SaveDialog = lazy(() => import('./github').then((m) => ({ default: m.SaveDialog })))
 /** The button's own rules, with it: docs.css is every page's first load. */
 const REPO_CSS = `
 .app-repo { max-width: 260px; font-family: var(--lm-mono); font-size: .78rem; }
@@ -264,6 +266,7 @@ function Editor({ root }: { root: URL }) {
   const [from, setFrom] = useState(() => tab && `${tab.origin.owner}/${tab.origin.name}`)
   const [changed, setChanged] = useState(() => (tab ? changedCount(tab) : 0))
   const [showChanges, setShowChanges] = useState(false)
+  const [showSave, setShowSave] = useState(false)
   // the tab could not keep a private repository's files: a reload would lose the edits, and the page says so
   const [unkept, setUnkept] = useState(false)
   const keep = (t: RepoTab) => {
@@ -281,6 +284,7 @@ function Editor({ root }: { root: URL }) {
     setFrom(undefined)
     setChanged(0)
     setShowChanges(false)
+    setShowSave(false)
     setUnkept(false)
   }
   // a file, or every file, back as the commit holds it
@@ -295,6 +299,13 @@ function Editor({ root }: { root: URL }) {
     const model = Object.hasOwn(files, t.path) ? t.path : t.origin.model
     keep({ ...t, path: model, files })
     editor.current?.setFiles({ path: model, files })
+  }
+  // saved: the files are now what the new commit holds, on the branch this tab made
+  const saved = (s: Saved) => {
+    const t = repo.current
+    if (!t) return
+    const origin = { ...t.origin, ref: s.branch, made: true, sha: s.commit, tree: s.tree, model: t.path }
+    keep({ ...t, origin: { ...origin, originals: { ...t.files } } })
   }
   /** A menu's own text in the editor's place: the repository is left first. */
   const leaving = (put: () => void) => () => {
@@ -483,7 +494,22 @@ function Editor({ root }: { root: URL }) {
             tab={repo.current}
             list={changes(repo.current)}
             onUndo={undo}
+            onSave={() => {
+              setShowChanges(false)
+              setShowSave(true)
+            }}
             onClose={() => setShowChanges(false)}
+          />
+        </Suspense>
+      )}
+      {showSave && repo.current && (
+        <Suspense fallback={null}>
+          <SaveDialog
+            origin={repo.current.origin}
+            path={repo.current.path}
+            list={changes(repo.current)}
+            onSaved={saved}
+            onClose={() => setShowSave(false)}
           />
         </Suspense>
       )}
@@ -497,6 +523,8 @@ function Editor({ root }: { root: URL }) {
           'files' in start && start.files && start.path != null ? { path: start.path, files: start.files } : undefined
         }
         onFiles={saveFiles}
+        // ⌘S with a repository open saves to it; without one the editor says the draft is kept
+        onSave={from ? () => setShowSave(true) : undefined}
         layout={layout}
         onChange={save}
         embedLink={embedLink}
@@ -589,7 +617,19 @@ const draftStart = (): Shared => startFrom() ?? { source: readDraft() ?? SOURCES
 function tabOf(o: Opened): RepoTab {
   const { owner, name, ref, sha, tree, private: shut } = o.listing
   return {
-    origin: { owner, name, ref, sha, tree, private: shut, originals: o.files, model: o.path, crlf: o.crlf },
+    origin: {
+      owner,
+      name,
+      ref,
+      base: ref,
+      made: false,
+      sha,
+      tree,
+      private: shut,
+      originals: o.files,
+      model: o.path,
+      crlf: o.crlf,
+    },
     path: o.path,
     files: o.files,
   }

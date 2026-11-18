@@ -18,8 +18,10 @@ export interface FakeRepo {
   truncated?: boolean
   /** Files past the cut of a truncated tree: there, but not listed. */
   hidden?: string[]
-  /** The token a private repository answers to. */
+  /** The token a private repository answers to, and the one that may write to any. */
   token?: string
+  /** GitHub refuses a pull request with this message. */
+  refusePull?: string
 }
 
 export interface Call {
@@ -50,6 +52,9 @@ export function shaOf(s: string): string {
 
 export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
   const calls: Call[] = []
+  /** Branches made through the API, and the parent of each commit made, by sha. */
+  const made = new Map<string, string>()
+  const parents = new Map<string, string>()
   const commits = new Map(Object.keys(repo.refs).map((ref) => [shaOf(`commit:${ref}`), ref]))
   const files = (ref: string) =>
     Object.entries(repo.refs[ref]!).map(([path, f]) => ({
@@ -74,7 +79,8 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
         { message: 'API rate limit exceeded for 1.2.3.4.' },
         { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1800' },
       )
-    const allowed = !repo.private || (repo.token != null && authorization === `Bearer ${repo.token}`)
+    const signed = repo.token != null && authorization === `Bearer ${repo.token}`
+    const allowed = !repo.private || signed
     if (url.origin === 'https://raw.githubusercontent.com') {
       const [, owner, name, sha, ...rest] = url.pathname.split('/').map(decodeURIComponent)
       const ref = commits.get(sha!)
@@ -87,6 +93,38 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
     const path = decodeURIComponent(url.pathname)
     if (!allowed || !path.startsWith(base)) return json(404, { message: 'Not Found' })
     const rest = path.slice(base.length)
+    const method = init.method ?? 'GET'
+    if (method !== 'GET') {
+      if (!authorization) return json(401, { message: 'Requires authentication' })
+      if (!signed) return json(403, { message: 'Resource not accessible by personal access token' })
+      const body = JSON.parse(String(init.body ?? '{}'))
+      if (method === 'POST' && rest === '/git/trees') return json(201, { sha: shaOf(`tree:${init.body}`) })
+      if (method === 'POST' && rest === '/git/commits') {
+        const sha = shaOf(`made:${init.body}`)
+        parents.set(sha, body.parents[0])
+        return json(201, { sha })
+      }
+      const tip = (b: string) => made.get(b) ?? (repo.refs[b] ? shaOf(`commit:${b}`) : undefined)
+      if (method === 'POST' && rest === '/git/refs') {
+        const b = String(body.ref).replace(/^refs\/heads\//, '')
+        if (tip(b)) return json(422, { message: 'Reference already exists' })
+        made.set(b, body.sha)
+        return json(201, { ref: body.ref, object: { sha: body.sha } })
+      }
+      if (method === 'PATCH' && rest.startsWith('/git/refs/heads/')) {
+        const b = rest.slice('/git/refs/heads/'.length)
+        if (!tip(b)) return json(422, { message: 'Reference does not exist' })
+        if (!body.force && parents.get(body.sha) !== tip(b))
+          return json(422, { message: 'Update is not a fast forward' })
+        made.set(b, body.sha)
+        return json(200, { ref: `refs/heads/${b}`, object: { sha: body.sha } })
+      }
+      if (method === 'POST' && rest === '/pulls') {
+        if (repo.refusePull) return json(422, { message: repo.refusePull })
+        return json(201, { number: 7, html_url: `https://github.com/${repo.owner}/${repo.name}/pull/7` })
+      }
+      return json(404, { message: 'Not Found' })
+    }
     if (rest === '')
       return json(200, {
         full_name: `${repo.owner}/${repo.name}`,
@@ -122,5 +160,7 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
     }
     return json(404, { message: 'Not Found' })
   }
-  return { fetch, calls }
+  /** A branch moves on GitHub, as when someone else pushes to it. */
+  const push = (branch: string, sha: string) => void made.set(branch, sha)
+  return { fetch, calls, made, push }
 }
