@@ -1,5 +1,11 @@
 # @loadmap/providers
 
+## 0.39.0
+
+### Patch Changes
+
+- @loadmap/core@0.39.0
+
 ## 0.38.1
 
 ### Patch Changes

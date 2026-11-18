@@ -1,5 +1,32 @@
 # @loadmap/editor
 
+## 0.39.0
+
+### Minor Changes
+
+- 5279bd9: View sets the code's font, its size and its ligatures, each the reader's own and kept in the browser: the system's
+  monospace, Fira Code, JetBrains Mono or Cascadia Code (SIL Open Font License, about 36 to 49 kB each, fetched only when
+  picked, never in a first load), a size from 11 to 20 px (13 by default; at least 16 on a phone), and ligatures on or
+  off (`->` drawn as one arrow, or as its two marks). The new `fonts` prop says which fonts View offers and where their
+  files are: `CODE_FONTS` (exported) by default, from fontsource on jsDelivr at a pinned version; the docs site serves
+  its own copies.
+- ff26ddd: While ligatures are on, the editor draws a capacity's `+-` (and `+/-`) as `±`, in the room of its marks, the way a
+  font joins `->`: the text keeps its marks (copy, undo, the file and a share link are as written), the cursor steps
+  over the sign as over one character, and Backspace takes one mark at a time. A `+-` in a text, or in a file stamped
+  before 1.6 (where it is a plus and a minus), is drawn as written, and so is every `+-` with ligatures off.
+- 99062f1: ⌘S (Ctrl+S, with or without Shift) in the editor never opens the browser's Save Page. With the new `onSave` prop the
+  page saves every file of the definition (a branch, a file of its own), one save at a time, and the bar says Saved or
+  why not; without it the bar says what keeps the text: "Kept as you type" when the page keeps a draft, or that it keeps
+  no copy and Share does. View → Keyboard shortcuts lists the key. The docs' editor page takes the key wherever the
+  focus is.
+
+### Patch Changes
+
+- Updated dependencies [52c0325]
+  - @loadmap/dsl@0.39.0
+  - @loadmap/react@0.39.0
+  - @loadmap/core@0.39.0
+
 ## 0.38.1
 
 ### Patch Changes
