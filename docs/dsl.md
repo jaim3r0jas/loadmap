@@ -39,9 +39,10 @@ phones -> api: "POST /photos"
 api -> resizers
 ```
 
-Every example of the repository is written this way too: `examples/checkout/checkout.loadmap`,
-`examples/alerts/alerts.loadmap`, `examples/search/search.loadmap`, `examples/regions/regions.loadmap` (in several
-files) and `examples/shop-live/shop.loadmap`. Their tests check that each draws exactly what its TypeScript draws.
+The examples of the repository are written this way too: `examples/checkout/checkout.loadmap`,
+`examples/alerts/alerts.loadmap`, `examples/search/search.loadmap` and `examples/regions/regions.loadmap` (in several
+files), whose tests check that each draws exactly what its TypeScript draws, and `examples/shop-live/shop.loadmap`,
+which is text alone.
 
 ## How it reads
 
@@ -108,7 +109,7 @@ their own, since each would then be declared twice.
 Every value is a formula: a small subset of TypeScript expressions, so a lambda body from a TypeScript model pastes
 as it is.
 
-- **Literals:** numbers (`20_000`), `"texts"`, `true`, `false`, and templates (`` `${pods} pods` ``).
+- **Literals:** numbers (`20_000`), `"texts"` (or `'texts'`), `true`, `false`, and templates (`` `${pods} pods` ``).
 - **Units:** a number may carry its unit straight after it, with no space. `ms`, `s`, `min` and `h` count in seconds,
   as every time in the language does (`held: 20ms` is `held: 0.02`); `%` makes a share (`hit: 80%` is `hit: 0.8`);
   `×` (or `x`) marks a load multiple and leaves the number as it is. So `demand: flows.events * 2ms` reads as what it
@@ -507,7 +508,8 @@ newer edition (the checker says when one has other figures). `version` is kept b
 a component whose published figures change with it (RabbitMQ, Valkey, CockroachDB, OpenSearch, Istio). `figure`
 picks one when several match; `margin: 0.3` reads a best case from 70 % of the figure up to it, never above.
 
-The editions, newest first (`EDITIONS` in `@loadmap/core/catalog`; a new statement names the newest):
+The editions, newest first (`EDITIONS` in `@loadmap/core/catalog` holds them oldest first; a new statement names the
+newest):
 
 | Edition | What it changed |
 | ------- | --------------- |
@@ -1333,8 +1335,8 @@ In **VS Code** (and Cursor, VSCodium and the other editors on Open VSX), install
 (`jaim3r0jas.loadmap`, from the Marketplace or Open VSX). It brings the language server below, highlighting, and a
 live preview beside the text: **loadmap: Open Preview to the Side** (Ctrl+K V, ⌘K V on a Mac; **Open Preview**,
 Ctrl+Shift+V or ⌘⇧V, in the text's place) draws the file as you type, a click on a box selects its declaration, the eye over it tracks live changes (the boxes each edit changed come
-into view and glow), **loadmap: Add from the Catalog…** writes a component's published figure, and **Copy Share Link**
-opens the text in this editor. Nothing else to install; `loadmap.server.path` runs a project's own `loadmap` instead.
+into view and glow), **loadmap: Add from the Catalog…** writes a component's published figure, **Copy Share Link**
+copies a link that opens the text in this editor, and **Open in the Live Editor** opens it there. Nothing else to install; `loadmap.server.path` runs a project's own `loadmap` instead.
 
 `loadmap lsp` (in `@loadmap/cli`) speaks the language server protocol over standard input and output, so an editor
 that speaks it gets the help the docs' editor has: errors and failing `expect` lines as you type, completion with
@@ -1739,7 +1741,7 @@ A figure from the component catalog, as published for a configuration: its id is
 
 ```loadmap
 published brokersRef kafka {
-  edition: "2026-11"
+  edition: "2027-01"
   brokers: 3
   replication: 3
   acks: "all"

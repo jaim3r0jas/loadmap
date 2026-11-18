@@ -47,12 +47,12 @@ A `defineModel` definition takes, besides the required parts: `title`, `presets`
 
 `@loadmap/core` has entries of its own for what a page rarely loads:
 
-| Entry                     | What                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `@loadmap/core/calibrate` | `fitLinear`                                                                       |
-| `@loadmap/core/format`    | the number formats                                                                |
-| `@loadmap/core/measure`   | snapshots of measured data: see [Measured data](#measured-data-loadmap-providers) |
-| `@loadmap/core/catalog`   | the published figures: see [The catalog](#the-catalog-loadmap-core-catalog)       |
+| Entry                     | What                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `@loadmap/core/calibrate` | `fitLinear`                                                                                             |
+| `@loadmap/core/format`    | the number formats                                                                                      |
+| `@loadmap/core/measure`   | snapshots of measured data: see [Measured data](#measured-data-loadmap-providers)                       |
+| `@loadmap/core/catalog`   | the published figures: see [The catalog](#the-catalog-loadmap-core-catalog)                             |
 | `@loadmap/core/drift`     | the tests behind `loadmap drift`: `changePoints`, `compareWindows`, `threshold`, `mannWhitney`, `welch` |
 
 ## The view (`@loadmap/layout`, re-exported by react)
@@ -180,15 +180,15 @@ errors, completion, hover, rename), and `loadmapStream` with `loadmapHighlight` 
 
 ## Media (`@loadmap/export`)
 
-| Export                                                                             | What                                                                       |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `exportPng(handle, { scale?, caption? })`                                          | The board as it is now                                                     |
-| `exportSvg(handle, { caption? })`                                                  | The board as an SVG file, dots included                                    |
+| Export                                                                               | What                                                                       |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `exportPng(handle, { scale?, caption? })`                                            | The board as it is now                                                     |
+| `exportSvg(handle, { caption? })`                                                    | The board as an SVG file, dots included                                    |
 | `recordVideo(handle, { seconds or story, format?, script?, caption?, fps?, seed? })` | GIF, WebM or MP4 on a fixed clock                                          |
-| `recordStill`, `recordPoster`                                                      | A PNG after a warm-up; a poster with the limits and the scenarios compared |
-| `expose(handle, name?)`                                                            | Lets `loadmap record` drive the page                                       |
-| `composeFrame(handle, options?)`                                                   | The board as one image on a canvas: the SVG with the dots painted on top   |
-| `download(blob, name)`                                                             | Saves a blob through the browser                                           |
+| `recordStill`, `recordPoster`                                                        | A PNG after a warm-up; a poster with the limits and the scenarios compared |
+| `expose(handle, name?)`                                                              | Lets `loadmap record` drive the page                                       |
+| `composeFrame(handle, options?)`                                                     | The board as one image on a canvas: the SVG with the dots painted on top   |
+| `download(blob, name)`                                                               | Saves a blob through the browser                                           |
 
 ## Measured data (`@loadmap/providers`)
 

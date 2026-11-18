@@ -818,7 +818,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     inspector: 'model',
     doc: 'A figure from the component catalog, as published for a configuration: its id is a capacity (`capacity: brokersRef`). It applies only when every condition its run was made under matches; otherwise the component has no published benchmark and is not ranked. Nothing is scaled.',
     example:
-      'published brokersRef kafka {\n  edition: "2026-11"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
+      'published brokersRef kafka {\n  edition: "2027-01"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
     args: [
       { name: 'id', kind: 'id' },
       { name: 'component', kind: 'id' },
