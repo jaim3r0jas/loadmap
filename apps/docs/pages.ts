@@ -51,6 +51,7 @@ export const PAGES: readonly Page[] = [
   { route: 'language/errors', file: 'language-errors.md', nav: 'Errors and versions', group: 'The language' },
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
   { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'The editor', frame: 'app' },
+  { route: 'using-the-editor', file: 'using-the-editor.md', nav: 'Using the editor', group: 'The editor' },
   { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The editor' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
   { route: 'checks', file: 'checks.md', nav: 'Checks in CI', group: 'Use it' },
