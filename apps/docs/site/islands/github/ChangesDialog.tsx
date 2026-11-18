@@ -13,8 +13,8 @@ const CSS = `${DIALOG_CSS}${DIFF_CSS}
 .lmg-change-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; }
 .lmg-change-row > button:first-child { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; padding: 2px 0; text-align: left; font: .82rem var(--lm-mono); color: inherit; background: none; border: 0; cursor: pointer; }
 .lmg-change-row > button:first-child span { overflow-wrap: anywhere; }
-.lmg-change-row > button:first-child::before { content: "▸"; color: var(--lm-muted); transition: transform .12s; }
-.lmg-change-row > button[aria-expanded="true"]:first-child::before { transform: rotate(90deg); }
+.lmg-caret { color: var(--lm-muted); transition: transform .12s; }
+.lmg-change-row > button[aria-expanded="true"] .lmg-caret { transform: rotate(90deg); }
 .lmg-kind { flex: none; padding: 1px 6px; border-radius: 999px; font: 600 .68rem var(--lm-font); letter-spacing: .02em; text-transform: uppercase; }
 .lmg-kind[data-kind="changed"] { color: var(--lm-accent); background: var(--lm-accent-soft); }
 .lmg-kind[data-kind="added"] { color: var(--lm-ok); background: color-mix(in srgb, var(--lm-ok) 14%, transparent); }
@@ -90,6 +90,10 @@ export default function ChangesDialog({ tab, list, onUndo, onClose }: ChangesDia
                       aria-controls={`${id}-${c.path}`}
                       onClick={() => setOpen(open === c.path ? null : c.path)}
                     >
+                      {/* not ::before: generated content would join the button's name */}
+                      <span className="lmg-caret" aria-hidden="true">
+                        ▸
+                      </span>
                       <span>{c.path}</span>
                     </button>
                     <span className="lmg-kind" data-kind={c.kind}>
