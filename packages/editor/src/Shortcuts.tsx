@@ -74,13 +74,13 @@ const GROUPS: readonly { title: string; rows: readonly (readonly [action: string
 ]
 
 /**
- * The editor's keys, for the platform it runs on, with what ⌘S does on this page (`save`): a modal dialog (the keyboard stays in it), closed by Close, Escape
- * or a click on the dimmed page. Its code and rules load with it.
+ * The editor's keys, for the platform it runs on, with what ⌘S does on this page (`save`): a modal dialog (the keyboard
+ * stays in it), closed by Close, Escape or a click on the dimmed page. Its code and rules load with it.
  */
 export default function Shortcuts({ mac, save, onClose }: { mac: boolean; save: string; onClose: () => void }) {
   // what ⌘S does depends on the page: its own save, or nothing but saying what keeps the text
   const groups = GROUPS.map((g) =>
-    g.title === 'Edit' ? { ...g, rows: [[save, ['⌘S', 'Ctrl+S']] as const, ...g.rows] } : g,
+    g.title === 'Edit' ? { ...g, rows: [[save, ['⌘S or ⇧⌘S', 'Ctrl+S or Shift+Ctrl+S']] as const, ...g.rows] } : g,
   )
   const sheet = useRef<HTMLDialogElement>(null)
   useEffect(() => sheet.current?.showModal(), [])

@@ -472,7 +472,9 @@ describe('the editor', () => {
     expect(sheet.textContent).toContain('What fits at the cursor')
     expect(sheet.textContent).toContain(mac ? '⌘I, ⌥I or ⌃Space' : 'Ctrl+Space')
     // ⌘S on a page that keeps no copy
-    expect(sheet.textContent).toContain(`Nothing to save: Share keeps it${mac ? '⌘S' : 'Ctrl+S'}`)
+    expect(sheet.textContent).toContain(
+      `Nothing to save: this page keeps no copy, Share does${mac ? '⌘S or ⇧⌘S' : 'Ctrl+S or Shift+Ctrl+S'}`,
+    )
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => document.querySelector('.lme-keysheet')).toBeNull()
     // back in the text, where the keys work
@@ -509,7 +511,7 @@ describe('the editor', () => {
     let { host, view } = await mount()
     view.focus()
     await userEvent.keyboard(`{${mod}>}s{/${mod}}`)
-    await expect.poll(() => note(host)).toBe('This page keeps no copy: Share keeps it')
+    await expect.poll(() => note(host)).toBe('This page keeps no copy, Share does')
     expect(view.state.doc.toString()).toBe(checkout)
     expect(press(view.contentDOM, save)).toBe(true)
     expect(press(view.contentDOM, { ...save, shiftKey: true })).toBe(true)
@@ -533,17 +535,30 @@ describe('the editor', () => {
     root?.unmount()
     document.body.replaceChildren()
 
-    // a page with a save of its own: every file, as they are now; held down, once
+    // a page with a save of its own: every file, as they are now; one save at a time, and a held key saves once
     const saved: EditorFiles[] = []
-    ;({ host, view } = await mount({ onSave: (f) => void saved.push(f) }))
+    let done = () => {}
+    ;({ host, view } = await mount({
+      onSave: (f) => {
+        saved.push(f)
+        return new Promise<void>((r) => {
+          done = r
+        })
+      },
+    }))
     view.focus()
     view.dispatch({ changes: { from: 0, insert: '# saved\n' } })
     await userEvent.keyboard(`{${mod}>}{Shift>}s{/Shift}{/${mod}}`)
     await expect.poll(() => saved.length).toBe(1)
     expect(saved[0]!.files[saved[0]!.path]).toBe(`# saved\n${checkout}`)
+    expect(note(host)).toBe('Saving…')
+    expect(press(view.contentDOM, save)).toBe(true)
     expect(press(view.contentDOM, { ...save, repeat: true })).toBe(true)
     expect(saved).toHaveLength(1)
-    expect(note(host)).toBe('')
+    done()
+    await expect.poll(() => note(host)).toBe('Saved')
+    expect(press(view.contentDOM, save)).toBe(true)
+    await expect.poll(() => saved.length).toBe(2)
     root?.unmount()
     document.body.replaceChildren()
 
