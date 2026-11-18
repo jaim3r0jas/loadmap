@@ -23,6 +23,7 @@
     "apps/docs/site",
     "apps/docs/test",
     "apps/docs/*.ts",
+    "apps/github-auth",
     "vitest.config.ts",
     "scripts/budget"
   ],

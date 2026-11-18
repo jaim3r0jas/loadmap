@@ -30,6 +30,11 @@ jobs:
       - run: pnpm --filter docs build
         env:
           DOCS_BASE: /${{ github.event.repository.name }}/
+          # the GitHub App the editor signs in with (apps/github-auth/README.md): public values, repository variables;
+          # unset, the editor asks for a pasted token instead
+          VITE_GITHUB_APP_CLIENT_ID: ${{ vars.LOADMAP_GITHUB_APP_CLIENT_ID }}
+          VITE_GITHUB_APP_SLUG: ${{ vars.LOADMAP_GITHUB_APP_SLUG }}
+          VITE_GITHUB_APP_EXCHANGE: ${{ vars.LOADMAP_GITHUB_APP_EXCHANGE }}
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: apps/docs/dist

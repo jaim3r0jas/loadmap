@@ -235,6 +235,32 @@ describe('the built site', () => {
     expect(existsSync(join(out, '404.html'))).toBe(true)
   })
 
+  it("hands GitHub's sign-in answer to the editor that opened it, on this site only, and closes", async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage()
+      await page.goto(`${url}editor/`)
+      await page.waitForSelector('.lme-title')
+      const closing = page.waitForEvent('popup').then((p) => p.waitForEvent('close'))
+      const heard = await page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            addEventListener('message', (e) => resolve({ ours: e.origin === location.origin, data: e.data }))
+            window.open('../signed-in/?code=the-code&state=the-state', 'sign-in', 'popup')
+          }),
+      )
+      expect(heard).toEqual({
+        ours: true,
+        data: { type: 'loadmap-github-sign-in', state: 'the-state', code: 'the-code', error: null },
+      })
+      await closing
+      // a build given no app offers no sign-in: the token is pasted
+      expect(readFileSync(join(out, 'signed-in/index.html'), 'utf8')).toContain('noindex')
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
   it('sends a moved page on to where it went, from no list', () => {
     for (const [route, to] of Object.entries(MOVED)) {
       const html = readFileSync(join(out, route, 'index.html'), 'utf8')
@@ -913,6 +939,8 @@ describe('the built site', () => {
       await page.keyboard.press('ControlOrMeta+s')
 
       await dialog.getByText('Saving writes to acme/capacity: give a token that may write to it.').waitFor()
+      // this build has no GitHub App: the token is pasted, with no sign-in offered
+      expect(await dialog.getByRole('button', { name: 'Sign in with GitHub' }).count()).toBe(0)
       const make = new URL((await dialog.getByRole('link', { name: /Make a token on GitHub/ }).getAttribute('href'))!)
       expect([make.searchParams.get('contents'), make.searchParams.get('pull_requests')]).toEqual(['write', 'write'])
       // nothing is written before the reader says so

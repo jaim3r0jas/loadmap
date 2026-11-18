@@ -1,7 +1,11 @@
-// A GitHub token, asked for in place when something needs one: a private repository, the hourly limit, a save. The
-// reader makes it on GitHub's page (filled in by the link) and pastes it here; it stays in this tab.
+// A GitHub token, asked for in place when something needs one: a private repository, the hourly limit, a save. With
+// the site's GitHub App (a build given one), "Sign in with GitHub" gets it in a popup; else, or as well, the reader
+// makes one on GitHub's page (filled in by the link) and pastes it here. It stays in this tab.
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { takeToken, tokenPage } from './session'
+import { installUrl, signIn, signInConfig } from './signin'
+
+const APP = signInConfig()
 
 const CSS = `
 .lmg-token { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--lm-line); border-radius: 8px; background: var(--lm-bg); }
@@ -11,6 +15,10 @@ const CSS = `
 .lmg-token code { font: .8rem var(--lm-mono); }
 .lmg-token label.lmg-keep { display: flex; gap: 6px; align-items: center; font-size: .85rem; }
 .lmg-token .lmg-row button { flex: none; }
+.lmg-token details { display: grid; gap: 10px; }
+.lmg-token details > summary { cursor: pointer; color: var(--lm-muted); font-size: .85rem; }
+.lmg-token details[open] > summary { margin-bottom: 10px; }
+.lmg-token .lmg-signin { justify-self: start; }
 `
 
 export interface TokenFormProps {
@@ -30,7 +38,23 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
   const [value, setValue] = useState('')
   const [keep, setKeep] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => input.current?.focus(), [])
+  const [signing, setSigning] = useState(false)
+  const first = useRef<HTMLButtonElement>(null)
+  useEffect(() => (APP ? first.current : input.current)?.focus(), [])
+  const signInNow = async () => {
+    if (!APP || signing) return
+    setError('')
+    setSigning(true)
+    try {
+      const wrong = takeToken(await signIn(APP), keep)
+      if (wrong) setError(wrong)
+      else onToken()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'GitHub did not sign you in.')
+    } finally {
+      setSigning(false)
+    }
+  }
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const wrong = takeToken(value, keep)
@@ -40,10 +64,9 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
       onToken()
     }
   }
-  return (
-    <form className="lmg-token" onSubmit={submit} aria-labelledby={`${id}r`}>
-      <style>{CSS}</style>
-      <p id={`${id}r`}>{reason}</p>
+  // a token made on GitHub's page, pasted: the way without the app, and beside it
+  const paste = (
+    <>
       <ol>
         <li>
           <a href={tokenPage(owner, need)} target="_blank" rel="noopener noreferrer">
@@ -77,6 +100,34 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
           </button>
         )}
       </div>
+    </>
+  )
+  return (
+    <form className="lmg-token" onSubmit={submit} aria-labelledby={`${id}r`}>
+      <style>{CSS}</style>
+      <p id={`${id}r`}>{reason}</p>
+      {APP && (
+        <>
+          {/* it stays while the popup is open (aria-disabled): the keyboard is never dropped */}
+          <button ref={first} type="button" className="lm-btn lmg-signin" aria-disabled={signing} onClick={signInNow}>
+            {signing ? 'Signing in on GitHub…' : 'Sign in with GitHub'}
+          </button>
+          <p className="lmg-hint">
+            The loadmap editor app reads and writes only the repositories it is installed on.{' '}
+            <a href={installUrl(APP)} target="_blank" rel="noopener noreferrer">
+              Install it on {owner ? `${owner}'s` : 'a'} repository ↗
+            </a>
+          </p>
+        </>
+      )}
+      {APP ? (
+        <details>
+          <summary>Or paste a token</summary>
+          {paste}
+        </details>
+      ) : (
+        paste
+      )}
       <label className="lmg-keep">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it for this tab
       </label>

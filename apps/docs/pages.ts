@@ -317,6 +317,10 @@ export function writePages(base = '/'): string[] {
   mkdirSync(dirname(embed), { recursive: true })
   update(embed, EMBED_HTML)
   files.push(embed)
+  const signedIn = join(SITE, SIGNED_IN, 'index.html')
+  mkdirSync(dirname(signedIn), { recursive: true })
+  update(signedIn, SIGNED_IN_HTML)
+  files.push(signedIn)
   const missing = join(SITE, '404.html')
   const notFound = { route: '', file: '', nav: '' }
   const body = '<h1>Not found</h1>\n<p>No page here. Every page is in the list of pages.</p>'
@@ -336,6 +340,30 @@ const movedHtml = (to: string) => `<!doctype html>
   </head>
   <body>
     <p>This page moved: <a href="${esc(to)}">go on</a>.</p>
+  </body>
+</html>
+`
+
+/** Where GitHub sends the editor's sign-in popup back: not a page of the site, so in no list. */
+export const SIGNED_IN = 'signed-in'
+
+/** It hands GitHub's answer to the editor that opened it, and closes: nothing else loads. */
+const SIGNED_IN_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Signing in · loadmap</title>
+    <style>
+      body { margin: 0; padding: 32px 16px; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2330; background: #f6f7f9; text-align: center; }
+      @media (prefers-color-scheme: dark) { body { color: #e6e9ee; background: #14171c; } }
+    </style>
+  </head>
+  <body>
+    <p id="said">Signing in…</p>
+    <script type="module" src="/signed-in.ts"></script>
   </body>
 </html>
 `

@@ -44,7 +44,8 @@ The repository's name in the bar says how many files you changed; it opens **Cha
 for one or all. **Save to GitHub…** there (or ⌘S) writes them as a commit on a new branch of the repository, and opens
 a pull request into the branch they came from if you ask; the next save adds a commit to that branch. It needs a
 token that may write (Contents, and Pull requests for the pull request), asked for in place; nothing is written before
-you press **Save to GitHub**.
+you press **Save to GitHub**. Where the site has its GitHub App, **Sign in with GitHub** gets the token in a popup
+instead: it reaches only the repositories the app is installed on, for 8 hours.
 
 **Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a
 page…**, for a frame in another page. The link opens with the text hidden: the diagram, and an inspector in the panel.

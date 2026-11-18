@@ -47,6 +47,17 @@ function pages(): Plugin {
   }
 }
 
+/** The sign-in Worker's origin, when the build is given the site's GitHub App: the editor's page may call it. */
+function exchangeOrigin(): string[] {
+  const url = process.env.VITE_GITHUB_APP_EXCHANGE?.trim()
+  if (!url) return []
+  try {
+    return [new URL(url).origin]
+  } catch {
+    return []
+  }
+}
+
 /** The editor's page gets its Content-Security-Policy once built: the dev server's own scripts would break it. */
 function policy(): Plugin {
   return {
@@ -54,7 +65,8 @@ function policy(): Plugin {
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
-      handler: (html, ctx) => (ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html) : html),
+      handler: (html, ctx) =>
+        ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html, exchangeOrigin()) : html,
     },
   }
 }
