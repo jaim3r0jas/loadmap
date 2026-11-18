@@ -15,7 +15,11 @@ chart, the exports, and the promises it keeps.
 
 - **Deciding.** Set today beside a proposal and see which one buys more headroom, and roughly when each runs out.
 - **Explaining.** Share a link, put a GIF in a pull request, walk a design review through a story.
-- **Keeping it true.** `loadmap check` fails a build when a change loses the headroom a model promises.
+- **Keeping it true.** `loadmap check` fails a build when a change loses the headroom a model promises, and on a pull
+  request says what the change does to the first limit ([Checks in CI](/checks/)).
+- **Grounding it.** Read capacities and costs from Prometheus or Elasticsearch ([Live data](/live-data/)), take a
+  component's published benchmark from the catalog ([Published figures](/language/published/)), and let `loadmap drift`
+  say what moved in the data while the model did not.
 
 ## Start
 

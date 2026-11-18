@@ -235,7 +235,7 @@ export interface LoadmapEditorProps {
   /** The reader turned tracking on or off; a page can keep it. */
   onTrack?: (on: boolean) => void
   /**
-   * The starters in the New menu; false leaves them out. Default: the ten that come with the editor (`TEMPLATES`),
+   * The starters in the New menu; false leaves them out. Default: the twelve that come with the editor (`TEMPLATES`),
    * the list loaded when the menu first opens, each one's text when the reader picks it.
    */
   templates?: readonly Template[] | false

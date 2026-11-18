@@ -38,4 +38,10 @@ export const CATALOG: readonly TemplateEntry[] = [
     title: 'Retry storm',
     summary: 'Retries that multiply the traffic past capacity, and a budget.',
   },
+  { id: 'shards', title: 'Sharded store', summary: 'Writes split across shards by key: the hottest runs out first.' },
+  {
+    id: 'slow-partner',
+    title: 'Slow partner API',
+    summary: 'A partner that slows as it fills, a client timeout, and retries.',
+  },
 ]
