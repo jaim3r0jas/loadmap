@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { compile } from '@loadmap/dsl'
 import { describe, expect, it, vi } from 'vitest'
 import { client, GitHubError } from '../site/islands/github/api'
-import { changedText, changes } from '../site/islands/github/changes'
+import { changedCount, changedText, changes } from '../site/islands/github/changes'
 import { lineDiff } from '../site/islands/github/Diff'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
@@ -138,6 +138,15 @@ describe('opening a repository', () => {
     }
   })
 
+  it('opens a file with "\\r\\n" line endings as the editor keeps it, and says which ones had them', async () => {
+    const gh = client({
+      fetch: fakeGitHub({ ...REPO, refs: { main: { 'a.loadmap': 'loadmap 1.5\r\ntitle: "A"\r\n' } } }).fetch,
+    })
+    const o = await open(gh, await list(gh, { owner: 'acme', name: 'capacity' }), 'a.loadmap')
+    expect(o.files['a.loadmap']).toBe('loadmap 1.5\ntitle: "A"\n')
+    expect(o.crlf).toEqual(['a.loadmap'])
+  })
+
   it('says which files the model names that the repository lacks, and opens the rest', async () => {
     const gh = client({
       fetch: fakeGitHub({ ...REPO, refs: { main: { 'a.loadmap': SHOP['models/shop.loadmap'] } } }).fetch,
@@ -237,6 +246,8 @@ describe('what a tab keeps of a repository', () => {
       tree: 'b'.repeat(40),
       private: shut,
       originals: { 'm.loadmap': 'one', 'lib/x.loadmap': 'two' },
+      model: 'm.loadmap',
+      crlf: [],
     },
     path: 'm.loadmap',
     files,
@@ -290,6 +301,8 @@ describe('what changed', () => {
         tree: 'b'.repeat(40),
         private: false,
         originals,
+        model: 'm.loadmap',
+        crlf: [],
       },
       path: 'm.loadmap',
       files,
@@ -300,6 +313,7 @@ describe('what changed', () => {
       { path: 'old.loadmap', kind: 'removed', before: 'three' },
     ])
     expect(changes({ ...t, files: originals })).toEqual([])
+    expect(changedCount(t)).toBe(3)
     expect([changedText(1), changedText(3)]).toEqual(['1 file changed', '3 files changed'])
   })
 })
@@ -339,6 +353,14 @@ describe('a line diff', () => {
         .map((l) => l.text)
         .join('\n'),
     ).toBe(b)
+  })
+
+  it('compares long files with a few scattered edits', () => {
+    const a = Array.from({ length: 12_000 }, (_, i) => `line ${i}`)
+    const b = a.map((l, i) => (i % 400 === 0 ? `${l} edited` : l))
+    const d = lineDiff(a.join('\n'), b.join('\n'))!
+    expect(d.filter((l) => l.kind === 'new')).toHaveLength(30)
+    expect(d.filter((l) => l.kind !== 'gone').map((l) => l.text)).toEqual(b)
   })
 
   it("gives up on texts too long and too different to compare at a reader's pace", () => {

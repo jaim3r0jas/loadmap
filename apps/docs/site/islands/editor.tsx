@@ -26,7 +26,7 @@ import shopSource from '../../../../docs/multi-file/shop.loadmap?raw'
 import storySource from '../../../../docs/multi-file/shop.story.loadmap?raw'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
-import { changedText, changes } from './github/changes'
+import { changedCount, changedText, changes } from './github/changes'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
 import { clearAside, leave as leaveTab, type RepoTab, readAside, readTab, writeTab } from './github/tab'
@@ -262,14 +262,14 @@ function Editor({ root }: { root: URL }) {
   const [aside, setAside] = useState(readAside)
   // the repository the files came from, and how many the reader changed: the bar's button says both
   const [from, setFrom] = useState(() => tab && `${tab.origin.owner}/${tab.origin.name}`)
-  const [changed, setChanged] = useState(() => (tab ? changes(tab).length : 0))
+  const [changed, setChanged] = useState(() => (tab ? changedCount(tab) : 0))
   const [showChanges, setShowChanges] = useState(false)
   // the tab could not keep a private repository's files: a reload would lose the edits, and the page says so
   const [unkept, setUnkept] = useState(false)
   const keep = (t: RepoTab) => {
     repo.current = t
     setFrom(`${t.origin.owner}/${t.origin.name}`)
-    setChanged(changes(t).length)
+    setChanged(changedCount(t))
     if (!writeTab(t) && t.origin.private) setUnkept(true)
   }
   // the start from an address hears of a repository after the first render
@@ -287,15 +287,12 @@ function Editor({ root }: { root: URL }) {
   const undo = (path?: string) => {
     const t = repo.current
     if (!t) return
-    const { originals } = t.origin
-    const back = new Set(path ? [path] : [...Object.keys(originals), ...Object.keys(t.files)])
-    const files = Object.fromEntries(
-      [...new Set([...Object.keys(t.files), ...back])].flatMap((p): [string, string][] => {
-        const text = back.has(p) ? (Object.hasOwn(originals, p) ? originals[p] : undefined) : t.files[p]
-        return text === undefined ? [] : [[p, text]]
-      }),
-    )
-    const model = Object.hasOwn(files, t.path) ? t.path : (Object.keys(originals)[0] ?? t.path)
+    // each change undone takes the file back to what the commit holds: an added file goes, a removed one comes back
+    const files = { ...t.files }
+    for (const c of changes(t).filter((c) => path == null || c.path === path))
+      if (c.before === undefined) delete files[c.path]
+      else files[c.path] = c.before
+    const model = Object.hasOwn(files, t.path) ? t.path : t.origin.model
     keep({ ...t, path: model, files })
     editor.current?.setFiles({ path: model, files })
   }
@@ -591,7 +588,11 @@ const draftStart = (): Shared => startFrom() ?? { source: readDraft() ?? SOURCES
 /** A repository's model as this tab keeps it: where it came from, and its files, as they came and as they are. */
 function tabOf(o: Opened): RepoTab {
   const { owner, name, ref, sha, tree, private: shut } = o.listing
-  return { origin: { owner, name, ref, sha, tree, private: shut, originals: o.files }, path: o.path, files: o.files }
+  return {
+    origin: { owner, name, ref, sha, tree, private: shut, originals: o.files, model: o.path, crlf: o.crlf },
+    path: o.path,
+    files: o.files,
+  }
 }
 
 /** What the editor opens with for a repository's model: its files, the model's text first. */

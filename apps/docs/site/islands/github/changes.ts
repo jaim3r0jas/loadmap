@@ -1,6 +1,6 @@
 // What the reader changed of what came from GitHub, file by file: the list "Changes" shows, and what a save writes.
 // No network, no DOM: the editor's page counts the changes as the reader types.
-import type { RepoTab } from './tab'
+import { own, type RepoTab } from './tab'
 
 export type ChangeKind = 'changed' | 'added' | 'removed'
 
@@ -11,8 +11,6 @@ export interface Change {
   before?: string
   after?: string
 }
-
-const own = (o: Record<string, string>, k: string) => (Object.hasOwn(o, k) ? o[k] : undefined)
 
 /** Every file whose text differs from the commit's, by path. */
 export function changes(t: RepoTab): Change[] {
@@ -27,6 +25,15 @@ export function changes(t: RepoTab): Change[] {
     out.push({ path, kind, ...(before !== undefined && { before }), ...(after !== undefined && { after }) })
   }
   return out
+}
+
+/** How many files differ from the commit's: what the bar's button says, counted as the reader types. */
+export function changedCount(t: RepoTab): number {
+  const { originals } = t.origin
+  let n = 0
+  for (const p of Object.keys(t.files)) if (own(originals, p) !== t.files[p]) n++
+  for (const p of Object.keys(originals)) if (!Object.hasOwn(t.files, p)) n++
+  return n
 }
 
 /** "1 file changed", "3 files changed". */

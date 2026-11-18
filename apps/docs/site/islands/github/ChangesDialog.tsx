@@ -29,15 +29,19 @@ export interface ChangesDialogProps {
   list: Change[]
   /** Puts a file (or every file, with no path) back as the commit holds it. */
   onUndo: (path?: string) => void
-  /** Opens "Save as branch"; absent where a save is not offered. */
-  onSave?: () => void
   onClose: () => void
 }
 
-export default function ChangesDialog({ tab, list, onUndo, onSave, onClose }: ChangesDialogProps) {
+export default function ChangesDialog({ tab, list, onUndo, onClose }: ChangesDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
   const [open, setOpen] = useState<string | null>(null)
+  // an Undo goes with what it undid: the keyboard stays in the dialog, on its list
+  const body = useRef<HTMLDivElement>(null)
+  const undo = (path?: string) => {
+    onUndo(path)
+    requestAnimationFrame(() => body.current?.focus())
+  }
   const o = tab.origin
   useEffect(() => dialog.current?.showModal(), [])
   const [theme] = useState(editorTheme)
@@ -56,7 +60,7 @@ export default function ChangesDialog({ tab, list, onUndo, onSave, onClose }: Ch
           Close
         </button>
       </div>
-      <div className="lmg-body">
+      <div className="lmg-body" ref={body} tabIndex={-1}>
         <div className="lmg-at">
           <b>
             {o.owner}/{o.name}
@@ -94,7 +98,7 @@ export default function ChangesDialog({ tab, list, onUndo, onSave, onClose }: Ch
                     <button
                       type="button"
                       className="lm-btn lme-quiet"
-                      onClick={() => onUndo(c.path)}
+                      onClick={() => undo(c.path)}
                       aria-label={`Undo the changes to ${c.path}`}
                     >
                       Undo
@@ -113,16 +117,11 @@ export default function ChangesDialog({ tab, list, onUndo, onSave, onClose }: Ch
             type="button"
             className="lm-btn lme-quiet lmg-grow"
             onClick={() => {
-              if (window.confirm(`Put every file back as ${o.ref} holds it? Your changes go.`)) onUndo()
+              if (window.confirm(`Put every file back as ${o.ref} holds it? Your changes go.`)) undo()
             }}
           >
             Undo all changes
           </button>
-          {onSave && (
-            <button type="button" className="lm-btn" onClick={onSave}>
-              Save as branch…
-            </button>
-          )}
         </div>
       )}
     </dialog>

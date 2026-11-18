@@ -4,8 +4,10 @@
 
 export type Line = { kind: 'same' | 'gone' | 'new'; text: string; before?: number; after?: number }
 
-/** The trace Myers keeps grows with the lines times the edits: past this many cells the diff says so instead. */
+/** The trace Myers keeps grows with the square of the edits: past this many cells (some 2,000 edits) it gives up. */
 const MAX_CELLS = 4_000_000
+/** The rows a diff draws at most: a whole file added or removed can be long. */
+const MAX_ROWS = 2_000
 
 /**
  * The lines of `after` against `before`: what both start and end with as it is, the middle by the shortest edit
@@ -40,11 +42,14 @@ function myers(a: string[], b: string[]): Line[] | undefined {
   const max = n + m
   const off = max + 1
   const v = new Int32Array(2 * max + 3)
+  // each step keeps only the diagonals it can reach (2d + 3 of them): the trace grows with the edits, not the lines
   const trace: Int32Array[] = []
+  let cells = 0
   let done = max === 0
   for (let d = 0; d <= max && !done; d++) {
-    if ((trace.length + 1) * v.length > MAX_CELLS) return undefined
-    trace.push(v.slice())
+    cells += 2 * d + 3
+    if (cells > MAX_CELLS) return undefined
+    trace.push(v.slice(off - d - 1, off + d + 2))
     for (let k = -d; k <= d; k += 2) {
       let x = k === -d || (k !== d && v[off + k - 1]! < v[off + k + 1]!) ? v[off + k + 1]! : v[off + k - 1]! + 1
       let y = x - k
@@ -65,10 +70,12 @@ function myers(a: string[], b: string[]): Line[] | undefined {
   let y = m
   for (let d = trace.length - 1; d > 0; d--) {
     const t = trace[d]!
+    /** The furthest x on diagonal `k` before step d: the slice starts at diagonal -d - 1. */
+    const at = (k: number) => t[k + d + 1]!
     const k = x - y
-    const down = k === -d || (k !== d && t[off + k - 1]! < t[off + k + 1]!)
+    const down = k === -d || (k !== d && at(k - 1) < at(k + 1))
     const pk = down ? k + 1 : k - 1
-    const px = t[off + pk]!
+    const px = at(pk)
     const py = px - pk
     while (x > px && y > py) {
       out.push({ kind: 'same', text: a[x - 1]!, before: x, after: y })
@@ -136,12 +143,15 @@ export function Diff({ id, before, after }: { id: string; before?: string; after
       : after === undefined
         ? whole(before, 'gone')
         : lineDiff(before, after)
+  const rows = lines ? fold(lines) : []
+  const shown = rows.slice(0, MAX_ROWS)
+  const more = rows.slice(MAX_ROWS).reduce((n, r) => n + (r.kind === 'fold' ? r.count : 1), 0)
   return (
     <div className="lmg-diff" id={id}>
       {lines ? (
         <table>
           <tbody>
-            {fold(lines).map((r, i) =>
+            {shown.map((r, i) =>
               r.kind === 'fold' ? (
                 // biome-ignore lint/suspicious/noArrayIndexKey: the rows never move, only the whole table changes
                 <tr key={i} data-kind="fold">
@@ -160,6 +170,13 @@ export function Diff({ id, before, after }: { id: string; before?: string; after
                   </td>
                 </tr>
               ),
+            )}
+            {more > 0 && (
+              <tr data-kind="fold">
+                <td colSpan={3}>
+                  {more} more line{more === 1 ? '' : 's'}, not shown here
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
