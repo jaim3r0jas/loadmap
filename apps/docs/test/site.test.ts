@@ -603,7 +603,7 @@ describe('the built site', () => {
       await page.locator('.search-dialog input').fill('zzqqxx')
       await expect.poll(() => page.locator('.search-dialog [role=status]').textContent()).toBe('Nothing found')
       await page.keyboard.press('Escape')
-      expect(await page.locator('.search-dialog').isVisible()).toBe(false)
+      await expect.poll(() => page.locator('.search-dialog').isVisible()).toBe(false)
       // the button in the top bar opens it too
       await page.locator('.top .search-open').click()
       await expect.poll(() => page.locator('.search-dialog').isVisible()).toBe(true)

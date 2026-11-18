@@ -165,6 +165,10 @@ function build(root: string): HTMLDialogElement {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       if (shown.length) pick((at + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length)
+    } else if (e.key === 'Escape') {
+      // a search field takes Escape to clear itself, so the dialog would not see it
+      e.preventDefault()
+      d.close()
     } else if (e.key === 'Enter') {
       const a = list.children[at]?.querySelector('a')
       if (!a) return
