@@ -73,9 +73,11 @@ describe('completions', () => {
   })
 
   it('offers stages in a route, nodes in an edge and after from', () => {
+    // not the stage before, nor kafka beside its one queue (topic)
     const route = at(inside('flow orders "orders" {', 'route: gateway -> |')).labels
-    expect(route).toEqual(['gateway', 'topic', 'workerPool', 'db', 'kafka'])
-    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['gateway', 'kafka', 'kafkaDropped', 'workerPool', 'db'])
+    expect(route).toEqual(['topic', 'workerPool', 'db'])
+    // phones -> gateway is drawn already
+    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['kafka', 'kafkaDropped', 'workerPool', 'db'])
     expect(at(inside('flow orders "orders" {', 'from: |')).labels).toContain('phones')
   })
 
@@ -271,10 +273,21 @@ describe('completions that know where they are', () => {
     expect(o.find((x) => x.label === 'workerCores')).toMatchObject({ snippet: 'workerCores(${1:rate})${0}' })
   })
 
-  it('offer the stages right after the last one along an edge first', () => {
-    const { c } = at(inside('flow orders "orders" {', 'route: gateway -> |'))
-    expect(c.options.find((o) => o.label === 'topic')).toMatchObject({ boost: 2 })
-    expect(c.options.find((o) => o.label === 'db')?.boost).toBeUndefined()
+  it('offer the stages right after the last one along an edge first, the others drawing the edge they need', () => {
+    const src = inside('flow orders "orders" {', 'route: gateway -> |')
+    const { c } = at(src)
+    expect(c.options.find((o) => o.label === 'topic')).toMatchObject({ boost: 2, detail: 'stage, next along an edge' })
+    const db = c.options.find((o) => o.label === 'db')!
+    expect(db).toMatchObject({ boost: -1, detail: 'stage, draws gateway -> db' })
+    // after the file's last edge
+    const last = src.replaceAll('|', '').trimEnd()
+    expect(db.edits).toEqual([{ from: last.length, to: last.length, insert: '\ngateway -> db' }])
+    // a route's first stage: the one its from node has an edge to
+    const first = at(inside('flow orders "orders" {', 'route: |')).c.options
+    expect(first.find((o) => o.label === 'gateway')).toMatchObject({ boost: 2 })
+    expect(first.find((o) => o.label === 'db')?.edits?.[0]?.insert).toBe('\nphones -> db')
+    // another stage's on: or a fan-out draws no edge
+    expect(at(checkout.replace('  on: db', '  on: |')).c.options.some((o) => o.edits)).toBe(false)
   })
 })
 
@@ -300,7 +313,7 @@ describe('completions on a box with one stage of another name', () => {
 describe('completions while typing', () => {
   it('keep the rest of the file after a block left open', () => {
     const src = cache.replace('node clients', 'flow q {\n  rate: \n  route: api -> |\n\nnode clients')
-    expect(at(src).labels).toEqual(['api', 'readCache', 'db'])
+    expect(at(src).labels).toEqual(['readCache', 'db'])
     expect(at(`${cache}\nnode x "X" {\n  capacity: |`).labels).toContain('estimated')
     expect(at(`${cache}\nnode x "X" {\n  |`).labels).toContain('capacity')
   })
@@ -478,5 +491,90 @@ describe('completions after a keyword line', () => {
     const first = ranked(text).slice(0, 3)
     expect(first).not.toContain('brokersRef')
     expect(ranked(every.replace('capacity: brokersRef', 'capacity: |')).slice(0, 3)).toContain('brokersRef')
+  })
+})
+
+describe('completions ranked by what the model already says', () => {
+  const every = readFileSync(new URL('../../../docs/every-statement.loadmap', import.meta.url), 'utf8')
+  const first = (src: string, n = 1) => ranked(src).slice(0, n)
+
+  it('offer a node that runs no stage first after from', () => {
+    const o = at(every.replace('  from: users\n  color: accent', '  from: |\n  color: accent')).c.options
+    expect(first(every.replace('  from: users\n  color: accent', '  from: |\n  color: accent'))).toEqual(['users'])
+    expect(o.find((x) => x.label === 'users')).toMatchObject({ detail: 'node, runs no stage', boost: 2 })
+  })
+
+  it('leave out an edge drawn already, and offer where a route goes next first', () => {
+    const drawn = at(every.replace('mailer -> sms\n', 'mailer -> sms\napi -> |\n')).labels
+    for (const k of ['resultCache', 'mailer', 'api']) expect(drawn).not.toContain(k)
+    // a route that goes limiter -> db, with no edge yet
+    const src = every
+      .replace('route: gateway -> limiter -> api -> resultCache -> db', 'route: gateway -> limiter -> db')
+      .replace('mailer -> sms\n', 'mailer -> sms\nlimiter -> |\n')
+    expect(at(src).c.options.find((o) => o.label === 'db')).toMatchObject({
+      detail: 'node, a route goes here',
+      boost: 2,
+    })
+  })
+
+  it("draw an edge before the statement being written while the file has none, and keep the edge being written's end", () => {
+    const open = `loadmap ${LANGUAGE_VERSION}\nload { max: 1 }\nnode a "A" { pass }\nnode b "B" { pass }\nflow q {\n  rate: 1\n  from: a\n  route: a -> |`
+    const b = at(open).c.options.find((o) => o.label === 'b')
+    // the flow's block is not closed: the end of the file is inside it
+    expect(b?.edits).toEqual([{ from: open.indexOf('flow q'), to: open.indexOf('flow q'), insert: 'a -> b\n' }])
+    // the end of an edge already written is offered at it
+    expect(at(every.replace('\napi -> mailer\n', '\napi -> mailer|\n')).labels).toContain('mailer')
+  })
+
+  it("rank an edge from a flow's from node to its first stage, and a hop written by a box's name", () => {
+    const noEdge = every
+      .replace('users -> gateway: "HTTPS"\n', '')
+      .replace('mailer -> sms\n', 'mailer -> sms\nusers -> |\n')
+    expect(at(noEdge).c.options.find((o) => o.label === 'gateway')).toMatchObject({ boost: 2 })
+    const byBox = every
+      .replace('route: gateway -> topic -> eventWorkers -> push', 'route: gateway -> kafka -> eventWorkers -> push')
+      .replace('flows: [events]', 'flows: [|]')
+    expect(first(byBox)).toEqual(['events'])
+  })
+
+  it('offer the flows that pass a queue, a box or a hop first', () => {
+    expect(first(every.replace('partitions { events: 12 }', 'partitions { | }'))).toEqual(['events'])
+    // a component of its own, on the database: the orders reach it
+    expect(first(every.replace('held { orders: 0.05 }', 'held { | }'))).toEqual(['orders'])
+    expect(first(every.replace('flows: [events]', 'flows: [|]'))).toEqual(['events'])
+  })
+})
+
+describe('completions in a route through a subsystem', () => {
+  const shop = `loadmap ${LANGUAGE_VERSION}
+load { max: 10 }
+subsystem line "Line" {
+  cluster kafka "Kafka" { members: 3; queue topic {} }
+  pool consumers "Consumers" { pods: 2; perPod: 2 }
+  kafka -> consumers
+  route: kafka -> consumers
+}
+flow orders { rate: 10 * load; route: gateway -> line -> db; from: users }
+node users "Users"
+node gateway "Gateway" { pass }
+node db "DB" { store }
+users -> gateway
+gateway -> line
+line -> db
+`
+  it('offer no subsystem as the node a flow comes from', () => {
+    const from = at(shop.replace('from: users', 'from: |')).c.options
+    expect(from.map((o) => o.label)).not.toContain('line')
+    expect(from.find((o) => o.label === 'users')).toMatchObject({ boost: 2 })
+  })
+
+  it('offer neither a subsystem after its own boxes nor its boxes after it', () => {
+    const after = at(shop.replace('route: gateway -> line -> db', 'route: gateway -> line -> |')).labels
+    for (const k of ['line.topic', 'line.consumers', 'line.kafka']) expect(after).not.toContain(k)
+    expect(after).toContain('db')
+    const inner = at(shop.replace('route: gateway -> line -> db', 'route: gateway -> line.topic -> |')).c.options
+    expect(inner.map((o) => o.label)).not.toContain('line')
+    // its own edge joins its boxes
+    expect(inner.find((o) => o.label === 'line.consumers')).toMatchObject({ boost: 2 })
   })
 })

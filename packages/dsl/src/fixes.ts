@@ -1,12 +1,12 @@
 import type { Decl, Stmt } from './ast'
 import { boxOf } from './boxes'
 import { declarations } from './compile'
-import { walk } from './complete'
 import { type Code, type Diagnostic, Reporter } from './diagnostics'
 import type { TextChange } from './edit'
 import { parse } from './parser'
 import { cut, edgeLabels, foldWorkers, mods, subsUp } from './rewrite'
 import { COLORS, COMPONENT_PROPS, own, type PropSpec, SCHEMA, STAGES } from './schema'
+import { walk } from './tree'
 import { CURRENT, lowest, needs, before as older, stampOf, versionText } from './versions'
 import { intoView } from './viewblock'
 

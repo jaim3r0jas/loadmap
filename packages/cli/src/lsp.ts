@@ -98,7 +98,7 @@ const SYMBOL: Readonly<Record<string, number>> = {
 export const CAPABILITIES = {
   positionEncoding: 'utf-16',
   textDocumentSync: { openClose: true, change: 1 },
-  completionProvider: { triggerCharacters: ['.', ':', '>', '(', ',', '"'] },
+  completionProvider: { triggerCharacters: ['.', ':', '>', '(', ',', '"', '{', '['] },
   hoverProvider: true,
   signatureHelpProvider: { triggerCharacters: ['(', ','] },
   definitionProvider: true,
@@ -344,7 +344,8 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
       case 'textDocument/completion': {
         const c = completionsAcross(d.text, at, around(d, true))
         return {
-          isIncomplete: false,
+          // an item that changes the text elsewhere (an edge) is asked for again on every key: its places move
+          isIncomplete: c.options.some((o) => o.edits),
           items: c.options.map((o, i) => ({
             label: o.label,
             kind: KIND[o.type],
@@ -354,6 +355,9 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
             filterText: o.label,
             insertTextFormat: o.snippet && client.snippets ? 2 : 1,
             textEdit: { range: range(d, c.from, c.to), newText: text(o) },
+            ...(o.edits && {
+              additionalTextEdits: o.edits.map((e) => ({ range: range(d, e.from, e.to), newText: e.insert })),
+            }),
           })),
         }
       }

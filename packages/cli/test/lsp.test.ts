@@ -125,6 +125,20 @@ describe('loadmap lsp', () => {
     })
   })
 
+  it("draws the edge a route's next stage needs, beside the word", async () => {
+    const routed = cache.replace('route: api -> readCache -> db', 'route: api -> ')
+    const { c } = await started(routed)
+    const stages = await c.request('textDocument/completion', {
+      textDocument: { uri },
+      position: pos(routed, 'route: api -> ', 14),
+    })
+    expect(stages.result.items.find((i: any) => i.label === 'db')).toMatchObject({
+      detail: 'stage, draws api -> db',
+      additionalTextEdits: [{ newText: '\napi -> db' }],
+    })
+    expect(stages.result.items.find((i: any) => i.label === 'readCache').additionalTextEdits).toBeUndefined()
+  })
+
   it('hovers with the values at the defaults, and names the arguments of a call', async () => {
     const { c } = await started()
     const h = await c.request('textDocument/hover', { textDocument: { uri }, position: pos(cache, 'flows.reads', 7) })

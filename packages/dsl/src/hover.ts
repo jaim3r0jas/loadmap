@@ -4,7 +4,6 @@ import { conditionText } from '@loadmap/core/internal'
 import type { Decl, Edge, Expr, Stmt } from './ast'
 import { componentOf } from './catalog'
 import { type Definition, type DslSymbol, declarations } from './compile'
-import { blockAt, propOf as prop } from './complete'
 import { callAt, cursorAt } from './cursor'
 import { Reporter } from './diagnostics'
 import { BUILTINS } from './expr'
@@ -12,6 +11,7 @@ import { lex, type Token } from './lexer'
 import { likeness } from './names'
 import { parse } from './parser'
 import { type BlockSpec, BOXES, EDGE_PROPS, own, type PropSpec, propNamed, SCHEMA, STAGES } from './schema'
+import { blockAt, propOf as prop } from './tree'
 
 export interface Hover {
   /** The word under the pointer: source[from, to). */

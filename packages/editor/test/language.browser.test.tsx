@@ -67,6 +67,25 @@ describe('completion in the editor', () => {
     expect(line(v)).toBe('capacity: estimated(3000, "queries/s", "load test") # ok')
   })
 
+  it("draws the edge a route's next stage needs, and leaves the cursor after the word", async () => {
+    // the edges after the flow: the list is asked for again as the word grows, so the edge lands where it should
+    const after = cache.replace('route: api -> readCache -> db', 'route: api -> ')
+    const v = mount(after, 'route: api -> ')
+    await userEvent.keyboard('d')
+    await listed(/^dbstage, draws api -> db/)
+    await userEvent.keyboard('{Enter}')
+    expect(line(v)).toBe('route: api -> db')
+    expect(v.state.doc.toString()).toContain('misses/s`\napi -> db')
+    expect(v.state.selection.main.head).toBe(v.state.doc.toString().indexOf('route: api -> db') + 16)
+    // the edges before the flow: the cursor moves with the text the edge adds above it
+    const before = `${cache}\nflow q "q" {\n  rate: 1\n  from: clients\n  route: api -> \n}\n`
+    const w = mount(before, 'from: clients\n  route: api -> ')
+    await userEvent.keyboard('d')
+    await listed(/^db/)
+    await userEvent.keyboard('{Enter}')
+    expect(line(w)).toBe('route: api -> db')
+  })
+
   it('offers the units the file uses inside the quotes', async () => {
     const v = mount(cache, 'node db "Database" "primary" {')
     await userEvent.keyboard('{Enter}capacity: measured(300, "')

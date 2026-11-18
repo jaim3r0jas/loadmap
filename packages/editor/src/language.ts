@@ -26,8 +26,6 @@ import {
   type CompileResult,
   type Completion,
   compile,
-  completions,
-  completionsAcross,
   type Definition,
   type Diagnostic,
   definition,
@@ -91,8 +89,17 @@ function positionInfo(view: EditorView, list: Rect, option: Rect, info: Rect, sp
 }
 
 function cmCompletion(o: Completion): CmCompletion {
-  const { snippet, ...rest } = o
-  return snippet ? snippetCompletion(snippet, rest) : rest
+  const { snippet, edits, ...rest } = o
+  if (snippet) return snippetCompletion(snippet, rest)
+  if (!edits) return rest
+  // the word and the edge the route needs, one step in the history; the cursor after the word, wherever the edge went
+  return {
+    ...rest,
+    apply: (view, _c, from, to) => {
+      const changes = view.state.changes([{ from, to, insert: o.apply ?? o.label }, ...edits])
+      view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: 'input.complete' })
+    },
+  }
 }
 
 /** The other files of the definition a text belongs to: what a host with several open hands the language. */
@@ -105,10 +112,21 @@ export interface Around {
   version: number
 }
 
-/** Completion from the parse alone: no compile per keystroke. With files around, their names and paths too. */
+/** Completion's code, fetched once: the first time the text has the focus, or the first list asked for. */
+let completion: Promise<typeof import('@loadmap/dsl/internal/completion')> | undefined
+const loadCompletion = () => {
+  completion ??= import('@loadmap/dsl/internal/completion')
+  return completion
+}
+
+/**
+ * Completion from the parse alone: no compile per keystroke. With files around, their names and paths too. Its code
+ * is not in the editor's first load: the first list waits for it.
+ */
 const completeWith =
   (around: () => Around | undefined): CompletionSource =>
-  (ctx) => {
+  async (ctx) => {
+    const { completions, completionsAcross } = await loadCompletion()
     const source = ctx.state.doc.toString()
     const a = around()
     const c = a
@@ -121,7 +139,14 @@ const completeWith =
       return null
     // in a text (a unit) a "/" is part of the word; in a formula it is a division, after which the list starts again
     const inText = /["'`]/.test(source[c.from - 1] ?? '')
-    return { from: c.from, to: c.to, options: c.options.map(cmCompletion), validFor: inText ? /^[\w/]*$/ : /^\w*$/ }
+    // an option that changes the text elsewhere (an edge) is worked out again on every key: its places move
+    const again = c.options.some((o) => o.edits)
+    return {
+      from: c.from,
+      to: c.to,
+      options: c.options.map(cmCompletion),
+      ...(!again && { validFor: inText ? /^[\w/]*$/ : /^\w*$/ }),
+    }
   }
 
 /** A line of help: its `code` as code elements, the rest as text. Never HTML: a shared definition is untrusted. */
@@ -473,6 +498,10 @@ export function loadmapLanguage(
       { key: 'F2', run: (v) => startRename(v, around) },
     ]),
     EditorView.domEventHandlers({
+      focus() {
+        void loadCompletion()
+        return false
+      },
       mousedown(e, view) {
         if (e.button !== 0 || !(e.metaKey || e.ctrlKey)) return false
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
