@@ -2204,6 +2204,25 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 
 ### Functions
 
-`min`, `max`, `round`, `floor`, `ceil`, `abs`, `sqrt`, `log`, `exp`, `pow`, `mod`, `fmt`, `compact`, `pct`, `secs`, `measured`, `estimated`, `configured`
+| Function | |
+| --- | --- |
+| `min(a, b, …)` | The smallest of the values. |
+| `max(a, b, …)` | The largest of the values. |
+| `round(x)` | To the nearest whole number. |
+| `floor(x)` | Down to a whole number. |
+| `ceil(x)` | Up to a whole number: ceil(rate / 500) pods. |
+| `abs(x)` | Without its sign. |
+| `sqrt(x)` | The square root. |
+| `log(x)` | The natural logarithm. |
+| `exp(x)` | e to the power of x. |
+| `pow(x, y)` | x to the power of y. |
+| `mod(a, b)` | The remainder of a divided by b: mod(7, 3) is 1. |
+| `fmt(x)` | A number for a reader: 1,234 / 12.3 / 0.4. |
+| `compact(x)` | A compact number: 980 / 1.2k / 34k / 1.5M. |
+| `pct(x)` | A share from 0 to 1 as a percentage: 50 %. |
+| `secs(x)` | A duration in seconds: 42 s / 3 min / > 1 h. |
+| `measured(value, unit, source?)` | A capacity read off a dashboard or a load test. `value +- 30%` (±) says how sure it is. |
+| `estimated(value, unit, source?)` | A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value +- 30%` (±) says how sure it is. |
+| `configured(value, unit, source?)` | A limit someone set, such as a rate limiter's: exact, so it takes no +- (±). |
 
 <!-- end of reference -->

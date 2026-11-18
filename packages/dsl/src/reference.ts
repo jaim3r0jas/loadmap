@@ -75,12 +75,17 @@ export function reference(): string {
     '',
   )
   table(EDGE_PROPS)
+  // each with its arguments and what it gives, as the editors' help says it
   out.push(
     '### Functions',
     '',
-    Object.keys(BUILTINS)
-      .map((f) => `\`${f}\``)
-      .join(', '),
+    '| Function | |',
+    '| --- | --- |',
+    ...Object.entries(BUILTINS).map(([name, f]) => {
+      const optional = (i: number) => f.min != null && i >= f.min && !f.variadic
+      const args = f.params.map((p, i) => (optional(i) ? `${p}?` : p)).join(', ')
+      return `| \`${name}(${args}${f.variadic ? ', …' : ''})\` | ${f.doc.replaceAll('|', '\\|')} |`
+    }),
     '',
   )
   return out.join('\n')
