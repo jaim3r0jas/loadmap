@@ -516,7 +516,7 @@ describe('saving to GitHub', () => {
     })
     expect(saved.pull).toBeUndefined()
     expect(saved.pullError).toBe('GitHub refused what was sent: No commits between main and loadmap/shop')
-    expect(saved.compare).toBe('https://github.com/acme/capacity/compare/main...loadmap%2Fshop?expand=1')
+    expect(saved.compare).toBe('https://github.com/acme/capacity/compare/main...loadmap/shop?expand=1')
   })
 
   it('refuses before any call what cannot be saved, and names the branch and the message from the files', () => {
