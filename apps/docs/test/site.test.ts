@@ -185,7 +185,8 @@ describe('the pages', () => {
       const page = rendered.find((r) => at(r.page.route) === route)
       expect(page, f.u).toBeDefined()
       if (id) expect(page!.html, f.u).toContain(` id="${id}"`)
-      expect(f.t, f.u).not.toMatch(/<\/?[a-z][^>]*>/)
+      // the build's own markup is gone; a tag the docs show as code (`<iframe>`) is text
+      expect(f.t, f.u).not.toMatch(/class="tok-|<\/code>|<\/p>|<button/)
     }
     expect(index.find((f) => f.u === 'reference/#preset')?.t).toContain('preset')
   })
@@ -583,8 +584,13 @@ describe('the built site', () => {
       const page = await browser.newPage()
       await page.goto(`${url}language/`)
       // nothing of the search before it is used
+      // CodeMirror's own search panel is a chunk named search too: look for the index and the dialog
       const loaded = () =>
-        page.evaluate(() => performance.getEntriesByType('resource').some((r) => /search/.test(r.name)))
+        page.evaluate(
+          () =>
+            performance.getEntriesByType('resource').some((r) => r.name.endsWith('/search.json')) ||
+            document.querySelector('.search-dialog') != null,
+        )
       expect(await loaded()).toBe(false)
       await page.keyboard.press('/')
       const input = page.locator('.search-dialog input')
@@ -600,7 +606,7 @@ describe('the built site', () => {
       expect(await page.locator('.search-dialog').isVisible()).toBe(false)
       // the button in the top bar opens it too
       await page.locator('.top .search-open').click()
-      expect(await page.locator('.search-dialog').isVisible()).toBe(true)
+      await expect.poll(() => page.locator('.search-dialog').isVisible()).toBe(true)
     } finally {
       await browser.close()
     }

@@ -64,11 +64,14 @@ export function rank(index: readonly Found[], query: string, limit = 20): Found[
     .map((h) => h.found)
 }
 
-/** A line of a section's text around the first word of the query found in it, each word marked. */
+/**
+ * A line of a section's text around the first word of the query found in it, each word marked. Found in the text as
+ * written, its case aside: folding the accents could move a position, and the line is cut from the text as written.
+ */
 export function excerpt(text: string, query: string): string {
-  const words = fold(query).split(/\s+/).filter(Boolean)
-  const folded = fold(text)
-  const first = Math.min(...words.map((w) => folded.indexOf(w)).filter((i) => i >= 0))
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const lower = text.toLowerCase()
+  const first = Math.min(...words.map((w) => lower.indexOf(w)).filter((i) => i >= 0))
   const from = Number.isFinite(first) ? Math.max(0, first - 40) : 0
   const piece = (from ? '…' : '') + text.slice(from, from + 160)
   const marks = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
@@ -85,6 +88,7 @@ let index: Promise<Found[]> | undefined
 /** Opens the search over the page; `root` is the site's root, where search.json and every page are. */
 export function open(root: string) {
   dialog ??= build(root)
+  if (dialog.open) return
   dialog.showModal()
   const input = dialog.querySelector('input')!
   input.select()
@@ -105,13 +109,15 @@ function build(root: string): HTMLDialogElement {
   let shown: Found[] = []
   let at = 0
 
-  index ??= fetch(`${root}search.json`).then((r) => {
-    if (!r.ok) throw new Error(`search.json: ${r.status}`)
-    return r.json() as Promise<Found[]>
-  })
-  index.catch(() => {
-    status.textContent = 'The search could not load its index.'
-  })
+  // fetched on the first query; one that fails is asked for again on the next
+  const load = () => {
+    index ??= fetch(`${root}search.json`).then((r) => {
+      if (!r.ok) throw new Error(`search.json: ${r.status}`)
+      return r.json() as Promise<Found[]>
+    })
+    return index
+  }
+  void load().catch(() => undefined)
 
   const pick = (i: number) => {
     at = i
@@ -131,17 +137,26 @@ function build(root: string): HTMLDialogElement {
       status.textContent = ''
       return
     }
-    const all = await index!
+    let all: Found[]
+    try {
+      all = await load()
+    } catch {
+      index = undefined
+      status.textContent = 'The search could not load its index: type again to retry.'
+      return
+    }
     // a newer key press may have run first
     if (input.value.trim() !== query) return
-    shown = rank(all, query)
+    // one more than are shown, to know whether there are more
+    const ranked = rank(all, query, 21)
+    shown = ranked.slice(0, 20)
     list.innerHTML = shown
       .map(
         (f, i) =>
           `<li role="option" id="search-${i}" aria-selected="false"><a href="${esc(root + f.u)}" tabindex="-1"><span class="where">${esc(f.p)}</span><span class="title">${esc(f.h)}</span><span class="text">${excerpt(f.t, query)}</span></a></li>`,
       )
       .join('')
-    status.textContent = shown.length ? `${shown.length}${shown.length === 20 ? '+' : ''} found` : 'Nothing found'
+    status.textContent = shown.length ? `${shown.length}${ranked.length > 20 ? '+' : ''} found` : 'Nothing found'
     pick(0)
   }
 

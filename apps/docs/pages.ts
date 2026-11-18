@@ -203,6 +203,9 @@ const SECTION = /^@section\(([^,)]+),\s*"([^"]+)"(?:,\s*([2-6]))?\)$/gm
 
 let anchorsOnce: Map<string, string> | undefined
 
+/** The pages as the last `writePages` rendered them: the search's index reads them rather than render them again. */
+let renderedOnce: Map<Page, ReturnType<typeof render>> | undefined
+
 /** The pages the language guide is shown on: its links and its old anchors look there first. */
 const isGuide = (p: Page) => p.route === 'language' || p.route.startsWith('language/') || p.route === 'checks'
 
@@ -412,7 +415,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
         <a class="brand" href="${up}">loadmap</a>
         <a class="version" href="${up}whats-new/" title="This site documents ${documents}: what's new">v${version}</a>
         <span class="grow"></span>
-        <button type="button" class="search-open" hidden aria-keyshortcuts="/ Control+K Meta+K"><span aria-hidden="true">⌕</span><span class="label"> Search</span> <kbd>/</kbd></button>
+        <button type="button" class="search-open" hidden aria-label="Search the docs" aria-keyshortcuts="/ Control+K Meta+K"><span aria-hidden="true">⌕</span><span class="label"> Search</span> <kbd>/</kbd></button>
         <span class="out">${out}</span>
         ${themeSwitch('theme-bar')}
         <details class="menu">
@@ -480,9 +483,12 @@ ${text}
 export function writePages(base = '/'): string[] {
   // the pages may have changed since the last write (the dev server writes them again on a change)
   anchorsOnce = undefined
+  renderedOnce = new Map()
   const files: string[] = []
   for (const page of PAGES) {
-    const { title, html, headings } = render(page)
+    const rendered = render(page)
+    renderedOnce.set(page, rendered)
+    const { title, html, headings } = rendered
     const file = join(SITE, page.route, 'index.html')
     mkdirSync(dirname(file), { recursive: true })
     update(file, page.frame === 'app' ? appShell(page, title, html) : shell(page, title, html, headings))
@@ -606,19 +612,32 @@ export interface Found {
   t: string
 }
 
-const textOfHtml = (html: string) =>
-  html
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<details class="toc-folded">[\s\S]*?<\/details>/g, '')
-    .replace(/<button[\s\S]*?<\/button>/g, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
+/**
+ * The text of a piece of the build's own HTML, for the index: what is between its tags, a snippet's Copy button left
+ * out, the entities the build writes read. Not a sanitizer: the index is data, and the search escapes what it shows.
+ */
+function textOfHtml(html: string): string {
+  let text = ''
+  let at = 0
+  while (at < html.length) {
+    const open = html.indexOf('<', at)
+    if (open < 0) {
+      text += html.slice(at)
+      break
+    }
+    text += `${html.slice(at, open)} `
+    // a button's label is no text of the page: skip to its end tag
+    const button = html.startsWith('<button', open)
+    const end = button ? html.indexOf('</button>', open) : html.indexOf('>', open)
+    if (end < 0) break
+    at = button ? html.indexOf('>', end) + 1 : end + 1
+  }
+  const entities: Record<string, string> = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&amp;': '&' }
+  return text
+    .replace(/&(?:lt|gt|quot|#39|amp);/g, (e) => entities[e]!)
     .replace(/\s+/g, ' ')
     .trim()
+}
 
 /**
  * search.json: every page of the site cut at its h2 and h3 headings, each piece with its text. The search loads it the
@@ -627,8 +646,10 @@ const textOfHtml = (html: string) =>
 export function searchIndex(): Found[] {
   const out: Found[] = []
   for (const page of DOCS) {
-    const { title, html } = render(page)
+    const { html } = renderedOnce?.get(page) ?? render(page)
     const at = page.route ? `${page.route}/` : ''
+    // the title as the page shows it, its Markdown read
+    const title = /<h1>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? page.nav
     // the pieces between the headings; the first is the text under the title
     const parts = html.split(/(?=<h[23] id=")/)
     for (const part of parts) {

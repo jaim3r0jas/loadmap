@@ -16,10 +16,12 @@ if (opener) {
   opener.hidden = false
   opener.addEventListener('click', open)
   addEventListener('keydown', (e) => {
-    const t = e.target as HTMLElement
-    const typing = t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)
-    const slash = e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey
-    if (!slash && !(e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey)) return
+    // an event a browser makes up (autofill) may carry no key
+    const key = typeof e.key === 'string' ? e.key.toLowerCase() : ''
+    const t = e.target instanceof HTMLElement ? e.target : undefined
+    if (!t || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+    const slash = key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey
+    if (!slash && !(key === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey)) return
     e.preventDefault()
     open()
   })
