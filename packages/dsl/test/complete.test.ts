@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { completions, decodeShare, encodeShare, LANGUAGE_VERSION, MAX_SHARED_BYTES } from '../src'
+import { decodeShare, encodeShare, LANGUAGE_VERSION, MAX_SHARED_BYTES } from '../src'
+import { completions } from '../src/completion'
 
 const checkout = readFileSync(new URL('../../../examples/checkout/checkout.loadmap', import.meta.url), 'utf8')
 const alerts = readFileSync(new URL('../../../examples/alerts/alerts.loadmap', import.meta.url), 'utf8')
@@ -76,8 +77,10 @@ describe('completions', () => {
     // not the stage before, nor kafka beside its one queue (topic)
     const route = at(inside('flow orders "orders" {', 'route: gateway -> |')).labels
     expect(route).toEqual(['topic', 'workerPool', 'db'])
-    // phones -> gateway is drawn already
-    expect(at(`${checkout}\nphones -> |`).labels).toEqual(['kafka', 'kafkaDropped', 'workerPool', 'db'])
+    // phones -> gateway is drawn already: last, as a second edge may stand under another condition
+    const edge = at(`${checkout}\nphones -> |`).c.options
+    expect(edge.map((o) => o.label)).toEqual(['gateway', 'kafka', 'kafkaDropped', 'workerPool', 'db'])
+    expect(edge[0]).toMatchObject({ detail: 'node, drawn already', boost: -1 })
     expect(at(inside('flow orders "orders" {', 'from: |')).labels).toContain('phones')
   })
 
@@ -505,8 +508,9 @@ describe('completions ranked by what the model already says', () => {
   })
 
   it('leave out an edge drawn already, and offer where a route goes next first', () => {
-    const drawn = at(every.replace('mailer -> sms\n', 'mailer -> sms\napi -> |\n')).labels
-    for (const k of ['resultCache', 'mailer', 'api']) expect(drawn).not.toContain(k)
+    const drawn = at(every.replace('mailer -> sms\n', 'mailer -> sms\napi -> |\n')).c.options
+    expect(drawn.map((o) => o.label)).not.toContain('api')
+    for (const k of ['resultCache', 'mailer']) expect(drawn.find((o) => o.label === k)).toMatchObject({ boost: -1 })
     // a route that goes limiter -> db, with no edge yet
     const src = every
       .replace('route: gateway -> limiter -> api -> resultCache -> db', 'route: gateway -> limiter -> db')

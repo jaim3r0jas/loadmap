@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { compile, completions, quickFixes, type TextChange } from '../src'
+import { compile, quickFixes, type TextChange } from '../src'
+import { completions } from '../src/completion'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const cache = read('../../editor/src/templates/cache.loadmap')

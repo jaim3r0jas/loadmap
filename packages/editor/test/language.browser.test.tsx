@@ -73,7 +73,7 @@ describe('completion in the editor', () => {
     // a new line invites nothing by itself
     expect(options()).toEqual([])
     await userEvent.keyboard('{Control>}[Space]{/Control}')
-    await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('capacity')
+    await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('demand')
     // what a box holds, at the cursor: the list starts under it
     const caret = v.coordsAtPos(v.state.selection.main.head)!
     const list = document.querySelector('.cm-tooltip-autocomplete')!.getBoundingClientRect()
@@ -338,7 +338,7 @@ describe('completion on a phone', () => {
     const { v, press } = await phone('node db "Database" "primary" {')
     await userEvent.keyboard('{Enter}')
     press('Suggest')
-    await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('capacity')
+    await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('demand')
     expect(v.hasFocus).toBe(true)
     await userEvent.keyboard('{Escape}')
     press('Find')

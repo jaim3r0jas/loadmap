@@ -6,7 +6,6 @@ import {
   type CompileResult,
   type Completion,
   compile,
-  completionsAcross,
   type Definition,
   type Diagnostic,
   definitionAcross,
@@ -24,6 +23,7 @@ import {
   signatureHelp,
   type WorkspaceOptions,
 } from '@loadmap/dsl'
+import { completionsAcross } from '@loadmap/dsl/completion'
 import { BOXES, type Decl, parse, Reporter, relativePath, SCHEMA, STAGES } from '@loadmap/dsl/internal'
 import { loadmapFiles, project } from './project'
 

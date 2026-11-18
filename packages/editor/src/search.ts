@@ -14,10 +14,14 @@ type Loaded = typeof import('@codemirror/search') & { panel: Extension }
 let loading: Promise<Loaded> | undefined
 // the panel's look loads with it: its rules are no part of the editor's first load
 const load = () => {
-  loading ??= Promise.all([import('@codemirror/search'), import('./searchPanel')]).then(([m, p]) => ({
-    ...m,
-    panel: p.panel,
-  }))
+  loading ??= Promise.all([import('@codemirror/search'), import('./searchPanel')]).then(
+    ([m, p]) => ({ ...m, panel: p.panel }),
+    (err) => {
+      // offline, or its chunk gone after a new version of the site: the next key tries again
+      loading = undefined
+      throw err
+    },
+  )
   return loading
 }
 
@@ -25,28 +29,42 @@ const load = () => {
 const withSearch =
   (pick: (m: Loaded) => (view: EditorView) => boolean) =>
   (view: EditorView): boolean => {
-    void load().then((m) => {
-      if (!view.state.facet(searching))
-        view.dispatch({
-          effects: StateEffect.appendConfig.of([
-            searching.of(true),
-            m.search({ top: true }),
-            keymap.of(m.searchKeymap),
-            m.panel,
-          ]),
-        })
-      pick(m)(view)
-    })
+    load().then(
+      (m) => {
+        if (!view.state.facet(searching))
+          view.dispatch({
+            effects: StateEffect.appendConfig.of([
+              searching.of(true),
+              m.search({ top: true }),
+              keymap.of(m.searchKeymap),
+              m.panel,
+            ]),
+          })
+        pick(m)(view)
+      },
+      () => {},
+    )
     return true
   }
 
 /** Opens the search panel. */
 export const openSearch = withSearch((m) => m.openSearchPanel)
 
-/** Mod-F and go to a line (Mod-Alt-G), ahead of the browser's; once loaded, the panel's own keys too. */
+/**
+ * The search's keys, ahead of the browser's (its find, its bookmark on Mod-D): Mod-F, the next and previous match,
+ * the next occurrence, go to a line. Each loads the search the first time; once loaded, the panel's own keys too.
+ */
 export const lazySearch: Extension = Prec.high(
   keymap.of([
     { key: 'Mod-f', run: openSearch, preventDefault: true },
+    {
+      key: 'Mod-g',
+      run: withSearch((m) => m.findNext),
+      shift: withSearch((m) => m.findPrevious),
+      preventDefault: true,
+    },
+    { key: 'F3', run: withSearch((m) => m.findNext), shift: withSearch((m) => m.findPrevious), preventDefault: true },
+    { key: 'Mod-d', run: withSearch((m) => m.selectNextOccurrence), preventDefault: true },
     { key: 'Mod-Alt-g', run: withSearch((m) => m.gotoLine), preventDefault: true },
   ]),
 )

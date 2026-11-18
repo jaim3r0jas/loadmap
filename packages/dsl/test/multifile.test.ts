@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   addImport,
   compile,
-  completionsAcross,
   decodeShare,
   definitionAcross,
   encodeShare,
@@ -16,6 +15,7 @@ import {
   referencesAcross,
   renameAcross,
 } from '../src'
+import { completionsAcross } from '../src/completion'
 import { edit, fileText, inspect, relativePath, resolvePath, takeLine } from '../src/internal'
 
 /** The multi-file example of the docs: a model, its part, the library it imports and a variant. */

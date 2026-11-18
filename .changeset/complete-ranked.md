@@ -9,5 +9,4 @@ others come last and draw the edge they need when picked (in VS Code too, as an 
 nodes that run no stage first, an edge leaves out what is drawn already and offers where a route goes next first, and
 `partitions`, `held` and a connection's `flows` offer the flows that pass there first. A box with one queue of another
 name is offered once, by its stage, and a subsystem never next to its own boxes. Completion's code is an entry of its
-own, `@loadmap/dsl/internal/completion`, which the editor loads the first time the text has the focus: its first
-load is about 6 kB lighter. The language server opens the list after `{` and `[` too.
+own, which the editor loads the first time the text has the focus. The language server opens the list after `{` and `[` too.

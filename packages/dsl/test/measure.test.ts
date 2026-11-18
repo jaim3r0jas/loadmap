@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { fromSnapshot, parseSnapshot } from '@loadmap/core/measure'
 import { describe, expect, it } from 'vitest'
-import { compile, completions, format, hover, problems, rename } from '../src'
+import { compile, format, hover, problems, rename } from '../src'
+import { completions } from '../src/completion'
 
 const SRC = `loadmap 1
 title: "Shop"

@@ -6,7 +6,7 @@ import { type Cursor, callAt, cursorAt } from './cursor'
 import { Reporter } from './diagnostics'
 import { MAX_NESTING } from './expand'
 import { BUILTINS } from './expr'
-import { DEFAULT_PATH, type Role, readHead } from './files'
+import { DEFAULT_PATH, HEAD, type Role, readHead } from './files'
 import type { Token } from './lexer'
 import { isTemplate, isValue, MODEL_ONLY, VARIANT_ADDS, VARIANT_ONCE, VARIANT_PROPS, VARIANT_REPLACES } from './link'
 import { parse } from './parser'
@@ -98,6 +98,8 @@ export interface Context {
   /** The boxes and subsystems this file imports, by the name they have here. */
   imported?: readonly { name: string; keyword: string; from: string; inputs: boolean; route: boolean }[]
   inputsOf?: (name: string) => Input[]
+  /** The link stopped partway: its names are not all there, so this text's own fill in the rest. */
+  partialLink?: boolean
   /** The part of the text that is this file's own, where an edge it adds goes: all of it, alone. */
   range?: { from: number; to: number }
 }
@@ -106,14 +108,18 @@ export interface Context {
 export function completionsIn(source: string, offset: number, ctx: Context = {}): Completions {
   const cur = cursorAt(source, offset)
   const { doc } = parse(source, new Reporter(source))
-  // the linked names; this text's own when linking found none (a file that stops it, while being typed)
-  const symbols = ctx.symbols?.length ? ctx.symbols : declarations(source, doc)
+  // the linked names; this text's own beside them where the link stopped partway (a file being typed)
+  const own = () => declarations(source, doc)
+  const symbols = !ctx.symbols?.length ? own() : ctx.partialLink ? union(ctx.symbols, own()) : ctx.symbols
   const head = ctx.head ?? headIn(source, doc.body, offset)
   const options = new Help(source, doc.body, symbols, cur, offset, { ...ctx, head }).options()
   return { from: cur.from, to: cur.to, options }
 }
 
-const HEAD_LINES = new Set(['include', 'part', 'library', 'import', 'extends'])
+const union = (a: readonly DslSymbol[], b: readonly DslSymbol[]) => {
+  const seen = new Set(a.map((s) => `${s.kind} ${s.id}`))
+  return [...a, ...b.filter((s) => !seen.has(`${s.kind} ${s.id}`))]
+}
 
 /**
  * Whether the top of a file of `role` may hold a property, a statement of `name` or an edge: what the linker refuses
@@ -268,7 +274,7 @@ class Help {
     // a box's own component lines, or a component block: one or the other
     const ownComponent = Object.keys(COMPONENT_PROPS).some((p) => written.has(p))
     const fits = (k: string) => {
-      if (top) return HEAD_LINES.has(k) ? this.headLine(k) : holdsAtTop(head.role, 'decl', k)
+      if (top) return HEAD.has(k) ? this.headLine(k) : holdsAtTop(head.role, 'decl', k)
       // a node runs one stage; a box has one component
       if (kind === 'node' && stages.includes(k)) return ![...has].some((h) => stages.includes(h))
       if (k === 'component' && boxKind) return !has.has(k) && !ownComponent
@@ -285,7 +291,7 @@ class Help {
     )
     const blocks = statements(spec, this.version, alone).filter((s) => fits(s.label))
     for (const s of blocks) {
-      if (HEAD_LINES.has(s.label)) {
+      if (HEAD.has(s.label)) {
         s.snippet = alone ? HEAD_SNIPPETS[s.label] : undefined
         s.boost = 5
       }
@@ -834,8 +840,11 @@ class Help {
     const [a, b] = (chain ?? []).map((n) => ('name' in n ? this.stageOf(n.name) : ''))
     if (!a || !b) return undefined
     const out = new Set<string>()
-    for (const [flow, { stages }] of this.routeChains())
-      for (let i = 0; i + 1 < stages.length; i++) if (stages[i] === a && stages[i + 1] === b) out.add(flow)
+    // from the flow's from node to its first stage too
+    for (const [flow, { from, stages }] of this.routeChains()) {
+      const hops = [...(from != null ? [from] : []), ...stages]
+      for (let i = 0; i + 1 < hops.length; i++) if (hops[i] === a && hops[i + 1] === b) out.add(flow)
+    }
     return out
   }
 
@@ -890,13 +899,16 @@ class Help {
       const boxes = [...(from != null ? [from] : []), ...stages.map((st) => box.get(st) ?? st)]
       for (let i = 0; i + 1 < boxes.length; i++) if (boxes[i] === prev) next.add(boxes[i + 1]!)
     }
-    return ids.flatMap((label) =>
-      mine(label) || drawn.has(label)
+    // an edge drawn already last: a second one may stand under another condition
+    return ids.flatMap((label): Completion[] =>
+      mine(label)
         ? []
         : [
-            next.has(label)
-              ? { label, type: 'variable' as const, detail: 'node, a route goes here', boost: 2 }
-              : { label, type: 'variable' as const, detail: 'node' },
+            drawn.has(label)
+              ? { label, type: 'variable', detail: 'node, drawn already', boost: -1 }
+              : next.has(label)
+                ? { label, type: 'variable', detail: 'node, a route goes here', boost: 2 }
+                : { label, type: 'variable', detail: 'node' },
           ],
     )
   }

@@ -14,8 +14,8 @@ render(<LoadmapSource source={source} name="shop.loadmap" />)
 `compile(source)` returns `{ ok, diagnostics, definition }`, the `model`, `view` and page `options` of a definition;
 `formatDiagnostic(d, source, 'shop.loadmap')` prints one as `loadmap check` does.
 
-Also: `format()` lays a definition out the one way (what `loadmap fmt` runs), `completions()` for an editor,
-`encodeShare`/`decodeShare` for links.
+Also: `format()` lays a definition out the one way (what `loadmap fmt` runs), `completions()` for an editor (from
+`@loadmap/dsl/completion`), `encodeShare`/`decodeShare` for links.
 
 ## Test a model
 

@@ -4,7 +4,8 @@
 
 // with the help, not the compiler: a page that only draws a definition (an embed) loads none of this
 export { flatten } from './bundle'
-export { type Completion, type Completions, completions, completionsAcross } from './completion'
+// completion itself is an entry of its own (@loadmap/dsl/completion): an editor loads it on its first list
+export type { Completion, Completions } from './complete'
 export type { EditResult, TextChange } from './edit'
 export { type QuickFix, quickFixes } from './fixes'
 export { type Hover, hover, type SignatureHelp, signatureHelp } from './hover'

@@ -9,7 +9,7 @@ import {
 import { invertedEffects, isolateHistory } from '@codemirror/commands'
 import { syntaxHighlighting } from '@codemirror/language'
 import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror/lint'
-import { type EditorState, type Extension, StateEffect, StateField } from '@codemirror/state'
+import { type EditorState, type Extension, StateEffect, StateField, type Text } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -88,7 +88,12 @@ function positionInfo(view: EditorView, list: Rect, option: Rect, info: Rect, sp
   }
 }
 
-function cmCompletion(o: Completion): CmCompletion {
+/**
+ * A completion for CodeMirror. One that changes the text elsewhere (the edge a route needs) asks again, through
+ * `fresh`, when the text has changed since its list was made: a list stays on screen while the next one is worked out,
+ * and the edge's place has moved with every key typed since.
+ */
+function cmCompletion(o: Completion, made: Text, fresh: (source: string, pos: number) => Completion[]): CmCompletion {
   const { snippet, edits, ...rest } = o
   if (snippet) return snippetCompletion(snippet, rest)
   if (!edits) return rest
@@ -96,7 +101,9 @@ function cmCompletion(o: Completion): CmCompletion {
   return {
     ...rest,
     apply: (view, _c, from, to) => {
-      const changes = view.state.changes([{ from, to, insert: o.apply ?? o.label }, ...edits])
+      const now = view.state.doc
+      const again = now === made ? edits : (fresh(now.toString(), to).find((x) => x.label === o.label)?.edits ?? [])
+      const changes = view.state.changes([{ from, to, insert: o.apply ?? o.label }, ...again])
       view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: 'input.complete' })
     },
   }
@@ -113,9 +120,9 @@ export interface Around {
 }
 
 /** Completion's code, fetched once: the first time the text has the focus, or the first list asked for. */
-let completion: Promise<typeof import('@loadmap/dsl/internal/completion')> | undefined
+let completion: Promise<typeof import('@loadmap/dsl/completion')> | undefined
 const loadCompletion = () => {
-  completion ??= import('@loadmap/dsl/internal/completion')
+  completion ??= import('@loadmap/dsl/completion')
   return completion
 }
 
@@ -127,11 +134,13 @@ const completeWith =
   (around: () => Around | undefined): CompletionSource =>
   async (ctx) => {
     const { completions, completionsAcross } = await loadCompletion()
-    const source = ctx.state.doc.toString()
     const a = around()
-    const c = a
-      ? completionsAcross(source, ctx.pos, { path: a.path, files: a.files, paths: [a.path, ...Object.keys(a.files)] })
-      : completions(source, ctx.pos)
+    const ask = (text: string, pos: number) =>
+      a
+        ? completionsAcross(text, pos, { path: a.path, files: a.files, paths: [a.path, ...Object.keys(a.files)] })
+        : completions(text, pos)
+    const source = ctx.state.doc.toString()
+    const c = ask(source, ctx.pos)
     if (
       !c.options.length ||
       (!ctx.explicit && c.from === c.to && !INVITES.test(source.slice(Math.max(0, c.from - 3), c.from)))
@@ -144,7 +153,7 @@ const completeWith =
     return {
       from: c.from,
       to: c.to,
-      options: c.options.map(cmCompletion),
+      options: c.options.map((o) => cmCompletion(o, ctx.state.doc, (text, pos) => ask(text, pos).options)),
       ...(!again && { validFor: inText ? /^[\w/]*$/ : /^\w*$/ }),
     }
   }

@@ -1,6 +1,7 @@
 import { type ComponentResult, defineModel, measured, p, queue, workers } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
-import { compile, completions, format, hover, loadCatalog, needsCatalog, quickFixes, rename } from '../src'
+import { compile, format, hover, loadCatalog, needsCatalog, quickFixes, rename } from '../src'
+import { completions } from '../src/completion'
 
 const SRC = `loadmap 1.5
 load { max: 100 }

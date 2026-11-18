@@ -132,7 +132,6 @@ Export and recording drive the page through it.
 | `formatDiagnostic(d, source, file)`                | `file:line:col error: …` with the line and a caret                        |
 | `problems(result, severity?)`                      | The diagnostics with failing expectations added                           |
 | `format(source)`                                   | `{ ok, text, diagnostics }`: the definition laid out the one way          |
-| `completions(source, offset)`                      | What may be typed at a place                                              |
 | `hover(source, offset, definition?)`               | What a word is, and its values at the defaults                            |
 | `signatureHelp(source, offset)`                    | The arguments of the call the cursor is in                                |
 | `quickFixes(source, diagnostics)`                  | The fixes of each diagnostic, as text changes                             |
@@ -148,6 +147,10 @@ reads no disk and no network. The result also has `measures`: each `measure` as 
 A text with a `published` statement needs the catalog, which no first load carries: `await loadCatalogFor(source)`
 before `compile(source)` loads it only then (`needsCatalog(source)` says whether; `loadCatalog()` loads it anyway).
 `LANGUAGE_VERSION` is the language version this build reads.
+
+`completions(source, offset)` (what may be typed at a place, ranked) and `completionsAcross(source, offset, { path,
+files })` (the same over a model's files) come from `@loadmap/dsl/completion`: an entry of its own, so an editor loads
+it with the first list it asks for rather than in its first load.
 
 ## The editor (`@loadmap/editor`)
 
