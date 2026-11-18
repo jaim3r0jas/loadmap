@@ -11,8 +11,8 @@ shows, and each walkthrough names the starters it grew from.
 ## Starters
 
 Twelve starters for common shapes, one for each building block among them (a cache, an autoscaled pool, a rate
-limiter, retries, a split, a timeout). Each compiles without a warning, keeps its own expectations, and lays out without a label over
-another, in both directions.
+limiter, retries, a split, a timeout). Each compiles without a warning, keeps its own expectations, and lays out
+without a label over another, in both directions.
 
 **Try:** pick a card, then the scenario beside **Today** to see what the change buys · click where it runs out, under
 the slider.

@@ -1,6 +1,7 @@
 loadmap 1.6
 # A store split into shards by key: each shard takes its share of the writes, so the hottest shard runs out first,
-# long before the shards together would. Rebalancing the keys buys more headroom than bigger shards.
+# long before the shards together would. Rebalancing the keys and bigger shards each buy headroom: the scenarios
+# side by side say how much.
 title: "Sharded store"
 view { speed: 10 }
 assume: "1× is today's busiest hour; the keys spread evenly but for the hot share."
@@ -45,7 +46,7 @@ node router "Shard router" {
   over: "writes queue at the router"
 }
 
-node shardA "Shard A" `${pct(hot)} of the keys` {
+node shardA "Shard A" `${pct(hot)} of the writes` {
   shape: cylinder
   store
   short: "shard A"

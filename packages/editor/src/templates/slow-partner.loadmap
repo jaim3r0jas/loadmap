@@ -3,7 +3,7 @@ loadmap 1.6
 # timeout a request fails and is sent again, which adds load just when the partner is slowest.
 title: "Slow partner API"
 view { speed: 10 }
-assume: "1× is today's busiest minute; each stage's time is a single queue's, an estimate of its shape."
+assume: "1× is today's busiest minute; the times are an estimate of their shape, not a measurement."
 
 load "Requests, × today" { max: 10; default: 1 }
 
@@ -44,8 +44,8 @@ node partner "Partner API" {
   over: "the partner answers 503s"
 }
 
-node timedOut "Timed out" { lost { takes: [timedOut] } }
+node failed "Failed" { lost { takes: [rejected, timedOut] } }
 
 clients -> api
 api -> partner
-partner -> timedOut
+partner -> failed
