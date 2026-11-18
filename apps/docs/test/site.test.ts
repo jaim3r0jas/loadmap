@@ -830,10 +830,10 @@ describe('the built site', () => {
       await dialog.getByText('acme/private was not found. If it is private, give a token to read it.').waitFor()
       const make = new URL((await dialog.getByRole('link', { name: /Make a token on GitHub/ }).getAttribute('href'))!)
       expect([make.searchParams.get('target_name'), make.searchParams.get('contents')]).toEqual(['acme', 'read'])
-      await dialog.getByLabel('Token').fill('hunter2')
+      await dialog.getByLabel('Token', { exact: true }).fill('hunter2')
       await dialog.getByRole('button', { name: 'Use it' }).click()
       await dialog.getByText('That is not a GitHub token').waitFor()
-      await dialog.getByLabel('Token').fill(token)
+      await dialog.getByLabel('Token', { exact: true }).fill(token)
       await dialog.getByRole('button', { name: 'Use it' }).click()
       await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Secret uploads')
 
