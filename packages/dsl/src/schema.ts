@@ -425,7 +425,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   extends: {
     since: '1.3',
-    doc: 'The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure or published figure replaces the one of its name; presets, scenarios, expectations and steps are added.',
+    doc: 'The second line of a variant: the model this file is, with what it writes changed. A parameter here replaces the lines it writes of that parameter; a let, fit, measure, metric or published figure replaces the one of its name; presets, scenarios, expectations and steps are added.',
     example: 'extends "./checkout.loadmap"',
     args: [{ name: 'path', kind: 'text' }],
     props: {},
@@ -818,7 +818,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     inspector: 'model',
     doc: 'A figure from the component catalog, as published for a configuration: its id is a capacity (`capacity: brokersRef`). It applies only when every condition its run was made under matches; otherwise the component has no published benchmark and is not ranked. Nothing is scaled.',
     example:
-      'published brokersRef kafka {\n  edition: "2026-11"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
+      'published brokersRef kafka {\n  edition: "2027-01"\n  brokers: 3\n  replication: 3\n  acks: "all"\n  messageSize: "1 KB"\n  producers: 4\n}',
     args: [
       { name: 'id', kind: 'id' },
       { name: 'component', kind: 'id' },
@@ -999,7 +999,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   node: {
-    doc: 'A box. It may run a stage (pass, store, sink, lost, fanout) and own a component (demand and capacity lines).',
+    doc: 'A box. It may run a stage (pass, store, sink, lost, fanout, split, cache or limit) and own a component (demand and capacity lines).',
     example: 'node gateway "API gateway" { pass; demand: flows.orders; capacity: estimated(20000, "req/s") }',
     args: BOX_ARGS,
     props: {

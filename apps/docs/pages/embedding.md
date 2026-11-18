@@ -21,6 +21,8 @@ The link is the editor's share link pointed at the embed page:
 https://jaim3r0jas.github.io/loadmap/embed/?mode=focus&play=1#v1.jZNNb9swDIbv…
 ```
 
+A model in several files makes a `#v2.` link, which carries every file it reaches: it embeds the same way.
+
 ## In ClickUp
 
 Type `/embed` in a doc, paste the link, and size the block. The board takes the room it is given: wider shows more,
