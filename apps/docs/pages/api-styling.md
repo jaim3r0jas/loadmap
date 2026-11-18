@@ -42,45 +42,45 @@ changed: a token changed later reaches the dots at the next theme change.
 
 Colours, with their defaults in light and in dark:
 
-| Token              | Light     | Dark      | What it colours                                                                   |
-| ------------------ | --------- | --------- | --------------------------------------------------------------------------------- |
-| `--lm-bg`          | `#eef2f5` | `#0d141b` | The root's background (unless `--lm-root-bg`), and full screen's                  |
-| `--lm-surface`     | `#ffffff` | `#151e27` | The board, the cards, the load bar, buttons and tips                              |
-| `--lm-fg`          | `#17212b` | `#e4ebf1` | Text; the scenario picked; values of the reader's own in the charts              |
-| `--lm-muted`       | `#5d6d7c` | `#93a3b3` | Secondary text, panel headings, the legend, edges and their arrows               |
-| `--lm-line`        | `#c6d0da` | `#2a3744` | Borders, table rules, the outline of a box with nothing to say                   |
+| Token              | Light     | Dark      | What it colours                                                                                                |
+| ------------------ | --------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| `--lm-bg`          | `#eef2f5` | `#0d141b` | The root's background (unless `--lm-root-bg`), and full screen's                                               |
+| `--lm-surface`     | `#ffffff` | `#151e27` | The board, the cards, the load bar, buttons and tips                                                           |
+| `--lm-fg`          | `#17212b` | `#e4ebf1` | Text; the scenario picked; values of the reader's own in the charts                                            |
+| `--lm-muted`       | `#5d6d7c` | `#93a3b3` | Secondary text, panel headings, the legend, edges and their arrows                                             |
+| `--lm-line`        | `#c6d0da` | `#2a3744` | Borders, table rules, the outline of a box with nothing to say                                                 |
 | `--lm-accent`      | `#0b6b8f` | `#5fb7d6` | The focus ring, the slider, the load marks, the story's progress; a flow's dots by default (`color: 'accent'`) |
-| `--lm-accent-soft` | `#d6e9f0` | `#163442` | Behind the verdict and the presets                                                |
-| `--lm-alt`         | `#7a4f9a` | `#c39be0` | Published capacities' tags; a flow with `color: 'alt'`                            |
-| `--lm-alt-soft`    | `#efe5f6` | `#2b2236` | Defined for pages to use; the board does not use it                              |
-| `--lm-ok`          | `#2a7f5a` | `#5fc08f` | Under the target: a box's outline, the slider's first zone, a meter; dots served |
-| `--lm-warn`        | `#b86e00` | `#e2a24a` | Past the target: outlines, the zone, the target's mark                            |
-| `--lm-drop`        | `#b7392e` | `#e26a5c` | Past capacity: outlines, the zone, where it runs out; dots dropped, rejected or timed out |
-| `--lm-lane`        | `#e3e9ee` | `#1b2631` | The cells inside a box: a queue's partitions, a pool's workers                    |
-| `--lm-lost-fill`   | `#fbefed` | `#2b1c1d` | The inside of a `lost` box, where what is lost ends                               |
-| `--lm-lost-line`   | `#b7392e` | `#e26a5c` | The outline of a `lost` box and the edges into it                                 |
-| `--lm-tier-base`   | `#f4f7fa` | `#1b2530` | The first, third… tier lane (`lanes: 'filled'`)                                   |
-| `--lm-tier`        | `#e8eef3` | `#24323f` | The second, fourth… tier lane                                                     |
-| `--lm-tier-head`   | `#dbe3eb` | `#2c3b4a` | A tier's heading band                                                             |
-| `--lm-tier-fg`     | `#34424f` | `#c3cfda` | A tier's name                                                                     |
-| `--lm-tier-line`   | `#c6d0da` | `#33424f` | The lines between tiers and under their headings                                  |
-| `--lm-s1`          | `#2a78d6` | `#3987e5` | The first scenario in the headroom chart and the comparison                       |
-| `--lm-s2`          | `#eb6834` | `#d95926` | The second scenario                                                               |
-| `--lm-s3`          | `#6250d6` | `#9085e9` | The third scenario                                                                |
-| `--lm-s4`          | `#eda100` | `#c98500` | The fourth; a fifth and later are drawn muted                                     |
+| `--lm-accent-soft` | `#d6e9f0` | `#163442` | Behind the verdict and the presets                                                                             |
+| `--lm-alt`         | `#7a4f9a` | `#c39be0` | Published capacities' tags; a flow with `color: 'alt'`                                                         |
+| `--lm-alt-soft`    | `#efe5f6` | `#2b2236` | Defined for pages to use; the board does not use it                                                            |
+| `--lm-ok`          | `#2a7f5a` | `#5fc08f` | Under the target: a box's outline, the slider's first zone, a meter; dots served                               |
+| `--lm-warn`        | `#b86e00` | `#e2a24a` | Past the target: outlines, the zone, the target's mark                                                         |
+| `--lm-drop`        | `#b7392e` | `#e26a5c` | Past capacity: outlines, the zone, where it runs out; dots dropped, rejected or timed out                      |
+| `--lm-lane`        | `#e3e9ee` | `#1b2631` | The cells inside a box: a queue's partitions, a pool's workers                                                 |
+| `--lm-lost-fill`   | `#fbefed` | `#2b1c1d` | The inside of a `lost` box, where what is lost ends                                                            |
+| `--lm-lost-line`   | `#b7392e` | `#e26a5c` | The outline of a `lost` box and the edges into it                                                              |
+| `--lm-tier-base`   | `#f4f7fa` | `#1b2530` | The first, third… tier lane (`lanes: 'filled'`)                                                                |
+| `--lm-tier`        | `#e8eef3` | `#24323f` | The second, fourth… tier lane                                                                                  |
+| `--lm-tier-head`   | `#dbe3eb` | `#2c3b4a` | A tier's heading band                                                                                          |
+| `--lm-tier-fg`     | `#34424f` | `#c3cfda` | A tier's name                                                                                                  |
+| `--lm-tier-line`   | `#c6d0da` | `#33424f` | The lines between tiers and under their headings                                                               |
+| `--lm-s1`          | `#2a78d6` | `#3987e5` | The first scenario in the headroom chart and the comparison                                                    |
+| `--lm-s2`          | `#eb6834` | `#d95926` | The second scenario                                                                                            |
+| `--lm-s3`          | `#6250d6` | `#9085e9` | The third scenario                                                                                             |
+| `--lm-s4`          | `#eda100` | `#c98500` | The fourth; a fifth and later are drawn muted                                                                  |
 
 A flow's `color` in the view is one of `accent`, `alt`, `ok`, `warn`, `drop` and `muted`, which follow the tokens and
 the theme, or any CSS colour, which stays as written. A tier's own `fill` wins over the lane tokens.
 
 Fonts and the page around the board:
 
-| Token             | Default                                                                   | What                                     |
-| ----------------- | ------------------------------------------------------------------------- | ---------------------------------------- |
-| `--lm-font`       | `ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` | Every text but the numbers      |
-| `--lm-mono`       | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`                | Numbers, tables, the load value          |
-| `--lm-pad`        | `16px`                                                                    | The root's padding                       |
-| `--lm-root-bg`    | `var(--lm-bg)`                                                            | The root's background                    |
-| `--lm-sticky-top` | `0px`                                                                     | Where the load bar sticks while the page scrolls: a fixed header's height |
+| Token             | Default                                                                            | What                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `--lm-font`       | `ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` | Every text but the numbers                                                |
+| `--lm-mono`       | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`                         | Numbers, tables, the load value                                           |
+| `--lm-pad`        | `16px`                                                                             | The root's padding                                                        |
+| `--lm-root-bg`    | `var(--lm-bg)`                                                                     | The root's background                                                     |
+| `--lm-sticky-top` | `0px`                                                                              | Where the load bar sticks while the page scrolls: a fixed header's height |
 
 The root's text is 14 px with a line height of 1.45, in `--lm-font`.
 
@@ -107,12 +107,12 @@ The board sets a few properties on its own elements while it runs (`--lm-fit`, `
 
 `<Loadmap theme>` (and `LoadmapRoot`, `<LoadmapSource>`, the editor) takes one of four:
 
-| `theme`     | What it draws                                                                                   |
-| ----------- | ----------------------------------------------------------------------------------------------- |
-| `'auto'`    | The system's light or dark (`prefers-color-scheme`); the default                                |
-| `'light'`   | Light, whatever the system says                                                                 |
-| `'dark'`    | Dark, whatever the system says                                                                  |
-| `'inherit'` | The page's own switch, followed as it changes; the system's while the page says nothing         |
+| `theme`     | What it draws                                                                           |
+| ----------- | --------------------------------------------------------------------------------------- |
+| `'auto'`    | The system's light or dark (`prefers-color-scheme`); the default                        |
+| `'light'`   | Light, whatever the system says                                                         |
+| `'dark'`    | Dark, whatever the system says                                                          |
+| `'inherit'` | The page's own switch, followed as it changes; the system's while the page says nothing |
 
 With `'inherit'`, the page's switch is on `<html>`: `data-theme="dark"` or `"light"`, or a `dark` or `light` class. One
 observer of `<html>` serves every board on the page. On the server, and while the page says nothing, it draws as
@@ -148,10 +148,10 @@ Full screen lays the root out as a column that never scrolls: the bar, the diagr
 line, and the panels in a compact dock ([Full screen](/api/react/#full-screen) has what each mode shows). The
 root says where it is, for a page's own rules:
 
-| Attribute on `.lm`  | Values                                   | When                                                         |
-| ------------------- | ---------------------------------------- | ------------------------------------------------------------ |
-| `data-full`         | `screen`, `overlay`, `fill`              | The browser's full screen, the fixed overlay where it has none, or `fill` |
-| `data-mode`         | `panels`, `focus`                        | What full screen shows                                       |
+| Attribute on `.lm` | Values                      | When                                                                      |
+| ------------------ | --------------------------- | ------------------------------------------------------------------------- |
+| `data-full`        | `screen`, `overlay`, `fill` | The browser's full screen, the fixed overlay where it has none, or `fill` |
+| `data-mode`        | `panels`, `focus`           | What full screen shows                                                    |
 
 - Full screen takes the whole screen (`100dvh`) with a 16 px padding and the `--lm-bg` background, whatever
   `--lm-pad` and `--lm-root-bg` say; `fill` takes its container's height with a 10 px padding.

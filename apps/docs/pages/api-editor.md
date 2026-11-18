@@ -20,32 +20,32 @@ import { LoadmapEditor } from '@loadmap/editor'
 `initial` is the one required prop: the text to start from. A new `initial` does not replace the text; give the
 editor a new `key`, or call `setSource` on its handle.
 
-| Prop        | What                                                                                                    |
-| ----------- | ------------------------------------------------------------------------------------------------------- |
-| `initial`   | The text to start from (required)                                                                       |
-| `values`    | Values to start the preview at; texts from a share link are read by each parameter's kind               |
-| `functions` | `HostFunctions`: what formulas may call beyond the built-in ones                                        |
-| `theme`     | `'auto'` (the default), `'light'`, `'dark'`, or `'inherit'` to follow the page's own switch             |
-| `onChange`  | `(source) => void`: every change of the text, for a page that keeps a draft                             |
-| `onShare`   | `(hash) => void \| Promise<void>`: called with a share hash; by default it goes in the address bar and the link is copied |
-| `embedLink` | `(hash, options) => string`: with it, Share has **Embed in a page…** (see below)                        |
-| `layout`    | How it opens: `'code'` (the default) or `'reader'`                                                      |
-| `onLayout`  | `(layout) => void`: the reader showed or hid the code; a page can keep it                               |
-| `fill`      | It fills its container as a canvas between two panels (see below)                                      |
-| `track`     | Track live changes, on at the start; default off                                                        |
-| `onTrack`   | `(on) => void`: the reader turned tracking on or off                                                    |
-| `files`     | A definition in several files: `{ path, files }` (see below)                                            |
-| `onFiles`   | `(files) => void`: every change of any file, a file added or removed                                    |
-| `onSave`    | `(files) => void \| Promise<void>`: ⌘S or Ctrl+S in the editor saves every file                         |
-| `templates` | The starters in New: `Template[]`, or `false` to leave them out; default the ten in `TEMPLATES`         |
-| `catalog`   | **Add → From the catalog** in New; default true, `false` leaves it out                                  |
-| `newItems`  | `BarSection[]`: more sections in the New menu, after the templates                                      |
-| `exportItems` | `BarSection[]`: more sections in the Export menu, after the download                                  |
-| `start`     | Controls at the start of the bar, before the name: a way back, a brand                                  |
-| `actions`   | Controls in the bar before Share: a theme, help. On a phone they go in the sheet of actions             |
-| `fileName`  | The name the downloaded file takes, without `.loadmap`; default the model's title                       |
-| `fonts`     | The fonts View offers for the code: `CodeFont[]`; default `CODE_FONTS`, `[]` for the system's alone     |
-| `ref`       | A `LoadmapEditorHandle`                                                                                 |
+| Prop          | What                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `initial`     | The text to start from (required)                                                                                         |
+| `values`      | Values to start the preview at; texts from a share link are read by each parameter's kind                                 |
+| `functions`   | `HostFunctions`: what formulas may call beyond the built-in ones                                                          |
+| `theme`       | `'auto'` (the default), `'light'`, `'dark'`, or `'inherit'` to follow the page's own switch                               |
+| `onChange`    | `(source) => void`: every change of the text, for a page that keeps a draft                                               |
+| `onShare`     | `(hash) => void \| Promise<void>`: called with a share hash; by default it goes in the address bar and the link is copied |
+| `embedLink`   | `(hash, options) => string`: with it, Share has **Embed in a page…** (see below)                                          |
+| `layout`      | How it opens: `'code'` (the default) or `'reader'`                                                                        |
+| `onLayout`    | `(layout) => void`: the reader showed or hid the code; a page can keep it                                                 |
+| `fill`        | It fills its container as a canvas between two panels (see below)                                                         |
+| `track`       | Track live changes, on at the start; default off                                                                          |
+| `onTrack`     | `(on) => void`: the reader turned tracking on or off                                                                      |
+| `files`       | A definition in several files: `{ path, files }` (see below)                                                              |
+| `onFiles`     | `(files) => void`: every change of any file, a file added or removed                                                      |
+| `onSave`      | `(files) => void \| Promise<void>`: ⌘S or Ctrl+S in the editor saves every file                                           |
+| `templates`   | The starters in New: `Template[]`, or `false` to leave them out; default the ten in `TEMPLATES`                           |
+| `catalog`     | **Add → From the catalog** in New; default true, `false` leaves it out                                                    |
+| `newItems`    | `BarSection[]`: more sections in the New menu, after the templates                                                        |
+| `exportItems` | `BarSection[]`: more sections in the Export menu, after the download                                                      |
+| `start`       | Controls at the start of the bar, before the name: a way back, a brand                                                    |
+| `actions`     | Controls in the bar before Share: a theme, help. On a phone they go in the sheet of actions                               |
+| `fileName`    | The name the downloaded file takes, without `.loadmap`; default the model's title                                         |
+| `fonts`       | The fonts View offers for the code: `CodeFont[]`; default `CODE_FONTS`, `[]` for the system's alone                       |
+| `ref`         | A `LoadmapEditorHandle`                                                                                                   |
 
 In `'code'` layout a click on a box selects its lines in the text. In `'reader'` layout the text is hidden: a click on
 a box opens an inspector with its label, its capacity and its parameters, each change a small edit of the text, so a
@@ -68,15 +68,15 @@ editor.current?.setSource(example)
 const hash = await editor.current?.shareHash()
 ```
 
-| Method            | What                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `source()`        | The text                                                                                  |
-| `setSource(text)` | Replaces the whole text, e.g. with an example                                             |
-| `loadmap()`       | The preview's `LoadmapHandle` once a version has compiled, else `null`                    |
+| Method            | What                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `source()`        | The text                                                                                        |
+| `setSource(text)` | Replaces the whole text, e.g. with an example                                                   |
+| `loadmap()`       | The preview's `LoadmapHandle` once a version has compiled, else `null`                          |
 | `shareHash()`     | `Promise<string>`: the hash of a link to this definition at the current values (`v1.…&load=30`) |
-| `format()`        | Lays the text out the one way; `false` when it has a syntax error                         |
-| `files()`         | `EditorFiles`: every file by its path, and the path of its model; one entry for one file  |
-| `setFiles(files)` | Replaces the whole definition with one in several files; its model shows first            |
+| `format()`        | Lays the text out the one way; `false` when it has a syntax error                               |
+| `files()`         | `EditorFiles`: every file by its path, and the path of its model; one entry for one file        |
+| `setFiles(files)` | Replaces the whole definition with one in several files; its model shows first                  |
 
 `loadmap()` is what export and recording drive: [React and the page](/api/react/#the-handle) has its methods.
 
@@ -92,14 +92,14 @@ const hash = await editor.current?.shareHash()
 the diagram as a canvas the reader pans and zooms between, and the verdict and the rest in a panel on the right. The
 bar shows the model's title. Each panel resizes by its inner edge and folds onto a rail.
 
-| Prop           | What (with `fill`)                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------------------- |
-| `split`        | The code panel's share of the width, `0.3` for 30 %: from 360 px to 60 %. Default 440 px           |
-| `onSplit`      | `(share) => void`: the code panel was resized; a page can keep it                                  |
+| Prop           | What (with `fill`)                                                                                               |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `split`        | The code panel's share of the width, `0.3` for 30 %: from 360 px to 60 %. Default 440 px                         |
+| `onSplit`      | `(share) => void`: the code panel was resized; a page can keep it                                                |
 | `panel`        | The side panel `'pinned'` beside the canvas, or `'auto'`, folded onto its rail. Default pinned from 1280 px wide |
-| `onPanel`      | `(mode) => void`: the reader pinned or folded it                                                   |
-| `panelWidth`   | The side panel's width, 300 px to 480 px. Default 340 px                                           |
-| `onPanelWidth` | `(px) => void`: the side panel was resized                                                         |
+| `onPanel`      | `(mode) => void`: the reader pinned or folded it                                                                 |
+| `panelWidth`   | The side panel's width, 300 px to 480 px. Default 340 px                                                         |
+| `onPanelWidth` | `(px) => void`: the side panel was resized                                                                       |
 
 A double-click on the code panel's edge puts it back at `split`. The side panel cannot pin below 1024 px wide. On a
 phone (below 720 px wide, or 500 px high) the editor shows the text or the diagram, switched at the bottom, the panels
@@ -193,12 +193,12 @@ new EditorView({ doc: source, extensions: [loadmapLanguage({ onResult: (source, 
 quick fixes, completion, hover, signature help, go to definition (F12, or a click with ⌘ or Ctrl), the other uses of a
 name marked, and rename (F2). It takes `CompileOptions` (`functions`, `catalog`, `snapshot`, `path`, `files`) and:
 
-| Option        | What                                                                                       |
-| ------------- | ------------------------------------------------------------------------------------------ |
-| `onResult`    | `(source, result) => void`: every compile the linter runs, so a preview follows without compiling twice |
-| `delay`       | Milliseconds of rest in typing before it compiles; default 150                             |
+| Option        | What                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `onResult`    | `(source, result) => void`: every compile the linter runs, so a preview follows without compiling twice               |
+| `delay`       | Milliseconds of rest in typing before it compiles; default 150                                                        |
 | `around`      | `() => { path, files, version } \| undefined`: the other files, read on every compile; `version` counts their changes |
-| `onOpen`      | `(at: Located) => void`: go to definition found the name in another file, for the host to show |
-| `onElsewhere` | A rename changed other files of the definition, for the host to apply there               |
+| `onOpen`      | `(at: Located) => void`: go to definition found the name in another file, for the host to show                        |
+| `onElsewhere` | A rename changed other files of the definition, for the host to apply there                                           |
 
 `loadmapStream` (a `StreamLanguage`) with `loadmapHighlight` (a `HighlightStyle`) is the highlighting alone.

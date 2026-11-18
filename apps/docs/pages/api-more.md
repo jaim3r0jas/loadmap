@@ -10,8 +10,8 @@ TypeScript types; none of it is in a `<Loadmap>` page's first load.
 
 Every function takes the `ref` of a `<Loadmap>`, a `LoadmapHandle` ([React and the page](/api/react/)), and runs in
 the browser. Recordings are made frame by frame on a fixed clock: the live animation is paused, the simulation is
-seeded and advances exactly 1/fps per frame, so the same options give the same file, byte for byte, however fast
-the machine is. The values a recording changed are put back afterwards.
+seeded and advances exactly 1/fps per frame, so the same options give the same frames however fast the machine is (a
+GIF the same bytes too; a WebM or an MP4 is encoded by the browser's own codec, which may differ between machines). The values a recording changed are put back afterwards.
 
 | Export                                  | What                                                                         |
 | --------------------------------------- | ---------------------------------------------------------------------------- |
@@ -133,7 +133,7 @@ import { createSim } from '@loadmap/sim'
 const sim = createSim(model, model.evaluate({ load: 20 }), { seed: 7 })
 // 30 s of real time at the default speed: 300 simulated seconds, no dots
 for (let i = 0; i < 900; i++) sim.step(1 / 30, { particles: false })
-sim.queue('orders', 'checkout').lag // seconds the oldest waiting order has waited
+sim.queue('topic', 'orders').lag // seconds the oldest order waiting at the topic has waited
 ```
 
 `createSim(model, evaluation, options?)` returns a `Sim`. Its options, `SimOptions`:

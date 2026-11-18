@@ -7,8 +7,8 @@ start from `packages/react/README.md`), and `@section(path, "### Heading")` one 
 its own headings moved up to h2: the guide stays one file (`docs/dsl.md`, which ships as REFERENCE.md and in
 llms-full.txt) and the site shows it a section or two a page (`/language/…`, `/checks/`). A link to a section another
 page holds goes there (`anchors()`), and a page that was split (`/language/`, `/api/`) forwards the anchors it held
-(`OLD_ANCHORS`, frozen, and `movedAnchors()`), since links to them are out there; site links are written from the root (`/language/`)
-and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
+(`OLD_ANCHORS`, frozen, and `movedAnchors()`), since links to them are out there; site links are written from the
+root (`/language/`) and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
 under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
 `<div class="island" data-island="example|editor|gallery|quickstart">`. A page with `frame: 'app'` (the editor at
 `/editor/`) is its Markdown alone in the window, without the site's frame, pager or llms.txt entry; `hidden: true`

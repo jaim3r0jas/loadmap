@@ -12,12 +12,12 @@ re-exports everything from `@loadmap/core` and the view API, so most pages insta
 npm i @loadmap/react react react-dom
 ```
 
-| Entry                            | What                                                                                   |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| `@loadmap/react`                 | `<Loadmap>`, `useLoadmap`, the panels, the styles, and the model and view API          |
-| `@loadmap/react/source`          | `<LoadmapSource>` and `useCatalog`: a `.loadmap` text drawn; the one entry with the compiler |
-| `@loadmap/react/catalog`         | `@loadmap/core/catalog` for a page that installs only react                            |
-| `@loadmap/react/elk.worker.js`   | The layout's worker as a file, for a page that serves or inlines it                    |
+| Entry                          | What                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `@loadmap/react`               | `<Loadmap>`, `useLoadmap`, the panels, the styles, and the model and view API                |
+| `@loadmap/react/source`        | `<LoadmapSource>` and `useCatalog`: a `.loadmap` text drawn; the one entry with the compiler |
+| `@loadmap/react/catalog`       | `@loadmap/core/catalog` for a page that installs only react                                  |
+| `@loadmap/react/elk.worker.js` | The layout's worker as a file, for a page that serves or inlines it                          |
 
 [Getting started](/getting-started/) has a first page; [Without a bundler](/without-a-bundler/) the same from a CDN
 or in one HTML file.
@@ -36,29 +36,29 @@ export function Capacity() {
 
 What it shows:
 
-| Prop          | Type                          | Default         | What                                                                     |
-| ------------- | ----------------------------- | --------------- | ------------------------------------------------------------------------ |
-| `theme`       | `'auto' \| 'light' \| 'dark' \| 'inherit'` | `'auto'` | `auto` follows the system; `inherit` the page's own switch ([Styling](/api/styling/#light-dark-and-inherit)) |
-| `title`       | `ReactNode \| false`          | the model's     | The heading; `false` leaves it out                                       |
-| `assumptions` | `readonly ReactNode[]`        | none            | Lines put before the generated ones in "What this assumes"               |
-| `headroom`    | `boolean`                     | `true`          | The headroom chart                                                       |
-| `compare`     | `boolean`                     | `true`          | The scenarios side by side, when the model declares two or more          |
-| `initial`     | `Partial<Values<P>>`          | the defaults    | Values to start from instead of the model's defaults                     |
-| `closed`      | `readonly string[]`           | none            | The subsystems drawn closed at first, by their ids in the view           |
-| `onNodeClick` | `(id: string) => void`        | none            | A click, or Enter, on a box, by its id: every box is a button then       |
-| `selected`    | `string \| null`              | none            | The box drawn as selected, by its id                                     |
-| `ref`         | `Ref<LoadmapHandle>`          | none            | The page's handle on the board: [the handle](#the-handle)                |
+| Prop          | Type                                       | Default      | What                                                                                                         |
+| ------------- | ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `theme`       | `'auto' \| 'light' \| 'dark' \| 'inherit'` | `'auto'`     | `auto` follows the system; `inherit` the page's own switch ([Styling](/api/styling/#light-dark-and-inherit)) |
+| `title`       | `ReactNode \| false`                       | the model's  | The heading; `false` leaves it out                                                                           |
+| `assumptions` | `readonly ReactNode[]`                     | none         | Lines put before the generated ones in "What this assumes"                                                   |
+| `headroom`    | `boolean`                                  | `true`       | The headroom chart                                                                                           |
+| `compare`     | `boolean`                                  | `true`       | The scenarios side by side, when the model declares two or more                                              |
+| `initial`     | `Partial<Values<P>>`                       | the defaults | Values to start from instead of the model's defaults                                                         |
+| `closed`      | `readonly string[]`                        | none         | The subsystems drawn closed at first, by their ids in the view                                               |
+| `onNodeClick` | `(id: string) => void`                     | none         | A click, or Enter, on a box, by its id: every box is a button then                                           |
+| `selected`    | `string \| null`                           | none         | The box drawn as selected, by its id                                                                         |
+| `ref`         | `Ref<LoadmapHandle>`                       | none         | The page's handle on the board: [the handle](#the-handle)                                                    |
 
 How the diagram is laid out:
 
-| Prop          | Type                          | Default         | What                                                                     |
-| ------------- | ----------------------------- | --------------- | ------------------------------------------------------------------------ |
-| `direction`   | `'auto' \| 'RIGHT' \| 'DOWN'` | `'auto'`        | Which way the diagram runs                                               |
-| `rows`        | `number \| 'auto'`            | `'auto'`        | The rows a long diagram is folded into (columns, running down); 1 never folds |
+| Prop          | Type                          | Default         | What                                                                              |
+| ------------- | ----------------------------- | --------------- | --------------------------------------------------------------------------------- |
+| `direction`   | `'auto' \| 'RIGHT' \| 'DOWN'` | `'auto'`        | Which way the diagram runs                                                        |
+| `rows`        | `number \| 'auto'`            | `'auto'`        | The rows a long diagram is folded into (columns, running down); 1 never folds     |
 | `narrowBelow` | `number`                      | `640`           | The container width, in pixels, under which the diagram runs down and never folds |
-| `transition`  | `number`                      | `0.8`           | Seconds the diagram takes to move to a new structure; 0 cuts             |
-| `zoom`        | `boolean`                     | `false`         | The reader pans and zooms the diagram                                    |
-| `elk`         | `ElkEngine`                   | a shared worker | Where ELK lays the diagram out: [where the layout runs](#where-the-layout-runs) |
+| `transition`  | `number`                      | `0.8`           | Seconds the diagram takes to move to a new structure; 0 cuts                      |
+| `zoom`        | `boolean`                     | `false`         | The reader pans and zooms the diagram                                             |
+| `elk`         | `ElkEngine`                   | a shared worker | Where ELK lays the diagram out: [where the layout runs](#where-the-layout-runs)   |
 
 `direction: 'auto'` takes the way that fits the room the diagram is given larger (the board's width by most of the
 window's height on a page; a board that fills its container, the canvas between its insets), and where both fit about
@@ -80,25 +80,25 @@ the view is shows over the board. Pictures and recordings always show the whole 
 
 Full screen:
 
-| Prop             | Type                       | Default            | What                                                              |
-| ---------------- | -------------------------- | ------------------ | ----------------------------------------------------------------- |
-| `fullScreen`     | `readonly LoadmapPanel[]`  | `LOADMAP_PANELS`   | The panels full screen shows, compact, below the diagram          |
-| `fullScreenMode` | `'panels' \| 'focus'`      | `'panels'`         | What full screen opens with                                       |
-| `fill`           | `boolean`                  | `false`            | The root fills its container, laid out as full screen is, for good |
+| Prop             | Type                      | Default          | What                                                               |
+| ---------------- | ------------------------- | ---------------- | ------------------------------------------------------------------ |
+| `fullScreen`     | `readonly LoadmapPanel[]` | `LOADMAP_PANELS` | The panels full screen shows, compact, below the diagram           |
+| `fullScreenMode` | `'panels' \| 'focus'`     | `'panels'`       | What full screen opens with                                        |
+| `fill`           | `boolean`                 | `false`          | The root fills its container, laid out as full screen is, for good |
 
 [Full screen](#full-screen) has what each does.
 
 The dots (the simulation's options, `SimOptions` from `@loadmap/sim`):
 
-| Prop           | Type     | Default | What                                                                      |
-| -------------- | -------- | ------- | ------------------------------------------------------------------------- |
-| `speed`        | `number` | `10`    | Simulated seconds per real second                                         |
-| `seed`         | `number` | `1`     | The seed of the dots' randomness: the same seed draws the same dots       |
-| `dotTarget`    | `number` | `28`    | About how many dots a second all flows together spawn; sets the dot scale |
+| Prop           | Type     | Default | What                                                                         |
+| -------------- | -------- | ------- | ---------------------------------------------------------------------------- |
+| `speed`        | `number` | `10`    | Simulated seconds per real second                                            |
+| `seed`         | `number` | `1`     | The seed of the dots' randomness: the same seed draws the same dots          |
+| `dotTarget`    | `number` | `28`    | About how many dots a second all flows together spawn; sets the dot scale    |
 | `minDots`      | `number` | `1`     | Dots a second every flow with any rate spawns at least, so a small one shows |
-| `maxDots`      | `number` | `40`    | Dots a second a flow spawns at most                                       |
-| `legSeconds`   | `number` | `0.45`  | Real seconds a dot takes from one stage to the next                       |
-| `maxParticles` | `number` | `800`   | Most dots alive at once                                                   |
+| `maxDots`      | `number` | `40`    | Dots a second a flow spawns at most                                          |
+| `legSeconds`   | `number` | `0.45`  | Real seconds a dot takes from one stage to the next                          |
+| `maxParticles` | `number` | `800`   | Most dots alive at once                                                      |
 
 The dots never decide anything: a stage drains what its flows carry at the load where its component is full, so the
 board and the bars always agree.
@@ -144,20 +144,20 @@ the load.
 The `ref` of `<Loadmap>` (and of `<LoadmapSource>`) is a `LoadmapHandle`: what a page, a test or `@loadmap/export`
 drives from outside.
 
-| Member                | What                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------ |
+| Member                | What                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `ready(timeoutMs?)`   | Resolves once the current values are laid out and drawn (and a move has its frame); rejects after `timeoutMs`, default 10 000 |
-| `values()`            | The values shown                                                                           |
-| `setValues(v)`        | Sets some values (`Partial<Values>`)                                                       |
-| `setStoryStep(i)`     | Shows a story step (its values and the box it points at); `null` leaves the story          |
-| `storyStep()`         | The step shown; `null` outside the story                                                   |
-| `playStory()`         | Plays the story from its first step on the engine's clock, as Play does; returns its length in seconds |
-| `pause()`, `resume()` | Stops and starts the dots                                                                  |
-| `step(dtReal)`        | Advances the dots (and a move to a new structure) by `dtReal` real seconds and draws: the deterministic way to animate |
-| `reset(seed?)`        | Empties the queues and the dots and starts over with this seed (default: the first one)     |
-| `show(ids)`           | On a board that zooms, brings these boxes into view, flying there                          |
-| `board()`             | `{ svg, canvas, scene }` of the drawn board, for capturing frames; `null` before it is drawn |
-| `engine`              | The engine that runs the board (`Engine`): low level, for export                           |
+| `values()`            | The values shown                                                                                                              |
+| `setValues(v)`        | Sets some values (`Partial<Values>`)                                                                                          |
+| `setStoryStep(i)`     | Shows a story step (its values and the box it points at); `null` leaves the story                                             |
+| `storyStep()`         | The step shown; `null` outside the story                                                                                      |
+| `playStory()`         | Plays the story from its first step on the engine's clock, as Play does; returns its length in seconds                        |
+| `pause()`, `resume()` | Stops and starts the dots                                                                                                     |
+| `step(dtReal)`        | Advances the dots (and a move to a new structure) by `dtReal` real seconds and draws: the deterministic way to animate        |
+| `reset(seed?)`        | Empties the queues and the dots and starts over with this seed (default: the first one)                                       |
+| `show(ids)`           | On a board that zooms, brings these boxes into view, flying there                                                             |
+| `board()`             | `{ svg, canvas, scene }` of the drawn board, for capturing frames; `null` before it is drawn                                  |
+| `engine`              | The engine that runs the board (`Engine`): low level, for export                                                              |
 
 `playStory()` throws while nothing is drawn yet or the model has no story. Picking a step or a value stops it.
 
@@ -182,26 +182,26 @@ laid out", "Full screen" and "The dots", with `initial` and `closed` (not the di
 `assumptions`, `headroom`, `compare`, `fullScreen`, `onNodeClick`, `selected`, `ref`). It returns a `LoadmapController`,
 which every panel takes as `lm`.
 
-| Field                                      | What                                                                                 |
-| ------------------------------------------ | ------------------------------------------------------------------------------------ |
-| `model`, `view`                            | The model, and the view drawn (with the closed subsystems closed)                     |
-| `values`, `setValues(v)`                   | The values shown, and a change to some of them                                       |
-| `ev`                                       | `model.evaluate(values)`: the verdict, the limits and the rest ([the evaluation](/api/model/#the-evaluation)) |
-| `scenario`                                 | The scenario the values match, load aside; `null` for values of the reader's own     |
-| `setScenario(label)`                       | Takes a scenario's values; the load stays                                             |
-| `step`, `setStep(i)`                       | The story step shown, by index (`null` outside the story), and a step to show        |
-| `stepChanged`                              | The reader changed a value since the step was shown                                  |
-| `focus`                                    | The component the story points at now                                                |
-| `storyPlaying`, `setStoryPlaying(on)`      | The story plays; play from the step after the one shown, or pause                    |
-| `cue`                                      | What the board says about the step played (`Cue`: `step`, `title`, `detail`, `after`, `top`, `seconds`); `null` when it does not play |
-| `closed`, `setClosed(ids)`                 | The subsystems drawn closed; draws these closed and every other one open             |
-| `fullScreen`, `toggleFullScreen()`         | The root is full screen (the browser's, the overlay, or `fill`); in or out           |
-| `fullScreenMode`, `setFullScreenMode(m)`   | `'panels'` or `'focus'`                                                              |
-| `fill`, `zoom`                             | The options as given                                                                 |
-| `scene`                                    | The laid out diagram; `null` until the first layout is done                          |
-| `labels`, `direction`, `reducedMotion`     | The labels at these values, the direction laid out, the reader's motion setting      |
-| `engine`                                   | The engine (dots, camera, story)                                                     |
-| `rootRef`, `root`                          | Attach `rootRef` to the element with the `.lm` class: its width picks the direction, its tokens the colours |
+| Field                                    | What                                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`, `view`                          | The model, and the view drawn (with the closed subsystems closed)                                                                     |
+| `values`, `setValues(v)`                 | The values shown, and a change to some of them                                                                                        |
+| `ev`                                     | `model.evaluate(values)`: the verdict, the limits and the rest ([the evaluation](/api/model/#the-evaluation))                         |
+| `scenario`                               | The scenario the values match, load aside; `null` for values of the reader's own                                                      |
+| `setScenario(label)`                     | Takes a scenario's values; the load stays                                                                                             |
+| `step`, `setStep(i)`                     | The story step shown, by index (`null` outside the story), and a step to show                                                         |
+| `stepChanged`                            | The reader changed a value since the step was shown                                                                                   |
+| `focus`                                  | The component the story points at now                                                                                                 |
+| `storyPlaying`, `setStoryPlaying(on)`    | The story plays; play from the step after the one shown, or pause                                                                     |
+| `cue`                                    | What the board says about the step played (`Cue`: `step`, `title`, `detail`, `after`, `top`, `seconds`); `null` when it does not play |
+| `closed`, `setClosed(ids)`               | The subsystems drawn closed; draws these closed and every other one open                                                              |
+| `fullScreen`, `toggleFullScreen()`       | The root is full screen (the browser's, the overlay, or `fill`); in or out                                                            |
+| `fullScreenMode`, `setFullScreenMode(m)` | `'panels'` or `'focus'`                                                                                                               |
+| `fill`, `zoom`                           | The options as given                                                                                                                  |
+| `scene`                                  | The laid out diagram; `null` until the first layout is done                                                                           |
+| `labels`, `direction`, `reducedMotion`   | The labels at these values, the direction laid out, the reader's motion setting                                                       |
+| `engine`                                 | The engine (dots, camera, story)                                                                                                      |
+| `rootRef`, `root`                        | Attach `rootRef` to the element with the `.lm` class: its width picks the direction, its tokens the colours                           |
 
 A value the reader changes, a scenario or a step they pick stops the story. A new `model` (an edited text) starts from
 its own defaults; the engine stays, and what is drawn moves to the new structure.
@@ -210,33 +210,33 @@ its own defaults; the engine stays, and what is drawn moves to the new structure
 
 Each takes the controller as `lm`.
 
-| Component        | Props                                   | What                                                                         |
-| ---------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
-| `LoadmapRoot`    | `lm`, `theme?`, `children`              | The root (`.lm`): the theme's tokens, the styles, the size the layout follows |
-| `Diagram`        | `DiagramProps` (below)                  | The board: SVG for the structure, a canvas on top for the dots, Full screen  |
-| `LoadBar`        | `lm`                                    | The scenarios and the load in one bar                                        |
-| `Scenarios`      | `lm`                                    | One button per scenario; nothing when the model has none                     |
-| `LoadRange`      | `lm`                                    | The load slider with its zones and marks                                     |
-| `Story`          | `lm`                                    | The story a step at a time: text, Play, back and next; ← → while it has the focus |
-| `Verdict`        | `lm`                                    | The verdict, and the capacity worth measuring                                |
-| `Limits`         | `lm`, `title?`                          | Each component's utilization in the order they reach the target              |
-| `Meters`         | `lm`                                    | Live, from the dots: lag and drops per queue, busy workers, pods running, cache hits, rejections, retries, p99, time-outs |
-| `Controls`       | `lm`, `load?` (default `true`)          | The load slider, the presets that set no load, and every parameter; `load={false}` leaves the load to a `LoadBar` |
-| `HeadroomChart`  | `lm`, `title?`                          | Utilization over the load multiple, per scenario; hover or the arrow keys read it |
-| `Compare`        | `lm`, `title?`                          | The scenarios side by side; nothing with fewer than two                      |
-| `Assumptions`    | `lm`, `extra?`                          | Every capacity with where it came from, every fit, and `extra` lines first   |
+| Component       | Props                          | What                                                                                                                      |
+| --------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `LoadmapRoot`   | `lm`, `theme?`, `children`     | The root (`.lm`): the theme's tokens, the styles, the size the layout follows                                             |
+| `Diagram`       | `DiagramProps` (below)         | The board: SVG for the structure, a canvas on top for the dots, Full screen                                               |
+| `LoadBar`       | `lm`                           | The scenarios and the load in one bar                                                                                     |
+| `Scenarios`     | `lm`                           | One button per scenario; nothing when the model has none                                                                  |
+| `LoadRange`     | `lm`                           | The load slider with its zones and marks                                                                                  |
+| `Story`         | `lm`                           | The story a step at a time: text, Play, back and next; ← → while it has the focus                                         |
+| `Verdict`       | `lm`                           | The verdict, and the capacity worth measuring                                                                             |
+| `Limits`        | `lm`, `title?`                 | Each component's utilization in the order they reach the target                                                           |
+| `Meters`        | `lm`                           | Live, from the dots: lag and drops per queue, busy workers, pods running, cache hits, rejections, retries, p99, time-outs |
+| `Controls`      | `lm`, `load?` (default `true`) | The load slider, the presets that set no load, and every parameter; `load={false}` leaves the load to a `LoadBar`         |
+| `HeadroomChart` | `lm`, `title?`                 | Utilization over the load multiple, per scenario; hover or the arrow keys read it                                         |
+| `Compare`       | `lm`, `title?`                 | The scenarios side by side; nothing with fewer than two                                                                   |
+| `Assumptions`   | `lm`, `extra?`                 | Every capacity with where it came from, every fit, and `extra` lines first                                                |
 
 The `title` defaults are "Where it runs out, in order", "Headroom" and "Scenarios compared". The type of
 `ev.verdict` is `VerdictResult` (from core); the panel is `Verdict`.
 
 `DiagramProps`:
 
-| Prop          | Type                         | Default | What                                                                          |
-| ------------- | ---------------------------- | ------- | ----------------------------------------------------------------------------- |
-| `lm`          | `LoadmapController`          |         | The controller                                                                |
-| `legend`      | `boolean`                    | `true`  | The flows' legend under the board                                             |
-| `onNodeClick` | `(id: string) => void`       | none    | A click, or Enter, on a box: every box is a button then, one without a component too |
-| `selected`    | `string \| null`             | `null`  | The box drawn as selected                                                     |
+| Prop          | Type                         | Default | What                                                                                        |
+| ------------- | ---------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `lm`          | `LoadmapController`          |         | The controller                                                                              |
+| `legend`      | `boolean`                    | `true`  | The flows' legend under the board                                                           |
+| `onNodeClick` | `(id: string) => void`       | none    | A click, or Enter, on a box: every box is a button then, one without a component too        |
+| `selected`    | `string \| null`             | `null`  | The box drawn as selected                                                                   |
 | `canvas`      | `boolean \| Partial<Insets>` | `false` | The board fills its container as a canvas the wheel alone zooms, with no Full screen button |
 
 `canvas` takes insets, `{ top, right, bottom, left }` in pixels: what the page floats over the board. Fit frames the
@@ -299,13 +299,13 @@ export function Capacity() {
 }
 ```
 
-| Prop        | Type                               | What                                                                              |
-| ----------- | ---------------------------------- | --------------------------------------------------------------------------------- |
+| Prop        | Type                               | What                                                                                              |
+| ----------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `source`    | `string`                           | The text; compiled again when its tokens change (spaces, line breaks and comments change nothing) |
-| `name`      | `string`                           | The file the diagnostics name, as `loadmap check` does; default `input.loadmap`   |
-| `functions` | `CompileOptions['functions']`      | The host's own functions for the formulas, as `compile` takes them                |
-| `files`     | `Readonly<Record<string, string>>` | The other files of a model in several, by their path from the project root        |
-| `path`      | `string`                           | This text's own path among them (`models/checkout.loadmap`)                       |
+| `name`      | `string`                           | The file the diagnostics name, as `loadmap check` does; default `input.loadmap`                   |
+| `functions` | `CompileOptions['functions']`      | The host's own functions for the formulas, as `compile` takes them                                |
+| `files`     | `Readonly<Record<string, string>>` | The other files of a model in several, by their path from the project root                        |
+| `path`      | `string`                           | This text's own path among them (`models/checkout.loadmap`)                                       |
 
 Every `<Loadmap>` prop but `model` and `view` works too. The options the definition declares in its `view` block
 (`speed`, `transition`, `direction`, `rows`, `fullScreen`, `fullScreenMode`, `closed`, and its assumptions) are

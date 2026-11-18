@@ -7,12 +7,12 @@ and no network: a host hands it the text and, for a model in several files, the 
 
 ## Entries
 
-| Entry                       | What                                                                              |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| `@loadmap/dsl`              | Compile, format, diagnostics, the editor help, files, share links, the catalog    |
-| `@loadmap/dsl/completion`   | `completions` and `completionsAcross`: loaded with the first list an editor asks  |
-| `@loadmap/dsl/add`          | What the editor's catalog picker writes: no promise between versions (see below)  |
-| `@loadmap/dsl/internal`     | For loadmap's own packages: no promise between versions                           |
+| Entry                     | What                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `@loadmap/dsl`            | Compile, format, diagnostics, the editor help, files, share links, the catalog   |
+| `@loadmap/dsl/completion` | `completions` and `completionsAcross`: loaded with the first list an editor asks |
+| `@loadmap/dsl/add`        | What the editor's catalog picker writes: no promise between versions (see below) |
+| `@loadmap/dsl/internal`   | For loadmap's own packages: no promise between versions                          |
 
 The package also ships the language guide and the reference as `dist/REFERENCE.md`, the same text as
 [the language guide](/language/) and [the reference](/reference/).
@@ -23,21 +23,24 @@ The package also ships the language guide and the reference as `dist/REFERENCE.m
 import { compile, formatDiagnostic } from '@loadmap/dsl'
 
 const r = compile(source, { path: 'models/shop.loadmap', files })
-if (!r.ok) for (const d of r.diagnostics) console.error(formatDiagnostic(d, source))
-const { model, view, options } = r.definition!
+if (!r.definition) {
+  for (const d of r.diagnostics) console.error(formatDiagnostic(d, source))
+  throw new Error('the definition does not compile')
+}
+const { model, view, options } = r.definition
 // <Loadmap model={model} view={view} {...options} />
 ```
 
 `compile(source: string, options?: CompileOptions): CompileResult`. It never throws on a bad text: what is wrong is
 in `diagnostics`.
 
-| Option      | What                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------ |
-| `functions` | `HostFunctions`: what formulas may call beyond the built-in ones, each called with plain values        |
-| `catalog`   | The catalog's editions, for `published` statements; by default the one `loadCatalog()` loaded          |
+| Option      | What                                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| `functions` | `HostFunctions`: what formulas may call beyond the built-in ones, each called with plain values           |
+| `catalog`   | The catalog's editions, for `published` statements; by default the one `loadCatalog()` loaded             |
 | `snapshot`  | Measured data for the `measure` statements: `fromSnapshot(parseSnapshot(text))` (`@loadmap/core/measure`) |
-| `path`      | This text's own path from the project root (`models/shop.loadmap`); default `input.loadmap`            |
-| `files`     | The other files the definition may name, by their path from the project root                           |
+| `path`      | This text's own path from the project root (`models/shop.loadmap`); default `input.loadmap`               |
+| `files`     | The other files the definition may name, by their path from the project root                              |
 
 Without a `snapshot`, every measure is its fallback. `files` is a function `(path) => string | undefined`, a `Map` or
 a plain object (the type `Files`). A path the host does not give is an error where it is written (`missing-file`).
@@ -48,17 +51,17 @@ model runs throws a `FormulaError`, with the `span` of the formula and an option
 
 ## CompileResult
 
-| Field          | What                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------ |
-| `ok`           | No errors (warnings may be there)                                                                      |
-| `diagnostics`  | `Diagnostic[]`: every error and warning, in order                                                      |
-| `definition`   | `{ model, view, options }`; only when there are no errors                                              |
-| `expectations` | Each `expect` line: `{ at, line, column, result, file? }`, `result` a `CheckResult` from core          |
+| Field          | What                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| `ok`           | No errors (warnings may be there)                                                                              |
+| `diagnostics`  | `Diagnostic[]`: every error and warning, in order                                                              |
+| `definition`   | `{ model, view, options }`; only when there are no errors                                                      |
+| `expectations` | Each `expect` line: `{ at, line, column, result, file? }`, `result` a `CheckResult` from core                  |
 | `measures`     | Each `measure` as `loadmap pull` reads it: `{ id, metric, label?, provider, query, stat?, minSamples?, unit }` |
-| `symbols`      | `DslSymbol[]`: every name the definition declares, and where                                           |
-| `doc`          | The text that was compiled, parsed                                                                     |
-| `role`         | `'model'`, `'part'`, `'library'` or `'variant'`: what the text is, said in its head                    |
-| `files`        | Every file the definition read, by its path from the project root, the model first                    |
+| `symbols`      | `DslSymbol[]`: every name the definition declares, and where                                                   |
+| `doc`          | The text that was compiled, parsed                                                                             |
+| `role`         | `'model'`, `'part'`, `'library'` or `'variant'`: what the text is, said in its head                            |
+| `files`        | Every file the definition read, by its path from the project root, the model first                             |
 
 `expectations` and `measures` are empty when the definition has errors. Each expectation is tested on the pessimistic
 edge (every capacity at its low bound); [Checks](/checks/) has what `outcome`, `reasons` and `message` say.
@@ -126,14 +129,14 @@ blocks are split. [Formatting](/language/in-code/#formatting) has the rules.
 
 Each takes the text and an offset into it, and reads only what it is given.
 
-| Export                                       | Returns                                                                                   |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `hover(source, offset, definition?)`         | `Hover \| null`: `{ from, to, head, body }`; given the compiled definition, values too     |
-| `signatureHelp(source, offset)`              | `SignatureHelp \| null`: the builtin or fit the cursor is in, and which argument           |
-| `quickFixes(source, diagnostics)`            | `QuickFix[][]`: for each diagnostic in order, its fixes `{ title, changes }`               |
-| `definition(source, offset)`                 | `Span \| null`: where the name at the offset is declared                                   |
-| `references(source, offset)`                 | `Span[] \| null`: every place the name is written, the declaration included               |
-| `rename(source, offset, name, options?)`     | `EditResult`: `{ source, changes }`, or `{ error }` when it would not compile             |
+| Export                                   | Returns                                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| `hover(source, offset, definition?)`     | `Hover \| null`: `{ from, to, head, body }`; given the compiled definition, values too |
+| `signatureHelp(source, offset)`          | `SignatureHelp \| null`: the builtin or fit the cursor is in, and which argument       |
+| `quickFixes(source, diagnostics)`        | `QuickFix[][]`: for each diagnostic in order, its fixes `{ title, changes }`           |
+| `definition(source, offset)`             | `Span \| null`: where the name at the offset is declared                               |
+| `references(source, offset)`             | `Span[] \| null`: every place the name is written, the declaration included            |
+| `rename(source, offset, name, options?)` | `EditResult`: `{ source, changes }`, or `{ error }` when it would not compile          |
 
 `Hover.head` is what the word is, as a line of the language (`flow orders "orders"`); `body` is short sentences, and
 with a `definition` (the `r.definition` of a compile) its values at the defaults: a flow's rate, what reaches a stage,
@@ -161,15 +164,15 @@ its first load. `completions(source, offset)` returns `Completions`: `{ from, to
 (replace `source.slice(from, to)`) and what may go there, ranked. It reads only the parse and the declared names, never
 runs the model: cheap enough for every keystroke.
 
-| `Completion` field | What                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| `label`            | What the list shows                                                                        |
-| `type`             | `'keyword'`, `'property'`, `'variable'`, `'function'`, `'constant'` or `'type'`             |
-| `detail`, `info`   | A few words beside the label; the longer help beside the list                              |
-| `apply`            | What to insert when it differs from the label: `rate: `                                    |
-| `snippet`          | A template instead of `apply`: `${1:value}` a field Tab moves to, `${0}` where it ends     |
-| `boost`            | From -99 to 99: higher fits the place better                                               |
-| `edits`            | Other changes made with it, in the same text: the edge a route's next stage needs          |
+| `Completion` field | What                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `label`            | What the list shows                                                                    |
+| `type`             | `'keyword'`, `'property'`, `'variable'`, `'function'`, `'constant'` or `'type'`        |
+| `detail`, `info`   | A few words beside the label; the longer help beside the list                          |
+| `apply`            | What to insert when it differs from the label: `rate: `                                |
+| `snippet`          | A template instead of `apply`: `${1:value}` a field Tab moves to, `${0}` where it ends |
+| `boost`            | From -99 to 99: higher fits the place better                                           |
+| `edits`            | Other changes made with it, in the same text: the edge a route's next stage needs      |
 
 CodeMirror's snippets and the language server protocol both read `snippet` as written.
 
@@ -178,10 +181,10 @@ CodeMirror's snippets and the language server protocol both read `snippet` as wr
 A model in several files is compiled with them: `compile(source, { path, files })`. These help a host find and move
 them:
 
-| Export                              | What                                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------------------ |
-| `imports(source, path?)`            | The head only: `{ role, files }`, each file `{ kind, written, path?, names }`              |
-| `gather(source, { path?, files? })` | Every file the definition reaches: `{ path, files, missing }`                               |
+| Export                              | What                                                                                            |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `imports(source, path?)`            | The head only: `{ role, files }`, each file `{ kind, written, path?, names }`                   |
+| `gather(source, { path?, files? })` | Every file the definition reaches: `{ path, files, missing }`                                   |
 | `flatten(source, options?)`         | The model as one file that draws and computes the same: `{ text }`, or `{ error, diagnostics }` |
 
 `imports` reports nothing: it is for a host that must fetch the files before it compiles (read the head, fetch what
@@ -194,16 +197,16 @@ The editor help has a form over a model and its parts. Each takes `WorkspaceOpti
 (`paths` every `.loadmap` of the project, for what a path or an import may complete to), and each place it returns is
 a `Located`: a span with its `file` when it is in another file.
 
-| Export                                                    | Returns                                                       |
-| --------------------------------------------------------- | ------------------------------------------------------------- |
-| `hoverAcross(source, offset, options?, definition?)`      | `Hover \| null`                                                |
-| `definitionAcross(source, offset, options?)`              | `Located \| null`                                              |
-| `referencesAcross(source, offset, options?)`              | `Located[] \| null`                                            |
-| `renameAcross(source, offset, name, options?)`            | `{ changes }`, each change with its `file`, or `{ error }`    |
-| `completionsAcross(source, offset, options?)`             | `Completions` (from `@loadmap/dsl/completion`)                |
-| `libraryOf(name, options)`                                | `{ path, keyword }` of a library in `paths` that declares it  |
-| `addImport(source, name, from, options?)`                 | The `TextChange` that imports `name` from the library at `from` |
-| `importersOf(path, theirs, name, options)`                | The changes in every file that imports `theirs` from `path`   |
+| Export                                               | Returns                                                         |
+| ---------------------------------------------------- | --------------------------------------------------------------- |
+| `hoverAcross(source, offset, options?, definition?)` | `Hover \| null`                                                 |
+| `definitionAcross(source, offset, options?)`         | `Located \| null`                                               |
+| `referencesAcross(source, offset, options?)`         | `Located[] \| null`                                             |
+| `renameAcross(source, offset, name, options?)`       | `{ changes }`, each change with its `file`, or `{ error }`      |
+| `completionsAcross(source, offset, options?)`        | `Completions` (from `@loadmap/dsl/completion`)                  |
+| `libraryOf(name, options)`                           | `{ path, keyword }` of a library in `paths` that declares it    |
+| `addImport(source, name, from, options?)`            | The `TextChange` that imports `name` from the library at `from` |
+| `importersOf(path, theirs, name, options)`           | The changes in every file that imports `theirs` from `path`     |
 
 `renameAcross` also takes `functions` and `catalog`. A name imported under the library's own (`import { a }`) keeps it
 there: the rename writes `import { b: a }`. `addImport` adds the name to an import of that library when there is one,
@@ -225,7 +228,8 @@ const initial = definition && sharedValues(definition.model, shared.values)
 ```
 
 `encodeShare(source, values?, bundle?)` resolves to the hash without its `#`: `v1.` and the text deflated and
-base64url-encoded, then the values that differ from the defaults (`&load=3&pods=6`). For a definition in several files,
+base64url-encoded, then every value it is given (`&load=3&pods=6`): pass only the ones that differ from the
+defaults, so a later change of a default still reaches the link. For a definition in several files,
 `bundle` is `{ path, files }` (`SharedFiles`) and the link starts `v2.`; one file keeps making `v1.`. Both are async:
 they deflate with the browser's `CompressionStream`.
 
@@ -243,12 +247,12 @@ A link carries the whole definition, so nothing goes to a server, and it is untr
 A text with a `published` statement (or a connection's `rule:`) needs the catalog of published figures, which no first
 load carries.
 
-| Export                   | What                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------ |
-| `needsCatalog(source)`   | Whether the text names the catalog                                                         |
-| `loadCatalogFor(source)` | Loads it when the text needs it; never rejects. Await it before `compile(source)`          |
-| `loadCatalog()`          | Loads it anyway, once: every edition, from loadmap's own data, never from a URL            |
-| `loadedCatalog()`        | The editions once loaded, or `undefined`                                                   |
+| Export                   | What                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `needsCatalog(source)`   | Whether the text names the catalog                                                |
+| `loadCatalogFor(source)` | Loads it when the text needs it; never rejects. Await it before `compile(source)` |
+| `loadCatalog()`          | Loads it anyway, once: every edition, from loadmap's own data, never from a URL   |
+| `loadedCatalog()`        | The editions once loaded, or `undefined`                                          |
 
 ```ts
 await loadCatalogFor(source)

@@ -52,26 +52,26 @@ export const checkout = defineModel({
 A test builds its model inline like this: a definition held in a variable first loses its literal types (the flow,
 component and stage ids) and fails the typecheck.
 
-| Field          | What                                                                                                    |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
-| `title`        | The model's name: the page's heading                                                                    |
-| `load`         | The load, from `p.load(…)`: required, one per model                                                     |
-| `params`       | The parameters a reader can change, by id: `p.select`, `p.switch`, `p.range`                            |
-| `flows`        | What moves, by id: [Flows](#flows). Required                                                            |
-| `components`   | What runs out, by id: [Components](#components). Required                                               |
-| `stages`       | What the dots do on a route, by id: [Stages](#stages). Required                                         |
-| `routes`       | Each flow's stages, in order: `{ orders: ['gateway', 'topic', 'workerPool', 'db'] }`. Required          |
-| `connections`  | How a stage reaches the next one, and through which part of it: [Connections](#connections)            |
-| `derived`      | Named formulas every model function can read as `derived.<name>`                                        |
-| `presets`      | Named sets of values, the load included: buttons on the page                                            |
-| `scenarios`    | Named designs to compare: the defaults plus these values, never the load. The first is the baseline     |
-| `growth`       | How fast the load grows: `{ rate: 0.06, per: 'month', asOf: '2026-11-01' }` turns multiples into dates   |
-| `expect`       | What must keep holding: [Expectations](#expectations)                                                   |
-| `story`        | A walk through the model, a step at a time: [A story](#a-story)                                         |
-| `calibration`  | Fits the model uses, by name, listed with the assumptions: `{ 'Worker CPU per request': workerCores }`  |
-| `snapshot`     | The measured data the model reads, as `parseSnapshot` returns it: each measurement goes in the list     |
-| `thresholds`   | `{ target?, full? }`: the utilization of the target (default 0.5) and of "runs out" (default 1)        |
-| `searchMax`    | The highest load multiple the limits search (default 2000); past it a component "never" runs out        |
+| Field         | What                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| `title`       | The model's name: the page's heading                                                                   |
+| `load`        | The load, from `p.load(…)`: required, one per model                                                    |
+| `params`      | The parameters a reader can change, by id: `p.select`, `p.switch`, `p.range`                           |
+| `flows`       | What moves, by id: [Flows](#flows). Required                                                           |
+| `components`  | What runs out, by id: [Components](#components). Required                                              |
+| `stages`      | What the dots do on a route, by id: [Stages](#stages). Required                                        |
+| `routes`      | Each flow's stages, in order: `{ orders: ['gateway', 'topic', 'workerPool', 'db'] }`. Required         |
+| `connections` | How a stage reaches the next one, and through which part of it: [Connections](#connections)            |
+| `derived`     | Named formulas every model function can read as `derived.<name>`                                       |
+| `presets`     | Named sets of values, the load included: buttons on the page                                           |
+| `scenarios`   | Named designs to compare: the defaults plus these values, never the load. The first is the baseline    |
+| `growth`      | How fast the load grows: `{ rate: 0.06, per: 'month', asOf: '2026-11-01' }` turns multiples into dates |
+| `expect`      | What must keep holding: [Expectations](#expectations)                                                  |
+| `story`       | A walk through the model, a step at a time: [A story](#a-story)                                        |
+| `calibration` | Fits the model uses, by name, listed with the assumptions: `{ 'Worker CPU per request': workerCores }` |
+| `snapshot`    | The measured data the model reads, as `parseSnapshot` returns it: each measurement goes in the list    |
+| `thresholds`  | `{ target?, full? }`: the utilization of the target (default 0.5) and of "runs out" (default 1)        |
+| `searchMax`   | The highest load multiple the limits search (default 2000); past it a component "never" runs out       |
 
 ## The load and the parameters
 
@@ -79,12 +79,12 @@ component and stage ids) and fails the typecheck.
 multiple of it. The other parameters are the design's choices; their ids are what model functions read
 (`({ pods, threads }) => …`). `load`, `flows`, `at`, `demand`, `util` and `derived` are reserved and cannot name one.
 
-| Builder                                                   | Option defaults                                                         |
-| --------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `p.load({ label?, min?, max, step?, default? })`          | label `'Load, × today'`, min 1, step 1, default the min                 |
-| `p.select({ label, options, default, format?, … })`       | `default` must be one of `options` (numbers or strings), or it throws   |
-| `p.switch({ label, default, … })`                         | `default` is `true` or `false`                                          |
-| `p.range({ label, min, max, step?, default, format?, … })` | step 1                                                                  |
+| Builder                                                    | Option defaults                                                       |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| `p.load({ label?, min?, max, step?, default? })`           | label `'Load, × today'`, min 1, step 1, default the min               |
+| `p.select({ label, options, default, format?, … })`        | `default` must be one of `options` (numbers or strings), or it throws |
+| `p.switch({ label, default, … })`                          | `default` is `true` or `false`                                        |
+| `p.range({ label, min, max, step?, default, format?, … })` | step 1                                                                |
 
 Every parameter but the load also takes `hint` (one line under the control), `tag` (a short word beside the label:
 "estimate"), and `enabled`, which greys the control out while it returns false; the value is kept:
@@ -104,15 +104,15 @@ included; `isEnabled(def, values)` says whether a control is on.
 
 A flow is what moves through the routes: requests, orders, events. Each has its own dots and colour.
 
-| Field      | What                                                                                                         |
-| ---------- | ------------------------------------------------------------------------------------------------------------ |
-| `rate`     | Units per second where it enters: a number, or `({ load, … }) => number`. Required                           |
-| `label`    | Its name on the page                                                                                         |
-| `unit`     | One unit, singular: `'order'`                                                                                |
-| `priority` | 1 is served first; flows of the same priority share capacity                                                 |
+| Field      | What                                                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| `rate`     | Units per second where it enters: a number, or `({ load, … }) => number`. Required                               |
+| `label`    | Its name on the page                                                                                             |
+| `unit`     | One unit, singular: `'order'`                                                                                    |
+| `priority` | 1 is served first; flows of the same priority share capacity                                                     |
 | `overload` | What its backlog in a queue does: `{ drop?: { olderThan, reason? }, merge?: { share, reason? } }`, or a function |
-| `retry`    | `{ times, budget? }`: what is turned away is sent again; a function of the load and the parameters only       |
-| `timeout`  | Seconds a client waits: a slower unit fails (and retries with `retry`); needs a `service` on its way          |
+| `retry`    | `{ times, budget? }`: what is turned away is sent again; a function of the load and the parameters only          |
+| `timeout`  | Seconds a client waits: a slower unit fails (and retries with `retry`); needs a `service` on its way             |
 
 `drop` drops units older than `olderThan` simulated seconds before they are handled. `merge` is keep-newest-per-key as a
 share: under backlog, that share of what is handled leaves the queue without using capacity. Without a rule a backlog
@@ -141,19 +141,19 @@ flows: {
 A component is what runs out: a gateway, a pool of workers, a database. Its utilization is its demand ÷ its capacity,
 and the crossings are the load multiples where that reaches the target and 100 %.
 
-| Field      | What                                                                                                        |
-| ---------- | ----------------------------------------------------------------------------------------------------------- |
-| `name`     | Its name in the limits list. Required                                                                       |
-| `capacity` | A [capacity](#capacities), or a function of the values that returns one. Required                           |
-| `over`     | What happens past 100 %, as a clause: `'clients get 429s'`; may be a function. Required                     |
-| `short`    | The name inside a sentence, with its article: `'the database'`. Default: the name                           |
-| `plural`   | `true` makes the verdict say "are past capacity"                                                            |
-| `demand`   | In the capacity's unit. Without one: the units per second reaching the stages that use it                   |
-| `held`     | Seconds each unit holds one of its slots, for every flow or per flow: the demand is then slots in use       |
-| `on`       | The stages whose units hold its slots; by default the stages that use it                                    |
-| `service`  | Seconds a unit takes here when nothing waits: the flows through it get a latency                            |
-| `when`     | Leaves the component out (no utilization) while it returns false                                            |
-| `describe` | One line under the name in the limits list; may be a function                                               |
+| Field      | What                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------- |
+| `name`     | Its name in the limits list. Required                                                                 |
+| `capacity` | A [capacity](#capacities), or a function of the values that returns one. Required                     |
+| `over`     | What happens past 100 %, as a clause: `'clients get 429s'`; may be a function. Required               |
+| `short`    | The name inside a sentence, with its article: `'the database'`. Default: the name                     |
+| `plural`   | `true` makes the verdict say "are past capacity"                                                      |
+| `demand`   | In the capacity's unit. Without one: the units per second reaching the stages that use it             |
+| `held`     | Seconds each unit holds one of its slots, for every flow or per flow: the demand is then slots in use |
+| `on`       | The stages whose units hold its slots; by default the stages that use it                              |
+| `service`  | Seconds a unit takes here when nothing waits: the flows through it get a latency                      |
+| `when`     | Leaves the component out (no utilization) while it returns false                                      |
+| `describe` | One line under the name in the limits list; may be a function                                         |
 
 `held` counts slots rather than a rate (a connection, a session, a request in flight): by Little's law, the demand is
 the units per second reaching `on` times the seconds held, and the capacity counts slots.
@@ -183,12 +183,12 @@ components: {
 
 Every capacity says where it came from: the verdict and the assumptions list show it. Never a bare number.
 
-| Builder                                       | What                                                                                 |
-| --------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `measured(value, unit, source?)`              | Read off a dashboard or a load test                                                  |
-| `estimated(value, unit, source?)`             | A vendor's figure, a benchmark elsewhere or a guess: the verdict says so            |
-| `configured(value, unit, source?)`            | A limit someone set, such as a rate limiter's: exact, so it takes no ±               |
-| `published(component, config?)`               | The figure the catalog publishes for this configuration, or none                    |
+| Builder                            | What                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `measured(value, unit, source?)`   | Read off a dashboard or a load test                                      |
+| `estimated(value, unit, source?)`  | A vendor's figure, a benchmark elsewhere or a guess: the verdict says so |
+| `configured(value, unit, source?)` | A limit someone set, such as a rate limiter's: exact, so it takes no ±   |
+| `published(component, config?)`    | The figure the catalog publishes for this configuration, or none         |
 
 `measured` and `estimated` take the source as a string, or options `{ source?, within?, origin? }`. `within` is the ±
 as a share, from 0 to below 1: `estimated(4_000, 'commits/s', { within: 0.3 })` is ± 30 %. With a ±, every crossing
@@ -213,18 +213,18 @@ A stage is what the dots do at a place on a route. Most take their component's i
 values (`partitions`, `pods`, `perPod`, `hit`, `to`) take a function of the context too (`Dyn`). Every stage takes
 `label`, the name meters and cluster groups give it.
 
-| Builder                                             | What                                                                         |
-| --------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `pass(component, { label? })`                       | Flows pass through; past capacity the share above 100 % is rejected          |
-| `queue({ partitions, component?, label? })`         | Flows wait; the next stage on each route drains it at its own capacity      |
-| `workers(component, { pods \| autoscale, perPod, placement?, label? })` | A pool: pods × workers per pod                   |
-| `cache({ hit, component?, label? })`                | A share `hit` is answered here and goes no further                           |
-| `limit(component, { label? })`                      | A rate limiter: what it rejects is gone from every stage after it            |
-| `store(component, { label? })`                      | Where a flow ends: written to its component                                  |
-| `sink({ label? })`                                  | Where a flow ends without a component: a receiver, a viewer, an app          |
-| `fanout({ to, component?, label? })`                | Each unit copied to several sinks or stores, each with its share             |
-| `split({ to, component?, label? })`                 | Each unit goes one of several ways, by share                                 |
-| `lost({ from, takes?, label? })`                    | Where what other stages lose ends, counted                                   |
+| Builder                                                                 | What                                                                   |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `pass(component, { label? })`                                           | Flows pass through; past capacity the share above 100 % is rejected    |
+| `queue({ partitions, component?, label? })`                             | Flows wait; the next stage on each route drains it at its own capacity |
+| `workers(component, { pods \| autoscale, perPod, placement?, label? })` | A pool: pods × workers per pod                                         |
+| `cache({ hit, component?, label? })`                                    | A share `hit` is answered here and goes no further                     |
+| `limit(component, { label? })`                                          | A rate limiter: what it rejects is gone from every stage after it      |
+| `store(component, { label? })`                                          | Where a flow ends: written to its component                            |
+| `sink({ label? })`                                                      | Where a flow ends without a component: a receiver, a viewer, an app    |
+| `fanout({ to, component?, label? })`                                    | Each unit copied to several sinks or stores, each with its share       |
+| `split({ to, component?, label? })`                                     | Each unit goes one of several ways, by share                           |
+| `lost({ from, takes?, label? })`                                        | Where what other stages lose ends, counted                             |
 
 **pass** and **limit** both turn away what is above 100 %. After a `pass`, the stages behind still count what was
 offered ("as if what is in front kept up"); after a `limit`, the rate reaching them stops at the limit.
@@ -276,19 +276,19 @@ A connection says how a stage reaches the next one on a route, and through which
 a demand or a capacity: it says how unevenly the work lands on the members of `to`, and the component of `to` runs out
 when its busiest member does.
 
-| Field         | What                                                                                                    |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `from`, `to`  | The stage in front and the stage whose members take the parts                                           |
-| `assign`      | `'shared'` (the default), `'exclusive'`, `'key'` or `'leader'`                                          |
-| `owner`       | What owns a part when `to` is a pool: `'worker'` (the default) or `'pod'`                               |
-| `capacityPer` | What the capacity divides over evenly: `'worker'` or `'pod'`; the owner by default, never finer         |
-| `parts`       | The parts of each flow when `from` is not a queue: shards, slots, ranges                                |
-| `members`     | The members of `to` when it is not a pool                                                               |
-| `flows`       | The flows it covers; by default every flow going from `from` straight to `to`                           |
-| `open`        | Connections each member of the pool on the hop keeps open to the other side                             |
+| Field         | What                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `from`, `to`  | The stage in front and the stage whose members take the parts                                                |
+| `assign`      | `'shared'` (the default), `'exclusive'`, `'key'` or `'leader'`                                               |
+| `owner`       | What owns a part when `to` is a pool: `'worker'` (the default) or `'pod'`                                    |
+| `capacityPer` | What the capacity divides over evenly: `'worker'` or `'pod'`; the owner by default, never finer              |
+| `parts`       | The parts of each flow when `from` is not a queue: shards, slots, ranges                                     |
+| `members`     | The members of `to` when it is not a pool                                                                    |
+| `flows`       | The flows it covers; by default every flow going from `from` straight to `to`                                |
+| `open`        | Connections each member of the pool on the hop keeps open to the other side                                  |
 | `accepts`     | The most the other side accepts (`max_connections`), a capacity: a limit of its own, named by the connection |
-| `skew`        | With `key`: the share of a flow on its hottest part, a capacity (measured or estimated)                 |
-| `rule`        | A rule from the catalog, `rule(kafka, 'kafka/consumer-group')`: its assign and owner, and its source    |
+| `skew`        | With `key`: the share of a flow on its hottest part, a capacity (measured or estimated)                      |
+| `rule`        | A rule from the catalog, `rule(kafka, 'kafka/consumer-group')`: its assign and owner, and its source         |
 
 `exclusive` deals the partitions of the queue in front to the members, one reader each (a consumer group); `key`
 sends each unit to the part its key hashes to; `leader` sends everything to one member.
@@ -307,13 +307,13 @@ that reads each partition.
 
 Every model function gets one object: the values (`load` and every parameter), and what the model worked out.
 
-| Name      | What                                                                                                         |
-| --------- | ------------------------------------------------------------------------------------------------------------ |
-| `flows`   | Units per second of each flow where it enters; with retries, its attempts                                    |
+| Name      | What                                                                                                              |
+| --------- | ----------------------------------------------------------------------------------------------------------------- |
+| `flows`   | Units per second of each flow where it enters; with retries, its attempts                                         |
 | `at`      | `at.<stage>.<flow>`: units per second reaching a stage. Cache hits and a limiter's rejections are gone after them |
-| `demand`  | Each component's demand, in its capacity's unit                                                              |
-| `util`    | Each component's demand ÷ capacity; null when it is switched off                                             |
-| `derived` | The model's `derived` formulas                                                                               |
+| `demand`  | Each component's demand, in its capacity's unit                                                                   |
+| `util`    | Each component's demand ÷ capacity; null when it is switched off                                                  |
+| `derived` | The model's `derived` formulas                                                                                    |
 
 ```ts
 derived: { slow: ({ util }) => ((util.cache ?? 0) > 0.7 ? 2 : 1) },
@@ -337,15 +337,15 @@ a page and its recordings say the same date on any day. `model.dateAt(multiple)`
 
 `expect` lists what must keep holding, on the pessimistic edge: `check()`, `assertHolds()` and `loadmap check` test it.
 
-| Field         | What                                                                                                    |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `label`       | Names it in a failure: `'Today keeps 7×'`                                                               |
-| `scenario`    | The scenario whose values it checks; the defaults without one                                           |
-| `component`   | One component; the first limit without one                                                              |
-| `underTarget` | Every component (or this one) stays under the target utilization up to at least this multiple           |
-| `notFull`     | Nothing (or this component) runs out before this multiple                                               |
-| `flow`        | With `p50`, `p95` or `p99` (seconds): the flow's latency stays under it, up to `underTarget` if given    |
-| `severity`    | `'warn'` is reported but never fails a check run; default `'fail'`                                      |
+| Field         | What                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| `label`       | Names it in a failure: `'Today keeps 7×'`                                                             |
+| `scenario`    | The scenario whose values it checks; the defaults without one                                         |
+| `component`   | One component; the first limit without one                                                            |
+| `underTarget` | Every component (or this one) stays under the target utilization up to at least this multiple         |
+| `notFull`     | Nothing (or this component) runs out before this multiple                                             |
+| `flow`        | With `p50`, `p95` or `p99` (seconds): the flow's latency stays under it, up to `underTarget` if given |
+| `severity`    | `'warn'` is reported but never fails a check run; default `'fail'`                                    |
 
 ```ts
 expect: [
@@ -362,15 +362,15 @@ expect: [
 `story` is a walk through the model, a step at a time: the page steps through it or plays it, and
 `loadmap record --story` records it.
 
-| Field      | What                                                                                                |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `text`     | What to say. Required                                                                               |
-| `title`    | The few words the diagram shows while the step plays. Default: what the step changes                |
-| `scenario` | Start from a scenario's values; without one, from the defaults                                      |
-| `set`      | Values on top, the load included                                                                    |
-| `focus`    | A component whose box is outlined                                                                   |
-| `closed`   | The subsystems drawn closed during the step (`[]` opens every one); without it, the page's own      |
-| `seconds`  | How long a recording holds it. Default 4                                                            |
+| Field      | What                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------- |
+| `text`     | What to say. Required                                                                          |
+| `title`    | The few words the diagram shows while the step plays. Default: what the step changes           |
+| `scenario` | Start from a scenario's values; without one, from the defaults                                 |
+| `set`      | Values on top, the load included                                                               |
+| `focus`    | A component whose box is outlined                                                              |
+| `closed`   | The subsystems drawn closed during the step (`[]` opens every one); without it, the page's own |
+| `seconds`  | How long a recording holds it. Default 4                                                       |
 
 Each step resolves to every value set (`model.story[i].values`), so a step looks the same whichever came before.
 
@@ -380,12 +380,12 @@ Each step resolves to every value set (`model.story[i].values`), so a step looks
 when a stage has no box, an edge names an unknown box, or a flow goes from one box to the next with no edge between
 them (a dot moves only along an edge).
 
-| Builder                                                         | What                                                       |
-| --------------------------------------------------------------- | ---------------------------------------------------------- |
-| `node({ label, sub?, stage?, component?, shape?, tier? })`      | A box; `shape: 'cylinder'` for a store                     |
-| `cluster({ label, sub?, stage, members, memberLabel?, tier? })` | Brokers holding the partitions of one or more queues       |
-| `pool({ label, sub?, stage, podLabel?, tier? })`                | A workers stage drawn as pods holding workers              |
-| `edge(from, to, { label?, when? })`                             | An edge; `when` leaves it out while it returns false       |
+| Builder                                                         | What                                                 |
+| --------------------------------------------------------------- | ---------------------------------------------------- |
+| `node({ label, sub?, stage?, component?, shape?, tier? })`      | A box; `shape: 'cylinder'` for a store               |
+| `cluster({ label, sub?, stage, members, memberLabel?, tier? })` | Brokers holding the partitions of one or more queues |
+| `pool({ label, sub?, stage, podLabel?, tier? })`                | A workers stage drawn as pods holding workers        |
+| `edge(from, to, { label?, when? })`                             | An edge; `when` leaves it out while it returns false |
 
 `label`, `sub` and an edge's `label` are text or a function of the context
 (`({ pods }) => \`${pods} pods\``). A node shows a `stage` (its dots stop there and it takes its component's colour),
@@ -397,12 +397,12 @@ A colour is a theme token (`'accent'`, `'alt'`, `'ok'`, `'warn'`, `'drop'`, `'mu
 
 The rest of the view is optional:
 
-| Field        | What                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------- |
+| Field        | What                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | `tiers`      | Bands across the flow, by id, in the order the flow meets them: `{ label, fill?, fillDark? }`; a box names its own with `tier` |
-| `lanes`      | `'filled'` (the default: every lane filled, alternating two shades) or `'striped'`                      |
-| `layout`     | `'compact'` (the default) or `'stable'`                                                                 |
-| `subsystems` | Several boxes as one frame, by id: `{ eu: { label: 'EU region' }, 'eu.orders': { label: 'Orders' } }`   |
+| `lanes`      | `'filled'` (the default: every lane filled, alternating two shades) or `'striped'`                                             |
+| `layout`     | `'compact'` (the default) or `'stable'`                                                                                        |
+| `subsystems` | Several boxes as one frame, by id: `{ eu: { label: 'EU region' }, 'eu.orders': { label: 'Orders' } }`                          |
 
 `compact` lays out each phase (a scenario, a story step, a preset, a choice of a select or switch) on its own and moves
 the boxes from one to the next; `stable` lays out every box at its largest anywhere the model reaches, so nothing but
@@ -420,70 +420,70 @@ its longest chain. `layout()` turns a view into a scene: [The layout](/api/more/
 
 `defineModel` returns a `Model`:
 
-| Member                              | What                                                                                     |
-| ----------------------------------- | ---------------------------------------------------------------------------------------- |
-| `evaluate(values?)`                 | Everything the page shows at these values (the defaults plus what you pass): an `Evaluation` |
-| `defaults()`                        | Every value at its default, the load included                                            |
-| `utilization(values?, bound?)`      | Each component's utilization, without the crossings; `bound` reads every capacity at `'low'` or `'high'` |
-| `latency(values?, bound?, flows?)`  | Each flow's latency, as `evaluate` gives it                                              |
-| `stagesAt(values?)`                 | `values`, `ctx`, `stages` and `paths` alone: cheap to call for many values               |
-| `scenarioOf(values)`                | The scenario these values are (the load aside), or null                                  |
-| `dateAt(multiple)`                  | When the load reaches it, from `growth`; null without growth, and at 1× or below         |
-| `isEnabled(id, values)`             | Whether a parameter's control is on                                                      |
-| `scenarios`, `story`, `expectations` | As declared, resolved: each scenario's and step's full values                           |
-| `params`, `load`, `thresholds`, `searchMax`, `growth`, `title` | The definition, with its defaults filled in                     |
-| `flowIds`, `componentIds`, `stageIds` | The ids, in declaration order                                                           |
+| Member                                                         | What                                                                                                     |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `evaluate(values?)`                                            | Everything the page shows at these values (the defaults plus what you pass): an `Evaluation`             |
+| `defaults()`                                                   | Every value at its default, the load included                                                            |
+| `utilization(values?, bound?)`                                 | Each component's utilization, without the crossings; `bound` reads every capacity at `'low'` or `'high'` |
+| `latency(values?, bound?, flows?)`                             | Each flow's latency, as `evaluate` gives it                                                              |
+| `stagesAt(values?)`                                            | `values`, `ctx`, `stages` and `paths` alone: cheap to call for many values                               |
+| `scenarioOf(values)`                                           | The scenario these values are (the load aside), or null                                                  |
+| `dateAt(multiple)`                                             | When the load reaches it, from `growth`; null without growth, and at 1× or below                         |
+| `isEnabled(id, values)`                                        | Whether a parameter's control is on                                                                      |
+| `scenarios`, `story`, `expectations`                           | As declared, resolved: each scenario's and step's full values                                            |
+| `params`, `load`, `thresholds`, `searchMax`, `growth`, `title` | The definition, with its defaults filled in                                                              |
+| `flowIds`, `componentIds`, `stageIds`                          | The ids, in declaration order                                                                            |
 
 ## The evaluation
 
 `model.evaluate(values)` returns an `Evaluation`: everything the page draws, for one set of values.
 
-| Field         | What                                                                                                    |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `values`      | Every value, defaults filled in                                                                         |
-| `verdict`     | `{ tier: 'ok' \| 'warn' \| 'over', text }`: the sentence at the top of the page                         |
-| `components`  | Each component's result, by id (below)                                                                  |
-| `ranked`      | The components in the order they reach the target, on the pessimistic edge                              |
-| `firstLimit`  | The component that reaches the target first; null when none does                                        |
-| `firstFull`   | The component that reaches 100 % first                                                                  |
+| Field         | What                                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| `values`      | Every value, defaults filled in                                                                            |
+| `verdict`     | `{ tier: 'ok' \| 'warn' \| 'over', text }`: the sentence at the top of the page                            |
+| `components`  | Each component's result, by id (below)                                                                     |
+| `ranked`      | The components in the order they reach the target, on the pessimistic edge                                 |
+| `firstLimit`  | The component that reaches the target first; null when none does                                           |
+| `firstFull`   | The component that reaches 100 % first                                                                     |
 | `target`      | Where the first limit reaches the target: `{ low, high }`, every capacity at its low and at its high bound |
-| `full`        | Where the first component reaches 100 %, the same way                                                   |
-| `measure`     | The capacity worth measuring: `{ component, target, firstLimit, text }`; null when the range is narrow  |
-| `presets`     | The presets as buttons: `{ label, values, derived }`                                                    |
-| `assumptions` | Every capacity, fit, measurement and connection the answer rests on, with where it came from           |
-| `flows`       | Units per second of each flow where it enters (with retries, its attempts)                              |
-| `at`          | `at[stage][flow]`: units per second reaching each stage                                                 |
-| `stages`      | Each stage worked out for these values (below)                                                          |
-| `routes`      | Each flow's route                                                                                       |
-| `paths`       | Each flow's ways through, `{ stages, share }`: its route once per branch of every split on it          |
-| `overload`    | Each flow's overload rules at these values                                                              |
-| `retry`       | Each retrying flow's `{ times, rate, attempts, rejected, retried, failed }`                             |
-| `latency`     | Each flow's time through, or null where no stage on it has a `service`                                  |
-| `ctx`         | The context model functions saw: for labels and other view callbacks                                    |
+| `full`        | Where the first component reaches 100 %, the same way                                                      |
+| `measure`     | The capacity worth measuring: `{ component, target, firstLimit, text }`; null when the range is narrow     |
+| `presets`     | The presets as buttons: `{ label, values, derived }`                                                       |
+| `assumptions` | Every capacity, fit, measurement and connection the answer rests on, with where it came from               |
+| `flows`       | Units per second of each flow where it enters (with retries, its attempts)                                 |
+| `at`          | `at[stage][flow]`: units per second reaching each stage                                                    |
+| `stages`      | Each stage worked out for these values (below)                                                             |
+| `routes`      | Each flow's route                                                                                          |
+| `paths`       | Each flow's ways through, `{ stages, share }`: its route once per branch of every split on it              |
+| `overload`    | Each flow's overload rules at these values                                                                 |
+| `retry`       | Each retrying flow's `{ times, rate, attempts, rejected, retried, failed }`                                |
+| `latency`     | Each flow's time through, or null where no stage on it has a `service`                                     |
+| `ctx`         | The context model functions saw: for labels and other view callbacks                                       |
 
 A component's result (`ev.components.db`):
 
-| Field                        | What                                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------ |
-| `util`, `demand`, `capacity` | At these values; null when switched off. `util` includes a connection's spread             |
-| `state`                      | `'off'`, `'ok'`, `'warn'` (past the target) or `'over'` (past 100 %)                       |
-| `target`, `full`             | The load multiples where it reaches the target and 100 %; `Infinity` when never            |
-| `targetRange`, `fullRange`   | The same as `{ low, high }`, every capacity at its low and at its high bound               |
-| `spread`                     | `{ factor, text }`, when a connection lands the work unevenly or leaves members idle       |
-| `held`                       | For a component that counts slots: the seconds a unit of each flow holds one               |
-| `missing`                    | Why it has no published figure for this configuration: it is then not ranked               |
-| `id`, `name`, `short`, `plural`, `over`, `describe` | As declared, functions resolved                                     |
+| Field                                               | What                                                                                 |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `util`, `demand`, `capacity`                        | At these values; null when switched off. `util` includes a connection's spread       |
+| `state`                                             | `'off'`, `'ok'`, `'warn'` (past the target) or `'over'` (past 100 %)                 |
+| `target`, `full`                                    | The load multiples where it reaches the target and 100 %; `Infinity` when never      |
+| `targetRange`, `fullRange`                          | The same as `{ low, high }`, every capacity at its low and at its high bound         |
+| `spread`                                            | `{ factor, text }`, when a connection lands the work unevenly or leaves members idle |
+| `held`                                              | For a component that counts slots: the seconds a unit of each flow holds one         |
+| `missing`                                           | Why it has no published figure for this configuration: it is then not ranked         |
+| `id`, `name`, `short`, `plural`, `over`, `describe` | As declared, functions resolved                                                      |
 
 A stage's result (`ev.stages.workerPool`) has its `id`, `label`, `kind` and `component`, and per kind:
 
-| Kind                              | Fields                                                                                    |
-| --------------------------------- | ----------------------------------------------------------------------------------------- |
-| `pass`, `limit`                   | `rejects` (the share of what is offered above capacity), `shed` (of what reaches it)      |
-| `cache`                           | `hit`, `rejects`, `shed`                                                                  |
-| `queue`                           | `partitions` per flow; `skew`, the share on the hottest partition, with a `key` connection |
-| `workers`                         | `pods` (drawn: an autoscaled pool's max), `running`, `perPod`, `placement`, `autoscale`, `assignment` |
-| `fanout`, `split`                 | `to` per flow, `rejects`, `shed`                                                          |
-| `lost`                            | `from`, `takes`                                                                           |
+| Kind              | Fields                                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `pass`, `limit`   | `rejects` (the share of what is offered above capacity), `shed` (of what reaches it)                  |
+| `cache`           | `hit`, `rejects`, `shed`                                                                              |
+| `queue`           | `partitions` per flow; `skew`, the share on the hottest partition, with a `key` connection            |
+| `workers`         | `pods` (drawn: an autoscaled pool's max), `running`, `perPod`, `placement`, `autoscale`, `assignment` |
+| `fanout`, `split` | `to` per flow, `rejects`, `shed`                                                                      |
+| `lost`            | `from`, `takes`                                                                                       |
 
 A pool's `assignment`, with an exclusive connection into it, is `{ owner, cells, from, weights }`: per flow, the worker
 (pod × workers per pod + its place in the pod) that reads each partition, the queue they come from, and each running
@@ -495,13 +495,13 @@ and `ways` (the same per path).
 
 ## Checks, comparisons and headroom
 
-| Function                                       | What                                                                            |
-| ---------------------------------------------- | ------------------------------------------------------------------------------- |
-| `check(model, expectations?)`                  | Tests the model's `expect` lines (or these) on the pessimistic edge: `CheckResult[]` |
-| `assertHolds(model, expectations?)`            | Throws one error listing every expectation that does not pass: for a test       |
-| `compare(model, load?)`                        | The scenarios side by side at a load (default: the load's default): `Comparison` |
-| `headroom(model, values?, { samples? })`       | Utilization over the load multiple, per scenario: what the headroom chart draws |
-| `compareDefinitions(base, head, { tolerance? })` | What a change of the model does to its limits (`loadmap check --base`)        |
+| Function                                         | What                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `check(model, expectations?)`                    | Tests the model's `expect` lines (or these) on the pessimistic edge: `CheckResult[]` |
+| `assertHolds(model, expectations?)`              | Throws one error listing every expectation that does not pass: for a test            |
+| `compare(model, load?)`                          | The scenarios side by side at a load (default: the load's default): `Comparison`     |
+| `headroom(model, values?, { samples? })`         | Utilization over the load multiple, per scenario: what the headroom chart draws      |
+| `compareDefinitions(base, head, { tolerance? })` | What a change of the model does to its limits (`loadmap check --base`)               |
 
 ```ts
 import { assertHolds, check } from '@loadmap/core'
