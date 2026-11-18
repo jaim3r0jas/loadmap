@@ -12,7 +12,7 @@ import {
   type PanelMode,
   TEMPLATES,
 } from '@loadmap/editor'
-import { Icon, Menu, MenuItem } from '@loadmap/editor/internal'
+import { Icon, isSaveKey, Menu, MenuItem } from '@loadmap/editor/internal'
 import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { regionsFiles } from '@loadmap/example-regions'
@@ -238,6 +238,13 @@ function Editor({ root }: { root: URL }) {
   useEffect(() => {
     if (!start) decodeShare(location.hash).then(setStart)
   }, [start])
+  // the page is the editor: ⌘S from habit never opens the browser's Save Page, wherever the focus is (the editor says
+  // what keeps the text when it holds the focus)
+  useEffect(() => {
+    const keydown = (e: KeyboardEvent) => isSaveKey(e) && e.preventDefault()
+    addEventListener('keydown', keydown)
+    return () => removeEventListener('keydown', keydown)
+  }, [])
   // editing what came from outside makes it the draft: the earlier draft is kept aside, and the address loses the
   // link, the template or the example, so a reload shows the edits
   const outside = useRef(fromLink() || !!template() || !!example())

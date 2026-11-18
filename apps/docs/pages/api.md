@@ -165,7 +165,9 @@ each edit brings the boxes it changed into view and marks them; off, the view st
 
 More props: `files` and `onFiles` (a definition in several files, `{ path, files }`: each file is a tab over the
 text), `embedLink` (with it, Share has "Embed in a page…"), `newItems` and `exportItems` (more sections in the New and
-Export menus), `start` (controls before the name: a way back, a brand) and `catalog` (**Add → From the catalog** in
+Export menus), `start` (controls before the name: a way back, a brand), `onSave` (⌘S or Ctrl+S in the editor: every
+file, for the page to save; without it the keys say what keeps the text, and the browser's Save Page never opens) and
+`catalog` (**Add → From the catalog** in
 the New menu: a component's published figure as a new box, or as the capacity of the box selected; `false` leaves it
 out).
 

@@ -36,6 +36,8 @@ async function mount(
     embedLink?: (hash: string, o: EmbedOptions) => string
     exportItems?: BarSection[]
     several?: EditorFiles
+    onChange?: (source: string) => void
+    onSave?: (files: EditorFiles) => void | Promise<void>
   } = {},
 ) {
   await page.viewport(1440, 1000)
@@ -52,6 +54,8 @@ async function mount(
       embedLink={o.embedLink}
       exportItems={o.exportItems}
       files={o.several}
+      onChange={o.onChange}
+      onSave={o.onSave}
     />,
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
@@ -467,6 +471,8 @@ describe('the editor', () => {
     expect(sheet.getAttribute('aria-labelledby')).toBeTruthy()
     expect(sheet.textContent).toContain('What fits at the cursor')
     expect(sheet.textContent).toContain(mac ? '⌘I, ⌥I or ⌃Space' : 'Ctrl+Space')
+    // ⌘S on a page that keeps no copy
+    expect(sheet.textContent).toContain(`Nothing to save: Share keeps it${mac ? '⌘S' : 'Ctrl+S'}`)
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => document.querySelector('.lme-keysheet')).toBeNull()
     // back in the text, where the keys work
@@ -485,6 +491,67 @@ describe('the editor', () => {
     await expect
       .poll(() => [...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes(last)))
       .toBe(true)
+  })
+
+  it("takes ⌘S from the browser's Save Page: the page saves, or the note says what keeps the text", async () => {
+    const mac = /Mac|iP/.test(navigator.platform)
+    const mod = mac ? 'Meta' : 'Control'
+    const note = (host: HTMLElement) => host.querySelector('.lme-note')?.textContent
+    /** A key pressed on `target`, as the browser sends it: whether its default (Save Page) was prevented. */
+    const press = (target: Element, init: KeyboardEventInit) => {
+      const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+      target.dispatchEvent(e)
+      return e.defaultPrevented
+    }
+    const save = { key: 's', code: 'KeyS', keyCode: 83, [mac ? 'metaKey' : 'ctrlKey']: true }
+
+    // a page that keeps no copy: the note says so
+    let { host, view } = await mount()
+    view.focus()
+    await userEvent.keyboard(`{${mod}>}s{/${mod}}`)
+    await expect.poll(() => note(host)).toBe('This page keeps no copy: Share keeps it')
+    expect(view.state.doc.toString()).toBe(checkout)
+    expect(press(view.contentDOM, save)).toBe(true)
+    expect(press(view.contentDOM, { ...save, shiftKey: true })).toBe(true)
+    // anywhere else in the editor: the same
+    expect(press(host.querySelector('.lm-verdict')!, save)).toBe(true)
+    // a layout without Latin letters: the key the layout gives the S's code
+    expect(press(view.contentDOM, { ...save, key: 'ы' })).toBe(true)
+    // the other platform's modifier, ⌥ with it, or the letter alone are not Save
+    expect(press(view.contentDOM, { ...save, metaKey: !mac, ctrlKey: mac })).toBe(false)
+    expect(press(view.contentDOM, { ...save, altKey: true })).toBe(false)
+    expect(press(view.contentDOM, { key: 's', code: 'KeyS', keyCode: 83 })).toBe(false)
+    expect(press(view.contentDOM, { ...save, key: 'd', code: 'KeyD', keyCode: 68 })).toBe(false)
+    root?.unmount()
+    document.body.replaceChildren()
+
+    // a page that keeps a draft
+    ;({ host, view } = await mount({ onChange: () => {} }))
+    view.focus()
+    await userEvent.keyboard(`{${mod}>}s{/${mod}}`)
+    await expect.poll(() => note(host)).toBe('Kept as you type')
+    root?.unmount()
+    document.body.replaceChildren()
+
+    // a page with a save of its own: every file, as they are now; held down, once
+    const saved: EditorFiles[] = []
+    ;({ host, view } = await mount({ onSave: (f) => void saved.push(f) }))
+    view.focus()
+    view.dispatch({ changes: { from: 0, insert: '# saved\n' } })
+    await userEvent.keyboard(`{${mod}>}{Shift>}s{/Shift}{/${mod}}`)
+    await expect.poll(() => saved.length).toBe(1)
+    expect(saved[0]!.files[saved[0]!.path]).toBe(`# saved\n${checkout}`)
+    expect(press(view.contentDOM, { ...save, repeat: true })).toBe(true)
+    expect(saved).toHaveLength(1)
+    expect(note(host)).toBe('')
+    root?.unmount()
+    document.body.replaceChildren()
+
+    // a save that fails says so
+    ;({ host, view } = await mount({ onSave: () => Promise.reject(new Error('the branch moved')) }))
+    view.focus()
+    await userEvent.keyboard(`{${mod}>}s{/${mod}}`)
+    await expect.poll(() => note(host)).toBe('Not saved: the branch moved')
   })
 
   it('starts from a template', async () => {

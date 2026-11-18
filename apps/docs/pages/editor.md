@@ -25,7 +25,8 @@ A click on a box selects its lines in the text, and the cursor in a box's lines 
 **Ctrl+Space** (on a Mac **⌘I** or ⌥I, on any keyboard layout: macOS takes ⌃Space to switch the input source) lists
 what can go at the cursor: the statements and properties of the block it is in, the names a formula can read, the
 stages a route can take next. Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it.
-**View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text.
+**View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text. There is nothing to save: the page keeps
+your draft as you type, so ⌘S (Ctrl+S) only says so.
 
 **New** starts from a template or an example, and **Export** downloads the text or an image.
 

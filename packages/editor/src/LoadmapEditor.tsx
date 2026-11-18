@@ -86,7 +86,7 @@ import type { FileTabsProps } from './FileTabs'
 import type { FileMark } from './filenames'
 import type { Dsl, NewKind } from './fileops'
 import type { InspectorProps, InspectorTab } from './Inspector'
-import { editorKeys } from './keys'
+import { editorKeys, isSaveKey } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
@@ -123,6 +123,10 @@ const ONE = 'input.loadmap'
 /** Where this browser keeps the reader's choice of the canvas's dot grid. */
 const GRID_KEY = 'loadmap:editor:grid'
 
+/** What ⌘S says on a page without a save of its own: the page keeps a draft, or nothing does. */
+const KEPT = 'Kept as you type'
+const NOT_KEPT = 'This page keeps no copy: Share keeps it'
+
 /** `code`: the text beside the diagram. `reader`: the diagram with an inspector, the text hidden. */
 export type EditorLayout = 'code' | 'reader'
 
@@ -144,6 +148,12 @@ export interface LoadmapEditorProps {
   files?: EditorFiles
   /** Every change of any file, a file added or removed: all of them, for a page that keeps a draft. */
   onFiles?: (files: EditorFiles) => void
+  /**
+   * ⌘S (Ctrl+S, with or without ⇧) while the editor holds the focus: the page saves every file of the definition, a
+   * branch or a file of its own. Without it the keys only say what keeps the text (`onChange` or `onFiles`, or nothing).
+   * Either way the browser's Save Page never opens over the editor.
+   */
+  onSave?: (files: EditorFiles) => void | Promise<void>
   /** Called with a share hash. Default: puts it in the address bar and copies the link. */
   onShare?: (hash: string) => void | Promise<void>
   /**
@@ -233,6 +243,7 @@ export function LoadmapEditor({
   onChange,
   files: initialFiles,
   onFiles,
+  onSave,
   onShare,
   embedLink,
   newItems,
@@ -350,8 +361,8 @@ export function LoadmapEditor({
   useEffect(() => unmark, [unmark])
   // the text last loaded whole (the initial one or a template): replacing anything else asks first
   const loaded = useRef(initial)
-  const latest = useRef({ onChange, onFiles, functions })
-  latest.current = { onChange, onFiles, functions }
+  const latest = useRef({ onChange, onFiles, onSave, functions })
+  latest.current = { onChange, onFiles, onSave, functions }
   const [layout, setLayoutState] = useState<EditorLayout>(initialLayout)
   const setLayout = (l: EditorLayout) => {
     setLayoutState(l)
@@ -420,6 +431,27 @@ export function LoadmapEditor({
     const open = view.current?.state.doc.toString() ?? state.source
     return { path: f.entry, files: { ...f.others, [f.active]: open } }
   }
+  // ⌘S from habit: the page's own save, or a word on what keeps the text; never the browser's Save Page
+  const pressedSave = useRef(() => {})
+  pressedSave.current = () => {
+    const { onSave: own, onChange: change, onFiles: files } = latest.current
+    if (!own) return setNote(change || files ? KEPT : NOT_KEPT)
+    Promise.resolve()
+      .then(() => own(filesNow()))
+      .catch((e: unknown) => setNote(`Not saved: ${e instanceof Error ? e.message : String(e)}`))
+  }
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    // in the capture: before anything in the editor takes the key, wherever the focus is in it
+    const keydown = (e: KeyboardEvent) => {
+      if (!isSaveKey(e)) return
+      e.preventDefault()
+      if (!e.repeat) pressedSave.current()
+    }
+    el.addEventListener('keydown', keydown, true)
+    return () => el.removeEventListener('keydown', keydown, true)
+  }, [])
   // the other files' tokens, once per change of them: with the open text's they say whether the model is the same
   const othersKey = useRef({ version: -1, key: '' })
   const accept = (source: string, own: CompileResult) => {
@@ -1218,6 +1250,13 @@ export function LoadmapEditor({
     <Suspense fallback={null}>
       <Shortcuts
         mac={MAC}
+        save={
+          onSave
+            ? 'Save'
+            : onChange || onFiles
+              ? 'Nothing to save: kept as you type'
+              : 'Nothing to save: Share keeps it'
+        }
         onClose={() => {
           setShortcuts(false)
           // back to the text, where the keys work
