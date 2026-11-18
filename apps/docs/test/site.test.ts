@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
 import { FENCES, highlight } from '../highlight'
 import { included, MOVED, PAGES, relative, render } from '../pages'
-import { fakeGitHub } from './fake-github'
+import { fakeGitHub, shaOf } from './fake-github'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
 const routeOf = (href: string, from: string) => new URL(href, `http://x/${from ? `${from}/` : ''}`).pathname
@@ -778,7 +778,9 @@ describe('the built site', () => {
       await page.locator('[role=tab][title="models/shop.loadmap"]').waitFor()
       // the files come from the commit the branch named when the page asked, by its sha
       const raws = fake.calls.filter((c) => c.url.startsWith('https://raw.githubusercontent.com/'))
-      expect(raws.map((c) => c.url.split('/').slice(5).join('/')).sort()).toEqual([
+      // …/acme/capacity/<sha>/models/x.loadmap; a routed request can reach the handler twice, so a set
+      expect(new Set(raws.map((c) => c.url.split('/')[5]))).toEqual(new Set([shaOf('commit:main')]))
+      expect([...new Set(raws.map((c) => c.url.split('/').slice(6).join('/')))].sort()).toEqual([
         'models/platform.loadmap',
         'models/shop.loadmap',
         'models/shop.story.loadmap',
