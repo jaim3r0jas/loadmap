@@ -41,6 +41,17 @@ const altKeys = Prec.lowest(
 )
 
 /**
+ * ⌘S and ⇧⌘S on a Mac, Ctrl+S and Shift+Ctrl+S elsewhere: the browser's Save Page, which a reader presses from habit to
+ * keep the text. The key that types an s on the layout, as the browser itself reads it; on a layout without Latin
+ * letters (`key` is "ы"), the key the layout gives the S's code.
+ */
+export function isSaveKey(event: KeyboardEvent): boolean {
+  if (event.altKey || (MAC ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey)) return false
+  const k = event.key.toLowerCase()
+  return k === 's' || (!/^[a-z]$/.test(k) && event.keyCode === 83)
+}
+
+/**
  * The editor's own keys beside CodeMirror's: the ⌥ keys above, and ⌘I on a Mac for what fits at the cursor, as VS
  * Code's Trigger Suggest (macOS takes ⌃Space to switch the input source). Selecting the block around, CodeMirror's ⌘I,
  * moves to VS Code's Expand Selection there. Not part of `loadmapLanguage()`: a host's editor keeps its own keys.

@@ -69,6 +69,7 @@ import {
   type Ref,
   type RefObject,
   Suspense,
+  useCallback,
   useEffect,
   useId,
   useImperativeHandle,
@@ -86,7 +87,7 @@ import type { FileTabsProps } from './FileTabs'
 import type { FileMark } from './filenames'
 import type { Dsl, NewKind } from './fileops'
 import type { InspectorProps, InspectorTab } from './Inspector'
-import { editorKeys } from './keys'
+import { editorKeys, isSaveKey } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
@@ -123,6 +124,16 @@ const ONE = 'input.loadmap'
 /** Where this browser keeps the reader's choice of the canvas's dot grid. */
 const GRID_KEY = 'loadmap:editor:grid'
 
+/**
+ * What ⌘S does on a page: its own save, or nothing but saying what keeps the text (a draft the page keeps, or none).
+ * `note` is the bar's word as the key is pressed, `sheet` the row in View → Keyboard shortcuts.
+ */
+function saveSays(saves: boolean, keeps: boolean): { note: string; sheet: string } {
+  if (saves) return { note: 'Saving…', sheet: 'Save' }
+  const why = keeps ? 'kept as you type' : 'this page keeps no copy, Share does'
+  return { note: why[0]!.toUpperCase() + why.slice(1), sheet: `Nothing to save: ${why}` }
+}
+
 /** `code`: the text beside the diagram. `reader`: the diagram with an inspector, the text hidden. */
 export type EditorLayout = 'code' | 'reader'
 
@@ -144,6 +155,12 @@ export interface LoadmapEditorProps {
   files?: EditorFiles
   /** Every change of any file, a file added or removed: all of them, for a page that keeps a draft. */
   onFiles?: (files: EditorFiles) => void
+  /**
+   * ⌘S (Ctrl+S, with or without ⇧) while the editor holds the focus: the page saves every file of the definition, a
+   * branch or a file of its own. Without it the keys only say what keeps the text (`onChange` or `onFiles`, or nothing).
+   * Either way the browser's Save Page never opens over the editor.
+   */
+  onSave?: (files: EditorFiles) => void | Promise<void>
   /** Called with a share hash. Default: puts it in the address bar and copies the link. */
   onShare?: (hash: string) => void | Promise<void>
   /**
@@ -233,6 +250,7 @@ export function LoadmapEditor({
   onChange,
   files: initialFiles,
   onFiles,
+  onSave,
   onShare,
   embedLink,
   newItems,
@@ -319,7 +337,13 @@ export function LoadmapEditor({
       }),
     )
   }, [])
-  const [note, setNote] = useState('')
+  const [note, setNoteText] = useState('')
+  // each note shows its full time, the same word again too
+  const [noted, setNoted] = useState(0)
+  const setNote = useCallback((text: string) => {
+    setNoteText(text)
+    setNoted((n) => n + 1)
+  }, [])
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const preview = useRef<LoadmapHandle>(null)
@@ -350,8 +374,8 @@ export function LoadmapEditor({
   useEffect(() => unmark, [unmark])
   // the text last loaded whole (the initial one or a template): replacing anything else asks first
   const loaded = useRef(initial)
-  const latest = useRef({ onChange, onFiles, functions })
-  latest.current = { onChange, onFiles, functions }
+  const latest = useRef({ onChange, onFiles, onSave, functions })
+  latest.current = { onChange, onFiles, onSave, functions }
   const [layout, setLayoutState] = useState<EditorLayout>(initialLayout)
   const setLayout = (l: EditorLayout) => {
     setLayoutState(l)
@@ -420,6 +444,37 @@ export function LoadmapEditor({
     const open = view.current?.state.doc.toString() ?? state.source
     return { path: f.entry, files: { ...f.others, [f.active]: open } }
   }
+  // ⌘S from habit: the page's own save, or a word on what keeps the text; never the browser's Save Page
+  // one save at a time: a second ⌘S while the page saves would race it with older files
+  const saving = useRef(false)
+  const pressedSave = useRef(() => {})
+  pressedSave.current = () => {
+    const { onSave: own, onChange: change, onFiles: files } = latest.current
+    setNote(saveSays(!!own, !!(change || files)).note)
+    if (!own || saving.current) return
+    saving.current = true
+    Promise.resolve()
+      .then(() => own(filesNow()))
+      .then(
+        () => setNote('Saved'),
+        (e: unknown) => setNote(e instanceof Error && e.message ? `Not saved: ${e.message}` : 'Not saved'),
+      )
+      .finally(() => {
+        saving.current = false
+      })
+  }
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    // in the capture: before anything in the editor takes the key, wherever the focus is in it
+    const keydown = (e: KeyboardEvent) => {
+      if (!isSaveKey(e)) return
+      e.preventDefault()
+      if (!e.repeat) pressedSave.current()
+    }
+    el.addEventListener('keydown', keydown, true)
+    return () => el.removeEventListener('keydown', keydown, true)
+  }, [])
   // the other files' tokens, once per change of them: with the open text's they say whether the model is the same
   const othersKey = useRef({ version: -1, key: '' })
   const accept = (source: string, own: CompileResult) => {
@@ -999,11 +1054,12 @@ export function LoadmapEditor({
     v.focus()
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `noted` restarts the time for the same note shown again
   useEffect(() => {
     if (!note) return
-    const t = setTimeout(() => setNote(''), 2500)
+    const t = setTimeout(() => setNoteText(''), 2500)
     return () => clearTimeout(t)
-  }, [note])
+  }, [note, noted])
 
   /**
    * The panels' widths in pixels. A pinned side panel takes no more than leaves the canvas `CODE.room` beside the code
@@ -1218,6 +1274,7 @@ export function LoadmapEditor({
     <Suspense fallback={null}>
       <Shortcuts
         mac={MAC}
+        save={saveSays(!!onSave, !!(onChange || onFiles)).sheet}
         onClose={() => {
           setShortcuts(false)
           // back to the text, where the keys work
