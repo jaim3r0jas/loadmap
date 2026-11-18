@@ -523,7 +523,8 @@ describe('the editor', () => {
     expect(press(view.contentDOM, { ...save, metaKey: !mac, ctrlKey: mac })).toBe(false)
     expect(press(view.contentDOM, { ...save, altKey: true })).toBe(false)
     expect(press(view.contentDOM, { key: 's', code: 'KeyS', keyCode: 83 })).toBe(false)
-    expect(press(view.contentDOM, { ...save, key: 'd', code: 'KeyD', keyCode: 68 })).toBe(false)
+    // another letter, away from the text (where CodeMirror takes some: ⌘D selects the next match)
+    expect(press(host.querySelector('.lm-verdict')!, { ...save, key: 'd', code: 'KeyD', keyCode: 68 })).toBe(false)
     root?.unmount()
     document.body.replaceChildren()
 
