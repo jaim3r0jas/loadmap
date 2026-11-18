@@ -63,6 +63,12 @@ describe('Sign in with GitHub', () => {
     expect(signInConfig(env)).toEqual(APP)
     expect(signInConfig({ ...env, VITE_GITHUB_APP_SLUG: '' })).toBeUndefined()
     expect(signInConfig({ ...env, VITE_GITHUB_APP_EXCHANGE: 'http://auth.example' })).toBeUndefined()
+    // plain http to this machine only, never a name that starts like it
+    expect(signInConfig({ ...env, VITE_GITHUB_APP_EXCHANGE: 'http://localhost:8787' })?.exchange).toBe(
+      'http://localhost:8787',
+    )
+    for (const bad of ['http://localhost.example.com', 'http://localhost@example.com', 'https://u:p@auth.example'])
+      expect(signInConfig({ ...env, VITE_GITHUB_APP_EXCHANGE: bad }), bad).toBeUndefined()
     expect(signInConfig({})).toBeUndefined()
     expect(installUrl(APP)).toBe('https://github.com/apps/loadmap-editor/installations/new')
     expect(backTo('https://example.github.io/loadmap/editor/?repo=a/b')).toBe(

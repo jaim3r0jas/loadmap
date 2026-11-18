@@ -38,14 +38,15 @@ With a Cloudflare account (the free plan is enough), from the repository's root:
 
 ```bash
 npx wrangler login
-npx wrangler deploy apps/github-auth/worker.ts --name loadmap-github-auth --compatibility-date 2026-11-01
+npx wrangler deploy apps/github-auth/worker.ts --name loadmap-github-auth --compatibility-date 2026-11-01 \
+  --var GITHUB_CLIENT_ID:<the app's Client ID> \
+  --var ALLOWED_ORIGINS:https://jaim3r0jas.github.io,http://localhost:5173
 npx wrangler secret put GITHUB_CLIENT_SECRET --name loadmap-github-auth     # paste the client secret
 ```
 
-Then in the Cloudflare dashboard → Workers → `loadmap-github-auth` → Settings → Variables, add two plain variables:
-
-- `GITHUB_CLIENT_ID`: the app's Client ID.
-- `ALLOWED_ORIGINS`: `https://jaim3r0jas.github.io` (and `,http://localhost:5173` for `pnpm dev`).
+The two `--var`s go with every deploy (a deploy replaces the Worker's plain variables with the ones it is given; the
+secret stays). Leave `http://localhost:5173` out if you won't try it with `pnpm dev`. A Worker missing any of the three
+answers `500 {"error":"not_configured"}`.
 
 The Worker's address is `https://loadmap-github-auth.<your-subdomain>.workers.dev`.
 

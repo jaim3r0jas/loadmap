@@ -16,8 +16,12 @@ export function signInConfig(env: Record<string, string | undefined> = import.me
   const slug = env.VITE_GITHUB_APP_SLUG?.trim()
   const exchange = env.VITE_GITHUB_APP_EXCHANGE?.trim()
   if (!clientId || !slug || !exchange) return undefined
+  // https, or plain http to this machine only (a Worker run with wrangler dev): never a string prefix, which
+  // http://localhost.example.com would pass
   try {
-    if (new URL(exchange).protocol !== 'https:' && !exchange.startsWith('http://localhost')) return undefined
+    const u = new URL(exchange)
+    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && u.hostname === 'localhost')) return undefined
+    if (u.username || u.password) return undefined
   } catch {
     return undefined
   }

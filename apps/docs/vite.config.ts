@@ -1,8 +1,9 @@
 import { join } from 'node:path'
 import react from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { withPolicy } from './csp'
 import { included, llms, SITE, writePages } from './pages'
+import { signInConfig } from './site/islands/github/signin'
 
 // DOCS_BASE is where the site is served: "/" here, "/loadmap/" on GitHub Pages
 const base = process.env.DOCS_BASE ?? '/'
@@ -47,34 +48,34 @@ function pages(): Plugin {
   }
 }
 
-/** The sign-in Worker's origin, when the build is given the site's GitHub App: the editor's page may call it. */
-function exchangeOrigin(): string[] {
-  const url = process.env.VITE_GITHUB_APP_EXCHANGE?.trim()
-  if (!url) return []
-  try {
-    return [new URL(url).origin]
-  } catch {
-    return []
-  }
+/**
+ * The sign-in Worker's origin, when the build is given the site's GitHub App: the editor's page may call it. The same
+ * rule (`signInConfig`) decides whether the editor shows the button, so the two never disagree.
+ */
+function exchangeOrigin(mode: string): string[] {
+  const app = signInConfig(loadEnv(mode, import.meta.dirname, 'VITE_'))
+  return app ? [new URL(app.exchange).origin] : []
 }
 
 /** The editor's page gets its Content-Security-Policy once built: the dev server's own scripts would break it. */
-function policy(): Plugin {
+function policy(mode: string): Plugin {
   return {
     name: 'loadmap-docs-csp',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
       handler: (html, ctx) =>
-        ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html, exchangeOrigin()) : html,
+        ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html, exchangeOrigin(mode)) : html,
     },
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: SITE,
   base,
-  plugins: [pages(), react(), policy()],
+  // VITE_GITHUB_APP_* from the environment, or apps/docs/.env.local (apps/github-auth/README.md)
+  envDir: import.meta.dirname,
+  plugins: [pages(), react(), policy(mode)],
   // elkjs (about 1.5 MB) runs in a worker chunk of its own, loaded on the first layout
   build: { outDir: join(import.meta.dirname, 'dist'), emptyOutDir: true, chunkSizeWarningLimit: 2500 },
   server: {
@@ -82,4 +83,4 @@ export default defineConfig({
     // the plugin writes the pages and reloads after it; a second Vite (a test) writing them must not reload this one
     watch: { ignored: ['**/site/**/*.html'] },
   },
-})
+}))

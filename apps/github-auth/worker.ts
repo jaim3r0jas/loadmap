@@ -25,6 +25,9 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
   })
 
 export async function handle(req: Request, env: Env, call: typeof fetch = fetch): Promise<Response> {
+  // a deploy that dropped its settings says so, plainly, rather than failing on them
+  if (!env.ALLOWED_ORIGINS || !env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET)
+    return json(500, { error: 'not_configured' })
   const allowed = env.ALLOWED_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean)

@@ -77,6 +77,13 @@ describe('the sign-in Worker', () => {
     expect(gh.sent).toEqual([])
   })
 
+  it('says it is not set up when a deploy dropped its settings', async () => {
+    const gh = github({ access_token: 'ghu_token' })
+    const res = await handle(ask(BODY), { ...ENV, ALLOWED_ORIGINS: undefined as unknown as string }, gh.call)
+    expect([res.status, await res.json()]).toEqual([500, { error: 'not_configured' }])
+    expect(gh.sent).toEqual([])
+  })
+
   it("passes GitHub's refusal on, without the secret", async () => {
     const gh = github({ error: 'bad_verification_code', error_description: 'The code passed is incorrect or expired.' })
     const res = await handle(ask(BODY), ENV, gh.call)

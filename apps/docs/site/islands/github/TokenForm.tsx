@@ -41,18 +41,31 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
   const [signing, setSigning] = useState(false)
   const first = useRef<HTMLButtonElement>(null)
   useEffect(() => (APP ? first.current : input.current)?.focus(), [])
+  // a sign-in outlives a click: it reads "Keep" when the token comes, and does nothing once the form is gone (Back,
+  // Close), so a save the reader backed out of never runs
+  const kept = useRef(keep)
+  kept.current = keep
+  const here = useRef(true)
+  useEffect(() => {
+    here.current = true
+    return () => {
+      here.current = false
+    }
+  }, [])
   const signInNow = async () => {
     if (!APP || signing) return
     setError('')
     setSigning(true)
     try {
-      const wrong = takeToken(await signIn(APP), keep)
+      const token = await signIn(APP)
+      if (!here.current) return
+      const wrong = takeToken(token, kept.current)
       if (wrong) setError(wrong)
       else onToken()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'GitHub did not sign you in.')
+      if (here.current) setError(e instanceof Error ? e.message : 'GitHub did not sign you in.')
     } finally {
-      setSigning(false)
+      if (here.current) setSigning(false)
     }
   }
   const submit = (e: FormEvent) => {
@@ -94,11 +107,6 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
         <button type="submit" className="lm-btn">
           Use it
         </button>
-        {onCancel && (
-          <button type="button" className="lm-btn lme-quiet" onClick={onCancel}>
-            Back
-          </button>
-        )}
       </div>
     </>
   )
@@ -137,10 +145,18 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
         </p>
       )}
       <p className="lmg-hint">
-        The token goes to api.github.com only. It stays in this page{keep ? ', and in this tab until it closes' : ''}:
-        never in a link, and never in this browser's lasting storage. A token for an organization's repository may wait
-        for an owner's approval.
+        The token goes to api.github.com only
+        {APP ? ' (a sign-in gets it through the site’s sign-in service, which keeps nothing)' : ''}. It stays in this
+        page
+        {keep ? ', and in this tab until it closes' : ''}: never in a link, and never in this browser's lasting storage.
+        A token for an organization's repository may wait for an owner's approval.
       </p>
+      {/* outside the folded paste: the way back shows whichever way the token comes */}
+      {onCancel && (
+        <button type="button" className="lm-btn lme-quiet" style={{ justifySelf: 'start' }} onClick={onCancel}>
+          Back
+        </button>
+      )}
     </form>
   )
 }

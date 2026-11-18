@@ -241,7 +241,7 @@ describe('the built site', () => {
       const page = await browser.newPage()
       await page.goto(`${url}editor/`)
       await page.waitForSelector('.lme-title')
-      const closing = page.waitForEvent('popup').then((p) => p.waitForEvent('close'))
+      const popup = page.waitForEvent('popup')
       const heard = await page.evaluate(
         () =>
           new Promise((resolve) => {
@@ -253,9 +253,10 @@ describe('the built site', () => {
         ours: true,
         data: { type: 'loadmap-github-sign-in', state: 'the-state', code: 'the-code', error: null },
       })
-      await closing
-      // a build given no app offers no sign-in: the token is pasted
-      expect(readFileSync(join(out, 'signed-in/index.html'), 'utf8')).toContain('noindex')
+      // it closes, the code gone from its address first
+      const p = await popup
+      if (!p.isClosed()) await p.waitForEvent('close')
+      expect(p.url()).not.toContain('code=')
     } finally {
       await browser.close()
     }
