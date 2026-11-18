@@ -16,7 +16,7 @@ import {
   included,
   MOVED,
   movedAnchors,
-  OLD_LANGUAGE_IDS,
+  OLD_ANCHORS,
   PAGES,
   packagesVersion,
   relative,
@@ -158,11 +158,25 @@ describe('the pages', () => {
       }
   })
 
-  it('send a link to a section the guide held on one page on to where it is now', () => {
-    // every section the one page had leads somewhere still: a section renamed later says so here
+  it('send a link to a section a page held before it was split on to where it is now', () => {
+    // every section each page had leads somewhere still: a section renamed later says so here
     const where = anchors()
-    for (const [old, now] of Object.entries(OLD_LANGUAGE_IDS)) expect(where.has(now), `${old} (now ${now})`).toBe(true)
-    const moved = movedAnchors()
+    const sections = new Set(
+      rendered.flatMap(({ page, html }) =>
+        [...html.matchAll(/ id="([^"]+)"/g)].map((m) => `/${page.route ? `${page.route}/` : ''}#${m[1]}`),
+      ),
+    )
+    const pages = new Set(PAGES.map((p) => `/${p.route ? `${p.route}/` : ''}`))
+    for (const [route, ids] of Object.entries(OLD_ANCHORS))
+      for (const [old, now] of Object.entries(ids)) {
+        const to = now.startsWith('/') ? now : where.get(now)
+        expect(to, `${route}: ${old} (now ${now})`).toBeDefined()
+        expect(to!.includes('#') ? sections.has(to!) : pages.has(to!), `${route}: ${old} → ${to}`).toBe(true)
+      }
+    const api = movedAnchors('api')
+    expect(api['the-page-loadmap-react']).toBe('/api/react/')
+    expect(api['the-simulation-loadmap-sim']).toBe('/api/more/#the-simulation-loadmap-sim')
+    const moved = movedAnchors('language')
     expect(moved.formulas).toBe('/language/formulas/')
     expect(moved['a-story']).toBe('/language/scenarios/#a-story')
     expect(moved.versions).toBe('/language/errors/#versions')
@@ -578,6 +592,9 @@ describe('the built site', () => {
       expect(await page.locator('#versions').isVisible()).toBe(true)
       await page.goto(`${url}language/#how-it-reads`)
       expect(new URL(page.url()).pathname).toBe('/language/')
+      // and the API's, one page a package now
+      await page.goto(`${url}api/#the-page-loadmap-react`)
+      await page.waitForURL(/\/api\/react\/$/)
     } finally {
       await browser.close()
     }

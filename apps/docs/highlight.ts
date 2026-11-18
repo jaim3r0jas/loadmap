@@ -2,6 +2,7 @@
 // read-only CodeMirror view that later takes a snippet's place reads its tokens from these spans, so no parser reaches
 // the browser.
 import { StreamLanguage } from '@codemirror/language'
+import { css } from '@codemirror/legacy-modes/mode/css'
 import { lua } from '@codemirror/legacy-modes/mode/lua'
 import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { toml } from '@codemirror/legacy-modes/mode/toml'
@@ -33,6 +34,8 @@ const LANGUAGES: Record<string, Language> = {
   bash: { label: 'Shell', parser: StreamLanguage.define(shell).parser },
   toml: { label: 'TOML', parser: StreamLanguage.define(toml).parser },
   lua: { label: 'Lua', parser: StreamLanguage.define(lua).parser },
+  // a page's styles: the theme's tokens
+  css: { label: 'CSS', parser: StreamLanguage.define(css).parser },
   // what a command printed, a URL: nothing to colour
   text: { label: 'Text' },
 }

@@ -54,6 +54,12 @@ export const PAGES: readonly Page[] = [
   { route: 'using-the-editor', file: 'using-the-editor.md', nav: 'Using the editor', group: 'The editor' },
   { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The editor' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
+  { route: 'api/model', file: 'api-model.md', nav: 'The model in TypeScript', group: 'Use it' },
+  { route: 'api/react', file: 'api-react.md', nav: 'React and the page', group: 'Use it' },
+  { route: 'api/styling', file: 'api-styling.md', nav: 'Styling', group: 'Use it' },
+  { route: 'api/language', file: 'api-language.md', nav: 'The language in code', group: 'Use it' },
+  { route: 'api/editor', file: 'api-editor.md', nav: 'The editor component', group: 'Use it' },
+  { route: 'api/more', file: 'api-more.md', nav: 'Media, simulation and layout', group: 'Use it' },
   { route: 'checks', file: 'checks.md', nav: 'Checks in CI', group: 'Use it' },
   { route: 'recording', file: 'recording.md', nav: 'The command line', group: 'Use it' },
   { route: 'live-data', file: 'live-data.md', nav: 'Live data', group: 'Use it' },
@@ -233,40 +239,57 @@ export function anchors(): ReadonlyMap<string, string> {
 }
 
 /**
- * The sections `/language/` had while the guide was one page, by the id each has now where it differs: links to them
- * are out there. Frozen: a section renamed later keeps its old id here, and the test that every one leads somewhere
- * says so.
+ * The sections a page held before it was split, by the page's route: each old id to the id it has now (found through
+ * `anchors()`), or to where it went (`/route/#id`). Links to them are out there. Frozen: a section renamed later keeps
+ * its old id here, and the test that every one leads somewhere says so.
  */
-export const OLD_LANGUAGE_IDS: Readonly<Record<string, string>> = Object.fromEntries(
-  [
-    'how-it-reads',
-    'boxes-stages-and-components',
-    'formulas',
-    'scenarios-and-growth',
-    'how-sure-and-what-must-hold',
-    'published-figures',
-    'measured-data',
-    'building-blocks',
-    'a-story',
-    'direction-and-tiers',
-    'the-view-block',
-    'full-screen',
-    'what-stays-code',
-    'layout',
-    'several-files',
-    'errors',
-    'versions',
-    'in-code',
-  ].map((id) => [id, ({ layout: 'formatting' } as Record<string, string>)[id] ?? id]),
-)
+export const OLD_ANCHORS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  // the language guide, one page until it was a page a section
+  language: Object.fromEntries(
+    [
+      'how-it-reads',
+      'boxes-stages-and-components',
+      'formulas',
+      'scenarios-and-growth',
+      'how-sure-and-what-must-hold',
+      'published-figures',
+      'measured-data',
+      'building-blocks',
+      'a-story',
+      'direction-and-tiers',
+      'the-view-block',
+      'full-screen',
+      'what-stays-code',
+      'layout',
+      'several-files',
+      'errors',
+      'versions',
+      'in-code',
+    ].map((id) => [id, ({ layout: 'formatting' } as Record<string, string>)[id] ?? id]),
+  ),
+  // the API, one page until it was a page a package
+  api: {
+    'the-model-loadmap-core': '/api/model/',
+    'the-view-loadmap-layout-re-exported-by-react': '/api/model/#the-view',
+    'the-page-loadmap-react': '/api/react/',
+    'the-language-loadmap-dsl': '/api/language/',
+    'the-editor-loadmap-editor': '/api/editor/',
+    'media-loadmap-export': '/api/more/#media-loadmap-export',
+    'measured-data-loadmap-providers': '/api/more/#measured-data-loadmap-providers',
+    'the-catalog-loadmap-core-catalog': '/api/more/#the-catalog-loadmap-core-catalog',
+    'the-simulation-loadmap-sim': '/api/more/#the-simulation-loadmap-sim',
+    'the-command-line-loadmap-cli': '/api/more/#the-command-line-loadmap-cli',
+  },
+}
 
-/** Each section `/language/` held as one page, to where it is now, but those it still holds. */
-export function movedAnchors(): Record<string, string> {
+/** Each section a page held before it was split, to where it is now, but those it still holds. */
+export function movedAnchors(route: string): Record<string, string> {
   const where = anchors()
+  const here = `/${route}/`
   const moved: Record<string, string> = {}
-  for (const [old, now] of Object.entries(OLD_LANGUAGE_IDS)) {
-    const to = where.get(now)
-    if (to && !to.startsWith('/language/#') && to !== '/language/') moved[old] = to
+  for (const [old, now] of Object.entries(OLD_ANCHORS[route] ?? {})) {
+    const to = now.startsWith('/') ? now : where.get(now)
+    if (to && !to.startsWith(`${here}#`) && to !== here) moved[old] = to
   }
   return moved
 }
@@ -430,7 +453,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
       <nav class="side" aria-label="Pages">${list}</nav>
       <main>
 ${text}
-${pager(page, up)}${page.route === 'language' ? movedScript(up) : ''}
+${pager(page, up)}${OLD_ANCHORS[page.route] ? movedScript(page.route, up) : ''}
         <footer class="documents">This site documents ${documents}. <a href="${up}whats-new/">What's new</a></footer>
       </main>
       ${toc?.aside ?? ''}
@@ -442,11 +465,11 @@ ${pager(page, up)}${page.route === 'language' ? movedScript(up) : ''}
 }
 
 /**
- * On the guide's first page: a link to a section it held before the guide was a page a section goes on to where that
- * section is now, before anything else loads. A section still here, or an id it never had, stays.
+ * On a page that was split (the guide's first page, the API's): a link to a section it held before goes on to where
+ * that section is now. A section still here, or an id it never had, stays.
  */
-function movedScript(up: string): string {
-  const to = Object.fromEntries(Object.entries(movedAnchors()).map(([id, at]) => [id, up + at.slice(1)]))
+function movedScript(route: string, up: string): string {
+  const to = Object.fromEntries(Object.entries(movedAnchors(route)).map(([id, at]) => [id, up + at.slice(1)]))
   const map = JSON.stringify(to).replace(/</g, '\\u003c')
   return `<script>(function(){var m=${map};var h;try{h=decodeURIComponent(location.hash.slice(1))}catch(e){return}if(h&&!document.getElementById(h)&&m[h])location.replace(m[h])})()</script>`
 }
