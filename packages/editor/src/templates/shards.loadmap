@@ -1,0 +1,76 @@
+loadmap 1.6
+# A store split into shards by key: each shard takes its share of the writes, so the hottest shard runs out first,
+# long before the shards together would. Rebalancing the keys buys more headroom than bigger shards.
+title: "Sharded store"
+view { speed: 10 }
+assume: "1× is today's busiest hour; the keys spread evenly but for the hot share."
+
+load "Writes, × today" { max: 20; default: 1 }
+
+param hot "Writes on the hottest shard" { options: [0.34, 0.5, 0.7]; default: 0.5; format: pct(value) }
+param shardSize "Writes a shard takes (/s)" { options: [1_000, 2_000]; default: 1_000 }
+
+scenario "Today" {}
+scenario "Rebalanced keys" { hot: 0.34 }
+scenario "Bigger shards" { shardSize: 2_000 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "Today's writes stay under the target" { component: shardA; underTarget: 1 }
+
+flow writes "writes" {
+  unit: "write"
+  rate: 800 * load
+  route: api -> router
+  from: clients
+  color: accent
+}
+
+node clients "Clients"
+
+node api "API" {
+  pass
+  short: "the API"
+  capacity: estimated(10_000, "req/s", "vendor sizing")
+  over: "requests queue in the API"
+}
+
+node router "Shard router" {
+  split {
+    writes -> shardA: hot
+    writes -> shardB: (1 - hot) / 2
+    writes -> shardC: (1 - hot) / 2
+  }
+  short: "the router"
+  capacity: estimated(20_000, "req/s", "vendor sizing")
+  over: "writes queue at the router"
+}
+
+node shardA "Shard A" `${pct(hot)} of the keys` {
+  shape: cylinder
+  store
+  short: "shard A"
+  capacity: measured(shardSize, "writes/s", "a load test of one shard")
+  over: "writes queue on shard A"
+}
+
+node shardB "Shard B" {
+  shape: cylinder
+  store
+  short: "shard B"
+  capacity: measured(shardSize, "writes/s", "a load test of one shard")
+  over: "writes queue on shard B"
+}
+
+node shardC "Shard C" {
+  shape: cylinder
+  store
+  short: "shard C"
+  capacity: measured(shardSize, "writes/s", "a load test of one shard")
+  over: "writes queue on shard C"
+}
+
+clients -> api
+api -> router
+router -> shardA
+router -> shardB
+router -> shardC

@@ -64,6 +64,7 @@ export const PAGES: readonly Page[] = [
   { route: 'recording', file: 'recording.md', nav: 'The command line', group: 'Use it' },
   { route: 'live-data', file: 'live-data.md', nav: 'Live data', group: 'Use it' },
   { route: 'embedding', file: 'embedding.md', nav: 'Embedding', group: 'Use it' },
+  { route: 'for-agents', file: 'for-agents.md', nav: 'For agents', group: 'Use it' },
   { route: 'examples', file: 'examples.md', nav: 'All examples', group: 'Examples' },
   { route: 'examples/checkout', file: 'checkout.md', nav: 'Checkout', group: 'Examples' },
   { route: 'examples/alerts', file: 'alerts.md', nav: 'Alerts', group: 'Examples' },

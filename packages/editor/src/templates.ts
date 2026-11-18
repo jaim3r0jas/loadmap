@@ -7,6 +7,8 @@ import queueWorkers from './templates/queue-workers.loadmap?raw'
 import rateLimit from './templates/rate-limit.loadmap?raw'
 import readReplicas from './templates/read-replicas.loadmap?raw'
 import retryStorm from './templates/retry-storm.loadmap?raw'
+import shards from './templates/shards.loadmap?raw'
+import slowPartner from './templates/slow-partner.loadmap?raw'
 import thirdPartyApi from './templates/third-party-api.loadmap?raw'
 import webApp from './templates/web-app.loadmap?raw'
 
@@ -74,5 +76,17 @@ export const TEMPLATES: readonly Template[] = [
     title: 'Retry storm',
     summary: 'Retries that multiply the traffic past capacity, and a budget.',
     source: retryStorm,
+  },
+  {
+    id: 'shards',
+    title: 'Sharded store',
+    summary: 'Writes split across shards by key: the hottest runs out first.',
+    source: shards,
+  },
+  {
+    id: 'slow-partner',
+    title: 'Slow partner API',
+    summary: 'A partner that slows as it fills, a client timeout, and retries.',
+    source: slowPartner,
   },
 ]

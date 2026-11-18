@@ -39,6 +39,8 @@ describe('the features a model shows', () => {
     // retries a parameter turns on in a scenario count too
     expect(template('retry-storm')).toContain('retries')
     expect(template('notifications')).toContain('fan-out')
+    expect(template('shards')).toContain('split')
+    expect(template('slow-partner')).toEqual(expect.arrayContaining(['retries', 'timeout']))
   })
 
   it('names nothing a model does not use, and a lone scenario as none, as the board shows no comparison', () => {
