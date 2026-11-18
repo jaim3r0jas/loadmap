@@ -583,7 +583,9 @@ describe('the built site', () => {
       expect(await links.count()).toBe(PAGES.filter((p) => !p.hidden).length)
       // the groups fold: the current page's is open, each other one a click away
       expect(await phone.locator('.menu .panel details[open] summary').textContent()).toBe('The language')
-      for (const fold of await phone.locator('.menu .panel details:not([open]) summary').all()) await fold.click()
+      // one at a time: each click opens a group, and the folded ones are one fewer
+      const folded = phone.locator('.menu .panel details:not([open]) summary')
+      while ((await folded.count()) > 0) await folded.first().click()
       for (const link of await links.all()) expect(await link.isVisible()).toBe(true)
       expect(await phone.locator('.menu [aria-current="page"]').textContent()).toBe('Reference')
     } finally {
