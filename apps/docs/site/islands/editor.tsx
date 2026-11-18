@@ -28,7 +28,7 @@ import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
-import { type RepoTab, readTab, writeTab } from './github/tab'
+import { clearAside, leave as leaveTab, type RepoTab, readAside, readTab, writeTab } from './github/tab'
 import { useRecorder } from './recorder'
 
 const SOURCES = {
@@ -240,16 +240,30 @@ function Editor({ root }: { root: URL }) {
   const [help, setHelp] = useHelp()
   const [close] = useState(() => closeTo(root))
   // what this tab opened from GitHub, as the reader left it: it opens again on a reload, unless the address asks for
-  // something else, which takes its place
+  // something else, which takes its place (a private repository with edits is kept aside)
   const [tab] = useState(() => {
-    const t = fromLink() || fromRepo() || template() || example() ? undefined : readTab()
-    if (!t) writeTab(undefined)
-    return t
+    const t = readTab()
+    if (!t || !(fromLink() || fromRepo() || template() || example())) return t
+    leaveTab(t)
+    return undefined
   })
   const repo = useRef<RepoTab | undefined>(tab)
+  const [aside, setAside] = useState(readAside)
+  // the tab could not keep a private repository's files: a reload would lose the edits, and the page says so
+  const [unkept, setUnkept] = useState(false)
+  const keep = (t: RepoTab) => {
+    repo.current = t
+    if (!writeTab(t) && t.origin.private) setUnkept(true)
+  }
   const leaveRepo = () => {
+    if (repo.current && leaveTab(repo.current)) setAside(readAside())
     repo.current = undefined
-    writeTab(undefined)
+    setUnkept(false)
+  }
+  /** A menu's own text in the editor's place: the repository is left first. */
+  const leaving = (put: () => void) => () => {
+    leaveRepo()
+    put()
   }
   // a link's definition (or a repository's) wins over the draft; reading it is async, so the editor waits for it
   const [start, setStart] = useState<Start | null>(() =>
@@ -257,7 +271,7 @@ function Editor({ root }: { root: URL }) {
       ? null
       : tab
         ? { source: tab.files[tab.path] ?? '', values: {}, path: tab.path, files: tab.files }
-        : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
+        : draftStart(),
   )
   const [github, setGithub] = useState<{ target?: RepoTarget; listing?: Listing; ask?: string } | null>(null)
   useEffect(() => {
@@ -274,15 +288,14 @@ function Editor({ root }: { root: URL }) {
         if (gone) return
         if ('opened' in r) {
           repo.current = tabOf(r.opened)
-          writeTab(repo.current)
+          if (!writeTab(repo.current) && r.opened.listing.private) setUnkept(true)
           setStart(fromOpened(r.opened))
         }
         // the draft as it would open without the address, in all its files; the error said above it
-        else if ('error' in r)
-          setStart({ ...(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }), error: r.error })
+        else if ('error' in r) setStart({ ...draftStart(), error: r.error })
         else {
           // several models and none named, or a token to give first: the dialog, the draft behind
-          setStart(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} })
+          setStart(draftStart())
           setGithub('ask' in r ? { target: r.target, ask: r.ask } : { listing: r.listing, target: r.target })
         }
       })
@@ -339,8 +352,7 @@ function Editor({ root }: { root: URL }) {
   // a draft in several files: all of them, and its model under the draft's own key, where one file is read
   const saveFiles = (all: { path: string; files: Readonly<Record<string, string>> }) => {
     if (repo.current) {
-      repo.current = { ...repo.current, path: all.path, files: { ...all.files } }
-      writeTab(repo.current)
+      keep({ ...repo.current, path: all.path, files: { ...all.files } })
       if (repo.current.origin.private) return
     }
     if (Object.keys(all.files).length > 1) {
@@ -364,10 +376,19 @@ function Editor({ root }: { root: URL }) {
   if (!start) return <p className="app-note">{fromRepo() ? 'Opening the repository…' : 'Opening the link…'}</p>
   // a repository's files take the draft's place as an example does: the draft is kept aside on the first edit
   const opened = (o: Opened) => {
+    leaveRepo()
     outside.current = true
-    repo.current = tabOf(o)
-    writeTab(repo.current)
+    keep(tabOf(o))
     editor.current?.setFiles({ path: o.path, files: o.files })
+  }
+  // a private repository left with edits, back where it was
+  const back = (t: RepoTab) => {
+    clearAside()
+    setAside(undefined)
+    // what is open now goes aside in its turn, when it is a private repository with edits
+    leaveRepo()
+    keep(t)
+    editor.current?.setFiles({ path: t.path, files: t.files })
   }
 
   const examples: BarSection[] = [
@@ -376,41 +397,32 @@ function Editor({ root }: { root: URL }) {
       items: [
         ...(Object.keys(SOURCES) as (keyof typeof SOURCES)[]).map((n) => ({
           label: NAMES[n],
-          onSelect: () => {
-            leaveRepo()
-            editor.current?.setSource(SOURCES[n])
-          },
+          onSelect: leaving(() => editor.current?.setSource(SOURCES[n])),
         })),
-        {
-          label: 'A shop in several files',
-          onSelect: () => {
-            leaveRepo()
-            editor.current?.setFiles(SHOP)
-          },
-        },
-        {
-          label: 'Two regions, in several files',
-          onSelect: () => {
-            leaveRepo()
-            editor.current?.setFiles(regionsFiles)
-          },
-        },
+        { label: 'A shop in several files', onSelect: leaving(() => editor.current?.setFiles(SHOP)) },
+        { label: 'Two regions, in several files', onSelect: leaving(() => editor.current?.setFiles(regionsFiles)) },
         ...(earlier != null
-          ? [
-              {
-                label: 'Your earlier draft',
-                onSelect: () => {
-                  leaveRepo()
-                  editor.current?.setSource(earlier)
-                },
-              },
-            ]
+          ? [{ label: 'Your earlier draft', onSelect: leaving(() => editor.current?.setSource(earlier)) }]
           : []),
       ],
     },
   ]
   const repos: BarSection[] = [
-    { label: 'GitHub', items: [{ label: 'Open from GitHub…', onSelect: () => setGithub({}) }] },
+    {
+      label: 'GitHub',
+      items: [
+        { label: 'Open from GitHub…', onSelect: () => setGithub({}) },
+        ...(aside
+          ? [
+              {
+                label: `Your edits to ${aside.origin.owner}/${aside.origin.name}`,
+                hint: 'Kept in this tab when another text took their place',
+                onSelect: () => back(aside),
+              },
+            ]
+          : []),
+      ],
+    },
   ]
   const images: BarSection[] = [
     {
@@ -468,6 +480,11 @@ function Editor({ root }: { root: URL }) {
               loadmap
             </a>
             {'error' in start && <span className="app-error">{start.error}; showing your draft instead.</span>}
+            {unkept && (
+              <span className="app-error">
+                This tab could not keep the repository's files: a reload would lose your edits.
+              </span>
+            )}
           </>
         }
         newItems={[...examples, ...repos]}
@@ -505,6 +522,9 @@ function Editor({ root }: { root: URL }) {
 
 /** What the editor opens with: a link's, a repository's or the draft's; a draft can come with why the rest did not. */
 type Start = Shared | (Extract<Shared, { source: string }> & { error: string })
+
+/** The reader's draft, as the editor opens without an address: a template, an example, the draft in all its files. */
+const draftStart = (): Shared => startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }
 
 /** A repository's model as this tab keeps it: where it came from, and its files, as they came and as they are. */
 function tabOf(o: Opened): RepoTab {

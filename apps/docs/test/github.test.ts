@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { compile } from '@loadmap/dsl'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { client, GitHubError } from '../site/islands/github/api'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
 import { takeToken, tokenPage } from '../site/islands/github/session'
+import { edited, leave, type RepoTab, readAside, readTab, writeTab } from '../site/islands/github/tab'
 import { type FakeRepo, fakeGitHub, shaOf } from './fake-github'
 
 const read = (f: string) => readFileSync(join(import.meta.dirname, '../../../docs/multi-file', f), 'utf8')
@@ -180,9 +181,13 @@ describe('opening a repository', () => {
       "GitHub's hourly limit for reading without a token is used up. It resets in 14 minutes. A token raises it.",
     )
     const gh = client({ fetch: fakeGitHub(REPO).fetch })
-    await expect(list(gh, { owner: 'acme', name: 'capacity', ref: 'nope' })).rejects.toThrow(
-      'acme/capacity has no branch, tag or commit "nope".',
-    )
+    // a ref that is not there is no case for a token; a repository this browser may not see is
+    const ref = (await list(gh, { owner: 'acme', name: 'capacity', ref: 'nope' }).catch(
+      (x: unknown) => x,
+    )) as GitHubError
+    expect([ref.message, ref.failure]).toEqual(['acme/capacity has no branch, tag or commit "nope".', 'missing'])
+    const unseen = (await list(gh, { owner: 'acme', name: 'other' }).catch((x: unknown) => x)) as GitHubError
+    expect(unseen.failure).toBe('unseen')
     const offline = client({
       fetch: async () => {
         throw new TypeError('Failed to fetch')
@@ -211,5 +216,61 @@ describe('a token', () => {
     expect(takeToken('hunter2', false)).toMatch('not a GitHub token')
     expect(takeToken(' github_pat x ', false)).toMatch('not a GitHub token')
     expect(takeToken(`github_pat_${'A'.repeat(40)}`, false)).toBeUndefined()
+  })
+})
+
+describe('what a tab keeps of a repository', () => {
+  const store = new Map<string, string>()
+  const fake = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  }
+  const tab = (files: Record<string, string>, shut = true): RepoTab => ({
+    origin: {
+      owner: 'acme',
+      name: 'p',
+      ref: 'main',
+      sha: 'a'.repeat(40),
+      tree: 'b'.repeat(40),
+      private: shut,
+      originals: { 'm.loadmap': 'one', 'lib/x.loadmap': 'two' },
+    },
+    path: 'm.loadmap',
+    files,
+  })
+
+  it('keeps the originals once, apart from what changed, and reads them back whole', () => {
+    vi.stubGlobal('sessionStorage', fake)
+    try {
+      const t = tab({ 'm.loadmap': 'one, edited', 'lib/x.loadmap': 'two', 'new.loadmap': 'three' })
+      expect(writeTab(t)).toBe(true)
+      const stored = JSON.parse(store.get('loadmap-editor-repo')!)
+      expect(stored.origin.changed).toEqual({ 'm.loadmap': 'one' })
+      expect(readTab()).toEqual(t)
+      expect(edited(t)).toBe(true)
+      expect(edited(tab({ 'm.loadmap': 'one', 'lib/x.loadmap': 'two' }))).toBe(false)
+      // a path that leaves the root, or names no .loadmap file, is no tab
+      store.set('loadmap-editor-repo', JSON.stringify({ ...stored, files: { ...stored.files, '../x.loadmap': '' } }))
+      expect(readTab()).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+      store.clear()
+    }
+  })
+
+  it('keeps a private repository with edits aside when it is left, and nothing else', () => {
+    vi.stubGlobal('sessionStorage', fake)
+    try {
+      expect(leave(tab({ 'm.loadmap': 'one', 'lib/x.loadmap': 'two' }))).toBe(false)
+      expect(leave(tab({ 'm.loadmap': 'edited', 'lib/x.loadmap': 'two' }, false))).toBe(false)
+      const t = tab({ 'm.loadmap': 'edited', 'lib/x.loadmap': 'two' })
+      expect(leave(t)).toBe(true)
+      expect(readAside()).toEqual(t)
+      expect(readTab()).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+      store.clear()
+    }
   })
 })

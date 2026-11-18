@@ -861,11 +861,16 @@ describe('the built site', () => {
       await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Secret uploads')
       expect(fake.calls.length).toBe(asked)
 
-      // an example in its place leaves the repository
+      // an example in its place leaves the repository; its edits stay one click away, in this tab
       await page.getByRole('button', { name: 'New', exact: true }).click()
       await page.getByRole('menuitem', { name: 'Checkout', exact: true }).click()
       await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Checkout pipeline')
       expect(await page.evaluate(() => sessionStorage.getItem('loadmap-editor-repo'))).toBeNull()
+      expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('Secret uploads')
+      await page.getByRole('button', { name: 'New', exact: true }).click()
+      await page.getByRole('menuitem', { name: /^Your edits to acme\/private/ }).click()
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Secret uploads')
+      expect(await page.locator('.cm-content').textContent()).toContain('# edited here')
     } finally {
       await browser.close()
     }

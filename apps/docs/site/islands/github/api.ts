@@ -7,7 +7,8 @@ export const RAW = 'https://raw.githubusercontent.com'
 
 /** Why a call failed, as the reader can act on it. */
 export type GitHubFailure =
-  | 'missing' // 404: no such repository, ref or file, or a private one this browser may not see
+  | 'missing' // 404: no such ref or file
+  | 'unseen' // no such repository, or a private one this browser (or its token) may not see
   | 'auth' // 401: the token is wrong or expired
   | 'forbidden' // 403: the token may not do this
   | 'rate' // the hourly limit is used up

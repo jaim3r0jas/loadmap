@@ -78,7 +78,7 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
         gh.signed()
           ? `${where(target)} was not found, or your token may not read it.`
           : `${where(target)} was not found. If it is private, give a token to read it.`,
-        'missing',
+        'unseen',
         404,
       )
     throw e

@@ -5,10 +5,16 @@ import { inFolder, type Listing, list, type Opened, open } from './load'
 import { type RepoTarget, targetFromQuery } from './parse'
 import { gh } from './session'
 
-/** A failure a token can mend: a private repository, a refused token, the limit for reading without one. */
+/**
+ * A failure a token can mend: a repository this browser may not see (private, or out of the token's reach), a refused
+ * token or one without the permission, the limit for reading without one. A ref or a file that is not there is not.
+ */
 export const tokenMends = (e: unknown) =>
   e instanceof GitHubError &&
-  (e.failure === 'auth' || ((e.failure === 'missing' || e.failure === 'rate') && !gh.signed()))
+  (e.failure === 'auth' ||
+    e.failure === 'unseen' ||
+    (e.failure === 'forbidden' && gh.signed()) ||
+    (e.failure === 'rate' && !gh.signed()))
 
 export type Started =
   | { opened: Opened }
