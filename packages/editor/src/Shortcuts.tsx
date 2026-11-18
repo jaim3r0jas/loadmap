@@ -22,7 +22,7 @@ const GROUPS: readonly { title: string; rows: readonly (readonly [action: string
   {
     title: 'Help with the language',
     rows: [
-      ['What fits at the cursor', ['⌃Space or ⌥I', 'Ctrl+Space']],
+      ['What fits at the cursor', ['⌘I, ⌥I or ⌃Space', 'Ctrl+Space']],
       ['In the list: pick, take, close', ['↑ ↓, Enter, Esc', '↑ ↓, Enter, Esc']],
       ["A template's next field", ['Tab', 'Tab']],
       ['Go to where a name is declared', ['F12 or ⌘-click', 'F12 or Ctrl+click']],
@@ -60,7 +60,7 @@ const GROUPS: readonly { title: string; rows: readonly (readonly [action: string
       ['To the start or end of the text', ['⌘↑, ⌘↓', 'Ctrl+Home, Ctrl+End']],
       ['Select as you move', ['⇧ with any of these', 'Shift with any of these']],
       ['Select the line', ['⌃L', 'Alt+L']],
-      ['Select the block around', ['⌘I', 'Ctrl+I']],
+      ['Select the block around', ['⌃⇧⌘→', 'Ctrl+I']],
       ['To the matching bracket', ['⇧⌘\\', 'Shift+Ctrl+\\']],
     ],
   },

@@ -7,6 +7,7 @@ import {
   indentWithTab,
   isolateHistory,
   redo,
+  selectParentSyntax,
   undo,
   undoDepth,
 } from '@codemirror/commands'
@@ -483,13 +484,15 @@ export function LoadmapEditor({
             return true
           },
         },
-        ...defaultKeymap,
+        // ⌘I completes on a Mac (language.ts): the block around moves to VS Code's Expand Selection there
+        { key: 'Mod-i', mac: 'Ctrl-Shift-Mod-ArrowRight', run: selectParentSyntax, preventDefault: true },
+        ...defaultKeymap.filter((b) => b.key !== 'Mod-i'),
         ...historyKeymap,
         indentWithTab,
       ]),
       lazySearch,
       // an empty text says how to start, and where the keys are
-      placeholder(`${MAC ? '⌃Space or ⌥I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
+      placeholder(`${MAC ? '⌘I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
       EditorState.tabSize.of(2),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': 'loadmap definition' }),
@@ -1364,7 +1367,12 @@ export function LoadmapEditor({
                 </button>
               )}
               {!reader && !canvas && (
-                <button type="button" className="lm-btn lme-wide" onClick={formatText} title="Shift+Alt+F">
+                <button
+                  type="button"
+                  className="lm-btn lme-wide"
+                  onClick={formatText}
+                  title={MAC ? '⇧⌥F' : 'Shift+Alt+F'}
+                >
                   Format
                 </button>
               )}
@@ -1450,7 +1458,7 @@ export function LoadmapEditor({
               >
                 Track live changes
               </button>
-              <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+              <button type="button" className="lm-btn" onClick={formatText} title={MAC ? '⇧⌥F' : 'Shift+Alt+F'}>
                 Format
               </button>
             </PanelHead>

@@ -466,7 +466,7 @@ describe('the editor', () => {
     const sheet = document.querySelector('.lme-keysheet')!
     expect(sheet.getAttribute('aria-labelledby')).toBeTruthy()
     expect(sheet.textContent).toContain('What fits at the cursor')
-    expect(sheet.textContent).toContain(mac ? '⌃Space or ⌥I' : 'Ctrl+Space')
+    expect(sheet.textContent).toContain(mac ? '⌘I, ⌥I or ⌃Space' : 'Ctrl+Space')
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => document.querySelector('.lme-keysheet')).toBeNull()
     // back in the text, where the keys work

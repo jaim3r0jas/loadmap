@@ -1,5 +1,5 @@
 import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -344,5 +344,41 @@ describe('completion on a phone', () => {
     await userEvent.keyboard('{Escape}')
     press('Find')
     await expect.poll(() => document.querySelector('.cm-search')).toBeTruthy()
+  })
+})
+
+/** A key pressed with ⌥ as a Mac layout reports it: `key` is what it types (or `Dead`), `code` the key's place. */
+function altKey(v: EditorView, key: string, code: string, shiftKey = false) {
+  const e = new KeyboardEvent('keydown', { key, code, altKey: true, shiftKey, bubbles: true, cancelable: true })
+  v.contentDOM.dispatchEvent(e)
+  return e
+}
+
+describe('keys held with Alt, on any layout', () => {
+  it('finds a binding by the key pressed when it types a character or starts a dead key, and lets the rest type', () => {
+    const ran: string[] = []
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: cache,
+        extensions: [
+          keymap.of([
+            { key: 'Shift-Alt-f', run: () => ran.push('format') > 0 },
+            { key: 'Alt-k', run: () => ran.push('k') > 0 },
+          ]),
+          loadmapLanguage(),
+        ],
+      }),
+    })
+    view.focus()
+    // ⇧⌥F types Ï on a US Mac, · on a German one; a dead key types nothing yet
+    expect(altKey(view, 'Ï', 'KeyF', true).defaultPrevented).toBe(true)
+    expect(altKey(view, 'Dead', 'KeyK').defaultPrevented).toBe(true)
+    expect(ran).toEqual(['format', 'k'])
+    // ⌥L is @ on a German Mac: no binding takes it, so it still types
+    expect(altKey(view, '@', 'KeyL').defaultPrevented).toBe(false)
+    expect(ran).toEqual(['format', 'k'])
   })
 })
