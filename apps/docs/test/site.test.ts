@@ -774,7 +774,8 @@ describe('the built site', () => {
       await routeGitHub(page, fake.fetch)
       await page.goto(`${url}editor/?repo=acme/capacity&path=models/shop.loadmap`)
       await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'A shop in several files')
-      expect(await page.locator('[role=tab][title="models/shop.loadmap"]').count()).toBe(1)
+      // the model's tab, named by its path from the repository's root (the tabs draw once the files are in)
+      await page.locator('[role=tab][title="models/shop.loadmap"]').waitFor()
       // the files come from the commit the branch named when the page asked, by its sha
       const raws = fake.calls.filter((c) => c.url.startsWith('https://raw.githubusercontent.com/'))
       expect(raws.map((c) => c.url.split('/').slice(5).join('/')).sort()).toEqual([
