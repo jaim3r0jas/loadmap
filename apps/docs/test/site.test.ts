@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
-import { encodeShare } from '@loadmap/dsl'
+import { encodeShare, LANGUAGE_VERSION } from '@loadmap/dsl'
 import { TEMPLATES } from '@loadmap/editor/templates'
 import { type Browser, chromium, type Frame, type Page } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
 import { inlineHashes } from '../csp'
 import { FENCES, highlight } from '../highlight'
-import { included, MOVED, PAGES, relative, render } from '../pages'
+import { included, MOVED, PAGES, packagesVersion, relative, render } from '../pages'
 import { fakeGitHub, shaOf } from './fake-github'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
@@ -123,11 +123,19 @@ describe('the pages', () => {
 
   it('tell the dev server which repository files they include', () => {
     const files = included().map((f) => f.slice(f.lastIndexOf('/', f.lastIndexOf('/') - 1) + 1))
-    // and the package.json %VERSION% comes from
+    // and the package.json %VERSION% comes from, and every changelog What's new reads
     expect(files.sort()).toEqual([
       'alerts/alerts.loadmap',
       'checkout/checkout.loadmap',
+      'cli/CHANGELOG.md',
+      'core/CHANGELOG.md',
       'docs/dsl.md',
+      'dsl/CHANGELOG.md',
+      'editor/CHANGELOG.md',
+      'export/CHANGELOG.md',
+      'layout/CHANGELOG.md',
+      'providers/CHANGELOG.md',
+      'react/CHANGELOG.md',
       'react/README.md',
       'react/package.json',
       'regions/region.loadmap',
@@ -135,6 +143,7 @@ describe('the pages', () => {
       'search/search.loadmap',
       'shop-live/live.tsx',
       'shop-live/shop.loadmap',
+      'sim/CHANGELOG.md',
     ])
   })
 
@@ -235,6 +244,25 @@ describe('the built site', () => {
     expect(existsSync(join(out, '404.html'))).toBe(true)
   })
 
+  it('names the release it documents on every page, the badge leading to what is new, and in llms.txt', () => {
+    const version = packagesVersion()
+    for (const p of DOCS) {
+      const html = readFileSync(join(out, p.route, 'index.html'), 'utf8')
+      const up = relative(p.route)
+      expect(html, p.route).toContain(`<a class="version" href="${up}whats-new/"`)
+      expect(html, p.route).toContain(`>v${version}</a>`)
+      expect(textOf(html), p.route).toContain(`This site documents loadmap ${version}, language ${LANGUAGE_VERSION}`)
+    }
+    // the 404 is served at any depth: its links start at the site's root
+    expect(readFileSync(join(out, '404.html'), 'utf8')).toContain('<a class="version" href="/whats-new/"')
+    expect(readFileSync(join(out, 'whats-new/index.html'), 'utf8')).toContain(
+      `<h2 id="${version.replace(/\./g, '-')}">`,
+    )
+    expect(readFileSync(join(out, 'llms.txt'), 'utf8')).toContain(
+      `These pages document loadmap ${version} and language ${LANGUAGE_VERSION}.`,
+    )
+  })
+
   it("hands GitHub's sign-in answer to the editor that opened it, on this site only, and closes", async () => {
     const browser = await chromium.launch()
     try {
@@ -329,8 +357,9 @@ describe('the built site', () => {
     const kb = first.reduce((s, f) => s + gzipSync(readFileSync(join(out, f))).length, 0) / 1024
     // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.7 kB): an
     // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window. The client holds the names
-    // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB)
-    expect(kb).toBeLessThan(6.25)
+    // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB). The
+    // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB
+    expect(kb).toBeLessThan(6.4)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 

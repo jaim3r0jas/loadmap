@@ -1,10 +1,12 @@
 # Changesets: on main, a pull request that bumps the versions and writes the changelogs; once it is merged, the
-# packages npm does not have yet are published. Three jobs, so the npm credential is near as little code as possible:
+# packages npm does not have yet are published, then the docs site. Four jobs, so the npm credential is near as little
+# code as possible:
 # - version opens the "Version Packages" pull request with a GitHub App token: a pull request that GITHUB_TOKEN opens
 #   gets its workflow runs held for approval, one the App opens runs `check` by itself.
 # - build builds the packages without any credential, once no changesets are pending (the release commit is merged).
 # - publish takes those files and publishes them: the only job with id-token: write, in the `release` environment
 #   (main only), which npm's trusted publisher names. No tests here: main only takes commits that passed `check`.
+# - docs publishes the docs site (docs.yml) once npm has what it documents: never while a changeset waits.
 name: release
 on:
   push:
@@ -108,3 +110,11 @@ jobs:
         with:
           github-token: ${{ steps.app.outputs.token }}
           publish-script: pnpm changeset publish
+
+  docs:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write # GitHub Pages' deployment
+    uses: $/.github/workflows/docs.yml

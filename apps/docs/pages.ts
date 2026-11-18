@@ -2,8 +2,10 @@
 // parts are islands the client mounts: a ```loadmap live fence, or a <div data-island="…"> in the Markdown.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { LANGUAGE_VERSION } from '@loadmap/dsl'
 import { Marked, type Token } from 'marked'
 import { shippedReference } from '../../scripts/reference'
+import { changelogFiles, releases, whatsNew } from './changelog'
 import { highlight } from './highlight'
 import { HEAD } from './site/theme'
 import { themeSwitch } from './site/theme-switch'
@@ -28,6 +30,7 @@ export const PAGES: readonly Page[] = [
   { route: '', file: 'index.md', nav: 'Home', group: 'Start' },
   { route: 'getting-started', file: 'getting-started.md', nav: 'Getting started', group: 'Start' },
   { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
+  { route: 'whats-new', file: 'whats-new.md', nav: "What's new", group: 'Start' },
   { route: 'without-a-bundler', file: 'without-a-bundler.md', nav: 'Without a bundler', group: 'Start' },
   { route: 'language', file: 'language.md', nav: 'The language', group: 'The language' },
   { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The language' },
@@ -66,31 +69,46 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, '')
 
 /**
+ * The version of the packages the site documents: they are versioned together, and the site deploys from the release
+ * that published them (release.yml), so it is the latest on npm.
+ */
+export const packagesVersion = (): string =>
+  JSON.parse(readFileSync(join(repo, 'packages/react/package.json'), 'utf8')).version
+
+/**
  * `@include(path, "from", "to")` on a line of its own: the lines of a repository file from the first that starts with
- * `from` up to (not including) the first after it that starts with `to`. Without `to`, to the end. `%VERSION%`: the
- * packages' version.
+ * `from` up to (not including) the first after it that starts with `to`. Without `to`, to the end. `@changelog` on a
+ * line of its own: every release, from the packages' changelogs. `%VERSION%`: the packages' version; `%LANGUAGE%`: the
+ * language's.
  */
 export function expand(md: string): string {
   // %VERSION% is the version of the packages, for a page that names one (a CDN link), included text too
-  const version = JSON.parse(readFileSync(join(repo, 'packages/react/package.json'), 'utf8')).version
-  return md
-    .replace(/^@include\(([^,)]+)(?:,\s*"([^"]*)")?(?:,\s*"([^"]*)")?\)$/gm, (_, path, from, to) => {
-      const lines = readFileSync(join(repo, path.trim()), 'utf8').split('\n')
-      const start = from ? lines.findIndex((l) => l.startsWith(from)) : 0
-      if (start < 0) throw new Error(`docs: no line starting with "${from}" in ${path}`)
-      const after = to ? lines.slice(start + 1).findIndex((l) => l.startsWith(to)) : -1
-      if (to && after < 0) throw new Error(`docs: no line starting with "${to}" after "${from}" in ${path}`)
-      return lines.slice(start, after < 0 ? undefined : start + 1 + after).join('\n')
-    })
-    .replaceAll('%VERSION%', version)
+  const version = packagesVersion()
+  return (
+    md
+      .replace(/^@include\(([^,)]+)(?:,\s*"([^"]*)")?(?:,\s*"([^"]*)")?\)$/gm, (_, path, from, to) => {
+        const lines = readFileSync(join(repo, path.trim()), 'utf8').split('\n')
+        const start = from ? lines.findIndex((l) => l.startsWith(from)) : 0
+        if (start < 0) throw new Error(`docs: no line starting with "${from}" in ${path}`)
+        const after = to ? lines.slice(start + 1).findIndex((l) => l.startsWith(to)) : -1
+        if (to && after < 0) throw new Error(`docs: no line starting with "${to}" after "${from}" in ${path}`)
+        return lines.slice(start, after < 0 ? undefined : start + 1 + after).join('\n')
+      })
+      .replaceAll('%VERSION%', version)
+      .replaceAll('%LANGUAGE%', LANGUAGE_VERSION)
+      // last: a release's text is shown as written, never read for an @include or a %VERSION%
+      .replace(/^@changelog$/m, () => whatsNew(releases(join(repo, 'packages'))))
+  )
 }
 
 /** The repository files the pages include, for the dev server to watch. */
 export function included(): string[] {
   const files = new Set<string>()
-  for (const p of PAGES)
-    for (const [, path] of readFileSync(join(here, 'pages', p.file), 'utf8').matchAll(/^@include\(([^,)]+)/gm))
-      files.add(join(repo, path!.trim()))
+  for (const p of PAGES) {
+    const md = readFileSync(join(here, 'pages', p.file), 'utf8')
+    for (const [, path] of md.matchAll(/^@include\(([^,)]+)/gm)) files.add(join(repo, path!.trim()))
+    if (/^@changelog$/m.test(md)) for (const { file } of changelogFiles(join(repo, 'packages'))) files.add(file)
+  }
   // where %VERSION% comes from
   files.add(join(repo, 'packages/react/package.json'))
   return [...files]
@@ -229,6 +247,8 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
   const eyebrow = page.route && page.group ? `<p class="eyebrow">${esc(page.group)}</p>` : ''
   const text = body.replace(EYEBROW, () => eyebrow).replace(CONTENTS, () => toc?.folded ?? '')
   const head = page.route ? `${title} · loadmap` : 'loadmap: interactive capacity models'
+  const version = packagesVersion()
+  const documents = `loadmap ${version}, language ${LANGUAGE_VERSION}`
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -243,7 +263,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
     <header class="top">
       <div class="bar">
         <a class="brand" href="${up}">loadmap</a>
-        <span class="version">0.1</span>
+        <a class="version" href="${up}whats-new/" title="This site documents ${documents}: what's new">v${version}</a>
         <span class="grow"></span>
         <span class="out">${out}</span>
         ${themeSwitch('theme-bar')}
@@ -258,6 +278,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
       <main>
 ${text}
 ${pager(page, up)}
+        <footer class="documents">This site documents ${documents}. <a href="${up}whats-new/">What's new</a></footer>
       </main>
       ${toc?.aside ?? ''}
     </div>
@@ -431,6 +452,8 @@ export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
       'TypeScript or in the `.loadmap` language; `loadmap check` tests a model in CI.',
     '',
     'The `.loadmap` reference also ships in `@loadmap/dsl`, as `dist/REFERENCE.md`.',
+    '',
+    `These pages document loadmap ${packagesVersion()} and language ${LANGUAGE_VERSION}.`,
     '',
     ...[...groups].flatMap(([group, pages]) => [
       `## ${group}`,

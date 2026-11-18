@@ -1,15 +1,13 @@
-# The docs site on GitHub Pages, from main. Settings → Pages → Source: GitHub Actions.
+# The docs site on GitHub Pages. Settings → Pages → Source: GitHub Actions. The site documents the latest release, so
+# release.yml calls this once npm has the packages: after each release, and after a push to main with no changeset
+# waiting (a fix of the docs alone). A merged feature waits for its release, and so do its pages. By hand (Run
+# workflow), it refuses while changesets are waiting.
 name: docs
 on:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions: {}
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -25,6 +23,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false # pnpm arrives after this step, through corepack
+      - name: Nothing waits for a release
+        run: |
+          if ls .changeset/*.md | grep -qv '/README.md$'; then
+            echo "::error::changesets wait for their release: the docs are published with it"
+            exit 1
+          fi
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter docs build
@@ -40,6 +44,10 @@ jobs:
           path: apps/docs/dist
   deploy:
     needs: build
+    # on the job, not the workflow: release.yml calls this one, and one deployment of the pages at a time
+    concurrency:
+      group: pages
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
