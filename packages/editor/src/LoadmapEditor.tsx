@@ -86,6 +86,7 @@ import type { FileTabsProps } from './FileTabs'
 import type { FileMark } from './filenames'
 import type { Dsl, NewKind } from './fileops'
 import type { InspectorProps, InspectorTab } from './Inspector'
+import { editorKeys } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
@@ -488,8 +489,9 @@ export function LoadmapEditor({
         indentWithTab,
       ]),
       lazySearch,
+      editorKeys,
       // an empty text says how to start, and where the keys are
-      placeholder(`${MAC ? '⌃Space or ⌥I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
+      placeholder(`${MAC ? '⌘I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
       EditorState.tabSize.of(2),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': 'loadmap definition' }),
@@ -1364,7 +1366,12 @@ export function LoadmapEditor({
                 </button>
               )}
               {!reader && !canvas && (
-                <button type="button" className="lm-btn lme-wide" onClick={formatText} title="Shift+Alt+F">
+                <button
+                  type="button"
+                  className="lm-btn lme-wide"
+                  onClick={formatText}
+                  title={MAC ? '⇧⌥F' : 'Shift+Alt+F'}
+                >
                   Format
                 </button>
               )}
@@ -1450,7 +1457,7 @@ export function LoadmapEditor({
               >
                 Track live changes
               </button>
-              <button type="button" className="lm-btn" onClick={formatText} title="Shift+Alt+F">
+              <button type="button" className="lm-btn" onClick={formatText} title={MAC ? '⇧⌥F' : 'Shift+Alt+F'}>
                 Format
               </button>
             </PanelHead>

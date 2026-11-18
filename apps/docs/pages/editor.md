@@ -22,10 +22,10 @@ has Suggest, Format, Undo, an indent, braces, quotes, Rename, Find and Done; **�
 A click on a box selects its lines in the text, and the cursor in a box's lines rings the box. **Format**
 (Shift+Alt+F) lays the text out the one way, as `loadmap fmt` does.
 
-**Ctrl+Space** (on a Mac also ⌥I, where Ctrl+Space switches the input source) lists what can go at the cursor: the
-statements and properties of the block it is in, the names a formula can read, the stages a route can take next.
-Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it. **View → Keyboard
-shortcuts** lists every key; Esc then Tab leaves the text.
+**Ctrl+Space** (on a Mac **⌘I** or ⌥I, on any keyboard layout: macOS takes ⌃Space to switch the input source) lists
+what can go at the cursor: the statements and properties of the block it is in, the names a formula can read, the
+stages a route can take next. Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it.
+**View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text.
 
 **New** starts from a template or an example, and **Export** downloads the text or an image.
 

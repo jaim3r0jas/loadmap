@@ -1,10 +1,11 @@
 import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { editorKeys } from '../src/keys'
 import { loadmapLanguage } from '../src/language'
 import cache from '../src/templates/cache.loadmap?raw'
 
@@ -344,5 +345,40 @@ describe('completion on a phone', () => {
     await userEvent.keyboard('{Escape}')
     press('Find')
     await expect.poll(() => document.querySelector('.cm-search')).toBeTruthy()
+  })
+})
+
+/** A key pressed with ⌥ that starts a dead key: `key` says Dead, `code` the key's place. */
+function deadKey(v: EditorView, code: string, shiftKey = false) {
+  const e = new KeyboardEvent('keydown', { key: 'Dead', code, altKey: true, shiftKey, bubbles: true, cancelable: true })
+  v.contentDOM.dispatchEvent(e)
+  return e
+}
+
+describe('keys held with Alt', () => {
+  it('find their binding by the key pressed when it starts a dead key', () => {
+    const ran: string[] = []
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: cache,
+        extensions: [
+          keymap.of([
+            { key: 'Shift-Alt-f', run: () => ran.push('format') > 0 },
+            { key: 'Alt-k', run: () => ran.push('k') > 0 },
+          ]),
+          loadmapLanguage(),
+          editorKeys,
+        ],
+      }),
+    })
+    view.focus()
+    expect(deadKey(view, 'KeyF', true).defaultPrevented).toBe(true)
+    expect(deadKey(view, 'KeyK').defaultPrevented).toBe(true)
+    expect(ran).toEqual(['format', 'k'])
+    // a dead key no binding takes still starts its accent
+    expect(deadKey(view, 'KeyE').defaultPrevented).toBe(false)
   })
 })
