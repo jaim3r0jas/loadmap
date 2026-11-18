@@ -1,4 +1,4 @@
-import type { Decl, Stmt } from './ast'
+import { type Decl, formulasOf, type Stmt } from './ast'
 import { boxOf } from './boxes'
 import { declarations } from './compile'
 import { type Code, type Diagnostic, Reporter } from './diagnostics'
@@ -113,8 +113,17 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
   ],
 
   // "+-" is a plus and a minus here (before 1.6); in a capacity's value it was likely its ±
-  'plus-minus': ({ data, replace }) => [
-    ...(data.within ? [{ title: 'Make it the ±: write "±"', changes: replace('±') }] : []),
+  'plus-minus': ({ d, doc, replace }) => [
+    ...([...formulasOf(doc().body)].some(
+      (e) =>
+        e.t === 'call' &&
+        CAPACITY.has(e.callee.name) &&
+        e.callee.name !== 'configured' &&
+        e.args[0]?.t === 'bin' &&
+        e.args[0].plusMinus?.from === d.from,
+    )
+      ? [{ title: 'Make it the ±: write "±"', changes: replace('±') }]
+      : []),
     { title: 'Keep the sum: write "+ -"', changes: replace('+ -') },
   ],
 

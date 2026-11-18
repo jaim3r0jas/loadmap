@@ -97,7 +97,6 @@ import {
   ONE_SPELLING,
   own,
   type PANELS,
-  PLUS_MINUS,
   POOL_LINES,
   type PropSpec,
   propNamed,
@@ -622,7 +621,6 @@ export class Compiler {
    */
   run(body: readonly Stmt[], namesOnly = false): Definition | undefined {
     this.gluedPercents(body)
-    this.plusMinuses(body)
     this.spellings(body)
     const root = this.shape('', SCHEMA['']!, body, { from: 0, to: 0 })
 
@@ -2032,33 +2030,6 @@ export class Compiler {
         `"${text(at)}" is the remainder of ${left} divided by ${right}, not a share`,
         share ? `write mod(${left}, ${right}), or ${share} for the share` : `write mod(${left}, ${right})`,
         { mod: `mod(${left}, ${right})`, ...(share && { share }) },
-      )
-    }
-  }
-
-  /**
-   * `a +- b` in a file stamped before 1.6: a plus and a minus, as it always was there, where the writer may have meant
-   * the `±` it is from 1.6. Only a warning: the file computes what it did.
-   */
-  private plusMinuses(body: readonly Stmt[]) {
-    const formulas = [...formulasOf(body)]
-    // the first value of measured(…) or estimated(…), where a ± was likely meant
-    const values = new Set(
-      formulas.flatMap((e) =>
-        e.t === 'call' && (e.callee.name === 'measured' || e.callee.name === 'estimated') && e.args[0]
-          ? [e.args[0]]
-          : [],
-      ),
-    )
-    for (const e of formulas) {
-      if (e.t !== 'bin' || !e.plusMinus) continue
-      const text = (x: Span) => this.source.slice(x.from, x.to)
-      this.report.warning(
-        'plus-minus',
-        e.plusMinus,
-        `"+-" is a plus and a minus here: ${text(e.left)} + ${text(e.right)}`,
-        `from loadmap ${PLUS_MINUS} "+-" is ±; write "+ -" to keep the sum`,
-        values.has(e) ? { within: 'true' } : undefined,
       )
     }
   }

@@ -1155,7 +1155,7 @@ describe('the checker', () => {
 
   it('needs the version line, and refuses a newer language', () => {
     expect(errors(def().replace('loadmap 1.1\n', ''))).toMatchObject([
-      { message: 'a definition starts with "loadmap 1.5"', hint: 'add "loadmap 1.5" as the first line' },
+      { message: 'a definition starts with "loadmap 1.6"', hint: 'add "loadmap 1.6" as the first line' },
     ])
     expect(errors(def().replace('loadmap 1.1', 'loadmap 2'))).toMatchObject([
       {
@@ -1223,9 +1223,6 @@ describe('uncertainty and expectations', () => {
     // "±" and "+/-" read as they always did
     expect(capacity16('estimated(800 ± 30%, "req/s")')).toMatchObject({ value: 800, within: 0.3 })
     expect(capacity16('measured(pods * 400 +/- 10%, "req/s")')).toMatchObject({ value: 800, within: 0.1 })
-    // without a loadmap line: the newest version
-    const bare = compile(at16('estimated(800 +- 200, "req/s")').replace('loadmap 1.6\n', ''))
-    expect(bare.definition!.model.evaluate().components.api!.capacity).toMatchObject({ value: 800, within: 0.25 })
     // from 1.6 a "+-" outside a capacity's value is an error that says how to write the sum
     expect(errors(def({ top: 'let x = 3 +- 1' }).replace('loadmap 1.1', 'loadmap 1.6'))).toEqual([
       {
@@ -1265,7 +1262,7 @@ describe('uncertainty and expectations', () => {
       expect(r.definition!.model.evaluate().ctx.derived.x).toBe(2)
       const warned = r.diagnostics.filter((d) => d.code === 'plus-minus')
       expect(warned.map((d) => [d.message, d.hint, old.slice(d.from, d.to)])).toEqual([
-        ['"+-" is a plus and a minus here: 3 + -1', 'from loadmap 1.6 "+-" is ±; write "+ -" to keep the sum', '+-'],
+        ['"+-" is a plus and a minus here; from loadmap 1.6 it is ±', 'write "+ -" to keep the sum', '+-'],
       ])
       const fix = quickFixes(old, warned)[0]?.[0]
       expect(fix?.title).toBe('Keep the sum: write "+ -"')

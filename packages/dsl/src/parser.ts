@@ -426,9 +426,17 @@ class Parser {
       const before = this.toks[this.i - 1]
       const glued = t.text === '%' && before?.kind === 'number' && before.to === t.from
       this.next()
-      // "a +- b" in a file stamped before 1.6: the lexer reads a plus and a minus, the writer perhaps a ±
+      // "a +- b" in a file stamped before 1.6: the lexer reads a plus and a minus, the writer perhaps a ±. Only a
+      // warning: the file computes what it did
       const sign = this.peek()
       const plusMinus = t.text === '+' && sign.kind === 'punct' && sign.text === '-' && sign.from === t.to
+      if (plusMinus)
+        this.report.warning(
+          'plus-minus',
+          { from: t.from, to: sign.to },
+          '"+-" is a plus and a minus here; from loadmap 1.6 it is ±',
+          'write "+ -" to keep the sum',
+        )
       const right = this.binary(prec + 1)
       const op = (t.text === '===' ? '==' : t.text === '!==' ? '!=' : t.text) as BinOp
       const triple = op !== t.text ? { from: t.from, to: t.to } : undefined
