@@ -13,7 +13,7 @@ export interface Entry {
   text: string
   /** The packages it names, short: `editor`, `dsl`. */
   packages: string[]
-  /** The site's page and section that tell more (`/language/#versions`), from the changeset's `Docs:` line. */
+  /** The site's page and section that tell more (`/language/errors/#versions`), from the changeset's `Docs:` line. */
   docs?: string
 }
 

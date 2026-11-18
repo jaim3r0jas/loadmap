@@ -245,234 +245,8 @@ expect "Black Friday keeps 3×" { scenario: Proposed; underTarget: 3; severity: 
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
 line in the pull request, and a table of the expectations goes into the job summary.
 
-`loadmap check --pull` reads the definition's measures first, as `loadmap pull` does (the same `--window`, `--step`
-and `--to`), writes the snapshot next to it, and checks against it; `--snapshot <file>` checks against one already
-there (a pull request from a fork gets no secrets, and a rerun reads exactly the data a job used). `--dry-run` reports
-everything and exits 0, to watch a gate before it blocks. `--json <file>` writes the run's result: the commit
-(`GITHUB_SHA`, or `--commit`), the snapshot's window, each expectation's outcome, severity and reasons, the first
-limit and each component's utilization and headroom; `--format json` prints it instead of the lines.
-
-```bash
-loadmap check shop.loadmap --pull --window 7d --json result.json   # LOADMAP_PROMETHEUS_URL and its token from CI secrets
-```
-
-`--base <ref>` compares each definition with itself at a git ref, both against the same data (a pull reads the
-measures of both). It fails when the first limit's headroom drops by more than `--tolerance` (`10%` by default, or
-load multiples: `0.5×`), when the first limit moves to another component without more headroom, or when a component
-crosses the target or 100 % from below at today's load, so a design already over its limit does not block every later
-change. Each of those is an annotation on the line of the component it is about. `--accept "<reason>"` turns them
-into warnings for a deliberate trade-off; the comment and the summary still say so. `--comment <file>` writes the pull
-request comment: one sentence ("The first limit moves from the database at 3.1× to the cache at 1.4×, and runs out in
-March 2027 instead of November 2027."), what fails, a table of each component's headroom before and after, and the
-assumptions with where each number comes from, behind a marker a workflow finds it by again.
-
-A workflow that runs it on every pull request, and keeps one comment up to date. The check job reads the secrets; the
-comment job alone may write to the pull request. A pull request from a fork gets no secrets: it checks against the
-snapshot committed next to the definition, gets no comment, and its job summary says so. The `capacity-accepted`
-label is the approval path: adding or taking it off runs the check again.
-
-```yaml
-# loadmap check on every pull request: the change against its base, on fresh data. A label runs it again.
-# No paths filter: a required check must report on every pull request, or one that touches no definition never merges.
-name: capacity
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
-
-permissions: {}
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0 # the base, for --base
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - run: npm ci # @loadmap/cli pinned by the lockfile
-      - env:
-          LOADMAP_PROMETHEUS_URL: ${{ secrets.LOADMAP_PROMETHEUS_URL }}
-          LOADMAP_PROMETHEUS_TOKEN: ${{ secrets.LOADMAP_PROMETHEUS_TOKEN }}
-          BASE: origin/${{ github.base_ref }}
-          FORK: ${{ github.event.pull_request.head.repo.fork }}
-          ACCEPTED: ${{ contains(github.event.pull_request.labels.*.name, 'capacity-accepted') }}
-        run: |
-          args=(capacity.loadmap --base "$BASE" --comment comment.md --json result.json)
-          if [ "$FORK" = true ]; then
-            echo "A pull request from a fork gets no secrets: checked against the committed snapshot." >> "$GITHUB_STEP_SUMMARY"
-            args+=(--snapshot capacity.snapshot.json)
-          else
-            args+=(--pull)
-          fi
-          if [ "$ACCEPTED" = true ]; then args+=(--accept "the capacity-accepted label"); fi
-          npx loadmap check "${args[@]}"
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: capacity-${{ github.sha }}
-          path: |
-            result.json
-            capacity.snapshot.json
-            comment.md
-
-  comment:
-    needs: check
-    if: ${{ !cancelled() && !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: capacity-${{ github.sha }}
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-        # one comment, found again by its marker and its author and updated in place
-        run: |
-          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[]
-            | select(.user.login == "github-actions[bot]" and (.body | startswith("\u003c!-- loadmap-check -->"))) | .id' \
-            | head -n 1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@comment.md
-          else
-            gh api "repos/$REPO/issues/$PR/comments" -F body=@comment.md
-          fi
-```
-
-Make `check` a required status check in the branch's rules, and a failure blocks the merge. Notifications beyond the
-comment (Slack, email) go through the CI's own means: a step after the check with `if: failure()`.
-
-**Drift** is what moves in the data while no line of the definition does: a slower query, a cache that hits less, a
-cost per request that grew. `loadmap drift` looks for it in a snapshot, against main's own history:
-
-```bash
-loadmap drift capacity.loadmap --pull --window 1d --history history/ --markers deploys.json --issue issue.md
-```
-
-```text
-capacity.loadmap: 3 drifts, 2026-11-12T04:00:00Z to 2026-11-13T04:00:00Z, against 30 past runs
-  ✗ dbWrites shifted +23 % from the run of 2026-11-09T04:17:00Z: 410 → 504 writes/s (p 4.1e-12), after deploy 4f2a1c
-  ✗ API CPU per request: a slope of 0.003, above the band of the last 30 runs (0.00191 to 0.00209)
-  ✗ headroom: the target at 5.7×, below the band of the last 30 runs (8.8 to 10.1)
-```
-
-- **Change points**, as Apache Otava finds them: each measurement's value across main's runs, one a run, is split
-  where its energy statistic peaks (E-divisive), and a split is kept only when Welch's t-test between its two sides is
-  below `--p-value` (0.001). One value a run, not the points inside a window: those are too alike, and a day's shape
-  is no shift. A shift needs five runs on either side, and is reported while it is in the last seven. `--markers`
-  names the latest deploy before it, since the run before. Deterministic: the same data gives the same report.
-- **Two windows**, as Kayenta judges them: each series against the last run's, by a Mann-Whitney U test at
-  `--confidence` (98 %), with a `--dead-zone` (5 %) so a tiny shift never counts. Only the points the last run did not
-  read are compared: what both windows hold is no evidence either way.
-- **Main's own history**, as Bencher sets its thresholds: each measured value, each fit's slope (the cost per unit)
-  and the first limit's headroom, against the band of the last `--runs` (30) snapshots in `--history`, once there are
-  `--min-runs` (5). `--test` builds it: `t_test` (the default, at 99 %), `percentage` (± 10 %) or `iqr`. A slope counts
-  only above its band and headroom only below: a cheaper request or more room is no drift.
-
-It exits 1 when something drifted and 3 when it cannot look: a definition with an error, a snapshot it cannot read or
-with no data at all (a provider down, a token expired), a file it cannot write. A scheduled job opens an issue for a
-drift and fails for a broken run, and nobody's pull request fails for either. `--json` writes the result, and `--issue` the body of
-an issue a workflow opens and keeps up to date. A nightly one, keeping the history in the Actions cache:
-
-```yaml
-# loadmap drift every night on main: what moved in the measured data, in one issue kept up to date
-name: capacity drift
-on:
-  schedule:
-    - cron: "17 4 * * *"
-  workflow_dispatch:
-
-permissions: {}
-
-jobs:
-  drift:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    outputs:
-      drifted: ${{ steps.drift.outputs.drifted }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - run: npm ci # @loadmap/cli pinned by the lockfile
-      # main's past snapshots, as the last night left them
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: history
-          key: capacity-history-${{ github.run_id }}
-          restore-keys: capacity-history-
-      - id: drift
-        env:
-          LOADMAP_PROMETHEUS_URL: ${{ secrets.LOADMAP_PROMETHEUS_URL }}
-          LOADMAP_PROMETHEUS_TOKEN: ${{ secrets.LOADMAP_PROMETHEUS_TOKEN }}
-        run: |
-          mkdir -p history
-          now="history/$(date -u +%Y-%m-%dT%H%MZ).snapshot.json"
-          set +e
-          npx loadmap drift capacity.loadmap --pull --window 1d --out "$now" --history history \
-            --issue issue.md --json drift.json
-          code=$?
-          set -e
-          # 0: nothing moved, 1: a drift, for the issue; anything else is a broken run, and fails here
-          case "$code" in
-            0) echo "drifted=false" >> "$GITHUB_OUTPUT" ;;
-            1) echo "drifted=true" >> "$GITHUB_OUTPUT" ;;
-            *) exit "$code" ;;
-          esac
-          # sixty nights are history enough
-          ls history/*.json | sort | head -n -60 | xargs -r rm --
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: history
-          key: capacity-history-${{ github.run_id }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: capacity-drift-${{ github.run_id }}
-          path: |
-            drift.json
-            issue.md
-
-  issue:
-    needs: drift
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      issues: write
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: capacity-drift-${{ github.run_id }}
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          DRIFTED: ${{ needs.drift.outputs.drifted }}
-        # one open issue, found again by its title and its author: updated on a drift, closed on a quiet night
-        run: |
-          title="Capacity drift in capacity.loadmap"
-          n=$(gh issue list --state open --author "app/github-actions" --search "\"$title\" in:title" \
-            --json number --jq '.[0].number // empty')
-          if [ "$DRIFTED" = true ] && [ -n "$n" ]; then
-            gh issue edit "$n" --body-file issue.md
-          elif [ "$DRIFTED" = true ]; then
-            gh issue create --title "$title" --body-file issue.md
-          elif [ -n "$n" ]; then
-            gh issue close "$n" --comment "$(cat issue.md)"
-          fi
-```
+[Checks in CI](#checks-in-ci) runs it on fresh data on every pull request, against the change's base, and looks
+for drift every night.
 
 ### Published figures
 
@@ -1035,7 +809,7 @@ compile(source, { functions: { headroom: (x: number) => x * 1.2 } })
 A shared link opened where those functions are missing reports which one it needs. Anything beyond formulas stays in
 the TypeScript API, which reads the same.
 
-### Layout
+### Formatting
 
 `loadmap fmt` (and **Format** in the editor) lays a definition out the one way: two spaces a block, a statement a
 line, at most one blank line, one space around operators. Numbers, texts, templates and parentheses stay as written,
@@ -1171,6 +945,249 @@ page reads.
 `docs/multi-file/` holds a model with a part, a library and a variant; `examples/checkout/split/` and
 `examples/alerts/split/` are the two examples in several files, each held to the same TypeScript model, and
 `examples/regions/` is written in several files from the start: two regions as copies of one subsystem of a library.
+
+## Checks in CI
+
+`loadmap check` and `loadmap drift` keep a model true where its code lives: the check on every pull request, against
+fresh data and against the change's base, and drift every night, on what moved in the data while the definition did
+not.
+
+### On fresh data
+
+`loadmap check --pull` reads the definition's measures first, as `loadmap pull` does (the same `--window`, `--step`
+and `--to`), writes the snapshot next to it, and checks against it; `--snapshot <file>` checks against one already
+there (a pull request from a fork gets no secrets, and a rerun reads exactly the data a job used). `--dry-run` reports
+everything and exits 0, to watch a gate before it blocks. `--json <file>` writes the run's result: the commit
+(`GITHUB_SHA`, or `--commit`), the snapshot's window, each expectation's outcome, severity and reasons, the first
+limit and each component's utilization and headroom; `--format json` prints it instead of the lines.
+
+```bash
+loadmap check shop.loadmap --pull --window 7d --json result.json   # LOADMAP_PROMETHEUS_URL and its token from CI secrets
+```
+
+### Against the base
+
+`--base <ref>` compares each definition with itself at a git ref, both against the same data (a pull reads the
+measures of both). It fails when the first limit's headroom drops by more than `--tolerance` (`10%` by default, or
+load multiples: `0.5×`), when the first limit moves to another component without more headroom, or when a component
+crosses the target or 100 % from below at today's load, so a design already over its limit does not block every later
+change. Each of those is an annotation on the line of the component it is about. `--accept "<reason>"` turns them
+into warnings for a deliberate trade-off; the comment and the summary still say so. `--comment <file>` writes the pull
+request comment: one sentence ("The first limit moves from the database at 3.1× to the cache at 1.4×, and runs out in
+March 2027 instead of November 2027."), what fails, a table of each component's headroom before and after, and the
+assumptions with where each number comes from, behind a marker a workflow finds it by again.
+
+### On every pull request
+
+A workflow that runs it on every pull request, and keeps one comment up to date. The check job reads the secrets; the
+comment job alone may write to the pull request. A pull request from a fork gets no secrets: it checks against the
+snapshot committed next to the definition, gets no comment, and its job summary says so. The `capacity-accepted`
+label is the approval path: adding or taking it off runs the check again.
+
+```yaml
+# loadmap check on every pull request: the change against its base, on fresh data. A label runs it again.
+# No paths filter: a required check must report on every pull request, or one that touches no definition never merges.
+name: capacity
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base, for --base
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci # @loadmap/cli pinned by the lockfile
+      - env:
+          LOADMAP_PROMETHEUS_URL: ${{ secrets.LOADMAP_PROMETHEUS_URL }}
+          LOADMAP_PROMETHEUS_TOKEN: ${{ secrets.LOADMAP_PROMETHEUS_TOKEN }}
+          BASE: origin/${{ github.base_ref }}
+          FORK: ${{ github.event.pull_request.head.repo.fork }}
+          ACCEPTED: ${{ contains(github.event.pull_request.labels.*.name, 'capacity-accepted') }}
+        run: |
+          args=(capacity.loadmap --base "$BASE" --comment comment.md --json result.json)
+          if [ "$FORK" = true ]; then
+            echo "A pull request from a fork gets no secrets: checked against the committed snapshot." >> "$GITHUB_STEP_SUMMARY"
+            args+=(--snapshot capacity.snapshot.json)
+          else
+            args+=(--pull)
+          fi
+          if [ "$ACCEPTED" = true ]; then args+=(--accept "the capacity-accepted label"); fi
+          npx loadmap check "${args[@]}"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capacity-${{ github.sha }}
+          path: |
+            result.json
+            capacity.snapshot.json
+            comment.md
+
+  comment:
+    needs: check
+    if: ${{ !cancelled() && !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: capacity-${{ github.sha }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        # one comment, found again by its marker and its author and updated in place
+        run: |
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[]
+            | select(.user.login == "github-actions[bot]" and (.body | startswith("\u003c!-- loadmap-check -->"))) | .id' \
+            | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@comment.md
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -F body=@comment.md
+          fi
+```
+
+Make `check` a required status check in the branch's rules, and a failure blocks the merge. Notifications beyond the
+comment (Slack, email) go through the CI's own means: a step after the check with `if: failure()`.
+
+### Drift every night
+
+**Drift** is what moves in the data while no line of the definition does: a slower query, a cache that hits less, a
+cost per request that grew. `loadmap drift` looks for it in a snapshot, against main's own history:
+
+```bash
+loadmap drift capacity.loadmap --pull --window 1d --history history/ --markers deploys.json --issue issue.md
+```
+
+```text
+capacity.loadmap: 3 drifts, 2026-11-12T04:00:00Z to 2026-11-13T04:00:00Z, against 30 past runs
+  ✗ dbWrites shifted +23 % from the run of 2026-11-09T04:17:00Z: 410 → 504 writes/s (p 4.1e-12), after deploy 4f2a1c
+  ✗ API CPU per request: a slope of 0.003, above the band of the last 30 runs (0.00191 to 0.00209)
+  ✗ headroom: the target at 5.7×, below the band of the last 30 runs (8.8 to 10.1)
+```
+
+- **Change points**, as Apache Otava finds them: each measurement's value across main's runs, one a run, is split
+  where its energy statistic peaks (E-divisive), and a split is kept only when Welch's t-test between its two sides is
+  below `--p-value` (0.001). One value a run, not the points inside a window: those are too alike, and a day's shape
+  is no shift. A shift needs five runs on either side, and is reported while it is in the last seven. `--markers`
+  names the latest deploy before it, since the run before. Deterministic: the same data gives the same report.
+- **Two windows**, as Kayenta judges them: each series against the last run's, by a Mann-Whitney U test at
+  `--confidence` (98 %), with a `--dead-zone` (5 %) so a tiny shift never counts. Only the points the last run did not
+  read are compared: what both windows hold is no evidence either way.
+- **Main's own history**, as Bencher sets its thresholds: each measured value, each fit's slope (the cost per unit)
+  and the first limit's headroom, against the band of the last `--runs` (30) snapshots in `--history`, once there are
+  `--min-runs` (5). `--test` builds it: `t_test` (the default, at 99 %), `percentage` (± 10 %) or `iqr`. A slope counts
+  only above its band and headroom only below: a cheaper request or more room is no drift.
+
+It exits 1 when something drifted and 3 when it cannot look: a definition with an error, a snapshot it cannot read or
+with no data at all (a provider down, a token expired), a file it cannot write. A scheduled job opens an issue for a
+drift and fails for a broken run, and nobody's pull request fails for either. `--json` writes the result, and `--issue` the body of
+an issue a workflow opens and keeps up to date. A nightly one, keeping the history in the Actions cache:
+
+```yaml
+# loadmap drift every night on main: what moved in the measured data, in one issue kept up to date
+name: capacity drift
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      drifted: ${{ steps.drift.outputs.drifted }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci # @loadmap/cli pinned by the lockfile
+      # main's past snapshots, as the last night left them
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: history
+          key: capacity-history-${{ github.run_id }}
+          restore-keys: capacity-history-
+      - id: drift
+        env:
+          LOADMAP_PROMETHEUS_URL: ${{ secrets.LOADMAP_PROMETHEUS_URL }}
+          LOADMAP_PROMETHEUS_TOKEN: ${{ secrets.LOADMAP_PROMETHEUS_TOKEN }}
+        run: |
+          mkdir -p history
+          now="history/$(date -u +%Y-%m-%dT%H%MZ).snapshot.json"
+          set +e
+          npx loadmap drift capacity.loadmap --pull --window 1d --out "$now" --history history \
+            --issue issue.md --json drift.json
+          code=$?
+          set -e
+          # 0: nothing moved, 1: a drift, for the issue; anything else is a broken run, and fails here
+          case "$code" in
+            0) echo "drifted=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "drifted=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+          # sixty nights are history enough
+          ls history/*.json | sort | head -n -60 | xargs -r rm --
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: history
+          key: capacity-history-${{ github.run_id }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capacity-drift-${{ github.run_id }}
+          path: |
+            drift.json
+            issue.md
+
+  issue:
+    needs: drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: capacity-drift-${{ github.run_id }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRIFTED: ${{ needs.drift.outputs.drifted }}
+        # one open issue, found again by its title and its author: updated on a drift, closed on a quiet night
+        run: |
+          title="Capacity drift in capacity.loadmap"
+          n=$(gh issue list --state open --author "app/github-actions" --search "\"$title\" in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ "$DRIFTED" = true ] && [ -n "$n" ]; then
+            gh issue edit "$n" --body-file issue.md
+          elif [ "$DRIFTED" = true ]; then
+            gh issue create --title "$title" --body-file issue.md
+          elif [ -n "$n" ]; then
+            gh issue close "$n" --comment "$(cat issue.md)"
+          fi
+```
 
 ## Errors
 

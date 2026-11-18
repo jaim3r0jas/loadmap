@@ -305,8 +305,38 @@ a {
   color: var(--muted);
 }
 
-.nav-group:first-child {
+.nav-fold:first-child .nav-group {
   margin-top: 0;
+}
+
+/* a group folds: its name is the button, with a caret that turns open */
+summary.nav-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 4px;
+}
+
+summary.nav-group::-webkit-details-marker {
+  display: none;
+}
+
+summary.nav-group::before {
+  content: "›";
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.nav-fold[open] > summary.nav-group::before {
+  transform: rotate(90deg);
+}
+
+summary.nav-group:hover,
+summary.nav-group:focus-visible {
+  color: var(--fg);
 }
 
 main {

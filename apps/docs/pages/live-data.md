@@ -36,7 +36,7 @@ The queries are the ones a Grafana panel runs: copy a panel's PromQL into a metr
 The flows run at `visitRate * load` and `orderRate * load`, so 1× is the shop as it is now, and the slider asks what
 happens at twice or ten times that. The workers' demand is `coresNow * load`, the CPU they use now, and the
 database's `queryRate * load`: numbers the shop reports, not ones someone typed.
-[The language guide](/language/#measured-data) has every statement, and fits a cost per request from two measured
+[The language guide](/language/measured-data/) has every statement, and fits a cost per request from two measured
 series.
 
 ## 3. Read it once
@@ -59,7 +59,7 @@ shop.loadmap: 1 expectation holds
 `pull` writes a **snapshot**: a JSON file with each measurement's value, its points and where they came from. The
 model reads the file and never the store, so a check in CI, a recording and a page say the same thing. Nothing in a
 definition fetches anything: the address and the credentials come from the environment, so a shared link cannot make
-anyone's browser call a server. [Recording and CI](/recording/#pull) has `pull`, `check --pull` and `drift`.
+anyone's browser call a server. [The command line](/recording/#pull) has `pull`, `check --pull` and `drift`.
 
 ## 4. A diagram that follows the shop
 

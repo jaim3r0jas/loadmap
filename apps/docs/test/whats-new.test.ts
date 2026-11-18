@@ -162,7 +162,7 @@ describe('a changeset', () => {
       '.changeset/a.md: a feature says where the docs tell of it, on a line of its own: "Docs: /<page>/#<section>", or "Docs: none"',
     ])
     expect(
-      problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: /language/#versions\n" }),
+      problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: /language/errors/#versions\n" }),
     ).toEqual([])
     expect(problemsOf({ 'a.md': "---\n'@loadmap/core': major\n---\n\nInternal.\n\nDocs: none\n" })).toEqual([])
     // a fix needs none
