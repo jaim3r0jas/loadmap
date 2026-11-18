@@ -33,6 +33,7 @@ export const PAGES: readonly Page[] = [
   { route: 'whats-new', file: 'whats-new.md', nav: "What's new", group: 'Start' },
   { route: 'without-a-bundler', file: 'without-a-bundler.md', nav: 'Without a bundler', group: 'Start' },
   { route: 'language', file: 'language.md', nav: 'Overview', group: 'The language' },
+  { route: 'language/controls', file: 'language-controls.md', nav: 'Controls and values', group: 'The language' },
   { route: 'language/formulas', file: 'language-formulas.md', nav: 'Formulas', group: 'The language' },
   { route: 'language/scenarios', file: 'language-scenarios.md', nav: 'Scenarios and stories', group: 'The language' },
   { route: 'language/how-sure', file: 'language-how-sure.md', nav: 'How sure', group: 'The language' },
