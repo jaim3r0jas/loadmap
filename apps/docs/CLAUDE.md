@@ -26,6 +26,10 @@ while a changeset waits), the header's badge and every page's footer name the pa
 every release read from the packages' changelogs, each feature linked to the section its changeset's `Docs:` line
 names (`test/whats-new.test.ts` checks that the section exists).
 
+The search (the top bar's button, `/`, ⌘K) is `site/search.ts`, loaded with its styles on first use; its index,
+`search.json`, is every page cut at its h2 and h3 headings (`searchIndex()`), written by the build and served fresh by
+the dev server. Nothing of it is in a page's first load.
+
 `pnpm dev` serves on `[::1]` only; from another machine tunnel it: `ssh -N -L '5173:[::1]:5173' jaime@mbpro.internal`
 (quoted: zsh globs the brackets).
 

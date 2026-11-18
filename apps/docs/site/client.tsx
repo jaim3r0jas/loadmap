@@ -3,6 +3,30 @@ import { wire } from './theme'
 // The light and dark switch: in the top bar, the menu and the editor's bar.
 wire()
 
+// The search: the top bar's button, "/" or ⌘K (Ctrl+K) anywhere but in a field. Its code, its styles and its index load
+// on first use, never with the page.
+const opener = document.querySelector<HTMLButtonElement>('.search-open')
+if (opener) {
+  const root = new URL(document.querySelector<HTMLAnchorElement>('.top .brand')!.href).href
+  const open = () =>
+    import('./search').then(
+      (m) => m.open(root),
+      (err) => console.error('loadmap docs: the search failed to load', err),
+    )
+  opener.hidden = false
+  opener.addEventListener('click', open)
+  addEventListener('keydown', (e) => {
+    // an event a browser makes up (autofill) may carry no key
+    const key = typeof e.key === 'string' ? e.key.toLowerCase() : ''
+    const t = e.target instanceof HTMLElement ? e.target : undefined
+    if (!t || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+    const slash = key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey
+    if (!slash && !(key === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey)) return
+    e.preventDefault()
+    open()
+  })
+}
+
 // Mounts the live parts of a page. Each island loads its own code, so a page without one loads almost nothing.
 const ISLANDS: Record<string, () => Promise<{ mount: (el: HTMLElement) => void }>> = {
   loadmap: () => import('./islands/live'),
