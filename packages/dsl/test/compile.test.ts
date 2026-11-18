@@ -1234,6 +1234,29 @@ describe('uncertainty and expectations', () => {
         text: '3 +- 1',
       },
     ])
+    // its fix writes the sum it was
+    const misplaced = def({ top: 'let x = 3 +- 1' }).replace('loadmap 1.1', 'loadmap 1.6')
+    const bad = compile(misplaced).diagnostics.filter((d) => d.code === 'bad-formula')
+    expect(quickFixes(misplaced, bad)[0]).toEqual([
+      {
+        title: 'Make it a plus and a minus: write "+ -"',
+        changes: [{ from: bad[0]!.from, to: bad[0]!.to, insert: '3 + - 1' }],
+      },
+    ])
+    // followed by more of a formula: one error at the mark, with the same fix
+    const longer = def({ top: 'let x = 3 +- 1 * 2' }).replace('loadmap 1.1', 'loadmap 1.6')
+    const said = compile(longer).diagnostics.filter((d) => d.severity === 'error')
+    expect(said.map((d) => [d.code, d.message, d.hint, longer.slice(d.from, d.to)])).toEqual([
+      [
+        'bad-formula',
+        '"+-" is ± from loadmap 1.6: one value goes after it',
+        'write "+ -" for a plus and a minus',
+        '+-',
+      ],
+    ])
+    expect(quickFixes(longer, said)[0]?.map((f) => f.changes)).toEqual([
+      [{ from: said[0]!.from, to: said[0]!.to, insert: '+ -' }],
+    ])
     // before 1.6 it is the sum it always was, and says what it is from 1.6
     for (const stamp of ['loadmap 1.1', 'loadmap 1.5']) {
       const old = def({ top: 'let x = 3 +- 1' }).replace('loadmap 1.1', stamp)
@@ -1248,6 +1271,13 @@ describe('uncertainty and expectations', () => {
       expect(fix?.title).toBe('Keep the sum: write "+ -"')
       expect(fix?.changes).toEqual([{ from: warned[0]!.from, to: warned[0]!.to, insert: '+ -' }])
     }
+    // in a capacity's value it was likely its ±: the first fix writes it so
+    const value = def({ api: 'estimated(800 +- 30%, "req/s")' }).replace('loadmap 1.1', 'loadmap 1.5')
+    const warned = compile(value).diagnostics.filter((d) => d.code === 'plus-minus')
+    expect(quickFixes(value, warned)[0]?.map((f) => [f.title, f.changes[0]?.insert])).toEqual([
+      ['Make it the ±: write "±"', '±'],
+      ['Keep the sum: write "+ -"', '+ -'],
+    ])
     // spaced, it was never one mark
     expect(compile(def({ top: 'let x = 3 + -1' })).diagnostics.filter((d) => d.code === 'plus-minus')).toEqual([])
   })
@@ -1256,14 +1286,14 @@ describe('uncertainty and expectations', () => {
     expect(errors(def({ top: 'let x = 3 ± 1' }))).toEqual([
       {
         message: '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
-        hint: 'write "+ -" for a plus and a minus',
+        hint: undefined,
         text: '3 ± 1',
       },
     ])
     expect(errors(def({ api: 'estimated(800, "req/s" ± 3)' }))).toEqual([
       {
         message: '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
-        hint: 'write "+ -" for a plus and a minus',
+        hint: undefined,
         text: '"req/s" ± 3',
       },
     ])

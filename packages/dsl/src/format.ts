@@ -3,8 +3,18 @@ import { type Diagnostic, Reporter } from './diagnostics'
 import { lex, type Token } from './lexer'
 import { parse } from './parser'
 import { cut, edgeLabels, foldWorkers, mods, oneSpelling, subsUp } from './rewrite'
-import { ONE_SPELLING, own, PLUS_MINUS, propNamed, SCHEMA } from './schema'
-import { before, CURRENT, lowest, needs, parseVersion, stampOf, type Version, versionText } from './versions'
+import { ONE_SPELLING, own, propNamed, SCHEMA } from './schema'
+import {
+  before,
+  CURRENT,
+  lowest,
+  needs,
+  PLUS_MINUS_VERSION,
+  parseVersion,
+  stampOf,
+  type Version,
+  versionText,
+} from './versions'
 import { applied, intoView, oldDirection, viewOf } from './viewblock'
 
 /** A line longer than this has its one-line blocks split, a statement a line. */
@@ -70,7 +80,7 @@ export function format(source: string): FormatResult {
   if (spelled.length) return format(applied(source, spelled))
   if (version) for (const [from, name] of renames(doc.body, version)) retext.set(from, name)
   // from 1.6 a capacity's ± is written "+-", for "±" and "+/-" too; an older stamp keeps what it wrote
-  if (version && !before(version, PLUS_MINUS_FROM))
+  if (version && !before(version, PLUS_MINUS_VERSION))
     for (const e of formulasOf(doc.body)) if (e.t === 'pm') retext.set(e.mark.from, '+-')
   const toks = lex(source, new Reporter(source), 0, source.length, true)
     .filter((t) => t.kind !== 'eof')
@@ -115,9 +125,6 @@ const VIEW_BLOCK: Version = [1, 2]
 
 /** The version from which one spelling is left: `workers` on its pool, `mod(a, b)`, a box's second text on its line. */
 const ONE: Version = parseVersion(ONE_SPELLING)!
-
-/** The version from which a capacity's ± is written `+-`. */
-const PLUS_MINUS_FROM: Version = parseVersion(PLUS_MINUS)!
 
 /** The version that reads a text continued on the next line. */
 const CONTINUED: Version = [1, 2]

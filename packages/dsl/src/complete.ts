@@ -482,7 +482,10 @@ class Help {
     if (call && CAPACITY.has(call.name) && call.arg > 0)
       return call.arg === 1 && !call.tokens.length ? this.units(false) : []
     // after a whole operand only an operator fits, or the ± of a capacity's value
-    const within = call?.arg === 0 && call.tokens.some(isPlusMinus)
+    // before 1.6 a "+-" is a plus and a minus: written glued in a capacity's value, it was meant as its ±
+    const glued = (t: Token, i: number, all: readonly Token[]) =>
+      t.text === '+' && all[i + 1]?.text === '-' && all[i + 1]!.from === t.to
+    const within = call?.arg === 0 && call.tokens.some((t, i, all) => isPlusMinus(t) || glued(t, i, all))
     if (last && (last.kind !== 'punct' || last.text === ')' || last.text === ']' || (within && last.text === '%'))) {
       if (call && call.arg === 0 && call.name !== 'configured' && CAPACITY.has(call.name) && !within)
         return [

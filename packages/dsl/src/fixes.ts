@@ -112,8 +112,15 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
     ...(data.mod ? [{ title: `Keep the remainder: ${data.mod}`, changes: replace(data.mod) }] : []),
   ],
 
-  // "+-" is a plus and a minus here (before 1.6)
-  'plus-minus': ({ replace }) => [{ title: 'Keep the sum: write "+ -"', changes: replace('+ -') }],
+  // "+-" is a plus and a minus here (before 1.6); in a capacity's value it was likely its ±
+  'plus-minus': ({ data, replace }) => [
+    ...(data.within ? [{ title: 'Make it the ±: write "±"', changes: replace('±') }] : []),
+    { title: 'Keep the sum: write "+ -"', changes: replace('+ -') },
+  ],
+
+  // "+-" (±) where it does not go, from 1.6: the sum it was before
+  'bad-formula': ({ data, replace }) =>
+    data.sum ? [{ title: 'Make it a plus and a minus: write "+ -"', changes: replace(data.sum) }] : [],
 
   // a -> b: { … }
   'colon-before-block': ({ replace }) => [{ title: 'Drop the ":"', changes: replace('') }],

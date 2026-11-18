@@ -14,8 +14,11 @@ export { before, parseVersion, type Version, versionText } from './stamp'
 
 export const CURRENT = parseVersion(LANGUAGE_VERSION)!
 
+/** The version from which a capacity's ± is written `+-` (and `+-` is no longer a plus and a minus). */
+export const PLUS_MINUS_VERSION: Version = parseVersion(PLUS_MINUS)!
+
 /** How a capacity's ± is written at a version: `+-` from 1.6 (`format()` writes it), `±` before. */
-export const plusMinusMark = (version: Version): string => (before(version, parseVersion(PLUS_MINUS)!) ? '±' : '+-')
+export const plusMinusMark = (version: Version): string => (before(version, PLUS_MINUS_VERSION) ? '±' : '+-')
 
 /**
  * The `loadmap` line's version: the number, as written, and the version it says. `version` is undefined when the text

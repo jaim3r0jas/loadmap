@@ -270,14 +270,20 @@ class Compiler {
       case 'array':
         this.report.error('bad-formula', e, 'a list is only allowed as the options of a parameter')
         return bad
-      case 'pm':
+      case 'pm': {
+        const src = this.report.source
+        // written "+-", it may be a sum from before 1.6
+        const ascii = src.slice(e.mark.from, e.mark.to) === '+-'
+        const sum = `${src.slice(e.from, e.mark.from)}+ -${src.slice(e.mark.to, e.to)}`
         this.report.error(
           'bad-formula',
           e,
           '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
-          'write "+ -" for a plus and a minus',
+          ascii ? 'write "+ -" for a plus and a minus' : undefined,
+          ascii ? { sum } : undefined,
         )
         return bad
+      }
     }
   }
 

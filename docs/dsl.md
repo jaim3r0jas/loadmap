@@ -188,8 +188,8 @@ with that scenario's button pressed.
 
 ### How sure, and what must hold
 
-A capacity says how sure it is with a `+-` (±) in its value, as a share (`30%`) or in its unit (`+- 1`). The editor
-draws it as `±` while ligatures are on; `±` and `+/-` read the same, and `loadmap fmt` writes `+-`:
+A capacity says how sure it is with a `+-` (±) in its value, as a share (`30%`) or in its unit (`+- 1`). `±` and
+`+/-` read the same, and `loadmap fmt` writes `+-`:
 
 ```loadmap
 capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")
@@ -197,7 +197,7 @@ capacity: measured(pods * 2 +- 5%, "cores", "pod CPU limit")
 ```
 
 Before `loadmap 1.6`, `a +- b` was `a + -b`, and a file stamped before it still reads it so: a warning
-(`plus-minus`) says so, and its quick fix writes `+ -`.
+(`plus-minus`) says so, and its quick fixes write `±` (in a capacity's value) or `+ -`.
 
 Every crossing is then also found with each capacity at its low bound and at its high bound, and the limits become
 ranges: "the 50 % target holds up to between 7.4× and 10×". The ranking, the first limit and the presets use the

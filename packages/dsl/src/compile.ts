@@ -2041,13 +2041,24 @@ export class Compiler {
    * the `±` it is from 1.6. Only a warning: the file computes what it did.
    */
   private plusMinuses(body: readonly Stmt[]) {
-    for (const e of formulasOf(body)) {
+    const formulas = [...formulasOf(body)]
+    // the first value of measured(…) or estimated(…), where a ± was likely meant
+    const values = new Set(
+      formulas.flatMap((e) =>
+        e.t === 'call' && (e.callee.name === 'measured' || e.callee.name === 'estimated') && e.args[0]
+          ? [e.args[0]]
+          : [],
+      ),
+    )
+    for (const e of formulas) {
       if (e.t !== 'bin' || !e.plusMinus) continue
+      const text = (x: Span) => this.source.slice(x.from, x.to)
       this.report.warning(
         'plus-minus',
         e.plusMinus,
-        `"+-" is a plus and a minus here: ${this.source.slice(e.left.from, e.left.to)} + ${this.source.slice(e.right.from, e.right.to)}`,
+        `"+-" is a plus and a minus here: ${text(e.left)} + ${text(e.right)}`,
         `from loadmap ${PLUS_MINUS} "+-" is ±; write "+ -" to keep the sum`,
+        values.has(e) ? { within: 'true' } : undefined,
       )
     }
   }

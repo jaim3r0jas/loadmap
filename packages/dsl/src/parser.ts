@@ -379,7 +379,23 @@ class Parser {
       this.fail(this.peek(), `the formula is nested more than ${MAX_DEPTH} deep`, undefined, 'too-large')
     try {
       const test = this.binary(1)
-      if (isPlusMinus(this.peek())) return this.pm(test)
+      if (isPlusMinus(this.peek())) {
+        const ascii = this.peek().text === '+-'
+        const pm = this.pm(test)
+        // from 1.6 "a +- b * c" is no longer a sum: one error that says so, and the rest read as the sum it was, so
+        // nothing after it is a second one
+        const next = this.peek()
+        if (!ascii || pm.t !== 'pm' || pm.percent || next.kind !== 'punct' || PREC[next.text] == null) return pm
+        this.report.error(
+          'bad-formula',
+          pm.mark,
+          '"+-" is ± from loadmap 1.6: one value goes after it',
+          'write "+ -" for a plus and a minus',
+          { sum: '+ -' },
+        )
+        const minus = { t: 'unary', op: '-', arg: pm.within, from: pm.mark.to - 1, to: pm.within.to } as const
+        return this.binary(1, { t: 'bin', op: '+', left: test, right: minus, from: test.from, to: minus.to })
+      }
       if (!this.eat('?')) return test
       const then = this.expr()
       this.expect(':', '":" of the "?"')
@@ -399,8 +415,9 @@ class Parser {
     return { t: 'pm', value, within, percent: !!percent, mark, from: value.from, to: percent?.to ?? within.to }
   }
 
-  binary(min: number): Expr {
-    let left = this.unary()
+  /** Operators of precedence `min` or more, after `left` (read here when not given). */
+  binary(min: number, first?: Expr): Expr {
+    let left = first ?? this.unary()
     for (;;) {
       const t = this.peek()
       const prec = t.kind === 'punct' ? PREC[t.text] : undefined
