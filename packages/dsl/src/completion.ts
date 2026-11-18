@@ -1,9 +1,18 @@
-// Completion over a model's files: an entry of its own (`@loadmap/dsl/completion`), for an editor that loads it on the
-// first completion it asks for, not with everything else it needs at once.
+// Completion over a model's files: an entry of its own (`@loadmap/dsl/internal/completion`, no promise between
+// versions), for loadmap's editor to load on the first completion it asks for, not with everything else at once.
 
-import type { Decl, Stmt } from './ast'
+import type { Decl } from './ast'
 import { type CompileOptions, Compiler, type DslSymbol, type Front, front } from './compile'
-import { type Completion, type Completions, completionsIn, headIn, type Input, inputsIn, inputsOf } from './complete'
+import {
+  type Completion,
+  type Completions,
+  completionsIn,
+  headIn,
+  type Input,
+  inputsIn,
+  inputsOf,
+  routable,
+} from './complete'
 import { Reporter } from './diagnostics'
 import { DEFAULT_PATH, type Files, fileText, type HeadLine, normalizePath, relativePath } from './files'
 import { parse } from './parser'
@@ -83,7 +92,7 @@ export function completionsAcross(source: string, offset: number, o: WorkspaceOp
               keyword: d.keyword.name,
               from: h.written ?? h.path!,
               inputs: inputsOf(text, d).length > 0,
-              route: routed(body, d),
+              route: routable(d, body),
             },
           ]
         : []
@@ -117,18 +126,6 @@ function inputsNamed(name: string, j: Joined, head: readonly HeadLine[], o: Work
     if (n && text != null) return inputsIn(text, parse(text, new Reporter(text)).doc.body, n.theirs.name)
   }
   return inputsIn(j.text, parse(j.text, new Reporter(j.text)).doc.body, name)
-}
-
-/** Whether a route may name a subsystem of a library: it says what a flow passes, or is like one there that does. */
-function routed(body: readonly Stmt[], d: Decl, depth = 0): boolean {
-  if (d.body?.some((s) => s.kind === 'prop' && s.key.name === 'route')) return true
-  const like = d.body?.find((s) => s.kind === 'prop' && s.key.name === 'like')
-  const name = like?.kind === 'prop' && like.value.t === 'id' ? like.value.name : undefined
-  const base = body.find(
-    (s): s is Decl =>
-      s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id' && s.args[0].name === name,
-  )
-  return !!base && depth < 4 && routed(body, base, depth + 1)
 }
 
 /** The last linked names, by the texts they were read from: completion asks again on every keystroke. */

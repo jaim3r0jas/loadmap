@@ -344,7 +344,8 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
       case 'textDocument/completion': {
         const c = completionsAcross(d.text, at, around(d, true))
         return {
-          isIncomplete: false,
+          // an item that changes the text elsewhere (an edge) is asked for again on every key: its places move
+          isIncomplete: c.options.some((o) => o.edits),
           items: c.options.map((o, i) => ({
             label: o.label,
             kind: KIND[o.type],

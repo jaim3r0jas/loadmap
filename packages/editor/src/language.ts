@@ -92,15 +92,13 @@ function cmCompletion(o: Completion): CmCompletion {
   const { snippet, edits, ...rest } = o
   if (snippet) return snippetCompletion(snippet, rest)
   if (!edits) return rest
-  // the word and the edge the route needs, one step in the history
+  // the word and the edge the route needs, one step in the history; the cursor after the word, wherever the edge went
   return {
     ...rest,
-    apply: (view, _c, from, to) =>
-      view.dispatch({
-        changes: [{ from, to, insert: o.apply ?? o.label }, ...edits],
-        selection: { anchor: from + (o.apply ?? o.label).length },
-        userEvent: 'input.complete',
-      }),
+    apply: (view, _c, from, to) => {
+      const changes = view.state.changes([{ from, to, insert: o.apply ?? o.label }, ...edits])
+      view.dispatch({ changes, selection: { anchor: changes.mapPos(to, 1) }, userEvent: 'input.complete' })
+    },
   }
 }
 
@@ -115,9 +113,9 @@ export interface Around {
 }
 
 /** Completion's code, fetched once: the first time the text has the focus, or the first list asked for. */
-let completion: Promise<typeof import('@loadmap/dsl/completion')> | undefined
+let completion: Promise<typeof import('@loadmap/dsl/internal/completion')> | undefined
 const loadCompletion = () => {
-  completion ??= import('@loadmap/dsl/completion')
+  completion ??= import('@loadmap/dsl/internal/completion')
   return completion
 }
 
@@ -141,7 +139,14 @@ const completeWith =
       return null
     // in a text (a unit) a "/" is part of the word; in a formula it is a division, after which the list starts again
     const inText = /["'`]/.test(source[c.from - 1] ?? '')
-    return { from: c.from, to: c.to, options: c.options.map(cmCompletion), validFor: inText ? /^[\w/]*$/ : /^\w*$/ }
+    // an option that changes the text elsewhere (an edge) is worked out again on every key: its places move
+    const again = c.options.some((o) => o.edits)
+    return {
+      from: c.from,
+      to: c.to,
+      options: c.options.map(cmCompletion),
+      ...(!again && { validFor: inText ? /^[\w/]*$/ : /^\w*$/ }),
+    }
   }
 
 /** A line of help: its `code` as code elements, the rest as text. Never HTML: a shared definition is untrusted. */

@@ -280,7 +280,7 @@ describe('completions that know where they are', () => {
     const db = c.options.find((o) => o.label === 'db')!
     expect(db).toMatchObject({ boost: -1, detail: 'stage, draws gateway -> db' })
     // after the file's last edge
-    const last = src.replace('|', '').trimEnd()
+    const last = src.replaceAll('|', '').trimEnd()
     expect(db.edits).toEqual([{ from: last.length, to: last.length, insert: '\ngateway -> db' }])
     // a route's first stage: the one its from node has an edge to
     const first = at(inside('flow orders "orders" {', 'route: |')).c.options
@@ -515,6 +515,26 @@ describe('completions ranked by what the model already says', () => {
       detail: 'node, a route goes here',
       boost: 2,
     })
+  })
+
+  it("draw an edge before the statement being written while the file has none, and keep the edge being written's end", () => {
+    const open = `loadmap ${LANGUAGE_VERSION}\nload { max: 1 }\nnode a "A" { pass }\nnode b "B" { pass }\nflow q {\n  rate: 1\n  from: a\n  route: a -> |`
+    const b = at(open).c.options.find((o) => o.label === 'b')
+    // the flow's block is not closed: the end of the file is inside it
+    expect(b?.edits).toEqual([{ from: open.indexOf('flow q'), to: open.indexOf('flow q'), insert: 'a -> b\n' }])
+    // the end of an edge already written is offered at it
+    expect(at(every.replace('\napi -> mailer\n', '\napi -> mailer|\n')).labels).toContain('mailer')
+  })
+
+  it("rank an edge from a flow's from node to its first stage, and a hop written by a box's name", () => {
+    const noEdge = every
+      .replace('users -> gateway: "HTTPS"\n', '')
+      .replace('mailer -> sms\n', 'mailer -> sms\nusers -> |\n')
+    expect(at(noEdge).c.options.find((o) => o.label === 'gateway')).toMatchObject({ boost: 2 })
+    const byBox = every
+      .replace('route: gateway -> topic -> eventWorkers -> push', 'route: gateway -> kafka -> eventWorkers -> push')
+      .replace('flows: [events]', 'flows: [|]')
+    expect(first(byBox)).toEqual(['events'])
   })
 
   it('offer the flows that pass a queue, a box or a hop first', () => {
