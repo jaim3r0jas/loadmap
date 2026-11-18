@@ -1,5 +1,20 @@
 # @loadmap/cli
 
+## 0.38.0
+
+### Patch Changes
+
+- a538b85: Completion ranks by what the model already says. In a route, the stages an edge joins to the last one come first; the
+  others come last and draw the edge they need when picked (in VS Code too, as an additional edit). `from:` offers the
+  nodes that run no stage first, an edge leaves out what is drawn already and offers where a route goes next first, and
+  `partitions`, `held` and a connection's `flows` offer the flows that pass there first. A box with one queue of another
+  name is offered once, by its stage, and a subsystem never next to its own boxes. Completion's code is an entry of its
+  own, which the editor loads the first time the text has the focus. The language server opens the list after `{` and `[` too.
+- aca02dd: **`completions()` and `completionsAcross()` move to `@loadmap/dsl/completion`**: `import { completions } from
+  '@loadmap/dsl/completion'`. The main entry no longer exports them (their types `Completion` and `Completions` stay):
+  while it did, every bundler kept completion in the first load of a page that imports anything from `@loadmap/dsl`, and
+  the editor, which now loads it with its first list, starts about 7 kB lighter.
+
 ## 0.37.0
 
 No changes in this release.

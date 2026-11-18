@@ -1,5 +1,41 @@
 # @loadmap/editor
 
+## 0.38.0
+
+### Minor Changes
+
+- bbf3d7a: Add → From the catalog asks how flows use the new box: the stage where its kind has two (flows end here, or go on),
+  a queue's partitions and the rule the pool after it reads by (`kafka/consumer-group`), a cache's hit ratio, what one
+  unit is worth in a figure's unit that counts no units a second (tpmC), and which flows pass it and where on each
+  route. It says the demand in words, shows the lines it adds and takes out before it adds them, and says why when it
+  cannot.
+- aca02dd: The editor's keys are found where a reader looks. View → Keyboard shortcuts lists them for the platform it runs on:
+  what fits at the cursor (Ctrl+Space, on a Mac also ⌥I), go to a definition, rename, format, find and replace, the
+  editing and moving keys, and how to leave the text with the keyboard. An empty text says how to start. Ctrl+F (⌘F)
+  finds and replaces in the text, which the browser's find cannot (the editor draws only the lines in view): its code
+  loads with the first search. On a phone the row over the keyboard has Suggest and Find.
+
+### Patch Changes
+
+- a538b85: Completion ranks by what the model already says. In a route, the stages an edge joins to the last one come first; the
+  others come last and draw the edge they need when picked (in VS Code too, as an additional edit). `from:` offers the
+  nodes that run no stage first, an edge leaves out what is drawn already and offers where a route goes next first, and
+  `partitions`, `held` and a connection's `flows` offer the flows that pass there first. A box with one queue of another
+  name is offered once, by its stage, and a subsystem never next to its own boxes. Completion's code is an entry of its
+  own, which the editor loads the first time the text has the focus. The language server opens the list after `{` and `[` too.
+- aca02dd: **`completions()` and `completionsAcross()` move to `@loadmap/dsl/completion`**: `import { completions } from
+  '@loadmap/dsl/completion'`. The main entry no longer exports them (their types `Completion` and `Completions` stay):
+  while it did, every bundler kept completion in the first load of a page that imports anything from `@loadmap/dsl`, and
+  the editor, which now loads it with its first list, starts about 7 kB lighter.
+- Updated dependencies [7bd53ff]
+- Updated dependencies [bbf3d7a]
+- Updated dependencies [ceaab31]
+- Updated dependencies [a538b85]
+- Updated dependencies [aca02dd]
+  - @loadmap/core@0.38.0
+  - @loadmap/dsl@0.38.0
+  - @loadmap/react@0.38.0
+
 ## 0.37.0
 
 ### Minor Changes

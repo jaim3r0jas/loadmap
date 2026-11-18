@@ -1,5 +1,19 @@
 # @loadmap/react
 
+## 0.38.0
+
+### Patch Changes
+
+- Updated dependencies [7bd53ff]
+- Updated dependencies [bbf3d7a]
+- Updated dependencies [ceaab31]
+- Updated dependencies [a538b85]
+- Updated dependencies [aca02dd]
+  - @loadmap/core@0.38.0
+  - @loadmap/dsl@0.38.0
+  - @loadmap/layout@0.38.0
+  - @loadmap/sim@0.38.0
+
 ## 0.37.0
 
 ### Minor Changes
