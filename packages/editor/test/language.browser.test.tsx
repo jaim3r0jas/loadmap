@@ -74,11 +74,12 @@ describe('completion in the editor', () => {
     expect(options()).toEqual([])
     await userEvent.keyboard('{Control>}[Space]{/Control}')
     await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('demand')
-    // what a box holds, at the cursor: the list starts under it
+    // what a box holds, at the cursor: the list starts at it, under the line or, near the bottom, over it
     const caret = v.coordsAtPos(v.state.selection.main.head)!
     const list = document.querySelector('.cm-tooltip-autocomplete')!.getBoundingClientRect()
     expect(Math.abs(list.left - caret.left)).toBeLessThan(48)
-    expect(list.top).toBeGreaterThanOrEqual(caret.top)
+    const gap = Math.min(Math.abs(list.top - caret.bottom), Math.abs(list.bottom - caret.top))
+    expect(gap).toBeLessThan(12)
   })
 
   it("draws the edge a route's next stage needs, and leaves the cursor after the word", async () => {
