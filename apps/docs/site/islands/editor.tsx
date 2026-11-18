@@ -1,7 +1,9 @@
 // The editor, the whole window, with the reader's draft kept in this browser. A shared link (#v1.…), a template
 // (?template=…) or an example (?example=…) opens instead of the draft; editing it makes it the draft, and the earlier
 // draft stays one click away. A link opens for readers: the diagram with the inspector, the text one click away
-// (?code opens it with the text, as the docs' Edit links do). Close goes back to the docs.
+// (?code opens it with the text, as the docs' Edit links do). A repository (?repo=owner/name&ref=…&path=…) opens its
+// model and the files it reaches from GitHub, as New → Open from GitHub does; the GitHub code loads only then.
+// Close goes back to the docs.
 import { decodeShare, type Shared } from '@loadmap/dsl'
 import {
   type BarSection,
@@ -17,13 +19,15 @@ import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { regionsFiles } from '@loadmap/example-regions'
 import { searchSource } from '@loadmap/example-search'
-import { type MouseEvent, StrictMode, useEffect, useRef, useState } from 'react'
+import { lazy, type MouseEvent, StrictMode, Suspense, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import platformSource from '../../../../docs/multi-file/platform.loadmap?raw'
 import shopSource from '../../../../docs/multi-file/shop.loadmap?raw'
 import storySource from '../../../../docs/multi-file/shop.story.loadmap?raw'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
+import type { Listing, Opened } from './github/load'
+import type { RepoTarget } from './github/parse'
 import { useRecorder } from './recorder'
 
 const SOURCES = {
@@ -110,6 +114,9 @@ function embedLink(hash: string, o: EmbedOptions): string {
   return `${url.href}#${hash}`
 }
 const fromLink = () => location.hash.startsWith('#v1.') || location.hash.startsWith('#v2.')
+const fromRepo = () => !fromLink() && query().has('repo')
+/** The GitHub dialog, loaded the first time it opens. */
+const OpenDialog = lazy(() => import('./github/OpenDialog'))
 const template = () => TEMPLATES.find((t) => t.id === query().get('template'))
 const example = () => {
   const name = query().get('example')
@@ -231,16 +238,38 @@ function Editor({ root }: { root: URL }) {
   const { png, poster, record } = useRecorder('editor', get)
   const [help, setHelp] = useHelp()
   const [close] = useState(() => closeTo(root))
-  // a link's definition wins over the draft; reading it is async, so the editor waits for it
+  // a link's definition (or a repository's) wins over the draft; reading it is async, so the editor waits for it
   const [start, setStart] = useState<Shared | null>(() =>
-    fromLink() ? null : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
+    fromLink() || fromRepo() ? null : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
   )
+  const [github, setGithub] = useState<{ target?: RepoTarget; listing?: Listing } | null>(null)
   useEffect(() => {
-    if (!start) decodeShare(location.hash).then(setStart)
+    if (start) return
+    if (!fromRepo()) {
+      decodeShare(location.hash).then(setStart)
+      return
+    }
+    let gone = false
+    import('./github/start')
+      .then((m) => m.fromQuery(query()))
+      .catch(() => ({ error: 'The GitHub part of the page could not load' }))
+      .then((r) => {
+        if (gone) return
+        if ('opened' in r) setStart(fromOpened(r.opened))
+        else if ('error' in r) setStart({ error: `${r.error}` })
+        else {
+          // several models and none named: the reader picks one, the draft behind
+          setStart(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} })
+          setGithub({ listing: r.listing, target: r.target })
+        }
+      })
+    return () => {
+      gone = true
+    }
   }, [start])
   // editing what came from outside makes it the draft: the earlier draft is kept aside, and the address loses the
   // link, the template or the example, so a reload shows the edits
-  const outside = useRef(fromLink() || !!template() || !!example())
+  const outside = useRef(fromLink() || fromRepo() || !!template() || !!example())
   // a link opens for readers (the code with ?code); else the code shows or hides as the reader left it
   const [layout] = useState<EditorLayout>(() =>
     fromLink() ? (query().has('code') ? 'code' : 'reader') : read(LAYOUT) === 'reader' ? 'reader' : 'code',
@@ -287,7 +316,12 @@ function Editor({ root }: { root: URL }) {
     e.preventDefault()
     history.back()
   }
-  if (!start) return <p className="app-note">Opening the link…</p>
+  if (!start) return <p className="app-note">{fromRepo() ? 'Opening the repository…' : 'Opening the link…'}</p>
+  // a repository's files take the draft's place as an example does: the draft is kept aside on the first edit
+  const opened = (o: Opened) => {
+    outside.current = true
+    editor.current?.setFiles({ path: o.path, files: o.files })
+  }
 
   const examples: BarSection[] = [
     {
@@ -305,6 +339,9 @@ function Editor({ root }: { root: URL }) {
       ],
     },
   ]
+  const repos: BarSection[] = [
+    { label: 'GitHub', items: [{ label: 'Open from GitHub…', onSelect: () => setGithub({}) }] },
+  ]
   const images: BarSection[] = [
     {
       label: 'Image',
@@ -316,78 +353,88 @@ function Editor({ root }: { root: URL }) {
     },
   ]
   return (
-    <LoadmapEditor
-      ref={editor}
-      fill
-      theme="inherit"
-      initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
-      values={'values' in start ? start.values : undefined}
-      files={
-        'files' in start && start.files && start.path != null ? { path: start.path, files: start.files } : undefined
-      }
-      onFiles={saveFiles}
-      layout={layout}
-      onChange={save}
-      embedLink={embedLink}
-      split={split}
-      onSplit={(n) => write(SPLIT, String(n))}
-      panel={panel}
-      onPanel={(p) => write(PANEL, p)}
-      panelWidth={panelWidth}
-      onPanelWidth={(n) => write(PANEL_WIDTH, String(n))}
-      // a link opens as its sender meant it: what the reader does with it is not how they leave their own editor
-      onLayout={(l) => !linked && write(LAYOUT, l)}
-      track={read(TRACK) === 'on'}
-      onTrack={(on) => write(TRACK, on ? 'on' : 'off')}
-      start={
-        <>
-          <a
-            className="lm-btn lme-quiet app-close"
-            href={close.href}
-            onClick={leave}
-            aria-label="Docs"
-            title="Back to the docs"
-          >
-            <Icon d="M13 8H3M7 4 3 8l4 4" />
-            <span className="app-label">Docs</span>
-          </a>
-          <a className="app-brand" href={root.href}>
-            loadmap
-          </a>
-          {'error' in start && <span className="app-error">{start.error}; showing your draft instead.</span>}
-        </>
-      }
-      newItems={examples}
-      exportItems={images}
-      actions={
-        <>
-          <ThemeMenu />
-          <button
-            type="button"
-            className="lm-btn lme-quiet lme-icon app-wide"
-            aria-label="Help"
-            title="Help"
-            aria-expanded={help}
-            aria-controls="help"
-            onClick={() => setHelp(!help)}
-          >
-            <Icon d="M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8zM6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4M8 11.6v.1" />
-          </button>
-          <ThemeSwitch />
-          <button
-            type="button"
-            className="lme-item app-narrow"
-            aria-expanded={help}
-            aria-controls="help"
-            onClick={() => setHelp(!help)}
-          >
-            Help
-          </button>
-        </>
-      }
-    />
+    <>
+      {github && (
+        <Suspense fallback={null}>
+          <OpenDialog start={github} onOpen={opened} onClose={() => setGithub(null)} />
+        </Suspense>
+      )}
+      <LoadmapEditor
+        ref={editor}
+        fill
+        theme="inherit"
+        initial={'source' in start ? start.source : (readDraft() ?? SOURCES.uploads)}
+        values={'values' in start ? start.values : undefined}
+        files={
+          'files' in start && start.files && start.path != null ? { path: start.path, files: start.files } : undefined
+        }
+        onFiles={saveFiles}
+        layout={layout}
+        onChange={save}
+        embedLink={embedLink}
+        split={split}
+        onSplit={(n) => write(SPLIT, String(n))}
+        panel={panel}
+        onPanel={(p) => write(PANEL, p)}
+        panelWidth={panelWidth}
+        onPanelWidth={(n) => write(PANEL_WIDTH, String(n))}
+        // a link opens as its sender meant it: what the reader does with it is not how they leave their own editor
+        onLayout={(l) => !linked && write(LAYOUT, l)}
+        track={read(TRACK) === 'on'}
+        onTrack={(on) => write(TRACK, on ? 'on' : 'off')}
+        start={
+          <>
+            <a
+              className="lm-btn lme-quiet app-close"
+              href={close.href}
+              onClick={leave}
+              aria-label="Docs"
+              title="Back to the docs"
+            >
+              <Icon d="M13 8H3M7 4 3 8l4 4" />
+              <span className="app-label">Docs</span>
+            </a>
+            <a className="app-brand" href={root.href}>
+              loadmap
+            </a>
+            {'error' in start && <span className="app-error">{start.error}; showing your draft instead.</span>}
+          </>
+        }
+        newItems={[...examples, ...repos]}
+        exportItems={images}
+        actions={
+          <>
+            <ThemeMenu />
+            <button
+              type="button"
+              className="lm-btn lme-quiet lme-icon app-wide"
+              aria-label="Help"
+              title="Help"
+              aria-expanded={help}
+              aria-controls="help"
+              onClick={() => setHelp(!help)}
+            >
+              <Icon d="M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8zM6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4M8 11.6v.1" />
+            </button>
+            <ThemeSwitch />
+            <button
+              type="button"
+              className="lme-item app-narrow"
+              aria-expanded={help}
+              aria-controls="help"
+              onClick={() => setHelp(!help)}
+            >
+              Help
+            </button>
+          </>
+        }
+      />
+    </>
   )
 }
+
+/** What the editor opens with for a repository's model: its files, the model's text first. */
+const fromOpened = (o: Opened): Shared => ({ source: o.files[o.path] ?? '', values: {}, path: o.path, files: o.files })
 
 export function mount(el: HTMLElement) {
   const root = new URL(document.body.dataset.root ?? './', location.href)

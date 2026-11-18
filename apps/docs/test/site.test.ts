@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
 import { FENCES, highlight } from '../highlight'
 import { included, MOVED, PAGES, relative, render } from '../pages'
+import { fakeGitHub } from './fake-github'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
 const routeOf = (href: string, from: string) => new URL(href, `http://x/${from ? `${from}/` : ''}`).pathname
@@ -30,6 +31,29 @@ function expectLinks(html: string, route: string, label: string) {
       expect(routes.has(path), `${label} links to ${href} (${path})`).toBe(true)
     }
   }
+}
+
+/** Chromium's calls to GitHub, answered by a fake: nothing reaches the real one. */
+async function routeGitHub(page: Page, fetch: ReturnType<typeof fakeGitHub>['fetch']) {
+  await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, async (route) => {
+    const req = route.request()
+    const cors = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-GitHub-Api-Version, Accept',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH',
+    }
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    const res = await fetch(req.url(), {
+      method: req.method(),
+      headers: req.headers(),
+      body: req.postData() ?? undefined,
+    })
+    await route.fulfill({
+      status: res.status,
+      headers: { ...Object.fromEntries(res.headers), ...cors },
+      body: await res.text(),
+    })
+  })
 }
 
 /** The text a piece of the build's own HTML shows: what is between its tags, the three entities the build writes read. */
@@ -724,6 +748,53 @@ describe('the built site', () => {
       await page.waitForSelector('[data-node]')
       expect(await page.locator('.lme-left').isVisible()).toBe(true)
       expect(await page.locator('.lme-inspector').count()).toBe(0)
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('opens a repository from GitHub: the model an address names, or one picked in New → Open from GitHub', async () => {
+    const shop = (f: string) => readFileSync(join(import.meta.dirname, '../../../docs/multi-file', f), 'utf8')
+    const fake = fakeGitHub({
+      owner: 'acme',
+      name: 'capacity',
+      refs: {
+        main: {
+          'models/shop.loadmap': shop('shop.loadmap'),
+          'models/shop.story.loadmap': shop('shop.story.loadmap'),
+          'models/platform.loadmap': shop('platform.loadmap'),
+          'uploads.loadmap': readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8'),
+        },
+      },
+    })
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await routeGitHub(page, fake.fetch)
+      await page.goto(`${url}editor/?repo=acme/capacity&path=models/shop.loadmap`)
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'A shop in several files')
+      expect(await page.getByRole('tab', { name: /^shop\.loadmap/ }).count()).toBe(1)
+      // the files come from the commit the branch named when the page asked, by its sha
+      const raws = fake.calls.filter((c) => c.url.startsWith('https://raw.githubusercontent.com/'))
+      expect(raws.map((c) => c.url.split('/').slice(5).join('/')).sort()).toEqual([
+        'models/platform.loadmap',
+        'models/shop.loadmap',
+        'models/shop.story.loadmap',
+      ])
+
+      await page.getByRole('button', { name: 'New', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Open from GitHub…' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Open from GitHub' })
+      await dialog.getByLabel('Repository').fill('https://github.com/acme/capacity/tree/main')
+      await dialog.getByRole('button', { name: 'Open', exact: true }).click()
+      await dialog.getByRole('button', { name: /^uploads\.loadmap/ }).click()
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Photo uploads')
+      expect(await dialog.isVisible()).toBe(false)
+
+      // a repository that is not there, in a sentence; the draft stays
+      await page.goto(`${url}editor/?repo=acme/nothing`)
+      await page.getByText('acme/nothing was not found. If it is private, give a token to read it').waitFor()
+      await page.waitForSelector('.lme-title')
     } finally {
       await browser.close()
     }

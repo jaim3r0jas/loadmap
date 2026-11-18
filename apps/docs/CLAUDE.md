@@ -29,3 +29,10 @@ would miss the rest. The token colours are `--tok-*` in `docs.css`, the editor's
 value (`site.test.ts` compares them in light and dark). Vite loads the config with `--configLoader runner` (the
 scripts, and `configLoader: 'runner'` wherever a test builds or serves the site): the config imports the editor's
 highlighter, whose workspace imports the default loader hands to Node as TypeScript.
+
+The editor opens GitHub repositories (`?repo=owner/name&ref=…&path=…`, New → Open from GitHub): `site/islands/github/`,
+loaded only on that menu or address, talks to `api.github.com` and `raw.githubusercontent.com` and nothing else
+(`api.ts`), pins the commit a ref names, and reads the model and what it reaches through `imports()` within the
+definition's limits (`load.ts`). A repository is untrusted input: its paths go through `cleanPath`. A token never goes
+into an address, a share link or localStorage. Tests answer from `test/fake-github.ts` (as `fetch` in node, through
+`page.route` in Chromium): nothing reaches the real GitHub.
