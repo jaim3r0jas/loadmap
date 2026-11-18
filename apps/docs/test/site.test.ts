@@ -9,6 +9,7 @@ import { type Browser, chromium, type Frame, type Page } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
+import { inlineHashes } from '../csp'
 import { FENCES, highlight } from '../highlight'
 import { included, MOVED, PAGES, relative, render } from '../pages'
 import { fakeGitHub, shaOf } from './fake-github'
@@ -33,8 +34,13 @@ function expectLinks(html: string, route: string, label: string) {
   }
 }
 
-/** Chromium's calls to GitHub, answered by a fake: nothing reaches the real one. */
+/** Chromium's calls to GitHub, answered by a fake: nothing reaches the real one. What the page's policy refuses is kept. */
 async function routeGitHub(page: Page, fetch: ReturnType<typeof fakeGitHub>['fetch']) {
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    Object.assign(window, { refused: seen })
+    document.addEventListener('securitypolicyviolation', (e) => seen.push(`${e.violatedDirective} ${e.blockedURI}`))
+  })
   await page.route(/^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//, async (route) => {
     const req = route.request()
     const cors = {
@@ -55,6 +61,9 @@ async function routeGitHub(page: Page, fetch: ReturnType<typeof fakeGitHub>['fet
     })
   })
 }
+
+/** What the page's Content-Security-Policy refused since it loaded (routeGitHub listens). */
+const refused = (page: Page) => page.evaluate(() => (window as unknown as { refused: string[] }).refused)
 
 /** The text a piece of the build's own HTML shows: what is between its tags, the three entities the build writes read. */
 const textOf = (html: string) =>
@@ -204,6 +213,16 @@ describe('the built site', () => {
   afterAll(async () => {
     await server?.close()
     if (out) await rm(out, { recursive: true })
+  })
+
+  it('gives the editor a Content-Security-Policy that names its inline script, and no other page one', () => {
+    const html = readFileSync(join(out, 'editor/index.html'), 'utf8')
+    const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1]
+    expect(policy).toBeDefined()
+    expect(html.indexOf('Content-Security-Policy')).toBeLessThan(html.indexOf('<script'))
+    for (const hash of inlineHashes(html)) expect(policy).toContain(hash)
+    expect(policy).toContain('connect-src')
+    expect(readFileSync(join(out, 'index.html'), 'utf8')).not.toContain('Content-Security-Policy')
   })
 
   it('is static HTML: a page per route with its text, and a 404', () => {
@@ -923,6 +942,8 @@ describe('the built site', () => {
       await dialog.getByText('Saved as').waitFor()
       expect(writes().at(-1)).toMatchObject({ method: 'PATCH', body: { force: false } })
       expect(new URL(writes().at(-1)!.url).pathname).toBe('/repos/acme/capacity/git/refs/heads/loadmap/shop')
+      // the editor's policy let all of it through
+      expect(await refused(page)).toEqual([])
     } finally {
       await browser.close()
     }
@@ -995,6 +1016,7 @@ describe('the built site', () => {
       await page.getByRole('menuitem', { name: /^Your edits to acme\/private/ }).click()
       await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Secret uploads')
       expect(await page.locator('.cm-content').textContent()).toContain('# edited here')
+      expect(await refused(page)).toEqual([])
     } finally {
       await browser.close()
     }

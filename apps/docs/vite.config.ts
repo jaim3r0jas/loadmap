@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+import { withPolicy } from './csp'
 import { included, llms, SITE, writePages } from './pages'
 
 // DOCS_BASE is where the site is served: "/" here, "/loadmap/" on GitHub Pages
@@ -46,10 +47,22 @@ function pages(): Plugin {
   }
 }
 
+/** The editor's page gets its Content-Security-Policy once built: the dev server's own scripts would break it. */
+function policy(): Plugin {
+  return {
+    name: 'loadmap-docs-csp',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler: (html, ctx) => (ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html) : html),
+    },
+  }
+}
+
 export default defineConfig({
   root: SITE,
   base,
-  plugins: [pages(), react()],
+  plugins: [pages(), react(), policy()],
   // elkjs (about 1.5 MB) runs in a worker chunk of its own, loaded on the first layout
   build: { outDir: join(import.meta.dirname, 'dist'), emptyOutDir: true, chunkSizeWarningLimit: 2500 },
   server: {

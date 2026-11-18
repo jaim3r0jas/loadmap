@@ -26,15 +26,25 @@ A click on a box selects its lines in the text, and the cursor in a box's lines 
 what can go at the cursor: the statements and properties of the block it is in, the names a formula can read, the
 stages a route can take next. Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it.
 **View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text. There is nothing to save: the page keeps
-your draft as you type, so ⌘S (Ctrl+S) only says so.
+your draft as you type, so ⌘S (Ctrl+S) only says so, unless the files came from GitHub (below).
 
 **New** starts from a template or an example, and **Export** downloads the text or an image. **New → Open from
 GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
 the files it names. A public repository opens as it is; a private one asks for a token in place: the dialog links
 to GitHub's form, filled in, and the token stays in the page (or this tab, if you say so), never in a link or this
 browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
-one as well:
-`/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch).
+one as well: `/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch), for instance from a
+repository's README:
+
+```text
+[Open in the loadmap editor](https://jaim3r0jas.github.io/loadmap/editor/?repo=owner/name&path=models/shop.loadmap)
+```
+
+The repository's name in the bar says how many files you changed; it opens **Changes**: each file's diff, **Undo**
+for one or all. **Save to GitHub…** there (or ⌘S) writes them as a commit on a new branch of the repository, and opens
+a pull request into the branch they came from if you ask; the next save adds a commit to that branch. It needs a
+token that may write (Contents, and Pull requests for the pull request), asked for in place; nothing is written before
+you press **Save to GitHub**.
 
 **Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a
 page…**, for a frame in another page. The link opens with the text hidden: the diagram, and an inspector in the panel.
