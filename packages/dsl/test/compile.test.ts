@@ -1159,7 +1159,7 @@ describe('the checker', () => {
     ])
     expect(errors(def().replace('loadmap 1.1', 'loadmap 2'))).toMatchObject([
       {
-        message: 'this definition is written in language version 2; this loadmap reads version 1.5',
+        message: 'this definition is written in language version 2; this loadmap reads version 1.6',
         hint: 'update @loadmap/dsl',
       },
     ])
