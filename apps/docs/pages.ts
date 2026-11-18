@@ -412,6 +412,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
         <a class="brand" href="${up}">loadmap</a>
         <a class="version" href="${up}whats-new/" title="This site documents ${documents}: what's new">v${version}</a>
         <span class="grow"></span>
+        <button type="button" class="search-open" hidden aria-keyshortcuts="/ Control+K Meta+K"><span aria-hidden="true">⌕</span><span class="label"> Search</span> <kbd>/</kbd></button>
         <span class="out">${out}</span>
         ${themeSwitch('theme-bar')}
         <details class="menu">
@@ -592,6 +593,59 @@ const EMBED_HTML = `<!doctype html>
   </body>
 </html>
 `
+
+/** A section of the site, for search: where it is, its page, its heading and its text. Short keys: it is fetched whole. */
+export interface Found {
+  /** Its route and its heading's id, from the site's root: `language/formulas/#units`. */
+  u: string
+  /** The page's title. */
+  p: string
+  /** The section's heading; the page's title for the text before the first. */
+  h: string
+  /** Its text, tags taken out. */
+  t: string
+}
+
+const textOfHtml = (html: string) =>
+  html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<details class="toc-folded">[\s\S]*?<\/details>/g, '')
+    .replace(/<button[\s\S]*?<\/button>/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+/**
+ * search.json: every page of the site cut at its h2 and h3 headings, each piece with its text. The search loads it the
+ * first time it opens, never in a page's first load.
+ */
+export function searchIndex(): Found[] {
+  const out: Found[] = []
+  for (const page of DOCS) {
+    const { title, html } = render(page)
+    const at = page.route ? `${page.route}/` : ''
+    // the pieces between the headings; the first is the text under the title
+    const parts = html.split(/(?=<h[23] id=")/)
+    for (const part of parts) {
+      const heading = /^<h([23]) id="([^"]+)">([\s\S]*?)<\/h\1>/.exec(part)
+      const body = heading ? part.slice(heading[0].length) : part.replace(/^[\s\S]*?<\/h1>/, '')
+      const t = textOfHtml(body)
+      if (!heading && !t) continue
+      out.push({
+        u: heading ? `${at}#${heading[2]}` : at,
+        p: textOfHtml(title),
+        h: heading ? textOfHtml(heading[3]!) : textOfHtml(title),
+        t,
+      })
+    }
+  }
+  return out
+}
 
 const PUBLISHED = 'https://jaim3r0jas.github.io/loadmap/'
 

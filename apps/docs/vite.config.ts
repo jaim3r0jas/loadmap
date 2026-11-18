@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { withPolicy } from './csp'
-import { included, llms, SITE, writePages } from './pages'
+import { included, llms, SITE, searchIndex, writePages } from './pages'
 import { signInConfig } from './site/islands/github/signin'
 
 // DOCS_BASE is where the site is served: "/" here, "/loadmap/" on GitHub Pages
@@ -33,10 +33,14 @@ function pages(): Plugin {
         }
         server.ws.send({ type: 'full-reload' })
       })
-      // llms.txt and llms-full.txt, read fresh on each request
+      // llms.txt, llms-full.txt and the search's index, made fresh on each request
       server.middlewares.use((req, res, next) => {
         const path = req.url?.split('?')[0] ?? ''
         const name = path.startsWith(base) ? path.slice(base.length) : ''
+        if (name === 'search.json') {
+          res.setHeader('content-type', 'application/json')
+          return res.end(JSON.stringify(searchIndex()))
+        }
         if (name !== 'llms.txt' && name !== 'llms-full.txt') return next()
         res.setHeader('content-type', 'text/plain; charset=utf-8')
         res.end(llms()[name])
@@ -44,6 +48,7 @@ function pages(): Plugin {
     },
     generateBundle() {
       for (const [fileName, source] of Object.entries(llms())) this.emitFile({ type: 'asset', fileName, source })
+      this.emitFile({ type: 'asset', fileName: 'search.json', source: JSON.stringify(searchIndex()) })
     },
   }
 }

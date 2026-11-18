@@ -146,6 +146,48 @@ a {
   flex: 1;
 }
 
+/* the search's button, shown once the page's script can open it: its dialog brings its own styles */
+.search-open[hidden] {
+  display: none;
+}
+
+.search-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.search-open:hover,
+.search-open:focus-visible {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.search-open kbd {
+  font:
+    0.72rem ui-monospace,
+    Menlo,
+    monospace;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+@media (max-width: 720px) {
+  .search-open .label,
+  .search-open kbd {
+    display: none;
+  }
+}
+
 .out {
   display: flex;
   gap: 16px;

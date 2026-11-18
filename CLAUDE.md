@@ -183,7 +183,7 @@ the parts to the end from the session (Verification) before wrapping it up.
 
 ## Not yet
 
-State in the URL for TypeScript pages (editor links carry it), search in the docs. Two live diagrams side by side,
+State in the URL for TypeScript pages (editor links carry it). Two live diagrams side by side,
 cost per scenario, goal seek; ranges for fits, Monte Carlo. In the editor: removing boxes and adding edges in the
 UI (the catalog picker adds a box), editing formulas in the inspector, edge labels, hover help, Export → TypeScript, the source in exported PNGs, a Vite
 plugin for `import m from './m.loadmap'`.

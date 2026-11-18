@@ -21,6 +21,7 @@ import {
   packagesVersion,
   relative,
   render,
+  searchIndex,
   section,
 } from '../pages'
 import { fakeGitHub, shaOf } from './fake-github'
@@ -169,6 +170,24 @@ describe('the pages', () => {
     expect(moved['how-it-reads']).toBeUndefined()
     const language = rendered.find((r) => r.page.route === 'language')!
     expect(language.html).toContain('id="how-it-reads"')
+  })
+
+  it('give the search every page cut at its headings, each piece where it is and its text without tags', () => {
+    const index = searchIndex()
+    const at = (route: string) => (route ? `${route}/` : '')
+    for (const p of DOCS)
+      expect(
+        index.some((f) => f.u.split('#')[0] === at(p.route)),
+        p.route,
+      ).toBe(true)
+    for (const f of index) {
+      const [route, id] = f.u.split('#')
+      const page = rendered.find((r) => at(r.page.route) === route)
+      expect(page, f.u).toBeDefined()
+      if (id) expect(page!.html, f.u).toContain(` id="${id}"`)
+      expect(f.t, f.u).not.toMatch(/<\/?[a-z][^>]*>/)
+    }
+    expect(index.find((f) => f.u === 'reference/#preset')?.t).toContain('preset')
   })
 
   it('draw the quick start exactly as the react README writes it', () => {
@@ -426,8 +445,8 @@ describe('the built site', () => {
     // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window. The client holds the names
     // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB). The
     // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB; the sidebar's folding
-    // groups 0.1 kB: 6.41 kB
-    expect(kb).toBeLessThan(6.5)
+    // groups 0.1 kB: 6.41 kB; the search's button and its keys 0.3 kB (the search itself loads on first use): 6.72 kB
+    expect(kb).toBeLessThan(6.8)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
@@ -553,6 +572,35 @@ describe('the built site', () => {
       expect(await page.locator('#versions').isVisible()).toBe(true)
       await page.goto(`${url}language/#how-it-reads`)
       expect(new URL(page.url()).pathname).toBe('/language/')
+    } finally {
+      await browser.close()
+    }
+  }, 60_000)
+
+  it('searches every page from the top bar, "/" or ⌘K, and goes to the section picked', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage()
+      await page.goto(`${url}language/`)
+      // nothing of the search before it is used
+      const loaded = () =>
+        page.evaluate(() => performance.getEntriesByType('resource').some((r) => /search/.test(r.name)))
+      expect(await loaded()).toBe(false)
+      await page.keyboard.press('/')
+      const input = page.locator('.search-dialog input')
+      await expect.poll(() => input.evaluate((el) => el === document.activeElement)).toBe(true)
+      await input.fill('preset')
+      await expect.poll(() => page.locator('.search-results .title').first().textContent()).toBe('preset')
+      await page.keyboard.press('Enter')
+      await page.waitForURL(/\/reference\/#preset$/)
+      await page.keyboard.press('ControlOrMeta+k')
+      await page.locator('.search-dialog input').fill('zzqqxx')
+      await expect.poll(() => page.locator('.search-dialog [role=status]').textContent()).toBe('Nothing found')
+      await page.keyboard.press('Escape')
+      expect(await page.locator('.search-dialog').isVisible()).toBe(false)
+      // the button in the top bar opens it too
+      await page.locator('.top .search-open').click()
+      expect(await page.locator('.search-dialog').isVisible()).toBe(true)
     } finally {
       await browser.close()
     }
