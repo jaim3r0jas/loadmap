@@ -28,7 +28,10 @@ stages a route can take next. Ctrl+F (⌘F) finds and replaces, F12 goes to wher
 **View → Keyboard shortcuts** lists every key; Esc then Tab leaves the text. There is nothing to save: the page keeps
 your draft as you type, so ⌘S (Ctrl+S) only says so.
 
-**New** starts from a template or an example, and **Export** downloads the text or an image.
+**New** starts from a template or an example, and **Export** downloads the text or an image. **New → Open from
+GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
+the files it names; a public repository opens without signing in. A link can open one too:
+`/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch).
 
 **Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a
 page…**, for a frame in another page. The link opens with the text hidden: the diagram, and an inspector in the panel.
