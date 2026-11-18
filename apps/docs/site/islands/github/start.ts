@@ -1,13 +1,27 @@
 // The editor opened with `?repo=…`: the model it names, or the list to pick one from when it names none. Loaded only
 // when the address asks for a repository.
+import { GitHubError } from './api'
 import { inFolder, type Listing, list, type Opened, open } from './load'
 import { type RepoTarget, targetFromQuery } from './parse'
 import { gh } from './session'
+
+/**
+ * A failure a token can mend: a repository this browser may not see (private, or out of the token's reach), a refused
+ * token or one without the permission, the limit for reading without one. A ref or a file that is not there is not.
+ */
+export const tokenMends = (e: unknown) =>
+  e instanceof GitHubError &&
+  (e.failure === 'auth' ||
+    e.failure === 'unseen' ||
+    (e.failure === 'forbidden' && gh.signed()) ||
+    (e.failure === 'rate' && !gh.signed()))
 
 export type Started =
   | { opened: Opened }
   /** A repository with several models and none named: the dialog lists them. */
   | { listing: Listing; target: RepoTarget }
+  /** A repository a token may open: the dialog asks for one, saying why. */
+  | { ask: string; target: RepoTarget }
   | { error: string }
 
 export async function fromQuery(q: URLSearchParams): Promise<Started> {
@@ -27,6 +41,7 @@ export async function fromQuery(q: URLSearchParams): Promise<Started> {
     }
     return { listing, target }
   } catch (e) {
+    if (tokenMends(e)) return { ask: (e as Error).message, target }
     return { error: e instanceof Error ? e.message.replace(/\.$/, '') : 'GitHub could not be read' }
   }
 }

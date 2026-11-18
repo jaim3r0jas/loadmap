@@ -77,8 +77,8 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
       throw new GitHubError(
         gh.signed()
           ? `${where(target)} was not found, or your token may not read it.`
-          : `${where(target)} was not found, or it is private.`,
-        'missing',
+          : `${where(target)} was not found. If it is private, give a token to read it.`,
+        'unseen',
         404,
       )
     throw e
