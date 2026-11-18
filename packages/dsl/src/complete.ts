@@ -790,7 +790,11 @@ class Help {
   /** The nodes a flow may come from: those that run no stage first. */
   sources(): Completion[] {
     const running = new Set(this.boxOf().values())
-    return this.nodes().map((n) => (running.has(n.label) ? n : { ...n, detail: 'node, runs no stage', boost: 2 }))
+    // a subsystem is no node a flow comes from
+    const subsystems = new Set(this.subsystems(false))
+    return this.nodes().flatMap((n) =>
+      subsystems.has(n.label) ? [] : [running.has(n.label) ? n : { ...n, detail: 'node, runs no stage', boost: 2 }],
+    )
   }
 
   /** The flows, those in `near` first. */

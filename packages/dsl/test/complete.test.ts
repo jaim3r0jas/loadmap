@@ -562,6 +562,12 @@ users -> gateway
 gateway -> line
 line -> db
 `
+  it('offer no subsystem as the node a flow comes from', () => {
+    const from = at(shop.replace('from: users', 'from: |')).c.options
+    expect(from.map((o) => o.label)).not.toContain('line')
+    expect(from.find((o) => o.label === 'users')).toMatchObject({ boost: 2 })
+  })
+
   it('offer neither a subsystem after its own boxes nor its boxes after it', () => {
     const after = at(shop.replace('route: gateway -> line -> db', 'route: gateway -> line -> |')).labels
     for (const k of ['line.topic', 'line.consumers', 'line.kafka']) expect(after).not.toContain(k)
