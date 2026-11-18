@@ -1,5 +1,46 @@
 # @loadmap/dsl
 
+## 0.38.0
+
+### Minor Changes
+
+- 7bd53ff: Catalog edition 2027-01: the figures of 2026-12, with each component's `box` the one its stage lives in. RabbitMQ is a
+  cluster (a queue lives only in one); etcd, CockroachDB, OpenSearch, MongoDB, Kubernetes and Istio are nodes (a cluster
+  holds nothing but queues, and a pool is its own workers). Add → From the catalog writes that box running its kind's
+  stage instead of a plain node with `demand: 0`: a queue for Kafka and RabbitMQ (as many members as the run's brokers
+  or nodes), a cache for Valkey, a store or a pass for a database, a pass for a proxy. It can put the box on flows'
+  routes, with the edges each hop needs (an edge no route takes any more goes) and a connection rule such as
+  `kafka/consumer-group`, and writes its demand in the figure's unit: for Kafka, what reaches the queue at the run's
+  message size. A demand in bytes against a published capacity is brought to the figure's unit, where it was an error.
+- aca02dd: **`completions()` and `completionsAcross()` move to `@loadmap/dsl/completion`**: `import { completions } from
+  '@loadmap/dsl/completion'`. The main entry no longer exports them (their types `Completion` and `Completions` stay):
+  while it did, every bundler kept completion in the first load of a page that imports anything from `@loadmap/dsl`, and
+  the editor, which now loads it with its first list, starts about 7 kB lighter.
+
+### Patch Changes
+
+- bbf3d7a: Add → From the catalog asks how flows use the new box: the stage where its kind has two (flows end here, or go on),
+  a queue's partitions and the rule the pool after it reads by (`kafka/consumer-group`), a cache's hit ratio, what one
+  unit is worth in a figure's unit that counts no units a second (tpmC), and which flows pass it and where on each
+  route. It says the demand in words, shows the lines it adds and takes out before it adds them, and says why when it
+  cannot.
+- ceaab31: Completion knows the model behind the cursor. Across files it reads the model linked: a route offers a subsystem,
+  its boxes after `orderLine.`, and a box like a library's `postgres`; `like:` offers what the file imports or declares
+  of the same kind, `with { main: … }` a flow for a flow input, and a prototype's formulas its own inputs. It leaves
+  out what would not compile: a second stage in a node, a second component, `with` on a box that is like nothing,
+  an `input` outside the top of a library's box or subsystem,
+  head lines after the head, and what a part, a library or a variant may not hold. An empty file starts with its
+  `loadmap` line, and `measure x` offers the metrics.
+- a538b85: Completion ranks by what the model already says. In a route, the stages an edge joins to the last one come first; the
+  others come last and draw the edge they need when picked (in VS Code too, as an additional edit). `from:` offers the
+  nodes that run no stage first, an edge leaves out what is drawn already and offers where a route goes next first, and
+  `partitions`, `held` and a connection's `flows` offer the flows that pass there first. A box with one queue of another
+  name is offered once, by its stage, and a subsystem never next to its own boxes. Completion's code is an entry of its
+  own, which the editor loads the first time the text has the focus. The language server opens the list after `{` and `[` too.
+- Updated dependencies [7bd53ff]
+  - @loadmap/core@0.38.0
+  - @loadmap/layout@0.38.0
+
 ## 0.37.0
 
 ### Minor Changes
