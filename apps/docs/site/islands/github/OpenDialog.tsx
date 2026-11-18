@@ -3,8 +3,9 @@
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { inFolder, type Listing, list, type Opened, open } from './load'
 import { parseRepo, type RepoTarget } from './parse'
-import { gh } from './session'
-import { missedFile } from './start'
+import { forgetToken, gh, hasToken } from './session'
+import { missedFile, tokenMends } from './start'
+import TokenForm from './TokenForm'
 
 const CSS = `
 .lmg-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(640px, calc(100dvh - 32px)); padding: 0; color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 12px; box-shadow: 0 12px 40px rgb(0 0 0 / .25); font: 400 .9rem var(--lm-font); }
@@ -30,12 +31,17 @@ const CSS = `
 .lmg-files button[aria-busy="true"] { background: var(--lm-accent-soft); cursor: progress; }
 .lmg-files .lmg-dir { color: var(--lm-muted); overflow-wrap: anywhere; }
 .lmg-files .lmg-file { font-weight: 600; overflow-wrap: anywhere; }
+.lmg-signed { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--lm-muted); font-size: .8rem; }
+.lmg-signed button { padding: 2px 6px; font-size: .8rem; }
 .lmg-files small { margin-left: auto; padding-left: 8px; color: var(--lm-muted); font-family: var(--lm-font); white-space: nowrap; }
 `
 
 export interface OpenDialogProps {
-  /** Where to start: a repository named by the address, or one already listed (an address with no file). */
-  start?: { target?: RepoTarget | { error: string }; listing?: Listing }
+  /**
+   * Where to start: a repository named by the address, one already listed (an address with no file), or one a token
+   * may open (`ask` says why).
+   */
+  start?: { target?: RepoTarget | { error: string }; listing?: Listing; ask?: string }
   onOpen: (opened: Opened) => void
   onClose: () => void
 }
@@ -53,6 +59,11 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
   const [error, setError] = useState(start?.target && 'error' in start.target ? start.target.error : '')
   const [busy, setBusy] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
+  // a token would mend the last failure: why, and what to try again with it
+  const [ask, setAsk] = useState<{ reason: string; owner: string; retry: () => void } | null>(() =>
+    first && start?.ask ? { reason: start.ask, owner: first.owner, retry: () => void look(first) } : null,
+  )
+  const [signed, setSigned] = useState(hasToken)
   // one look at a time: an older answer arriving late never replaces a newer one
   const turn = useRef(0)
 
@@ -71,6 +82,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
   const look = async (target: RepoTarget) => {
     const mine = ++turn.current
     setError('')
+    setAsk(null)
     setBusy('look')
     try {
       const l = await list(gh, target)
@@ -82,7 +94,9 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
       else if (l.want) await pick(l, l.want, mine)
       else if (inFolder(l).length === 1) await pick(l, inFolder(l)[0]!.path, mine)
     } catch (e) {
-      if (mine === turn.current) setError(message(e))
+      if (mine !== turn.current) return
+      if (tokenMends(e)) setAsk({ reason: message(e), owner: target.owner, retry: () => void look(target) })
+      else setError(message(e))
     } finally {
       if (mine === turn.current) setBusy(null)
     }
@@ -90,6 +104,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
 
   const pick = async (l: Listing, path: string, mine = ++turn.current) => {
     setError('')
+    setAsk(null)
     setBusy(path)
     try {
       const o = await open(gh, l, path)
@@ -97,7 +112,9 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
       onOpen(o)
       dialog.current?.close()
     } catch (e) {
-      if (mine === turn.current) setError(message(e))
+      if (mine !== turn.current) return
+      if (tokenMends(e)) setAsk({ reason: message(e), owner: l.owner, retry: () => void pick(l, path) })
+      else setError(message(e))
     } finally {
       if (mine === turn.current) setBusy(null)
     }
@@ -121,7 +138,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
   // the first look only: what the address named
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, on opening
   useEffect(() => {
-    if (first && !start?.listing) void look(first)
+    if (first && !start?.listing && !start?.ask) void look(first)
   }, [])
 
   // a loadmap root of its own (its colours), in the theme the editor shows: the editor's bar is behind the backdrop,
@@ -137,7 +154,18 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
         </button>
       </div>
       <div className="lmg-body">
-        {listing ? (
+        {ask ? (
+          <TokenForm
+            reason={ask.reason}
+            owner={ask.owner}
+            need="read"
+            onToken={() => {
+              setSigned(true)
+              ask.retry()
+            }}
+            onCancel={() => setAsk(null)}
+          />
+        ) : listing ? (
           <>
             <div className="lmg-at">
               <b>{named(listing)}</b>
@@ -225,13 +253,29 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
               </button>
             </div>
             <p className="lmg-hint">
-              A public repository opens without signing in. An address to a folder or a .loadmap file opens there.
+              A public repository opens as it is; a private one asks for a token. An address to a folder or a .loadmap
+              file opens there.
             </p>
           </form>
         )}
         {error && (
           <p className="lmg-error" role="alert">
             {error}
+          </p>
+        )}
+        {signed && !ask && (
+          <p className="lmg-signed">
+            Reading with your token.
+            <button
+              type="button"
+              className="lm-btn lme-quiet"
+              onClick={() => {
+                forgetToken()
+                setSigned(false)
+              }}
+            >
+              Forget it
+            </button>
           </p>
         )}
       </div>

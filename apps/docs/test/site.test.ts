@@ -797,8 +797,75 @@ describe('the built site', () => {
 
       // a repository that is not there, in a sentence; the draft stays
       await page.goto(`${url}editor/?repo=acme/nothing`)
-      await page.getByText('acme/nothing was not found, or it is private').waitFor()
+      await page.getByText('acme/nothing was not found. If it is private, give a token to read it.').waitFor()
       await page.waitForSelector('.lme-title')
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
+  it('asks for a token in place for a private repository, and keeps its text and the token out of lasting storage', async () => {
+    const token = `github_pat_${'A'.repeat(40)}`
+    const secret = readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8').replace(
+      'title: "Photo uploads"',
+      'title: "Secret uploads"',
+    )
+    const fake = fakeGitHub({
+      owner: 'acme',
+      name: 'private',
+      private: true,
+      token,
+      refs: { main: { 'm.loadmap': secret } },
+    })
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await routeGitHub(page, fake.fetch)
+      await page.goto(`${url}editor/`)
+      await page.waitForSelector('.lme-title')
+      const draft = await page.evaluate(() => localStorage.getItem('loadmap-editor-draft'))
+
+      await page.goto(`${url}editor/?repo=acme/private&path=m.loadmap`)
+      const dialog = page.getByRole('dialog', { name: 'Open from GitHub' })
+      await dialog.getByText('acme/private was not found. If it is private, give a token to read it.').waitFor()
+      const make = new URL((await dialog.getByRole('link', { name: /Make a token on GitHub/ }).getAttribute('href'))!)
+      expect([make.searchParams.get('target_name'), make.searchParams.get('contents')]).toEqual(['acme', 'read'])
+      await dialog.getByLabel('Token').fill('hunter2')
+      await dialog.getByRole('button', { name: 'Use it' }).click()
+      await dialog.getByText('That is not a GitHub token').waitFor()
+      await dialog.getByLabel('Token').fill(token)
+      await dialog.getByRole('button', { name: 'Use it' }).click()
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Secret uploads')
+
+      await page.locator('.cm-content').click()
+      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.type('\n# edited here')
+      await page.waitForFunction(() => sessionStorage.getItem('loadmap-editor-repo')?.includes('# edited here'))
+      const kept = await page.evaluate(() => ({
+        local: JSON.stringify(localStorage),
+        session: JSON.stringify(sessionStorage),
+        href: location.href,
+        draft: localStorage.getItem('loadmap-editor-draft'),
+      }))
+      // the private text is in this tab only, the reader's own draft is as it was, the token in memory only
+      expect(kept.local).not.toContain('Secret uploads')
+      expect(kept.draft).toBe(draft)
+      for (const where of [kept.local, kept.session, kept.href]) expect(where).not.toContain(token)
+      // the token went to api.github.com and nowhere else
+      for (const c of fake.calls) expect(c.url.startsWith('https://api.github.com/')).toBe(true)
+      expect(fake.calls.filter((c) => c.authorization).length).toBeGreaterThan(0)
+
+      // a reload keeps the files and where they came from, without asking GitHub again
+      const asked = fake.calls.length
+      await page.reload()
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Secret uploads')
+      expect(fake.calls.length).toBe(asked)
+
+      // an example in its place leaves the repository
+      await page.getByRole('button', { name: 'New', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Checkout', exact: true }).click()
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Checkout pipeline')
+      expect(await page.evaluate(() => sessionStorage.getItem('loadmap-editor-repo'))).toBeNull()
     } finally {
       await browser.close()
     }

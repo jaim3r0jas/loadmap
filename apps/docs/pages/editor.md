@@ -30,7 +30,10 @@ your draft as you type, so ⌘S (Ctrl+S) only says so.
 
 **New** starts from a template or an example, and **Export** downloads the text or an image. **New → Open from
 GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
-the files it names; a public repository opens without signing in. A link can open one too:
+the files it names. A public repository opens as it is; a private one asks for a token in place: the dialog links
+to GitHub's form, filled in, and the token stays in the page (or this tab, if you say so), never in a link or this
+browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
+one as well:
 `/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch).
 
 **Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a

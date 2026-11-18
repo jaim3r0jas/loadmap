@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { client, GitHubError } from '../site/islands/github/api'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
+import { takeToken, tokenPage } from '../site/islands/github/session'
 import { type FakeRepo, fakeGitHub, shaOf } from './fake-github'
 
 const read = (f: string) => readFileSync(join(import.meta.dirname, '../../../docs/multi-file', f), 'utf8')
@@ -121,7 +122,7 @@ describe('opening a repository', () => {
     const fake = fakeGitHub({ ...REPO, private: true, token: 'github_pat_x' })
     const without = client({ fetch: fake.fetch })
     await expect(list(without, { owner: 'acme', name: 'capacity' })).rejects.toThrow(
-      'acme/capacity was not found, or it is private.',
+      'acme/capacity was not found. If it is private, give a token to read it.',
     )
     const gh = client({ fetch: fake.fetch, token: () => 'github_pat_x' })
     const l = await list(gh, { owner: 'acme', name: 'capacity' })
@@ -176,7 +177,7 @@ describe('opening a repository', () => {
     const e = await list(limited, { owner: 'acme', name: 'capacity' }).catch((x: unknown) => x)
     expect(e).toBeInstanceOf(GitHubError)
     expect((e as GitHubError).message).toBe(
-      "GitHub's hourly limit for reading without signing in is used up. It resets in 14 minutes.",
+      "GitHub's hourly limit for reading without a token is used up. It resets in 14 minutes. A token raises it.",
     )
     const gh = client({ fetch: fakeGitHub(REPO).fetch })
     await expect(list(gh, { owner: 'acme', name: 'capacity', ref: 'nope' })).rejects.toThrow(
@@ -188,5 +189,27 @@ describe('opening a repository', () => {
       },
     })
     await expect(list(offline, { owner: 'acme', name: 'capacity' })).rejects.toThrow('GitHub could not be reached')
+  })
+})
+
+describe('a token', () => {
+  it("links to GitHub's form filled in: the owner, a week, and only what the editor needs", () => {
+    const read = new URL(tokenPage('acme', 'read'))
+    expect(read.origin + read.pathname).toBe('https://github.com/settings/personal-access-tokens/new')
+    expect(Object.fromEntries(read.searchParams)).toMatchObject({
+      target_name: 'acme',
+      expires_in: '7',
+      contents: 'read',
+    })
+    expect(read.searchParams.has('pull_requests')).toBe(false)
+    const write = new URL(tokenPage('acme', 'write')).searchParams
+    expect([write.get('contents'), write.get('pull_requests')]).toEqual(['write', 'write'])
+    expect(read.searchParams.get('name')!.length).toBeLessThanOrEqual(40)
+  })
+
+  it('is refused unless it looks like one GitHub makes', () => {
+    expect(takeToken('hunter2', false)).toMatch('not a GitHub token')
+    expect(takeToken(' github_pat x ', false)).toMatch('not a GitHub token')
+    expect(takeToken(`github_pat_${'A'.repeat(40)}`, false)).toBeUndefined()
   })
 })

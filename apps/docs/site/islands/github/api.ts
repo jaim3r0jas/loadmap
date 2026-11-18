@@ -85,7 +85,7 @@ export function client(o: ClientOptions = {}): Client {
       return new GitHubError(
         signed
           ? `GitHub's hourly limit for your token is used up.${when}`
-          : `GitHub's hourly limit for reading without signing in is used up.${when}`,
+          : `GitHub's hourly limit for reading without a token is used up.${when} A token raises it.`,
         'rate',
         s,
       )

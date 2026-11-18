@@ -28,6 +28,7 @@ import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
+import { type RepoTab, readTab, writeTab } from './github/tab'
 import { useRecorder } from './recorder'
 
 const SOURCES = {
@@ -238,11 +239,27 @@ function Editor({ root }: { root: URL }) {
   const { png, poster, record } = useRecorder('editor', get)
   const [help, setHelp] = useHelp()
   const [close] = useState(() => closeTo(root))
+  // what this tab opened from GitHub, as the reader left it: it opens again on a reload, unless the address asks for
+  // something else, which takes its place
+  const [tab] = useState(() => {
+    const t = fromLink() || fromRepo() || template() || example() ? undefined : readTab()
+    if (!t) writeTab(undefined)
+    return t
+  })
+  const repo = useRef<RepoTab | undefined>(tab)
+  const leaveRepo = () => {
+    repo.current = undefined
+    writeTab(undefined)
+  }
   // a link's definition (or a repository's) wins over the draft; reading it is async, so the editor waits for it
   const [start, setStart] = useState<Start | null>(() =>
-    fromLink() || fromRepo() ? null : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
+    fromLink() || fromRepo()
+      ? null
+      : tab
+        ? { source: tab.files[tab.path] ?? '', values: {}, path: tab.path, files: tab.files }
+        : (startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }),
   )
-  const [github, setGithub] = useState<{ target?: RepoTarget; listing?: Listing } | null>(null)
+  const [github, setGithub] = useState<{ target?: RepoTarget; listing?: Listing; ask?: string } | null>(null)
   useEffect(() => {
     if (start) return
     if (!fromRepo()) {
@@ -255,14 +272,18 @@ function Editor({ root }: { root: URL }) {
       .catch(() => ({ error: 'The GitHub part of the page could not load' }))
       .then((r) => {
         if (gone) return
-        if ('opened' in r) setStart(fromOpened(r.opened))
+        if ('opened' in r) {
+          repo.current = tabOf(r.opened)
+          writeTab(repo.current)
+          setStart(fromOpened(r.opened))
+        }
         // the draft as it would open without the address, in all its files; the error said above it
         else if ('error' in r)
           setStart({ ...(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} }), error: r.error })
         else {
-          // several models and none named: the reader picks one, the draft behind
+          // several models and none named, or a token to give first: the dialog, the draft behind
           setStart(startFrom() ?? { source: readDraft() ?? SOURCES.uploads, values: {} })
-          setGithub({ listing: r.listing, target: r.target })
+          setGithub('ask' in r ? { target: r.target, ask: r.ask } : { listing: r.listing, target: r.target })
         }
       })
     return () => {
@@ -292,6 +313,16 @@ function Editor({ root }: { root: URL }) {
   const [split] = useState(() => Number(read(SPLIT) ?? Number.NaN))
   const [panelWidth] = useState(() => Number(read(PANEL_WIDTH)) || undefined)
   const save = (s: string) => {
+    // a template in its place: the repository is left
+    if (repo.current && WHOLE.has(s)) leaveRepo()
+    // a private repository's text stays in this tab (tab.ts), never in the draft: the reader's own is left as it was
+    if (repo.current?.origin.private) {
+      if (outside.current) {
+        outside.current = false
+        history.replaceState(null, '', location.pathname)
+      }
+      return
+    }
     // a whole new text (an example, a template, the first edit of a link) takes the draft's place: the reader's own
     // draft is kept aside, one click away
     const draft = readDraft()
@@ -307,6 +338,11 @@ function Editor({ root }: { root: URL }) {
   }
   // a draft in several files: all of them, and its model under the draft's own key, where one file is read
   const saveFiles = (all: { path: string; files: Readonly<Record<string, string>> }) => {
+    if (repo.current) {
+      repo.current = { ...repo.current, path: all.path, files: { ...all.files } }
+      writeTab(repo.current)
+      if (repo.current.origin.private) return
+    }
     if (Object.keys(all.files).length > 1) {
       write(DRAFT_FILES, JSON.stringify(all))
       write(DRAFT, all.files[all.path] ?? '')
@@ -329,6 +365,8 @@ function Editor({ root }: { root: URL }) {
   // a repository's files take the draft's place as an example does: the draft is kept aside on the first edit
   const opened = (o: Opened) => {
     outside.current = true
+    repo.current = tabOf(o)
+    writeTab(repo.current)
     editor.current?.setFiles({ path: o.path, files: o.files })
   }
 
@@ -338,12 +376,35 @@ function Editor({ root }: { root: URL }) {
       items: [
         ...(Object.keys(SOURCES) as (keyof typeof SOURCES)[]).map((n) => ({
           label: NAMES[n],
-          onSelect: () => editor.current?.setSource(SOURCES[n]),
+          onSelect: () => {
+            leaveRepo()
+            editor.current?.setSource(SOURCES[n])
+          },
         })),
-        { label: 'A shop in several files', onSelect: () => editor.current?.setFiles(SHOP) },
-        { label: 'Two regions, in several files', onSelect: () => editor.current?.setFiles(regionsFiles) },
+        {
+          label: 'A shop in several files',
+          onSelect: () => {
+            leaveRepo()
+            editor.current?.setFiles(SHOP)
+          },
+        },
+        {
+          label: 'Two regions, in several files',
+          onSelect: () => {
+            leaveRepo()
+            editor.current?.setFiles(regionsFiles)
+          },
+        },
         ...(earlier != null
-          ? [{ label: 'Your earlier draft', onSelect: () => editor.current?.setSource(earlier) }]
+          ? [
+              {
+                label: 'Your earlier draft',
+                onSelect: () => {
+                  leaveRepo()
+                  editor.current?.setSource(earlier)
+                },
+              },
+            ]
           : []),
       ],
     },
@@ -444,6 +505,12 @@ function Editor({ root }: { root: URL }) {
 
 /** What the editor opens with: a link's, a repository's or the draft's; a draft can come with why the rest did not. */
 type Start = Shared | (Extract<Shared, { source: string }> & { error: string })
+
+/** A repository's model as this tab keeps it: where it came from, and its files, as they came and as they are. */
+function tabOf(o: Opened): RepoTab {
+  const { owner, name, ref, sha, tree, private: shut } = o.listing
+  return { origin: { owner, name, ref, sha, tree, private: shut, originals: o.files }, path: o.path, files: o.files }
+}
 
 /** What the editor opens with for a repository's model: its files, the model's text first. */
 const fromOpened = (o: Opened): Shared => ({ source: o.files[o.path] ?? '', values: {}, path: o.path, files: o.files })
