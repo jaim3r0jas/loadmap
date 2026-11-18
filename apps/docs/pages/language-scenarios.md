@@ -4,4 +4,4 @@
 
 ## A story
 
-@section(docs/dsl.md, "### A story")
+@section(docs/dsl.md, "### A story", 3)

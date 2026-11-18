@@ -106,8 +106,8 @@ fails the run.
 
 With `--base origin/main` the check fails when the first limit's headroom drops by more than the tolerance, when the
 first limit moves to another component without more headroom, or when a component crosses the target or 100 % from
-below at today's load. [The language guide](/language/how-sure/) has the workflow that comments on
-a pull request.
+below at today's load. [Checks in CI](/checks/#on-every-pull-request) has the workflow that comments on a pull
+request.
 
 ## Pull
 

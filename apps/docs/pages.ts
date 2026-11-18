@@ -110,7 +110,7 @@ export function expand(md: string): string {
         if (to && after < 0) throw new Error(`docs: no line starting with "${to}" after "${from}" in ${path}`)
         return lines.slice(start, after < 0 ? undefined : start + 1 + after).join('\n')
       })
-      .replace(SECTION, (_, path, heading) => section(path.trim(), heading))
+      .replace(SECTION, (_, path, heading, depth) => section(path.trim(), heading, depth ? Number(depth) : 2))
       .replaceAll('%VERSION%', version)
       .replaceAll('%LANGUAGE%', LANGUAGE_VERSION)
       // last: a release's text is shown as written, never read for an @include or a %VERSION%
@@ -127,10 +127,11 @@ const levelOf = (line: string) => /^(#{1,6}) /.exec(line)?.[1]?.length ?? 0
 /**
  * `@section(path, "### Formulas")` on a line of its own: the section that heading starts in a repository file, up to
  * the next heading of its level or above, without the heading itself (the page says it): its own headings move up so
- * the first under it is an h2. A `#` in a fence (a YAML comment) is no heading. The guide stays one file (it ships as
- * the dsl package's REFERENCE.md and in llms-full.txt) and the site shows it a section or two a page.
+ * the first under it is an h2, or an h3 with `@section(path, "### Formulas", 3)` for a page that puts it under an h2
+ * of its own. A `#` in a fence (a YAML comment) is no heading. The guide stays one file (it ships as the dsl package's
+ * REFERENCE.md and in llms-full.txt) and the site shows it a section or two a page.
  */
-export function section(path: string, heading: string): string {
+export function section(path: string, heading: string, depth = 2): string {
   const lines = readFileSync(join(repo, path), 'utf8').split('\n')
   const level = levelOf(heading)
   if (!level) throw new Error(`docs: "${heading}" is not a heading`)
@@ -145,7 +146,7 @@ export function section(path: string, heading: string): string {
       continue
     }
     if (at && at <= level) break
-    out.push(at ? `${'#'.repeat(at - level + 1)}${line.slice(at)}` : line)
+    out.push(at ? `${'#'.repeat(at - level + depth - 1)}${line.slice(at)}` : line)
   }
   if (!inside) throw new Error(`docs: no heading "${heading}" in ${path}`)
   return out.join('\n').trim()
@@ -176,25 +177,29 @@ const EYEBROW = '<!--eyebrow-->'
 const CONTENTS = '<!--contents-->'
 
 /**
- * A page's HTML: its Markdown with islands, heading anchors, and site links made relative to where it is served; and
- * its h2 and h3 headings, for the contents. Marks EYEBROW before the title and CONTENTS after the introduction (the
- * paragraph right after the title, if there is one).
+ * A heading's id from its inline HTML, one page at a time: its text's slug, and "-2" on a second heading with the same
+ * text, so each entry of the contents finds its own. `render` and `idsOf` both count with it.
  */
-/** The ids a page's h2 to h6 get, as `render` gives them: its text's slug, "-2" on a second heading with the same. */
-function idsOf(md: string): string[] {
+function headingIds(): (html: string) => string {
   const seen = new Map<string, number>()
+  return (html) => {
+    const base = slug(html)
+    const n = (seen.get(base) ?? 0) + 1
+    seen.set(base, n)
+    return n > 1 ? `${base}-${n}` : base
+  }
+}
+
+/** The ids a page's h2 to h6 get, as `render` gives them, without rendering it. */
+function idsOf(md: string): string[] {
+  const id = headingIds()
   const inline = new Marked()
   return new Marked()
     .lexer(md)
-    .flatMap((t) => (t.type === 'heading' && t.depth > 1 ? [slug(inline.parseInline(t.text) as string)] : []))
-    .map((base) => {
-      const n = (seen.get(base) ?? 0) + 1
-      seen.set(base, n)
-      return n > 1 ? `${base}-${n}` : base
-    })
+    .flatMap((t) => (t.type === 'heading' && t.depth > 1 ? [id(inline.parseInline(t.text) as string)] : []))
 }
 
-const SECTION = /^@section\(([^,)]+),\s*"([^"]+)"\)$/gm
+const SECTION = /^@section\(([^,)]+),\s*"([^"]+)"(?:,\s*([2-6]))?\)$/gm
 
 let anchorsOnce: Map<string, string> | undefined
 
@@ -223,21 +228,49 @@ export function anchors(): ReadonlyMap<string, string> {
 }
 
 /**
- * The sections the language guide had on one page (`/language/`, docs/dsl.md up to "## In your editor") before it was
- * a page a section, each to where it is now: links to them are out there. `layout` was the formatting's.
+ * The sections `/language/` had while the guide was one page, by the id each has now where it differs: links to them
+ * are out there. Frozen: a section renamed later keeps its old id here, and the test that every one leads somewhere
+ * says so.
  */
+export const OLD_LANGUAGE_IDS: Readonly<Record<string, string>> = Object.fromEntries(
+  [
+    'how-it-reads',
+    'boxes-stages-and-components',
+    'formulas',
+    'scenarios-and-growth',
+    'how-sure-and-what-must-hold',
+    'published-figures',
+    'measured-data',
+    'building-blocks',
+    'a-story',
+    'direction-and-tiers',
+    'the-view-block',
+    'full-screen',
+    'what-stays-code',
+    'layout',
+    'several-files',
+    'errors',
+    'versions',
+    'in-code',
+  ].map((id) => [id, ({ layout: 'formatting' } as Record<string, string>)[id] ?? id]),
+)
+
+/** Each section `/language/` held as one page, to where it is now, but those it still holds. */
 export function movedAnchors(): Record<string, string> {
-  const guide = readFileSync(join(repo, 'docs/dsl.md'), 'utf8')
-  const old = guide.slice(0, guide.indexOf('\n## In your editor'))
   const where = anchors()
   const moved: Record<string, string> = {}
-  for (const id of [...idsOf(old), 'layout']) {
-    const to = where.get(id === 'layout' ? 'formatting' : id)
-    if (to && !to.startsWith('/language/#') && to !== '/language/') moved[id] = to
+  for (const [old, now] of Object.entries(OLD_LANGUAGE_IDS)) {
+    const to = where.get(now)
+    if (to && !to.startsWith('/language/#') && to !== '/language/') moved[old] = to
   }
   return moved
 }
 
+/**
+ * A page's HTML: its Markdown with islands, heading anchors, and site links made relative to where it is served; and
+ * its h2 and h3 headings, for the contents. Marks EYEBROW before the title and CONTENTS after the introduction (the
+ * paragraph right after the title, if there is one).
+ */
 export function render(page: Page): { title: string; html: string; headings: Heading[] } {
   const md = expand(readFileSync(join(here, 'pages', page.file), 'utf8'))
   // a link to a section of the guide that another page holds now goes there
@@ -245,17 +278,13 @@ export function render(page: Page): { title: string; html: string; headings: Hea
   const title = /^# (.+)$/m.exec(md)?.[1]?.replace(/`/g, '') ?? page.nav
   const up = relative(page.route)
   const headings: Heading[] = []
-  const ids = new Map<string, number>()
+  const idOf = headingIds()
   const marked = new Marked({
     renderer: {
       heading({ tokens, depth }) {
         const text = this.parser.parseInline(tokens)
         if (depth === 1) return `<h1>${text}</h1>\n`
-        // a second heading with the same text gets "-2", so each entry of the contents finds its own
-        const base = slug(text)
-        const n = (ids.get(base) ?? 0) + 1
-        ids.set(base, n)
-        const id = n > 1 ? `${base}-${n}` : base
+        const id = idOf(text)
         if (depth === 2 || depth === 3) headings.push({ depth, id, html: text.replace(/<\/?a\b[^>]*>/g, '') })
         return `<h${depth} id="${id}">${text}</h${depth}>\n`
       },
@@ -324,6 +353,7 @@ function pageList(page: Page, up: string): string {
           return `<li><a href="${href(up, p)}"${current}>${esc(p.nav)}${app}</a></li>`
         })
         .join('')
+      if (!group) return `<ul>${items}</ul>`
       return `<details class="nav-fold"${group === here ? ' open' : ''}><summary class="nav-group">${esc(group)}</summary><ul>${items}</ul></details>`
     })
     .join('')
@@ -412,7 +442,7 @@ ${pager(page, up)}${page.route === 'language' ? movedScript(up) : ''}
 function movedScript(up: string): string {
   const to = Object.fromEntries(Object.entries(movedAnchors()).map(([id, at]) => [id, up + at.slice(1)]))
   const map = JSON.stringify(to).replace(/</g, '\\u003c')
-  return `<script>(function(){var m=${map};var h=decodeURIComponent(location.hash.slice(1));if(h&&!document.getElementById(h)&&m[h])location.replace(m[h])})()</script>`
+  return `<script>(function(){var m=${map};var h;try{h=decodeURIComponent(location.hash.slice(1))}catch(e){return}if(h&&!document.getElementById(h)&&m[h])location.replace(m[h])})()</script>`
 }
 
 /**

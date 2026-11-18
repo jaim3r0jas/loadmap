@@ -770,7 +770,7 @@ a.button {
     display: block;
   }
 
-  .menu summary {
+  .menu > summary {
     list-style: none;
     cursor: pointer;
     white-space: nowrap;
@@ -783,7 +783,7 @@ a.button {
     font-size: 0.9rem;
   }
 
-  .menu summary::-webkit-details-marker {
+  .menu > summary::-webkit-details-marker {
     display: none;
   }
 

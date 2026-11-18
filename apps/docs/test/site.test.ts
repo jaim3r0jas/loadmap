@@ -11,7 +11,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
 import { inlineHashes } from '../csp'
 import { FENCES, highlight } from '../highlight'
-import { anchors, included, MOVED, movedAnchors, PAGES, packagesVersion, relative, render, section } from '../pages'
+import {
+  anchors,
+  included,
+  MOVED,
+  movedAnchors,
+  OLD_LANGUAGE_IDS,
+  PAGES,
+  packagesVersion,
+  relative,
+  render,
+  section,
+} from '../pages'
 import { fakeGitHub, shaOf } from './fake-github'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
@@ -112,6 +123,8 @@ describe('the pages', () => {
     // a # in a fence is a YAML comment, not a heading that ends the section
     expect(checks).toContain('\n# loadmap drift every night on main')
     expect(checks).not.toContain('## Errors')
+    // under a page's own h2, its headings are h3s
+    expect(section('docs/dsl.md', '## Checks in CI', 3)).toContain('\n### On fresh data\n')
     const formulas = section('docs/dsl.md', '### Formulas')
     expect(formulas).not.toContain('### Scenarios and growth')
     expect(() => section('docs/dsl.md', '### Nothing')).toThrow('no heading "### Nothing"')
@@ -145,6 +158,9 @@ describe('the pages', () => {
   })
 
   it('send a link to a section the guide held on one page on to where it is now', () => {
+    // every section the one page had leads somewhere still: a section renamed later says so here
+    const where = anchors()
+    for (const [old, now] of Object.entries(OLD_LANGUAGE_IDS)) expect(where.has(now), `${old} (now ${now})`).toBe(true)
     const moved = movedAnchors()
     expect(moved.formulas).toBe('/language/formulas/')
     expect(moved['a-story']).toBe('/language/scenarios/#a-story')
@@ -562,7 +578,7 @@ describe('the built site', () => {
       const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
       await phone.goto(`${url}reference/`)
       expect(await phone.locator('.side').isVisible()).toBe(false)
-      await phone.locator('.menu summary').click()
+      await phone.locator('.menu > summary').click()
       const links = phone.locator('.menu .panel ul a')
       expect(await links.count()).toBe(PAGES.filter((p) => !p.hidden).length)
       // the groups fold: the current page's is open, each other one a click away
@@ -1487,7 +1503,8 @@ describe('the built site', () => {
           }
         })
         const page = await context.newPage()
-        await page.goto(`${url}language/`)
+        // a page with a snippet of every kind of token: a comment among them
+        await page.goto(`${url}language/building-blocks/`)
         await page.waitForSelector('.snippet .tok-keyword')
         const got = await page.evaluate(() => {
           // in a view or in a <pre> further down that has none yet: the same classes
@@ -1672,7 +1689,7 @@ describe('the built site', () => {
       const page = await context.newPage()
       await page.goto(`${url}concepts/`)
       expect(await page.locator('.bar > .theme').isVisible()).toBe(false)
-      await page.locator('.menu summary').click()
+      await page.locator('.menu > summary').click()
       await page.locator('.panel .theme label', { hasText: 'Dark' }).click()
       await expect.poll(() => looks(page), { timeout: 5000 }).toMatchObject({ kept: 'dark', page: 'dark' })
       await page.goto(`${url}editor/`)

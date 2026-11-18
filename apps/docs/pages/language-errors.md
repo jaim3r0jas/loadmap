@@ -5,8 +5,8 @@ the same under every later one.
 
 ## Errors
 
-@section(docs/dsl.md, "## Errors")
+@section(docs/dsl.md, "## Errors", 3)
 
 ## Versions
 
-@section(docs/dsl.md, "## Versions")
+@section(docs/dsl.md, "## Versions", 3)
