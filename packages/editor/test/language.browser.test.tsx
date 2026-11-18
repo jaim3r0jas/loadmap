@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { editorKeys } from '../src/keys'
 import { loadmapLanguage } from '../src/language'
 import cache from '../src/templates/cache.loadmap?raw'
 
@@ -347,15 +348,15 @@ describe('completion on a phone', () => {
   })
 })
 
-/** A key pressed with ⌥ as a Mac layout reports it: `key` is what it types (or `Dead`), `code` the key's place. */
-function altKey(v: EditorView, key: string, code: string, shiftKey = false) {
-  const e = new KeyboardEvent('keydown', { key, code, altKey: true, shiftKey, bubbles: true, cancelable: true })
+/** A key pressed with ⌥ that starts a dead key: `key` says Dead, `code` the key's place. */
+function deadKey(v: EditorView, code: string, shiftKey = false) {
+  const e = new KeyboardEvent('keydown', { key: 'Dead', code, altKey: true, shiftKey, bubbles: true, cancelable: true })
   v.contentDOM.dispatchEvent(e)
   return e
 }
 
-describe('keys held with Alt, on any layout', () => {
-  it('finds a binding by the key pressed when it types a character or starts a dead key, and lets the rest type', () => {
+describe('keys held with Alt', () => {
+  it('find their binding by the key pressed when it starts a dead key', () => {
     const ran: string[] = []
     const parent = document.createElement('div')
     document.body.appendChild(parent)
@@ -369,16 +370,15 @@ describe('keys held with Alt, on any layout', () => {
             { key: 'Alt-k', run: () => ran.push('k') > 0 },
           ]),
           loadmapLanguage(),
+          editorKeys,
         ],
       }),
     })
     view.focus()
-    // ⇧⌥F types Ï on a US Mac, · on a German one; a dead key types nothing yet
-    expect(altKey(view, 'Ï', 'KeyF', true).defaultPrevented).toBe(true)
-    expect(altKey(view, 'Dead', 'KeyK').defaultPrevented).toBe(true)
+    expect(deadKey(view, 'KeyF', true).defaultPrevented).toBe(true)
+    expect(deadKey(view, 'KeyK').defaultPrevented).toBe(true)
     expect(ran).toEqual(['format', 'k'])
-    // ⌥L is @ on a German Mac: no binding takes it, so it still types
-    expect(altKey(view, '@', 'KeyL').defaultPrevented).toBe(false)
-    expect(ran).toEqual(['format', 'k'])
+    // a dead key no binding takes still starts its accent
+    expect(deadKey(view, 'KeyE').defaultPrevented).toBe(false)
   })
 })

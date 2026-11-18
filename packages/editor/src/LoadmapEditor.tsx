@@ -7,7 +7,6 @@ import {
   indentWithTab,
   isolateHistory,
   redo,
-  selectParentSyntax,
   undo,
   undoDepth,
 } from '@codemirror/commands'
@@ -87,6 +86,7 @@ import type { FileTabsProps } from './FileTabs'
 import type { FileMark } from './filenames'
 import type { Dsl, NewKind } from './fileops'
 import type { InspectorProps, InspectorTab } from './Inspector'
+import { editorKeys } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
@@ -484,13 +484,12 @@ export function LoadmapEditor({
             return true
           },
         },
-        // ⌘I completes on a Mac (language.ts): the block around moves to VS Code's Expand Selection there
-        { key: 'Mod-i', mac: 'Ctrl-Shift-Mod-ArrowRight', run: selectParentSyntax, preventDefault: true },
-        ...defaultKeymap.filter((b) => b.key !== 'Mod-i'),
+        ...defaultKeymap,
         ...historyKeymap,
         indentWithTab,
       ]),
       lazySearch,
+      editorKeys,
       // an empty text says how to start, and where the keys are
       placeholder(`${MAC ? '⌘I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
       EditorState.tabSize.of(2),

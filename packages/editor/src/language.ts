@@ -5,12 +5,11 @@ import {
   closeBrackets,
   closeBracketsKeymap,
   snippetCompletion,
-  startCompletion,
 } from '@codemirror/autocomplete'
 import { invertedEffects, isolateHistory } from '@codemirror/commands'
 import { syntaxHighlighting } from '@codemirror/language'
 import { type Diagnostic as CmDiagnostic, linter, lintGutter } from '@codemirror/lint'
-import { type EditorState, type Extension, Prec, StateEffect, StateField, type Text } from '@codemirror/state'
+import { type EditorState, type Extension, StateEffect, StateField, type Text } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -46,7 +45,6 @@ import {
   type SignatureHelp,
   signatureHelp,
 } from '@loadmap/dsl'
-import { altKeys } from './altKeys'
 import { loadmapHighlight, loadmapStream } from './highlight'
 
 export { loadmapHighlight, loadmapStream }
@@ -496,9 +494,6 @@ export function loadmapLanguage(
     linter(lint, { delay: o.delay ?? 150 }),
     lintGutter(),
     autocompletion({ override: [completeWith(around)], activateOnTyping: true, positionInfo }),
-    // ⌘I on a Mac, as VS Code's Trigger Suggest: macOS takes ⌃Space to switch the input source, and ⌥I needs altKeys
-    Prec.highest(keymap.of([{ mac: 'Mod-i', run: startCompletion, preventDefault: true }])),
-    altKeys,
     closeBrackets(),
     keymap.of(closeBracketsKeymap),
     info,
