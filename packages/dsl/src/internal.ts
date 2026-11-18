@@ -21,7 +21,7 @@ export {
 } from './edit'
 export { BUILTINS } from './expr'
 export { DEFAULT_PATH, fileText, MAX_FILES, MAX_TOTAL, normalizePath, relativePath, resolvePath } from './files'
-export { fingerprint, LEXICON, lex, type Token } from './lexer'
+export { fingerprint, LEXICON, lex, PLUS_MINUS_MARKS, type Token } from './lexer'
 export { MAX_DEPTH, MAX_SOURCE, parse, parseExpression } from './parser'
 export { codeReference, reference } from './reference'
 export { BOXES, COLORS, COMPONENT_PROPS, EDGE_PROPS, PANELS, type PropSpec, SCHEMA, STAGES } from './schema'

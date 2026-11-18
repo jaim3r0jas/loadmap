@@ -1,4 +1,4 @@
-import { redo, undo } from '@codemirror/commands'
+import { cursorCharRight, redo, undo } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import type { ParamValue } from '@loadmap/core'
 import { decodeShare } from '@loadmap/dsl'
@@ -665,6 +665,72 @@ describe('the editor', () => {
       expect(document.querySelectorAll('[role="group"][aria-label="Font"] [role="menuitemradio"]')).toHaveLength(1)
     } finally {
       for (const k of keys) localStorage.removeItem(k)
+    }
+  })
+
+  it("draws a capacity's +- as ± while ligatures are on, and leaves the text as written", async () => {
+    localStorage.removeItem('loadmap:editor:ligatures')
+    try {
+      // a "+-" in a text is no sign
+      const source = checkout.replace('title: "Checkout pipeline"', 'title: "Checkout +- pipeline"')
+      let { host, handle, view } = await mount({ source })
+      const signs = () => [...host.querySelectorAll('.lme-code .lme-pm')]
+      const mark = source.indexOf('gateways +- 30%') + 'gateways '.length
+      // CodeMirror draws only the lines in view
+      view.dispatch({ selection: { anchor: mark }, scrollIntoView: true })
+      await expect.poll(() => signs().length).toBeGreaterThan(0)
+      const sign = signs()[0] as HTMLElement
+      expect(sign.textContent).toBe('±')
+      // in the room of its two marks
+      const ch = view.defaultCharacterWidth
+      expect(Math.abs(sign.getBoundingClientRect().width - 2 * ch)).toBeLessThan(1)
+      view.dispatch({ effects: EditorView.scrollIntoView(0) })
+      await expect.poll(() => host.querySelector('.cm-line')?.textContent).toBe('loadmap 1.6')
+      expect([...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes('Checkout +- pipeline'))).toBe(
+        true,
+      )
+      // the text keeps its marks, and the cursor steps over the sign as over one character
+      expect(handle.source()).toBe(source)
+      view.dispatch({ selection: { anchor: mark }, scrollIntoView: true })
+      cursorCharRight(view)
+      expect(view.state.selection.main.head).toBe(mark + 2)
+      expect(view.state.sliceDoc(mark, mark + 2)).toBe('+-')
+      // Backspace after the sign and Delete before it take one mark, as in a ligature: what is left is drawn as written
+      view.focus()
+      await userEvent.keyboard('{Backspace}')
+      expect(view.state.sliceDoc(mark, mark + 2)).toBe('+ ')
+      expect(view.state.selection.main.head).toBe(mark + 1)
+      undo(view)
+      view.dispatch({ selection: { anchor: mark } })
+      await userEvent.keyboard('{Delete}')
+      expect(view.state.sliceDoc(mark, mark + 2)).toBe('- ')
+      expect(view.state.selection.main.head).toBe(mark)
+      undo(view)
+      expect(handle.source()).toBe(source)
+
+      // ligatures off: the marks as written
+      await page.getByRole('button', { name: 'View' }).click()
+      await page.getByRole('menuitemcheckbox', { name: /Ligatures/ }).click()
+      await expect.poll(() => signs().length).toBe(0)
+      expect([...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes('gateways +- 30%'))).toBe(true)
+      await page.getByRole('button', { name: 'View' }).click()
+      await page.getByRole('menuitemcheckbox', { name: /Ligatures/ }).click()
+      await expect.poll(() => signs().length).toBeGreaterThan(0)
+      root?.unmount()
+      document.body.replaceChildren()
+
+      // before 1.6 a "+-" is a plus and a minus: drawn as written
+      const old = source.replace('loadmap 1.6', 'loadmap 1.5').replace('4_000 +- 30%', '4_000 ± 30%')
+      ;({ host, view } = await mount({
+        source: old.replace('gateways +- 30%', 'gateways ± 30%') + '\nlet sum = 3 +- 1\n',
+      }))
+      view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true })
+      await expect
+        .poll(() => [...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes('let sum = 3 +- 1')))
+        .toBe(true)
+      expect(signs()).toHaveLength(0)
+    } finally {
+      localStorage.removeItem('loadmap:editor:ligatures')
     }
   })
 

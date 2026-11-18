@@ -92,6 +92,7 @@ import { editorKeys, isSaveKey } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
 import { type BarSection, barItems, ICON, Icon, later, Menu, MenuGroup, MenuItem, sections, useToolbar } from './Menu'
 import { PanelHead, RAIL, Rail, Resize } from './Panel'
+import { plusMinusSigns, redrawMarks } from './plusMinus'
 import type { FileHost } from './reshape'
 import { lazySearch, openSearch } from './search'
 import { injectEditorStyles } from './styles'
@@ -337,6 +338,9 @@ export function LoadmapEditor({
     return CODE_SIZES.includes(said) ? said : CODE_SIZE
   })
   const [ligatures, setLigatures] = useState(() => stored(LIGATURES_KEY) !== 'off')
+  // the text's extensions are made once: they read the ligatures through this
+  const ligaturesOn = useRef(ligatures)
+  ligaturesOn.current = ligatures
   // a font the page no longer offers is the system's
   const codeFont = fonts.find((f) => f.name === fontName)
   const [tabs, setTabs] = useState(() => [set.current.entry, ...Object.keys(set.current.others).sort()])
@@ -405,6 +409,13 @@ export function LoadmapEditor({
   }, [fontUrl])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new size or ligatures change every line's measure
   useEffect(() => view.current?.requestMeasure(), [fontSize, ligatures])
+  // the signs drawn again when the reader turns ligatures on or off; a new text draws its own
+  const drawnWith = useRef(ligatures)
+  useEffect(() => {
+    if (drawnWith.current === ligatures) return
+    drawnWith.current = ligatures
+    view.current?.dispatch({ effects: redrawMarks.of(null) })
+  }, [ligatures])
   const preview = useRef<LoadmapHandle>(null)
   // the values the preview shows, carried across versions so an edit does not reset the sliders
   const shown = useRef<Readonly<Record<string, unknown>>>(values ?? {})
@@ -604,6 +615,8 @@ export function LoadmapEditor({
       ]),
       lazySearch,
       editorKeys,
+      // a capacity's +- drawn as ±, while the reader's ligatures are on
+      plusMinusSigns(() => ligaturesOn.current),
       // an empty text says how to start, and where the keys are
       placeholder(`${MAC ? '⌘I' : 'Ctrl+Space'}: what can go here. View → Keyboard shortcuts: the rest.`),
       EditorState.tabSize.of(2),
@@ -1298,7 +1311,13 @@ export function LoadmapEditor({
           ))}
         </div>
       </MenuGroup>
-      <MenuItem sheet={sheet} toggle checked={ligatures} hint="-> and != drawn joined" onSelect={toggleLigatures}>
+      <MenuItem
+        sheet={sheet}
+        toggle
+        checked={ligatures}
+        hint="+- drawn as ±, -> as one arrow"
+        onSelect={toggleLigatures}
+      >
         Ligatures
       </MenuItem>
     </>

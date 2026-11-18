@@ -189,7 +189,7 @@ with that scenario's button pressed.
 ### How sure, and what must hold
 
 A capacity says how sure it is with a `+-` (±) in its value, as a share (`30%`) or in its unit (`+- 1`). `±` and
-`+/-` read the same, and `loadmap fmt` writes `+-`:
+`+/-` read the same, and `loadmap fmt` writes `+-`; the editor draws it as `±` while its ligatures are on:
 
 ```loadmap
 capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")
