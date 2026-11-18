@@ -38,8 +38,11 @@ export interface Listing {
 export interface Opened {
   listing: Listing
   path: string
+  /** Each file's text, its lines ending in "\n" as the editor keeps them. */
   files: Record<string, string>
   missing: string[]
+  /** The files the commit holds with "\r\n": a save writes them back that way. */
+  crlf: string[]
 }
 
 /** The files under the folder an address named, else all of them. */
@@ -140,6 +143,7 @@ export async function open(gh: Client, listing: Listing, path: string): Promise<
   }
   const files: Record<string, string> = {}
   const missing: string[] = []
+  const crlf: string[] = []
   let total = 0
   let level = [path]
   while (level.length) {
@@ -162,10 +166,13 @@ export async function open(gh: Client, listing: Listing, path: string): Promise<
       total += text.length
       if (total > MAX_TOTAL)
         throw new Error('The files the model reaches hold more than 1,000,000 characters, more than a definition may.')
-      Object.defineProperty(files, p, { value: text, enumerable: true, writable: true, configurable: true })
+      // the editor ends lines in "\n": a file that came with "\r\n" would otherwise read as changed throughout
+      const lf = text.includes('\r\n') ? text.replace(/\r\n/g, '\n') : text
+      if (lf !== text) crlf.push(p)
+      Object.defineProperty(files, p, { value: lf, enumerable: true, writable: true, configurable: true })
       for (const f of imports(text, p).files) if (f.path) next.push(f.path)
     }
     level = next
   }
-  return { listing, path, files, missing }
+  return { listing, path, files, missing, crlf }
 }

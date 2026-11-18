@@ -14,8 +14,12 @@ export interface RepoOrigin {
   sha: string
   tree: string
   private: boolean
-  /** Every file as the commit holds it, by its path. */
+  /** Every file as the commit holds it, by its path (lines ending in "\n"). */
   originals: Record<string, string>
+  /** The model that was opened: what an undo of everything opens again. */
+  model: string
+  /** The files the commit holds with "\r\n" line endings. */
+  crlf: string[]
 }
 
 export interface RepoTab {
@@ -38,7 +42,8 @@ interface Stored {
   files: Record<string, string>
 }
 
-const own = (o: Record<string, string>, k: string) => (Object.hasOwn(o, k) ? o[k] : undefined)
+/** A file's text by its path, never a name every object has ("constructor"). */
+export const own = (o: Readonly<Record<string, string>>, k: string) => (Object.hasOwn(o, k) ? o[k] : undefined)
 
 const isFiles = (v: unknown): v is Record<string, string> =>
   typeof v === 'object' &&
@@ -58,8 +63,10 @@ function unpack(raw: string | null): RepoTab | undefined {
     const t = JSON.parse(raw ?? 'null') as Partial<Stored> | null
     const o = t?.origin
     if (!t || !o || typeof t.path !== 'string' || !isFiles(t.files) || !Object.hasOwn(t.files, t.path)) return undefined
-    for (const k of ['owner', 'name', 'ref', 'sha', 'tree'] as const) if (typeof o[k] !== 'string') return undefined
+    for (const k of ['owner', 'name', 'ref', 'sha', 'tree', 'model'] as const)
+      if (typeof o[k] !== 'string') return undefined
     if (typeof o.private !== 'boolean' || !Array.isArray(o.paths) || !isFiles(o.changed)) return undefined
+    if (!Array.isArray(o.crlf) || !o.crlf.every((p) => typeof p === 'string')) return undefined
     const originals: Record<string, string> = {}
     for (const p of o.paths) {
       const text = typeof p === 'string' && cleanPath(p) === p ? (own(o.changed, p) ?? own(t.files, p)) : undefined
