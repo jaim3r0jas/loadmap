@@ -456,6 +456,37 @@ describe('the editor', () => {
     expect(handle.loadmap()!.values()).toMatchObject({ load: 10, posPods: 3 })
   })
 
+  it('lists its keys under View, and finds in the text with Mod-F, beyond the lines in view', async () => {
+    const { host, view } = await mount()
+    const mac = /Mac|iP/.test(navigator.platform)
+    await userEvent.click(page.getByRole('button', { name: 'View' }))
+    await userEvent.click(page.getByRole('menuitem', { name: 'Keyboard shortcuts…' }))
+    // it loads as it is first asked for
+    await expect.poll(() => document.querySelector('.lme-keysheet[open]'), { timeout: 5000 }).toBeTruthy()
+    const sheet = document.querySelector('.lme-keysheet')!
+    expect(sheet.getAttribute('aria-labelledby')).toBeTruthy()
+    expect(sheet.textContent).toContain('What fits at the cursor')
+    expect(sheet.textContent).toContain(mac ? '⌃Space or ⌥I' : 'Ctrl+Space')
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => document.querySelector('.lme-keysheet')).toBeNull()
+    // back in the text, where the keys work
+    expect(view.hasFocus).toBe(true)
+    view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true })
+    const last = 'kafka -> kafkaDropped'
+    // the last lines are not drawn: the browser's find would miss them
+    expect([...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes(last))).toBe(false)
+    const mod = mac ? 'Meta' : 'Control'
+    await userEvent.keyboard(`{${mod}>}f{/${mod}}`)
+    await expect.poll(() => document.querySelector('.cm-search input[name="search"]'), { timeout: 5000 }).toBeTruthy()
+    await userEvent.keyboard(`${last}{Enter}`)
+    await expect
+      .poll(() => view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to))
+      .toBe(last)
+    await expect
+      .poll(() => [...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes(last)))
+      .toBe(true)
+  })
+
   it('starts from a template', async () => {
     const { host, handle } = await mount()
     await userEvent.click(page.getByRole('button', { name: 'New' }))

@@ -1289,8 +1289,9 @@ const { model, view, options } = r.definition!
 
 `r.expectations` holds each `expect` line with its place and its `check()` result; `problems(r)` returns the
 diagnostics with every failing expectation added (as a warning, or as `problems(r, 'error')`).
-`completions(source, offset)` lists what may be typed at a place, ranked by what fits there, with snippets in the
-language server protocol's `${1:field}` form. `hover(source, offset, definition?)` says what the word there is (a
+`completions(source, offset)`, from `@loadmap/dsl/completion` (an entry of its own, which an editor loads with its
+first list), lists what may be typed at a place, ranked by what fits there, with snippets in the language server
+protocol's `${1:field}` form. `hover(source, offset, definition?)` says what the word there is (a
 statement, a property, a name the definition declares, a builtin) and, given the compiled definition, its values at the
 defaults: a flow's rate, what reaches a stage, a component's utilization and where it runs out. `signatureHelp(source,
 offset)` names the arguments of the builtin or fit the cursor is in. `quickFixes(source, diagnostics)` gives each
@@ -1307,8 +1308,8 @@ symbol in another file carries its `file`, with its offsets, line and column in 
 reads only the head, for a host that must fetch the files first; `gather(source, { path, files })` returns every file
 the definition reaches; `flatten(source, { path, files })` writes it as one file. `encodeShare(source, values, {
 path, files })` makes a `#v2.` link when there is more than one file, and `decodeShare` gives them back.
-`definitionAcross`, `referencesAcross`, `renameAcross`, `hoverAcross` and `completionsAcross` are the help above over
-a model and its parts, each place with its `file`.
+`definitionAcross`, `referencesAcross`, `renameAcross`, `hoverAcross` and `completionsAcross` (from
+`@loadmap/dsl/completion` too) are the help above over a model and its parts, each place with its `file`.
 
 ## In your editor
 

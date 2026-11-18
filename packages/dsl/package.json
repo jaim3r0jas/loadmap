@@ -22,7 +22,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./internal": "./src/internal.ts",
-    "./internal/completion": "./src/completion.ts",
+    "./completion": "./src/completion.ts",
     "./add": "./src/add.ts"
   },
   "publishConfig": {
@@ -35,7 +35,7 @@
         "types": "./dist/internal.d.ts",
         "import": "./dist/internal.js"
       },
-      "./internal/completion": {
+      "./completion": {
         "types": "./dist/completion.d.ts",
         "import": "./dist/completion.js"
       },

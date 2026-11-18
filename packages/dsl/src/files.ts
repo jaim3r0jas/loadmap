@@ -96,7 +96,8 @@ export interface HeadLine {
   names: Imported[]
 }
 
-const HEAD = new Set(['include', 'import', 'part', 'library', 'extends'])
+/** The statements a file's head holds, before anything else. */
+export const HEAD = new Set(['include', 'import', 'part', 'library', 'extends'])
 
 /** One file of a model, parsed, where the reporter holds it. */
 export interface SourceFile extends Placed {

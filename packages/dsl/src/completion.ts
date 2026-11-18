@@ -1,5 +1,5 @@
-// Completion over a model's files: an entry of its own (`@loadmap/dsl/internal/completion`, no promise between
-// versions), for loadmap's editor to load on the first completion it asks for, not with everything else at once.
+// Completion: an entry of its own (`@loadmap/dsl/completion`), so an editor loads it with the first list it asks for,
+// not with everything else it needs at once. The main entry exports none of it, or every bundler would keep it there.
 
 import type { Decl } from './ast'
 import { type CompileOptions, Compiler, type DslSymbol, type Front, front } from './compile'
@@ -14,7 +14,7 @@ import {
   routable,
 } from './complete'
 import { Reporter } from './diagnostics'
-import { DEFAULT_PATH, type Files, fileText, type HeadLine, normalizePath, relativePath } from './files'
+import { DEFAULT_PATH, fileText, type HeadLine, normalizePath, relativePath } from './files'
 import { parse } from './parser'
 import { back, headOf, inside, into, type Joined, join, type WorkspaceOptions } from './workspace'
 
@@ -27,22 +27,28 @@ export { type Completion, type Completions, completions } from './complete'
  * `declarations`: an embed, which loads the compiler, never needs it. Never throws; a file that stops the link leaves
  * the names found before it.
  */
-function declarationsAcross(source: string, o: Pick<CompileOptions, 'path' | 'files'>): DslSymbol[] {
+function declarationsAcross(
+  source: string,
+  o: Pick<CompileOptions, 'path' | 'files'>,
+): { symbols: DslSymbol[]; partial: boolean } {
   const f: Front = { report: new Reporter(source), doc: { body: [] }, role: 'model' }
   let c: Compiler | undefined
+  let partial = false
   try {
     front(source, o, f)
-    if (!f.linked) return []
+    if (!f.linked) return { symbols: [], partial: true }
     c = new Compiler(f.report, {}, undefined, undefined, f.linked)
     c.run(f.linked.body, true)
   } catch {
-    // a bail leaves the names found so far
+    // a bail leaves the names found so far: this text's own names fill in the rest
+    partial = true
   }
-  return (c?.symbols ?? []).map((s) => {
+  const symbols = (c?.symbols ?? []).map((s) => {
     const { file, ...span } = f.report.local(s.span)
     const { file: _, ...decl } = f.report.local(s.decl)
     return { ...s, span, decl, ...(file != null && { file }) }
   })
+  return { symbols, partial }
 }
 
 /**
@@ -98,8 +104,10 @@ export function completionsAcross(source: string, offset: number, o: WorkspaceOp
         : []
     })
   })
+  const names = declarationsAcross(source, { path: self, files: o.files })
   const c = completionsIn(j.text, into(j, offset), {
-    symbols: linkedNames(source, self, o.files),
+    symbols: names.symbols,
+    partialLink: names.partial,
     head: headIn(source, mine.doc.body, offset),
     imported,
     inputsOf: (name) => inputsNamed(name, j, mine.head, o),
@@ -126,24 +134,4 @@ function inputsNamed(name: string, j: Joined, head: readonly HeadLine[], o: Work
     if (n && text != null) return inputsIn(text, parse(text, new Reporter(text)).doc.body, n.theirs.name)
   }
   return inputsIn(j.text, parse(j.text, new Reporter(j.text)).doc.body, name)
-}
-
-/** The last linked names, by the texts they were read from: completion asks again on every keystroke. */
-let lastLinked: { source: string; path: string; files: Files | undefined; symbols: DslSymbol[] } | undefined
-
-/** The same texts by the same paths: a host may hand a new object each time. */
-function sameFiles(a: Files | undefined, b: Files | undefined): boolean {
-  if (a === b) return true
-  // a reader or a map is the same only as itself
-  if (!a || !b || typeof a === 'function' || typeof b === 'function' || a instanceof Map || b instanceof Map)
-    return false
-  const [x, y] = [a as Readonly<Record<string, string>>, b as Readonly<Record<string, string>>]
-  const keys = Object.keys(x)
-  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k])
-}
-
-function linkedNames(source: string, path: string, files: Files | undefined): DslSymbol[] {
-  if (lastLinked?.source !== source || lastLinked.path !== path || !sameFiles(lastLinked.files, files))
-    lastLinked = { source, path, files, symbols: declarationsAcross(source, { path, files }) }
-  return lastLinked.symbols
 }

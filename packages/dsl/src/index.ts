@@ -25,8 +25,6 @@ export {
   addImport,
   type Completion,
   type Completions,
-  completions,
-  completionsAcross,
   definition,
   definitionAcross,
   type EditResult,

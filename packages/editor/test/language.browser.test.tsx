@@ -67,6 +67,21 @@ describe('completion in the editor', () => {
     expect(line(v)).toBe('capacity: estimated(3000, "queries/s", "load test") # ok')
   })
 
+  it('opens the list at the cursor with Ctrl+Space, nothing typed', async () => {
+    const v = mount(cache, 'node db "Database" "primary" {')
+    await userEvent.keyboard('{Enter}')
+    // a new line invites nothing by itself
+    expect(options()).toEqual([])
+    await userEvent.keyboard('{Control>}[Space]{/Control}')
+    await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('demand')
+    // what a box holds, at the cursor: the list starts at it, under the line or, near the bottom, over it
+    const caret = v.coordsAtPos(v.state.selection.main.head)!
+    const list = document.querySelector('.cm-tooltip-autocomplete')!.getBoundingClientRect()
+    expect(Math.abs(list.left - caret.left)).toBeLessThan(48)
+    const gap = Math.min(Math.abs(list.top - caret.bottom), Math.abs(list.bottom - caret.top))
+    expect(gap).toBeLessThan(12)
+  })
+
   it("draws the edge a route's next stage needs, and leaves the cursor after the word", async () => {
     // the edges after the flow: the list is asked for again as the word grows, so the edge lands where it should
     const after = cache.replace('route: api -> readCache -> db', 'route: api -> ')
@@ -258,35 +273,46 @@ describe('quick fixes, definitions and rename in the editor', () => {
   })
 })
 
+/** The editor on a phone, its cursor at the end of `after`, the row of keys over the keyboard. */
+async function phone(after: string) {
+  // a touch screen, as a phone has: the row of keys shows over the keyboard
+  window.matchMedia = (q: string) =>
+    q.includes('pointer: coarse')
+      ? ({
+          matches: true,
+          media: q,
+          onchange: null,
+          addEventListener() {},
+          removeEventListener() {},
+          addListener() {},
+          removeListener() {},
+          dispatchEvent: () => false,
+        } as MediaQueryList)
+      : matchMedia.call(window, q)
+  await page.viewport(400, 800)
+  const host = document.createElement('div')
+  host.style.cssText = 'width: 400px; height: 760px'
+  document.body.appendChild(host)
+  const ref = createRef<LoadmapEditorHandle>()
+  root = createRoot(host)
+  root.render(<LoadmapEditor ref={ref} fill initial={cache} />)
+  await expect.poll(() => host.querySelector('.cm-editor')).toBeTruthy()
+  const v = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!
+  const anchor = cache.indexOf(after) + after.length
+  v.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: 'center' }) })
+  v.focus()
+  await expect.poll(() => host.querySelector('.lme-keys')).toBeTruthy()
+  /** A key of the row, by its name: a DOM click, so the text keeps its focus, as a tap does. */
+  const press = (name: string) =>
+    [...host.querySelectorAll<HTMLElement>('.lme-keys button')]
+      .find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)!
+      .click()
+  return { host, v, press }
+}
+
 describe('completion on a phone', () => {
   it("moves through a snippet's fields with the ⇥ key, a phone keyboard having no Tab", async () => {
-    // a touch screen, as a phone has: the row of keys shows over the keyboard
-    window.matchMedia = (q: string) =>
-      q.includes('pointer: coarse')
-        ? ({
-            matches: true,
-            media: q,
-            onchange: null,
-            addEventListener() {},
-            removeEventListener() {},
-            addListener() {},
-            removeListener() {},
-            dispatchEvent: () => false,
-          } as MediaQueryList)
-        : matchMedia.call(window, q)
-    await page.viewport(400, 800)
-    const host = document.createElement('div')
-    host.style.cssText = 'width: 400px; height: 760px'
-    document.body.appendChild(host)
-    const ref = createRef<LoadmapEditorHandle>()
-    root = createRoot(host)
-    root.render(<LoadmapEditor ref={ref} fill initial={cache} />)
-    await expect.poll(() => host.querySelector('.cm-editor')).toBeTruthy()
-    const v = EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!
-    const anchor = cache.indexOf('node db "Database" "primary" {') + 'node db "Database" "primary" {'.length
-    v.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: 'center' }) })
-    v.focus()
-    await expect.poll(() => host.querySelector('.lme-keys')).toBeTruthy()
+    const { host, v, press } = await phone('node db "Database" "primary" {')
     await userEvent.keyboard('{Enter}capacity: ')
     await listed(/^measured/)
     await expect.poll(helpClear).toBe('under or over')
@@ -305,7 +331,18 @@ describe('completion on a phone', () => {
     // a phone has no F2: the row's Rename opens the field at the name under the cursor
     const at = v.state.doc.toString().indexOf('pods * 1')
     v.dispatch({ selection: { anchor: at + 1 } })
-    ;(host.querySelector('.lme-keys button:nth-of-type(6)') as HTMLElement).click()
+    press('Rename')
     await expect.poll(() => document.querySelector<HTMLInputElement>('.lm-rename input')?.value).toBe('pods')
+  })
+
+  it('opens the list with Suggest and the search with Find, the text keeping its focus', async () => {
+    const { v, press } = await phone('node db "Database" "primary" {')
+    await userEvent.keyboard('{Enter}')
+    press('Suggest')
+    await expect.poll(() => options().join(' '), { timeout: 5000 }).toContain('demand')
+    expect(v.hasFocus).toBe(true)
+    await userEvent.keyboard('{Escape}')
+    press('Find')
+    await expect.poll(() => document.querySelector('.cm-search')).toBeTruthy()
   })
 })

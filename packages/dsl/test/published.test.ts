@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { compile, completions, format, hover, loadCatalog, loadedCatalog, needsCatalog, rename } from '../src'
+import { compile, format, hover, loadCatalog, loadedCatalog, needsCatalog, rename } from '../src'
 import { addPublished, catalogBox, catalogStage } from '../src/add'
+import { completions } from '../src/completion'
 import { edit, inspect } from '../src/internal'
 
 const SRC = `loadmap 1
