@@ -6,6 +6,9 @@ import { createRef, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import cascadiaCode from '../../../apps/docs/site/fonts/cascadia-code.woff2?url'
+import firaCode from '../../../apps/docs/site/fonts/fira-code.woff2?url'
+import jetbrainsMono from '../../../apps/docs/site/fonts/jetbrains-mono.woff2?url'
 import platform from '../../../docs/multi-file/platform.loadmap?raw'
 import shop from '../../../docs/multi-file/shop.loadmap?raw'
 import story from '../../../docs/multi-file/shop.story.loadmap?raw'
@@ -14,6 +17,7 @@ import checkout from '../../../examples/checkout/checkout.loadmap?raw'
 import { watchDots } from '../../../examples/dots'
 import {
   type BarSection,
+  type CodeFont,
   type EditorFiles,
   type EmbedOptions,
   LoadmapEditor,
@@ -38,6 +42,7 @@ async function mount(
     several?: EditorFiles
     onChange?: (source: string) => void
     onSave?: (files: EditorFiles) => void | Promise<void>
+    fonts?: readonly CodeFont[]
   } = {},
 ) {
   await page.viewport(1440, 1000)
@@ -56,6 +61,7 @@ async function mount(
       files={o.several}
       onChange={o.onChange}
       onSave={o.onSave}
+      fonts={o.fonts}
     />,
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
@@ -568,6 +574,89 @@ describe('the editor', () => {
     view.focus()
     await userEvent.keyboard(`{${mod}>}s{/${mod}}`)
     await expect.poll(() => note(host)).toBe('Not saved: the branch moved')
+  })
+
+  it("sets the code's font, its size and its ligatures from View, the reader's own, each font fetched when picked", async () => {
+    const keys = ['loadmap:editor:font', 'loadmap:editor:fontSize', 'loadmap:editor:ligatures']
+    for (const k of keys) localStorage.removeItem(k)
+    const fonts: CodeFont[] = [
+      { name: 'Fira Code', url: firaCode },
+      { name: 'JetBrains Mono', url: jetbrainsMono },
+      { name: 'Cascadia Code', url: cascadiaCode },
+    ]
+    const face = (name: string) => [...document.fonts].find((f) => f.family.replaceAll('"', '') === name)
+    try {
+      let { host, handle, view } = await mount({ fonts })
+      const scroller = () => getComputedStyle(view.scrollDOM)
+      const pick = async (role: 'menuitemradio' | 'menuitemcheckbox', name: string) => {
+        await page.getByRole('button', { name: 'View' }).click()
+        await page.getByRole(role, { name, exact: true }).click()
+      }
+      // at first the system's monospace at 13 px, ligatures on, and no font fetched
+      expect(scroller().fontFamily).not.toContain('Fira Code')
+      expect(scroller().fontSize).toBe('13px')
+      expect(scroller().fontVariantLigatures).toBe('normal')
+      expect(fonts.some((f) => face(f.name))).toBe(false)
+      await page.getByRole('button', { name: 'View' }).click()
+      await expect
+        .element(page.getByRole('menuitemradio', { name: 'System', exact: true }))
+        .toHaveAttribute('aria-checked', 'true')
+      await expect.element(page.getByRole('menuitemradio', { name: '13 px' })).toHaveAttribute('aria-checked', 'true')
+      await userEvent.keyboard('{Escape}')
+
+      // a font: the code draws in it once its file is in, the text unchanged
+      const before = handle.source()
+      await pick('menuitemradio', 'Fira Code')
+      expect(scroller().fontFamily).toMatch(/^"Fira Code", /)
+      await expect.poll(() => face('Fira Code')?.status, { timeout: 5000 }).toBe('loaded')
+      expect(face('JetBrains Mono')).toBeUndefined()
+      expect(handle.source()).toBe(before)
+      // a size, and the lines are measured again: the cursor sits on its line
+      await pick('menuitemradio', '16 px')
+      expect(scroller().fontSize).toBe('16px')
+      view.dispatch({ selection: { anchor: view.state.doc.line(3).from } })
+      await expect
+        .poll(() => Math.round(view.coordsAtPos(view.state.doc.line(3).from)!.top))
+        .toBe(Math.round(view.lineBlockAt(view.state.doc.line(3).from).top + view.documentTop))
+      // ligatures off: "->" and "!=" as their two marks
+      await pick('menuitemcheckbox', 'Ligatures')
+      expect(host.querySelector('.lme-code')!.getAttribute('data-ligatures')).toBe('off')
+      expect(scroller().fontVariantLigatures).toBe('none')
+      expect(localStorage.getItem('loadmap:editor:font')).toBe('Fira Code')
+      expect(localStorage.getItem('loadmap:editor:fontSize')).toBe('16')
+      expect(localStorage.getItem('loadmap:editor:ligatures')).toBe('off')
+
+      // kept in this browser: a new editor opens as the reader left it
+      root?.unmount()
+      document.body.replaceChildren()
+      ;({ host, handle, view } = await mount({ fonts }))
+      expect(scroller().fontFamily).toMatch(/^"Fira Code", /)
+      expect(scroller().fontSize).toBe('16px')
+      expect(scroller().fontVariantLigatures).toBe('none')
+      // back to the defaults: nothing kept
+      await pick('menuitemradio', 'System')
+      await pick('menuitemradio', '13 px')
+      await pick('menuitemcheckbox', 'Ligatures')
+      expect(scroller().fontFamily).not.toContain('Fira Code')
+      for (const k of keys) expect(localStorage.getItem(k)).toBeNull()
+      root?.unmount()
+      document.body.replaceChildren()
+
+      // a font whose file does not load: the note says so, the system's font stands in
+      ;({ host } = await mount({ fonts: [{ name: 'Gone Mono', url: '/no-such-font.woff2' }] }))
+      await pick('menuitemradio', 'Gone Mono')
+      await expect
+        .poll(() => host.querySelector('.lme-note')?.textContent, { timeout: 5000 })
+        .toBe("Gone Mono did not load: the system's font stands in")
+      // a page that offers no fonts: only the system's
+      root?.unmount()
+      document.body.replaceChildren()
+      await mount({ fonts: [] })
+      await page.getByRole('button', { name: 'View' }).click()
+      expect(document.querySelectorAll('[role="group"][aria-label="Font"] [role="menuitemradio"]')).toHaveLength(1)
+    } finally {
+      for (const k of keys) localStorage.removeItem(k)
+    }
   })
 
   it('starts from a template', async () => {
