@@ -588,9 +588,11 @@ describe('the editor', () => {
     try {
       let { host, handle, view } = await mount({ fonts })
       const scroller = () => getComputedStyle(view.scrollDOM)
+      // by the end of its name: the ✓ before a checked one is drawn in CSS, which Playwright reads into it
+      const named = (name: string) => new RegExp(`(^|\\s)${name}$`)
       const pick = async (role: 'menuitemradio' | 'menuitemcheckbox', name: string) => {
         await page.getByRole('button', { name: 'View' }).click()
-        await page.getByRole(role, { name, exact: true }).click()
+        await page.getByRole(role, { name: named(name) }).click()
       }
       // at first the system's monospace at 13 px, ligatures on, and no font fetched
       expect(scroller().fontFamily).not.toContain('Fira Code')
@@ -599,7 +601,7 @@ describe('the editor', () => {
       expect(fonts.some((f) => face(f.name))).toBe(false)
       await page.getByRole('button', { name: 'View' }).click()
       await expect
-        .element(page.getByRole('menuitemradio', { name: 'System', exact: true }))
+        .element(page.getByRole('menuitemradio', { name: named('System') }))
         .toHaveAttribute('aria-checked', 'true')
       await expect.element(page.getByRole('menuitemradio', { name: '13 px' })).toHaveAttribute('aria-checked', 'true')
       await userEvent.keyboard('{Escape}')
@@ -652,7 +654,7 @@ describe('the editor', () => {
       expect(localStorage.getItem('loadmap:editor:font')).toBeNull()
       await page.getByRole('button', { name: 'View' }).click()
       await expect
-        .element(page.getByRole('menuitemradio', { name: 'System', exact: true }))
+        .element(page.getByRole('menuitemradio', { name: named('System') }))
         .toHaveAttribute('aria-checked', 'true')
       await userEvent.keyboard('{Escape}')
       // a page that offers no fonts: only the system's
