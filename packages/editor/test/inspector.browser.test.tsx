@@ -103,8 +103,8 @@ describe('the editor for readers', () => {
     expect(changed(checkout, link.source)).toEqual([
       '-node gateway "API gateway" {',
       '+node gateway "Edge gateway" {',
-      '-  capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")',
-      '+  capacity: estimated(25_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")',
+      '-  capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")',
+      '+  capacity: estimated(25_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")',
     ])
     expect(link.values).toEqual({ load: '30' })
 

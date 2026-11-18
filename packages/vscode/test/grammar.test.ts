@@ -97,7 +97,7 @@ describe('the grammar', () => {
       'flow orders "orders" { rate: 40 * load; route: gateway -> workers }',
       'node gateway "Gateway" {',
       '  pass',
-      '  capacity: estimated(20_000 ± 30%, "req/s", "a benchmark")',
+      '  capacity: estimated(20_000 +- 30%, "req/s", "a benchmark")',
       '  over: pods > 2 ? low : high',
       '}',
       'preset "Sale" { load: 20; pods: 4 }',
@@ -120,7 +120,7 @@ describe('the grammar', () => {
     expect(at('pass', 6)).toBe('keyword.other.statement')
     expect(at('estimated', 7)).toBe('support.function.builtin')
     expect(at('20_000', 7)).toBe('constant.numeric')
-    expect(at('±', 7)).toBe('keyword.operator')
+    expect(at('+-', 7)).toBe('keyword.operator')
     // a ternary's branches are values, not properties
     expect(at('low', 8)).toBe('variable.other')
     expect(at('high', 8)).toBe('variable.other')

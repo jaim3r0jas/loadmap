@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # A rate limiter in front of a service that cannot take every request: above the limit clients get 429s, and what
 # gets through never exceeds what the service and its database can take.
 title: "Rate limiter"
@@ -47,7 +47,7 @@ node db "Database" {
   shape: cylinder
   store
   short: "the database"
-  capacity: estimated(3_000 ± 30%, "queries/s", "vendor sizing")
+  capacity: estimated(3_000 +- 30%, "queries/s", "vendor sizing")
   over: "queries queue on the primary"
 }
 

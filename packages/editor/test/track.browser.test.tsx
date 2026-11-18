@@ -82,7 +82,7 @@ describe('the editor’s diagram across edits', () => {
     const was = onBoard(first, 'db')
     const edits: [string, string][] = [
       ['"Postgres" "primary"', '"Postgres" "primary, edited"'],
-      ['estimated(4_000 ± 30%', 'estimated(2_000 ± 30%'],
+      ['estimated(4_000 +- 30%', 'estimated(2_000 +- 30%'],
       ['phones -> gateway', 'node cache "Cache" { tier: data }\ngateway -> cache\nphones -> gateway'],
       ['node cache "Cache" { tier: data }\ngateway -> cache\n', ''],
     ]
@@ -161,7 +161,7 @@ describe('the editor’s diagram across edits', () => {
     closeOnPhones(engine())
     const was = engine().viewer!.shownView()!
     const scene = engine().scene
-    edit('estimated(4_000 ± 30%', 'estimated(2_000 ± 30%')
+    edit('estimated(4_000 +- 30%', 'estimated(2_000 +- 30%')
     await expect.poll(() => engine().scene !== scene, { timeout: 5000 }).toBe(true)
     await settled(engine)
     await new Promise((r) => setTimeout(r, 900))
@@ -172,7 +172,7 @@ describe('the editor’s diagram across edits', () => {
   it('tracks live changes: brings the box an edit changed into view, no closer, and marks it', async () => {
     const { host, engine, edit } = await mount({ track: true })
     closeOnPhones(engine())
-    edit('estimated(4_000 ± 30%', 'estimated(2_000 ± 30%')
+    edit('estimated(4_000 +- 30%', 'estimated(2_000 +- 30%')
     await expect.poll(() => host.querySelector('[data-node="db"][data-changed]'), { timeout: 5000 }).toBeTruthy()
     await expect.poll(() => inView(engine(), 'db'), { timeout: 5000 }).toBe(true)
     expect(engine().viewer!.shownView()!.k).toBeLessThanOrEqual(2)
@@ -197,7 +197,7 @@ describe('the editor’s diagram across edits', () => {
     await settled(engine)
     await page.getByRole('button', { name: 'Track live changes' }).click()
     closeOnPhones(engine())
-    edit('estimated(4_000 ± 30%', 'estimated(2_000 ± 30%')
+    edit('estimated(4_000 +- 30%', 'estimated(2_000 +- 30%')
     await expect.poll(() => host.querySelector('[data-node="db"][data-changed]'), { timeout: 5000 }).toBeTruthy()
     expect([...host.querySelectorAll('[data-changed]')].map((el) => el.getAttribute('data-node'))).toEqual(['db'])
   })

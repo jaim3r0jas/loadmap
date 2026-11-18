@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 include "./alerts.data.loadmap"
 include "./alerts.story.loadmap"
 import "./platform.loadmap" { podPool }
@@ -65,7 +65,7 @@ node gateway "Gateway" {
   pass
   short: "the gateway"
   demand: flows.alerts + flows.positions
-  capacity: estimated(30_000 ± 30%, "req/s", "load test pending")
+  capacity: estimated(30_000 +- 30%, "req/s", "load test pending")
   over: "phones get timeouts, alerts and positions alike"
 }
 

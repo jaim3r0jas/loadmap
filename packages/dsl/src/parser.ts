@@ -1,6 +1,6 @@
 import type { BinOp, Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 import { type Code, Reporter, type Span } from './diagnostics'
-import { lex, type Token } from './lexer'
+import { isPlusMinus, lex, type Token } from './lexer'
 import { SCHEMA } from './schema'
 
 /** Deeper formulas are refused: a shared link must not be able to exhaust the stack. */
@@ -379,7 +379,23 @@ class Parser {
       this.fail(this.peek(), `the formula is nested more than ${MAX_DEPTH} deep`, undefined, 'too-large')
     try {
       const test = this.binary(1)
-      if (this.is('±') || this.is('+/-')) return this.pm(test)
+      if (isPlusMinus(this.peek())) {
+        const ascii = this.peek().text === '+-'
+        const pm = this.pm(test)
+        // from 1.6 "a +- b * c" is no longer a sum: one error that says so, and the rest read as the sum it was, so
+        // nothing after it is a second one
+        const next = this.peek()
+        if (!ascii || pm.t !== 'pm' || pm.percent || next.kind !== 'punct' || PREC[next.text] == null) return pm
+        this.report.error(
+          'bad-formula',
+          pm.mark,
+          '"+-" is ± from loadmap 1.6: one value goes after it',
+          'write "+ -" for a plus and a minus',
+          { sum: '+ -' },
+        )
+        const minus = { t: 'unary', op: '-', arg: pm.within, from: pm.mark.to - 1, to: pm.within.to } as const
+        return this.binary(1, { t: 'bin', op: '+', left: test, right: minus, from: test.from, to: minus.to })
+      }
       if (!this.eat('?')) return test
       const then = this.expr()
       this.expect(':', '":" of the "?"')
@@ -392,14 +408,16 @@ class Parser {
 
   /** `value ± within` or `value ± within%`: parsed anywhere, so the checker can say where it belongs. */
   pm(value: Expr): Expr {
-    this.next()
+    const m = this.next()
     const within = this.unary()
     const percent = this.is('%') ? this.next() : null
-    return { t: 'pm', value, within, percent: !!percent, from: value.from, to: percent?.to ?? within.to }
+    const mark = { from: m.from, to: m.to }
+    return { t: 'pm', value, within, percent: !!percent, mark, from: value.from, to: percent?.to ?? within.to }
   }
 
-  binary(min: number): Expr {
-    let left = this.unary()
+  /** Operators of precedence `min` or more, after `left` (read here when not given). */
+  binary(min: number, first?: Expr): Expr {
+    let left = first ?? this.unary()
     for (;;) {
       const t = this.peek()
       const prec = t.kind === 'punct' ? PREC[t.text] : undefined
@@ -408,6 +426,17 @@ class Parser {
       const before = this.toks[this.i - 1]
       const glued = t.text === '%' && before?.kind === 'number' && before.to === t.from
       this.next()
+      // "a +- b" in a file stamped before 1.6: the lexer reads a plus and a minus, the writer perhaps a ±. Only a
+      // warning: the file computes what it did
+      const sign = this.peek()
+      const plusMinus = t.text === '+' && sign.kind === 'punct' && sign.text === '-' && sign.from === t.to
+      if (plusMinus)
+        this.report.warning(
+          'plus-minus',
+          { from: t.from, to: sign.to },
+          '"+-" is a plus and a minus here; from loadmap 1.6 it is ±',
+          'write "+ -" to keep the sum',
+        )
       const right = this.binary(prec + 1)
       const op = (t.text === '===' ? '==' : t.text === '!==' ? '!=' : t.text) as BinOp
       const triple = op !== t.text ? { from: t.from, to: t.to } : undefined
@@ -420,6 +449,7 @@ class Parser {
         to: right.to,
         ...(glued && { glued }),
         ...(triple && { triple }),
+        ...(plusMinus && { plusMinus: { from: t.from, to: sign.to } }),
       }
     }
   }

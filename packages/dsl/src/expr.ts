@@ -126,12 +126,15 @@ export const BUILTINS: Readonly<Record<string, Builtin>> = {
   compact: text(compact, 'A compact number: 980 / 1.2k / 34k / 1.5M.'),
   pct: text(pct, 'A share from 0 to 1 as a percentage: 50 %.'),
   secs: text(secs, 'A duration in seconds: 42 s / 3 min / > 1 h.'),
-  measured: capacity(measured, 'A capacity read off a dashboard or a load test. `value ± 30%` says how sure it is.'),
+  measured: capacity(
+    measured,
+    'A capacity read off a dashboard or a load test. `value +- 30%` (±) says how sure it is.',
+  ),
   estimated: capacity(
     estimated,
-    "A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value ± 30%` says how sure it is.",
+    "A capacity from a vendor's figure, a benchmark elsewhere or a guess: the verdict says so. `value +- 30%` (±) says how sure it is.",
   ),
-  configured: capacity(configured, "A limit someone set, such as a rate limiter's: exact, so it takes no ±."),
+  configured: capacity(configured, "A limit someone set, such as a rate limiter's: exact, so it takes no +- (±)."),
 }
 
 /** The tables a formula may read with a ".": flows.orders, at.db.orders, demand.db, util.db, derived.x. */
@@ -267,9 +270,20 @@ class Compiler {
       case 'array':
         this.report.error('bad-formula', e, 'a list is only allowed as the options of a parameter')
         return bad
-      case 'pm':
-        this.report.error('bad-formula', e, '"±" only goes in the first value of measured(…) or estimated(…)')
+      case 'pm': {
+        const src = this.report.source
+        // written "+-", it may be a sum from before 1.6
+        const ascii = src.slice(e.mark.from, e.mark.to) === '+-'
+        const sum = `${src.slice(e.from, e.mark.from)}+ -${src.slice(e.mark.to, e.to)}`
+        this.report.error(
+          'bad-formula',
+          e,
+          '"+-" (±) only goes in the first value of measured(…) or estimated(…)',
+          ascii ? 'write "+ -" for a plus and a minus' : undefined,
+          ascii ? { sum } : undefined,
+        )
         return bad
+      }
     }
   }
 

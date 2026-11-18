@@ -1,18 +1,24 @@
 import { childrenOf, type Decl, type Expr, type Stmt } from './ast'
 import type { Span } from './diagnostics'
 import { isSize } from './lexer'
-import { COMPONENT_PROPS, EDGE_PROPS, own, SCHEMA } from './schema'
+import { COMPONENT_PROPS, EDGE_PROPS, own, PLUS_MINUS, SCHEMA } from './schema'
 import { before, parseVersion, stampVersion, type Version } from './stamp'
 
 /**
  * The language version this package reads, the newest: what a new definition starts with. A minor version stays open
  * until the release that ships it; from then on it never changes (docs/dsl.md, "Versions").
  */
-export const LANGUAGE_VERSION = '1.5'
+export const LANGUAGE_VERSION = '1.6'
 
 export { before, parseVersion, type Version, versionText } from './stamp'
 
 export const CURRENT = parseVersion(LANGUAGE_VERSION)!
+
+/** The version from which a capacity's ± is written `+-` (and `+-` is no longer a plus and a minus). */
+export const PLUS_MINUS_VERSION: Version = parseVersion(PLUS_MINUS)!
+
+/** How a capacity's ± is written at a version: `+-` from 1.6 (`format()` writes it), `±` before. */
+export const plusMinusMark = (version: Version): string => (before(version, PLUS_MINUS_VERSION) ? '±' : '+-')
 
 /**
  * The `loadmap` line's version: the number, as written, and the version it says. `version` is undefined when the text

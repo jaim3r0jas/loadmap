@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 library "Checkout platform"
 # What the team's models share: its worker pod and its database, each written once.
 
@@ -22,6 +22,6 @@ node postgres "Postgres" "primary" {
   store
   short: "the database"
   demand: writes
-  capacity: estimated(4_000 ± 30%, "commits/s")
+  capacity: estimated(4_000 +- 30%, "commits/s")
   over: "commits queue on the primary"
 }

@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```loadmap
-loadmap 1.5
+loadmap 1.6
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -44,7 +44,7 @@ tests check that each draws exactly what its TypeScript draws.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.5`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.6`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -89,7 +89,7 @@ checker warns.
 ```loadmap
 node db "Index shard 1" {
   store
-  capacity: estimated(1_000 ± 30%, "queries/s", "a load test of one shard")
+  capacity: estimated(1_000 +- 30%, "queries/s", "a load test of one shard")
   over: "queries queue"
 }
 node db2 "Index shard 2" { like: db; short: "the second shard" }
@@ -188,13 +188,16 @@ with that scenario's button pressed.
 
 ### How sure, and what must hold
 
-A capacity says how sure it is with a `±` in its value, as a share (`30%`) or in its unit (`± 1`). `+/-` is the same
-for a keyboard without `±`:
+A capacity says how sure it is with a `+-` (±) in its value, as a share (`30%`) or in its unit (`+- 1`). `±` and
+`+/-` read the same, and `loadmap fmt` writes `+-`:
 
 ```loadmap
-capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")
-capacity: measured(pods * 2 +/- 5%, "cores", "pod CPU limit")
+capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")
+capacity: measured(pods * 2 +- 5%, "cores", "pod CPU limit")
 ```
+
+Before `loadmap 1.6`, `a +- b` was `a + -b`, and a file stamped before it still reads it so: a warning
+(`plus-minus`) says so, and its quick fixes write `±` (in a capacity's value) or `+ -`.
 
 Every crossing is then also found with each capacity at its low bound and at its high bound, and the limits become
 ranges: "the 50 % target holds up to between 7.4× and 10×". The ranking, the first limit and the presets use the
@@ -693,7 +696,7 @@ does not cut it, so each component's limit stays the one it has if what is in fr
 ```loadmap
 node db "Database" {
   store
-  capacity: estimated(3_000 ± 30%, "queries/s") # no demand: the misses the cache lets through
+  capacity: estimated(3_000 +- 30%, "queries/s") # no demand: the misses the cache lets through
   over: "queries queue on the primary"
 }
 ```
@@ -1048,7 +1051,7 @@ straight under `loadmap`, before any other statement:
 
 ```loadmap
 # shop.loadmap
-loadmap 1.5
+loadmap 1.6
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
@@ -1076,7 +1079,7 @@ node postgres "Postgres" "primary" {
   input limit = 4_000
   store
   demand: writes
-  capacity: estimated(limit ± 30%, "commits/s", "load test of the primary")
+  capacity: estimated(limit +- 30%, "commits/s", "load test of the primary")
 }
 
 # shop.loadmap
@@ -1199,8 +1202,9 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `out-of-range` | a number outside the range the property takes |
 | `wrong-scope` | a formula reads what its place may not read |
 | `wrong-arguments` | a function called with the wrong number of values |
-| `bad-formula` | a formula that uses a table, a function, a list or "±" where they do not go |
+| `bad-formula` | a formula that uses a table, a function, a list or "+-" (±) where they do not go |
 | `glued-percent` | a "%" straight after a number and before a value: the remainder, where a share was likely meant |
+| `plus-minus` | a "+-" in a file stamped before 1.6: a plus and a minus there, where it is "±" from 1.6 |
 | `unit-mismatch` | a demand, capacity or property whose unit differs from the one it should have |
 | `empty-unit` | a capacity whose unit is empty |
 | `bare-capacity` | a capacity without measured(…), estimated(…) or configured(…) |
@@ -1246,7 +1250,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.5`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.6`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1275,6 +1279,7 @@ with no warning first; none is planned.
 | 1.3 | several files: `include` and `part of`, `library` and `import { … }`, `input` and `with { … }`, `subsystem`, `extends`; a dotted name for a box of a subsystem (`orderLine.workers`) | |
 | 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
+| 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 
 ## In code
 
@@ -1499,7 +1504,7 @@ view { direction: right; speed: 10; fullScreen: [verdict, controls] }
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```loadmap
-loadmap 1.5
+loadmap 1.6
 ```
 
 After the keyword: version.
@@ -1839,7 +1844,7 @@ After the keyword: [id] [label].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -1893,7 +1898,7 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -1923,7 +1928,7 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
@@ -1957,7 +1962,7 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
-| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set. |
+| `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |

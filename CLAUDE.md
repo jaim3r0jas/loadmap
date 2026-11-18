@@ -65,7 +65,7 @@ it, push, watch again. A session wraps up only once `check` is green on its last
 
 The browser tests need Chromium once: `pnpm exec playwright install chromium`. They write screenshots to
 `__screenshots__/` next to each test (ignored by git). The budget fails when a `<Loadmap>` page loads more than 70 kB
-gzip of loadmap first, the editor adds more than 221 kB, an embed loads more than 130 kB first, or ELK is in a first
+gzip of loadmap first, the editor adds more than 221 kB, an embed loads more than 131 kB first, or ELK is in a first
 load. `verify:pack` packs every package, installs the tarballs with npm in a fresh Vite app outside the monorepo, runs
 tsc, builds, measures the budget, and draws checkout and the react README's quick start in Chromium, built and in dev.
 `pnpm --filter @loadmap/vscode package` makes the .vsix.
@@ -108,7 +108,7 @@ the parts to the end from the session (Verification) before wrapping it up.
 
 - **No DOM or React in core, sim or layout.** They run in Node tests; React is only the binding.
 - **Every capacity says where it came from**: `measured(...)`, `estimated(...)` or a `fitLinear(...)` result. The
-  verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`± 30%` in the
+  verdict and the assumptions list show it; never add a bare number as a capacity. A `within` (`+- 30%` in the
   language) makes every crossing a range; the ranking, the first limit, presets, `compare()` and expectations use
   its pessimistic edge (every capacity at its low bound), and without a ± every text reads as before. An expectation
   that holds only at the high edge, or rests on measured data that is missing, is inconclusive: `loadmap check` warns

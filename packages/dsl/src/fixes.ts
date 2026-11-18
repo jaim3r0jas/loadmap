@@ -1,4 +1,4 @@
-import type { Decl, Stmt } from './ast'
+import { type Decl, formulasOf, type Stmt } from './ast'
 import { boxOf } from './boxes'
 import { declarations } from './compile'
 import { type Code, type Diagnostic, Reporter } from './diagnostics'
@@ -111,6 +111,25 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
     ...(data.share ? [{ title: `Make it the share: ${data.share}`, changes: replace(data.share) }] : []),
     ...(data.mod ? [{ title: `Keep the remainder: ${data.mod}`, changes: replace(data.mod) }] : []),
   ],
+
+  // "+-" is a plus and a minus here (before 1.6); in a capacity's value it was likely its ±
+  'plus-minus': ({ d, doc, replace }) => [
+    ...([...formulasOf(doc().body)].some(
+      (e) =>
+        e.t === 'call' &&
+        CAPACITY.has(e.callee.name) &&
+        e.callee.name !== 'configured' &&
+        e.args[0]?.t === 'bin' &&
+        e.args[0].plusMinus?.from === d.from,
+    )
+      ? [{ title: 'Make it the ±: write "±"', changes: replace('±') }]
+      : []),
+    { title: 'Keep the sum: write "+ -"', changes: replace('+ -') },
+  ],
+
+  // "+-" (±) where it does not go, from 1.6: the sum it was before
+  'bad-formula': ({ data, replace }) =>
+    data.sum ? [{ title: 'Make it a plus and a minus: write "+ -"', changes: replace(data.sum) }] : [],
 
   // a -> b: { … }
   'colon-before-block': ({ replace }) => [{ title: 'Drop the ":"', changes: replace('') }],

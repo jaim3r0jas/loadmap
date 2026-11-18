@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 # One model in several files. This file is the system; its story is a part beside it (shop.story.loadmap), and the
@@ -33,7 +33,7 @@ node gateway "API gateway" {
   tier: edge
   pass
   short: "the API gateway"
-  capacity: estimated(20_000 ± 30%, "req/s", "vendor benchmark")
+  capacity: estimated(20_000 +- 30%, "req/s", "vendor benchmark")
   over: "clients get 429s"
 }
 

@@ -47,7 +47,7 @@ export function grammar() {
           // what every formula may read; `load` where a statement starts is the keyword
           { name: 'variable.language.loadmap', match: '\\b(?:load|flows|at|demand|util|derived)\\b' },
           { name: 'keyword.operator.arrow.loadmap', match: '->' },
-          { name: 'keyword.operator.loadmap', match: '===|!==|\\+/-|==|!=|<=|>=|&&|\\|\\||[-+*/%<>!?=±]' },
+          { name: 'keyword.operator.loadmap', match: '===|!==|\\+/-|\\+-|==|!=|<=|>=|&&|\\|\\||[-+*/%<>!?=±]' },
           { name: 'punctuation.section.block.loadmap', match: '[{}]' },
           { name: 'punctuation.section.brackets.loadmap', match: '[\\[\\]]' },
           { name: 'punctuation.section.parens.loadmap', match: '[()]' },

@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 include "./regions.story.loadmap"
 import "./region.loadmap" { region }
 # Two regions, each sized for its own users, and what happens to one when the other is lost. The regions are one

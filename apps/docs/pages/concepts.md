@@ -75,7 +75,7 @@ long as its widest layer, down when the widest layer is wider. Here a gateway fe
 database, so it runs down, even on a wide screen, and its tiers become lanes with their names up the left:
 
 ```loadmap live
-loadmap 1.5
+loadmap 1.6
 title: "Five services, one database"
 load "Requests, × today" { max: 20; default: 1 }
 
@@ -123,7 +123,7 @@ Everything above can be written as a `.loadmap` definition instead of TypeScript
 diagram. This one is drawn from its text right here:
 
 ```loadmap live
-loadmap 1.5
+loadmap 1.6
 title: "A gateway and a worker pool"
 load "Users, × today" { max: 100; default: 10 }
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
@@ -137,7 +137,7 @@ node gateway "API gateway" {
   pass
   short: "the API gateway"
   demand: flows.orders
-  capacity: estimated(6_000 ± 30%, "req/s", "vendor benchmark")
+  capacity: estimated(6_000 +- 30%, "req/s", "vendor benchmark")
   over: "clients get 429s"
 }
 pool workerPool "Workers" `${pods} pods × 8 threads` {

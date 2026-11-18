@@ -20,6 +20,9 @@ const BROKEN: Record<string, string> = {
   ),
   'colon-before-block': cache.replace('clients -> api', 'clients -> api: { when: true }'),
   'glued-percent': cache14.replace('2_000 * load', '2_000 * load * (30%+1)'),
+  'plus-minus': cache14.replace('2_000 * load', '2_000 * load +- 1'),
+  // from 1.6 a "+-" is ±, which only goes in a capacity's value
+  'bad-formula': cache.replace('2_000 * load', '2_000 +- load'),
   removed: cache.replace('clients -> api', 'clients -> api { label: "HTTPS" }'),
   remainder: cache.replace('2_000 * load', '2_000 * load * (1 + pods % 2)'),
   // an old name under a stamp that has the new one

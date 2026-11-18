@@ -143,8 +143,8 @@ describe('inspect', () => {
 describe('edit', () => {
   it('changes a number of a formula, written as the text writes numbers', () => {
     expect(diff(checkout, 'node:gateway/capacity#0', 25_000)).toEqual([
-      '-  capacity: estimated(20_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")',
-      '+  capacity: estimated(25_000 * gateways ± 30%, "req/s", "vendor benchmark, not load-tested")',
+      '-  capacity: estimated(20_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")',
+      '+  capacity: estimated(25_000 * gateways +- 30%, "req/s", "vendor benchmark, not load-tested")',
     ])
     expect(diff(checkout, 'flow:orders/rate#0', 52.5)).toEqual(['-  rate: 40 * load', '+  rate: 52.5 * load'])
     // a negative number in parentheses: where it keeps the value at 0 or more (a capacity below 0 is refused)
@@ -203,14 +203,19 @@ describe('edit', () => {
       '+  capacity: estimated(20_000 * gateways, "req/s", "vendor benchmark, not load-tested")',
     )
     expect(diff(checkout, 'node:gateway/capacity.within', 50)[1]).toBe(
-      '+  capacity: estimated(20_000 * gateways ± 50%, "req/s", "vendor benchmark, not load-tested")',
+      '+  capacity: estimated(20_000 * gateways +- 50%, "req/s", "vendor benchmark, not load-tested")',
     )
     expect(diff(checkout, 'pool:workerPool/capacity.within', 10)).toEqual([
       '-  capacity: measured(pods * 2, "cores", "pod CPU limit")',
-      '+  capacity: measured(pods * 2 ± 10%, "cores", "pod CPU limit")',
+      '+  capacity: measured(pods * 2 +- 10%, "cores", "pod CPU limit")',
     ])
     expect(diff(checkout, 'node:gateway/capacity.provenance', 'configured')[1]).toBe(
       '+  capacity: configured(20_000 * gateways, "req/s", "vendor benchmark, not load-tested")',
+    )
+    // a file stamped before 1.6 writes it "±", as "+-" is a plus and a minus there
+    const old = checkout.replace('loadmap 1.6', 'loadmap 1.5').replaceAll(' +- ', ' ± ')
+    expect(diff(old, 'pool:workerPool/capacity.within', 10)[1]).toBe(
+      '+  capacity: measured(pods * 2 ± 10%, "cores", "pod CPU limit")',
     )
     const limit = read('packages/editor/src/templates/rate-limit.loadmap')
     expect(refused(limit, 'node:limiter/capacity.within', 10)).toBe('a configured capacity is exact: it takes no ±')
@@ -218,14 +223,14 @@ describe('edit', () => {
 
   it('changes the unit and the source, and adds or takes out a source', () => {
     expect(diff(checkout, 'node:db/capacity.unit', 'tx/s')).toEqual([
-      '-  capacity: estimated(4_000 ± 30%, "commits/s")',
-      '+  capacity: estimated(4_000 ± 30%, "tx/s")',
+      '-  capacity: estimated(4_000 +- 30%, "commits/s")',
+      '+  capacity: estimated(4_000 +- 30%, "tx/s")',
     ])
     expect(diff(checkout, 'node:db/capacity.source', 'pgbench')[1]).toBe(
-      '+  capacity: estimated(4_000 ± 30%, "commits/s", "pgbench")',
+      '+  capacity: estimated(4_000 +- 30%, "commits/s", "pgbench")',
     )
     expect(diff(checkout, 'node:gateway/capacity.source', null)[1]).toBe(
-      '+  capacity: estimated(20_000 * gateways ± 30%, "req/s")',
+      '+  capacity: estimated(20_000 * gateways +- 30%, "req/s")',
     )
   })
 

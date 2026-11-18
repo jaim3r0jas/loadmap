@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 # Alerts and positions, made up: the same model and view as model.ts and view.ts.
 title: "Alerts and live positions"
 view { speed: 10; transition: 1; fullScreen: [verdict, live, limits, controls, headroom]; fullScreenMode: panels }
@@ -112,7 +112,7 @@ node gateway "Gateway" {
   pass
   short: "the gateway"
   demand: flows.alerts + flows.positions
-  capacity: estimated(30_000 ± 30%, "req/s", "load test pending")
+  capacity: estimated(30_000 +- 30%, "req/s", "load test pending")
   over: "phones get timeouts, alerts and positions alike"
 }
 

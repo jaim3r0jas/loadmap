@@ -7,7 +7,7 @@ import { Reporter } from './diagnostics'
 import { MAX_NESTING } from './expand'
 import { BUILTINS } from './expr'
 import { DEFAULT_PATH, HEAD, type Role, readHead } from './files'
-import type { Token } from './lexer'
+import { isPlusMinus, type Token } from './lexer'
 import { isTemplate, isValue, MODEL_ONLY, VARIANT_ADDS, VARIANT_ONCE, VARIANT_PROPS, VARIANT_REPLACES } from './link'
 import { parse } from './parser'
 import {
@@ -24,7 +24,7 @@ import {
   STAGES,
 } from './schema'
 import { blockAt, propOf, walk } from './tree'
-import { before, CURRENT, LANGUAGE_VERSION, parseVersion, stampOf, type Version } from './versions'
+import { before, CURRENT, LANGUAGE_VERSION, parseVersion, plusMinusMark, stampOf, type Version } from './versions'
 
 export interface Completion {
   label: string
@@ -476,20 +476,23 @@ class Help {
     const last = tokens.at(-1)
     if (punct(last, '.')) return this.table(tokens, slot)
     // after a ± only a number fits: 30%
-    if (punct(last, '±') || punct(last, '+/-')) return []
+    if (isPlusMinus(last)) return []
 
     // a unit, until one is written; the source is free text
     if (call && CAPACITY.has(call.name) && call.arg > 0)
       return call.arg === 1 && !call.tokens.length ? this.units(false) : []
     // after a whole operand only an operator fits, or the ± of a capacity's value
-    const within = call?.arg === 0 && call.tokens.some((t) => t.text === '±' || t.text === '+/-')
+    // before 1.6 a "+-" is a plus and a minus: written glued in a capacity's value, it was meant as its ±
+    const glued = (t: Token, i: number, all: readonly Token[]) =>
+      t.text === '+' && all[i + 1]?.text === '-' && all[i + 1]!.from === t.to
+    const within = call?.arg === 0 && call.tokens.some((t, i, all) => isPlusMinus(t) || glued(t, i, all))
     if (last && (last.kind !== 'punct' || last.text === ')' || last.text === ']' || (within && last.text === '%'))) {
       if (call && call.arg === 0 && call.name !== 'configured' && CAPACITY.has(call.name) && !within)
         return [
           {
-            label: '± 30%',
+            label: `${plusMinusMark(this.version)} 30%`,
             type: 'keyword',
-            snippet: '± ${1:30}%${0}',
+            snippet: `${plusMinusMark(this.version)} \${1:30}%\${0}`,
             detail: 'how sure',
             info: 'The value is known to within this share: every crossing becomes a range, and the verdict uses its pessimistic edge.',
           },

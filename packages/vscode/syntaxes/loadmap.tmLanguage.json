@@ -80,7 +80,7 @@
         },
         {
           "name": "keyword.operator.loadmap",
-          "match": "===|!==|\\+/-|==|!=|<=|>=|&&|\\|\\||[-+*/%<>!?=±]"
+          "match": "===|!==|\\+/-|\\+-|==|!=|<=|>=|&&|\\|\\||[-+*/%<>!?=±]"
         },
         {
           "name": "punctuation.section.block.loadmap",

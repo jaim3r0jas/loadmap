@@ -82,6 +82,9 @@ export interface PropSpec {
 /** The version from which one spelling is left: an old name (`was`) and a view setting at the top are errors. */
 export const ONE_SPELLING = '1.5'
 
+/** The version from which `+-` is a capacity's `±` (and what `format()` writes for it); before, `a +- b` is `a + -b`. */
+export const PLUS_MINUS = '1.6'
+
 /** A property of `props` by its name or by its old one (`was`): its spec, and the name it has now. */
 export function propNamed(
   props: Readonly<Record<string, PropSpec>>,
@@ -220,7 +223,7 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     inspector: 'main',
     value: 'capacity',
     scope: 'ctx',
-    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value ± 30%` saying how sure it is; configured(value, unit, source) for a limit someone set.',
+    doc: 'What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set.',
   },
   when: { value: 'boolean', scope: 'ctx', doc: 'The component is switched off (no utilization) while this is false.' },
   over: { value: 'string', scope: 'ctx', doc: 'What happens past 100 %, as a clause: "clients get 429s".' },
@@ -484,7 +487,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
-    example: 'loadmap 1.5',
+    example: 'loadmap 1.6',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],

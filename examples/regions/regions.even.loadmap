@@ -1,4 +1,4 @@
-loadmap 1.5
+loadmap 1.6
 extends "./regions.loadmap"
 # A variant: the US region sized as the EU one is. It writes only what differs from its model.
 title: "Two regions, sized alike"
