@@ -11,7 +11,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { shippedReference } from '../../../scripts/reference'
 import { inlineHashes } from '../csp'
 import { FENCES, highlight } from '../highlight'
-import { included, MOVED, PAGES, packagesVersion, relative, render } from '../pages'
+import {
+  anchors,
+  included,
+  MOVED,
+  movedAnchors,
+  OLD_LANGUAGE_IDS,
+  PAGES,
+  packagesVersion,
+  relative,
+  render,
+  section,
+} from '../pages'
 import { fakeGitHub, shaOf } from './fake-github'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
@@ -102,6 +113,62 @@ describe('the pages', () => {
     expect(html('in-your-editor')).toContain('href="vscode:extension/jaim3r0jas.loadmap"')
     for (const statement of ['flow', 'node', 'scenario', 'expect', 'step', 'fanout'])
       expect(html('reference')).toContain(`<h3 id="${statement}">${statement}</h3>`)
+  })
+
+  it("show the guide a section or two a page: a heading's section, without it, its own headings moved up", () => {
+    const checks = section('docs/dsl.md', '## Checks in CI')
+    expect(checks.startsWith('`loadmap check` and `loadmap drift`')).toBe(true)
+    expect(checks).toContain('\n## On fresh data\n')
+    expect(checks).toContain('\n## Drift every night\n')
+    // a # in a fence is a YAML comment, not a heading that ends the section
+    expect(checks).toContain('\n# loadmap drift every night on main')
+    expect(checks).not.toContain('## Errors')
+    // under a page's own h2, its headings are h3s
+    expect(section('docs/dsl.md', '## Checks in CI', 3)).toContain('\n### On fresh data\n')
+    const formulas = section('docs/dsl.md', '### Formulas')
+    expect(formulas).not.toContain('### Scenarios and growth')
+    expect(() => section('docs/dsl.md', '### Nothing')).toThrow('no heading "### Nothing"')
+    // every section of the guide is on a page of the site
+    const guide = readFileSync(join(import.meta.dirname, '../../../docs/dsl.md'), 'utf8')
+    const where = anchors()
+    for (const [, heading] of guide.slice(0, guide.indexOf('\n## In your editor')).matchAll(/^#{2,3} (.+)$/gm))
+      expect(
+        where.has(
+          heading!
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, ''),
+        ),
+        heading,
+      ).toBe(true)
+  })
+
+  it("link to another page's section only where that page has it", () => {
+    const at = (route: string) => `/${route ? `${route}/` : ''}`
+    const sections = new Set(
+      rendered.flatMap(({ page, html }) =>
+        [...html.matchAll(/ id="([^"]+)"/g)].map((m) => `${at(page.route)}#${m[1]}`),
+      ),
+    )
+    for (const { page, html } of rendered)
+      for (const [, href, id] of html.matchAll(/href="([^"#:]+)#([^"]+)"/g)) {
+        const route = routeOf(href!, page.route)
+        if (routes.has(route)) expect(sections, `${page.file} links to ${href}#${id}`).toContain(`${route}#${id}`)
+      }
+  })
+
+  it('send a link to a section the guide held on one page on to where it is now', () => {
+    // every section the one page had leads somewhere still: a section renamed later says so here
+    const where = anchors()
+    for (const [old, now] of Object.entries(OLD_LANGUAGE_IDS)) expect(where.has(now), `${old} (now ${now})`).toBe(true)
+    const moved = movedAnchors()
+    expect(moved.formulas).toBe('/language/formulas/')
+    expect(moved['a-story']).toBe('/language/scenarios/#a-story')
+    expect(moved.versions).toBe('/language/errors/#versions')
+    expect(moved.layout).toBe('/language/in-code/#formatting')
+    expect(moved['how-it-reads']).toBeUndefined()
+    const language = rendered.find((r) => r.page.route === 'language')!
+    expect(language.html).toContain('id="how-it-reads"')
   })
 
   it('draw the quick start exactly as the react README writes it', () => {
@@ -358,8 +425,9 @@ describe('the built site', () => {
     // with the light and dark switch, on every page (0.6 kB), and the snippets' copy button and colours (0.7 kB): an
     // island is tens, and CodeMirror (72 kB) comes only once a snippet is near the window. The client holds the names
     // of the chunks each island preloads, about 16 bytes each (the GitHub dialog's split `files.ts` out: 6.23 kB). The
-    // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB
-    expect(kb).toBeLessThan(6.4)
+    // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB; the sidebar's folding
+    // groups 0.1 kB: 6.41 kB
+    expect(kb).toBeLessThan(6.5)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
@@ -476,6 +544,20 @@ describe('the built site', () => {
     }
   }, 120_000)
 
+  it('sends a link to a section the guide held on its one page on to that section, and keeps one still there', async () => {
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage()
+      await page.goto(`${url}language/#versions`)
+      await page.waitForURL(/\/language\/errors\/#versions$/)
+      expect(await page.locator('#versions').isVisible()).toBe(true)
+      await page.goto(`${url}language/#how-it-reads`)
+      expect(new URL(page.url()).pathname).toBe('/language/')
+    } finally {
+      await browser.close()
+    }
+  }, 60_000)
+
   it('keeps the pages and the sections in view, and lists every page in the phone menu', async () => {
     const browser = await chromium.launch()
     try {
@@ -496,9 +578,14 @@ describe('the built site', () => {
       const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
       await phone.goto(`${url}reference/`)
       expect(await phone.locator('.side').isVisible()).toBe(false)
-      await phone.locator('.menu summary').click()
+      await phone.locator('.menu > summary').click()
       const links = phone.locator('.menu .panel ul a')
       expect(await links.count()).toBe(PAGES.filter((p) => !p.hidden).length)
+      // the groups fold: the current page's is open, each other one a click away
+      expect(await phone.locator('.menu .panel details[open] summary').textContent()).toBe('The language')
+      // one at a time: each click opens a group, and the folded ones are one fewer
+      const folded = phone.locator('.menu .panel details:not([open]) summary')
+      while ((await folded.count()) > 0) await folded.first().click()
       for (const link of await links.all()) expect(await link.isVisible()).toBe(true)
       expect(await phone.locator('.menu [aria-current="page"]').textContent()).toBe('Reference')
     } finally {
@@ -1418,7 +1505,8 @@ describe('the built site', () => {
           }
         })
         const page = await context.newPage()
-        await page.goto(`${url}language/`)
+        // a page with a snippet of every kind of token: a comment among them
+        await page.goto(`${url}language/building-blocks/`)
         await page.waitForSelector('.snippet .tok-keyword')
         const got = await page.evaluate(() => {
           // in a view or in a <pre> further down that has none yet: the same classes
@@ -1603,7 +1691,7 @@ describe('the built site', () => {
       const page = await context.newPage()
       await page.goto(`${url}concepts/`)
       expect(await page.locator('.bar > .theme').isVisible()).toBe(false)
-      await page.locator('.menu summary').click()
+      await page.locator('.menu > summary').click()
       await page.locator('.panel .theme label', { hasText: 'Dark' }).click()
       await expect.poll(() => looks(page), { timeout: 5000 }).toMatchObject({ kept: 'dark', page: 'dark' })
       await page.goto(`${url}editor/`)

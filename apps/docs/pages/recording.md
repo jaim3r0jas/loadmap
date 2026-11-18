@@ -1,4 +1,4 @@
-# Recording and CI
+# The command line
 
 `@loadmap/cli` is the command line: `loadmap record` makes media that stand alone, `loadmap fmt` lays a definition
 out the one way, `loadmap check` holds a model to its promises in CI, `loadmap pull` reads measured data into a
@@ -106,8 +106,8 @@ fails the run.
 
 With `--base origin/main` the check fails when the first limit's headroom drops by more than the tolerance, when the
 first limit moves to another component without more headroom, or when a component crosses the target or 100 % from
-below at today's load. [The language guide](/language/#how-sure-and-what-must-hold) has the workflow that comments on
-a pull request.
+below at today's load. [Checks in CI](/checks/#on-every-pull-request) has the workflow that comments on a pull
+request.
 
 ## Pull
 
@@ -125,7 +125,7 @@ definition. The address and the credentials come from the environment, never fro
 or a window with fewer samples than its metric's `minSamples`, leaves that measurement missing: the model uses the
 definition's fallback, and the line says why. `--window` is how far back it reads (default `7d`), `--step` the time
 between points (default `5m`), `--to` the end of the window (default now) and `--out` where the file goes.
-[Measured data](/language/#measured-data) has the statements; in code it is `pull` from `@loadmap/providers`.
+[Measured data](/language/measured-data/) has the statements; in code it is `pull` from `@loadmap/providers`.
 
 ## Drift
 
@@ -146,7 +146,7 @@ the body of an issue for a workflow to open. `--p-value`, `--confidence`, `--dea
 loadmap bundle shop.loadmap --out shop.one.loadmap
 ```
 
-A model in [several files](/language/#several-files) written as one file that draws and computes the same, for a
+A model in [several files](/language/several-files/) written as one file that draws and computes the same, for a
 host that reads one file. Without `--out` it goes to standard output.
 
 ## Language server

@@ -2,8 +2,9 @@
 
 Every change a user of the packages would notice gets a changeset: `pnpm changeset`, pick the bump, write one line
 for the changelog. A feature (a `minor` or `major` bump) ends with a line of its own naming the docs site's page and
-section that tell of it, `Docs: /language/#versions`, or `Docs: none` when there is nothing for a reader: What's new
-links it, and the docs tests check that the section exists, so the feature's pages land with it.
+section that tell of it, `Docs: /language/errors/#versions` (or a whole page, `Docs: /language/formulas/`), or
+`Docs: none` when there is nothing for a reader: What's new links it, and the docs tests check that the page and the
+section exist, so the feature's pages land with it.
 
 All `@loadmap/*` packages share one version. A changeset names only packages that are published: `@loadmap/vscode`,
 the examples and the docs are private and not versioned, and `changeset version` refuses a changeset that names one

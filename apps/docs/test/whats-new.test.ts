@@ -32,10 +32,11 @@ const sections = new Map(
   PAGES.map((p) => [`/${p.route ? `${p.route}/` : ''}`, new Set(render(p).headings.map((h) => h.id))]),
 )
 
-/** Whether `/page/#section` names a page of the site and a section it has. */
+/** Whether `/page/#section` names a page of the site and a section it has, or `/page/` a page. */
 function resolves(link: string): boolean {
   const [path, id] = link.split('#')
-  return sections.get(path!)?.has(id!) ?? false
+  const page = sections.get(path!)
+  return page != null && (id == null || page.has(id))
 }
 
 describe("what's new", () => {
@@ -159,19 +160,22 @@ describe('a changeset', () => {
 
   it('of a feature says where the docs tell of it, or that they need not', () => {
     expect(problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n" })).toEqual([
-      '.changeset/a.md: a feature says where the docs tell of it, on a line of its own: "Docs: /<page>/#<section>", or "Docs: none"',
+      '.changeset/a.md: a feature says where the docs tell of it, on a line of its own: "Docs: /<page>/#<section>", "Docs: /<page>/" or "Docs: none"',
     ])
     expect(
-      problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: /language/#versions\n" }),
+      problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: /language/errors/#versions\n" }),
     ).toEqual([])
     expect(problemsOf({ 'a.md': "---\n'@loadmap/core': major\n---\n\nInternal.\n\nDocs: none\n" })).toEqual([])
     // a fix needs none
     expect(problemsOf({ 'a.md': "---\n'@loadmap/core': patch\n---\n\nA fix.\n" })).toEqual([])
   })
 
-  it('names a page with its section', () => {
-    expect(problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: /language/\n" })).toEqual([
-      '.changeset/a.md: "Docs: /language/" is not a page of the site with a section, "/<page>/#<section>"',
+  it('names a page of the site, with its section or whole', () => {
+    expect(
+      problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: /language/formulas/\n" }),
+    ).toEqual([])
+    expect(problemsOf({ 'a.md': "---\n'@loadmap/core': minor\n---\n\nA feature.\n\nDocs: language#x\n" })).toEqual([
+      '.changeset/a.md: "Docs: language#x" is not a page of the site, "/<page>/" or "/<page>/#<section>"',
     ])
   })
 

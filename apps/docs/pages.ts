@@ -32,12 +32,28 @@ export const PAGES: readonly Page[] = [
   { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
   { route: 'whats-new', file: 'whats-new.md', nav: "What's new", group: 'Start' },
   { route: 'without-a-bundler', file: 'without-a-bundler.md', nav: 'Without a bundler', group: 'Start' },
-  { route: 'language', file: 'language.md', nav: 'The language', group: 'The language' },
-  { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The language' },
-  { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'The language', frame: 'app' },
+  { route: 'language', file: 'language.md', nav: 'Overview', group: 'The language' },
+  { route: 'language/formulas', file: 'language-formulas.md', nav: 'Formulas', group: 'The language' },
+  { route: 'language/scenarios', file: 'language-scenarios.md', nav: 'Scenarios and stories', group: 'The language' },
+  { route: 'language/how-sure', file: 'language-how-sure.md', nav: 'How sure', group: 'The language' },
+  { route: 'language/published', file: 'language-published.md', nav: 'Published figures', group: 'The language' },
+  { route: 'language/measured-data', file: 'language-measured-data.md', nav: 'Measured data', group: 'The language' },
+  {
+    route: 'language/building-blocks',
+    file: 'language-building-blocks.md',
+    nav: 'Building blocks',
+    group: 'The language',
+  },
+  { route: 'language/view', file: 'language-view.md', nav: 'The view', group: 'The language' },
+  { route: 'language/several-files', file: 'language-several-files.md', nav: 'Several files', group: 'The language' },
+  { route: 'language/in-code', file: 'language-in-code.md', nav: 'In code', group: 'The language' },
+  { route: 'language/errors', file: 'language-errors.md', nav: 'Errors and versions', group: 'The language' },
   { route: 'reference', file: 'reference.md', nav: 'Reference', group: 'The language' },
+  { route: 'editor', file: 'editor.md', nav: 'Editor', group: 'The editor', frame: 'app' },
+  { route: 'in-your-editor', file: 'in-your-editor.md', nav: 'In your editor', group: 'The editor' },
   { route: 'api', file: 'api.md', nav: 'API', group: 'Use it' },
-  { route: 'recording', file: 'recording.md', nav: 'Recording and CI', group: 'Use it' },
+  { route: 'checks', file: 'checks.md', nav: 'Checks in CI', group: 'Use it' },
+  { route: 'recording', file: 'recording.md', nav: 'The command line', group: 'Use it' },
   { route: 'live-data', file: 'live-data.md', nav: 'Live data', group: 'Use it' },
   { route: 'embedding', file: 'embedding.md', nav: 'Embedding', group: 'Use it' },
   { route: 'examples', file: 'examples.md', nav: 'All examples', group: 'Examples' },
@@ -94,6 +110,7 @@ export function expand(md: string): string {
         if (to && after < 0) throw new Error(`docs: no line starting with "${to}" after "${from}" in ${path}`)
         return lines.slice(start, after < 0 ? undefined : start + 1 + after).join('\n')
       })
+      .replace(SECTION, (_, path, heading, depth) => section(path.trim(), heading, depth ? Number(depth) : 2))
       .replaceAll('%VERSION%', version)
       .replaceAll('%LANGUAGE%', LANGUAGE_VERSION)
       // last: a release's text is shown as written, never read for an @include or a %VERSION%
@@ -101,12 +118,46 @@ export function expand(md: string): string {
   )
 }
 
+/** A fence opens or closes on this line: three backticks or tildes, indented in a list or not. */
+const FENCE = /^\s*(```|~~~)/
+
+/** A Markdown heading's level, outside a fence: 0 when the line is none. */
+const levelOf = (line: string) => /^(#{1,6}) /.exec(line)?.[1]?.length ?? 0
+
+/**
+ * `@section(path, "### Formulas")` on a line of its own: the section that heading starts in a repository file, up to
+ * the next heading of its level or above, without the heading itself (the page says it): its own headings move up so
+ * the first under it is an h2, or an h3 with `@section(path, "### Formulas", 3)` for a page that puts it under an h2
+ * of its own. A `#` in a fence (a YAML comment) is no heading. The guide stays one file (it ships as the dsl package's
+ * REFERENCE.md and in llms-full.txt) and the site shows it a section or two a page.
+ */
+export function section(path: string, heading: string, depth = 2): string {
+  const lines = readFileSync(join(repo, path), 'utf8').split('\n')
+  const level = levelOf(heading)
+  if (!level) throw new Error(`docs: "${heading}" is not a heading`)
+  const out: string[] = []
+  let fence = false
+  let inside = false
+  for (const line of lines) {
+    const at = fence ? 0 : levelOf(line)
+    if (FENCE.test(line)) fence = !fence
+    if (!inside) {
+      inside = at === level && line === heading
+      continue
+    }
+    if (at && at <= level) break
+    out.push(at ? `${'#'.repeat(at - level + depth - 1)}${line.slice(at)}` : line)
+  }
+  if (!inside) throw new Error(`docs: no heading "${heading}" in ${path}`)
+  return out.join('\n').trim()
+}
+
 /** The repository files the pages include, for the dev server to watch. */
 export function included(): string[] {
   const files = new Set<string>()
   for (const p of PAGES) {
     const md = readFileSync(join(here, 'pages', p.file), 'utf8')
-    for (const [, path] of md.matchAll(/^@include\(([^,)]+)/gm)) files.add(join(repo, path!.trim()))
+    for (const [, path] of md.matchAll(/^@(?:include|section)\(([^,)]+)/gm)) files.add(join(repo, path!.trim()))
     if (/^@changelog$/m.test(md)) for (const { file } of changelogFiles(join(repo, 'packages'))) files.add(file)
   }
   // where %VERSION% comes from
@@ -126,26 +177,114 @@ const EYEBROW = '<!--eyebrow-->'
 const CONTENTS = '<!--contents-->'
 
 /**
+ * A heading's id from its inline HTML, one page at a time: its text's slug, and "-2" on a second heading with the same
+ * text, so each entry of the contents finds its own. `render` and `idsOf` both count with it.
+ */
+function headingIds(): (html: string) => string {
+  const seen = new Map<string, number>()
+  return (html) => {
+    const base = slug(html)
+    const n = (seen.get(base) ?? 0) + 1
+    seen.set(base, n)
+    return n > 1 ? `${base}-${n}` : base
+  }
+}
+
+/** The ids a page's h2 to h6 get, as `render` gives them, without rendering it. */
+function idsOf(md: string): string[] {
+  const id = headingIds()
+  const inline = new Marked()
+  return new Marked()
+    .lexer(md)
+    .flatMap((t) => (t.type === 'heading' && t.depth > 1 ? [id(inline.parseInline(t.text) as string)] : []))
+}
+
+const SECTION = /^@section\(([^,)]+),\s*"([^"]+)"(?:,\s*([2-6]))?\)$/gm
+
+let anchorsOnce: Map<string, string> | undefined
+
+/** The pages the language guide is shown on: its links and its old anchors look there first. */
+const isGuide = (p: Page) => p.route === 'language' || p.route.startsWith('language/') || p.route === 'checks'
+
+/**
+ * Where each section of the site is, by its id: `/route/#id` for a page's heading, and `/route/` for a heading a page
+ * takes the section of (`@section`) and says in words of its own. The guide's pages first, then the others in their
+ * order: the first page that has an id keeps it.
+ */
+export function anchors(): ReadonlyMap<string, string> {
+  if (anchorsOnce) return anchorsOnce
+  const map = new Map<string, string>()
+  for (const p of [...DOCS.filter(isGuide), ...DOCS.filter((p) => !isGuide(p))]) {
+    const raw = readFileSync(join(here, 'pages', p.file), 'utf8')
+    const at = `/${p.route ? `${p.route}/` : ''}`
+    for (const id of idsOf(expand(raw))) if (!map.has(id)) map.set(id, `${at}#${id}`)
+    for (const [, , heading] of raw.matchAll(SECTION)) {
+      const id = slug(heading!.replace(/^#+ /, ''))
+      if (!map.has(id)) map.set(id, at)
+    }
+  }
+  anchorsOnce = map
+  return map
+}
+
+/**
+ * The sections `/language/` had while the guide was one page, by the id each has now where it differs: links to them
+ * are out there. Frozen: a section renamed later keeps its old id here, and the test that every one leads somewhere
+ * says so.
+ */
+export const OLD_LANGUAGE_IDS: Readonly<Record<string, string>> = Object.fromEntries(
+  [
+    'how-it-reads',
+    'boxes-stages-and-components',
+    'formulas',
+    'scenarios-and-growth',
+    'how-sure-and-what-must-hold',
+    'published-figures',
+    'measured-data',
+    'building-blocks',
+    'a-story',
+    'direction-and-tiers',
+    'the-view-block',
+    'full-screen',
+    'what-stays-code',
+    'layout',
+    'several-files',
+    'errors',
+    'versions',
+    'in-code',
+  ].map((id) => [id, ({ layout: 'formatting' } as Record<string, string>)[id] ?? id]),
+)
+
+/** Each section `/language/` held as one page, to where it is now, but those it still holds. */
+export function movedAnchors(): Record<string, string> {
+  const where = anchors()
+  const moved: Record<string, string> = {}
+  for (const [old, now] of Object.entries(OLD_LANGUAGE_IDS)) {
+    const to = where.get(now)
+    if (to && !to.startsWith('/language/#') && to !== '/language/') moved[old] = to
+  }
+  return moved
+}
+
+/**
  * A page's HTML: its Markdown with islands, heading anchors, and site links made relative to where it is served; and
  * its h2 and h3 headings, for the contents. Marks EYEBROW before the title and CONTENTS after the introduction (the
  * paragraph right after the title, if there is one).
  */
 export function render(page: Page): { title: string; html: string; headings: Heading[] } {
   const md = expand(readFileSync(join(here, 'pages', page.file), 'utf8'))
+  // a link to a section of the guide that another page holds now goes there
+  const own = new Set(idsOf(md))
   const title = /^# (.+)$/m.exec(md)?.[1]?.replace(/`/g, '') ?? page.nav
   const up = relative(page.route)
   const headings: Heading[] = []
-  const ids = new Map<string, number>()
+  const idOf = headingIds()
   const marked = new Marked({
     renderer: {
       heading({ tokens, depth }) {
         const text = this.parser.parseInline(tokens)
         if (depth === 1) return `<h1>${text}</h1>\n`
-        // a second heading with the same text gets "-2", so each entry of the contents finds its own
-        const base = slug(text)
-        const n = (ids.get(base) ?? 0) + 1
-        ids.set(base, n)
-        const id = n > 1 ? `${base}-${n}` : base
+        const id = idOf(text)
         if (depth === 2 || depth === 3) headings.push({ depth, id, html: text.replace(/<\/?a\b[^>]*>/g, '') })
         return `<h${depth} id="${id}">${text}</h${depth}>\n`
       },
@@ -156,7 +295,9 @@ export function render(page: Page): { title: string; html: string; headings: Hea
           ? `<div class="island" data-island="loadmap" data-editor="${up}editor/">${snip}</div>\n`
           : `${snip}\n`
       },
-      link({ href, title, tokens }) {
+      link({ href: written, title, tokens }) {
+        const elsewhere = written.startsWith('#') && !own.has(written.slice(1)) && anchors().get(written.slice(1))
+        const href = elsewhere || written
         const to = href.startsWith('/') && !href.startsWith('//') ? up + href.slice(1) : href
         const out = /^https?:/.test(href) ? ' rel="noopener"' : ''
         return `<a href="${esc(to)}"${title ? ` title="${esc(title)}"` : ''}${out}>${this.parser.parseInline(tokens)}</a>`
@@ -194,22 +335,28 @@ export const relative = (route: string) => (route ? '../'.repeat(route.split('/'
 
 const href = (up: string, p: Page) => `${up}${p.route ? `${p.route}/` : ''}`
 
-/** The pages grouped as the sidebar and the phone's menu list them, the current one marked; an app is marked ⤢. */
+/**
+ * The pages grouped as the sidebar and the phone's menu list them, the current one marked; an app is marked ⤢. Each
+ * group folds: the current page's is open (Start on a page in no group), the others a click away.
+ */
 function pageList(page: Page, up: string): string {
-  const nav: string[] = []
   const listed = PAGES.filter((p) => !p.hidden)
-  listed.forEach((p, i) => {
-    if (i === 0 || p.group !== listed[i - 1]!.group) {
-      if (i > 0) nav.push('</ul>')
-      if (p.group) nav.push(`<p class="nav-group">${esc(p.group)}</p>`)
-      nav.push('<ul>')
-    }
-    const current = p === page ? ' aria-current="page"' : ''
-    const app = p.frame === 'app' ? ' <span class="app-mark" aria-hidden="true">⤢</span>' : ''
-    nav.push(`<li><a href="${href(up, p)}"${current}>${esc(p.nav)}${app}</a></li>`)
-  })
-  nav.push('</ul>')
-  return nav.join('')
+  const groups = [...new Set(listed.map((p) => p.group ?? ''))]
+  const here = listed.includes(page) ? (page.group ?? '') : groups[0]
+  return groups
+    .map((group) => {
+      const items = listed
+        .filter((p) => (p.group ?? '') === group)
+        .map((p) => {
+          const current = p === page ? ' aria-current="page"' : ''
+          const app = p.frame === 'app' ? ' <span class="app-mark" aria-hidden="true">⤢</span>' : ''
+          return `<li><a href="${href(up, p)}"${current}>${esc(p.nav)}${app}</a></li>`
+        })
+        .join('')
+      if (!group) return `<ul>${items}</ul>`
+      return `<details class="nav-fold"${group === here ? ' open' : ''}><summary class="nav-group">${esc(group)}</summary><ul>${items}</ul></details>`
+    })
+    .join('')
 }
 
 /**
@@ -277,7 +424,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
       <nav class="side" aria-label="Pages">${list}</nav>
       <main>
 ${text}
-${pager(page, up)}
+${pager(page, up)}${page.route === 'language' ? movedScript(up) : ''}
         <footer class="documents">This site documents ${documents}. <a href="${up}whats-new/">What's new</a></footer>
       </main>
       ${toc?.aside ?? ''}
@@ -286,6 +433,16 @@ ${pager(page, up)}
   </body>
 </html>
 `
+}
+
+/**
+ * On the guide's first page: a link to a section it held before the guide was a page a section goes on to where that
+ * section is now, before anything else loads. A section still here, or an id it never had, stays.
+ */
+function movedScript(up: string): string {
+  const to = Object.fromEntries(Object.entries(movedAnchors()).map(([id, at]) => [id, up + at.slice(1)]))
+  const map = JSON.stringify(to).replace(/</g, '\\u003c')
+  return `<script>(function(){var m=${map};var h;try{h=decodeURIComponent(location.hash.slice(1))}catch(e){return}if(h&&!document.getElementById(h)&&m[h])location.replace(m[h])})()</script>`
 }
 
 /**
@@ -320,6 +477,8 @@ ${text}
  * the HTML files.
  */
 export function writePages(base = '/'): string[] {
+  // the pages may have changed since the last write (the dev server writes them again on a change)
+  anchorsOnce = undefined
   const files: string[] = []
   for (const page of PAGES) {
     const { title, html, headings } = render(page)

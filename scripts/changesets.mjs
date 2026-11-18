@@ -27,8 +27,9 @@ function packages() {
 }
 
 /**
- * A changeset's `Docs:` line: the docs site's page and section that tell of the change (`Docs: /language/#versions`),
- * or `Docs: none`. What's new links it (apps/docs/changelog.ts), and the docs tests check that the section exists.
+ * A changeset's `Docs:` line: the docs site's page, and its section, that tell of the change
+ * (`Docs: /language/errors/#versions`, or `Docs: /language/formulas/` for a whole page), or `Docs: none`. What's new
+ * links it (apps/docs/changelog.ts), and the docs tests check that the page and the section exist.
  */
 export const DOCS_LINE = /^Docs:[ \t]*(\S+)[ \t]*$/m
 
@@ -60,12 +61,10 @@ export function changesetProblems(dir = join(root, '.changeset'), known = packag
     const docs = DOCS_LINE.exec(body)?.[1]
     if (feature && docs == null)
       problems.push(
-        `.changeset/${file}: a feature says where the docs tell of it, on a line of its own: "Docs: /<page>/#<section>", or "Docs: none"`,
+        `.changeset/${file}: a feature says where the docs tell of it, on a line of its own: "Docs: /<page>/#<section>", "Docs: /<page>/" or "Docs: none"`,
       )
-    else if (docs != null && docs !== 'none' && !/^\/[^\s#]*#[\w-]+$/.test(docs))
-      problems.push(
-        `.changeset/${file}: "Docs: ${docs}" is not a page of the site with a section, "/<page>/#<section>"`,
-      )
+    else if (docs != null && docs !== 'none' && !/^\/(?:[^\s#]*\/)?(?:#[\w-]+)?$/.test(docs))
+      problems.push(`.changeset/${file}: "Docs: ${docs}" is not a page of the site, "/<page>/" or "/<page>/#<section>"`)
   }
   return problems
 }

@@ -2,8 +2,12 @@
 
 `apps/docs` is the site (Vite + React, static HTML). Pages are Markdown in `apps/docs/pages`, listed in `PAGES`
 (`apps/docs/pages.ts`), written into `apps/docs/site/` (the Vite root; the HTML is ignored by git) before Vite runs.
-`@include(path, "from", "to")` pulls lines from a repository file (the guide and the reference come from
-`docs/dsl.md`, the quick start from `packages/react/README.md`); site links are written from the root (`/language/`)
+`@include(path, "from", "to")` pulls lines from a repository file (the reference comes from `docs/dsl.md`, the quick
+start from `packages/react/README.md`), and `@section(path, "### Heading")` one heading's section without the heading,
+its own headings moved up to h2: the guide stays one file (`docs/dsl.md`, which ships as REFERENCE.md and in
+llms-full.txt) and the site shows it a section or two a page (`/language/…`, `/checks/`). A link to a section another
+page holds goes there (`anchors()`), and `/language/` forwards the anchors it held when the guide was one page
+(`movedAnchors()`), since links to them are out there; site links are written from the root (`/language/`)
 and made relative, so the build works at any base (`DOCS_BASE=/loadmap/` for GitHub Pages). Live parts are islands
 under `apps/docs/site/islands`, loaded only on the pages that use them: a ` ```loadmap live` fence, or
 `<div class="island" data-island="example|editor|gallery|quickstart">`. A page with `frame: 'app'` (the editor at

@@ -195,7 +195,7 @@ errors, completion, hover, rename), and `loadmapStream` with `loadmapHighlight` 
 A model reads measured data from a **snapshot**: a JSON file with each measurement's value over a window, its points
 and where they came from. Nothing in a definition or a shared link fetches anything: a pull is an explicit action, and
 the address and the credentials come from the environment, never from the text. `loadmap pull` is the usual way in;
-[the language guide](/language/#measured-data) has the statements, and [Live data](/live-data/) a shop to try it on.
+[the language guide](/language/measured-data/) has the statements, and [Live data](/live-data/) a shop to try it on.
 
 | Export                                                   | What                                                                    |
 | -------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -256,4 +256,4 @@ load where its component is full. `<Loadmap>` runs it; a page rarely needs it di
 | `loadmap bundle <file>` | A model in several files written as one                                        |
 | `loadmap lsp`           | The language server, for any editor that speaks the protocol                   |
 
-[Recording and CI](/recording/) has each command's options; `loadmap --help` prints them.
+[The command line](/recording/) has each command's options; `loadmap --help` prints them.
