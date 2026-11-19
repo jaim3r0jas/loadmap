@@ -349,6 +349,9 @@ describe('the built site', () => {
     }
     expect(readFileSync(join(out, 'reference/index.html'), 'utf8')).toContain('Each unit is copied to several stages')
     expect(existsSync(join(out, '404.html'))).toBe(true)
+    // the home page's own stylesheet (Page.css), on it alone
+    const sheets = (file: string) => (readFileSync(join(out, file), 'utf8').match(/rel="stylesheet"/g) ?? []).length
+    expect(sheets('index.html')).toBe(sheets('recording/index.html') + 1)
   })
 
   it('names the release it documents on every page, the badge leading to what is new, and in llms.txt', () => {

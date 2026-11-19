@@ -1,0 +1,175 @@
+/* The home page: a landing beside a live board, its sections as wide as a diagram. Only this page loads it. */
+main:has(> .home-hero) > * {
+  max-width: var(--wide);
+}
+
+.home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  gap: 36px;
+  align-items: center;
+  margin-top: 8px;
+  margin-bottom: 56px;
+}
+
+.home-name {
+  margin: 0;
+  font: 600 0.95rem var(--mono);
+  color: var(--accent);
+}
+
+.home-hero h1 {
+  margin: 8px 0 16px;
+  font-size: 2.4rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.home-hero .lead {
+  margin: 0;
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0 16px;
+}
+
+.home-actions a.button {
+  font-size: 0.95rem;
+  padding: 9px 18px;
+}
+
+.home-actions a.button.primary {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.home-actions a.button:hover,
+.home-actions a.button:focus-visible {
+  border-color: var(--accent);
+}
+
+.home-hero .snippet {
+  margin: 0;
+}
+
+.home-board {
+  min-width: 0;
+}
+
+/* the board fills its frame: the diagram and its verdict */
+.home-board .island {
+  height: 600px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.home-caption {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.home-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.home-step {
+  min-width: 0;
+}
+
+.home-step-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.home-step-n {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  color: var(--bg);
+  background: var(--accent);
+}
+
+.home-step .snippet {
+  margin: 0;
+}
+
+.home-step-note {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.home-caps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
+}
+
+.home-cap {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.home-cap:hover,
+.home-cap:focus-visible {
+  background: var(--surface);
+}
+
+.home-cap b {
+  display: block;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.home-cap-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 600 0.8rem var(--mono);
+  color: var(--accent);
+}
+
+@media (max-width: 1000px) {
+  .home-hero,
+  .home-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .home-hero h1 {
+    font-size: 2rem;
+  }
+
+  .home-caps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-board .island {
+    height: 400px;
+  }
+}

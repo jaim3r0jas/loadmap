@@ -24,10 +24,12 @@ export interface Page {
   frame?: 'app'
   /** Not listed in the sidebar. */
   hidden?: boolean
+  /** A stylesheet of its own in `site/`, for a page laid out unlike the others (the home page): no other page loads it. */
+  css?: string
 }
 
 export const PAGES: readonly Page[] = [
-  { route: '', file: 'index.md', nav: 'Home', group: 'Start' },
+  { route: '', file: 'index.md', nav: 'Home', group: 'Start', css: 'home.css' },
   { route: 'getting-started', file: 'getting-started.md', nav: 'Getting started', group: 'Start' },
   { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
   { route: 'whats-new', file: 'whats-new.md', nav: "What's new", group: 'Start' },
@@ -417,7 +419,8 @@ function pager(page: Page, up: string): string {
 function shell(page: Page, title: string, body: string, headings: readonly Heading[] = []): string {
   const up = relative(page.route)
   const list = pageList(page, up)
-  const toc = contents(headings)
+  // the home page is a landing, not a document: no map of its sections
+  const toc = page.route ? contents(headings) : undefined
   const out = `<a href="https://www.npmjs.com/package/@loadmap/react" rel="noopener">npm</a>
         <a href="https://github.com/jaim3r0jas/loadmap" rel="noopener">GitHub</a>`
   const eyebrow = page.route && page.group ? `<p class="eyebrow">${esc(page.group)}</p>` : ''
@@ -433,7 +436,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
     <title>${esc(head)}</title>
     <meta name="description" content="loadmap draws a system's architecture with its load flowing through it, ranks the parts by when they run out, and writes the verdict." />
     ${HEAD}
-    <link rel="stylesheet" href="/docs.css" />
+    <link rel="stylesheet" href="/docs.css" />${page.css ? `\n    <link rel="stylesheet" href="/${page.css}" />` : ''}
   </head>
   <body>
     <header class="top">
