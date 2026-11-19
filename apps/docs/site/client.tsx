@@ -35,6 +35,7 @@ const ISLANDS: Record<string, () => Promise<{ mount: (el: HTMLElement) => void }
   gallery: () => import('./islands/gallery'),
   framed: () => import('./islands/framed'),
   quickstart: () => import('./islands/quickstart'),
+  hero: () => import('./islands/hero'),
 }
 
 for (const el of document.querySelectorAll<HTMLElement>('[data-island]')) {

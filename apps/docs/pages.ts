@@ -24,10 +24,14 @@ export interface Page {
   frame?: 'app'
   /** Not listed in the sidebar. */
   hidden?: boolean
+  /** A stylesheet of its own in `site/`, for a page laid out unlike the others (the home page): no other page loads it. */
+  css?: string
+  /** `false`: no map of its sections (a landing, not a document). */
+  toc?: false
 }
 
 export const PAGES: readonly Page[] = [
-  { route: '', file: 'index.md', nav: 'Home', group: 'Start' },
+  { route: '', file: 'index.md', nav: 'Home', group: 'Start', css: 'home.css', toc: false },
   { route: 'getting-started', file: 'getting-started.md', nav: 'Getting started', group: 'Start' },
   { route: 'concepts', file: 'concepts.md', nav: 'Concepts', group: 'Start' },
   { route: 'whats-new', file: 'whats-new.md', nav: "What's new", group: 'Start' },
@@ -268,6 +272,8 @@ export const OLD_ANCHORS: Readonly<Record<string, Readonly<Record<string, string
       'in-code',
     ].map((id) => [id, ({ layout: 'formatting' } as Record<string, string>)[id] ?? id]),
   ),
+  // the home page, a landing since: what it was for is what it does now
+  '': { 'what-it-is-for': '/#what-it-does' },
   // the API, one page until it was a page a package
   api: {
     'the-model-loadmap-core': '/api/model/',
@@ -286,11 +292,12 @@ export const OLD_ANCHORS: Readonly<Record<string, Readonly<Record<string, string
 /** Each section a page held before it was split, to where it is now, but those it still holds. */
 export function movedAnchors(route: string): Record<string, string> {
   const where = anchors()
-  const here = `/${route}/`
+  const here = route ? `/${route}/` : '/'
   const moved: Record<string, string> = {}
   for (const [old, now] of Object.entries(OLD_ANCHORS[route] ?? {})) {
     const to = now.startsWith('/') ? now : where.get(now)
-    if (to && !to.startsWith(`${here}#`) && to !== here) moved[old] = to
+    // a section still here under its old id stays
+    if (to && to !== `${here}#${old}`) moved[old] = to
   }
   return moved
 }
@@ -417,7 +424,7 @@ function pager(page: Page, up: string): string {
 function shell(page: Page, title: string, body: string, headings: readonly Heading[] = []): string {
   const up = relative(page.route)
   const list = pageList(page, up)
-  const toc = contents(headings)
+  const toc = page.toc === false ? undefined : contents(headings)
   const out = `<a href="https://www.npmjs.com/package/@loadmap/react" rel="noopener">npm</a>
         <a href="https://github.com/jaim3r0jas/loadmap" rel="noopener">GitHub</a>`
   const eyebrow = page.route && page.group ? `<p class="eyebrow">${esc(page.group)}</p>` : ''
@@ -433,7 +440,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
     <title>${esc(head)}</title>
     <meta name="description" content="loadmap draws a system's architecture with its load flowing through it, ranks the parts by when they run out, and writes the verdict." />
     ${HEAD}
-    <link rel="stylesheet" href="/docs.css" />
+    <link rel="stylesheet" href="/docs.css" />${page.css ? `\n    <link rel="stylesheet" href="/${page.css}" />` : ''}
   </head>
   <body>
     <header class="top">
@@ -454,7 +461,7 @@ function shell(page: Page, title: string, body: string, headings: readonly Headi
       <nav class="side" aria-label="Pages">${list}</nav>
       <main>
 ${text}
-${pager(page, up)}${OLD_ANCHORS[page.route] ? movedScript(page.route, up) : ''}
+${pager(page, up)}${page.route in OLD_ANCHORS ? movedScript(page.route, up) : ''}
         <footer class="documents">This site documents ${documents}. <a href="${up}whats-new/">What's new</a></footer>
       </main>
       ${toc?.aside ?? ''}
@@ -685,8 +692,9 @@ export function searchIndex(): Found[] {
       if (!heading && !t) continue
       out.push({
         u: heading ? `${at}#${heading[2]}` : at,
-        p: textOfHtml(title),
-        h: heading ? textOfHtml(heading[3]!) : textOfHtml(title),
+        // the home page's h1 is its tagline: it is the home page
+        p: page.route ? textOfHtml(title) : page.nav,
+        h: heading ? textOfHtml(heading[3]!) : page.route ? textOfHtml(title) : page.nav,
         t,
       })
     }

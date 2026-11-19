@@ -1,19 +1,28 @@
-import { Loadmap, type LoadmapHandle, type Theme } from '@loadmap/react'
+import { Loadmap, type LoadmapHandle, type LoadmapPanel, type Theme } from '@loadmap/react'
 import type { Ref } from 'react'
 import { checkout } from './model'
 import { view } from './view'
 
-/** `zoom`: the reader pans and zooms the board; `headroom={false}` leaves out the chart (the docs' landing page). */
+/**
+ * `zoom`: the reader pans and zooms the board. The docs' home page draws it filling its frame (`fill`), with the
+ * verdict alone below the diagram (`fullScreen`), no headroom chart and no comparison.
+ */
 export function Checkout({
   theme,
   ref,
   zoom,
   headroom,
+  compare,
+  fill,
+  fullScreen,
 }: {
   theme?: Theme
   ref?: Ref<LoadmapHandle>
   zoom?: boolean
   headroom?: boolean
+  compare?: boolean
+  fill?: boolean
+  fullScreen?: readonly LoadmapPanel[]
 }) {
   return (
     <Loadmap
@@ -25,6 +34,9 @@ export function Checkout({
       theme={theme}
       zoom={zoom}
       headroom={headroom}
+      compare={compare}
+      fill={fill}
+      fullScreen={fullScreen}
       assumptions={['Load scales linearly with users; 1× is the 5-minute peak of an ordinary day.']}
     />
   )

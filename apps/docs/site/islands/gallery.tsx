@@ -23,7 +23,7 @@ interface Walkthrough {
   from: readonly string[]
 }
 
-const WALKTHROUGHS: readonly Walkthrough[] = [
+export const WALKTHROUGHS: readonly Walkthrough[] = [
   {
     id: 'checkout',
     title: 'Checkout',
