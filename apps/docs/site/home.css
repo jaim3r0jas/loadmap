@@ -3,6 +3,12 @@ main:has(> .home-hero) > * {
   max-width: var(--wide);
 }
 
+/* a paragraph keeps a readable line, at the wide column's left edge */
+main:has(> .home-hero) > p {
+  max-width: var(--prose);
+  margin-left: max(0px, calc((100% - var(--wide)) / 2));
+}
+
 .home-hero {
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
