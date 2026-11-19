@@ -1,5 +1,23 @@
 # @loadmap/editor
 
+## 0.40.0
+
+### Minor Changes
+
+- 5f10219: Two more starters in New: **Sharded store** (writes split across shards by key, so the hottest shard runs out first)
+  and **Slow partner API** (a partner that slows as it fills, a client timeout, and retries that add load when it is
+  slowest). Each compiles clean, keeps its expectations and lays out without a collision, like the ten before them.
+
+  Docs: /examples/#starters
+
+### Patch Changes
+
+- Updated dependencies [3531ca3]
+- Updated dependencies [2189dae]
+  - @loadmap/dsl@0.40.0
+  - @loadmap/react@0.40.0
+  - @loadmap/core@0.40.0
+
 ## 0.39.0
 
 ### Minor Changes
