@@ -1,6 +1,5 @@
 // An example from the repository, as TypeScript draws it, with the buttons that export it and a link that opens its
-// .loadmap in the editor at the values the reader set, or downloads it. The reader pans and zooms it;
-// data-headroom="false" leaves out the headroom chart.
+// .loadmap in the editor at the values the reader set, or downloads it. The reader pans and zooms it.
 import type { ParamValue } from '@loadmap/core'
 import { Alerts, alertsSource } from '@loadmap/example-alerts'
 import { Checkout, checkoutSource } from '@loadmap/example-checkout'
@@ -19,17 +18,7 @@ const SOURCES = { checkout: checkoutSource, alerts: alertsSource, search: search
 const FILES: Partial<Record<Name, typeof regionsFiles>> = { regions: regionsFiles }
 type Name = keyof typeof EXAMPLES
 
-function Example({
-  name,
-  exports,
-  editor,
-  headroom,
-}: {
-  name: Name
-  exports: boolean
-  editor?: string
-  headroom: boolean
-}) {
+function Example({ name, editor }: { name: Name; editor?: string }) {
   const handle = useRef<LoadmapHandle>(null)
   const [get] = useState(() => () => handle.current)
   const { png, poster, svg, record } = useRecorder(name, get)
@@ -57,23 +46,21 @@ function Example({
   }
   return (
     <>
-      {exports && (
-        <Actions name={name} source={SOURCES[name]} edit={editor && `${editor}?example=${name}`} onEdit={edit}>
-          <button type="button" onClick={png}>
-            PNG
-          </button>
-          <button type="button" onClick={poster}>
-            Poster
-          </button>
-          <button type="button" onClick={svg}>
-            SVG
-          </button>
-          <button type="button" onClick={() => record('webm')}>
-            WebM
-          </button>
-        </Actions>
-      )}
-      <Shown ref={handle} theme="inherit" zoom headroom={headroom} />
+      <Actions name={name} source={SOURCES[name]} edit={editor && `${editor}?example=${name}`} onEdit={edit}>
+        <button type="button" onClick={png}>
+          PNG
+        </button>
+        <button type="button" onClick={poster}>
+          Poster
+        </button>
+        <button type="button" onClick={svg}>
+          SVG
+        </button>
+        <button type="button" onClick={() => record('webm')}>
+          WebM
+        </button>
+      </Actions>
+      <Shown ref={handle} theme="inherit" zoom />
     </>
   )
 }
@@ -83,12 +70,7 @@ export function mount(el: HTMLElement) {
   if (!(name in EXAMPLES)) throw new Error(`no example "${name}"`)
   createRoot(el).render(
     <StrictMode>
-      <Example
-        name={name}
-        exports={el.dataset.exports !== 'false'}
-        editor={el.dataset.editor}
-        headroom={el.dataset.headroom !== 'false'}
-      />
+      <Example name={name} editor={el.dataset.editor} />
     </StrictMode>,
   )
 }

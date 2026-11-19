@@ -58,6 +58,15 @@ main:has(> .home-hero) > p {
   border-color: var(--accent);
 }
 
+.home-actions a.button.primary:hover {
+  filter: brightness(1.12);
+}
+
+.home-actions a.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .home-hero .snippet {
   margin: 0;
 }
@@ -159,7 +168,8 @@ main:has(> .home-hero) > p {
   color: var(--accent);
 }
 
-@media (max-width: 1000px) {
+/* two columns only with room beside the sidebar */
+@media (max-width: 1240px) {
   .home-hero,
   .home-steps {
     grid-template-columns: minmax(0, 1fr);

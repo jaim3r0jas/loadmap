@@ -27,18 +27,10 @@ npm i @loadmap/react react react-dom
 <p class="home-step-title"><span class="home-step-n">1</span> Describe the system</p>
 
 ```loadmap
-flow orders "orders" {
-  rate: 40 * load
-  route: api -> db
-  from: shop
-}
-
-node db "Database" {
-  store
-  capacity: measured(600, "writes/s")
-  over: "writes queue"
-}
+@include(apps/docs/pages/shop.loadmap, "flow orders", "node shop")
 ```
+
+<p class="home-step-note">From <code>shop.loadmap</code>, with the API in front of the database.</p>
 
 </div><div class="home-step">
 
@@ -73,7 +65,7 @@ shop.loadmap: 1 expectation holds
 <a class="home-cap" href="language/how-sure/"><span class="home-cap-icon" aria-hidden="true">±</span><span><b>How sure</b>A capacity's ± makes every answer a range.</span></a>
 <a class="home-cap" href="language/published/"><span class="home-cap-icon" aria-hidden="true">▤</span><span><b>Published benchmarks</b>A component's figure from the catalog, with its source.</span></a>
 <a class="home-cap" href="live-data/"><span class="home-cap-icon" aria-hidden="true">∿</span><span><b>Live data</b>Capacities and costs read from Prometheus or Elasticsearch.</span></a>
-<a class="home-cap" href="checks/"><span class="home-cap-icon" aria-hidden="true">✓</span><span><b>Checks in CI</b>A build fails when a change loses the headroom promised.</span></a>
+<a class="home-cap" href="checks/"><span class="home-cap-icon" aria-hidden="true">✓</span><span><b>Checks in CI</b>A build fails when a change loses the headroom promised; drift says what moved in the data.</span></a>
 <a class="home-cap" href="recording/"><span class="home-cap-icon" aria-hidden="true">▶</span><span><b>Recordings</b>A GIF, a video or a poster for a pull request or a slide.</span></a>
 <a class="home-cap" href="embedding/"><span class="home-cap-icon" aria-hidden="true">⧉</span><span><b>Share and embed</b>A link that carries the whole model, or a frame in a page.</span></a>
 <a class="home-cap" href="in-your-editor/"><span class="home-cap-icon" aria-hidden="true">&gt;_</span><span><b>In your editor</b>VS Code, any editor with a language server, or this site's.</span></a>
@@ -82,7 +74,12 @@ shop.loadmap: 1 expectation holds
 
 ## Examples
 
-<div class="island" data-island="gallery" data-show="walkthroughs" data-root="./"></div>
+<ul class="cards home-examples">
+<li><a href="examples/checkout/"><b>Checkout</b><span>Orders through a gateway, a queue, workers and Postgres.</span></a></li>
+<li><a href="examples/alerts/"><b>Alerts</b><span>Two topics on shared brokers, then a fan-out to the receivers.</span></a></li>
+<li><a href="examples/search/"><b>Search</b><span>Clients that retry, a rate limiter, an autoscaled API and a cache.</span></a></li>
+<li><a href="examples/regions/"><b>Two regions</b><span>Each region a subsystem, in several files: what happens to one when the other is lost.</span></a></li>
+</ul>
 
 Each is laid out to read in a minute, with a story to play; [All examples](/examples/) has twelve starters to make
 your own.

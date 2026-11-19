@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
-import { encodeShare, LANGUAGE_VERSION } from '@loadmap/dsl'
+import { compile, encodeShare, LANGUAGE_VERSION } from '@loadmap/dsl'
 import { TEMPLATES } from '@loadmap/editor/templates'
 import { type Browser, chromium, type Frame, type Page } from 'playwright'
 import { build, type PreviewServer, preview } from 'vite'
@@ -24,6 +24,7 @@ import {
   searchIndex,
   section,
 } from '../pages'
+import { WALKTHROUGHS } from '../site/islands/gallery'
 import { fakeGitHub, shaOf } from './fake-github'
 
 const config = join(import.meta.dirname, '../vite.config.ts')
@@ -206,6 +207,26 @@ describe('the pages', () => {
     expect(index.find((f) => f.u === 'reference/#preset')?.t).toContain('preset')
   })
 
+  it('show on the home page what loadmap writes for its model, and the walkthroughs as the gallery has them', () => {
+    const home = readFileSync(join(import.meta.dirname, '../pages/index.md'), 'utf8')
+    const source = readFileSync(join(import.meta.dirname, '../pages/shop.loadmap'), 'utf8')
+    const r = compile(source)
+    expect(r.diagnostics).toEqual([])
+    const fences = [...home.matchAll(/```text\n([\s\S]*?)```/g)].map((m) => m[1]!.replace(/\s+/g, ' ').trim())
+    // see it run: the verdict at the defaults, word for word
+    expect(fences).toContain(r.definition!.model.evaluate({}).verdict.text)
+    // keep it true: what loadmap check says of it
+    expect(r.expectations.every((e) => e.result.ok)).toBe(true)
+    const n = r.expectations.length
+    expect(fences).toContain(
+      `$ loadmap check shop.loadmap shop.loadmap: ${n} ${n === 1 ? 'expectation holds' : 'expectations hold'}`,
+    )
+    const html = rendered.find((x) => x.page.route === '')!.html
+    for (const w of WALKTHROUGHS) expect(textOf(html), w.id).toContain(`${w.title}${w.summary}`)
+    // search names it the home page, not its tagline
+    expect(searchIndex().find((f) => f.u === '')?.p).toBe('Home')
+  })
+
   it('draw the quick start exactly as the react README writes it', () => {
     const readme = readFileSync(join(import.meta.dirname, '../../../packages/react/README.md'), 'utf8')
     const code = /```tsx\n([\s\S]*?)```/.exec(readme)![1]!
@@ -240,6 +261,7 @@ describe('the pages', () => {
       'multi-file/shop.big.loadmap',
       'multi-file/shop.loadmap',
       'multi-file/shop.story.loadmap',
+      'pages/shop.loadmap',
       'pages/using-the-editor.md',
       'providers/CHANGELOG.md',
       'react/CHANGELOG.md',

@@ -1,0 +1,29 @@
+loadmap 1.6
+# The home page's "How it works": its first step shows the flow, the database and the expectation; its second the
+# verdict at the defaults, its third what loadmap check says (apps/docs/test/site.test.ts holds them to this file).
+title: "Shop"
+
+load "Orders, × today" { max: 40; default: 1 }
+
+flow orders "orders" { rate: 40 * load; route: api -> db; from: shop }
+
+node db "Database" {
+  store
+  short: "the database"
+  capacity: measured(600, "writes/s", "a load test")
+  over: "writes queue"
+}
+
+expect "Black Friday stays under the target" { underTarget: 5 }
+
+node shop "Shop"
+
+node api "API" {
+  pass
+  short: "the API"
+  capacity: estimated(1_500 +- 30%, "req/s", "a vendor benchmark")
+  over: "orders queue"
+}
+
+shop -> api
+api -> db

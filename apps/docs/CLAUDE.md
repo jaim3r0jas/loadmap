@@ -13,9 +13,10 @@ are islands under `apps/docs/site/islands`, loaded only on the pages that use th
 class="island" data-island="example|editor|gallery|quickstart">`. A page with `frame: 'app'` (the editor at `/editor/`)
 is its Markdown alone in the window, without the site's frame, pager or llms.txt entry; `hidden: true` leaves a page out
 of the sidebar. A page laid out unlike the others (the home page: a hero beside a live board, `site/islands/hero.tsx`)
-names a stylesheet of its own in `css` (`site/home.css`), which no other page loads. A page that moves keeps its old
-route in `MOVED` (a page that sends the reader on, in no list). `/embed/` is not a page: `writePages` writes it bare (no
-docs CSS) for `site/embed.tsx`, which draws a share link's definition filling an iframe (`<Loadmap fill>`); the editor's
+names a stylesheet of its own in `css` (`site/home.css`), which no other page loads, and `toc: false`; its How it works
+shows `pages/shop.loadmap`, held to its verdict and its check by `site.test.ts`. A page that moves keeps its old route
+in `MOVED` (a page that sends the reader on, in no list). `/embed/` is not a page: `writePages` writes it bare (no docs
+CSS) for `site/embed.tsx`, which draws a share link's definition filling an iframe (`<Loadmap fill>`); the editor's
 "Copy embed link" makes its links. `apps/docs/test/site.test.ts` builds the site, checks every link, and draws the live
 pages in Chromium. The build also writes `llms.txt` (the pages) and `llms-full.txt` (`docs/dsl.md` and
 `docs/every-statement.loadmap`, which must hold every statement of the schema: `docs.test.ts`); the dsl build copies
