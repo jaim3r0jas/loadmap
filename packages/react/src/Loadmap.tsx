@@ -15,7 +15,7 @@ import { storySeconds } from './camera'
 import type { OpenPanel } from './compact'
 import { Diagram } from './Diagram'
 import type { Engine } from './engine'
-import { Assumptions, Controls, Limits, LoadBar, Meters, Verdict } from './panels'
+import { Assumptions, Controls, hasDesign, Limits, LoadBar, Meters, Verdict } from './panels'
 import { Compare, HeadroomChart } from './scenarios'
 import { Story } from './story'
 import { injectStyles } from './styles'
@@ -185,7 +185,7 @@ export function Loadmap<P>({
   useImperativeHandle(ref, () => handleOf(lm), [lm])
   const side = compare && model.scenarios.length > 1
   // the load is in the bar: the controls panel is the design, when there is one
-  const design = model.params.length > 1 || lm.ev.presets.some((p) => !('load' in p.values))
+  const design = hasDesign(lm)
   const charts: LoadmapPanel[] = []
   if (headroom) charts.push('headroom')
   if (side) charts.push('compare')

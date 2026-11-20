@@ -341,6 +341,10 @@ export function LoadBar({ lm }: { lm: LoadmapController }) {
   )
 }
 
+/** A model has a design to change: a parameter beside the load, or a preset that sets no load. */
+export const hasDesign = (lm: LoadmapController) =>
+  lm.model.params.length > 1 || lm.ev.presets.some((p) => !('load' in p.values))
+
 /**
  * The load slider (unless `load` is false: the page shows a `LoadBar`), the presets that set no load, and every
  * parameter, greyed out where it does not apply.
