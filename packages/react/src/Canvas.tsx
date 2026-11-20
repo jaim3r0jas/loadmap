@@ -152,7 +152,7 @@ export function useCanvasPanels(): Pick<Slots, 'panels' | 'open' | 'show'> {
  * An element's size in pixels, read before the first paint and on every change; null until it is there. Not `useSize`
  * (scenarios.tsx): the diagram waits for these sizes, so they are read in the commit that mounts the element.
  */
-function useBox(el: HTMLElement | null): { w: number; h: number } | null {
+function useBox(el: HTMLElement | null, inner = false): { w: number; h: number } | null {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null)
   useLayoutEffect(() => {
     if (!el) {
@@ -160,14 +160,15 @@ function useBox(el: HTMLElement | null): { w: number; h: number } | null {
       return
     }
     const read = () => {
-      const r = el.getBoundingClientRect()
+      // inside its border (`inner`): what is placed in it is placed from there
+      const r = inner ? { width: el.clientWidth, height: el.clientHeight } : el.getBoundingClientRect()
       setBox((was) => (was && was.w === r.width && was.h === r.height ? was : { w: r.width, h: r.height }))
     }
     read()
     const ro = new ResizeObserver(read)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [el])
+  }, [el, inner])
   return box
 }
 
@@ -225,7 +226,7 @@ export function Canvas({
   useLayoutEffect(() => {
     if (root) injectCanvasStyles(root.ownerDocument)
   }, [root])
-  const now = useBox(root)
+  const now = useBox(root, true)
   // the last size it had while shown: a canvas hidden for a while (a tab) keeps its diagram and the reader's view
   const [box, setBox] = useState<{ w: number; h: number } | null>(null)
   if (now && now.w > 0 && now.h > 0 && now !== box) setBox(now)
