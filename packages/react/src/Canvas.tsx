@@ -21,11 +21,45 @@ const CANVAS_CSS = `
 .lm-canvas { position: relative; box-sizing: border-box; height: clamp(420px, 70dvh, 760px); overflow: hidden; contain: layout; border: 1px solid var(--lm-line); border-radius: var(--lm-radius, 10px); background: var(--lm-surface); }
 .lm.lm[data-full] > .lm-canvas { display: block; flex: 1 1 0; height: auto; min-height: 0; }
 .lm-canvas > .lm-wrap[data-canvas] { position: absolute; inset: 0; }
-.lm-canvas-bar, .lm-canvas-console { position: absolute; left: 0; right: var(--lm-canvas-right, 0px); z-index: 3; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; background: var(--lm-surface); }
+.lm-canvas-bar, .lm-canvas-console { position: absolute; left: 0; right: var(--lm-canvas-right, 0px); z-index: 3; box-sizing: border-box; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px 12px; padding: 8px 12px; background: var(--lm-surface); }
 .lm-canvas-bar { top: 0; border-bottom: 1px solid var(--lm-line); }
 .lm-canvas-console { bottom: 0; border-top: 1px solid var(--lm-line); }
-.lm-canvas[data-short] :is(.lm-canvas-bar, .lm-canvas-console) { flex-wrap: nowrap; padding: 4px 8px; overflow: hidden; }
+.lm-canvas-bar > h2 { flex: 0 1 auto; min-width: 0; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-canvas-bar > .lm-scenarios { flex: 0 2 auto; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.lm-canvas-bar > .lm-scenarios legend { display: none; }
+.lm-canvas-bar > .lm-scenarios button { flex: none; padding: 4px 10px; white-space: nowrap; }
+/* one row whatever is on: an entry that does not fit wraps under it, out of view, whole */
+.lm-canvas-bar > .lm-legend { flex: 1 1 0; justify-content: flex-end; min-width: 0; height: 1.5em; line-height: 1.5; overflow: hidden; white-space: nowrap; }
+.lm-canvas-pick { flex: 0 1 auto; min-width: 0; max-width: 100%; font: 500 .84rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 5px 8px; }
+.lm-canvas-console { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 12px 8px; }
+.lm-canvas-console > .lm-load { grid-template: "label track value" / minmax(0, max-content) minmax(120px, 1fr) auto; align-items: start; }
+.lm-canvas-console > .lm-load > label { max-width: 14em; padding-top: 6px; }
+.lm-canvas-console > .lm-load > output { padding-top: 5px; }
+.lm-canvas-verdict { display: flex; align-items: center; gap: 6px 14px; min-width: 0; padding-left: 8px; border-left: 4px solid var(--lm-ok); }
+.lm-canvas-verdict[data-tier="warn"] { border-color: var(--lm-warn); }
+.lm-canvas-verdict[data-tier="over"] { border-color: var(--lm-drop); }
 .lm-canvas[data-width="compact"] :is(.lm-canvas-bar, .lm-canvas-console) { padding: 6px 8px; }
+.lm-canvas[data-width="compact"] .lm-canvas-console > .lm-load { grid-template: "label value" "track track" / minmax(0, 1fr) auto; align-items: center; }
+.lm-canvas[data-width="compact"] .lm-canvas-console > .lm-load > :is(label, output) { padding-top: 0; }
+/* room for the date under the load, with one or not */
+.lm-canvas[data-width="compact"] .lm-canvas-console > .lm-load > output { min-height: 2.1rem; }
+/* two lines kept whatever the verdict says: the load never changes the console's height */
+.lm-canvas[data-width="compact"]:not([data-short]) .lm-headline { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; height: 2.6em; line-height: 1.3; white-space: normal; }
+/* two fingers zoom a narrow canvas: Fit alone stays, clear of the boxes */
+.lm-canvas[data-width="compact"] .lm-zoom .lm-btn:not(:last-child) { display: none; }
+/* until today's full screen goes: its rules for a phone (the load on two lines, no legend) are not the canvas's */
+.lm.lm[data-full] .lm-canvas .lm-load { display: grid; }
+.lm.lm[data-full] .lm-canvas .lm-load small { display: block; }
+.lm.lm[data-full] .lm-canvas .lm-load > label { position: static; width: auto; height: auto; clip-path: none; }
+.lm.lm[data-full] .lm-canvas .lm-load > output { margin-left: 0; }
+.lm.lm[data-full] .lm-canvas .lm-headline { flex-basis: auto; }
+.lm.lm[data-full] .lm-canvas .lm-legend { display: flex; }
+.lm.lm[data-full] .lm-canvas[data-short] .lm-load > label { display: none; }
+.lm-canvas[data-short] .lm-canvas-bar { padding: 4px 8px; overflow: hidden; }
+.lm-canvas[data-short] .lm-canvas-console { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 12px; padding: 2px 8px; }
+.lm-canvas[data-short] .lm-canvas-console > .lm-load { grid-template: "track value" / minmax(0, 1fr) auto; align-items: start; }
+.lm-canvas[data-short] .lm-canvas-console > .lm-load > label { display: none; }
+.lm-canvas[data-short][data-width="compact"] .lm-canvas-console { grid-template-columns: minmax(0, 1fr); gap: 0; }
 `
 
 function injectCanvasStyles(doc: Document): void {
