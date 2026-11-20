@@ -120,6 +120,29 @@ by default and as wide as the root. Nothing the reader does changes its height, 
 The default height has no weight of its own, so a plain `.lm-canvas` rule of the page sets it, wherever the page's
 stylesheet stands.
 
+## Light, dark and inherit
+
+`<Loadmap theme>` (and `LoadmapRoot`, `<LoadmapSource>`, the editor) takes one of four:
+
+| `theme`     | What it draws                                                                           |
+| ----------- | --------------------------------------------------------------------------------------- |
+| `'auto'`    | The system's light or dark (`prefers-color-scheme`); the default                        |
+| `'light'`   | Light, whatever the system says                                                         |
+| `'dark'`    | Dark, whatever the system says                                                          |
+| `'inherit'` | The page's own switch, followed as it changes; the system's while the page says nothing |
+
+With `'inherit'`, the page's switch is on `<html>`: `data-theme="dark"` or `"light"`, or a `dark` or `light` class. One
+observer of `<html>` serves every board on the page. On the server, and while the page says nothing, it draws as
+`'auto'`.
+
+The root carries the theme it draws as `data-theme="light"` or `"dark"`, and none for `'auto'`. `usePageTheme(theme)`
+returns the same, `'auto'`, `'light'` or `'dark'`, for a piece of your own that should match the board.
+
+## Server rendering and a shadow root
+
+The stylesheet is one string, `LOADMAP_CSS`. `injectStyles(doc?)` adds it once to a document's `<head>` (as
+`<style id="loadmap-css">`; default the current `document`), which every root does on its first render.
+
 - Server rendering: put `LOADMAP_CSS` in the page's `<head>` as `<style id="loadmap-css">`, so the first paint is
   styled; the root then finds it by its id and adds nothing.
 - A shadow root: the document's stylesheet does not reach inside it, so put `LOADMAP_CSS` in a `<style>` inside the
