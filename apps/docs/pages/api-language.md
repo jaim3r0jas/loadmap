@@ -66,9 +66,11 @@ model runs throws a `FormulaError`, with the `span` of the formula and an option
 `expectations` and `measures` are empty when the definition has errors. Each expectation is tested on the pessimistic
 edge (every capacity at its low bound); [Checks](/checks/) has what `outcome`, `reasons` and `message` say.
 
-`definition.options` (`DefinitionOptions`) is what the text sets beyond the model and the view, as props of
-`<Loadmap>`: `speed`, `transition`, `direction`, `rows`, `assumptions` (always a list, maybe empty), `fullScreen`,
-`fullScreenMode`, `closed`, and `grid` (the editor's dot grid; only the editor reads it).
+`definition.options` (`DefinitionOptions`) is what the text sets beyond the model and the view: `speed`,
+`transition`, `direction`, `rows`, `assumptions` (always a list, maybe empty), `fullScreen`, `fullScreenMode`,
+`closed`, and `grid` (the editor's dot grid; only the editor reads it). `<LoadmapSource>` hands them to `<Loadmap>`
+as its props of the same names, with `fullScreen` as `panels` and `fullScreenMode` as `chrome`
+([the view](/language/view/#full-screen)).
 
 A `DslSymbol` is `{ kind, id, span, decl, detail?, file? }`. `kind` is one of `param`, `let`, `fit`, `published`,
 `measure`, `metric`, `flow`, `node`, `stage`, `component`, `scenario`, `tier` or `connection`; `span` is where its id

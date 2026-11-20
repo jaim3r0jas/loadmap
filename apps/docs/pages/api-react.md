@@ -1,8 +1,9 @@
 # React and the page
 
-`@loadmap/react` draws a model on a page: `<Loadmap>` is the whole piece (the scenarios and the load in a bar, the
-story, the diagram with its dots, the verdict, the headroom chart, the live meters, the limits, the controls and the
-assumptions), and `useLoadmap` with the panel components builds a layout of your own from the same parts. It also
+`@loadmap/react` draws a model on a page: `<Loadmap>` is the whole piece in one box, the canvas (the title, the
+scenarios and the story in a bar, the diagram with its dots, the load and the verdict under it, and the limits, the
+design, the headroom chart, the live meters and the assumptions in panels), and `useLoadmap` with `Canvas` or the
+panel components builds a layout of your own from the same parts. It also
 re-exports everything from `@loadmap/core` and the view API, so most pages install this package alone:
 [The model in TypeScript](/api/model/) has the model and [the view](/api/model/#the-view). React 19 is a peer.
 
@@ -14,7 +15,7 @@ npm i @loadmap/react react react-dom
 
 | Entry                          | What                                                                                         |
 | ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `@loadmap/react`               | `<Loadmap>`, `useLoadmap`, the panels, the styles, and the model and view API                |
+| `@loadmap/react`               | `<Loadmap>`, `Canvas`, `useLoadmap`, the panels, the styles, and the model and view API      |
 | `@loadmap/react/source`        | `<LoadmapSource>` and `useCatalog`: a `.loadmap` text drawn; the one entry with the compiler |
 | `@loadmap/react/catalog`       | `@loadmap/core/catalog` for a page that installs only react                                  |
 | `@loadmap/react/elk.worker.js` | The layout's worker as a file, for a page that serves or inlines it                          |
@@ -28,7 +29,7 @@ or in one HTML file.
 import { Loadmap } from '@loadmap/react'
 
 export function Capacity() {
-  return <Loadmap model={shop} view={view} theme="inherit" zoom closed={['eu']} />
+  return <Loadmap model={shop} view={view} theme="inherit" closed={['eu']} />
 }
 ```
 
@@ -91,10 +92,11 @@ it, and the path to where the view is shows over the board. Pictures and recordi
 
 Full screen:
 
-| Prop     | Type                 | Default  | What                                                                     |
-| -------- | -------------------- | -------- | ------------------------------------------------------------------------ |
-| `chrome` | `'all' \| 'least'`   | `'all'`  | What stands around the diagram in full screen, and in a root that fills  |
-| `fill`   | `boolean`            | `false`  | The root fills its container, for good, with no Full screen button       |
+| Prop      | Type               | Default       | What                                                                    |
+| --------- | ------------------ | ------------- | ----------------------------------------------------------------------- |
+| `chrome`  | `'all' \| 'least'` | `'all'`       | What stands around the diagram in full screen, and in a root that fills |
+| `fill`    | `boolean`          | `false`       | The root fills its container, for good, with no Full screen button      |
+| `scrolls` | `boolean`          | not in `fill` | The page around it scrolls: the plain wheel and one finger are its own  |
 
 [Full screen](#full-screen) has what each does.
 
@@ -134,6 +136,9 @@ panel are away, and the load and the verdict stay. ← → step it; Done puts ev
 `'assumptions'`. `LoadmapPanel` is their type. `panels={['limits', 'live']}` offers only those; Design stays out of
 a model with nothing to set but the load.
 
+[Styling](/api/styling/#sizing-the-canvas) has how a page sets the canvas's height, and the classes and attributes
+its own rules can use.
+
 ## Full screen
 
 The bar's **Full screen** button opens the browser's full screen, or a fixed overlay where the browser has none (an
@@ -157,10 +162,9 @@ the old ones.
 
 ## The load bar for readers
 
-The scenarios and the load share one bar over the diagram (`LoadBar`), so the reader moves the load and watches what
-it does. It stays in view while the page scrolls (a page with a fixed header sets `--lm-sticky-top`:
-[Styling](/api/styling/#the-tokens)); on a phone it sits under the diagram, in thumb reach. Picking a scenario keeps
-the load.
+In `<Loadmap>` the load is in the console, under the diagram: its slider, and under it the verdict in one line. Both
+stay in view whatever panel is open, so the reader moves the load and watches what it does. The scenarios are in the
+bar over the diagram. Picking a scenario keeps the load.
 
 - The track is coloured by what the load does: under the target, past it, past capacity, and a ± range as a blend
   between its edges.
@@ -170,6 +174,11 @@ the load.
   and for where it runs out. A click takes it; the mark of the values shown is underlined.
 - ← → (and ↑ ↓) move the load a step, Page Up and Page Down to the next mark, Home and End to either end.
 - The value shows its date when the model has `growth`.
+
+`LoadBar` is the part for a page of its own ([a layout of your own](#a-layout-of-your-own)): the scenarios and the
+same slider in one bar. It stays in view while the page scrolls (a page with a fixed header sets `--lm-sticky-top`:
+[Styling](/api/styling/#the-tokens)); on a phone it sits under the diagram, in thumb reach. `<Loadmap>` does not draw
+it.
 
 ## The handle
 
@@ -210,10 +219,12 @@ return <Loadmap model={shop} view={view} ref={board} />
 
 `useLoadmap(model, view, options?)` is the state behind `<Loadmap>`: the values, the model's evaluation, the layout
 and the engine that draws the dots. It takes `LoadmapOptions`: every prop of the tables above under "How the diagram is
-laid out", "Full screen" and "The dots", with `initial` and `closed` (not the display props: `theme`, `title`,
-`assumptions`, `headroom`, `compare`, `fullScreen`, `onNodeClick`, `selected`, `children`, `ref`). It returns a
-`LoadmapController`,
-which every panel takes as `lm`.
+laid out" and "The dots", `chrome` and `fill`, with `initial` and `closed` (not the display props: `theme`, `title`,
+`assumptions`, `panels`, `open`, `defaultOpen`, `onOpen`, `headroom`, `compare`, `scrolls`, `onNodeClick`, `selected`,
+`children`, `ref`). It returns a `LoadmapController`, which every panel takes as `lm`.
+
+One option is for a layout of your own alone: `zoom: true` lets the reader pan and zoom a `<Diagram>` that stands in
+the page's flow. A canvas always pans and zooms, so `<Loadmap>` and `<Canvas>` do not read it.
 
 | Field                                    | What                                                                                                                                  |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -229,7 +240,7 @@ which every panel takes as `lm`.
 | `cue`                                    | What the board says about the step played (`Cue`: `step`, `title`, `detail`, `after`, `top`, `seconds`); `null` when it does not play |
 | `closed`, `setClosed(ids)`               | The subsystems drawn closed; draws these closed and every other one open                                                              |
 | `fullScreen`, `toggleFullScreen()`       | The root is full screen (the browser's, the overlay, or `fill`); in or out                                                            |
-| `fullScreenMode`, `setFullScreenMode(m)` | `'panels'` or `'focus'`                                                                                                               |
+| `fullScreenMode`, `setFullScreenMode(m)` | What stands around the diagram in full screen: `'panels'` (`chrome="all"`) or `'focus'` (`chrome="least"`)                            |
 | `fill`, `zoom`                           | The options as given                                                                                                                  |
 | `scene`                                  | The laid out diagram; `null` until the first layout is done                                                                           |
 | `labels`, `direction`, `reducedMotion`   | The labels at these values, the direction laid out, the reader's motion setting                                                       |
@@ -246,8 +257,9 @@ Each takes the controller as `lm`.
 | Component       | Props                          | What                                                                                                                      |
 | --------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | `LoadmapRoot`   | `lm`, `theme?`, `children`     | The root (`.lm`): the theme's tokens, the styles, the size the layout follows                                             |
+| `Canvas`        | `CanvasProps`                  | One box with the diagram, a bar, a console and panels: [a layout of your own](#a-layout-of-your-own)                      |
 | `Diagram`       | `DiagramProps` (below)         | The board: SVG for the structure, a canvas on top for the dots, Full screen                                               |
-| `LoadBar`       | `lm`                           | The scenarios and the load in one bar                                                                                     |
+| `LoadBar`       | `lm`                           | The scenarios and the load in one bar that stays in view, for a document of the parts                                     |
 | `Scenarios`     | `lm`                           | One button per scenario; nothing when the model has none                                                                  |
 | `LoadRange`     | `lm`                           | The load slider with its zones and marks                                                                                  |
 | `Story`         | `lm`                           | The story a step at a time: text, Play, back and next; ← → while it has the focus                                         |
@@ -298,6 +310,75 @@ pan and pinch the board.
 
 ## A layout of your own
 
+There are two ways, from the same parts. Both start with `useLoadmap` and a `LoadmapRoot`.
+
+### The canvas with your own parts
+
+`Canvas` is the box `<Loadmap>` draws in. The diagram fills it, `Canvas.Bar` lies over its top, `Canvas.Console` over
+its bottom, and each `Canvas.Panel` is a tab that opens its panel, one at a time. It arranges itself by its own size
+and takes its height from the page, as [the canvas](#the-canvas) says.
+
+```tsx
+import { Canvas, Limits, LoadmapRoot, LoadRange, Scenarios, useLoadmap, Verdict } from '@loadmap/react'
+
+function Capacity() {
+  const lm = useLoadmap(shop, view)
+  return (
+    <LoadmapRoot lm={lm} theme="inherit">
+      <Canvas lm={lm} defaultOpen="limits">
+        <Canvas.Bar>
+          <Scenarios lm={lm} />
+          <button type="button" className="lm-btn" onClick={lm.toggleFullScreen}>
+            Full screen
+          </button>
+        </Canvas.Bar>
+        <Canvas.Console>
+          <LoadRange lm={lm} />
+        </Canvas.Console>
+        <Canvas.Panel id="limits" title="Limits">
+          <Verdict lm={lm} />
+          <Limits lm={lm} />
+        </Canvas.Panel>
+        <Canvas.Panel id="notes" title="Notes">
+          <p>Measured in the last load test.</p>
+        </Canvas.Panel>
+      </Canvas>
+    </LoadmapRoot>
+  )
+}
+```
+
+`CanvasProps`:
+
+| Prop                                | Type                | What                                                                                   |
+| ----------------------------------- | ------------------- | -------------------------------------------------------------------------------------- |
+| `lm`                                | `LoadmapController` | The controller                                                                         |
+| `label`                             | `string`            | The region's name for a screen reader; default the model's title                       |
+| `open`, `defaultOpen`, `onOpen`     | as `<Loadmap>`'s    | The open panel, by its `id`; leave `open` out and the canvas keeps it itself           |
+| `over`                              | `ReactNode`         | What takes the top for a while, a `<Story>`: the tabs and the open panel are away then |
+| `scrolls`                           | `boolean`           | The page around it scrolls; default `true` in a page, `false` in a root that fills     |
+| `legend`, `onNodeClick`, `selected` | as `Diagram`'s      | Passed to the diagram                                                                  |
+| `className`, `style`, `ref`         |                     | The box's own, `.lm-canvas`: `style` for a height the page's CSS does not give         |
+
+- `Canvas.Bar`, `Canvas.Console` and every `Canvas.Panel` are direct children of `Canvas`, which places them by their
+  type: the bar and the console at most once each. Anything else is drawn over the canvas.
+- A `Canvas.Panel` takes `id`, `title` (what its tab says) and its children, drawn only while it is open.
+- The diagram in a canvas has no Full screen button: a button of yours calls `lm.toggleFullScreen()`. Full screen is
+  the same canvas at the screen's size, with one panel kept open from 1280 px.
+- `useCanvasSize()` gives a part in the canvas its size class, `{ width, short, pinned }`: `width` is `'compact'`
+  (under 520 px), `'regular'` or `'wide'` (from 900 px), `short` a canvas under 420 px high, `pinned` a full screen
+  that keeps its panel open. A part folds by it, never by the window.
+- `useCanvasPanels()` gives `{ panels, open, show, under }`: the panels' ids, the one that is open, `show(id)` to open
+  one (`show(null)` closes it), and `under`, true while something lies over the bar.
+- `CANVAS` has those sizes in pixels (`compact`, `wide`, `short`, `pin`) and the widths of the rail and the panel.
+
+A panel of your own in `<Loadmap>` needs none of this: give it a `Canvas.Panel` child, and its tab comes before the
+loadmap's.
+
+### A document of the parts
+
+Every panel on the page at once, in the page's own flow, as `<Loadmap>` was before 0.41:
+
 ```tsx
 import { Assumptions, Diagram, LoadBar, LoadmapRoot, Story, useLoadmap, Verdict } from '@loadmap/react'
 
@@ -318,17 +399,22 @@ function Capacity() {
 }
 ```
 
-The diagram's Full screen takes the whole root, and the classes say where each piece goes:
+The diagram has its own **Full screen** button here. It takes the whole root as a column that never scrolls, and the
+classes say where each piece goes:
 
 - A title (`h2`), the `LoadBar` (or `Scenarios`) and the `Story` stay above the diagram.
 - Inside a `<div className="lm-side">` after the `Diagram`, the pieces become a box below it that scrolls on its own.
   On the page `.lm-side` lays nothing out of its own (`display: contents`): its pieces are the root's.
-- Anything else in the root waits outside full screen.
-- `.lm-panel` is a grid for one panel's parts; an element with a `data-out` attribute is left out of full screen.
-- `.lm-drawer` is `<Loadmap>`'s own: the box that opens one compact panel whole over the diagram. A `.lm-side` that is
-  also `.lm-drawer` is hidden in full screen until a panel opens in it, which only `<Loadmap>` does.
+- Anything else in the root waits outside full screen, and so does an element with a `data-out` attribute.
+- A switch beside Close, or the F key, turns it into focus: the `.lm-side` goes, and the diagram and the story stand
+  in the middle of the screen. `chrome: 'least'` opens full screen there.
+- Under 760 px wide the title and the legend go, the diagram pans in a box of its own, and the `LoadBar` moves under
+  it.
 - `.lm-card` draws a card (the surface, a border, rounded corners); `.lm-strip` puts two cards side by side, one
   column on a narrow root.
+
+It has no tabs, no panel beside the diagram and no pinned panel: those are the canvas's. The dock of compact cards
+and the drawer that `<Loadmap>` gave this full screen before 0.41 are gone.
 
 The controller has the state for controls of your own: `lm.fullScreen`, `lm.toggleFullScreen()`,
 `lm.fullScreenMode`, `lm.storyPlaying`, `lm.cue`. `handleOf(lm)` makes the [handle](#the-handle) of a layout of your
@@ -357,8 +443,9 @@ export function Capacity() {
 | `path`      | `string`                           | This text's own path among them (`models/checkout.loadmap`)                                       |
 
 Every `<Loadmap>` prop but `model` and `view` works too. The options the definition declares in its `view` block
-(`speed`, `transition`, `direction`, `rows`, `fullScreen`, `fullScreenMode`, `closed`, and its assumptions) are
-passed on ([The view](/language/view/)); a prop the page sets wins, and the page's `assumptions` come first.
+(`speed`, `transition`, `direction`, `rows`, `closed`, `fullScreen` as `panels`, `fullScreenMode` as `chrome`, and
+its assumptions) are passed on ([The view](/language/view/)); a prop the page sets wins, and the page's
+`assumptions` come first.
 
 - While the text does not compile, its diagnostics show as `loadmap check` prints them, above the last version that
   did.
@@ -390,8 +477,8 @@ A TypeScript model imports the figures from `@loadmap/react/catalog` (or `@loadm
 The stylesheet goes into the document's `<head>` on the first render; nothing to import. `LOADMAP_CSS` is the
 stylesheet as a string and `injectStyles(doc?)` adds it once to a document (default `document`): for server rendering,
 a shadow root, or a document of your own. `usePageTheme(theme)` returns the theme a root draws (`'auto'`, `'light'`
-or `'dark'`), following the page's own switch for `'inherit'`. [Styling](/api/styling/) has the tokens, the themes and
-the full-screen layouts.
+or `'dark'`), following the page's own switch for `'inherit'`. [Styling](/api/styling/) has the tokens, the themes,
+and the canvas's height and classes.
 
 ## Where the layout runs
 
@@ -424,5 +511,5 @@ recipes. Any object with `layout(graph): Promise<graph>` is an `ElkEngine`.
 - `scenarioColor(model, label)`: a scenario's colour (`var(--lm-s1)` to `var(--lm-s4)`, then muted; the text colour
   for values of the reader's own), for a chart of your own.
 - `useComparison(lm)`: `compare(model, load)` at the load shown, memoized.
-- The types `LoadmapProps`, `LoadmapOptions`, `LoadmapController`, `LoadmapHandle`, `LoadmapPanel`, `FullScreenMode`,
-  `Theme`, `DiagramProps`, `Cue`, `Dot` and `Engine`.
+- The types `LoadmapProps`, `LoadmapOptions`, `LoadmapController`, `LoadmapHandle`, `LoadmapPanel`, `CanvasProps`,
+  `CanvasSize`, `Chrome`, `FullScreenMode`, `Theme`, `DiagramProps`, `Cue`, `Dot` and `Engine`.

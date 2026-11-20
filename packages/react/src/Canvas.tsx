@@ -25,7 +25,9 @@ import type { LoadmapController } from './useLoadmap'
  * in it changes that height: the diagram fills it, the bar and the console lie over its top and its bottom.
  */
 const CANVAS_CSS = `
-.lm-canvas { position: relative; box-sizing: border-box; height: clamp(420px, 70dvh, 760px); overflow: hidden; contain: layout; border: 1px solid var(--lm-line); border-radius: var(--lm-radius, 10px); background: var(--lm-surface); }
+/* without weight: a page's own .lm-canvas { height } wins, wherever its stylesheet stands */
+:where(.lm-canvas) { height: clamp(420px, 70dvh, 760px); }
+.lm-canvas { position: relative; box-sizing: border-box; overflow: hidden; contain: layout; border: 1px solid var(--lm-line); border-radius: var(--lm-radius, 10px); background: var(--lm-surface); }
 .lm.lm[data-full] > .lm-canvas { display: block; flex: 1 1 0; height: auto; min-height: 0; }
 /* the spacer that centres a page of parts with the least around it would take a gap under the canvas */
 .lm.lm[data-full]:has(> .lm-canvas)::after { content: none; }
@@ -124,12 +126,15 @@ const CANVAS_CSS = `
 .lm-frame[data-short][data-width="compact"] .lm-canvas-console { grid-template-columns: minmax(0, 1fr); gap: 0; }
 `
 
-function injectCanvasStyles(doc: Document): void {
-  if (doc.getElementById('loadmap-canvas-css')) return
-  const el = doc.createElement('style')
+/** Once per document, or per shadow root the canvas is drawn in: a document's stylesheet does not reach into one. */
+function injectCanvasStyles(root: HTMLElement): void {
+  const scope = root.getRootNode()
+  const into = scope instanceof ShadowRoot ? scope : root.ownerDocument
+  if (into.getElementById('loadmap-canvas-css')) return
+  const el = root.ownerDocument.createElement('style')
   el.id = 'loadmap-canvas-css'
   el.textContent = CANVAS_CSS
-  doc.head.appendChild(el)
+  ;(into instanceof ShadowRoot ? into : into.head).appendChild(el)
 }
 
 interface Slots {
@@ -262,7 +267,7 @@ export function Canvas({
   useImperativeHandle(ref, () => root as HTMLDivElement, [root])
   // before the box is measured: its height is the stylesheet's
   useLayoutEffect(() => {
-    if (root) injectCanvasStyles(root.ownerDocument)
+    if (root) injectCanvasStyles(root)
   }, [root])
   const now = useBox(root, true)
   // the last size it had while shown: a canvas hidden for a while (a tab) keeps its diagram and the reader's view

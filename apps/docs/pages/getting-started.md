@@ -26,9 +26,12 @@ boxes to draw and where the dots start.
 
 <div class="island" data-island="quickstart"></div>
 
-Move **Visitors** past 2×: the app pods turn amber, and the verdict says they are the first limit, at 2.2×. Switch to
-8 pods and the database takes over, somewhere between 2.9× and 5.4×: a range, because its capacity is an estimate
-within ± 30 %.
+Move **Visitors** past 2×, under the diagram: the app pods turn amber, and the verdict says they are the first limit,
+at 2.2×. Open **Design** and switch to 8 pods: the database takes over, somewhere between 2.9× and 5.4×, a range
+because its capacity is an estimate within ± 30 %. **Limits** has each part in the order they run out.
+
+`<Loadmap>` is one box of a fixed height, 420 to 760 px by the window's: `.lm-canvas` in your CSS gives it another
+([Styling](/api/styling/#sizing-the-canvas)).
 
 ## 4. Make it yours
 

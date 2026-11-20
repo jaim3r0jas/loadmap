@@ -14,10 +14,10 @@ between versions; it is left out here.
 | `@loadmap/core/drift`       | The tests behind `loadmap drift`                                              | [Media, simulation and layout](/api/more/)            |
 | `@loadmap/core/catalog`     | The published figures                                                         | [Media, simulation and layout](/api/more/)            |
 | `@loadmap/layout`           | The view (`defineView`, `node`, `edge`, …) and its ELK layout                 | [The model](/api/model/#the-view), [more](/api/more/) |
-| `@loadmap/react`            | `<Loadmap>`, `useLoadmap`, the panels, plus everything from core and the view | [React and the page](/api/react/)                     |
+| `@loadmap/react`            | `<Loadmap>`, `Canvas`, `useLoadmap`, the panels, with core and the view       | [React and the page](/api/react/)                     |
 | `@loadmap/react/source`     | `<LoadmapSource>`: a `.loadmap` text drawn; `useCatalog`                      | [React and the page](/api/react/)                     |
 | `@loadmap/react/catalog`    | `@loadmap/core/catalog`, for a page that installs only react                  | [React and the page](/api/react/)                     |
-| the styles                  | The `--lm-*` tokens, light and dark, a shadow root, full screen               | [Styling](/api/styling/)                              |
+| the styles                  | The `--lm-*` tokens, light and dark, the canvas's height, full screen         | [Styling](/api/styling/)                              |
 | `@loadmap/dsl`              | The `.loadmap` language: `compile`, `format`, hover, rename, share links      | [The language in code](/api/language/)                |
 | `@loadmap/dsl/completion`   | What may be typed at a place, loaded with the first list                      | [The language in code](/api/language/)                |
 | `@loadmap/dsl/add`          | Adding boxes from code, for loadmap's own editors                             | [The language in code](/api/language/)                |

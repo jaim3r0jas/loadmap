@@ -118,9 +118,7 @@ function Starters({ root }: { root: string }) {
           </a>
         )}
       </Actions>
-      {def && (
-        <Loadmap key={t.id} model={def.model} view={def.view} theme="inherit" zoom {...pageOptions(def.options)} />
-      )}
+      {def && <Loadmap key={t.id} model={def.model} view={def.view} theme="inherit" {...pageOptions(def.options)} />}
     </>
   )
 }

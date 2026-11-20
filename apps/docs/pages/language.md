@@ -11,7 +11,7 @@
 - [Measured data](/language/measured-data/): numbers from Prometheus and Elasticsearch, through a snapshot.
 - [Building blocks](/language/building-blocks/): caches, autoscaling, rate limits, retries, lost units, queues,
   fan-outs and sinks, splits, slots, connections, latency and timeouts.
-- [The view](/language/view/): the diagram's direction, tiers, lanes and full screen.
+- [The view](/language/view/): the diagram's direction, tiers, lanes, the page's panels and full screen.
 - [Several files](/language/several-files/): parts, libraries, variants and subsystems.
 - [In code](/language/in-code/): compiling a definition from TypeScript, and formatting it.
 - [Errors and versions](/language/errors/): every diagnostic's code, and what each version of the language added.

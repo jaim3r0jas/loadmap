@@ -5,7 +5,7 @@ positions, which under backlog keep only the newest fix per user. A push broker 
 receive them. It compares today with a proposal (twice the position pods, a fourth push node), turns load into dates
 with a growth rate, and the gateway's capacity is an estimate (± 30 %) until its load test is done.
 
-**Try:** switch to **Proposed** · **▶ Play**: in the last step the push broker takes over · zoom into the brokers:
+**Try:** switch to **Proposed** · **▶ Story**: in the last step the push broker takes over · zoom into the brokers:
 drag, pinch or Ctrl-scroll.
 
 <div class="island" data-island="example" data-name="alerts" data-editor="../../editor/"></div>

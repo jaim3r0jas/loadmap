@@ -1,9 +1,10 @@
 # Styling
 
-A board is styled by CSS custom properties, the `--lm-*` tokens: colours, fonts, the root's padding and background,
-and where the load bar sticks. The stylesheet is scoped to the root, the element with the `.lm` class, and goes into
-the document on the first render, so a page imports no CSS. Light and dark each have a full set of tokens; a page
-changes the ones it wants in its own stylesheet.
+A board is styled by CSS custom properties, the `--lm-*` tokens: colours, fonts, and the root's padding and
+background. The stylesheet is scoped to the root, the element with the `.lm` class, and goes into the document on the
+first render, so a page imports no CSS. Light and dark each have a full set of tokens; a page changes the ones it
+wants in its own stylesheet. The box `<Loadmap>` draws in, the canvas, takes its height from the page:
+[sizing the canvas](#sizing-the-canvas).
 
 ## Setting a token
 
@@ -33,7 +34,8 @@ values the same weight plus one:
 ```
 
 Three tokens are for the page around the board and are not defined on `.lm`: `--lm-pad`, `--lm-root-bg` and
-`--lm-sticky-top`. They take their value from wherever the page sets them, an ancestor too.
+`--lm-sticky-top`. They take their value from wherever the page sets them, an ancestor too. `--lm-sticky-top` is for
+a `LoadBar` in a layout of your own: `<Loadmap>` has nothing that sticks.
 
 The dots are drawn on a canvas with the colours the root's tokens had when the board started or its theme last
 changed: a token changed later reaches the dots at the next theme change.
@@ -45,7 +47,7 @@ Colours, with their defaults in light and in dark:
 | Token              | Light     | Dark      | What it colours                                                                                                |
 | ------------------ | --------- | --------- | -------------------------------------------------------------------------------------------------------------- |
 | `--lm-bg`          | `#eef2f5` | `#0d141b` | The root's background (unless `--lm-root-bg`), and full screen's                                               |
-| `--lm-surface`     | `#ffffff` | `#151e27` | The board, the cards, the load bar, buttons and tips                                                           |
+| `--lm-surface`     | `#ffffff` | `#151e27` | The canvas with its bar, its console and its panels, the cards, buttons and tips                               |
 | `--lm-fg`          | `#17212b` | `#e4ebf1` | Text; the scenario picked; values of the reader's own in the charts                                            |
 | `--lm-muted`       | `#5d6d7c` | `#93a3b3` | Secondary text, panel headings, the legend, edges and their arrows                                             |
 | `--lm-line`        | `#c6d0da` | `#2a3744` | Borders, table rules, the outline of a box with nothing to say                                                 |
@@ -80,7 +82,7 @@ Fonts and the page around the board:
 | `--lm-mono`       | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`                         | Numbers, tables, the load value                                           |
 | `--lm-pad`        | `16px`                                                                             | The root's padding                                                        |
 | `--lm-root-bg`    | `var(--lm-bg)`                                                                     | The root's background                                                     |
-| `--lm-sticky-top` | `0px`                                                                              | Where the load bar sticks while the page scrolls: a fixed header's height |
+| `--lm-sticky-top` | `0px`                                                                              | Where a `LoadBar` sticks in a layout of your own: a fixed header's height |
 
 The root's text is 14 px with a line height of 1.45, in `--lm-font`.
 
@@ -92,7 +94,7 @@ Inside a card of its own, drop the root's padding and background: full screen ke
   --lm-root-bg: transparent;
 }
 
-/* a page whose header stays fixed: the bar sticks under it */
+/* a layout of your own under a header that stays fixed: its LoadBar sticks under it */
 body {
   --lm-sticky-top: 56px;
 }
@@ -100,37 +102,30 @@ body {
 
 In a grid or a flex row, give the root (or its cell) `min-width: 0`: the board sizes the diagram to its width.
 
-The board sets a few properties on its own elements while it runs (`--lm-fit`, `--lm-at`, `--lm-step` and
-`--lm-inset-top`, `-right`, `-bottom`, `-left`). They are not for a page to set.
+The board sets a few properties on its own elements while it runs (`--lm-fit`, `--lm-at`, `--lm-step`,
+`--lm-inset-top`, `-right`, `-bottom`, `-left`, and on the canvas `--lm-canvas-top`, `-right`, `-bottom`, `-under`
+and `-reach`). They are not for a page to set.
 
-## Light, dark and inherit
+## Sizing the canvas
 
-`<Loadmap theme>` (and `LoadmapRoot`, `<LoadmapSource>`, the editor) takes one of four:
+`<Loadmap>` draws everything in one box, `.lm-canvas`, inside the root. The box is `clamp(420px, 70dvh, 760px)` high
+by default and as wide as the root. Nothing the reader does changes its height, so the page sets it:
 
-| `theme`     | What it draws                                                                           |
-| ----------- | --------------------------------------------------------------------------------------- |
-| `'auto'`    | The system's light or dark (`prefers-color-scheme`); the default                        |
-| `'light'`   | Light, whatever the system says                                                         |
-| `'dark'`    | Dark, whatever the system says                                                          |
-| `'inherit'` | The page's own switch, followed as it changes; the system's while the page says nothing |
+```css
+.lm-canvas {
+  height: 560px;
+}
+```
 
-With `'inherit'`, the page's switch is on `<html>`: `data-theme="dark"` or `"light"`, or a `dark` or `light` class. One
-observer of `<html>` serves every board on the page. On the server, and while the page says nothing, it draws as
-`'auto'`.
-
-The root carries the theme it draws as `data-theme="light"` or `"dark"`, and none for `'auto'`. `usePageTheme(theme)`
-returns the same, `'auto'`, `'light'` or `'dark'`, for a piece of your own that should match the board.
-
-## Server rendering and a shadow root
-
-The stylesheet is one string, `LOADMAP_CSS`. `injectStyles(doc?)` adds it once to a document's `<head>` (as
-`<style id="loadmap-css">`; default the current `document`), which every root does on its first render.
+The default height has no weight of its own, so a plain `.lm-canvas` rule of the page sets it, wherever the page's
+stylesheet stands.
 
 - Server rendering: put `LOADMAP_CSS` in the page's `<head>` as `<style id="loadmap-css">`, so the first paint is
   styled; the root then finds it by its id and adds nothing.
 - A shadow root: the document's stylesheet does not reach inside it, so put `LOADMAP_CSS` in a `<style>` inside the
-  shadow root yourself. The zoom buttons and the path over a zoomed board have a small stylesheet of their own, which
-  goes into the document only: in a shadow root they show unstyled, so leave `zoom` off there.
+  shadow root yourself. The canvas, the zoom buttons and the path over a zoomed board have small stylesheets of their
+  own (`<style id="loadmap-canvas-css">` and `"loadmap-zoom-css"`), which they put in the shadow root they are
+  drawn in.
 - A frame or a window of your own: `injectStyles(frame.contentDocument)`.
 
 ```ts
@@ -144,20 +139,20 @@ shadow.append(style, mount)
 
 ## Full screen
 
-Full screen lays the root out as a column that never scrolls: the bar, the diagram as large as fits, the verdict in a
-line, and the panels in a compact dock ([Full screen](/api/react/#full-screen) has what each mode shows). The
-root says where it is, for a page's own rules:
+Full screen is the same canvas at the screen's size: the root takes the screen and the canvas fills it, with one
+panel kept open from 1280 px ([Full screen](/api/react/#full-screen)). The root says where it is, for a page's own
+rules:
 
 | Attribute on `.lm` | Values                      | When                                                                      |
 | ------------------ | --------------------------- | ------------------------------------------------------------------------- |
 | `data-full`        | `screen`, `overlay`, `fill` | The browser's full screen, the fixed overlay where it has none, or `fill` |
-| `data-mode`        | `panels`, `focus`           | What full screen shows                                                    |
+| `data-mode`        | `panels`, `focus`           | In full screen: everything (`chrome="all"`), or the least (`"least"`)     |
 
 - Full screen takes the whole screen (`100dvh`) with a 16 px padding and the `--lm-bg` background, whatever
   `--lm-pad` and `--lm-root-bg` say; `fill` takes its container's height with a 10 px padding.
 - The overlay sits in the top layer (a popover), so an ancestor with a transform, a filter or containment does not
   trap it.
-- Under 760 px wide the title and the legend go, the diagram pans in a box of its own 40 % of the screen high, the load
-  bar moves under it, in thumb reach, and the panels show one at a time under tabs.
-- In a layout of your own, only a title, the bar, the story, the diagram and a `.lm-side` stay in full screen:
+- A document of the parts has the full screen of before the canvas: only a title, the `LoadBar`, the story, the
+  diagram and a `.lm-side` stay, and under 760 px wide the title and the legend go, the diagram pans in a box of its
+  own 40 % of the screen high and the `LoadBar` moves under it, in thumb reach:
   [A layout of your own](/api/react/#a-layout-of-your-own).

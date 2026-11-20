@@ -83,6 +83,14 @@ main:has(> .home-hero) > p {
   border-radius: 10px;
   overflow: hidden;
 }
+/* the island is the canvas's frame already: no second border inside it */
+.home-board .island .lm[data-full] {
+  padding: 0;
+}
+.home-board .island .lm-canvas {
+  border: 0;
+  border-radius: 0;
+}
 
 .home-caption {
   margin: 8px 0 0;

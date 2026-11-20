@@ -83,7 +83,7 @@ Three things make it work:
 - **The page asks its own origin.** `vite.config.ts` passes `/prometheus` on to the real address, so Prometheus needs
   no CORS setting. In production the same proxy is where a token goes: never put a credential in a page.
 - **A measurement that fails is missing, not zero.** The model then uses the definition's own value for it, and the
-  assumptions under the diagram say why.
+  page's **Assumes** panel says why.
 
 ## With your own Prometheus or Grafana
 

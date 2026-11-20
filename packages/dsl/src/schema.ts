@@ -255,7 +255,7 @@ const LIKE: PropSpec = {
 }
 const OVERLOAD_WHEN: PropSpec = { value: 'boolean', scope: 'ctx', doc: 'The rule applies only while this is true.' }
 
-/** The panels of `<Loadmap>` below the diagram, as its `fullScreen` prop names them. */
+/** The names a `fullScreen` list takes: the panels `<Loadmap>` had before its tabs, each in one of them now. */
 export const PANELS = ['verdict', 'live', 'limits', 'controls', 'headroom', 'compare', 'assumptions'] as const
 
 /** What full screen opens with, as the `fullScreenMode` prop of `<Loadmap>` names it. */
@@ -282,13 +282,13 @@ const VIEW_PROPS: Readonly<Record<string, PropSpec>> = {
     value: 'names',
     scope: 'const',
     values: PANELS,
-    doc: 'The panels full screen shows, compact, below the diagram. Default all of them.',
+    doc: 'The panels the page offers as tabs, in a page and in full screen alike: verdict is in Limits, compare in Headroom. Default all of them.',
   },
   fullScreenMode: {
     value: 'enum',
     scope: 'const',
     values: FULL_SCREEN_MODES,
-    doc: 'What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels.',
+    doc: "What stands around the diagram in full screen: the panels' tabs, or focus (the diagram, the load and the verdict alone). Default panels.",
   },
   lanes: {
     value: 'enum',

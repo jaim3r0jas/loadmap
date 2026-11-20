@@ -20,14 +20,15 @@ files. A **component** is something that can run out: its **demand** (what it mu
 - `estimated(20_000, 'req/s', { source: 'vendor benchmark', within: 0.3 })`: you believe it, within ± 30 %.
 - a `fitLinear(points, …)` result: a cost per unit fitted from measurements, with its r² in the assumptions.
 
-The page lists every one of them under **Assumptions**, so a reader can see which answers rest on guesses.
+The page lists every one of them in its **Assumes** panel, so a reader can see which answers rest on guesses.
 
 ## Limits and the verdict
 
 Each component's utilization is demand ÷ capacity. Two thresholds matter: the **target** (50 % by default, the
 headroom you want to keep) and **full** (100 %). For each component loadmap finds the load multiple where it crosses
 each one, ranks them, and writes the **verdict**: "At 10×, every component is under the 50 % target. It holds up to
-14×; the worker pool is the first limit."
+14×; the worker pool is the first limit." The page says it in one line under the load, and whole in its **Limits**
+panel, over the ranking.
 
 With a `±` on a capacity, every crossing becomes a range ("between 7.4× and 10×"). The ranking, the first limit and
 every check use the **pessimistic edge**, every capacity at its low bound, where it may already happen. When a range
@@ -44,10 +45,10 @@ always agree.
 ## Scenarios, growth and the headroom chart
 
 A **scenario** is a named design: parameter values without the load ("Proposed": 2 gateways, 6 pods). The page shows
-a button per scenario, the scenarios side by side, and a **headroom chart**: utilization over the load multiple, one
-line (or band) per scenario. With **growth** (`{ rate: 0.06, per: 'month', asOf: '2026-11-01' }`), multiples become
-dates: "around March 2031". The date is counted from `asOf`, never from today, so the page and its recordings say the
-same thing tomorrow.
+a button per scenario and, in its **Headroom** panel, the scenarios side by side and a **headroom chart**:
+utilization over the load multiple, one line (or band) per scenario. With **growth**
+(`{ rate: 0.06, per: 'month', asOf: '2026-11-01' }`), multiples become dates: "around March 2031". The date is
+counted from `asOf`, never from today, so the page and its recordings say the same thing tomorrow.
 
 ## Expectations and checks
 
@@ -57,9 +58,9 @@ editor marks a broken one on its line.
 
 ## A story
 
-A **story** is a list of steps, each with a text, values and a component to point at. The page shows a bar with
-back and next; `loadmap record --story` plays it with the text under the board. Each step starts from the defaults, so
-it looks the same whichever step came before.
+A **story** is a list of steps, each with a text, values and a component to point at. **▶ Story** plays it on the
+page, in a bar with back and next; `loadmap record --story` plays it with the text under the board. Each step starts
+from the defaults, so it looks the same whichever step came before.
 
 ## The view and the layout
 

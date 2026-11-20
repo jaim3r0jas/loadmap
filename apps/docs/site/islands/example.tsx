@@ -60,7 +60,7 @@ function Example({ name, editor }: { name: Name; editor?: string }) {
           WebM
         </button>
       </Actions>
-      <Shown ref={handle} theme="inherit" zoom />
+      <Shown ref={handle} theme="inherit" />
     </>
   )
 }
