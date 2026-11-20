@@ -1,5 +1,77 @@
 # @loadmap/react
 
+## 0.41.0
+
+### Minor Changes
+
+- 24b0fbe: `<Diagram canvas>` takes `reserve`: the part of its insets that is always there. The diagram is arranged for what
+  `reserve` leaves, so the rest of the insets (a panel the reader opens over the board) moves the view and never the
+  layout. Without it a canvas is arranged for what Fit has, as before.
+
+  Docs: /api/react/#the-pieces
+- ef6ebc7: `<Diagram canvas>` takes `scrolls: true` for a canvas that lies in a page that scrolls: the wheel zooms only with
+  Ctrl or ⌘ held, one finger scrolls the page, and two fingers pan and pinch the board. Without it a canvas takes the
+  wheel and one finger for itself, as before.
+
+  Docs: /api/react/#the-pieces
+- b29a957: **The editor's diagram is the canvas every loadmap is.** With `fill`, the diagram beside the code is `<Loadmap fill>`:
+  the scenarios in a bar over it, the load and the verdict in one line under it, and the limits, the design, the
+  headroom, the live meters and the assumptions in panels that open one at a time from their tabs (a rail, a row over
+  the console, or a panel kept open from 1280 px of canvas). The editor's own side panel is gone, with its rail, its pin,
+  its resize and its hover, and so is the phone's sheet with its three heights: on a phone a tab opens its panel as a
+  sheet on the console. While the code is hidden the inspector is the first tab, **Inspect**: a click on a box opens it,
+  once for each box, and it no longer shows before a box is picked unless the canvas keeps a panel open. The note that
+  the diagram is the last version without errors lies over the canvas, under its bar.
+
+  Removed from `<LoadmapEditor>`: `panel`, `onPanel`, `panelWidth`, `onPanelWidth` and the type `PanelMode`; a page that
+  passes them no longer compiles, and has nothing to keep in their place. The classes `.lme-canvas`, `.lme-panel`,
+  `.lme-sheet`, `.lme-over` and `.lme-sec` are gone: the canvas's own are `.lm-canvas` and the rest (Styling). The dot
+  grid's `data-grid="off"` is on `.lme-preview`.
+
+  `<Loadmap>` takes `children`: each `Canvas.Panel` among them is a panel of the page's own, its tab before the
+  loadmap's, and anything else is drawn over the canvas. `open` and `defaultOpen` take such a panel's id.
+
+  Docs: /using-the-editor/#the-canvas-and-the-panels
+- b29a957: **`<Loadmap>` is one canvas.** Everything it draws is in one box whose height the page gives (`.lm-canvas`, by
+  default `clamp(420px, 70dvh, 760px)`): the title, the scenarios and the story's button in a bar over the diagram, the
+  load and the verdict in one line under it, and the limits, the design, the headroom, the live meters and the
+  assumptions in panels that open one at a time from their tabs. The canvas arranges itself by its own size (tabs as a
+  rail, a row or a menu; the panel beside the diagram, or a sheet under 520 px), the diagram always pans and zooms, and
+  nothing the reader does lays it out again or changes the box's height. Full screen is the same canvas at the
+  screen's size, with one panel kept open from 1280 px.
+
+  What changes for a page:
+  - `<Loadmap>` no longer grows with its panels: it has a fixed height. Set `.lm-canvas { height: … }`, or `fill`.
+  - `panels`, `open`, `defaultOpen` and `onOpen` choose and drive the panels; `chrome="least"` opens full screen (and
+    a root that fills) with the diagram, the load and the verdict alone. `fullScreen` and `fullScreenMode` still work
+    and say in the console that they are `panels` and `chrome` now; `zoom` is no longer needed.
+    `fullScreen` used to shape full screen only: its list now says which tabs the page offers too (`[]`: none).
+    `scrolls` gives the wheel and one finger back to a page that scrolls around a root that fills its frame.
+  - `LOADMAP_PANELS` is the five tabs: `limits` (with the verdict's sentence), `controls`, `headroom` (with the
+    scenarios compared), `live`, `assumptions`.
+  - Gone from `<Loadmap>`: the dock of compact cards and the drawer of full screen, focus mode's layout, and the
+    classes of the old page (`.lm-loadbar`, `.lm-side`, `.lm-panel`, `[data-out]`, `.lm-line`, `.lm-dock`, `.lm-mini`,
+    `.lm-drawer`). A page that wants every panel on the page at once composes it from the parts, as before:
+    `useLoadmap`, `LoadmapRoot`, `LoadBar`, `Story`, `Diagram` and the panels.
+  - New for a layout of your own: `Canvas` with `Canvas.Bar`, `Canvas.Console` and `Canvas.Panel`, `useCanvasSize`,
+    `useCanvasPanels`.
+  - A `.loadmap` file's `fullScreen` and `fullScreenMode` keep their meaning: the panels a page offers, and what stands
+    around the diagram in full screen.
+  - `loadmap record` draws the board as before: its recordings do not change. A recording made from a page that draws
+    `<Loadmap>` takes the canvas's room, so its size can differ from one made before.
+
+  Docs: /api/react/#the-canvas
+
+### Patch Changes
+
+- ce9f9f1: A page's plain `.lm-canvas { height: … }` sets the canvas's height wherever its stylesheet stands: the default
+  height has no weight of its own. `LOADMAP_CSS` holds the canvas's styles too, so a page that puts it in its `<head>`
+  for server rendering, or in a shadow root, has the canvas styled from the first paint.
+- @loadmap/core@0.41.0
+  - @loadmap/dsl@0.41.0
+  - @loadmap/layout@0.41.0
+  - @loadmap/sim@0.41.0
+
 ## 0.40.0
 
 ### Patch Changes
