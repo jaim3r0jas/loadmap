@@ -1,9 +1,10 @@
-import { type Assumption, type Capacity, type Preset, sourceText } from '@loadmap/core'
+import { type Assumption, type Capacity, sourceText } from '@loadmap/core'
 import { compact, duration, fmt, multiple, multiples, pct, secs } from '@loadmap/core/format'
-import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useId, useState } from 'react'
-import { Scenarios, useSize, when } from './scenarios'
-import { labelled, loadScale, marksOf, zones } from './track'
+import { type ReactNode, useEffect, useState } from 'react'
+import { isOn, LoadRange, plusMinus } from './bar'
 import type { LoadmapController } from './useLoadmap'
+
+export { hasDesign, LoadBar, LoadRange, plusMinus } from './bar'
 
 /** The model's one-sentence answer for the current values, and which capacity to measure when it is unsure. */
 export function Verdict({ lm }: { lm: LoadmapController }) {
@@ -21,9 +22,6 @@ export function Verdict({ lm }: { lm: LoadmapController }) {
     </>
   )
 }
-
-/** "±30 %" for a capacity with a range; "−30 %" for a best case, which a range only lowers. */
-export const plusMinus = (c: Capacity | null) => (c?.within ? `${c.ceiling ? '−' : '±'}${pct(c.within)}` : '')
 
 /** The tag beside a component's name when its capacity is not plainly measured: estimated, published, a range, none. */
 export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: boolean }) {
@@ -242,108 +240,6 @@ export function Meters({ lm }: { lm: LoadmapController }) {
     </>
   )
 }
-
-/** A preset's values are the shown ones. */
-const isOn = (lm: LoadmapController, p: Preset<any>) =>
-  Object.entries(p.values).every(([k, x]) => (lm.values as Record<string, unknown>)[k] === x)
-
-/**
- * The load slider: its label, the load with its date, and a track coloured by what the load does (under the target,
- * past it, past capacity). Under it, a mark for each preset that sets the load, which a click takes; ← → move a
- * step, Page Up and Page Down to the next mark. A load that spans ten times or more is on a log scale.
- */
-export function LoadRange({ lm }: { lm: LoadmapController }) {
-  const { model, ev } = lm
-  const load = model.load
-  const x = lm.values.load
-  const id = useId()
-  const [box, { width }] = useSize<HTMLDivElement>(240)
-  const { at, of } = loadScale(load)
-  const marks = marksOf(ev.presets, ev.full, load, fmt)
-  const shown = labelled(marks, at, width)
-  // through the track and back: on the step's grid, without a float's dust, inside the range
-  const set = (to: number) => lm.setValues({ load: of(at(to)) } as any)
-  const key = (e: KeyboardEvent) => {
-    const by = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]
-    const loads = marks.map((m) => m.load).sort((a, b) => a - b)
-    const to = by
-      ? x + by * load.step
-      : e.key === 'PageUp'
-        ? (loads.find((l) => l > x) ?? load.max)
-        : e.key === 'PageDown'
-          ? (loads.findLast((l) => l < x) ?? load.min)
-          : e.key === 'Home'
-            ? load.min
-            : e.key === 'End'
-              ? load.max
-              : null
-    if (to == null) return
-    e.preventDefault()
-    set(to)
-  }
-  const date = when(model, x)
-  // the widest the load is anywhere on its range, so dragging never moves what is beside it
-  const wide = Math.max(...[load.min, load.max, load.min + load.step].map((n) => fmt(n).length)) + 1
-  return (
-    <div className="lm-range lm-load">
-      <label htmlFor={id} title={load.label}>
-        {load.label}
-      </label>
-      <output htmlFor={id} style={{ minWidth: `${Math.max(wide, date ? 6 : 0)}ch` }}>
-        {fmt(x)}×{date && <small>{date}</small>}
-      </output>
-      <div className="lm-load-track" style={{ '--lm-at': at(x) } as CSSProperties}>
-        <input
-          id={id}
-          type="range"
-          min={0}
-          max={1}
-          step="any"
-          value={at(x)}
-          aria-valuetext={`${fmt(x)}×${date ? `, ${date}` : ''}`}
-          onChange={(e) => set(of(Number(e.target.value)))}
-          onKeyDown={key}
-        />
-        <i className="lm-zones" style={{ background: zones(ev.target, ev.full, at) }} />
-        <div className="lm-marks" ref={box}>
-          {marks.map((m, i) => (
-            <button
-              type="button"
-              key={m.preset.label}
-              data-kind={m.kind}
-              data-label={shown[i] || undefined}
-              style={{ left: `${at(m.load) * 100}%` }}
-              title={m.preset.label}
-              aria-label={m.preset.label}
-              aria-pressed={isOn(lm, m.preset)}
-              onClick={() => lm.setValues(m.preset.values)}
-            >
-              <span>{m.text}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/**
- * The scenarios and the load in one bar, above the diagram: the reader moves the load and watches what it does. It
- * stays in view while the page scrolls (under `--lm-sticky-top`, for a page's own fixed header); on a phone it sits
- * under the diagram, in thumb reach.
- */
-export function LoadBar({ lm }: { lm: LoadmapController }) {
-  return (
-    <div className="lm-loadbar">
-      <Scenarios lm={lm} />
-      <LoadRange lm={lm} />
-    </div>
-  )
-}
-
-/** A model has a design to change: a parameter beside the load, or a preset that sets no load. */
-export const hasDesign = (lm: LoadmapController) =>
-  lm.model.params.length > 1 || lm.ev.presets.some((p) => !('load' in p.values))
 
 /**
  * The load slider (unless `load` is false: the page shows a `LoadBar`), the presets that set no load, and every

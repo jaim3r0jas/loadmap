@@ -1,6 +1,5 @@
 import { fmt, multiple, multiples, pct } from '@loadmap/core/format'
-import { plusMinus } from './panels'
-import { whenRange } from './scenarios'
+import { plusMinus, whenRange } from './bar'
 import type { LoadmapController } from './useLoadmap'
 
 /** Opens what a link of the verdict's line stands for; `from` gets the keyboard back when it closes. */
