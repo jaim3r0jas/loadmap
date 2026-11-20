@@ -54,6 +54,17 @@ export function room(vp: Viewport): { w: number; h: number } {
   return { w: f.w - 2 * m, h: f.h - 2 * m }
 }
 
+/**
+ * The room a canvas arranges its diagram for: the board less what is always over it (`reserve`) and Fit's margin.
+ * Each way keeps a quarter of the board at least, so bars that grow past a low board never hand the whole board back.
+ */
+export function kept(vp: Viewport, reserve: Insets): { w: number; h: number } {
+  const w = Math.max(vp.w - reserve.left - reserve.right, vp.w / 4)
+  const h = Math.max(vp.h - reserve.top - reserve.bottom, vp.h / 4)
+  const m = Math.min(vp.margin, w / 4, h / 4)
+  return { w: w - 2 * m, h: h - 2 * m }
+}
+
 /** The view that shows `r` centred in the free part, as large as fits with the margin, no closer than `max`. */
 export function frame(r: Rect, vp: Viewport, max = vp.fitMax): Viewpoint {
   const f = free(vp)

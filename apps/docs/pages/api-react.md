@@ -247,6 +247,14 @@ height.
 <Diagram lm={lm} canvas={{ left: 420 }} />
 ```
 
+The diagram is arranged for the room the insets leave, so a new inset can lay it out again. `reserve` names the part
+of them that is always there: the diagram is arranged for what `reserve` leaves, and the rest only moves the view.
+A panel 340 px wide that opens over a rail of 44 px:
+
+```tsx
+<Diagram lm={lm} canvas={{ right: open ? 340 : 44, reserve: { right: 44 } }} />
+```
+
 ## A layout of your own
 
 ```tsx
