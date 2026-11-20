@@ -353,7 +353,6 @@ describe('a loadmap in one canvas', () => {
     await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('none')
     expect(wheel(board)).toBe(true)
     root!.render(<Page height={700} fill scrolls />)
-    board.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 2 }))
     await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('pan-x pan-y')
     expect(wheel(board)).toBe(false)
     expect(wheel(board, true)).toBe(true)

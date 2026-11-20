@@ -493,8 +493,9 @@ describe('the built site', () => {
     // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB; the sidebar's folding
     // groups 0.1 kB: 6.41 kB; the search's button and its keys 0.3 kB (the search itself loads on first use): 6.72 kB.
     // The chunks' hashed names compress a few bytes better or worse with each build (6.79 to 6.80 kB with no change
-    // to the client): the bound leaves that room
-    expect(kb).toBeLessThan(6.85)
+    // to the client): the bound leaves that room. The canvas loads its panels, its story and its zoom in chunks of
+    // their own, each one more name here: 6.86 kB
+    expect(kb).toBeLessThan(6.9)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 

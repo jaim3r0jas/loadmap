@@ -75,7 +75,7 @@ export function attachZoom(
   board: HTMLElement,
   viewer: Viewer,
   o: { always: boolean | (() => boolean); page?: () => boolean },
-): () => void {
+): (() => void) & { hands(): void } {
   const always = () => (typeof o.always === 'function' ? o.always() : o.always)
   // a canvas in a page that scrolls: one finger is the page's for good, two are the board's
   const paged = () => !!o.page?.()
@@ -237,7 +237,7 @@ export function attachZoom(
   board.addEventListener('wheel', wheel, { passive: false })
   board.addEventListener('keydown', key)
   board.addEventListener('focusin', focus)
-  return () => {
+  const letGo = () => {
     viewer.land()
     off()
     for (const a of ['tabindex', 'role', 'aria-label']) board.removeAttribute(a)
@@ -253,7 +253,8 @@ export function attachZoom(
     board.removeEventListener('wheel', wheel)
     board.removeEventListener('keydown', key)
     board.removeEventListener('focusin', focus)
-  }
+  } // `hands` reads again whose the wheel and one finger are (the canvas left its page, or the host said otherwise)
+  return Object.assign(letGo, { hands: touch })
 }
 
 const SIDES = ['top', 'right', 'bottom', 'left'] as const
@@ -269,7 +270,7 @@ export function mountZoom(
   shape: () => { canvas: boolean; inset: Insets; reserve?: Insets | null; scrolls?: boolean },
 ): { measure(): void; off(): void } {
   injectZoomStyles(board.ownerDocument)
-  let off: (() => void) | undefined
+  let off: ((() => void) & { hands(): void }) | undefined
   const wrap = board.parentElement
   const measure = () => {
     const { canvas, inset, reserve } = shape()
@@ -301,6 +302,7 @@ export function mountZoom(
       })
     }
     engine.viewer.setViewport(vp)
+    off?.hands()
     // a canvas's room is what Fit has, or what is left by the part of its insets that is always there: a panel that
     // opens then moves the view alone. A board on a page takes its height from the diagram, and tells its own
     if (canvas) engine.setRoom(reserve ? kept(vp, reserve) : room(vp))

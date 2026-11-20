@@ -96,7 +96,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
   const inset = sides(given)
   const reserve = given.reserve ? sides(given.reserve) : null
   const key = (i: Insets | null) => (i ? `${i.top} ${i.right} ${i.bottom} ${i.left}` : '')
-  const insetKey = `${key(inset)}|${key(reserve)}`
+  const insetKey = `${key(inset)}|${key(reserve)}|${given.scrolls ? 1 : 0}`
   // read when a box is pressed, so a new function each render does not redraw every box
   const click = useRef(onNodeClick)
   click.current = onNodeClick
