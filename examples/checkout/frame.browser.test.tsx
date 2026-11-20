@@ -13,15 +13,15 @@ let host: HTMLDivElement | null = null
 let handle: LoadmapHandle | null = null
 let ctl: LoadmapController | null = null
 
-function Page({ height }: { height: number }) {
-  const lm = useLoadmap(checkout, view)
+function Page({ height, fill = false }: { height: number; fill?: boolean }) {
+  const lm = useLoadmap(checkout, view, { fill })
   useEffect(() => {
     handle = handleOf(lm)
     ctl = lm
   }, [lm])
   return (
     <LoadmapRoot lm={lm}>
-      <Frame lm={lm} style={{ height }} />
+      <Frame lm={lm} style={fill ? undefined : { height }} />
     </LoadmapRoot>
   )
 }
@@ -39,13 +39,15 @@ const frames = async (n = 2) => {
   for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r))
 }
 
-async function mount(width: number, height: number) {
+async function mount(width: number, height: number, fill = false) {
   await page.viewport(1600, 1000)
   host = document.createElement('div')
   host.style.width = `${width}px`
+  // a root that fills its frame stands for full screen: the frame gives the height
+  if (fill) host.style.height = `${height}px`
   document.body.appendChild(host)
   root = createRoot(host)
-  root.render(<Page height={height} />)
+  root.render(<Page height={height} fill={fill} />)
   await expect.poll(() => host!.querySelector('[data-node]'), { timeout: 5000 }).not.toBeNull()
   await expect.poll(() => handle?.engine.room ?? null, { timeout: 5000 }).not.toBeNull()
   await handle!.ready()
@@ -141,5 +143,139 @@ describe('a loadmap in one canvas', () => {
     expect(verdict.left).toBeGreaterThanOrEqual(load.right)
     expect(high(canvas.querySelector('.lm-canvas-console'))).toBeLessThan(70)
     await page.screenshot({ path: '__screenshots__/frame-short.png', element: host! })
+  })
+
+  const tab = (canvas: HTMLElement, name: string) =>
+    [...canvas.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')].find((b) => b.textContent === name)!
+  const panel = (canvas: HTMLElement) => canvas.querySelector<HTMLElement>('.lm-canvas-panel')
+
+  it('opens one panel at a time from its tabs, beside the diagram, without laying the diagram out again', async () => {
+    const canvas = await mount(1200, 560)
+    const tabs = canvas.querySelector('.lm-canvas-tabs')!
+    expect(tabs.getAttribute('role')).toBe('toolbar')
+    expect([...tabs.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'Limits',
+      'Design',
+      'Headroom',
+      'Live',
+      'Assumes',
+    ])
+    expect(panel(canvas)).toBeNull()
+    const before = sizes(canvas)
+    const room = handle!.engine.room
+    const scene = handle!.engine.scene
+    tab(canvas, 'Limits').click()
+    // its content comes with the first panel opened
+    await expect.poll(() => canvas.querySelector('.lm-canvas-panel .lm-limits'), { timeout: 5000 }).not.toBeNull()
+    expect(panel(canvas)!.dataset.place).toBe('side')
+    expect(tab(canvas, 'Limits').getAttribute('aria-expanded')).toBe('true')
+    expect(tab(canvas, 'Limits').getAttribute('aria-controls')).toBe(panel(canvas)!.id)
+    await frames()
+    expect(sizes(canvas)).toEqual(before)
+    expect(handle!.engine.room).toBe(room)
+    expect(handle!.engine.scene).toBe(scene)
+    // between the bars, and the diagram's boxes clear of it
+    const box = panel(canvas)!.getBoundingClientRect()
+    expect(box.top).toBeGreaterThanOrEqual(canvas.querySelector('.lm-canvas-bar')!.getBoundingClientRect().bottom - 1)
+    expect(box.bottom).toBeLessThanOrEqual(canvas.querySelector('.lm-canvas-console')!.getBoundingClientRect().top + 1)
+    await expect
+      .poll(
+        () => Math.max(...[...canvas.querySelectorAll('[data-node]')].map((n) => n.getBoundingClientRect().right)),
+        {
+          timeout: 5000,
+        },
+      )
+      .toBeLessThanOrEqual(box.left)
+    await page.screenshot({ path: '__screenshots__/frame-panel-side.png', element: host! })
+    // another tab takes its place
+    tab(canvas, 'Design').click()
+    await expect.poll(() => canvas.querySelector('.lm-canvas-panel .lm-controls'), { timeout: 5000 }).not.toBeNull()
+    expect(canvas.querySelectorAll('.lm-canvas-panel').length).toBe(1)
+    expect(tab(canvas, 'Limits').getAttribute('aria-expanded')).toBe('false')
+    // Escape in the panel closes it and gives the keyboard back to its tab
+    panel(canvas)!.focus()
+    panel(canvas)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await expect.poll(() => panel(canvas), { timeout: 5000 }).toBeNull()
+    expect(document.activeElement).toBe(tab(canvas, 'Design'))
+    // and a tab closes the panel it opened
+    tab(canvas, 'Live').click()
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('live')
+    tab(canvas, 'Live').click()
+    await expect.poll(() => panel(canvas), { timeout: 5000 }).toBeNull()
+    expect(handle!.engine.room).toBe(room)
+  })
+
+  it('opens the limits from "Why" and the assumptions from their count, on a wide canvas', async () => {
+    const canvas = await mount(1200, 560)
+    const links = [...canvas.querySelectorAll<HTMLButtonElement>('.lm-canvas-verdict .lm-link')]
+    expect(links.map((l) => l.textContent!.replace(/ ·.*/, ''))).toEqual(['Why ›', 'What this assumes'])
+    links[0]!.click()
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('limits')
+    links[1]!.click()
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('assumptions')
+    // closed, the keyboard is back on the link that opened it
+    canvas.querySelector<HTMLButtonElement>('.lm-canvas-panel-head button')!.click()
+    await expect.poll(() => panel(canvas), { timeout: 5000 }).toBeNull()
+    expect(document.activeElement).toBe(links[1])
+  })
+
+  it('stands the panel as a sheet on the console of a narrow canvas, half or whole', async () => {
+    const canvas = await mount(360, 560)
+    const before = sizes(canvas)
+    const room = handle!.engine.room
+    tab(canvas, 'Design').click()
+    await expect.poll(() => canvas.querySelector('.lm-canvas-panel .lm-controls'), { timeout: 5000 }).not.toBeNull()
+    expect(panel(canvas)!.dataset.place).toBe('sheet')
+    const tabsTop = canvas.querySelector('.lm-canvas-tabs')!.getBoundingClientRect().top
+    const half = panel(canvas)!.getBoundingClientRect()
+    // the load and the verdict stay in view under it
+    expect(half.bottom).toBeLessThanOrEqual(tabsTop + 1)
+    await page.screenshot({ path: '__screenshots__/frame-panel-sheet.png', element: host! })
+    const whole = [...canvas.querySelectorAll<HTMLButtonElement>('.lm-canvas-panel-head button')].find(
+      (b) => b.textContent === 'Whole',
+    )!
+    whole.click()
+    await expect
+      .poll(() => panel(canvas)!.getBoundingClientRect().height, { timeout: 5000 })
+      .toBeGreaterThan(half.height)
+    const all = panel(canvas)!.getBoundingClientRect()
+    expect(all.bottom).toBeLessThanOrEqual(tabsTop + 1)
+    expect(all.top).toBeGreaterThanOrEqual(canvas.querySelector('.lm-canvas-bar')!.getBoundingClientRect().bottom - 1)
+    await frames()
+    expect(sizes(canvas)).toEqual(before)
+    expect(handle!.engine.room).toBe(room)
+  })
+
+  it('has one menu for the panels on a low canvas', async () => {
+    const canvas = await mount(800, 320)
+    expect(canvas.querySelector('.lm-canvas-tabs')).toBeNull()
+    const menu = canvas.querySelector<HTMLSelectElement>('select.lm-canvas-menu')!
+    expect(menu.getAttribute('aria-label')).toBe('Open a panel')
+    menu.value = 'limits'
+    menu.dispatchEvent(new Event('change', { bubbles: true }))
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('limits')
+    expect(panel(canvas)!.dataset.place).toBe('side')
+    menu.value = ''
+    menu.dispatchEvent(new Event('change', { bubbles: true }))
+    await expect.poll(() => panel(canvas), { timeout: 5000 }).toBeNull()
+  })
+
+  it('keeps a panel open beside the diagram in a wide full screen, its slot out of the room from the start', async () => {
+    const canvas = await mount(1400, 800, true)
+    expect(canvas.dataset.pinned).toBe('')
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('limits')
+    const room = handle!.engine.room
+    // nothing closes it: its tabs only change what it holds
+    expect(canvas.querySelector('.lm-canvas-panel-head button')).toBeNull()
+    tab(canvas, 'Limits').click()
+    await frames()
+    expect(panel(canvas)?.dataset.panel).toBe('limits')
+    tab(canvas, 'Headroom').click()
+    await expect.poll(() => canvas.querySelector('.lm-canvas-panel .lm-headroom'), { timeout: 5000 }).not.toBeNull()
+    await frames()
+    expect(handle!.engine.room).toBe(room)
+    const boxes = [...canvas.querySelectorAll('[data-node]')].map((n) => n.getBoundingClientRect().right)
+    expect(Math.max(...boxes)).toBeLessThanOrEqual(panel(canvas)!.getBoundingClientRect().left)
+    await page.screenshot({ path: '__screenshots__/frame-panel-pinned.png', element: host! })
   })
 })

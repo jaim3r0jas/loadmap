@@ -28,20 +28,23 @@ const { model, view } = compiled.definition
 
 let engine: Engine | null = null
 
-function Page({ panel, height }: { panel: number; height?: number }) {
+function Page({ open = null, height }: { open?: string | null; height?: number }) {
   const lm = useLoadmap(model, view)
   useEffect(() => {
     engine = lm.engine
   }, [lm.engine])
   return (
     <LoadmapRoot lm={lm}>
-      <Canvas lm={lm} panel={panel} style={height ? { height } : undefined}>
+      <Canvas lm={lm} open={open} style={height ? { height } : undefined}>
         <Canvas.Bar>
           <div style={{ height: 30 }}>bar</div>
         </Canvas.Bar>
         <Canvas.Console>
           <div style={{ height: 50 }}>console</div>
         </Canvas.Console>
+        <Canvas.Panel id="notes" title="Notes">
+          <p>The panel's own text.</p>
+        </Canvas.Panel>
       </Canvas>
     </LoadmapRoot>
   )
@@ -66,7 +69,7 @@ async function mount(width: number, height?: number) {
   host.style.width = `${width}px`
   document.body.appendChild(host)
   root = createRoot(host)
-  root.render(<Page panel={0} height={height} />)
+  root.render(<Page height={height} />)
   await expect.poll(() => host!.querySelector('[data-node="db"]'), { timeout: 5000 }).not.toBeNull()
   await expect.poll(() => engine?.room ?? null, { timeout: 5000 }).not.toBeNull()
   await frames()
@@ -93,6 +96,7 @@ describe('a canvas on a page', () => {
       'lm-canvas-bar',
       'lm-wrap',
       'lm-canvas-console',
+      'lm-canvas-tabs',
     ])
   })
 
@@ -120,13 +124,13 @@ describe('a canvas on a page', () => {
     const wrap = canvas.querySelector('.lm-wrap')!
     const room = engine!.room
     const scene = engine!.scene
-    root!.render(<Page panel={340} height={500} />)
-    await expect.poll(() => px(wrap, '--lm-inset-right'), { timeout: 5000 }).toBe('340px')
+    root!.render(<Page open="notes" height={500} />)
+    await expect.poll(() => px(wrap, '--lm-inset-right'), { timeout: 5000 }).toBe(`${CANVAS.rail + CANVAS.panel}px`)
     await frames()
     expect(engine!.room).toBe(room)
     expect(engine!.scene).toBe(scene)
     expect(canvas.getBoundingClientRect().height).toBe(500)
-    root!.render(<Page panel={0} height={500} />)
+    root!.render(<Page height={500} />)
     await expect.poll(() => px(wrap, '--lm-inset-right'), { timeout: 5000 }).toBe(`${CANVAS.rail}px`)
     expect(engine!.room).toBe(room)
   })
@@ -138,10 +142,10 @@ describe('a canvas on a page', () => {
     await expect.poll(() => canvas.dataset.width, { timeout: 5000 }).toBe('compact')
     const top = high(canvas.querySelector('.lm-canvas-bar'))
     const bottom = high(canvas.querySelector('.lm-canvas-console'))
-    // no rail, and Fit's margin of 16 px on a board under 640 px
+    // no rail but the row of tabs over the console, and Fit's margin of 16 px on a board under 640 px
     await expect
       .poll(() => engine!.room, { timeout: 5000 })
-      .toEqual({ w: canvas.clientWidth - 32, h: 498 - top - bottom - 32 })
+      .toEqual({ w: canvas.clientWidth - 32, h: 498 - top - bottom - CANVAS.tabs - 32 })
     expect(engine!.room!.w).toBeLessThan(wide.w)
     host!.style.width = '700px'
     await expect.poll(() => canvas.dataset.width, { timeout: 5000 }).toBe('regular')
