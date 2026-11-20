@@ -11,9 +11,7 @@ import { gzipSync } from 'node:zlib'
  * kB gzip: loadmap's code in a <Loadmap> page's first load, what the editor adds to it, and a page made to be framed
  * (an embed: the compiler and the board) on its own.
  */
-// the editor: 230 while it holds the shared canvas beside its own, and measured over a page that loads its panels
-// and its story later, which the editor loads first (221 before both)
-export const BUDGET = { loadmap: 70, editor: 230, embed: 131 }
+export const BUDGET = { loadmap: 70, editor: 221, embed: 131 }
 
 // a string only ELK's code has
 const ELK_MARK = 'org.eclipse.elk'
