@@ -12,7 +12,6 @@ import {
   type EmbedOptions,
   LoadmapEditor,
   type LoadmapEditorHandle,
-  type PanelMode,
   TEMPLATES,
 } from '@loadmap/editor'
 import { Icon, isSaveKey, Menu, MenuItem } from '@loadmap/editor/internal'
@@ -70,10 +69,8 @@ const DRAFT_FILES = 'loadmap-editor-draft-files'
 const EARLIER = 'loadmap-editor-draft-earlier'
 /** The code panel's share of the width, as the reader left it (the divider's old share is not one). */
 const SPLIT = 'loadmap-editor-card'
-/** Whether the reader hid the code, and pinned the side panel, and how wide they left it. */
+/** Whether the reader hid the code. */
 const LAYOUT = 'loadmap-editor-layout'
-const PANEL = 'loadmap-editor-panel'
-const PANEL_WIDTH = 'loadmap-editor-panel-width'
 /** Whether the reader tracks live changes. */
 const TRACK = 'loadmap-editor-track'
 
@@ -389,13 +386,8 @@ function Editor({ root }: { root: URL }) {
     fromLink() ? (query().has('code') ? 'code' : 'reader') : read(LAYOUT) === 'reader' ? 'reader' : 'code',
   )
   const [linked] = useState(fromLink)
-  const [panel] = useState<PanelMode | undefined>(() => {
-    const p = read(PANEL)
-    return p === 'pinned' || p === 'auto' ? p : undefined
-  })
   const [earlier, setEarlier] = useState(() => read(EARLIER))
   const [split] = useState(() => Number(read(SPLIT) ?? Number.NaN))
-  const [panelWidth] = useState(() => Number(read(PANEL_WIDTH)) || undefined)
   const save = (s: string) => {
     // a template in its place: the repository is left
     if (repo.current && WHOLE.has(s)) leaveRepo()
@@ -559,10 +551,6 @@ function Editor({ root }: { root: URL }) {
         embedLink={embedLink}
         split={split}
         onSplit={(n) => write(SPLIT, String(n))}
-        panel={panel}
-        onPanel={(p) => write(PANEL, p)}
-        panelWidth={panelWidth}
-        onPanelWidth={(n) => write(PANEL_WIDTH, String(n))}
         // a link opens as its sender meant it: what the reader does with it is not how they leave their own editor
         onLayout={(l) => !linked && write(LAYOUT, l)}
         track={read(TRACK) === 'on'}

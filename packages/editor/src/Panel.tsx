@@ -1,24 +1,19 @@
-import type { ButtonHTMLAttributes, KeyboardEvent, PointerEvent, ReactNode, Ref } from 'react'
+import type { ButtonHTMLAttributes, KeyboardEvent, PointerEvent, ReactNode } from 'react'
 
-/** The two side panels of a canvas: the code on the start side, the verdict and the rest on the end. */
-export type Side = 'start' | 'end'
-
-/** Pixels a folded panel's rail takes. */
+/** Pixels the folded code panel's rail takes. */
 export const RAIL = 44
 
 /**
- * A panel's header: its name and a note beside it, its buttons, and at the outer end the one that folds it onto its
- * rail.
+ * The code panel's header: its name and a note beside it, its buttons, and at the outer end the one that folds it onto
+ * its rail.
  */
 export function PanelHead({
-  side,
   title,
   note,
   fold,
   onFold,
   children,
 }: {
-  side: Side
   title: string
   note?: ReactNode
   /** The fold button's name. */
@@ -33,27 +28,23 @@ export function PanelHead({
       <span className="lme-grow" />
       {children}
       <button type="button" className="lm-btn lme-quiet lme-icon" aria-label={fold} title={fold} onClick={onFold}>
-        {side === 'start' ? '‹' : '›'}
+        ‹
       </button>
     </div>
   )
 }
 
-/** A folded panel: a strip along its edge with a dot for its state and its name, written down the strip. */
+/** The code panel folded: a strip along its edge with a dot for its state and its name, written down the strip. */
 export function Rail({
-  side,
   tier,
   label,
-  ref,
   ...rest
 }: {
-  side: Side
   tier: 'ok' | 'warn' | 'over'
   label: string
-  ref?: Ref<HTMLButtonElement>
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'className'>) {
   return (
-    <button type="button" ref={ref} className="lme-rail" data-side={side} data-tier={tier} {...rest}>
+    <button type="button" className="lme-rail" data-side="start" data-tier={tier} {...rest}>
       <i aria-hidden="true" />
       <span>{label}</span>
     </button>
@@ -61,11 +52,10 @@ export function Rail({
 }
 
 /**
- * The edge between a panel and the canvas: dragged, or moved with the arrows (Shift: further), Home and End; a
+ * The edge between the code panel and the canvas: dragged, or moved with the arrows (Shift: further), Home and End; a
  * double-click puts it back. `onChange` has the new width, and `done` once the move is over (a page keeps it then).
  */
 export function Resize({
-  side,
   label,
   value,
   min,
@@ -73,7 +63,6 @@ export function Resize({
   onChange,
   onReset,
 }: {
-  side: Side
   label: string
   value: number
   min: number
@@ -81,8 +70,6 @@ export function Resize({
   onChange: (px: number, done: boolean) => void
   onReset: () => void
 }) {
-  // the edge moves with the pointer: the start panel grows rightwards, the end panel leftwards
-  const sign = side === 'start' ? 1 : -1
   const clamp = (px: number) => Math.round(Math.max(min, Math.min(max, px)))
   const drag = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
@@ -93,7 +80,7 @@ export function Resize({
     edge.setPointerCapture(e.pointerId)
     editor?.setAttribute('data-dragging', '')
     const move = (ev: globalThis.PointerEvent) => {
-      last = clamp(value + sign * (ev.clientX - from))
+      last = clamp(value + ev.clientX - from)
       onChange(last, false)
     }
     const up = () => {
@@ -109,7 +96,7 @@ export function Resize({
     edge.addEventListener('pointercancel', up)
   }
   const nudge = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = (e.shiftKey ? 64 : 16) * sign
+    const step = e.shiftKey ? 64 : 16
     const to =
       e.key === 'ArrowLeft'
         ? value - step
@@ -128,7 +115,7 @@ export function Resize({
     // biome-ignore lint/a11y/useSemanticElements: an <hr> takes no focus nor pointer; this separator is moved
     <div
       className="lme-resize"
-      data-side={side}
+      data-side="start"
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

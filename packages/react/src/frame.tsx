@@ -1,4 +1,14 @@
-import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
+import {
+  Children,
+  type CSSProperties,
+  isValidElement,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { hasDesign, LoadRange, Scenarios } from './bar'
 import { Canvas, useCanvasPanels, useCanvasSize } from './Canvas'
 import { type DiagramProps, Legend } from './Diagram'
@@ -143,10 +153,10 @@ export interface FrameProps extends Pick<DiagramProps, 'onNodeClick' | 'selected
   legend?: boolean
   /** The panels the frame offers, in the order of their tabs. Default: every one; Design only when the model has one. */
   panels?: readonly FramePanel[]
-  /** The panel that is open; null for none. Leave it out and the frame keeps it itself. */
-  open?: FramePanel | null
+  /** The panel that is open (one of the page's own by its id); null for none. Leave it out and the frame keeps it itself. */
+  open?: FramePanel | (string & {}) | null
   /** The panel open at first, when the frame keeps it itself. */
-  defaultOpen?: FramePanel | null
+  defaultOpen?: FramePanel | (string & {}) | null
   /** A panel opened or closed (null). */
   onOpen?: (panel: FramePanel | null) => void
   /** The page's own assumption lines, shown with the model's. */
@@ -163,6 +173,11 @@ export interface FrameProps extends Pick<DiagramProps, 'onNodeClick' | 'selected
   className?: string
   /** The box's own style: its height, when the page's CSS does not give it. */
   style?: CSSProperties
+  /**
+   * The page's own: each `Canvas.Panel` a panel whose tab comes before the frame's, anything else drawn over the
+   * canvas.
+   */
+  children?: ReactNode
 }
 
 /**
@@ -185,12 +200,17 @@ export function Frame({
   style,
   onNodeClick,
   selected,
+  children,
 }: FrameProps) {
   // a model with nothing to set but the load has no Design
   // with the least chrome (a full screen's, or a filled frame's, other mode) the diagram, the load and the verdict
   // alone: no tabs, no panel
   const least = lm.fullScreen && lm.fullScreenMode === 'focus'
   const shown = least ? [] : panels.filter((p) => p !== 'controls' || hasDesign(lm))
+  // the page's own panels go with the frame's; what it draws over the canvas stays
+  const own = least
+    ? Children.toArray(children).filter((c) => !(isValidElement(c) && c.type === Canvas.Panel))
+    : children
   // the story takes the canvas while a step of it shows or it plays: its text over the bar, the panels away
   // held from its start to Done: stopped before its first step shows (a pause, a value the reader changed), the
   // strip stays, with a way out of its own
@@ -288,6 +308,7 @@ export function Frame({
       <Canvas.Console>
         <ConsoleParts lm={lm} extra={assumptions?.length} />
       </Canvas.Console>
+      {own}
       {shown.map((p) => (
         <Canvas.Panel key={p} id={p} title={TITLES[p]}>
           <Suspense fallback={null}>

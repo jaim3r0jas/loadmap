@@ -89,22 +89,21 @@ const hash = await editor.current?.shareHash()
 ```
 
 `fill` makes the editor the whole of its container, which gives it a height: the bar, the code in a panel on the left,
-the diagram as a canvas the reader pans and zooms between, and the verdict and the rest in a panel on the right. The
-bar shows the model's title. Each panel resizes by its inner edge and folds onto a rail.
+and beside it the diagram as [`<Loadmap fill>`](/api/react/#the-canvas) draws it: a canvas the reader pans and zooms,
+the scenarios over it, the load and the verdict under it, and the rest in panels that open from their tabs. The bar
+shows the model's title. The code panel resizes by its inner edge and folds onto a rail. While the code is hidden, the
+inspector is the first of the canvas's panels, **Inspect**, and a click on a box opens it.
 
-| Prop           | What (with `fill`)                                                                                               |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `split`        | The code panel's share of the width, `0.3` for 30 %: from 360 px to 60 %. Default 440 px                         |
-| `onSplit`      | `(share) => void`: the code panel was resized; a page can keep it                                                |
-| `panel`        | The side panel `'pinned'` beside the canvas, or `'auto'`, folded onto its rail. Default pinned from 1280 px wide |
-| `onPanel`      | `(mode) => void`: the reader pinned or folded it                                                                 |
-| `panelWidth`   | The side panel's width, 300 px to 480 px. Default 340 px                                                         |
-| `onPanelWidth` | `(px) => void`: the side panel was resized                                                                       |
+| Prop      | What (with `fill`)                                                                       |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `split`   | The code panel's share of the width, `0.3` for 30 %: from 360 px to 60 %. Default 440 px |
+| `onSplit` | `(share) => void`: the code panel was resized; a page can keep it                        |
 
-A double-click on the code panel's edge puts it back at `split`. The side panel cannot pin below 1024 px wide. On a
-phone (below 720 px wide, or 500 px high) the editor shows the text or the diagram, switched at the bottom, the panels
-in a sheet over the diagram, and the actions other than Share in a sheet of their own. The root carries `data-narrow`
-on a phone and `data-short` below 1000 px wide, for a page's own controls in the bar to follow.
+A double-click on the code panel's edge puts it back at `split`. The canvas arranges its panels by its own width, as
+any loadmap's does: there is no side panel to pin or resize (`panel`, `onPanel`, `panelWidth` and `onPanelWidth` are
+gone). On a phone (below 720 px wide, or 500 px high) the editor shows the text or the diagram, switched at the bottom,
+and the actions other than Share in a sheet of their own. The root carries `data-narrow` on a phone and `data-short`
+below 1000 px wide, for a page's own controls in the bar to follow.
 
 ## Several files
 

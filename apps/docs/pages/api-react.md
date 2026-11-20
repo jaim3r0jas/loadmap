@@ -56,6 +56,7 @@ What it shows:
 | `closed`      | `readonly string[]`                        | none         | The subsystems drawn closed at first, by their ids in the view                                               |
 | `onNodeClick` | `(id: string) => void`                     | none         | A click, or Enter, on a box, by its id: every box is a button then                                           |
 | `selected`    | `string \| null`                           | none         | The box drawn as selected, by its id                                                                         |
+| `children`    | `ReactNode`                                | none         | A `Canvas.Panel` each: a tab before the loadmap's own. Anything else is drawn over the canvas                |
 | `ref`         | `Ref<LoadmapHandle>`                       | none         | The page's handle on the board: [the handle](#the-handle)                                                    |
 
 How the diagram is laid out:
@@ -208,7 +209,8 @@ return <Loadmap model={shop} view={view} ref={board} />
 `useLoadmap(model, view, options?)` is the state behind `<Loadmap>`: the values, the model's evaluation, the layout
 and the engine that draws the dots. It takes `LoadmapOptions`: every prop of the tables above under "How the diagram is
 laid out", "Full screen" and "The dots", with `initial` and `closed` (not the display props: `theme`, `title`,
-`assumptions`, `headroom`, `compare`, `fullScreen`, `onNodeClick`, `selected`, `ref`). It returns a `LoadmapController`,
+`assumptions`, `headroom`, `compare`, `fullScreen`, `onNodeClick`, `selected`, `children`, `ref`). It returns a
+`LoadmapController`,
 which every panel takes as `lm`.
 
 | Field                                    | What                                                                                                                                  |

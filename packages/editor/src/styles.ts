@@ -162,50 +162,27 @@ export const EDITOR_CSS = `
 .lme[data-fill] .lme-code .cm-editor { height: 100%; }
 .lme[data-fill] .lme-preview { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 16px 24px; }
 .lme[data-fill] .lme-preview[hidden] { display: none; }
-/* a canvas: the code's panel on the left, the side panel on the right, the diagram filling the room between */
+/* a canvas: the code's panel on the left, the diagram's canvas filling the room beside it */
 .lme[data-canvas] > .lme-split { position: relative; display: block; overflow: hidden; }
 .lme[data-canvas] .lme-preview { position: absolute; inset: 0 0 0 var(--lme-start); padding: 0; overflow: hidden; }
 .lme[data-canvas] .lme-preview > .lm { --lm-pad: 0; --lm-root-bg: transparent; position: absolute; inset: 0; }
 .lme[data-canvas] .lme-preview > .lme-empty { margin: 72px 24px 0; }
-.lme-canvas { position: absolute; inset: 0 var(--lme-r) 0 0; container: lme-canvas / inline-size; }
-.lme-canvas > .lm-wrap { position: absolute; inset: 0; }
-.lme-canvas .lm-board { height: 100%; border: 0; border-radius: 0; background-color: var(--lm-bg); }
-.lme-canvas:not([data-grid="off"]) .lm-board { background-image: radial-gradient(color-mix(in srgb, var(--lm-muted) 30%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
+/* the canvas is the loadmap's own, flush in its room: no frame around it, the board on the page's ground */
+.lme[data-fill] .lme-preview > .lm[data-full] { padding: 0; }
+.lme[data-fill] .lme-preview .lm-canvas { border: 0; border-radius: 0; }
+.lme[data-fill] .lme-preview .lm-wrap[data-canvas] > .lm-board { background-color: var(--lm-bg); }
+.lme[data-fill] .lme-preview:not([data-grid="off"]) .lm-wrap[data-canvas] > .lm-board { background-image: radial-gradient(color-mix(in srgb, var(--lm-muted) 30%, transparent) 1px, transparent 1.3px); background-size: 22px 22px; }
 /* the grid shows through the lanes; an export, which drops the classes, keeps them whole */
-.lme-canvas:not([data-grid="off"]) .lm-tier > [data-lane] { fill-opacity: .55; }
-.lme-over { position: absolute; z-index: 2; left: 0; right: 0; display: flex; justify-content: center; padding: 0 12px; pointer-events: none; }
-.lme-over > * { pointer-events: auto; max-width: min(760px, 100%); }
-.lme-over > .lm-loadbar { flex: 1 1 auto; position: static; }
-.lme-over-top { top: 12px; }
-.lme-over-bottom { bottom: 60px; }
-/* the legend and the zoom along the bottom edge, the story just above them: Fit leaves room for all three. The legend
-   keeps to one line, clipped where the canvas is narrow */
-.lme-canvas .lm-wrap[data-canvas] > .lm-bar, .lme-canvas .lm-wrap[data-canvas] .lm-zoom { bottom: 12px; }
-.lme-canvas .lm-wrap[data-canvas] > .lm-bar { box-sizing: border-box; height: 34px; padding: 0 12px; }
-.lme-canvas .lm-wrap[data-canvas] > .lm-bar .lm-legend { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
-.lme-over-note { top: var(--lme-t); justify-content: flex-start; }
-/* everything over the canvas on one surface */
-.lme-over > :is(.lm-scenarios, .lm-story, .lm-loadbar), .lme-canvas .lm-wrap[data-canvas] > .lm-bar, .lme-canvas .lm-zoom { background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / .12); }
-.lme-over > :is(.lm-scenarios, .lm-story, .lm-loadbar) { margin: 0; padding: 6px 10px; }
-.lme-over .lme-stale { margin: 0; padding: 4px 10px; background: var(--lm-surface); border: 1px solid var(--lm-warn); border-radius: 6px; }
-/* the load on one row beside its label, under the scenarios where the canvas is narrow; the story's text, as tall as
-   its longest step, centred beside its buttons */
-.lme-over .lm-loadbar .lm-load { grid-template: "label track value" / minmax(0, max-content) minmax(120px, 1fr) auto; align-items: start; }
-.lme-over .lm-loadbar .lm-load > label { max-width: 12em; padding-top: 6px; }
-.lme-over .lm-story p > span { align-self: center; }
-@container lme-canvas (width < 760px) {
-  .lme-over :is(.lm-loadbar, .lm-story) legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .lme-over .lm-story { flex-wrap: nowrap; }
-  .lme-over .lm-story p { flex: 1 1 0; min-width: 0; }
-  .lme-over .lm-story-nav { flex: none; }
-}
-/* the two panels: one frame and one header, flush to their edge with a border on the canvas's side, the edge that
-   resizes them, and a rail when folded */
+.lme[data-fill] .lme-preview:not([data-grid="off"]) .lm-tier > [data-lane] { fill-opacity: .55; }
+/* over the canvas, under its bar: the diagram is the last version without errors */
+.lme-preview .lm-canvas > .lme-stale { position: absolute; z-index: 2; top: calc(var(--lm-canvas-top) + 8px); left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box; margin: 0; padding: 4px 10px; background: var(--lm-surface); border: 1px solid var(--lm-warn); border-radius: 6px; }
+/* the inspector in its panel: the panel is its frame, and scrolls it */
+.lme .lm-canvas-panel .lme-inspector { position: static; max-height: none; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+/* the code's panel: flush to its edge with a border on the canvas's side, the edge that resizes it, and a rail when
+   folded */
 .lme[data-canvas] .lme-pane { position: absolute; z-index: 5; top: 0; bottom: 0; padding: 0; gap: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--lm-surface); }
 .lme[data-canvas] .lme-pane[hidden] { display: none; }
 .lme[data-canvas] .lme-pane[data-side="start"] { left: 0; width: var(--lme-start); border-right: 1px solid var(--lm-line); }
-.lme[data-canvas] .lme-pane[data-side="end"] { right: 0; width: var(--lme-panel); border-left: 1px solid var(--lm-line); }
-.lme[data-canvas] .lme-pane[data-mode="auto"] { top: 8px; right: calc(var(--lme-rail) + 8px); bottom: 8px; max-width: calc(100% - var(--lme-rail) - 24px); border: 1px solid var(--lm-line); border-radius: 10px; box-shadow: -8px 0 30px rgb(0 0 0 / .18); }
 .lme-pane:focus { outline: none; }
 .lme-pane:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
 .lme-pane-head { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 46px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--lm-line); }
@@ -221,22 +198,11 @@ export const EDITOR_CSS = `
 .lme[data-canvas] .lme-problems { padding: 6px; border-top: 1px solid var(--lm-line); }
 .lme-resize { position: absolute; z-index: 6; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
 .lme-resize[data-side="start"] { right: -5px; }
-.lme-resize[data-side="end"] { left: -5px; }
 .lme-resize::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 40px; margin-top: -20px; border-radius: 2px; background: var(--lm-muted); opacity: .35; }
 .lme-resize:hover::after, .lme-resize:focus-visible::after, .lme[data-dragging] .lme-resize::after { background: var(--lm-accent); opacity: 1; }
 .lme-resize:focus-visible { outline: none; }
-.lme-panel-body { padding: 4px 14px 16px; overflow: auto; overscroll-behavior: contain; container-type: inline-size; }
-.lme-sec { padding: 8px 0; border-top: 1px solid var(--lm-line); }
-.lme-panel-body > .lme-sec:first-child, .lme-panel-body > .lme-inspector + .lme-sec { border-top: 0; }
-.lme-sec > summary { padding: 4px 0; cursor: pointer; font: 700 .72rem var(--lm-font); letter-spacing: .08em; text-transform: uppercase; color: var(--lm-muted); }
-.lme-sec[open] > summary { margin-bottom: 8px; }
-/* a part's own heading and box give way to the section's */
-.lme-sec > :not(summary) > h3:first-child, .lme-sec > summary + h3 { display: none; }
-.lme-sec .lm-card { padding: 0; background: none; border: 0; border-radius: 0; }
-.lme[data-fill] .lme-panel .lme-inspector { position: static; max-height: none; padding: 8px 0 12px; border: 0; border-bottom: 1px solid var(--lm-line); border-radius: 0; box-shadow: none; }
 .lme-rail { position: absolute; z-index: 4; top: 0; bottom: 0; width: var(--lme-rail); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0; font: 600 .76rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 0; cursor: pointer; }
 .lme-rail[data-side="start"] { left: 0; border-right: 1px solid var(--lm-line); }
-.lme-rail[data-side="end"] { right: 0; border-left: 1px solid var(--lm-line); }
 .lme-rail:hover { background: color-mix(in srgb, var(--lm-fg) 5%, var(--lm-surface)); }
 .lme-rail span { writing-mode: vertical-rl; }
 .lme-rail i { width: 12px; height: 12px; border-radius: 50%; background: var(--lm-ok); }
@@ -244,9 +210,8 @@ export const EDITOR_CSS = `
 .lme-rail[data-tier="over"] i { background: var(--lm-drop); }
 .lme-rail:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -2px; }
 .lme[data-fill] .lme-split[data-layout="reader"] { grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); }
-.lme[data-fill] .lme-inspector { position: static; max-height: none; border-width: 0 0 0 1px; border-radius: 0; box-shadow: none; }
 /* a phone: the text or the diagram, the bar on top and the switch at the bottom clear of the notch and the home bar,
-   targets a finger can hit, the panels in a sheet over the diagram's bottom. Typing, the editor takes the height the
+   targets a finger can hit, the diagram in its canvas. Typing, the editor takes the height the
    keyboard leaves, the switch goes, and a row of keys sits on top of the keyboard */
 .lme[data-narrow] { grid-template-rows: auto minmax(0, 1fr) auto; overscroll-behavior: none; }
 .lme[data-narrow][data-typing] { height: var(--lme-vv, 100%); transform: translateY(var(--lme-vt, 0px)); grid-template-rows: auto minmax(0, 1fr); }
@@ -265,38 +230,6 @@ export const EDITOR_CSS = `
 .lme[data-narrow] .lme-preview { position: absolute; inset: 0; padding: 0; overflow: hidden; }
 .lme[data-narrow] .lme-preview[hidden] { display: none; }
 .lme[data-narrow] .lme-preview > .lm { --lm-pad: 0; --lm-root-bg: transparent; position: absolute; inset: 0; }
-.lme[data-narrow] .lme-over-top { top: 8px; justify-content: flex-start; padding-right: 136px; }
-.lme[data-narrow] .lme-over .lm-scenarios legend { display: none; }
-.lme[data-narrow] .lme-over .lm-scenarios button { min-height: 44px; }
-.lme[data-narrow] .lme-over-note { top: 60px; }
-.lme[data-narrow] .lme-over-bottom { bottom: calc(var(--lme-sheet) + 8px); }
-/* the story in one line: its words cut short, its buttons beside them */
-.lme[data-narrow] .lme-over .lm-story { flex-wrap: nowrap; gap: 6px; padding: 4px 6px 4px 10px; }
-.lme[data-narrow] .lme-over .lm-story legend, .lme[data-narrow] .lme-over .lm-story-progress { display: none; }
-.lme[data-narrow] .lme-over .lm-story p { flex: 1 1 auto; min-width: 0; font-size: .84rem; white-space: nowrap; }
-.lme[data-narrow] .lme-over .lm-story p > span { overflow: hidden; text-overflow: ellipsis; }
-.lme[data-narrow] .lme-over .lm-story-nav { flex: none; }
-.lme[data-narrow] .lme-over .lm-story button { min-height: 44px; }
-.lme[data-narrow] .lme-canvas .lm-wrap[data-canvas] > .lm-bar { display: none; }
-.lme[data-narrow] .lme-canvas .lm-wrap[data-canvas] .lm-zoom { top: 8px; right: 8px; bottom: auto; }
-/* fingers pinch: the zoom shown and Fit are enough */
-.lme[data-narrow] .lme-canvas .lm-zoom .lm-btn:is(:first-child, :nth-child(3)) { display: none; }
-.lme-sheet { position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; background: var(--lm-surface); border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .16); transition: height .2s ease-out; }
-.lme-sheet[data-detent="drag"] { transition: none; }
-@media (prefers-reduced-motion: reduce) { .lme-sheet { transition: none; } }
-.lme-grab { flex: none; display: grid; place-items: center; width: 100%; height: 36px; padding: 0; background: none; border: 0; cursor: grab; touch-action: none; }
-.lme-grab i { width: 40px; height: 5px; border-radius: 3px; background: var(--lm-line); }
-.lme-grab:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -4px; border-radius: 16px 16px 0 0; }
-.lme-peek { display: grid; gap: 8px; padding: 0 calc(16px + env(safe-area-inset-right)) 12px calc(16px + env(safe-area-inset-left)); }
-.lme-peek-verdict { margin: 0; padding-left: 10px; border-left: 4px solid var(--lm-ok); font-size: .88rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.lme-peek-verdict[data-tier="warn"] { border-color: var(--lm-warn); }
-.lme-peek-verdict[data-tier="over"] { border-color: var(--lm-drop); }
-.lme-peek .lm-load { row-gap: 2px; }
-.lme-sheet-tabs { flex: none; display: flex; gap: 4px; overflow-x: auto; padding: 0 12px 6px; scrollbar-width: none; }
-.lme-sheet-tabs button { flex: none; min-height: 44px; padding: 0 12px; font: 500 .9rem var(--lm-font); color: var(--lm-muted); background: none; border: 0; border-radius: 8px; cursor: pointer; }
-.lme-sheet-tabs [aria-selected="true"] { color: var(--lm-fg); font-weight: 600; background: var(--lm-accent-soft); }
-.lme-sheet-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 16px 16px; container-type: inline-size; }
-.lme-sheet-body > .lme-inspector { position: static; max-height: none; padding: 0; border: 0; box-shadow: none; }
 .lme-switch { display: flex; gap: 4px; padding: 6px calc(12px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background: var(--lm-surface); border-top: 1px solid var(--lm-line); }
 .lme[data-typing] .lme-switch { display: none; }
 .lme-switch button { flex: 1; min-height: 44px; font: 500 .95rem var(--lm-font); color: var(--lm-fg); background: var(--lm-bg); border: 0; border-radius: 10px; cursor: pointer; }

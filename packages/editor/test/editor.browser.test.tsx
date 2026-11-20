@@ -909,10 +909,6 @@ describe('the editor filling its container', () => {
     o: {
       split?: number
       onSplit?: (n: number) => void
-      onPanel?: (p: string) => void
-      panel?: 'pinned' | 'auto'
-      panelWidth?: number
-      onPanelWidth?: (px: number) => void
       layout?: 'code' | 'reader'
       start?: string
       embedLink?: (hash: string, o: EmbedOptions) => string
@@ -936,10 +932,6 @@ describe('the editor filling its container', () => {
         files={o.several}
         split={o.split}
         onSplit={o.onSplit}
-        onPanel={o.onPanel}
-        panel={o.panel}
-        panelWidth={o.panelWidth}
-        onPanelWidth={o.onPanelWidth}
         layout={o.layout}
         start={o.start && <a href="/">{o.start}</a>}
         embedLink={o.embedLink}
@@ -978,7 +970,7 @@ describe('the editor filling its container', () => {
     await expect.poll(() => box(host, '.lme-code').width).toBeCloseTo(code, 0)
     expect(box(host, '.lme-files').top).toBeCloseTo(box(host, '.lme-ftabs').top, 0)
     expect(box(host, '.lme-files').bottom).toBeCloseTo(box(host, '.lme-code').bottom, 0)
-    await expect.poll(() => box(host, '.lme-canvas').left).toBeCloseTo(box(host, '.lme-left').right, 0)
+    await expect.poll(() => box(host, '.lme-preview').left).toBeCloseTo(box(host, '.lme-left').right, 0)
     // the View menu hides it again
     await userEvent.click(page.getByRole('button', { name: 'View', exact: true }))
     await userEvent.click(page.getByRole('menuitemcheckbox', { name: 'Files' }))
@@ -1015,7 +1007,7 @@ describe('the editor filling its container', () => {
       await item(name).click()
     }
     // on the grid, every lane lets the dots through
-    expect(host.querySelector('.lme-canvas')!.hasAttribute('data-grid')).toBe(false)
+    expect(host.querySelector('.lme-preview')!.hasAttribute('data-grid')).toBe(false)
     expect(lanes().map((r) => r && getComputedStyle(r).fillOpacity)).toEqual(['0.55', '0.55', '0.55'])
     await page.getByRole('button', { name: 'View' }).click()
     await expect.element(item('Lane fills')).toHaveAttribute('aria-checked', 'true')
@@ -1026,7 +1018,7 @@ describe('the editor filling its container', () => {
     await view('Dot grid')
     expect(handle.source()).toBe(before)
     expect(localStorage.getItem('loadmap:editor:grid')).toBe('off')
-    await expect.poll(() => host.querySelector('.lme-canvas')!.getAttribute('data-grid')).toBe('off')
+    await expect.poll(() => host.querySelector('.lme-preview')!.getAttribute('data-grid')).toBe('off')
     expect(getComputedStyle(lanes()[0]!).fillOpacity).toBe('1')
     // the lanes' fills write a line of the text, and switched back take it out
     await view('Lane fills')
@@ -1061,27 +1053,30 @@ describe('the editor filling its container', () => {
     await expect.poll(() => lanes()[2]?.getAttribute('fill')).toBe('var(--lm-tier-base)')
   })
 
-  it('draws the diagram as a canvas between the code’s panel and the side panel’s rail, the code’s edge resizing it', async () => {
+  it('draws the diagram as the shared canvas beside the code’s panel, the code’s edge resizing it', async () => {
     const moved: number[] = []
     const { host } = await fill(1200, { split: 0.5, onSplit: (n) => moved.push(n), start: 'Back' })
     expect(host.querySelector('.lme-bar > a')!.textContent).toBe('Back')
     expect(box(host, '.lme').height).toBe(700)
-    // nothing scrolls: the canvas fills what the bar leaves, the panels scroll in their own box
+    // nothing scrolls: the canvas fills what the bar leaves, its open panel scrolls in its own box
     const preview = host.querySelector<HTMLElement>('.lme-preview')!
     expect(preview.scrollHeight).toBeLessThanOrEqual(preview.clientHeight)
     expect(Math.abs(box(host, '.lme-left').width - 600)).toBeLessThan(2)
-    // the canvas starts where the code ends and stops at the rail: nothing floats over it from the sides
-    expect(box(host, '.lme-canvas').left).toBeCloseTo(box(host, '.lme-left').right, 0)
-    expect(box(host, '.lme-canvas').right).toBeCloseTo(box(host, '.lme-rail[data-side="end"]').left, 0)
-    // the whole diagram, in the room the code and the panel's rail leave
-    await expect.poll(() => drawn(host).left, { timeout: 5000 }).toBeGreaterThan(box(host, '.lme-left').right)
-    expect(drawn(host).right).toBeLessThan(box(host, '.lme-rail').left)
-    expect(drawn(host).top).toBeGreaterThan(box(host, '.lme-bar').bottom)
-    expect(drawn(host).bottom).toBeLessThan(box(host, '.lme').bottom)
-    // the load floats over the canvas's top, and the diagram fits under it; the panel keeps the design
-    expect(drawn(host).top).toBeGreaterThan(box(host, '.lme-over-top .lm-loadbar').bottom)
-    expect(host.querySelector('.lme-over-top .lm-load input[type=range]')).toBeTruthy()
-    expect(host.querySelector('.lme-panel .lm-load')).toBeNull()
+    // the canvas is the loadmap's own, flush from where the code ends to the editor's edges
+    const canvas = box(host, '.lme-preview .lm-canvas')
+    expect(canvas.left).toBeCloseTo(box(host, '.lme-left').right, 0)
+    expect(canvas.right).toBeCloseTo(box(host, '.lme').right, 0)
+    expect(canvas.top).toBeCloseTo(box(host, '.lme-bar').bottom, 0)
+    expect(canvas.bottom).toBeCloseTo(box(host, '.lme').bottom, 0)
+    // the whole diagram, between the canvas's bar and its tabs over the console
+    await expect.poll(() => drawn(host).left, { timeout: 5000 }).toBeGreaterThan(canvas.left)
+    expect(drawn(host).right).toBeLessThan(canvas.right)
+    expect(drawn(host).top).toBeGreaterThan(box(host, '.lm-canvas-bar').bottom)
+    expect(drawn(host).bottom).toBeLessThan(box(host, '.lm-canvas-tabs').top)
+    // the load is in the console; the editor's own bar has the title, and the editor is the page: no full screen
+    expect(host.querySelector('.lm-canvas-console .lm-load input[type=range]')).toBeTruthy()
+    expect(host.querySelector('.lm-canvas-bar h2')).toBeNull()
+    expect(host.querySelector('.lm-canvas-full')).toBeNull()
     const edge = page.getByRole('separator', { name: 'Resize the code' })
     await expect.element(edge).toHaveAttribute('aria-valuenow', '600')
     ;(edge.element() as HTMLElement).focus()
@@ -1104,11 +1099,9 @@ describe('the editor filling its container', () => {
     ;(page.getByRole('separator', { name: 'Resize the code' }).element() as HTMLElement).focus()
     await userEvent.keyboard('{Home}')
     await expect.poll(dots).toEqual(sharp)
-    // the side panel
-    ;(page.getByRole('separator', { name: 'Resize the panel' }).element() as HTMLElement).focus()
-    await userEvent.keyboard('{End}')
-    await expect.poll(dots).toEqual(sharp)
-    await userEvent.click(page.getByRole('button', { name: 'Hide the panel' }))
+    // a panel of the canvas, opened
+    openTab(host, 'Limits')
+    await expect.poll(() => host.querySelector('.lm-canvas-panel')).toBeTruthy()
     await expect.poll(dots).toEqual(sharp)
     // the window
     host.style.width = '1000px'
@@ -1231,18 +1224,25 @@ describe('the editor filling its container', () => {
     expect(stops().map((b) => b.getAttribute('aria-label'))).toEqual(['More ways to share'])
   })
 
-  it('sets both panels beside the canvas, never over it, at every desktop width, the diagram fitted between', async () => {
-    for (const width of [2560, 1440, 1280, 1000]) {
+  it('sets the code’s panel beside the canvas at every desktop width, the diagram fitted in what the canvas keeps', async () => {
+    // the canvas arranges itself by its own width, the code's 440 px apart: a pinned panel, a rail, a row of tabs
+    for (const [width, tabs] of [
+      [2560, 'head'],
+      [1440, 'rail'],
+      [1280, 'row'],
+      [1000, 'row'],
+    ] as const) {
       const { host } = await fill(width)
-      const canvas = box(host, '.lme-canvas')
-      const pinned = width >= 1280
-      const end = box(host, pinned ? '.lme-panel' : '.lme-rail[data-side="end"]')
-      expect(host.querySelector<HTMLElement>('.lme-panel')!.dataset.mode, `${width}`).toBe(pinned ? 'pinned' : 'auto')
+      const canvas = box(host, '.lme-preview')
+      const own = host.querySelector<HTMLElement>('.lme-preview .lm-canvas')!
+      expect(own.dataset.tabs, `${width}`).toBe(tabs)
       expect(canvas.left, `${width}`).toBeCloseTo(box(host, '.lme-left').right, 0)
-      expect(canvas.right, `${width}`).toBeCloseTo(end.left, 0)
+      expect(canvas.right, `${width}`).toBeCloseTo(box(host, '.lme').right, 0)
       expect(canvas.left - box(host, '.lme').left, `${width}`).toBe(440)
+      // what the canvas keeps on its right: its rail, or its pinned panel
+      const kept = Number.parseFloat(own.style.getPropertyValue('--lm-canvas-right'))
       await expect.poll(() => drawn(host).left, { timeout: 5000 }).toBeGreaterThan(canvas.left)
-      expect(drawn(host).right, `${width}`).toBeLessThan(canvas.right)
+      expect(drawn(host).right, `${width}`).toBeLessThan(canvas.right - kept)
       // no page scroll: the editor is its container's height, each panel scrolls in its own box
       expect(box(host, '.lme').height).toBe(700)
       expect(document.scrollingElement!.scrollHeight).toBeLessThanOrEqual(innerHeight)
@@ -1250,60 +1250,6 @@ describe('the editor filling its container', () => {
       root = null
       document.body.replaceChildren()
     }
-  })
-
-  it('folds the side panel onto its rail and pins it again from there, the keyboard following', async () => {
-    const panels: string[] = []
-    const { host } = await fill(1400, { onPanel: (p) => panels.push(p) })
-    const panel = host.querySelector<HTMLElement>('.lme-panel')!
-    expect(panel.dataset.mode).toBe('pinned')
-    expect(panel.hidden).toBe(false)
-    expect(panel.textContent).toContain('Verdict')
-    expect(panel.querySelector('h2')!.textContent).toBe('Panel')
-    ;(page.getByRole('button', { name: 'Hide the panel' }).element() as HTMLElement).focus()
-    await userEvent.keyboard('{Enter}')
-    expect(panels).toEqual(['auto'])
-    expect(panel.hidden).toBe(true)
-    // the button went with the panel: the keyboard is on the rail
-    const rail = host.querySelector<HTMLButtonElement>('.lme-rail[data-side="end"]')!
-    await expect.poll(() => document.activeElement).toBe(rail)
-    // the diagram takes the room the panel leaves
-    await expect.poll(() => drawn(host).right, { timeout: 5000 }).toBeGreaterThan(box(host, '.lme').right - 340)
-    // a wide editor pins it again from the rail, and the keyboard goes into it, from a key or a click alike: the rail
-    // goes
-    expect(rail.getAttribute('aria-label')).toBe('Pin the panel')
-    await userEvent.keyboard('{Enter}')
-    expect(panels).toEqual(['auto', 'pinned'])
-    expect(panel.dataset.mode).toBe('pinned')
-    await expect.poll(() => panel.contains(document.activeElement)).toBe(true)
-    await userEvent.click(page.getByRole('button', { name: 'Hide the panel' }))
-    await userEvent.click(host.querySelector<HTMLButtonElement>('.lme-rail[data-side="end"]')!)
-    expect(panel.dataset.mode).toBe('pinned')
-    await expect.poll(() => panel.contains(document.activeElement)).toBe(true)
-  })
-
-  it('opens the panel over the canvas from its rail where it cannot pin', async () => {
-    const { host } = await fill(1000)
-    const panel = host.querySelector<HTMLElement>('.lme-panel')!
-    expect(panel.dataset.mode).toBe('auto')
-    expect(panel.hidden).toBe(true)
-    const rail = host.querySelector<HTMLButtonElement>('.lme-rail[data-side="end"]')!
-    rail.focus()
-    await userEvent.keyboard('{Enter}')
-    expect(panel.hidden).toBe(false)
-    expect(rail.getAttribute('aria-expanded')).toBe('true')
-    expect(host.querySelector('.lme-panel .lme-resize')).toBeNull()
-    // from the keyboard the focus goes into the panel, and Escape gives it back to the rail
-    await expect.poll(() => panel.contains(document.activeElement)).toBe(true)
-    await userEvent.keyboard('{Escape}')
-    expect(panel.hidden).toBe(true)
-    expect(document.activeElement).toBe(rail)
-    await userEvent.click(rail)
-    expect(panel.hidden).toBe(false)
-    // its own button closes it too, and gives the keyboard to the rail
-    await userEvent.click(page.getByRole('button', { name: 'Hide the panel' }))
-    expect(panel.hidden).toBe(true)
-    await expect.poll(() => document.activeElement).toBe(rail)
   })
 
   it('folds the code onto a rail, and the diagram fits the room it leaves', async () => {
@@ -1314,7 +1260,7 @@ describe('the editor filling its container', () => {
     expect(host.querySelector<HTMLElement>('.lme-left')!.hidden).toBe(true)
     const rail = host.querySelector<HTMLElement>('.lme-rail[data-side="start"]')!
     expect(rail.textContent).toBe('Code')
-    expect(box(host, '.lme-canvas').left).toBeCloseTo(rail.getBoundingClientRect().right, 0)
+    expect(box(host, '.lme-preview').left).toBeCloseTo(rail.getBoundingClientRect().right, 0)
     // fitted again: wider, and further left
     await expect
       .poll(() => drawn(host).right - drawn(host).left, { timeout: 5000 })
@@ -1334,33 +1280,54 @@ describe('the editor filling its container', () => {
     expect(rail.getAttribute('aria-label')).toMatch(/^Show code \(\d+ errors?\)$/)
   })
 
-  it('keeps a panel the reader folded shut; only where it cannot pin does a hover open it, and a click keep it open', async () => {
-    const { host } = await fill(1400, { layout: 'reader' })
-    const panel = host.querySelector<HTMLElement>('.lme-panel')!
+  it('puts Inspect first among the tabs while the code is hidden, and opens it for each box clicked, once', async () => {
+    const { host } = await fill(1200, { layout: 'reader' })
+    const tabs = () => [...host.querySelectorAll('.lm-canvas-tabs button')].map((b) => b.textContent)
+    const panel = () => host.querySelector<HTMLElement>('.lm-canvas-panel')
+    const heading = () => panel()?.querySelector('.lme-inspector h3')?.textContent
+    const click = (id: string) => userEvent.click(host.querySelector<SVGGElement>(`.lme-preview [data-node="${id}"]`)!)
+    const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await expect.poll(() => tabs()[0]).toBe('Inspect')
+    // the frame's own tabs follow it
+    expect(tabs().slice(1)).toContain('Limits')
+    expect(panel()).toBeNull()
     // a box clicked while the code is hidden: its fields in the panel
-    await userEvent.click(host.querySelector<SVGGElement>('.lme-preview [data-node="gateway"]')!)
-    await expect.poll(() => panel.querySelector('.lme-inspector h3')?.textContent).toBe('API gateway')
-    await userEvent.click(page.getByRole('button', { name: 'Hide the panel' }))
-    const rail = host.querySelector<HTMLButtonElement>('.lme-rail[data-side="end"]')!
-    // React makes its enter and leave from over and out
-    const hover = () => {
-      rail.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' }))
-      rail.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }))
-    }
-    // folded, and it stays so whatever the editor renders next, a hover included: a wide editor unfolds on a click
-    hover()
-    await new Promise((r) => setTimeout(r, 400))
-    expect(panel.hidden).toBe(true)
-    host.style.width = '1000px'
-    // laid out again for 1000 px: the code's most is 60 % of it
-    await expect
-      .poll(() => host.querySelector('[aria-label="Resize the code"]')?.getAttribute('aria-valuemax'))
-      .toBe('600')
-    rail.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' }))
-    hover()
-    await expect.poll(() => panel.hidden).toBe(false)
-    rail.click()
-    expect(panel.hidden).toBe(false)
+    await click('gateway')
+    await expect.poll(heading, { timeout: 5000 }).toBe('API gateway')
+    expect(panel()!.dataset.panel).toBe('inspect')
+    // closed, it stays so for that box
+    host.querySelector<HTMLButtonElement>('.lm-canvas-panel [aria-label="Close Inspect"]')!.click()
+    await expect.poll(panel).toBeNull()
+    await click('gateway')
+    await frames()
+    expect(panel()).toBeNull()
+    // another box opens it again
+    await click('workerPool')
+    await expect.poll(() => panel()?.dataset.panel).toBe('inspect')
+    // its own fields, whatever its name
+    await expect.poll(heading, { timeout: 5000 }).toMatch(/^(?!API gateway$).+/)
+    // the code shown: the box's lines are in the text, and the tab goes with its panel
+    host.querySelector<HTMLButtonElement>('.lme-rail[data-side="start"]')!.click()
+    await expect.poll(tabs).not.toContain('Inspect')
+    expect(tabs()).toContain('Limits')
+    expect(panel()).toBeNull()
+  })
+
+  it('keeps the code’s panel and the canvas their room when a panel of the canvas opens', async () => {
+    const { host } = await fill(1400)
+    const canvas = host.querySelector<HTMLElement>('.lme-preview .lm-canvas')!
+    const kept = () => canvas.style.getPropertyValue('--lm-canvas-right')
+    const before = { code: box(host, '.lme-left').width, canvas: box(host, '.lme-preview'), kept: kept() }
+    openTab(host, 'Limits')
+    await expect.poll(() => host.querySelector('.lm-canvas-panel[data-panel="limits"]')).toBeTruthy()
+    // over the canvas, inside it: nothing beside it moves, and what the diagram is arranged for stays
+    const panel = box(host, '.lm-canvas-panel')
+    expect(panel.left).toBeGreaterThan(before.canvas.left)
+    expect(panel.right).toBeLessThanOrEqual(before.canvas.right)
+    expect(box(host, '.lme-left').width).toBe(before.code)
+    expect(box(host, '.lme-preview').left).toBe(before.canvas.left)
+    expect(box(host, '.lme-preview').width).toBe(before.canvas.width)
+    expect(kept()).toBe(before.kept)
   })
 
   it('keeps the values the reader set when the editor turns narrow, and the keyboard where it can see', async () => {
@@ -1380,66 +1347,6 @@ describe('the editor filling its container', () => {
     await expect.poll(() => document.activeElement?.closest('.lme-code')).toBeTruthy()
   })
 
-  it('resizes the side panel by its edge, and keeps the canvas 320 px between the two', async () => {
-    const widths: number[] = []
-    const { host } = await fill(1100, { panel: 'pinned', onPanelWidth: (px) => widths.push(px) })
-    expect(host.querySelector<HTMLElement>('.lme-panel')!.dataset.mode).toBe('pinned')
-    const edge = page.getByRole('separator', { name: 'Resize the panel' })
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '340')
-    ;(edge.element() as HTMLElement).focus()
-    // its edge is on its left: the arrow to the left widens it
-    await userEvent.keyboard('{ArrowLeft}')
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '356')
-    await userEvent.keyboard('{Home}')
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '300')
-    // 1100 − 360 for the code at its least − 320 for the canvas
-    await userEvent.keyboard('{End}')
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '420')
-    expect(widths).toEqual([356, 300, 420])
-    expect(Math.round(box(host, '.lme-panel').width)).toBe(420)
-    // the code then takes what is left beside the canvas's 320 px
-    const code = page.getByRole('separator', { name: 'Resize the code' })
-    ;(code.element() as HTMLElement).focus()
-    await userEvent.keyboard('{End}')
-    await expect.element(code).toHaveAttribute('aria-valuenow', '360')
-    await userEvent.dblClick(edge)
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '340')
-    expect(Math.round(box(host, '.lme-canvas').width)).toBe(1100 - 360 - 340)
-  })
-
-  it('starts the side panel at the width a page kept, and puts it back there on a double-click', async () => {
-    const { host } = await fill(1400, { panelWidth: 400 })
-    expect(Math.round(box(host, '.lme-panel').width)).toBe(400)
-    expect(Math.round(box(host, '.lme-canvas').right)).toBe(Math.round(box(host, '.lme-panel').left))
-    const edge = page.getByRole('separator', { name: 'Resize the panel' })
-    ;(edge.element() as HTMLElement).focus()
-    await userEvent.keyboard('{End}')
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '480')
-    await userEvent.dblClick(edge)
-    await expect.element(edge).toHaveAttribute('aria-valuenow', '400')
-  })
-
-  it('opens the side panel over the canvas at its own width where it cannot pin, whatever a page passes', async () => {
-    const { host } = await fill(1000, { panelWidth: 420 })
-    await userEvent.click(host.querySelector<HTMLButtonElement>('.lme-rail[data-side="end"]')!)
-    expect(Math.round(box(host, '.lme-panel').width)).toBe(420)
-    root?.unmount()
-    document.body.replaceChildren()
-    const broken = await fill(1400, { panelWidth: Number.NaN })
-    expect(Math.round(box(broken.host, '.lme-panel').width)).toBe(340)
-  })
-
-  it('hides the load bar’s legend only where the canvas is narrow', async () => {
-    const legend = (host: HTMLElement) =>
-      host.querySelector('.lme-over .lm-loadbar legend')!.getBoundingClientRect().width
-    const { host } = await fill(2560)
-    expect(legend(host)).toBeGreaterThan(20)
-    root?.unmount()
-    document.body.replaceChildren()
-    const narrow = await fill(1000)
-    expect(legend(narrow.host)).toBeLessThanOrEqual(1)
-  })
-
   it('shows a phone the text or the diagram, switched at the bottom, the other buttons in a sheet', async () => {
     const { host } = await fill(400)
     expect(host.querySelector('.lme-resize')).toBeNull()
@@ -1449,9 +1356,11 @@ describe('the editor filling its container', () => {
     await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
     expect(host.querySelector<HTMLElement>('.lme-left')!.hidden).toBe(true)
     expect(host.querySelector<HTMLElement>('.lme-preview')!.hidden).toBe(false)
-    // the panels in a sheet over the diagram's bottom, the diagram above it
-    await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
-    await expect.poll(() => drawn(host).bottom, { timeout: 5000 }).toBeLessThan(box(host, '.lme-sheet').top)
+    // the canvas's own console and tabs under the diagram, and the switch under the canvas: nothing lies over them
+    await expect.poll(() => host.querySelector('.lm-canvas-tabs')).toBeTruthy()
+    await expect.poll(() => drawn(host).bottom, { timeout: 5000 }).toBeLessThan(box(host, '.lm-canvas-tabs').top)
+    expect(host.querySelector('.lme-preview .lm-canvas')!.getAttribute('data-width')).toBe('compact')
+    expect(box(host, '.lm-canvas-console').bottom).toBeLessThanOrEqual(box(host, '.lme-switch').top + 0.5)
     // drawn, and its code loaded, only when ⋯ opens it
     const sheet = () => host.querySelector<HTMLDialogElement>('dialog.lme-actions')
     expect(sheet()).toBeNull()
@@ -1489,62 +1398,19 @@ describe('the editor filling its container', () => {
     expect(pop.left >= 0 && pop.right <= document.documentElement.clientWidth).toBe(true)
   })
 
-  it('brings a phone’s sheet up for each box tapped while the code is hidden, and the handle answers Enter', async () => {
+  it('opens Inspect as a sheet on a phone for a box tapped while the code is hidden', async () => {
     const { host } = await fill(400, { layout: 'reader' })
-    await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
-    const sheet = host.querySelector<HTMLElement>('.lme-sheet')!
-    const grab = host.querySelector<HTMLButtonElement>('.lme-grab')!
-    // opened with nothing picked, it rests at peek
-    expect(sheet.dataset.detent).toBe('peek')
-    const tapBox = (id: string) => userEvent.click(host.querySelector<SVGGElement>(`.lme-preview [data-node="${id}"]`)!)
-    await tapBox('gateway')
-    await expect.poll(() => sheet.dataset.detent).toBe('half')
-    expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Box')
-    // lowered, or on another tab: the next box brings it up again
-    await userEvent.click(sheet.querySelector<HTMLButtonElement>('[role="tab"]:nth-child(3)')!)
-    grab.focus()
-    await userEvent.keyboard('{Enter}')
-    await expect.poll(() => sheet.dataset.detent).toBe('peek')
-    await tapBox('workerPool')
-    await expect.poll(() => sheet.dataset.detent).toBe('half')
-    expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Box')
-    // a cancelled touch is no tap
-    const o = { bubbles: true, pointerId: 9, pointerType: 'touch', isPrimary: true }
-    grab.dispatchEvent(new PointerEvent('pointerdown', o))
-    grab.dispatchEvent(new PointerEvent('pointercancel', o))
-    await new Promise((r) => setTimeout(r, 100))
-    expect(sheet.dataset.detent).toBe('half')
-  })
-
-  it('rests the phone’s sheet at peek, half or full: tapped, stepped with the keys, or dragged', async () => {
-    const { host } = await fill(400)
-    await userEvent.click(page.getByRole('tab', { name: 'Diagram' }))
-    await expect.poll(() => host.querySelector('.lme-sheet')).toBeTruthy()
-    const sheet = host.querySelector<HTMLElement>('.lme-sheet')!
-    const grab = host.querySelector<HTMLButtonElement>('.lme-grab')!
-    const at = () => sheet.dataset.detent
-    // at peek: the verdict and the load slider
-    expect(at()).toBe('peek')
-    expect(sheet.querySelector('.lme-peek .lm-range input[type="range"]')).toBeTruthy()
-    // the slider's marks too, inside the sheet
-    const marks = sheet.querySelector('.lme-peek .lm-marks')!.getBoundingClientRect()
-    expect(marks.bottom + 20).toBeLessThanOrEqual(sheet.getBoundingClientRect().bottom)
-    await userEvent.click(grab)
-    expect(at()).toBe('half')
-    expect(sheet.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Verdict')
-    grab.focus()
-    await userEvent.keyboard('{ArrowUp}')
-    expect(at()).toBe('full')
-    // dragged down most of the way, it lands at peek
-    const g = grab.getBoundingClientRect()
-    const o = { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true }
-    grab.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: g.x + 50, clientY: g.y + 10 }))
-    for (let i = 1; i <= 8; i++)
-      grab.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: g.x + 50, clientY: g.y + 10 + i * 60 }))
-    grab.dispatchEvent(new PointerEvent('pointerup', { ...o, clientX: g.x + 50, clientY: g.y + 490 }))
-    await expect.poll(at).toBe('peek')
-    // the diagram fits above the sheet wherever it rests
-    await userEvent.click(grab)
-    await expect.poll(() => drawn(host).bottom, { timeout: 5000 }).toBeLessThan(sheet.getBoundingClientRect().top)
+    const tabs = () => [...host.querySelectorAll('.lm-canvas-tabs button')].map((b) => b.textContent)
+    await expect.poll(() => tabs()[0]).toBe('Inspect')
+    expect(host.querySelector('.lm-canvas-panel')).toBeNull()
+    await userEvent.click(host.querySelector<SVGGElement>('.lme-preview [data-node="gateway"]')!)
+    await expect
+      .poll(
+        () =>
+          host.querySelector('.lm-canvas-panel[data-place="sheet"][data-panel="inspect"] .lme-inspector h3')
+            ?.textContent,
+        { timeout: 5000 },
+      )
+      .toBe('API gateway')
   })
 })

@@ -160,10 +160,10 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   compare?: boolean
   /** The panels offered, in the order of their tabs. Default every one; Design only when the model has one. */
   panels?: readonly LoadmapPanel[]
-  /** The panel that is open; null for none. Leave it out and the loadmap keeps it itself. */
-  open?: LoadmapPanel | null
+  /** The panel that is open (one of the page's own by its id); null for none. Leave it out and the loadmap keeps it itself. */
+  open?: LoadmapPanel | (string & {}) | null
   /** The panel open at first, when the loadmap keeps it itself. */
-  defaultOpen?: LoadmapPanel | null
+  defaultOpen?: LoadmapPanel | (string & {}) | null
   /** A panel opened or closed (null). */
   onOpen?: (panel: LoadmapPanel | null) => void
   /**
@@ -177,6 +177,11 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   onNodeClick?: (id: string) => void
   /** The box drawn as selected, by its id. */
   selected?: string | null
+  /**
+   * The page's own, in the canvas: each `Canvas.Panel` a panel whose tab comes before the loadmap's, anything else
+   * drawn over the canvas.
+   */
+  children?: ReactNode
   ref?: Ref<LoadmapHandle>
 }
 
@@ -202,6 +207,7 @@ export function Loadmap<P>({
   fullScreen,
   onNodeClick,
   selected,
+  children,
   ref,
   ...o
 }: LoadmapProps<P>) {
@@ -230,7 +236,9 @@ export function Loadmap<P>({
         compare={side}
         onNodeClick={onNodeClick}
         selected={selected}
-      />
+      >
+        {children}
+      </Frame>
     </LoadmapRoot>
   )
 }
