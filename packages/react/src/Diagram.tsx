@@ -52,9 +52,11 @@ export interface DiagramProps {
   /**
    * The board fills its container, which gives it a height, as a canvas the reader pans and zooms (the wheel alone
    * zooms it), with no Full screen button. Insets are the pixels on each side that something of the page floats over:
-   * Fit frames the diagram in what they leave, and the legend and the zoom buttons stay clear of them.
+   * Fit frames the diagram in what they leave, and the legend and the zoom buttons stay clear of them. `reserve` is
+   * the part of them that is always there: the diagram is arranged for what `reserve` leaves, so the rest (a panel
+   * the reader opens) moves the view and never the layout. Without it the diagram is arranged for what Fit has.
    */
-  canvas?: boolean | Partial<Insets>
+  canvas?: boolean | (Partial<Insets> & { reserve?: Partial<Insets> })
 }
 
 /**
@@ -81,8 +83,11 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
   const zoom = lm.zoom || !!canvas
   // a canvas has a box of its own: the room is what Fit has in it
   const boxed = !!canvas
-  const inset = { top: 0, right: 0, bottom: 0, left: 0, ...(typeof canvas === 'object' ? canvas : {}) }
-  const insetKey = `${inset.top} ${inset.right} ${inset.bottom} ${inset.left}`
+  const { reserve: kept, ...given } = typeof canvas === 'object' ? canvas : {}
+  const inset = { top: 0, right: 0, bottom: 0, left: 0, ...given }
+  const reserve = kept ? { top: 0, right: 0, bottom: 0, left: 0, ...kept } : null
+  const key = (i: Insets | null) => (i ? `${i.top} ${i.right} ${i.bottom} ${i.left}` : '')
+  const insetKey = `${key(inset)}|${key(reserve)}`
   // read when a box is pressed, so a new function each render does not redraw every box
   const click = useRef(onNodeClick)
   click.current = onNodeClick
@@ -164,8 +169,8 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
 
   // the reader's hands on the board, and its size in pixels with what floats over it. The code comes with the first
   // board that zooms; a chunk that cannot load leaves the board as it is, drawn whole, without the hands
-  const shape = useRef({ canvas: !!canvas, inset })
-  shape.current = { canvas: !!canvas, inset }
+  const shape = useRef({ canvas: !!canvas, inset, reserve })
+  shape.current = { canvas: !!canvas, inset, reserve }
   const zoomed = useRef<{ measure(): void; off(): void } | null>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: a canvas or not; its insets come through the ref
   useEffect(() => {

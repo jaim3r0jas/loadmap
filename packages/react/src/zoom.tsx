@@ -237,13 +237,13 @@ const SIDES = ['top', 'right', 'bottom', 'left'] as const
 export function mountZoom(
   board: HTMLElement,
   engine: Engine,
-  shape: () => { canvas: boolean; inset: Insets },
+  shape: () => { canvas: boolean; inset: Insets; reserve?: Insets | null },
 ): { measure(): void; off(): void } {
   injectZoomStyles(board.ownerDocument)
   let off: (() => void) | undefined
   const wrap = board.parentElement
   const measure = () => {
-    const { canvas, inset } = shape()
+    const { canvas, inset, reserve } = shape()
     // the legend and the buttons stay clear of what floats over a canvas
     if (canvas) for (const s of SIDES) wrap?.style.setProperty(`--lm-inset-${s}`, `${inset[s]}px`)
     // to the fraction of a pixel, as the SVG fills it
@@ -268,8 +268,9 @@ export function mountZoom(
       off = attachZoom(board, engine.viewer, { always: canvas })
     }
     engine.viewer.setViewport(vp)
-    // a canvas's room is what Fit has; a board on a page takes its height from the diagram, and tells its own
-    if (canvas) engine.setRoom(room(vp))
+    // a canvas's room is what Fit has, or what is left by the part of its insets that is always there: a panel that
+    // opens then moves the view alone. A board on a page takes its height from the diagram, and tells its own
+    if (canvas) engine.setRoom(room(reserve ? { ...vp, inset: reserve } : vp))
   }
   measure()
   const ro = new ResizeObserver(measure)
