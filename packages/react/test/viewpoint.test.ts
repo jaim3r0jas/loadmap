@@ -190,8 +190,7 @@ describe('the room a canvas arranges its diagram for', () => {
 
   it('keeps a quarter of the board each way under bars that take the rest', () => {
     const r = kept({ ...board, h: 200 }, { top: 120, right: 0, bottom: 120, left: 0 })
-    expect(r.h).toBeGreaterThan(0)
-    expect(r.h).toBeLessThanOrEqual(50)
-    expect(r.w).toBe(1000 - 48)
+    // a quarter of 200 px, and a margin of a quarter of that on each side (less than Fit's 24 px)
+    expect(r).toEqual({ w: 1000 - 25, h: 50 - 25 })
   })
 })
