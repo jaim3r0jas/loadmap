@@ -1,10 +1,10 @@
 import type { Insets } from './viewpoint'
 
 /**
- * Where a canvas changes its arrangement, by its own size in pixels (never the window's): narrower than `compact` the
- * panel is a sheet under a row of tabs, from `wide` it stands beside the diagram behind a rail, lower than `short` the
- * bars fold to a row each, and a full screen from `pin` wide keeps the panel open. `rail` and `panel` are the widths
- * of the rail and of the panel beside the diagram.
+ * Where a canvas changes its arrangement, by its own size in pixels (never the window's): from `wide` the panel stands
+ * beside the diagram behind a rail, narrower it is a sheet over the console (under `compact` the bars tighten too),
+ * lower than `short` the bars fold to a row each, and a full screen from `pin` wide keeps the panel open. `rail` and
+ * `panel` are the widths of the rail and of the panel beside the diagram.
  */
 export const CANVAS = { compact: 520, wide: 900, short: 420, pin: 1280, rail: 44, panel: 340 } as const
 
@@ -42,13 +42,14 @@ export function reserved(size: CanvasSize, bars: Bars): Insets {
 }
 
 /**
- * What covers the canvas now: the reserved part, and the open panel over more of it (`panel` is its extent in pixels:
- * its width beside the diagram, its height as a sheet; 0 while it is closed). Fit frames the diagram in what is left.
+ * What covers the canvas now: the reserved part, and the open panel over more of it (`panel` is its extent in pixels;
+ * 0 while it is closed). Beside the diagram it stands over the rail, so its width counts from the canvas's edge; as a
+ * sheet it stands on the console, which stays in view, so its height adds to it. Fit frames the diagram in the rest.
  */
 export function covered(size: CanvasSize, bars: Bars, panel: number): Insets {
   const base = reserved(size, bars)
   if (!(panel > 0)) return base
   return size.width === 'wide'
     ? { ...base, right: Math.max(base.right, panel) }
-    : { ...base, bottom: Math.max(base.bottom, panel) }
+    : { ...base, bottom: base.bottom + panel }
 }

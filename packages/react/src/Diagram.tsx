@@ -83,9 +83,16 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
   const zoom = lm.zoom || !!canvas
   // a canvas has a box of its own: the room is what Fit has in it
   const boxed = !!canvas
-  const { reserve: kept, ...given } = typeof canvas === 'object' ? canvas : {}
-  const inset = { top: 0, right: 0, bottom: 0, left: 0, ...given }
-  const reserve = kept ? { top: 0, right: 0, bottom: 0, left: 0, ...kept } : null
+  // a side left out, or given as undefined, is 0
+  const sides = (i: Partial<Insets>): Insets => ({
+    top: i.top ?? 0,
+    right: i.right ?? 0,
+    bottom: i.bottom ?? 0,
+    left: i.left ?? 0,
+  })
+  const given = typeof canvas === 'object' ? canvas : {}
+  const inset = sides(given)
+  const reserve = given.reserve ? sides(given.reserve) : null
   const key = (i: Insets | null) => (i ? `${i.top} ${i.right} ${i.bottom} ${i.left}` : '')
   const insetKey = `${key(inset)}|${key(reserve)}`
   // read when a box is pressed, so a new function each render does not redraw every box
@@ -253,7 +260,8 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     const wrap = wrapRef.current
     const bar = barRef.current
     const root = lm.root
-    if (!full || !scene || !wrap || !bar || !root) return
+    // a canvas fills its box in full screen too: its view fits the diagram, not its width
+    if (!full || boxed || !scene || !wrap || !bar || !root) return
     const fit = () => {
       const h = heightUnder(root, wrap, bar)
       const w = Math.min(wrap.clientWidth, (h * scene.width) / scene.height)
@@ -278,7 +286,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       mo.disconnect()
       wrap.style.removeProperty('--lm-fit')
     }
-  }, [full, scene, lm.root])
+  }, [full, boxed, scene, lm.root])
   // the board's room, which the diagram is arranged for: a canvas tells what Fit has (zoom.tsx); a board on a page or
   // one that fills the screen has it watched by room.ts, which comes after the first load: until it has told, the
   // room is due and nothing is laid out, so the diagram is never drawn one way and then another

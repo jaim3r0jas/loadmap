@@ -40,17 +40,23 @@ describe('the room a canvas keeps for itself', () => {
       [1440, 900, true],
     ] as const) {
       const size = canvasSize(w, h, full)
-      expect(covered(size, bars, 0)).toEqual(reserved(size, bars))
-      expect(reserved(size, bars)).toEqual(reserved(size, bars))
+      const keeps = reserved(size, bars)
+      expect(covered(size, bars, 0)).toEqual(keeps)
+      // the open panel covers more on one side only, and never less than what is kept
+      const open = covered(size, bars, 400)
+      expect(open.top).toBe(keeps.top)
+      expect(open.left).toBe(keeps.left)
+      expect(open.right).toBeGreaterThanOrEqual(keeps.right)
+      expect(open.bottom).toBeGreaterThanOrEqual(keeps.bottom)
     }
-    // beside the diagram when wide, a sheet from the bottom otherwise
+    // beside the diagram when wide; otherwise a sheet that stands on the console
     expect(covered(canvasSize(1000, 600), bars, 340)).toEqual({ top: 48, right: 340, bottom: 64, left: 0 })
-    expect(covered(canvasSize(480, 600), bars, 300)).toEqual({ top: 48, right: 0, bottom: 300, left: 0 })
+    expect(covered(canvasSize(480, 600), bars, 300)).toEqual({ top: 48, right: 0, bottom: 364, left: 0 })
+    expect(covered(canvasSize(700, 600), bars, 300)).toEqual({ top: 48, right: 0, bottom: 364, left: 0 })
   })
 
   it('never covers less than it keeps: a pinned panel is already out of the room', () => {
     const size = canvasSize(1440, 900, true)
     expect(covered(size, bars, 300).right).toBe(CANVAS.panel)
-    expect(covered(canvasSize(480, 600), bars, 40).bottom).toBe(64)
   })
 })

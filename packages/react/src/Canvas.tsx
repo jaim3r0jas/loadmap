@@ -55,7 +55,10 @@ export function useCanvasSize(): CanvasSize {
   return slots('useCanvasSize()').size
 }
 
-/** An element's size in pixels, read before the first paint and on every change; null until it is there. */
+/**
+ * An element's size in pixels, read before the first paint and on every change; null until it is there. Not `useSize`
+ * (scenarios.tsx): the diagram waits for these sizes, so they are read in the commit that mounts the element.
+ */
 function useBox(el: HTMLElement | null): { w: number; h: number } | null {
   const [box, setBox] = useState<{ w: number; h: number } | null>(null)
   useLayoutEffect(() => {
@@ -87,7 +90,7 @@ export interface CanvasProps extends Pick<DiagramProps, 'legend' | 'onNodeClick'
   className?: string
   /** The box's own style: its height, when the page's CSS does not give it. */
   style?: CSSProperties
-  /** `Canvas.Bar` and `Canvas.Console`, each at most once. */
+  /** `Canvas.Bar` and `Canvas.Console`, each at most once and as direct children: the canvas places them by type. */
   children?: ReactNode
 }
 
@@ -114,7 +117,10 @@ export function Canvas({
   useLayoutEffect(() => {
     if (root) injectCanvasStyles(root.ownerDocument)
   }, [root])
-  const box = useBox(root)
+  const now = useBox(root)
+  // the last size it had while shown: a canvas hidden for a while (a tab) keeps its diagram and the reader's view
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null)
+  if (now && now.w > 0 && now.h > 0 && now !== box) setBox(now)
   const bar = useBox(barEl)
   const cons = useBox(consoleEl)
   // the bar first for the keyboard and a screen reader, then the diagram, then the console
@@ -126,8 +132,9 @@ export function Canvas({
   // one object per class: a part that reads it draws again only when the class changes
   const size = useMemo<CanvasSize>(() => ({ width, short, pinned }), [width, short, pinned])
   const ctx = useMemo<Slots>(() => ({ size, bar: setBar, console: setConsole }), [size])
-  // the diagram comes once the box and its bars are measured: it is arranged once, for the room it keeps
-  const measured = !!box && box.w > 0 && box.h > 0 && (!hasBar || !!bar) && (!hasConsole || !!cons)
+  // the bars come once the box has a size, so they are measured in its size class; the diagram once they are
+  // measured: it is arranged once, for the room it keeps
+  const measured = !!box && (!hasBar || !!bar) && (!hasConsole || !!cons)
   const bars = { top: Math.ceil(bar?.h ?? 0), bottom: Math.ceil(cons?.h ?? 0) }
   const reserve = reserved(size, bars)
   const inset = covered(size, bars, panel)
@@ -144,7 +151,7 @@ export function Canvas({
       ref={setRoot}
     >
       <Ctx value={ctx}>
-        {all.filter(isBar)}
+        {box && all.filter(isBar)}
         {measured && (
           <Diagram
             lm={lm}
@@ -154,7 +161,7 @@ export function Canvas({
             canvas={{ ...inset, reserve }}
           />
         )}
-        {all.filter((c) => !isBar(c))}
+        {box && all.filter((c) => !isBar(c))}
       </Ctx>
     </div>
   )

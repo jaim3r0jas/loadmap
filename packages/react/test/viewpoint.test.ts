@@ -8,6 +8,7 @@ import {
   clamp,
   frame,
   free,
+  kept,
   NO_INSET,
   panBy,
   placement,
@@ -175,5 +176,22 @@ describe('the reader’s viewpoint', () => {
     expect(towards(a, b, 1)).toEqual(b)
     // the scale changes by the same factor each moment: halfway is the geometric middle
     expect(towards(a, b, 0.5).k).toBeCloseTo(2, 9)
+  })
+})
+
+describe('the room a canvas arranges its diagram for', () => {
+  const board: Viewport = { w: 1000, h: 500, inset: NO_INSET, margin: 24, fitMax: 1.5 }
+
+  it('is the board less what is always over it and the margin, whatever else covers it now', () => {
+    const reserve = { top: 48, right: 44, bottom: 64, left: 0 }
+    expect(kept(board, reserve)).toEqual({ w: 1000 - 44 - 48, h: 500 - 48 - 64 - 48 })
+    expect(kept({ ...board, inset: { ...reserve, right: 340 } }, reserve)).toEqual(kept(board, reserve))
+  })
+
+  it('keeps a quarter of the board each way under bars that take the rest', () => {
+    const r = kept({ ...board, h: 200 }, { top: 120, right: 0, bottom: 120, left: 0 })
+    expect(r.h).toBeGreaterThan(0)
+    expect(r.h).toBeLessThanOrEqual(50)
+    expect(r.w).toBe(1000 - 48)
   })
 })
