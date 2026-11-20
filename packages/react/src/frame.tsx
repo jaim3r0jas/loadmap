@@ -1,4 +1,4 @@
-import { type CSSProperties, lazy, type ReactNode, Suspense } from 'react'
+import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef } from 'react'
 import { Canvas, useCanvasPanels, useCanvasSize } from './Canvas'
 // with the dock in one module until `<Loadmap>` becomes this frame: the line then gets a module of its own, so a
 // first load holds it without the dock
@@ -6,6 +6,7 @@ import { VerdictLine } from './compact'
 import { type DiagramProps, Legend } from './Diagram'
 import { hasDesign, LoadRange } from './panels'
 import { Scenarios } from './scenarios'
+import { Story } from './story'
 import type { LoadmapController } from './useLoadmap'
 
 // what each panel is made of comes with the first one a reader opens. The parts it shares a module with (the load
@@ -71,6 +72,11 @@ export function BarParts({
     <>
       {heading && !size.short && <h2>{heading}</h2>}
       {tight ? <ScenarioPick lm={lm} /> : <Scenarios lm={lm} />}
+      {lm.model.story.length > 0 && (
+        <button type="button" className="lm-btn lm-canvas-play" onClick={() => lm.setStoryPlaying(true)}>
+          ▶ Story
+        </button>
+      )}
       {legend && size.width === 'wide' && !size.short && <Legend lm={lm} />}
     </>
   )
@@ -82,9 +88,9 @@ export function BarParts({
  */
 export function ConsoleParts({ lm, extra = 0 }: { lm: LoadmapController; extra?: number }) {
   const size = useCanvasSize()
-  const { panels, show } = useCanvasPanels()
+  const { panels, show, under } = useCanvasPanels()
   // on a wide canvas only: the line keeps its room for the first limit's name
-  const links = size.width === 'wide' && !size.short
+  const links = size.width === 'wide' && !size.short && !under
   return (
     <>
       <LoadRange lm={lm} />
@@ -142,9 +148,25 @@ export function Frame({
 }: FrameProps) {
   // a model with nothing to set but the load has no Design
   const shown = panels.filter((p) => p !== 'controls' || hasDesign(lm))
+  // the story takes the canvas while a step of it shows or it plays: its text over the bar, the panels away
+  const told = lm.model.story.length > 0 && (lm.step != null || lm.storyPlaying || lm.cue != null)
+  const box = useRef<HTMLDivElement>(null)
+  const was = useRef(told)
+  useEffect(() => {
+    if (was.current === told) return
+    was.current = told
+    // the keyboard goes with it, when it was in the canvas or nowhere: into the story, where the arrows step it, and
+    // back to the button that started it
+    const root = box.current
+    const at = root?.ownerDocument.activeElement
+    if (!root || (at && at !== root.ownerDocument.body && !root.contains(at))) return
+    root.querySelector<HTMLElement>(told ? '.lm-canvas-over .lm-story' : '.lm-canvas-play')?.focus()
+  }, [told])
   return (
     <Canvas
+      ref={box}
       lm={lm}
+      over={told ? <Story lm={lm} /> : undefined}
       legend={false}
       open={open}
       defaultOpen={defaultOpen}

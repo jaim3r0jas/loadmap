@@ -285,4 +285,72 @@ describe('a loadmap in one canvas', () => {
     expect(Math.max(...boxes)).toBeLessThanOrEqual(panel(canvas)!.getBoundingClientRect().left)
     await page.screenshot({ path: '__screenshots__/frame-panel-pinned.png', element: host! })
   })
+
+  it('gives its top to the story while one shows: the text over the bar, the panels away, the same room', async () => {
+    const canvas = await mount(1200, 560)
+    tab(canvas, 'Limits').click()
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('limits')
+    const before = sizes(canvas)
+    const room = handle!.engine.room
+    const play = canvas.querySelector<HTMLButtonElement>('.lm-canvas-play')!
+    expect(play.textContent).toBe('▶ Story')
+    play.focus()
+    play.click()
+    const story = () => canvas.querySelector<HTMLElement>('.lm-canvas-over .lm-story')
+    await expect.poll(story, { timeout: 5000 }).not.toBeNull()
+    // the keyboard is in the story, where the arrows step it; the bar under it is out of reach
+    await expect.poll(() => document.activeElement, { timeout: 5000 }).toBe(story())
+    expect(canvas.querySelector('.lm-canvas-bar')!.hasAttribute('inert')).toBe(true)
+    expect(canvas.querySelector('.lm-canvas-tabs')).toBeNull()
+    expect(panel(canvas)).toBeNull()
+    expect(canvas.querySelector('.lm-canvas-verdict .lm-link')).toBeNull()
+    // a step by hand, so the test does not wait on the story's clock
+    ctl!.setStoryPlaying(false)
+    ctl!.setStep(1)
+    await expect.poll(() => story()?.textContent, { timeout: 5000 }).toContain('2 of 3')
+    await handle!.ready()
+    await frames()
+    expect(sizes(canvas)).toEqual(before)
+    expect(handle!.engine.room).toBe(room)
+    // the load and the verdict stay under it
+    expect(canvas.querySelector('.lm-canvas-console input[type="range"]')).not.toBeNull()
+    await page.screenshot({ path: '__screenshots__/frame-story.png', element: host! })
+    canvas.querySelector<HTMLButtonElement>('button[aria-label="Leave the story"]')!.click()
+    await expect.poll(story, { timeout: 5000 }).toBeNull()
+    // everything is back as it was, the keyboard on the button that started it
+    expect(canvas.querySelector('.lm-canvas-tabs')).not.toBeNull()
+    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('limits')
+    await expect.poll(() => document.activeElement, { timeout: 5000 }).toBe(play)
+    expect(sizes(canvas)).toEqual(before)
+    expect(handle!.engine.room).toBe(room)
+  })
+
+  const wheel = (board: Element, ctrlKey = false) => {
+    const e = new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true, ctrlKey })
+    board.dispatchEvent(e)
+    return e.defaultPrevented
+  }
+
+  it('leaves the page its wheel and its one finger while it lies in a page', async () => {
+    const canvas = await mount(1200, 560)
+    const board = canvas.querySelector<HTMLElement>('.lm-board')!
+    await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('pan-x pan-y')
+    const k = handle!.engine.viewer!.shownView()!.k
+    // the plain wheel scrolls the page; with Ctrl (a trackpad's pinch too) it zooms the diagram
+    expect(wheel(board)).toBe(false)
+    expect(handle!.engine.viewer!.shownView()!.k).toBe(k)
+    expect(wheel(board, true)).toBe(true)
+    expect(handle!.engine.viewer!.shownView()!.k).toBeGreaterThan(k)
+    // zoomed or not, one finger stays the page's
+    expect(board.style.touchAction).toBe('pan-x pan-y')
+  })
+
+  it('takes the wheel and one finger for itself in full screen', async () => {
+    const canvas = await mount(1100, 700, true)
+    const board = canvas.querySelector<HTMLElement>('.lm-board')!
+    await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('none')
+    const k = handle!.engine.viewer!.shownView()!.k
+    expect(wheel(board)).toBe(true)
+    expect(handle!.engine.viewer!.shownView()!.k).toBeGreaterThan(k)
+  })
 })

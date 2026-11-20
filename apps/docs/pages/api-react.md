@@ -255,6 +255,14 @@ A panel 340 px wide that opens over a rail of 44 px:
 <Diagram lm={lm} canvas={{ right: open ? 340 : 44, reserve: { right: 44 } }} />
 ```
 
+A canvas takes the wheel and one finger for itself, as a board that fills its page should. With `scrolls: true` it
+lies in a page that scrolls: the wheel zooms only with Ctrl or ⌘ held, one finger scrolls the page, and two fingers
+pan and pinch the board.
+
+```tsx
+<Diagram lm={lm} canvas={{ scrolls: true }} />
+```
+
 ## A layout of your own
 
 ```tsx

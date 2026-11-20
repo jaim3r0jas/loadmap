@@ -55,8 +55,10 @@ export interface DiagramProps {
    * Fit frames the diagram in what they leave, and the legend and the zoom buttons stay clear of them. `reserve` is
    * the part of them that is always there: the diagram is arranged for what `reserve` leaves, so the rest (a panel
    * the reader opens) moves the view and never the layout. Without it the diagram is arranged for what Fit has.
+   * `scrolls` says the canvas lies in a page that scrolls: the wheel then zooms only with Ctrl or ⌘ held, and one
+   * finger scrolls the page while two pan and pinch the board.
    */
-  canvas?: boolean | (Partial<Insets> & { reserve?: Partial<Insets> })
+  canvas?: boolean | (Partial<Insets> & { reserve?: Partial<Insets>; scrolls?: boolean })
 }
 
 /**
@@ -176,8 +178,9 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
 
   // the reader's hands on the board, and its size in pixels with what floats over it. The code comes with the first
   // board that zooms; a chunk that cannot load leaves the board as it is, drawn whole, without the hands
-  const shape = useRef({ canvas: !!canvas, inset, reserve })
-  shape.current = { canvas: !!canvas, inset, reserve }
+  const scrolls = !!given.scrolls
+  const shape = useRef({ canvas: !!canvas, inset, reserve, scrolls })
+  shape.current = { canvas: !!canvas, inset, reserve, scrolls }
   const zoomed = useRef<{ measure(): void; off(): void } | null>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: a canvas or not; its insets come through the ref
   useEffect(() => {
