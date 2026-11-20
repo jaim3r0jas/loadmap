@@ -41,11 +41,14 @@ describe('an exclusive connection on the board', () => {
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    root.render(<LoadmapSource source={SOURCE} />)
+    root.render(<LoadmapSource source={SOURCE} defaultOpen="limits" />)
     await expect.poll(() => host!.querySelectorAll('rect[data-unassigned]').length, { timeout: 5000 }).toBe(10)
     expect(host.querySelectorAll('rect[data-slot]').length).toBe(16)
-    expect(host.querySelector('.lm-lim[data-component="pool"] .lm-spread')?.textContent).toBe(
-      'The busiest pod reads 2 of 6 partitions: Consumers runs out at 75 % of its capacity. 10 of 16 workers read no partition.',
-    )
+    // the limits are a panel of the canvas: what it holds comes with it
+    await expect
+      .poll(() => host!.querySelector('.lm-lim[data-component="pool"] .lm-spread')?.textContent, { timeout: 5000 })
+      .toBe(
+        'The busiest pod reads 2 of 6 partitions: Consumers runs out at 75 % of its capacity. 10 of 16 workers read no partition.',
+      )
   })
 })

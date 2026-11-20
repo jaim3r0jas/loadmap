@@ -194,6 +194,13 @@ describe('compile', () => {
   it('reads the panels full screen shows, and names a wrong one', () => {
     const r = compile(def({ top: 'fullScreen: [verdict, "controls", headroom]' }))
     expect(r.definition!.options.fullScreen).toEqual(['verdict', 'controls', 'headroom'])
+    // for the page they are tabs, in the tabs' own order: the verdict's sentence is with the limits
+    expect(pageOptions(r.definition!.options).panels).toEqual(['limits', 'controls', 'headroom'])
+    const tabs = (list: string) =>
+      pageOptions(compile(def({ top: `fullScreen: [${list}]` })).definition!.options).panels
+    expect(tabs('compare, live, limits, verdict, headroom')).toEqual(['limits', 'headroom', 'live'])
+    expect(tabs('')).toEqual([])
+    expect(pageOptions(compile(def({})).definition!.options)).not.toHaveProperty('panels')
     expect(compile(def({ top: 'fullScreen: []' })).definition!.options.fullScreen).toEqual([])
     expect(errors(def({ top: 'fullScreen: [verdict, contrls]' }))).toEqual([
       {
@@ -207,10 +214,15 @@ describe('compile', () => {
 
   it('reads what full screen opens with, and names a wrong one', () => {
     expect(compile(def({ top: 'fullScreenMode: focus' })).definition!.options.fullScreenMode).toBe('focus')
-    expect(pageOptions(compile(def({ top: 'fullScreenMode: panels' })).definition!.options)).toMatchObject({
-      fullScreenMode: 'panels',
-    })
-    expect(pageOptions(compile(def({})).definition!.options)).not.toHaveProperty('fullScreenMode')
+    // for the page it is how much stands around the diagram
+    const chrome = (mode: string) =>
+      pageOptions(compile(def({ top: `fullScreenMode: ${mode}` })).definition!.options).chrome
+    expect(chrome('panels')).toBe('all')
+    expect(chrome('focus')).toBe('least')
+    expect(pageOptions(compile(def({})).definition!.options)).not.toHaveProperty('chrome')
+    expect(pageOptions(compile(def({ top: 'fullScreenMode: focus' })).definition!.options)).not.toHaveProperty(
+      'fullScreenMode',
+    )
     expect(errors(def({ top: 'fullScreenMode: focs' }))[0]).toMatchObject({ hint: 'did you mean "focus"?' })
   })
 

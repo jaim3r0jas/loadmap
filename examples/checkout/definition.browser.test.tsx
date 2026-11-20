@@ -1,4 +1,5 @@
 import { compile } from '@loadmap/dsl'
+import { pageOptions } from '@loadmap/dsl/internal'
 import { Loadmap, type LoadmapHandle } from '@loadmap/react'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -38,17 +39,8 @@ it('draws checkout.loadmap exactly like the TypeScript example', async () => {
   const a = createRef<LoadmapHandle>()
   const b = createRef<LoadmapHandle>()
   const ts = await mount(<Checkout ref={a} />, a)
-  const dsl = await mount(
-    <Loadmap
-      ref={b}
-      model={def.model}
-      view={def.view}
-      speed={def.options.speed}
-      transition={def.options.transition}
-      assumptions={def.options.assumptions}
-    />,
-    b,
-  )
+  // the page options as `<LoadmapSource>` passes them: the speed, the assumptions and the least chrome, as Checkout.tsx
+  const dsl = await mount(<Loadmap ref={b} model={def.model} view={def.view} {...pageOptions(def.options)} />, b)
   for (const h of [a.current!, b.current!]) {
     h.pause()
     h.setValues({ load: 40, pods: 4 })
@@ -60,11 +52,14 @@ it('draws checkout.loadmap exactly like the TypeScript example', async () => {
     h.reset(3)
     for (let i = 0; i < 300; i++) h.step(1 / 30)
   }
-  // React's ids differ between two roots, and the live meters refresh on a wall-clock timer; the rest must match
+  // React's ids differ between two roots, and the live meters (in a panel, were one open) refresh on a wall-clock
+  // timer; the rest must match
   const html = (el: HTMLElement) => {
     const lm = el.querySelector('.lm')!.cloneNode(true) as HTMLElement
     lm.querySelector('.lm-meters')?.remove()
-    return lm.outerHTML.replace(/ (id|for|aria-labelledby)="[^"]*"/g, '').replace(/_r_\w+_/g, '_r_')
+    return lm.outerHTML
+      .replace(/ (id|for|aria-labelledby|aria-controls|aria-describedby)="[^"]*"/g, '')
+      .replace(/_r_\w+_/g, '_r_')
   }
   expect(html(dsl)).toBe(html(ts))
   // both read in the same task, before a frame could draw either again

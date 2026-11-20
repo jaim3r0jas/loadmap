@@ -37,9 +37,12 @@ it('draws both topics, both pools and the fan-out', async () => {
   for (let i = 0; i < 600; i++) handle.step(1 / 30)
   const branches = new Set(handle.engine.sim.particles.filter((d) => d.branch).map((d) => d.branch))
   expect(branches.size).toBeGreaterThan(1)
-  expect([...el.querySelectorAll('.lm-meter span')].map((s) => s.textContent)).toContain(
-    'positions superseded /s (newest kept)',
-  )
+  // the live meters are a panel of the canvas: it comes with its tab
+  const tabs = [...el.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')]
+  tabs.find((b) => b.textContent === 'Live')!.click()
+  await expect
+    .poll(() => [...el.querySelectorAll('.lm-meter span')].map((s) => s.textContent), { timeout: 5000 })
+    .toContain('positions superseded /s (newest kept)')
 })
 
 for (const theme of ['light', 'dark'] as const)

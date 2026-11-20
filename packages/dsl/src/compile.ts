@@ -210,7 +210,23 @@ export interface DefinitionOptions {
   closed?: string[]
 }
 
-/** The page options as `<Loadmap>` props, leaving out the unset ones so it keeps its defaults. */
+/** The tab each of the language's panel names is in: the verdict's sentence with the limits, the comparison with the headroom. */
+const TABS = {
+  verdict: 'limits',
+  live: 'live',
+  limits: 'limits',
+  controls: 'controls',
+  headroom: 'headroom',
+  compare: 'headroom',
+  assumptions: 'assumptions',
+} as const
+const TAB_ORDER = ['limits', 'controls', 'headroom', 'live', 'assumptions'] as const
+
+/**
+ * The page options as `<Loadmap>` props, leaving out the unset ones so it keeps its defaults. `fullScreen` names the
+ * panels a page offers (`panels`), in a page and in full screen alike; `fullScreenMode` what stands around the diagram
+ * in full screen (`chrome`: `focus` is the least).
+ */
 export function pageOptions(o: DefinitionOptions) {
   return {
     ...(o.speed != null ? { speed: o.speed } : {}),
@@ -218,8 +234,8 @@ export function pageOptions(o: DefinitionOptions) {
     ...(o.direction ? { direction: o.direction } : {}),
     ...(o.rows != null ? { rows: o.rows } : {}),
     ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
-    ...(o.fullScreen ? { fullScreen: o.fullScreen } : {}),
-    ...(o.fullScreenMode ? { fullScreenMode: o.fullScreenMode } : {}),
+    ...(o.fullScreen ? { panels: TAB_ORDER.filter((t) => o.fullScreen?.some((p) => TABS[p] === t)) } : {}),
+    ...(o.fullScreenMode ? { chrome: o.fullScreenMode === 'focus' ? ('least' as const) : ('all' as const) } : {}),
     ...(o.closed ? { closed: o.closed } : {}),
   }
 }

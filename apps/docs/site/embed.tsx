@@ -4,7 +4,7 @@
 // limits, and its formulas never reach eval.
 import { compile, type Definition, decodeShare, formatDiagnostic, loadCatalogFor, sharedValues } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
-import { LOADMAP_PANELS, Loadmap, type LoadmapHandle, type LoadmapPanel } from '@loadmap/react'
+import { Loadmap, type LoadmapHandle, panelsOf } from '@loadmap/react'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -28,10 +28,9 @@ function Embed({ def, values }: { def: Definition; values: Record<string, string
   // block resized in the doc changes it
   const portrait = useSyncExternalStore(resized, () => innerHeight > innerWidth)
   const page = pageOptions(def.options)
-  const listed = query
-    .get('panels')
-    ?.split(',')
-    .filter((p): p is LoadmapPanel => (LOADMAP_PANELS as readonly string[]).includes(p))
+  // the tabs the link names, by their names of now or of before (`verdict` is with the limits, `compare` with the
+  // headroom): a name it does not know is left out
+  const listed = panelsOf(query.get('panels')?.split(',') ?? [])
   // the story plays once, the first time half the frame is in view: a doc scrolled past it plays nothing
   useEffect(() => {
     const root = document.querySelector('.lm')
@@ -56,17 +55,16 @@ function Embed({ def, values }: { def: Definition; values: Record<string, string
       view={def.view}
       {...page}
       fill
-      // the doc around the frame keeps its wheel: Ctrl or ⌘ with it, a pinch or the buttons zoom
-      zoom
-      // an embed shows the diagram first, whatever the model's own full screen does: a frame is small for panels
-      fullScreenMode={pick('mode', ['focus', 'panels'] as const) ?? 'focus'}
-      fullScreen={listed?.length ? listed : page.fullScreen}
+      // an embed shows the diagram, the load and the verdict first, whatever the model's own full screen does: a frame
+      // is small for panels. `mode=panels` gives it their tabs
+      chrome={pick('mode', ['focus', 'panels'] as const) === 'panels' ? 'all' : 'least'}
+      panels={listed.length ? listed : page.panels}
       theme={pick('theme', ['auto', 'light', 'dark'] as const) ?? 'auto'}
       initial={sharedValues(def.model, values)}
       narrowBelow={portrait ? undefined : 0}
       title={
         <>
-          {def.model.title}
+          <span className="embed-title">{def.model.title}</span>
           <a className="embed-open" href={editor()} target="_blank" rel="noopener">
             Open ↗
           </a>

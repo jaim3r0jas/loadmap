@@ -1,13 +1,11 @@
 import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useCanvasPanels, useCanvasSize } from './Canvas'
-// with the dock in one module until `<Loadmap>` becomes this frame: the line then gets a module of its own, so a
-// first load holds it without the dock
-import { VerdictLine } from './compact'
 import { type DiagramProps, Legend } from './Diagram'
 import { hasDesign, LoadRange } from './panels'
 import { Scenarios } from './scenarios'
 import { Story } from './story'
 import type { LoadmapController } from './useLoadmap'
+import { VerdictLine } from './verdictLine'
 
 // what each panel is made of comes with the first one a reader opens. The parts it shares a module with (the load
 // slider's, the scenarios') are in the first load until they are split from it, with the budget, when `<Loadmap>`
@@ -53,7 +51,8 @@ function ScenarioPick({ lm }: { lm: LoadmapController }) {
 
 /**
  * What the bar over a canvas holds: the title, the scenarios and the flows' legend. A compact or a short canvas folds
- * the scenarios into one control, a short one leaves the title out, and the legend shows on a wide one. One row always:
+ * the scenarios into one control, the title gives way first where the row is short of room, and the legend shows on a
+ * wide one. One row always:
  * nothing the reader does changes its height.
  */
 export function BarParts({
@@ -73,7 +72,7 @@ export function BarParts({
   const heading = title === false ? null : (title ?? lm.model.title)
   return (
     <>
-      {heading && !size.short && <h2>{heading}</h2>}
+      {heading && <h2>{heading}</h2>}
       {tight ? <ScenarioPick lm={lm} /> : <Scenarios lm={lm} />}
       {onStory && lm.model.story.length > 0 && (
         <button type="button" className="lm-btn lm-canvas-play" onClick={onStory}>
@@ -81,6 +80,33 @@ export function BarParts({
         </button>
       )}
       {legend && size.width === 'wide' && !size.short && <Legend lm={lm} />}
+      <span className="lm-canvas-tools">
+        {/* a root that fills its frame for good has neither: the page picks what it shows */}
+        {lm.fullScreen && !lm.fill && (
+          <button
+            type="button"
+            className="lm-btn lm-canvas-chrome"
+            aria-pressed={lm.fullScreenMode === 'panels'}
+            aria-keyshortcuts="F"
+            title="Show the panels (F)"
+            onClick={() => lm.setFullScreenMode(lm.fullScreenMode === 'panels' ? 'focus' : 'panels')}
+          >
+            Panels
+          </button>
+        )}
+        {!lm.fill && (
+          <button
+            type="button"
+            className="lm-btn lm-canvas-full"
+            aria-pressed={lm.fullScreen}
+            aria-label={lm.fullScreen ? 'Close full screen' : 'Full screen'}
+            title={lm.fullScreen ? 'Close full screen' : 'Full screen'}
+            onClick={lm.toggleFullScreen}
+          >
+            {lm.fullScreen ? '✕' : '⤢'}
+          </button>
+        )}
+      </span>
     </>
   )
 }
@@ -101,7 +127,7 @@ export function ConsoleParts({ lm, extra = 0 }: { lm: LoadmapController; extra?:
         <VerdictLine
           lm={lm}
           extra={extra}
-          open={links ? (p, from) => show(p === 'verdict' ? 'limits' : p, from) : undefined}
+          open={links ? (p, from) => show(p === 'verdict' ? 'limits' : 'assumptions', from) : undefined}
           why={panels.includes('limits')}
           assumptions={panels.includes('assumptions')}
         />
@@ -126,6 +152,8 @@ export interface FrameProps extends Pick<DiagramProps, 'onNodeClick' | 'selected
   onOpen?: (panel: FramePanel | null) => void
   /** The page's own assumption lines, shown with the model's. */
   assumptions?: readonly ReactNode[]
+  /** The scenarios side by side under the headroom chart, when the model has two or more. Default true. */
+  compare?: boolean
   className?: string
   /** The box's own style: its height, when the page's CSS does not give it. */
   style?: CSSProperties
@@ -144,13 +172,17 @@ export function Frame({
   defaultOpen,
   onOpen,
   assumptions,
+  compare = true,
   className,
   style,
   onNodeClick,
   selected,
 }: FrameProps) {
   // a model with nothing to set but the load has no Design
-  const shown = panels.filter((p) => p !== 'controls' || hasDesign(lm))
+  // with the least chrome (a full screen's, or a filled frame's, other mode) the diagram, the load and the verdict
+  // alone: no tabs, no panel
+  const least = lm.fullScreen && lm.fullScreenMode === 'focus'
+  const shown = least ? [] : panels.filter((p) => p !== 'controls' || hasDesign(lm))
   // the story takes the canvas while a step of it shows or it plays: its text over the bar, the panels away
   // held from its start to Done: stopped before its first step shows (a pause, a value the reader changed), the
   // strip stays, with a way out of its own
@@ -219,7 +251,7 @@ export function Frame({
       {shown.map((p) => (
         <Canvas.Panel key={p} id={p} title={TITLES[p]}>
           <Suspense fallback={null}>
-            <Body lm={lm} id={p} assumptions={assumptions} />
+            <Body lm={lm} id={p} assumptions={assumptions} compare={compare} />
           </Suspense>
         </Canvas.Panel>
       ))}

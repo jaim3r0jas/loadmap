@@ -47,6 +47,17 @@ const box = (host: HTMLElement, id: string) => host.querySelector<SVGGElement>(`
 const input = (host: HTMLElement, key: string, n = 0) =>
   host.querySelectorAll<HTMLInputElement>(`.lme-inspector [data-key="${key}"] input[type="text"]`)[n]!
 
+/**
+ * Opens one of the preview's panels by its tab, unless it is open: only the open panel is drawn, and what it holds
+ * comes a moment later. Called from inside a poll, it opens the tab again on a preview that was drawn anew.
+ */
+const openTab = (host: HTMLElement, title: string) => {
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')].find(
+    (b) => b.textContent === title,
+  )
+  if (tab?.getAttribute('aria-expanded') === 'false') tab.click()
+}
+
 /** Types a value into a field and presses Enter, as a reader does. */
 async function type(el: HTMLInputElement, value: string) {
   await userEvent.fill(el, value)
@@ -92,9 +103,14 @@ describe('the editor for readers', () => {
     await type(input(host, 'node:gateway/capacity'), '25000')
     await expect.poll(() => box(host, 'gateway').textContent).toContain('Edge gateway')
     // the preview follows the text: the gateway's capacity is now 25,000 req/s per instance
+    const before = '50 % at 7.4×–13× · full at 14×–27×'
     await expect
-      .poll(() => host.querySelector('.lm-lim[data-component="gateway"] small')?.textContent)
-      .not.toBe('50 % at 7.4×–13× · full at 14×–27×')
+      .poll(() => {
+        openTab(host, 'Limits')
+        // until the limits are drawn, nothing has changed yet
+        return host.querySelector('.lm-lim[data-component="gateway"] small')?.textContent ?? before
+      })
+      .not.toBe(before)
     handle.loadmap()!.setValues({ load: 30 })
     await userEvent.click(page.getByRole('button', { name: 'Share', exact: true }))
     await expect.poll(() => first.shared.length).toBe(1)

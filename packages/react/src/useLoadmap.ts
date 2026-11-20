@@ -38,7 +38,12 @@ export interface LoadmapOptions<P> extends SimOptions {
    * holds it: 1 never folds. A narrow screen (`narrowBelow`) never folds.
    */
   rows?: number | 'auto'
-  /** What full screen opens with: the panels around the diagram, or mainly the diagram and the story. Default panels. */
+  /**
+   * How much stands around the diagram in full screen, and in a root that fills its frame: `all`, with the panels'
+   * tabs, or `least`, the diagram, the load and the verdict alone. F switches it. Default `all`.
+   */
+  chrome?: Chrome
+  /** @deprecated `chrome` now: `panels` is `all`, `focus` is `least`. */
   fullScreenMode?: FullScreenMode
   /**
    * The root fills its container, laid out as full screen is (in `fullScreenMode`), and stays so: no full screen
@@ -67,6 +72,8 @@ export interface LoadmapOptions<P> extends SimOptions {
 
 /** Full screen with every panel it lists in a compact form, or mainly the diagram and the story. */
 export type FullScreenMode = 'panels' | 'focus'
+/** What stands around the diagram in full screen: everything, or the least. */
+export type Chrome = 'all' | 'least'
 
 export interface LoadmapController<P = any> {
   model: Model<P>
@@ -405,7 +412,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     document.addEventListener('fullscreenchange', f)
     return () => document.removeEventListener('fullscreenchange', f)
   }, [root])
-  const start = o.fullScreenMode ?? 'panels'
+  const start: FullScreenMode = o.chrome ? (o.chrome === 'least' ? 'focus' : 'panels') : (o.fullScreenMode ?? 'panels')
   const [modeState, setModeState] = useState({ start, mode: start })
   // a page that picks another start resets the reader's choice
   const fullScreenMode = modeState.start === start ? modeState.mode : start

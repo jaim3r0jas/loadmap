@@ -3,8 +3,8 @@
 import { compile, formatDiagnostic, loadCatalogFor } from '@loadmap/dsl'
 import { pageOptions } from '@loadmap/dsl/internal'
 import { expose } from '@loadmap/export'
-import { Loadmap, type LoadmapHandle } from '@loadmap/react'
-import { createElement } from 'react'
+import { Diagram, handleOf, LoadmapRoot, useLoadmap } from '@loadmap/react'
+import { createElement, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 
 const source = await (await fetch('definition.loadmap')).text()
@@ -28,16 +28,14 @@ if (!r.ok || !r.definition) {
 } else {
   const { model, view, options } = r.definition
   document.title = model.title ?? 'loadmap'
-  let off: (() => void) | null = null
-  createRoot(root).render(
-    createElement(Loadmap, {
-      model,
-      view,
-      ...pageOptions(options),
-      ref: (h: LoadmapHandle | null) => {
-        off?.()
-        off = h ? expose(h) : null
-      },
-    }),
-  )
+  const { speed, transition, direction, rows, closed } = pageOptions(options)
+  // the board alone, as a page draws it: a recording holds nothing else, and its room is the page's width by seven
+  // tenths of the window's height, whatever a `<Loadmap>` puts around its diagram
+  function Recorded() {
+    const lm = useLoadmap(model, view, { speed, transition, direction, rows, closed })
+    useEffect(() => expose(handleOf(lm)), [lm])
+    // biome-ignore lint/correctness/noChildrenProp: the root's props name its children; this file has no JSX
+    return createElement(LoadmapRoot, { lm, children: createElement(Diagram, { lm }) })
+  }
+  createRoot(root).render(createElement(Recorded))
 }

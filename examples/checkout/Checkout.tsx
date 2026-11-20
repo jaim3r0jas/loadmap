@@ -4,8 +4,8 @@ import { checkout } from './model'
 import { view } from './view'
 
 /**
- * `zoom`: the reader pans and zooms the board. The docs' home page draws it filling its frame (`fill`), with the
- * verdict alone below the diagram (`fullScreen`), no headroom chart and no comparison.
+ * The docs' home page draws it filling its frame (`fill`) with no panels (`panels`): the diagram, the load and the
+ * verdict alone. `zoom` is kept for the pages that pass it: a loadmap always pans and zooms now.
  */
 export function Checkout({
   theme,
@@ -14,7 +14,7 @@ export function Checkout({
   headroom,
   compare,
   fill,
-  fullScreen,
+  panels,
 }: {
   theme?: Theme
   ref?: Ref<LoadmapHandle>
@@ -22,7 +22,7 @@ export function Checkout({
   headroom?: boolean
   compare?: boolean
   fill?: boolean
-  fullScreen?: readonly LoadmapPanel[]
+  panels?: readonly LoadmapPanel[]
 }) {
   return (
     <Loadmap
@@ -30,13 +30,13 @@ export function Checkout({
       model={checkout}
       view={view}
       speed={10}
-      fullScreenMode="focus"
+      chrome="least"
       theme={theme}
       zoom={zoom}
       headroom={headroom}
       compare={compare}
       fill={fill}
-      fullScreen={fullScreen}
+      panels={panels}
       assumptions={['Load scales linearly with users; 1× is the 5-minute peak of an ordinary day.']}
     />
   )

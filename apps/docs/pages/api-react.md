@@ -34,6 +34,11 @@ export function Capacity() {
 
 `model` and `view` are required. Every other prop is optional.
 
+It draws everything in one box, the canvas: the title, the scenarios and the story's button in a bar over the diagram,
+the load and the verdict in one line under it, and the rest in panels that open one at a time from their tabs
+(Limits, Design, Headroom, Live, Assumes). The page gives the box its height (`.lm-canvas`, by default
+`clamp(420px, 70dvh, 760px)`), and nothing the reader does changes it: [the canvas](#the-canvas).
+
 What it shows:
 
 | Prop          | Type                                       | Default      | What                                                                                                         |
@@ -41,8 +46,12 @@ What it shows:
 | `theme`       | `'auto' \| 'light' \| 'dark' \| 'inherit'` | `'auto'`     | `auto` follows the system; `inherit` the page's own switch ([Styling](/api/styling/#light-dark-and-inherit)) |
 | `title`       | `ReactNode \| false`                       | the model's  | The heading; `false` leaves it out                                                                           |
 | `assumptions` | `readonly ReactNode[]`                     | none         | Lines put before the generated ones in "What this assumes"                                                   |
-| `headroom`    | `boolean`                                  | `true`       | The headroom chart                                                                                           |
-| `compare`     | `boolean`                                  | `true`       | The scenarios side by side, when the model declares two or more                                              |
+| `panels`      | `readonly LoadmapPanel[]`                  | every one    | The panels offered, in the order of their tabs; `[]` for none                                                |
+| `open`        | `LoadmapPanel \| null`                     | none         | The panel that is open; leave it out and the loadmap keeps it itself                                         |
+| `defaultOpen` | `LoadmapPanel \| null`                     | `null`       | The panel open at first, when the loadmap keeps it itself                                                    |
+| `onOpen`      | `(panel: LoadmapPanel \| null) => void`    | none         | A panel opened, or closed (`null`)                                                                           |
+| `headroom`    | `boolean`                                  | `true`       | The Headroom tab                                                                                             |
+| `compare`     | `boolean`                                  | `true`       | The scenarios side by side in Headroom, when the model declares two or more                                  |
 | `initial`     | `Partial<Values<P>>`                       | the defaults | Values to start from instead of the model's defaults                                                         |
 | `closed`      | `readonly string[]`                        | none         | The subsystems drawn closed at first, by their ids in the view                                               |
 | `onNodeClick` | `(id: string) => void`                     | none         | A click, or Enter, on a box, by its id: every box is a button then                                           |
@@ -57,7 +66,6 @@ How the diagram is laid out:
 | `rows`        | `number \| 'auto'`            | `'auto'`        | The rows a long diagram is folded into (columns, running down); 1 never folds     |
 | `narrowBelow` | `number`                      | `640`           | The container width, in pixels, under which the diagram runs down and never folds |
 | `transition`  | `number`                      | `0.8`           | Seconds the diagram takes to move to a new structure; 0 cuts                      |
-| `zoom`        | `boolean`                     | `false`         | The reader pans and zooms the diagram                                             |
 | `elk`         | `ElkEngine`                   | a shared worker | Where ELK lays the diagram out: [where the layout runs](#where-the-layout-runs)   |
 
 `direction: 'auto'` takes the way that fits the room the diagram is given larger (the board's width by most of the
@@ -73,18 +81,19 @@ A scenario, a story step or a control that changes the structure (more pods, mor
 `transition` seconds: what stays moves to its new place, what is new fades in. With reduced motion it always cuts. The
 load never moves a box.
 
-`zoom`: a drag pans (a press that hardly moves still clicks a box), a pinch or the wheel with Ctrl or ⌘ held zooms
-about the pointer, the keys + − 0 and the arrows work on the focused board, and the buttons on it go − · zoom · + ·
-Fit. A page that scrolls keeps its plain wheel. A click on a subsystem's frame flies in to it, and the path to where
-the view is shows over the board. Pictures and recordings always show the whole diagram.
+The reader pans and zooms the diagram: a drag pans (a press that hardly moves still clicks a box), the wheel with
+Ctrl or ⌘ held zooms about the pointer, the keys + − 0 and the arrows work on the focused board, and the buttons on
+it go − · zoom · + · Fit. The page keeps its plain wheel and one finger, which scroll it; two fingers pan and pinch
+the diagram. In full screen the wheel and one finger are the diagram's. A click on a subsystem's frame flies in to
+it, and the path to where the view is shows over the board. Pictures and recordings always show the whole diagram.
+`zoom` is still taken and no longer needed.
 
 Full screen:
 
-| Prop             | Type                      | Default          | What                                                               |
-| ---------------- | ------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `fullScreen`     | `readonly LoadmapPanel[]` | `LOADMAP_PANELS` | The panels full screen shows, compact, below the diagram           |
-| `fullScreenMode` | `'panels' \| 'focus'`     | `'panels'`       | What full screen opens with                                        |
-| `fill`           | `boolean`                 | `false`          | The root fills its container, laid out as full screen is, for good |
+| Prop     | Type                 | Default  | What                                                                     |
+| -------- | -------------------- | -------- | ------------------------------------------------------------------------ |
+| `chrome` | `'all' \| 'least'`   | `'all'`  | What stands around the diagram in full screen, and in a root that fills  |
+| `fill`   | `boolean`            | `false`  | The root fills its container, for good, with no Full screen button       |
 
 [Full screen](#full-screen) has what each does.
 
@@ -103,25 +112,44 @@ The dots (the simulation's options, `SimOptions` from `@loadmap/sim`):
 The dots never decide anything: a stage drains what its flows carry at the load where its component is full, so the
 board and the bars always agree.
 
+## The canvas
+
+The canvas reads its own size, never the window's, and arranges itself by it:
+
+- From 900 px wide the panels' tabs are a rail down its right edge; narrower, a row over the load. A canvas under
+  420 px high has one menu for them, at the top.
+- The open panel stands beside the diagram, between the bars. On a canvas under 520 px wide it is a sheet that stands
+  on the load, half of the room or all of it. The load and the verdict stay in view either way.
+- Under 520 px the scenarios are one control; from 900 px the bar shows the flows' legend.
+
+The diagram is arranged once for the room the bars and the tabs always leave. A panel that opens moves the view into
+what is left and never lays the diagram out again; neither does the load, a scenario or the story.
+
+**▶ Story** gives the canvas's top to the story: its text and its buttons lie over the bar, the tabs and the open
+panel are away, and the load and the verdict stay. ← → step it; Done puts everything back.
+
+`LOADMAP_PANELS` names the panels, in the order of their tabs: `'limits'` (with the verdict's sentence),
+`'controls'` (the design: the load is in the console), `'headroom'` (with the scenarios compared), `'live'`,
+`'assumptions'`. `LoadmapPanel` is their type. `panels={['limits', 'live']}` offers only those; Design stays out of
+a model with nothing to set but the load.
+
 ## Full screen
 
-The diagram's **Full screen** button opens the browser's full screen, or a fixed overlay where the browser has none
-(an iPhone) or refuses (a frame without the permission); Esc leaves either. It fits the screen without scrolling: the
-diagram as wide as the screen, the verdict in one line under it, and the page's panels side by side in a compact form
-(a phone shows one at a time, under tabs, and pans the diagram in a box of its own). Each compact panel opens whole over
-the diagram.
+The bar's **Full screen** button opens the browser's full screen, or a fixed overlay where the browser has none (an
+iPhone) or refuses (a frame without the permission); Esc leaves either. It is the same canvas at the screen's size.
+From 1280 px wide one panel stays open beside the diagram, in a slot that is out of the diagram's room from the
+start.
 
-`LOADMAP_PANELS` names the panels, in order: `'verdict'`, `'live'`, `'limits'`, `'controls'`, `'headroom'`,
-`'compare'`, `'assumptions'` (`controls` is the design: the load is in the bar). `LoadmapPanel` is their type.
-`fullScreen={['verdict', 'live', 'controls']}` keeps only those; a panel the page does not show (no `headroom`, or one
-scenario for `compare`) stays out either way.
+**Panels** beside Close, or the F key, switches the tabs and the panel off and on: with `chrome="least"` full screen
+opens with the diagram, the load and the verdict alone. The reader switches it; a page that changes the prop resets
+the reader's choice.
 
-A switch beside Close, or the F key, turns full screen into **focus**: the bar, the diagram, the story and the
-verdict, if it is listed. `fullScreenMode="focus"` opens full screen there. The reader switches it; a page that changes
-the prop resets the reader's choice.
+`fill` makes the root fill its container, with no Full screen button: for a page of its own made to be framed. The
+container gives it its height, and `chrome` says whether it has the tabs. [Embedding](/embedding/) uses it.
 
-`fill` makes the root fill its container, laid out as full screen is (in `fullScreenMode`), with no full screen
-button: for a page of its own made to be framed. The container gives it its height. [Embedding](/embedding/) uses it.
+`fullScreen` and `fullScreenMode` are the names these had before 0.41: they still work and say so in the console.
+`fullScreen` took the panels' old names (`'verdict'` is in Limits now, `'compare'` in Headroom) and is `panels`;
+`fullScreenMode="focus"` is `chrome="least"`.
 
 ## The load bar for readers
 

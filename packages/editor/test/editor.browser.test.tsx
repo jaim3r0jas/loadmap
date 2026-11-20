@@ -79,7 +79,20 @@ async function mount(
   return { host, handle: ref.current!, edit, view }
 }
 
-const verdict = (host: HTMLElement) => host.querySelector('.lm-verdict')?.textContent ?? ''
+// the verdict's sentence: the preview's console says it in one line, with the whole of it as that line's title
+const verdict = (host: HTMLElement) =>
+  host.querySelector('.lm-canvas-verdict .lm-headline')?.getAttribute('title') ?? ''
+
+/**
+ * Opens one of the preview's panels by its tab, unless it is open: only the open panel is drawn, and what it holds
+ * comes a moment later. Called from inside a poll, it opens the tab again on a preview that was drawn anew.
+ */
+const openTab = (host: HTMLElement, title: string) => {
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')].find(
+    (b) => b.textContent === title,
+  )
+  if (tab?.getAttribute('aria-expanded') === 'false') tab.click()
+}
 const tabNames = (host: HTMLElement) => [...host.querySelectorAll('.lme-ftabs [role="tab"]')].map((t) => t.textContent)
 const activeTab = (host: HTMLElement) => host.querySelector('.lme-ftab[data-active] [role="tab"]')?.textContent
 /** The files' explorer, shown: it loads when first asked for. */
@@ -363,7 +376,13 @@ describe('the editor', () => {
     expect(host.querySelector('.lme-preview')!.hasAttribute('data-stale')).toBe(false)
     edit('"Postgres primary"', '"Main database"')
     await expect
-      .poll(() => host.querySelector('.lm-lim[data-component="db"] b')?.textContent, { timeout: 5000 })
+      .poll(
+        () => {
+          openTab(host, 'Limits')
+          return host.querySelector('.lm-lim[data-component="db"] b')?.textContent
+        },
+        { timeout: 5000 },
+      )
       .toContain('Main database')
   })
 
@@ -522,7 +541,7 @@ describe('the editor', () => {
     expect(press(view.contentDOM, save)).toBe(true)
     expect(press(view.contentDOM, { ...save, shiftKey: true })).toBe(true)
     // anywhere else in the editor: the same
-    expect(press(host.querySelector('.lm-verdict')!, save)).toBe(true)
+    expect(press(host.querySelector('.lm-canvas-verdict')!, save)).toBe(true)
     // a layout without Latin letters: the key the layout gives the S's code
     expect(press(view.contentDOM, { ...save, key: 'ы' })).toBe(true)
     // the other platform's modifier, ⌥ with it, or the letter alone are not Save
@@ -530,7 +549,9 @@ describe('the editor', () => {
     expect(press(view.contentDOM, { ...save, altKey: true })).toBe(false)
     expect(press(view.contentDOM, { key: 's', code: 'KeyS', keyCode: 83 })).toBe(false)
     // another letter, away from the text (where CodeMirror takes some: ⌘D selects the next match)
-    expect(press(host.querySelector('.lm-verdict')!, { ...save, key: 'd', code: 'KeyD', keyCode: 68 })).toBe(false)
+    expect(press(host.querySelector('.lm-canvas-verdict')!, { ...save, key: 'd', code: 'KeyD', keyCode: 68 })).toBe(
+      false,
+    )
     root?.unmount()
     document.body.replaceChildren()
 

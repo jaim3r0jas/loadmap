@@ -42,6 +42,17 @@ async function mount(initial = SOURCE) {
   return { host, view }
 }
 
+/**
+ * Opens one of the preview's panels by its tab, unless it is open: only the open panel is drawn, and what it holds
+ * comes a moment later. Called from inside a poll, it opens the tab again on a preview that was drawn anew.
+ */
+const openTab = (host: HTMLElement, title: string) => {
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')].find(
+    (b) => b.textContent === title,
+  )
+  if (tab?.getAttribute('aria-expanded') === 'false') tab.click()
+}
+
 const open = async () => {
   await userEvent.click(page.getByRole('button', { name: 'New' }))
   await userEvent.click(page.getByRole('menuitem', { name: 'From the catalog…' }))
@@ -69,7 +80,13 @@ describe('the catalog picker', () => {
     expect(text).toContain('cluster kafka "Apache Kafka" {')
     // the assumptions name it, published and linked
     await expect
-      .poll(() => [...host.querySelectorAll('.lm-facts li')].map((li) => li.textContent).join('\n'), { timeout: 5000 })
+      .poll(
+        () => {
+          openTab(host, 'Assumes')
+          return [...host.querySelectorAll('.lm-facts li')].map((li) => li.textContent).join('\n')
+        },
+        { timeout: 5000 },
+      )
       .toContain('Apache Kafka: 605 MB/s, published')
   })
 
@@ -84,9 +101,13 @@ describe('the catalog picker', () => {
     await userEvent.click(page.getByRole('button', { name: 'Use for Workers' }))
     expect(view.state.doc.toString()).toContain('  capacity: kafkaFigure\n')
     await expect
-      .poll(() => host.querySelector('.lm-lim[data-component="workers"] .lm-tag[data-kind="published"]'), {
-        timeout: 5000,
-      })
+      .poll(
+        () => {
+          openTab(host, 'Limits')
+          return host.querySelector('.lm-lim[data-component="workers"] .lm-tag[data-kind="published"]')
+        },
+        { timeout: 5000 },
+      )
       .toBeTruthy()
   })
 })
@@ -136,9 +157,13 @@ describe('how flows use a box from the catalog', () => {
     expect(text).toContain('connection kafkaConsumers {\n  hop: kafka -> consumers\n  rule: "kafka/consumer-group"\n}')
     // the board ranks it by its published figure
     await expect
-      .poll(() => host.querySelector('.lm-lim[data-component="kafka"] .lm-tag[data-kind="published"]'), {
-        timeout: 5000,
-      })
+      .poll(
+        () => {
+          openTab(host, 'Limits')
+          return host.querySelector('.lm-lim[data-component="kafka"] .lm-tag[data-kind="published"]')
+        },
+        { timeout: 5000 },
+      )
       .toBeTruthy()
   })
 

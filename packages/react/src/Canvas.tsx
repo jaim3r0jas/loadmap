@@ -37,13 +37,18 @@ const CANVAS_CSS = `
 .lm-canvas-over { position: absolute; z-index: 5; top: 0; left: 0; right: 0; box-sizing: border-box; display: flex; align-items: center; max-height: 45%; overflow: auto; overscroll-behavior: contain; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); box-shadow: 0 8px 18px -14px rgb(0 0 0 / .45); }
 .lm-canvas-over > .lm-story { flex: 1 1 auto; border: 0; border-radius: 0; background: none; }
 .lm-canvas-over > .lm-canvas-leave { flex: none; margin-right: 12px; }
+/* the bar's own buttons, at its end */
+.lm-canvas-tools { display: flex; flex: none; gap: 6px; margin-left: auto; }
+.lm-canvas-tools .lm-btn { padding: 4px 9px; }
+.lm-canvas-tools .lm-btn[aria-pressed="true"].lm-canvas-chrome { border-color: var(--lm-fg); box-shadow: inset 0 0 0 1px var(--lm-fg); }
+.lm-frame .lm-canvas-bar > .lm-legend + .lm-canvas-tools { margin-left: 0; }
 /* a slot that holds nothing takes no room */
 .lm-canvas-bar:empty, .lm-canvas-console:empty { display: none; }
 .lm-canvas[data-width="compact"] :is(.lm-canvas-bar, .lm-canvas-console) { padding: 6px 8px; }
 .lm-canvas[data-short] .lm-canvas-bar { padding: 4px 8px; }
 /* on a touch screen two fingers zoom a narrow canvas: Fit alone stays, clear of the boxes */
 @media (pointer: coarse) { .lm-canvas[data-width="compact"] .lm-zoom .lm-btn:not(:last-child) { display: none; } }
-/* until today's full screen goes: its rules for a phone (the load on two lines, no legend) are not the canvas's */
+/* a page of its own parts has full-screen rules for a phone (the load on two lines, no legend): not the canvas's */
 .lm.lm[data-full] .lm-canvas .lm-load { display: grid; }
 .lm.lm[data-full] .lm-canvas .lm-load small { display: block; }
 .lm.lm[data-full] .lm-canvas .lm-load > label { position: static; width: auto; height: auto; clip-path: none; }
@@ -88,7 +93,7 @@ const CANVAS_CSS = `
 
 /* the frame: what <Frame> puts in the two slots. Each is one row of a height nothing the reader does changes */
 .lm-frame .lm-canvas-bar { flex-wrap: nowrap; overflow: hidden; }
-.lm-frame .lm-canvas-bar > h2 { flex: 0 1 auto; min-width: 0; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-frame .lm-canvas-bar > h2 { flex: 0 5 auto; min-width: 0; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lm-frame .lm-canvas-bar > .lm-scenarios { flex: 0 2 auto; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px; }
 .lm-frame .lm-canvas-bar > .lm-scenarios::-webkit-scrollbar { display: none; }
 .lm-frame .lm-canvas-bar > .lm-scenarios > * { flex: none; white-space: nowrap; }
@@ -361,8 +366,9 @@ export function Canvas({
             legend={legend}
             onNodeClick={onNodeClick}
             selected={selected}
-            // in a page the wheel and one finger are the page's; a full screen has no page under it
-            canvas={{ ...inset, reserve, scrolls: !lm.fullScreen }}
+            // in a page, and in a frame of one it fills, the wheel and one finger are the page's; a full screen has
+            // no page under it
+            canvas={{ ...inset, reserve, scrolls: lm.fill || !lm.fullScreen }}
           />
         )}
         {box && consoles}
