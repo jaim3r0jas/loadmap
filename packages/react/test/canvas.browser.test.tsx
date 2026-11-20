@@ -111,8 +111,8 @@ describe('a canvas on a page', () => {
     expect(px(wrap, '--lm-inset-top')).toBe(`${top}px`)
     expect(px(wrap, '--lm-inset-bottom')).toBe(`${bottom}px`)
     expect(px(wrap, '--lm-inset-right')).toBe(`${CANVAS.rail}px`)
-    // the box less its border, the reserved sides and Fit's margin of 24 px on each side
-    expect(engine!.room).toEqual({ w: 998 - CANVAS.rail - 48, h: 498 - top - bottom - 48 })
+    // the box inside its border, less the reserved sides and Fit's margin of 24 px on each side
+    expect(engine!.room).toEqual({ w: canvas.clientWidth - CANVAS.rail - 48, h: 498 - top - bottom - 48 })
   })
 
   it('moves the view and not the layout when a panel opens', async () => {
@@ -139,7 +139,9 @@ describe('a canvas on a page', () => {
     const top = high(canvas.querySelector('.lm-canvas-bar'))
     const bottom = high(canvas.querySelector('.lm-canvas-console'))
     // no rail, and Fit's margin of 16 px on a board under 640 px
-    await expect.poll(() => engine!.room, { timeout: 5000 }).toEqual({ w: 478 - 32, h: 498 - top - bottom - 32 })
+    await expect
+      .poll(() => engine!.room, { timeout: 5000 })
+      .toEqual({ w: canvas.clientWidth - 32, h: 498 - top - bottom - 32 })
     expect(engine!.room!.w).toBeLessThan(wide.w)
     host!.style.width = '700px'
     await expect.poll(() => canvas.dataset.width, { timeout: 5000 }).toBe('regular')
