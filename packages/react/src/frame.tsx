@@ -2,7 +2,7 @@ import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, 
 import { hasDesign, LoadRange, Scenarios } from './bar'
 import { Canvas, useCanvasPanels, useCanvasSize } from './Canvas'
 import { type DiagramProps, Legend } from './Diagram'
-import { Story } from './story'
+import type { Story } from './story'
 import type { LoadmapController } from './useLoadmap'
 import { VerdictLine } from './verdictLine'
 
@@ -207,24 +207,43 @@ export function Frame({
     setTold(false)
     setSeen(false)
   }
+  // the story's bar comes with the first story shown: a page whose reader never starts it does not load it
+  const [StoryBar, setStoryBar] = useState<typeof Story | null>(null)
+  useEffect(() => {
+    if (!told || StoryBar) return
+    let on = true
+    import('./story').then((m) => on && setStoryBar(() => m.Story))
+    return () => {
+      on = false
+    }
+  }, [told, StoryBar])
+  const drawn = told && !!StoryBar
   const box = useRef<HTMLDivElement>(null)
   const was = useRef(told)
-  // the story was started from its button, by the keyboard's owner: the focus goes back there
-  const back = useRef(false)
+  // the story was started from its button, by the keyboard's owner: the focus goes into it once it is drawn, and
+  // back to the button when it is gone
+  const from = useRef<'button' | 'moved' | null>(null)
   useEffect(() => {
-    if (was.current === told) return
-    was.current = told
-    // the keyboard goes with it, and only then: from the button that started it into the story, where the arrows
-    // step it; and back to that button when the story it was in is gone. Never from the load or a box, nor from
-    // the page outside
+    // the keyboard goes with the story, and only then: from the button that started it into the story, where the
+    // arrows step it; and back to that button when the story it was in is gone. Never from the load or a box, nor
+    // from the page outside, and never scrolling the page
     const root = box.current
-    const at = root?.ownerDocument.activeElement
-    if (!root || !at) return
+    const doc = root?.ownerDocument
+    if (!root || !doc) return
     const play = root.querySelector<HTMLElement>('.lm-canvas-play')
-    if (told ? at === play : at === root.ownerDocument.body && back.current)
-      (told ? root.querySelector<HTMLElement>('.lm-canvas-over .lm-story') : play)?.focus({ preventScroll: true })
-    back.current = told && at === play
-  }, [told])
+    const at = doc.activeElement
+    if (told && !was.current) from.current = at === play ? 'button' : null
+    // the button is out of reach under the strip by now: the focus is still on it, or nowhere
+    if (drawn && from.current === 'button' && (at === play || at === doc.body)) {
+      root.querySelector<HTMLElement>('.lm-canvas-over .lm-story')?.focus({ preventScroll: true })
+      from.current = 'moved'
+    }
+    if (!told && was.current) {
+      if (from.current && at === doc.body) play?.focus({ preventScroll: true })
+      from.current = null
+    }
+    was.current = told
+  }, [told, drawn])
   return (
     <Canvas
       ref={box}
@@ -233,7 +252,7 @@ export function Frame({
       over={
         told ? (
           <>
-            <Story lm={lm} />
+            {StoryBar && <StoryBar lm={lm} />}
             {!live && (
               <button type="button" className="lm-btn lm-canvas-leave" aria-label="Leave the story" onClick={leave}>
                 Done
