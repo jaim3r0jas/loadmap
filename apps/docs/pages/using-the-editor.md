@@ -8,13 +8,14 @@ last version that compiled. Your text is kept in this browser as a draft.
 ## The canvas and the panels
 
 The diagram fills the window: drag it to move it, zoom with the wheel or a pinch (or + and −), and **Fit** brings
-the whole of it back. The text floats on its left: drag its edge to resize it, and **‹** hides it. The verdict, the
-controls and the other panels stand on the right: **Unpin** folds them onto a rail that opens when you point at it.
-This browser remembers how you leave them.
+the whole of it back. The text stands on its left: drag its edge to resize it, and **‹** hides it. This browser
+remembers how you leave it. The scenarios are over the diagram, the load and the verdict under it, and the limits, the
+design, the headroom, the live meters and the assumptions are panels that open from their tabs, one at a time: a
+window wide enough keeps one open.
 
-On a phone, **Diagram** and **Code** at the bottom switch between the two. The panels rest in a sheet over the
-diagram's bottom: the verdict and the load at first, more as you drag or tap it up. Typing, a row over the keyboard
-has Suggest, Format, Undo, an indent, braces, quotes, Rename, Find and Done; **⋯** has the rest.
+On a phone, **Diagram** and **Code** at the bottom switch between the two. The load and the verdict stay under the
+diagram, and a tab opens its panel as a sheet over them. Typing, a row over the keyboard has Suggest, Format, Undo, an
+indent, braces, quotes, Rename, Find and Done; **⋯** has the rest.
 
 A click on a box selects its lines in the text, and the cursor in a box's lines rings the box. **Format**
 (Shift+Alt+F) lays the text out the one way, as `loadmap fmt` does.
@@ -93,7 +94,7 @@ instead: it reaches only the repositories the app is installed on, for 8 hours.
 
 **Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a
 page…**, for a frame in another page ([Embedding](/embedding/)). The link opens with the text hidden: the diagram, and
-an inspector in the panel. Click a box to change its label, its capacity and the parameters it reads, or open
-**Model** for the title, the load, growth and the flows. Each change is a small edit of the text, so **Undo** takes it
+an **Inspect** tab first among the panels. Click a box to change its label, its capacity and the parameters it reads,
+or open **Model** for the title, the load, growth and the flows. Each change is a small edit of the text, so **Undo** takes it
 back, the link carries it, and **Show code** shows what changed. For a box `like` another, the inspector lists each
 line it takes from the other, as written there; **Write here** puts it in the box, to change it there.

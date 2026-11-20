@@ -96,7 +96,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
   const inset = sides(given)
   const reserve = given.reserve ? sides(given.reserve) : null
   const key = (i: Insets | null) => (i ? `${i.top} ${i.right} ${i.bottom} ${i.left}` : '')
-  const insetKey = `${key(inset)}|${key(reserve)}`
+  const insetKey = `${key(inset)}|${key(reserve)}|${given.scrolls ? 1 : 0}`
   // read when a box is pressed, so a new function each render does not redraw every box
   const click = useRef(onNodeClick)
   click.current = onNodeClick
@@ -253,7 +253,14 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
   // back on the page, the keyboard is where it was before: the panel it was in has moved
   const was = useRef(false)
   useEffect(() => {
-    if (was.current && !full) buttonRef.current?.focus()
+    // a canvas has its own button, in its bar
+    if (was.current && !full)
+      (
+        buttonRef.current ??
+        wrapRef.current
+          ?.closest('.lm')
+          ?.querySelector<HTMLElement>('.lm-canvas-bar:not([inert]) .lm-canvas-full, .lm-canvas-over .lm-story')
+      )?.focus()
     was.current = full
   }, [full])
   // the board as large as fits under the bar: as wide as the screen, unless that leaves the rows below it less than
@@ -313,7 +320,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
       engine.setRoom(null)
     }
   }, [engine, boxed, full, lm.root])
-  // F switches between the panels and focus, unless the keyboard is in a field or a panel is open whole
+  // F switches between the panels and focus, unless the keyboard is in a field
   const { setFullScreenMode, fullScreenMode } = lm
   const modesRef = useRef<HTMLFieldSetElement>(null)
   useEffect(() => {
@@ -322,13 +329,16 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
     if (!full || !root || lm.fill) return
     const f = (e: KeyboardEvent) => {
       if ((e.key !== 'f' && e.key !== 'F') || e.ctrlKey || e.metaKey || e.altKey) return
-      if (typing(e.composedPath()[0] ?? null) || root.querySelector(':scope > [data-drawer]')) return
+      if (typing(e.composedPath()[0] ?? null)) return
       e.preventDefault()
       if (e.repeat) return
       const next = fullScreenMode === 'focus' ? 'panels' : 'focus'
       // the keyboard was on a panel the other mode does not show: it waits on the switch
-      if (document.activeElement?.closest('.lm-dock, .lm-line'))
-        modesRef.current?.querySelector<HTMLButtonElement>(`[data-mode="${next}"]`)?.focus()
+      if (document.activeElement?.closest('.lm-canvas-tabs, .lm-canvas-panel'))
+        (
+          root.querySelector<HTMLButtonElement>('.lm-canvas-chrome') ??
+          modesRef.current?.querySelector<HTMLButtonElement>(`[data-mode="${next}"]`)
+        )?.focus()
       setFullScreenMode(next)
     }
     document.addEventListener('keydown', f)
@@ -341,7 +351,7 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
         {legend ? <Legend lm={lm} /> : <span />}
         <span className="lm-tools">
           {/* a root that fills its frame for good has neither: the page picks what it shows */}
-          {full && !lm.fill && (
+          {full && !lm.fill && !canvas && (
             <fieldset className="lm-modes" aria-label="Full screen shows (F)" ref={modesRef}>
               {(['panels', 'focus'] as const).map((m) => (
                 <button

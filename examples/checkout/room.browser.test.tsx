@@ -10,7 +10,10 @@ import { view } from '../alerts/view'
 let root: Root | null = null
 let host: HTMLDivElement | null = null
 
-/** Alerts, a long chain, filling a frame of this size: the frame is the diagram's room. */
+/**
+ * Alerts, a long chain, filling a frame of this size with the least around it: the diagram's room is the frame less
+ * the bar over it and the console under it.
+ */
 async function frame(width: number, height: number, direction?: Direction | 'auto', rows?: number) {
   await page.viewport(1600, 1300)
   host = document.createElement('div')
@@ -18,10 +21,10 @@ async function frame(width: number, height: number, direction?: Direction | 'aut
   document.body.appendChild(host)
   root = createRoot(host)
   const ref = createRef<LoadmapHandle>()
-  root.render(
-    <Loadmap ref={ref} model={alerts} view={view} fill fullScreenMode="focus" direction={direction} rows={rows} />,
-  )
+  root.render(<Loadmap ref={ref} model={alerts} view={view} fill chrome="least" direction={direction} rows={rows} />)
   await expect.poll(() => ref.current).toBeTruthy()
+  // the canvas tells its room once its bars are measured: the diagram is arranged for it
+  await expect.poll(() => ref.current!.engine.room, { timeout: 5000 }).not.toBeNull()
   await ref.current!.ready()
   return ref.current!
 }
@@ -32,11 +35,14 @@ const rows = (handle: LoadmapHandle) => {
   const scene = handle.board()?.scene
   return scene && new Set(scene.tiers.map((t) => (scene.direction === 'DOWN' ? t.x : t.y))).size
 }
-/** The share of the frame the diagram's board covers. */
-const covers = () => {
-  const b = host!.querySelector('.lm-board')!.getBoundingClientRect()
-  const h = host!.getBoundingClientRect()
-  return (b.width * b.height) / (h.width * h.height)
+/**
+ * The scale the whole diagram has in its room, as the arrangement counts it (`arrangementFor`): no scale past full
+ * size counts. The board is the whole canvas now, so its own size says nothing of how large the diagram is drawn.
+ */
+const fits = (handle: LoadmapHandle) => {
+  const room = handle.engine.room!
+  const { width, height } = handle.board()!.scene
+  return Math.min(room.w / width, room.h / height, 1)
 }
 
 afterEach(() => {
@@ -57,7 +63,7 @@ describe('the direction follows the room', () => {
     const handle = await frame(760, 1100)
     await expect.poll(() => runs(handle), { timeout: 5000 }).toBe('DOWN')
     await handle.ready()
-    const down = covers()
+    const down = fits(handle)
     await page.screenshot({ path: '__screenshots__/room-tall.png', element: host! })
     root!.unmount()
     host!.remove()
@@ -65,7 +71,7 @@ describe('the direction follows the room', () => {
     const held = await frame(760, 1100, 'RIGHT', 1)
     expect(runs(held)).toBe('RIGHT')
     await page.screenshot({ path: '__screenshots__/room-tall-right.png', element: host! })
-    expect(down).toBeGreaterThan(covers() * 1.5)
+    expect(down).toBeGreaterThan(fits(held) * 1.5)
   })
 
   it('keeps a direction the page sets, whatever the room', async () => {
@@ -102,7 +108,7 @@ describe('a long diagram folds to fill its room', () => {
   it('folds a chain held to the right into rows in a frame too narrow for it, larger than in one row', async () => {
     const one = await frame(760, 1100, 'RIGHT', 1)
     expect(rows(one)).toBe(1)
-    const strip = covers()
+    const strip = fits(one)
     const width = one.board()!.scene.width
     root!.unmount()
     host!.remove()
@@ -111,7 +117,7 @@ describe('a long diagram folds to fill its room', () => {
     await handle.ready()
     expect(runs(handle)).toBe('RIGHT')
     expect(handle.board()!.scene.width).toBeLessThan(width * 0.7)
-    expect(covers()).toBeGreaterThan(strip * 1.5)
+    expect(fits(handle)).toBeGreaterThan(strip * 1.5)
     await page.screenshot({ path: '__screenshots__/room-tall-folded.png', element: host! })
   })
 

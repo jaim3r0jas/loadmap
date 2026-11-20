@@ -13,7 +13,7 @@ let host: HTMLDivElement | null = null
 let handle: LoadmapHandle | null = null
 let ctl: LoadmapController | null = null
 
-function Page({ height, fill = false }: { height: number; fill?: boolean }) {
+function Page({ height, fill = false, scrolls }: { height: number; fill?: boolean; scrolls?: boolean }) {
   const lm = useLoadmap(checkout, view, { fill })
   useEffect(() => {
     handle = handleOf(lm)
@@ -21,7 +21,7 @@ function Page({ height, fill = false }: { height: number; fill?: boolean }) {
   }, [lm])
   return (
     <LoadmapRoot lm={lm}>
-      <Frame lm={lm} style={fill ? undefined : { height }} />
+      <Frame lm={lm} style={fill ? undefined : { height }} scrolls={scrolls} />
     </LoadmapRoot>
   )
 }
@@ -133,7 +133,6 @@ describe('a loadmap in one canvas', () => {
   it('is one row over and one under the diagram on a low canvas, the load beside the verdict', async () => {
     const canvas = await mount(800, 320)
     expect(canvas.dataset.short).toBe('')
-    expect(canvas.querySelector('.lm-canvas-bar h2')).toBeNull()
     // the slider keeps its name, unseen
     const input = canvas.querySelector<HTMLInputElement>('.lm-load input')!
     expect(input.labels![0]!.textContent).toBe(checkout.load.label)
@@ -347,13 +346,55 @@ describe('a loadmap in one canvas', () => {
     expect(board.style.touchAction).toBe('pan-x pan-y')
   })
 
-  it('takes the wheel and one finger for itself in full screen', async () => {
+  it('takes the wheel in a frame it fills, unless the page around that frame scrolls', async () => {
     const canvas = await mount(1100, 700, true)
     const board = canvas.querySelector<HTMLElement>('.lm-board')!
+    // a root that fills its container has no page under it (a pane of an editor), until the host says it has
     await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('none')
-    const k = handle!.engine.viewer!.shownView()!.k
     expect(wheel(board)).toBe(true)
-    expect(handle!.engine.viewer!.shownView()!.k).toBeGreaterThan(k)
+    root!.render(<Page height={700} fill scrolls />)
+    await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('pan-x pan-y')
+    expect(wheel(board)).toBe(false)
+    expect(wheel(board, true)).toBe(true)
+  })
+
+  it('takes the wheel and one finger for itself in full screen', async () => {
+    // no native full screen (an iPhone, a frame without the permission): the overlay stands for it
+    const native = Element.prototype.requestFullscreen
+    Element.prototype.requestFullscreen = undefined as never
+    try {
+      const canvas = await mount(1100, 600)
+      const board = canvas.querySelector<HTMLElement>('.lm-board')!
+      const button = canvas.querySelector<HTMLButtonElement>('.lm-canvas-full')!
+      expect(button.getAttribute('aria-label')).toBe('Full screen')
+      button.click()
+      await expect.poll(() => button.getAttribute('aria-pressed'), { timeout: 5000 }).toBe('true')
+      expect(button.getAttribute('aria-label')).toBe('Close full screen')
+      // the same box at the window's size
+      await expect.poll(() => canvas.getBoundingClientRect().height, { timeout: 5000 }).toBeGreaterThan(800)
+      await handle!.ready()
+      await frames()
+      const k = handle!.engine.viewer!.shownView()!.k
+      board.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 2 }))
+      expect(board.style.touchAction).toBe('none')
+      expect(wheel(board)).toBe(true)
+      expect(handle!.engine.viewer!.shownView()!.k).toBeGreaterThan(k)
+      // the Panels switch is there only in full screen; F switches it too
+      const chrome = canvas.querySelector<HTMLButtonElement>('.lm-canvas-chrome')!
+      expect(chrome.getAttribute('aria-pressed')).toBe('true')
+      expect(canvas.querySelector('.lm-canvas-tabs')).not.toBeNull()
+      chrome.click()
+      await expect.poll(() => canvas.querySelector('.lm-canvas-tabs'), { timeout: 5000 }).toBeNull()
+      expect(canvas.querySelector('.lm-canvas-console input[type="range"]')).not.toBeNull()
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }))
+      await expect.poll(() => canvas.querySelector('.lm-canvas-tabs'), { timeout: 5000 }).not.toBeNull()
+      button.click()
+      await expect.poll(() => button.getAttribute('aria-pressed'), { timeout: 5000 }).toBe('false')
+      expect(canvas.querySelector('.lm-canvas-chrome')).toBeNull()
+      expect(canvas.getBoundingClientRect().height).toBe(600)
+    } finally {
+      Element.prototype.requestFullscreen = native
+    }
   })
 
   it('keeps the story when it is stopped before its first step shows, with a way out', async () => {

@@ -1,29 +1,11 @@
 import type { Model, Values } from '@loadmap/core'
 import type { Scene, View } from '@loadmap/layout'
-import {
-  lazy,
-  type ReactNode,
-  type Ref,
-  Suspense,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { type ReactNode, type Ref, useEffect, useImperativeHandle, useSyncExternalStore } from 'react'
 import { storySeconds } from './camera'
-import type { OpenPanel } from './compact'
-import { Diagram } from './Diagram'
 import type { Engine } from './engine'
-import { Assumptions, Controls, hasDesign, Limits, LoadBar, Meters, Verdict } from './panels'
-import { Compare, HeadroomChart } from './scenarios'
-import { Story } from './story'
+import { FRAME_PANELS, Frame, type FramePanel } from './frame'
 import { injectStyles } from './styles'
 import { type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
-
-// full screen's compact panels come with the first full screen: a page that never opens it does not load them
-const Dock = lazy(() => import('./later').then((m) => ({ default: m.Dock })))
-const VerdictLine = lazy(() => import('./later').then((m) => ({ default: m.VerdictLine })))
 
 /** `auto` follows the system's light or dark; `inherit` the page's own switch (`data-theme`, or a `dark` or `light` class, on `<html>`). */
 export type Theme = 'auto' | 'light' | 'dark' | 'inherit'
@@ -135,9 +117,34 @@ export function LoadmapRoot({
   )
 }
 
-/** The panels full screen shows with the diagram, compact: the verdict and the assumptions in a line under it. */
-export const LOADMAP_PANELS = ['verdict', 'live', 'limits', 'controls', 'headroom', 'compare', 'assumptions'] as const
-export type LoadmapPanel = (typeof LOADMAP_PANELS)[number]
+/** A loadmap's panels, in the order of their tabs: one opens at a time, beside the diagram. */
+export const LOADMAP_PANELS = FRAME_PANELS
+export type LoadmapPanel = FramePanel
+
+/** The names `fullScreen` took while the panels were cards under the diagram, and the tab each is in now. */
+const BEFORE: Record<string, LoadmapPanel> = {
+  verdict: 'limits',
+  live: 'live',
+  limits: 'limits',
+  controls: 'controls',
+  headroom: 'headroom',
+  compare: 'headroom',
+  assumptions: 'assumptions',
+}
+
+/** The tabs a list of names stands for, old names or new, in the tabs' own order. */
+export function panelsOf(names: readonly string[]): LoadmapPanel[] {
+  const on = new Set(names.map((n) => BEFORE[n]))
+  return LOADMAP_PANELS.filter((p) => on.has(p))
+}
+
+const warned = new Set<string>()
+/** Says once that a prop has another name now. */
+function renamed(old: string, now: string): void {
+  if (warned.has(old)) return
+  warned.add(old)
+  console.warn(`loadmap: \`${old}\` is \`${now}\` now, and goes in a later version.`)
+}
 
 export interface LoadmapProps<P> extends LoadmapOptions<P> {
   model: Model<P>
@@ -147,25 +154,42 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   title?: ReactNode | false
   /** Lines added before the generated assumptions. */
   assumptions?: readonly ReactNode[]
-  /** The headroom chart. Default true. */
+  /** The headroom chart, in the Headroom tab. Default true. Without it and the comparison the tab is left out. */
   headroom?: boolean
-  /** The scenarios side by side, when the model declares two or more. Default true. */
+  /** The scenarios side by side under the headroom chart, when the model declares two or more. Default true. */
   compare?: boolean
+  /** The panels offered, in the order of their tabs. Default every one; Design only when the model has one. */
+  panels?: readonly LoadmapPanel[]
+  /** The panel that is open (one of the page's own by its id); null for none. Leave it out and the loadmap keeps it itself. */
+  open?: LoadmapPanel | (string & {}) | null
+  /** The panel open at first, when the loadmap keeps it itself. */
+  defaultOpen?: LoadmapPanel | (string & {}) | null
+  /** A panel opened or closed (null). */
+  onOpen?: (panel: LoadmapPanel | (string & {}) | null) => void
   /**
-   * The panels full screen shows, compact, below the diagram. Default every one the page shows. Focus mode shows the
-   * verdict of these. The scenarios and the load are in the bar over the diagram, in every layout.
+   * The page around it scrolls: the plain wheel and one finger are the page's. Default: true in a page, false with
+   * `fill` (say so for a root that fills a frame of a page that scrolls). Never in full screen.
    */
-  fullScreen?: readonly LoadmapPanel[]
+  scrolls?: boolean
+  /** @deprecated `panels` now, for the page and full screen alike. Its old names still stand for their tabs. */
+  fullScreen?: readonly string[]
   /** A click (or Enter) on a box of the diagram, by its id: every box is a button then. */
   onNodeClick?: (id: string) => void
   /** The box drawn as selected, by its id. */
   selected?: string | null
+  /**
+   * The page's own, in the canvas: each `Canvas.Panel` a panel whose tab comes before the loadmap's, anything else
+   * drawn over the canvas.
+   */
+  children?: ReactNode
   ref?: Ref<LoadmapHandle>
 }
 
 /**
- * The whole page piece: the scenarios and the load in a bar over the diagram, the diagram, verdict, headroom, live
- * meters, limits, the design controls and assumptions.
+ * The whole piece in one box the page sizes (by default `clamp(420px, 70dvh, 760px)` high): the title, the scenarios
+ * and the story over the diagram, the load and the verdict under it, and the limits, the design, the headroom, the
+ * live meters and the assumptions in panels that open from their tabs. Full screen is the same box at the screen's
+ * size.
  */
 export function Loadmap<P>({
   model,
@@ -175,134 +199,46 @@ export function Loadmap<P>({
   assumptions,
   headroom = true,
   compare = true,
-  fullScreen = LOADMAP_PANELS,
+  panels,
+  open,
+  defaultOpen,
+  onOpen,
+  scrolls,
+  fullScreen,
   onNodeClick,
   selected,
+  children,
   ref,
   ...o
 }: LoadmapProps<P>) {
   const lm = useLoadmap(model, view, o)
   useImperativeHandle(ref, () => handleOf(lm), [lm])
-  const side = compare && model.scenarios.length > 1
-  // the load is in the bar: the controls panel is the design, when there is one
-  const design = hasDesign(lm)
-  const charts: LoadmapPanel[] = []
-  if (headroom) charts.push('headroom')
-  if (side) charts.push('compare')
-  // marks what full screen leaves out: a panel not listed, a container none of whose panels are
-  const out = (...panels: LoadmapPanel[]) => (panels.some((p) => fullScreen.includes(p)) ? undefined : '')
-  const listed = (p: LoadmapPanel) =>
-    fullScreen.includes(p) && (p === 'headroom' ? headroom : p === 'compare' ? side : p !== 'controls' || design)
-  const full = lm.fullScreen
-  const focus = full && lm.fullScreenMode === 'focus'
-
-  // a panel whole, over the diagram: the page's own panel, shown alone, so there is never a second copy
-  const [drawer, setDrawer] = useState<{ panel: LoadmapPanel; from: HTMLElement } | null>(null)
-  if (drawer && !full) setDrawer(null)
-  const close = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (drawer) close.current?.focus()
-  }, [drawer])
-  const open: OpenPanel = (p, from) => setDrawer({ panel: p, from })
-  const shut = () => {
-    drawer?.from.focus()
-    setDrawer(null)
-  }
-  // Esc closes the drawer first, before the overlay's Esc on the document sees it
-  useEffect(() => {
-    if (!drawer) return
-    const f = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      drawer.from.focus()
-      setDrawer(null)
-    }
-    document.addEventListener('keydown', f, true)
-    return () => document.removeEventListener('keydown', f, true)
-  }, [drawer])
-  const drawn = (...panels: LoadmapPanel[]) => (drawer && panels.includes(drawer.panel) ? '' : undefined)
-  // in full screen only the panel open whole is drawn: the compact ones do the work of the rest
-  const panel = (id: LoadmapPanel, children: ReactNode) => (
-    <div className="lm-panel" data-panel={id} data-out={out(id)} data-drawn={drawn(id)}>
-      {(!full || drawer?.panel === id) && children}
-    </div>
-  )
-  const heading = title !== false && <h2>{title ?? model.title}</h2>
-  const verdict = listed('verdict')
-  const line = focus ? verdict : verdict || listed('assumptions')
+  if (fullScreen) renamed('fullScreen', 'panels')
+  if (o.fullScreenMode) renamed('fullScreenMode', 'chrome')
+  const listed = panels ?? (fullScreen ? panelsOf(fullScreen) : LOADMAP_PANELS)
+  // the Headroom tab holds the chart and the scenarios compared: each can be left out, and the tab with both. A list
+  // by the old names, which had a panel for each, says which of the two it meant
+  const old = !panels && fullScreen ? fullScreen : null
+  const chart = headroom && (!old || old.includes('headroom'))
+  const side = compare && model.scenarios.length > 1 && (!old || old.includes('compare'))
   return (
     <LoadmapRoot lm={lm} theme={theme}>
-      {full ? (
-        <div className="lm-head">
-          {heading}
-          <LoadBar lm={lm} />
-        </div>
-      ) : (
-        <>
-          {heading}
-          <LoadBar lm={lm} />
-        </>
-      )}
-      {/* focus shows it under the diagram, by its order: here it keeps its keyboard focus and its fill */}
-      <Story lm={lm} />
-      <Diagram lm={lm} onNodeClick={onNodeClick} selected={selected} />
-      {full && line && (
-        <div className="lm-line" data-tier={lm.ev.verdict.tier}>
-          <Suspense fallback={null}>
-            <VerdictLine
-              lm={lm}
-              verdict={verdict}
-              extra={assumptions?.length}
-              open={open}
-              assumptions={!focus && listed('assumptions')}
-            />
-          </Suspense>
-        </div>
-      )}
-      {full && !focus && (
-        <Suspense fallback={null}>
-          <Dock lm={lm} panels={LOADMAP_PANELS.filter(listed)} open={open} />
-        </Suspense>
-      )}
-      {/* on the page its parts are the root's; in full screen it is the drawer, one panel at a time */}
-      <div
-        className="lm-side lm-drawer"
-        data-out={out('verdict', 'live', 'limits', 'controls', ...charts, 'assumptions')}
-        data-drawer={drawer?.panel}
-        // a dialog while it is the drawer; on the page nothing but a wrapper
-        {...(drawer && { role: 'dialog', 'aria-label': 'The whole panel' })}
+      <Frame
+        lm={lm}
+        title={title}
+        panels={chart || side ? listed : listed.filter((p) => p !== 'headroom')}
+        open={open}
+        defaultOpen={defaultOpen}
+        onOpen={onOpen}
+        assumptions={assumptions}
+        scrolls={scrolls}
+        headroom={chart}
+        compare={side}
+        onNodeClick={onNodeClick}
+        selected={selected}
       >
-        {drawer && (
-          <div className="lm-drawer-bar" data-drawn="">
-            <button type="button" className="lm-btn" onClick={shut} ref={close}>
-              ✕ Back to full screen
-            </button>
-          </div>
-        )}
-        {panel('verdict', <Verdict lm={lm} />)}
-        {charts.length > 0 && (
-          <div
-            className={charts.length > 1 ? 'lm-charts lm-strip' : 'lm-charts'}
-            data-out={out(...charts)}
-            data-drawn={drawn(...charts)}
-          >
-            {headroom && panel('headroom', <HeadroomChart lm={lm} />)}
-            {side && panel('compare', <Compare lm={lm} />)}
-          </div>
-        )}
-        <div
-          className="lm-strip lm-live"
-          data-out={out('live', 'limits', 'controls')}
-          data-drawn={drawn('live', 'limits', 'controls')}
-        >
-          <div className="lm-card" data-out={out('live', 'limits')} data-drawn={drawn('live', 'limits')}>
-            {panel('live', <Meters lm={lm} />)}
-            {panel('limits', <Limits lm={lm} />)}
-          </div>
-          {design && panel('controls', <Controls lm={lm} load={false} />)}
-        </div>
-        {panel('assumptions', <Assumptions lm={lm} extra={assumptions} />)}
-      </div>
+        {children}
+      </Frame>
     </LoadmapRoot>
   )
 }

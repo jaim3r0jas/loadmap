@@ -610,15 +610,10 @@ const EMBED_HTML = `<!doctype html>
       .embed-problem { height: 100%; box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; text-align: center; font-size: 14px; }
       .embed-problem code { font: 12px ui-monospace, Menlo, monospace; color: #5d6677; overflow-wrap: anywhere; }
       .embed-problem a { color: #0d6a8a; }
-      /* the title, and Open ↗ with it, stays in a narrow frame, which full screen's narrow layout would hide */
-      @media (min-height: 261px) { html .lm[data-full] .lm-head h2 { display: block; } }
-      /* a frame of a doc's height keeps the story to its buttons: the board titles the step while it plays */
-      @media (max-height: 520px) { .lm[data-full] > .lm-story p { display: none; } }
-      /* a short frame keeps the diagram and one line of verdict */
-      @media (max-height: 260px) {
-        .lm .lm-story, .lm .lm-loadbar, .lm .lm-line .lm-link, .lm .lm-legend, .lm .lm-dock { display: none; }
-        .lm .lm-headline { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      }
+      /* the title gives way in a narrow frame, never Open ↗ beside it */
+      .lm-canvas-bar > h2 { display: flex; align-items: baseline; }
+      .embed-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .embed-open { flex: none; }
       @media (prefers-color-scheme: dark) {
         body { color: #e6e9ee; background: #14171c; }
         .embed-problem code { color: #9aa3b2; }

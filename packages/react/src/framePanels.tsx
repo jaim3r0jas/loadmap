@@ -12,10 +12,14 @@ export function FramePanelBody({
   lm,
   id,
   assumptions,
+  headroom = true,
+  compare = true,
 }: {
   lm: LoadmapController
   id: FramePanel
   assumptions?: readonly ReactNode[]
+  headroom?: boolean
+  compare?: boolean
 }) {
   switch (id) {
     case 'limits':
@@ -30,8 +34,8 @@ export function FramePanelBody({
     case 'headroom':
       return (
         <>
-          <HeadroomChart lm={lm} />
-          {lm.model.scenarios.length > 1 && <Compare lm={lm} />}
+          {headroom && <HeadroomChart lm={lm} />}
+          {compare && lm.model.scenarios.length > 1 && <Compare lm={lm} />}
         </>
       )
     case 'live':

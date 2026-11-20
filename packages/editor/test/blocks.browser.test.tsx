@@ -13,7 +13,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-/** A template on its own page, at these values. */
+/** A template on its own page, at these values, its live meters open. */
 async function mount(id: string, values: Record<string, number> = {}) {
   await page.viewport(1440, 1000)
   const { definition } = compile(TEMPLATES.find((t) => t.id === id)!.source)
@@ -21,7 +21,7 @@ async function mount(id: string, values: Record<string, number> = {}) {
   document.body.appendChild(host)
   const ref = createRef<LoadmapHandle>()
   root = createRoot(host)
-  root.render(<Loadmap ref={ref} model={definition!.model} view={definition!.view} />)
+  root.render(<Loadmap ref={ref} model={definition!.model} view={definition!.view} defaultOpen="live" />)
   await expect.poll(() => ref.current).toBeTruthy()
   const handle = ref.current!
   handle.setValues(values)
@@ -60,6 +60,9 @@ describe('the building blocks in the browser', () => {
     // 1,800 req/s against 1,500: a sixth turned away
     const { host } = await mount('rate-limit', { load: 3 })
     await expect.poll(() => meter(host, 'rejected at the rate limiter')).toBe('17 %')
+    // one panel at a time: the limits in place of the meters
+    host.querySelector<HTMLButtonElement>('.lm-canvas-tabs button')!.click()
+    await expect.poll(() => host.querySelector('.lm-lim[data-component="limiter"]')).toBeTruthy()
     expect(host.querySelector('.lm-lim[data-component="limiter"] .lm-tag[data-kind="estimated"]')).toBeNull()
   })
 

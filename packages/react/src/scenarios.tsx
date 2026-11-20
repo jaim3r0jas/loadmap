@@ -5,75 +5,30 @@ import {
   type Headroom,
   type HeadroomLine,
   headroom,
-  type Model,
   type Series,
 } from '@loadmap/core'
-import { fmt, monthOf, multiple, multiples, pct } from '@loadmap/core/format'
+import { fmt, multiple, multiples, pct } from '@loadmap/core/format'
 import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
   type RefObject,
-  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { scenarioColor, useSize, when, whenRange } from './bar'
 import type { LoadmapController } from './useLoadmap'
 
-/** Scenario identity colours, in declaration order; a fifth and later scenario is drawn muted. */
-const SERIES = ['var(--lm-s1)', 'var(--lm-s2)', 'var(--lm-s3)', 'var(--lm-s4)']
-
-/** The colour of a scenario by label; values of the reader's own are drawn in the text colour. */
-export function scenarioColor(model: Model, label: string | null): string {
-  if (label == null) return 'var(--lm-fg)'
-  const i = model.scenarios.findIndex((s) => s.label === label)
-  return SERIES[i] ?? 'var(--lm-muted)'
-}
+export { Scenarios, scenarioColor, useSize, when, whenRange } from './bar'
 
 const lineName = (l: HeadroomLine) => l.label ?? 'These values'
-
-/** A month for a table cell or an axis: "Mar 2031"; "now" for a crossing already reached. */
-export function when(model: Model, x: number | null): string {
-  const d = model.dateAt(x)
-  return d ? monthOf(d, true) : x != null && x <= 1 && model.growth ? 'now' : ''
-}
-
-/** The months of both edges: "Sep 2029–Feb 2030", or one month when they agree. */
-export function whenRange(model: Model, r: CrossingRange | null): string {
-  if (!r) return ''
-  const [lo, hi] = [when(model, r.low), when(model, r.high)]
-  return !hi || lo === hi ? lo : `${lo}–${hi}`
-}
 
 /** The comparison at the shown load: crossings do not depend on it, the verdicts do. */
 export function useComparison(lm: LoadmapController): Comparison {
   return useMemo(() => compare(lm.model, lm.values.load), [lm.model, lm.values.load])
-}
-
-/** One button per scenario: a reader switches designs without touching the controls. The load stays. */
-export function Scenarios({ lm }: { lm: LoadmapController }) {
-  const { model } = lm
-  if (!model.scenarios.length) return null
-  return (
-    <fieldset className="lm-scenarios">
-      <legend>Scenario</legend>
-      {model.scenarios.map((s) => (
-        <button
-          type="button"
-          key={s.label}
-          aria-pressed={lm.scenario?.label === s.label}
-          onClick={() => lm.setScenario(s.label)}
-        >
-          <i style={{ background: scenarioColor(model, s.label) }} />
-          {s.label}
-        </button>
-      ))}
-      {!lm.scenario && <span className="lm-own">your own values</span>}
-    </fieldset>
-  )
 }
 
 /** "+107 %" against the baseline; "same" within a rounding; nothing where either never runs out. */
@@ -162,24 +117,6 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
       </div>
     </div>
   )
-}
-
-/** The size of an element in CSS pixels, kept current: a chart draws at its own size so text stays legible. */
-export function useSize<T extends HTMLElement>(fallback: number) {
-  const ref = useRef<T>(null)
-  const [size, setSize] = useState({ width: fallback, height: 0 })
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const ro = new ResizeObserver(([e]) => {
-      const width = Math.round(e?.contentRect.width ?? el.clientWidth)
-      const height = Math.round(e?.contentRect.height ?? el.clientHeight)
-      if (width > 0) setSize((s) => (s.width === width && s.height === height ? s : { width, height }))
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  return [ref, size] as const
 }
 
 /** Every scenario's line over the load: it depends on every value but the load, which is only the marker. */

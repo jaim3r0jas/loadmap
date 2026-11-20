@@ -24,6 +24,8 @@ export {
   type View,
   type ViewDef,
 } from '@loadmap/layout'
+export { Canvas, type CanvasProps, useCanvasPanels, useCanvasSize } from './Canvas'
+export { CANVAS, type CanvasSize } from './canvasSize'
 export { Diagram, type DiagramProps } from './Diagram'
 export { workerElk } from './elk'
 export type { Cue, Dot, Engine } from './engine'
@@ -35,6 +37,7 @@ export {
   type LoadmapPanel,
   type LoadmapProps,
   LoadmapRoot,
+  panelsOf,
   type Theme,
   usePageTheme,
 } from './Loadmap'
@@ -42,4 +45,10 @@ export { Assumptions, Controls, Limits, LoadBar, LoadRange, Meters, Verdict } fr
 export { Compare, HeadroomChart, Scenarios, scenarioColor, useComparison } from './scenarios'
 export { Story } from './story'
 export { injectStyles, LOADMAP_CSS } from './styles'
-export { type FullScreenMode, type LoadmapController, type LoadmapOptions, useLoadmap } from './useLoadmap'
+export {
+  type Chrome,
+  type FullScreenMode,
+  type LoadmapController,
+  type LoadmapOptions,
+  useLoadmap,
+} from './useLoadmap'

@@ -98,6 +98,10 @@ export function LoadmapSource({
   // a prop passed as undefined leaves the definition's option alone
   const set = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined))
   const lines = def && [...(assumptions ?? []), ...def.options.assumptions]
+  // what the page sets wins over the file, by the old names of its props too
+  const page: ReturnType<typeof pageOptions> = def ? pageOptions(def.options) : {}
+  if ('fullScreen' in set) delete page.panels
+  if ('fullScreenMode' in set) delete page.chrome
   return (
     <>
       {compiled && !compiled.r.ok && (
@@ -115,7 +119,7 @@ export function LoadmapSource({
         <Loadmap
           model={def.model}
           view={def.view}
-          {...pageOptions(def.options)}
+          {...page}
           {...set}
           ref={handle}
           initial={sharedValues(def.model, drawn.current.values)}

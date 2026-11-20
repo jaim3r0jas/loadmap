@@ -62,7 +62,7 @@ import {
   setProperty,
   takeLine,
 } from '@loadmap/dsl/internal'
-import { Loadmap, type LoadmapHandle, type Theme, usePageTheme } from '@loadmap/react'
+import { Canvas, Loadmap, type LoadmapHandle, type Theme, useCanvasPanels, usePageTheme } from '@loadmap/react'
 import {
   type CSSProperties,
   type ReactNode,
@@ -78,7 +78,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { EditorCanvas, PANEL, type PanelMode } from './Canvas'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
@@ -204,26 +203,18 @@ export interface LoadmapEditorProps {
   /** Controls at the start of the bar, before the name: a way back, a brand. */
   start?: ReactNode
   /**
-   * The editor fills its container, which gives it a height, as a canvas: the bar, then the code in a panel on the
-   * left, the diagram the reader pans and zooms in the room between, and the verdict and the rest in a panel on the
-   * right. Each panel resizes by its inner edge and folds onto a rail. The bar shows the model's title. On a phone
-   * (below 720 px wide, or a phone on its side) the text or the diagram, switched at the bottom, the panels in a sheet
-   * over the diagram, and the actions other than Share in a sheet of their own. The root carries `data-narrow` on a
-   * phone and `data-short` below 1000 px, for a page's own controls to follow.
+   * The editor fills its container, which gives it a height: the bar, then the code in a panel on the left, which
+   * resizes by its inner edge and folds onto a rail, and beside it the diagram as `<Loadmap fill>` draws it: a canvas
+   * the reader pans and zooms, the scenarios over it, the load and the verdict under it, and the rest in panels that
+   * open from their tabs. The bar shows the model's title. On a phone (below 720 px wide, or a phone on its side) the
+   * text or the diagram, switched at the bottom, and the actions other than Share in a sheet of their own. The root
+   * carries `data-narrow` on a phone and `data-short` below 1000 px, for a page's own controls to follow.
    */
   fill?: boolean
   /** With `fill`: the code panel's share of the width (360 px to 60 % of it), and where a double-click on its edge puts it back. Default: 440 px. */
   split?: number
   /** With `fill`: the code panel was resized, to this share; a page can keep it. */
   onSplit?: (share: number) => void
-  /** With `fill`: the side panel pinned beside the canvas, or on `auto`, folded onto its rail. Default: pinned from 1280 px wide. */
-  panel?: PanelMode
-  /** With `fill`: the reader pinned or folded the side panel; a page can keep it. */
-  onPanel?: (mode: PanelMode) => void
-  /** With `fill`: the side panel's width in pixels (300 to 480). Default: 340. */
-  panelWidth?: number
-  /** With `fill`: the side panel was resized, to this width; a page can keep it. */
-  onPanelWidth?: (px: number) => void
   /** The reader showed or hid the code; a page can keep it. */
   onLayout?: (layout: EditorLayout) => void
   /**
@@ -292,10 +283,6 @@ export function LoadmapEditor({
   fill = false,
   split,
   onSplit,
-  panel: initialPanel,
-  onPanel,
-  panelWidth,
-  onPanelWidth,
   onLayout,
   track: initialTrack = false,
   onTrack,
@@ -462,18 +449,6 @@ export function LoadmapEditor({
   const [height, setHeight] = useState(0)
   // a short window is a phone on its side, not a tablet whose keyboard took half its height
   const narrow = width > 0 && (width < NARROW || (height < SHORT_HEIGHT && width < SIDEWAYS))
-  const [panelState, setPanelState] = useState<PanelMode | undefined>(initialPanel)
-  // a wide window pins the panel unless the reader said otherwise
-  // pinned only where it leaves the diagram room; a choice made on a wide screen waits for one
-  const canPin = width >= PANEL.pinFrom
-  const panel = !canPin ? 'auto' : (panelState ?? (width >= PIN_FROM ? 'pinned' : 'auto'))
-  const setPanel = (m: PanelMode) => {
-    setPanelState(m)
-    onPanel?.(m)
-  }
-  // the side panel's width as the page gave it, and as the reader set it
-  const panelStart = Number.isFinite(panelWidth) ? panelWidth! : PANEL.width
-  const [panelPx, setPanelPx] = useState(panelStart)
   const [pane, setPane] = useState<'text' | 'diagram'>('text')
   useLayoutEffect(() => {
     const el = root.current
@@ -1061,8 +1036,9 @@ export function LoadmapEditor({
     const box = all.symbols.find((s) => s.kind === 'node' && s.id === id)
     // a box another file declares: that file comes into the editor, for its lines and for the inspector's fields
     if (box) switchTo(box.file ?? all.given)
-    // in full screen, or on the diagram's tab, the text is out of sight: the keyboard must not go into it
-    const full = preview.current?.board()?.svg.closest('[data-full]')
+    // in full screen, or on the diagram's tab, the text is out of sight: the keyboard must not go into it. A canvas
+    // that fills the editor for good is no full screen
+    const full = preview.current?.board()?.svg.closest('[data-full]:not([data-full="fill"])')
     if (textHidden || !v || !box || full) return
     const end = Math.min(box.decl.to, v.state.doc.length)
     v.dispatch({
@@ -1134,32 +1110,19 @@ export function LoadmapEditor({
   }, [note, noted])
 
   /**
-   * The panels' widths in pixels. A pinned side panel takes no more than leaves the canvas `CODE.room` beside the code
-   * at its least; the code then takes from 360 px to 60 % of the editor, as far as the canvas keeps `CODE.room` (below
-   * about 720 px, its least wins). Over the canvas, the side panel takes its own width.
+   * The code panel's width in pixels: from 360 px to 60 % of the editor, as far as the canvas keeps `CODE.room` (below
+   * about 720 px, its least wins).
    */
   const reader = layout === 'reader'
-  const panelMost = Math.round(
-    panel === 'pinned'
-      ? Math.max(PANEL.min, Math.min(PANEL.max, width - (reader ? RAIL : CODE.min) - CODE.room))
-      : PANEL.max,
-  )
-  const panelAt = Math.round(Math.max(PANEL.min, Math.min(panelMost, panelPx)))
-  const right = panel === 'pinned' ? panelAt : RAIL
-  const codeMost = Math.max(CODE.min, Math.min(CODE.max * width, width - right - CODE.room))
+  const codeMost = Math.max(CODE.min, Math.min(CODE.max * width, width - CODE.room))
   const codePx = (share: number) =>
     Math.round(Math.max(CODE.min, Math.min(codeMost, Number.isFinite(share) ? share * width : CODE.start)))
   // the explorer's column is added to the code's panel, as far as the canvas keeps its room: the text keeps its width
-  const filesPx =
-    explorer && !reader ? Math.max(0, Math.min(FILES, Math.round(width - right - CODE.room - codePx(ratio)))) : 0
+  const filesPx = explorer && !reader ? Math.max(0, Math.min(FILES, Math.round(width - CODE.room - codePx(ratio)))) : 0
   const resizeCode = (all: number, done: boolean) => {
     const px = all - filesPx
     setRatio(px / width)
     if (done) onSplit?.(px / width)
-  }
-  const resizePanel = (px: number, done: boolean) => {
-    setPanelPx(px)
-    if (done) onPanelWidth?.(px)
   }
 
   const list = problems(state.result)
@@ -1188,9 +1151,9 @@ export function LoadmapEditor({
     [reader, text, tab, selected],
   )
 
-  // a phone: the text or the diagram, one at a time, the panels in a sheet; typing, the keyboard takes the bottom
+  // a phone: the text or the diagram, one at a time; typing, the keyboard takes the bottom
   const phone = fill && narrow
-  // a filling editor wide enough: the diagram is a canvas, the code's panel and the side panel on either side
+  // a filling editor wide enough: the code's panel, and the diagram's canvas in the room beside it
   const canvas = fill && width > 0 && !narrow
   const typing = usePhoneTyping(phone, root)
   // below this the page's own controls in the bar take their short form
@@ -1202,7 +1165,7 @@ export function LoadmapEditor({
         : [count(errors, 'error'), count(warnings, 'warning')].filter(Boolean).join(' · ')}
     </output>
   )
-  // it loads as the code hides, before the reader picks a box
+  // beside the diagram it loads as the code hides, before the reader picks a box; in a canvas, with its panel
   const inspector = reader && (
     <Suspense fallback={null}>
       <Inspector
@@ -1485,7 +1448,6 @@ export function LoadmapEditor({
         canvas
           ? ({
               '--lme-start': `${reader ? RAIL : codePx(ratio) + filesPx}px`,
-              '--lme-panel': `${panelAt}px`,
               '--lme-rail': `${RAIL}px`,
             } as CSSProperties)
           : undefined
@@ -1620,7 +1582,6 @@ export function LoadmapEditor({
         >
           {canvas && (
             <PanelHead
-              side="start"
               title="Code"
               note={status}
               fold="Hide code"
@@ -1760,7 +1721,6 @@ export function LoadmapEditor({
           )}
           {canvas && (
             <Resize
-              side="start"
               label="Resize the code"
               value={codePx(ratio) + filesPx}
               min={CODE.min + filesPx}
@@ -1774,36 +1734,39 @@ export function LoadmapEditor({
           // nothing drawn before the editor knows its width, and so which layout it takes
           <div className="lme-preview" />
         ) : canvas || phone ? (
-          <div className="lme-preview" data-stale={stale || undefined} hidden={phone && !reader && pane === 'text'}>
+          <div
+            className="lme-preview"
+            data-stale={stale || undefined}
+            data-grid={grid ? undefined : 'off'}
+            hidden={phone && !reader && pane === 'text'}
+          >
             {def ? (
-              <EditorCanvas
+              // the canvas every loadmap is, filling the room: the editor's own bar has the title, and the editor
+              // shows every panel whatever the definition picks for a page
+              <Loadmap
                 key={state.doc}
                 ref={preview}
-                def={def}
-                grid={grid}
-                look={look}
+                model={def.model}
+                view={def.view}
+                theme={look}
+                {...pageOptions(def.options)}
+                panels={undefined}
+                chrome="all"
+                fill
+                zoom
+                title={false}
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
                 selected={selected}
-                phone={phone}
-                panel={panel}
-                onPanel={setPanel}
-                canPin={canPin}
-                width={panelAt}
-                resize={
-                  <Resize
-                    side="end"
-                    label="Resize the panel"
-                    value={panelAt}
-                    min={PANEL.min}
-                    max={panelMost}
-                    onChange={resizePanel}
-                    onReset={() => resizePanel(panelStart, true)}
-                  />
-                }
-                inspector={inspector}
-                note={staleNote}
-              />
+              >
+                {reader && (
+                  <Canvas.Panel id={INSPECT} title="Inspect">
+                    {inspector}
+                  </Canvas.Panel>
+                )}
+                {reader && <InspectOnClick selected={selected} />}
+                {staleNote}
+              </Loadmap>
             ) : (
               <p className="lme-empty">Fix the errors in the text to see the diagram.</p>
             )}
@@ -1831,7 +1794,6 @@ export function LoadmapEditor({
         )}
         {canvas && reader && (
           <Rail
-            side="start"
             tier={errors ? 'over' : warnings ? 'warn' : 'ok'}
             label={errors || warnings ? `${count(errors, 'error') || count(warnings, 'warning')} · Code` : 'Code'}
             aria-label={
@@ -1874,6 +1836,21 @@ export function LoadmapEditor({
   )
 }
 
+/** The inspector's panel among the canvas's, by its id: the first of the tabs while the code is hidden. */
+const INSPECT = 'inspect'
+
+/**
+ * In the canvas: a box clicked while the code is hidden opens its fields. Once for each box, so a panel the reader
+ * closes stays closed.
+ */
+function InspectOnClick({ selected }: { selected: string | null }) {
+  const { show } = useCanvasPanels()
+  useEffect(() => {
+    if (selected) show(INSPECT)
+  }, [selected, show])
+  return null
+}
+
 /** The one change from `a` to `b`: only the part that differs, so the cursor stays where it was. */
 export function between(a: string, b: string): { from: number; to: number; insert: string } {
   let from = 0
@@ -1887,7 +1864,7 @@ export function between(a: string, b: string): { from: number; to: number; inser
 
 /**
  * The code panel: its width to start and its least, in pixels; its most as a share of the editor's; and the room the
- * canvas always keeps between the panels.
+ * canvas always keeps beside it.
  */
 const CODE = { start: 440, min: 360, max: 0.6, room: 320 } as const
 /** What the explorer's file operations read of the language: handed over, so its chunk imports none of it. */
@@ -1896,8 +1873,6 @@ const DSL: Dsl = { imports, resolvePath, relativePath, parse, MAX_FILES, LANGUAG
 const FILES = 220
 /** Below this width the canvas's bar is short: a page's controls in it take their short form. */
 const SHORT = 1000
-/** From this width the side panel starts pinned. */
-const PIN_FROM = 1280
 /** Below this width, or this height, a filling editor shows one pane at a time. */
 const NARROW = 720
 const SHORT_HEIGHT = 500

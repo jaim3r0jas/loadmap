@@ -4,6 +4,7 @@ import { createRef, type Ref, useImperativeHandle } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
+import { Document } from '../document'
 import { watchDots } from '../dots'
 import { checkout } from './model'
 import { view } from './view'
@@ -18,7 +19,7 @@ afterEach(() => {
   host = null
 })
 
-/** A page with the checkout board the reader pans and zooms; every box click is counted. */
+/** A page with the checkout canvas, which the reader pans and zooms; every box click is counted. */
 async function mount() {
   await page.viewport(1280, 900)
   host = document.createElement('div')
@@ -26,7 +27,7 @@ async function mount() {
   const ref = createRef<LoadmapHandle>()
   const clicks: string[] = []
   root = createRoot(host)
-  root.render(<Loadmap ref={ref} model={checkout} view={view} speed={10} zoom onNodeClick={(id) => clicks.push(id)} />)
+  root.render(<Loadmap ref={ref} model={checkout} view={view} speed={10} onNodeClick={(id) => clicks.push(id)} />)
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
   const el = host.querySelector<HTMLElement>('.lm')!
@@ -239,10 +240,13 @@ describe('pan and zoom on a page', () => {
     expect(viewBox(board)).not.toBe(zoomed)
     handle.step(2)
     expect(handle.engine.playing).toBe(true)
+    // the page has drawn the story before the reader's hand comes: the test steps the clock within one task
+    await expect.poll(() => el.querySelector('.lm-canvas-over .lm-story'), { timeout: 5000 }).not.toBeNull()
     drag(board, board, 50, 0)
     expect(handle.engine.playing).toBe(false)
     expect(handle.engine.viewer!.readerView).not.toBeNull()
-    await expect.poll(() => el.querySelector('.lm-story button')?.textContent).toContain('Play')
+    // the story lies over the canvas's bar, stopped: its own button plays it on
+    await expect.poll(() => el.querySelector('.lm-canvas-over .lm-story-nav button')?.textContent).toContain('Play')
   })
 })
 
@@ -308,7 +312,7 @@ describe('a canvas', () => {
 })
 
 describe('the dots’ canvas', () => {
-  /** A board in a host styled `css`, its root filling the host from the first render; zooming or not. */
+  /** A board in a host styled `css`, its root filling the host from the first render: a canvas, or a page's board. */
   async function sized(css: string, zoom: boolean) {
     host = document.createElement('div')
     host.style.cssText = css
@@ -317,7 +321,7 @@ describe('the dots’ canvas', () => {
     document.body.appendChild(host)
     const ref = createRef<LoadmapHandle>()
     root = createRoot(host.lastElementChild!)
-    root.render(zoom ? <Canvas ref={ref} /> : <Loadmap ref={ref} model={checkout} view={view} speed={10} />)
+    root.render(zoom ? <Canvas ref={ref} /> : <Document ref={ref} model={checkout} view={view} speed={10} />)
     await expect.poll(() => ref.current).toBeTruthy()
     await ref.current!.ready()
     return watchDots(host.querySelector('canvas')!)
@@ -341,6 +345,7 @@ describe('the dots’ canvas', () => {
     await expect.poll(dots).toEqual(sharp)
   })
 
+  // a page of its own, put together from the parts: `<Loadmap>`'s board is a canvas, and always zooms
   it('follows a board that does not zoom, as its page narrows', async () => {
     await page.viewport(1280, 900)
     const dots = await sized('width: 900px', false)

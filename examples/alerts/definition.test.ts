@@ -1,4 +1,4 @@
-import { PANELS } from '@loadmap/dsl/internal'
+import { PANELS, pageOptions } from '@loadmap/dsl/internal'
 import { LOADMAP_PANELS } from '@loadmap/react'
 import { describe, expect, it } from 'vitest'
 import { compiled, grid, sameDots, sameModel, sameView } from '../roundtrip'
@@ -23,8 +23,12 @@ describe('alerts.loadmap', () => {
     })
   })
 
-  it('names the panels of full screen as <Loadmap> does', () => {
-    expect(PANELS).toEqual(LOADMAP_PANELS)
+  it("puts every panel the language names in one of <Loadmap>'s tabs, and the page's in the tabs Alerts.tsx offers", () => {
+    expect(pageOptions({ assumptions: [], fullScreen: [...PANELS] }).panels).toEqual(LOADMAP_PANELS)
+    expect(pageOptions(def.options)).toMatchObject({
+      panels: ['limits', 'controls', 'headroom', 'live'],
+      chrome: 'all',
+    })
   })
 
   it('lays out the same as view.ts', async () => {

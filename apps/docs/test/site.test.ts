@@ -493,8 +493,9 @@ describe('the built site', () => {
     // version badge, the footer and What's new's package names add 0.08 kB of CSS: 6.31 kB; the sidebar's folding
     // groups 0.1 kB: 6.41 kB; the search's button and its keys 0.3 kB (the search itself loads on first use): 6.72 kB.
     // The chunks' hashed names compress a few bytes better or worse with each build (6.79 to 6.80 kB with no change
-    // to the client): the bound leaves that room
-    expect(kb).toBeLessThan(6.85)
+    // to the client): the bound leaves that room. The canvas loads its panels, its story and its zoom in chunks of
+    // their own, each one more name here: 6.86 kB
+    expect(kb).toBeLessThan(6.9)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
@@ -524,14 +525,21 @@ describe('the built site', () => {
         expect(await page.evaluate(() => document.querySelectorAll('[data-node]').length), route).toBe(nodes)
         if (/^examples\/./.test(route))
           expect(await page.evaluate(() => Boolean((globalThis as { __loadmap?: object }).__loadmap))).toBe(true)
-        // every board of the docs pans and zooms, but the quick start's, which is the react README's code; the
-        // landing board leaves its headroom chart to the example's page
+        // every board of the docs pans and zooms, and offers its headroom chart in a tab (a menu on a low one); the
+        // landing board has no tabs and leaves the chart to the example's page
         if (route !== 'editor/') {
-          const zoom = page.locator('.island .lm-zoom')
-          if (route === 'getting-started/') expect(await zoom.count(), route).toBe(0)
-          else await zoom.first().waitFor({ timeout: 10_000 })
+          await page.locator('.island .lm-zoom').first().waitFor({ timeout: 10_000 })
           const boards = await page.locator('.island .lm').count()
-          expect(await page.locator('.island [data-panel="headroom"]').count(), route).toBe(route === '' ? 0 : boards)
+          const offered = () =>
+            page.evaluate(
+              () =>
+                [...document.querySelectorAll('.island .lm')].filter((lm) =>
+                  [...lm.querySelectorAll('.lm-canvas-tabs button, .lm-canvas-menu option')].some(
+                    (t) => t.textContent === 'Headroom',
+                  ),
+                ).length,
+            )
+          await expect.poll(offered, { timeout: 10_000, message: route }).toBe(route === '' ? 0 : boards)
         }
         expect(errors, route).toEqual([])
         await page.close()
@@ -704,7 +712,9 @@ describe('the built site', () => {
     try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
       await page.goto(`${url}editor/#${hash}`)
-      await page.waitForSelector('.lme-inspector')
+      // the inspector is the first of the canvas's panels, opened by a click on a box
+      await page.waitForSelector('.lme-preview .lm-canvas-tabs button')
+      expect(await page.locator('.lme-preview .lm-canvas-tabs button').first().textContent()).toBe('Inspect')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
       // the old link opens the same model, at the values it carries
       expect(await page.locator('.lme-title').first().textContent()).toBe('Checkout pipeline')
@@ -772,6 +782,9 @@ describe('the built site', () => {
           const root = document.querySelector<HTMLElement>('.lm')!
           const r = root.getBoundingClientRect()
           const b = root.querySelector('.lm-board')!.getBoundingClientRect()
+          const title = root.querySelector('.lm-canvas-bar h2')?.getBoundingClientRect()
+          const link = root.querySelector('.embed-open')
+          const o = link?.getBoundingClientRect()
           return {
             full: root.dataset.full,
             fills: [r.width, r.height],
@@ -782,8 +795,12 @@ describe('the built site', () => {
             ],
             board: b.width > 0 && b.height > 0 && b.right <= innerWidth + 0.5 && b.bottom <= innerHeight + 0.5,
             load: root.querySelector('.lm-headline b')?.textContent,
-            fullScreen: [...root.querySelectorAll('button')].some((x) => x.textContent?.includes('Full screen')),
-            open: root.querySelector('.embed-open')?.getAttribute('href') ?? null,
+            fullScreen: root.querySelector('.lm-canvas-full') !== null,
+            // the least chrome: neither the panels' tabs nor a panel
+            panels: root.querySelectorAll('.lm-canvas-tabs, .lm-canvas-menu, .lm-canvas-panel').length,
+            open: link?.getAttribute('href') ?? null,
+            // whole in the bar's title, which gives way beside it
+            openShown: !!o && !!title && o.width > 0 && o.left >= title.left - 0.5 && o.right <= title.right + 0.5,
           }
         })
         const { w, h } = sizes[i]!
@@ -794,18 +811,29 @@ describe('the built site', () => {
           board: true,
           load: '25×',
           fullScreen: false,
+          panels: 0,
+          // Open ↗ opens the same link in the editor, at any size: the title beside it is what gives way
+          open: `${url}editor/#${hash}`,
+          openShown: true,
         })
-        // Open ↗ opens the same link in the editor; a short frame keeps only the diagram and a line of verdict
-        if (h > 260) expect(m.open).toBe(`${url}editor/#${hash}`)
-        else expect(m.open === null || !(await frame.locator('.embed-open').isVisible())).toBe(true)
       }
+      // the board is the frame's whole room at any shape: how far the boxes' middles reach down it, over across it
+      const runsDown = () =>
+        frames[0]!.evaluate(() => {
+          const at = [...document.querySelectorAll('[data-node]')].map((n) => {
+            const r = n.getBoundingClientRect()
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+          })
+          const reach = (of: number[]) => Math.max(...of) - Math.min(...of)
+          return reach(at.map((p) => p.y)) > reach(at.map((p) => p.x))
+        })
+      // wider than tall, it runs across
+      expect(await runsDown()).toBe(false)
       // a block resized tall and narrow in the doc: the diagram runs top to bottom, still without scrolling the page
       await page.evaluate(() =>
         document.querySelector('#f0')!.setAttribute('style', 'border: 0; width: 360px; height: 720px'),
       )
-      const board = () =>
-        frames[0]!.evaluate(() => document.querySelector('.lm-board')!.getBoundingClientRect().toJSON())
-      await expect.poll(async () => (await board()).height > (await board()).width, { timeout: 15_000 }).toBe(true)
+      await expect.poll(runsDown, { timeout: 15_000 }).toBe(true)
       expect(await frames[0]!.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBe(0)
       expect(errors).toEqual([])
       await page.close()
@@ -824,21 +852,23 @@ describe('the built site', () => {
           const el = document.querySelector<HTMLElement>('.lm')!
           return {
             theme: el.dataset.theme ?? null,
-            mode: el.dataset.mode,
-            minis: [...el.querySelectorAll<HTMLElement>('[data-mini]')].map((m) => m.dataset.mini),
+            tabs: [...el.querySelectorAll('.lm-canvas-tabs button')].map((b) => b.textContent),
+            menu: el.querySelector('.lm-canvas-menu') !== null,
           }
         })
-      expect(await root(panels)).toEqual({ theme: 'dark', mode: 'panels', minis: ['limits'] })
-      // a value it does not know is the default: the diagram first, the reader's theme
-      expect(await root(unknown)).toMatchObject({ theme: null, mode: 'focus' })
-      await play.waitForSelector('.lm-story[data-playing]', { timeout: 10_000 })
+      // the tabs of the panels it names, by their names of now or of before: the verdict is with the limits
+      expect(await root(panels)).toEqual({ theme: 'dark', tabs: ['Limits'], menu: false })
+      // a value it does not know is the default: the diagram first, without tabs, in the reader's theme
+      expect(await root(unknown)).toEqual({ theme: null, tabs: [], menu: false })
+      // the story's text lies over the frame's bar while it plays
+      await play.waitForSelector('.lm-canvas-over .lm-story[data-playing]', { timeout: 10_000 })
       expect(errors).toEqual([])
       await page.close()
       // never by itself with reduced motion
       const still = await framed([{ query: '?play=1', hash, w: 860, h: 440 }], { reducedMotion: 'reduce' })
       await still.frames[0]!.waitForFunction(() => document.querySelectorAll('[data-node]').length === 6)
       await still.page.waitForTimeout(1500)
-      expect(await still.frames[0]!.locator('.lm-story[data-playing]').count()).toBe(0)
+      expect(await still.frames[0]!.locator('.lm-canvas-over, .lm-story').count()).toBe(0)
       await still.page.close()
     }, 120_000)
 
@@ -902,31 +932,34 @@ describe('the built site', () => {
         const page = await browser.newPage({ viewport: { width, height } })
         await page.goto(`${url}editor/`)
         await page.waitForSelector('[data-node]')
-        // fitted once the layout and the view are in: every box between the code's panel and the side panel
+        // fitted once the layout and the view are in: every box between the code's panel and the canvas's tabs
         await page.waitForFunction(() => {
           const code = document.querySelector('.lme-left')!.getBoundingClientRect()
-          const panel = document.querySelector('.lme-panel')!.getBoundingClientRect()
+          const tabs = document.querySelector('.lme-preview .lm-canvas-tabs')?.getBoundingClientRect()
           const boxes = [...document.querySelectorAll('.lme-preview [data-node]')].map((n) => n.getBoundingClientRect())
-          return boxes.every((b) => b.left > code.right && b.right < panel.left && b.top > 0 && b.bottom < innerHeight)
+          return (
+            !!tabs &&
+            boxes.every((b) => b.left > code.right && b.right < tabs.left && b.top > 0 && b.bottom < innerHeight)
+          )
         })
         const m = await page.evaluate(() => {
           const lme = document.querySelector('.lme')!.getBoundingClientRect()
           const text = document.querySelector('.lme-left')!.getBoundingClientRect()
-          const canvas = document.querySelector('.lme-canvas')!.getBoundingClientRect()
-          const panel = document.querySelector('.lme-panel')!.getBoundingClientRect()
+          const canvas = document.querySelector('.lme-preview .lm-canvas')!.getBoundingClientRect()
           return {
             frame: document.querySelectorAll('.top, .side, .pager').length,
             scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
             lme: [lme.width, lme.height],
-            // the code, the canvas and the panel side by side, the code from the window's left edge, as tall as all
-            // the bar leaves
+            // the code and the canvas side by side, the code from the window's left edge and the canvas to its right
+            // one, as tall as all the bar leaves
             beside:
               text.left === 0 &&
               Math.abs(canvas.left - text.right) < 1 &&
-              Math.abs(panel.left - canvas.right) < 1 &&
-              panel.right === innerWidth &&
-              text.bottom === innerHeight,
-            panel: document.querySelector<HTMLElement>('.lme-panel')!.dataset.mode,
+              Math.abs(canvas.right - innerWidth) < 1 &&
+              text.bottom === innerHeight &&
+              Math.abs(canvas.bottom - innerHeight) < 1,
+            // the canvas's panels by its own width: a rail of tabs, or the panel kept open
+            tabs: document.querySelector<HTMLElement>('.lme-preview .lm-canvas')!.dataset.tabs,
           }
         })
         const at = `${width}x${height}`
@@ -934,7 +967,7 @@ describe('the built site', () => {
         expect(m.scroll, at).toEqual([width, height])
         expect(m.lme, at).toEqual([width, height])
         expect(m.beside, at).toBe(true)
-        expect(m.panel, at).toBe('pinned')
+        expect(m.tabs, at).toBe(width - 440 >= 1280 ? 'head' : 'rail')
         await page.close()
       }
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -948,20 +981,13 @@ describe('the built site', () => {
       expect(await edge.getAttribute('aria-valuenow')).toBe('520')
       const wide = await page.evaluate(() => document.querySelector('.lme-left')!.getBoundingClientRect().width)
       expect(Math.abs(wide - 520)).toBeLessThan(2)
-      // the panel's width stays so
-      const side = page.getByRole('separator', { name: 'Resize the panel' })
-      await side.focus()
-      await page.keyboard.press('ArrowLeft')
-      expect(await side.getAttribute('aria-valuenow')).toBe('356')
-      await page.reload()
-      expect(await side.getAttribute('aria-valuenow')).toBe('356')
-      // the code and the panel folded stay so
+      // the code folded stays so, and Inspect is then the first of the canvas's tabs
       await page.getByRole('button', { name: 'Hide code' }).click()
-      await page.getByRole('button', { name: 'Hide the panel' }).click()
       await page.reload()
       await page.waitForSelector('.lme-rail[data-side="start"]')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
-      expect(await page.locator('.lme-rail[data-side="end"]').isVisible()).toBe(true)
+      await page.waitForSelector('.lme-preview .lm-canvas-tabs button')
+      expect(await page.locator('.lme-preview .lm-canvas-tabs button').first().textContent()).toBe('Inspect')
       await page.getByRole('button', { name: 'Help' }).click()
       expect(await page.locator('#help').isVisible()).toBe(true)
       await page.keyboard.press('Escape')
@@ -1336,7 +1362,7 @@ describe('the built site', () => {
     }
   }, 120_000)
 
-  it('fits a phone: the text or the diagram, a sheet of panels, a finger to pan and two to zoom', async () => {
+  it('fits a phone: the text or the diagram in its canvas, a finger to pan and two to zoom', async () => {
     const browser = await chromium.launch()
     try {
       const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
@@ -1348,14 +1374,12 @@ describe('the built site', () => {
       await page.getByRole('tab', { name: 'Diagram' }).tap()
       await page.waitForSelector('.lme-preview [data-node]')
       expect(await page.locator('.lme-left').isHidden()).toBe(true)
-      // the whole diagram, between the bar and the sheet
+      // the whole diagram, between the bar and the canvas's tabs over its console
       await page.waitForFunction(() => {
         const bar = document.querySelector('.lme-bar')!.getBoundingClientRect()
-        const sheet = document.querySelector('.lme-sheet')?.getBoundingClientRect()
+        const tabs = document.querySelector('.lme-preview .lm-canvas-tabs')?.getBoundingClientRect()
         const boxes = [...document.querySelectorAll('.lme-preview [data-node]')].map((n) => n.getBoundingClientRect())
-        return (
-          !!sheet && boxes.every((b) => b.left >= 0 && b.right <= 390 && b.top > bar.bottom && b.bottom < sheet.top)
-        )
+        return !!tabs && boxes.every((b) => b.left >= 0 && b.right <= 390 && b.top > bar.bottom && b.bottom < tabs.top)
       })
       const m = await page.evaluate(() => ({
         scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
@@ -1387,9 +1411,14 @@ describe('the built site', () => {
       const moved = (await viewBox())!.split(' ').map(Number)
       // closer: the board shows less of the scene
       expect(moved[2]!).toBeLessThan(fitted[2]!)
-      // the sheet: tapped up, its tabs
-      await page.locator('.lme-grab').tap()
-      await page.waitForSelector('.lme-sheet[data-detent="half"] [role="tab"]')
+      // a tab of the canvas: its panel as a sheet on the console, the switch under it all
+      await page.locator('.lme-preview .lm-canvas-tabs button', { hasText: 'Limits' }).tap()
+      await page.waitForSelector('.lme-preview .lm-canvas-panel[data-place="sheet"]')
+      const under = await page.evaluate(() => {
+        const console = document.querySelector('.lme-preview .lm-canvas-console')!.getBoundingClientRect()
+        return console.bottom <= document.querySelector('.lme-switch')!.getBoundingClientRect().top + 0.5
+      })
+      expect(under).toBe(true)
       // the rest of the buttons, in a sheet of their own
       expect(await page.getByRole('button', { name: 'Format' }).isVisible()).toBe(false)
       await page.getByRole('button', { name: 'More' }).tap()

@@ -1,5 +1,5 @@
-import { compile } from '@loadmap/dsl'
-import { Loadmap, type LoadmapHandle } from '@loadmap/react'
+import { compile, type Definition } from '@loadmap/dsl'
+import { Diagram, Loadmap, type LoadmapHandle, LoadmapRoot, useLoadmap } from '@loadmap/react'
 import { LoadmapSource } from '@loadmap/react/source'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -43,6 +43,16 @@ afterEach(() => {
   root = null
   host = null
 })
+
+/** A page of its own with the board alone: a page's board zooms only when the page says so. */
+function Board({ model, view }: Pick<Definition, 'model' | 'view'>) {
+  const lm = useLoadmap(model, view)
+  return (
+    <LoadmapRoot lm={lm}>
+      <Diagram lm={lm} />
+    </LoadmapRoot>
+  )
+}
 
 describe('a subsystem on the board', () => {
   it('is a frame with its name around its boxes, in the state of the worst of them', async () => {
@@ -181,12 +191,14 @@ describe('a subsystem on the board', () => {
     await expect.poll(crumbs, { timeout: 5000 }).toBeNull()
   })
 
+  // `<Loadmap>`'s board is a canvas, which always zooms: a board put on a page from the parts does not
   it('leaves a frame still on a board that does not zoom', async () => {
+    const def = compile(SOURCE).definition!
     host = document.createElement('div')
     host.style.width = '1200px'
     document.body.appendChild(host)
     root = createRoot(host)
-    root.render(<LoadmapSource source={SOURCE} />)
+    root.render(<Board model={def.model} view={def.view} />)
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
     expect(host.querySelector('[data-subsystem-id="eu"] rect')!.getAttribute('role')).toBeNull()
   })

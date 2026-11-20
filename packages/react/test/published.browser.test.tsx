@@ -66,9 +66,11 @@ async function mount(count: number) {
   const ref = createRef<LoadmapHandle>()
   const m = brokers(count)
   root = createRoot(host)
-  root.render(<Loadmap ref={ref} model={m} view={viewOf(m)} />)
+  root.render(<Loadmap ref={ref} model={m} view={viewOf(m)} defaultOpen="limits" />)
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
+  // the limits are open: what a panel holds comes with it
+  await expect.poll(() => host!.querySelector('.lm-verdict'), { timeout: 5000 }).not.toBeNull()
   return host
 }
 
@@ -85,6 +87,10 @@ describe('a published capacity', () => {
     expect(el.querySelector('.lm-verdict')?.textContent).toContain('(capacity published, a best case)')
     const row = el.querySelector('.lm-lim[data-component="brokers"]')!
     expect(row.querySelector('.lm-tag[data-kind="published"]')?.textContent).toBe('published')
+    // one panel is open at a time: the assumptions take the limits' place
+    const tabs = [...el.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')]
+    tabs.find((b) => b.textContent === 'Assumes')!.click()
+    await expect.poll(() => el.querySelector('.lm-facts li'), { timeout: 5000 }).not.toBeNull()
     const facts = [...el.querySelectorAll('.lm-facts li')].map((li) => li.textContent ?? '')
     const line = facts.find((t) => t.startsWith('Brokers:'))!
     expect(line).toContain('605 MB/s')
@@ -146,7 +152,7 @@ describe('a .loadmap with a published statement', () => {
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    root.render(<LoadmapSource source={SOURCE} />)
+    root.render(<LoadmapSource source={SOURCE} defaultOpen="limits" />)
     await expect
       .poll(() => host!.querySelector('.lm-verdict')?.textContent, { timeout: 5000 })
       .toContain('The brokers have no published benchmark for 6 brokers')

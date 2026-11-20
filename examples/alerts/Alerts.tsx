@@ -24,8 +24,9 @@ export function Alerts({
       view={view}
       speed={10}
       transition={1}
-      fullScreen={['verdict', 'live', 'limits', 'controls', 'headroom']}
-      fullScreenMode="panels"
+      panels={['limits', 'controls', 'headroom', 'live']}
+      // as alerts.loadmap lists them: the headroom, not the scenarios compared
+      compare={false}
       theme={theme}
       zoom={zoom}
       headroom={headroom}

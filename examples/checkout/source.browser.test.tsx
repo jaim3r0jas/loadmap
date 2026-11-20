@@ -20,16 +20,23 @@ function host() {
   return el
 }
 
+/** Opens a panel from its tab, as a reader does: one is open at a time, and what it holds comes with it. */
+const open = (el: HTMLElement, name: string) =>
+  [...el.querySelectorAll<HTMLButtonElement>('.lm-canvas-tabs button')].find((b) => b.textContent === name)!.click()
+
 it('draws a .loadmap text with the options it declares', async () => {
   const el = host()
   const ref = createRef<LoadmapHandle>()
-  root!.render(<LoadmapSource source={source} name="checkout.loadmap" ref={ref} />)
+  root!.render(<LoadmapSource source={source} name="checkout.loadmap" ref={ref} defaultOpen="limits" />)
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
   expect(el.querySelectorAll('[data-node]').length).toBe(6)
-  expect(el.querySelector('.lm-verdict')!.textContent).toContain('API gateway')
+  await expect.poll(() => el.querySelector('.lm-verdict')?.textContent, { timeout: 5000 }).toContain('API gateway')
   // the definition's own `assume:` line reaches the page, as compile() + <Loadmap {...options}> would put it
-  expect(el.textContent).toContain('Load scales linearly with users')
+  open(el, 'Assumes')
+  await expect
+    .poll(() => el.querySelector('.lm-facts')?.textContent, { timeout: 5000 })
+    .toContain('Load scales linearly with users')
 })
 
 it('shows the diagnostics as loadmap check prints them, and draws once the text is fixed', async () => {
@@ -98,14 +105,27 @@ it('keeps the values through an edit of the model, where they still fit it; init
 it("puts the page's assumptions first, and lets a prop left undefined keep the definition's option", async () => {
   const el = host()
   const ref = createRef<LoadmapHandle>()
-  root!.render(<LoadmapSource source={source} ref={ref} assumptions={['Prices as of Q3.']} speed={undefined} />)
+  root!.render(
+    <LoadmapSource
+      source={source}
+      ref={ref}
+      assumptions={['Prices as of Q3.']}
+      speed={undefined}
+      defaultOpen="assumptions"
+    />,
+  )
   await expect.poll(() => ref.current).toBeTruthy()
   await ref.current!.ready()
-  const text = el.textContent ?? ''
-  expect(text).toContain('Prices as of Q3.')
-  expect(text).toContain('Load scales linearly with users')
-  // checkout.loadmap says speed: 10
-  expect(text).toContain('10× speed')
+  await expect
+    .poll(() => el.querySelector('.lm-facts')?.textContent ?? '', { timeout: 5000 })
+    .toContain('Prices as of Q3.')
+  const text = el.querySelector('.lm-facts')!.textContent ?? ''
+  expect(text.indexOf('Prices as of Q3.')).toBeLessThan(text.indexOf('Load scales linearly with users'))
+  // checkout.loadmap says speed: 10: the legend says it, with the live meters
+  open(el, 'Live')
+  await expect
+    .poll(() => el.querySelector('.lm-canvas-panel .lm-legend')?.textContent, { timeout: 5000 })
+    .toContain('10× speed')
 })
 
 it('runs a fan-out wider than it is long down on a wide screen, unless the text says which way', async () => {
