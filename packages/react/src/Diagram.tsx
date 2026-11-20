@@ -424,7 +424,8 @@ function typing(t: EventTarget | null): boolean {
   return t instanceof HTMLInputElement && !keys.includes(t.type)
 }
 
-function Legend({ lm }: { lm: LoadmapController }) {
+/** The flows by colour, and what a dot's other colours mean. */
+export function Legend({ lm }: { lm: LoadmapController }) {
   const flows = lm.view.def.flows as Record<string, { color: string; label?: string }>
   const merges = Object.values(lm.ev.overload).some((o) => o.merge)
   const grey = Object.values(lm.ev.stages).some((s) => s.kind === 'fanout')
