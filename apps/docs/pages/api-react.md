@@ -152,6 +152,8 @@ itself; `scrolls` gives them back to a page that scrolls around the frame. [Embe
 `fullScreen` and `fullScreenMode` are the names these had before 0.41: they still work and say so in the console.
 `fullScreen` took the panels' old names (`'verdict'` is in Limits now, `'compare'` in Headroom) and is `panels`;
 `fullScreenMode="focus"` is `chrome="least"`.
+`panelsOf(names)` gives the tabs a list of names stands for, old names or new: for a link or a setting stored with
+the old ones.
 
 ## The load bar for readers
 

@@ -177,7 +177,8 @@ export const EDITOR_CSS = `
 /* over the canvas, under its bar: the diagram is the last version without errors */
 .lme-preview .lm-canvas > .lme-stale { position: absolute; z-index: 2; top: calc(var(--lm-canvas-top) + 8px); left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box; margin: 0; padding: 4px 10px; background: var(--lm-surface); border: 1px solid var(--lm-warn); border-radius: 6px; }
 /* the inspector in its panel: the panel is its frame, and scrolls it */
-.lme .lm-canvas-panel .lme-inspector { position: static; max-height: none; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+/* the panel scrolls, not the inspector in it: an item that scrolls would be squeezed to the panel's height */
+.lme .lm-canvas-panel .lme-inspector { position: static; max-height: none; overflow: visible; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
 /* the code's panel: flush to its edge with a border on the canvas's side, the edge that resizes it, and a rail when
    folded */
 .lme[data-canvas] .lme-pane { position: absolute; z-index: 5; top: 0; bottom: 0; padding: 0; gap: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--lm-surface); }

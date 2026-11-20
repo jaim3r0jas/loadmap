@@ -235,6 +235,9 @@ export function pageOptions(o: DefinitionOptions) {
     ...(o.rows != null ? { rows: o.rows } : {}),
     ...(o.assumptions.length ? { assumptions: o.assumptions } : {}),
     ...(o.fullScreen ? { panels: TAB_ORDER.filter((t) => o.fullScreen?.some((p) => TABS[p] === t)) } : {}),
+    // the Headroom tab holds the chart and the scenarios compared: a list that names one of the two leaves the other out
+    ...(o.fullScreen?.includes('compare') && !o.fullScreen.includes('headroom') ? { headroom: false } : {}),
+    ...(o.fullScreen?.includes('headroom') && !o.fullScreen.includes('compare') ? { compare: false } : {}),
     ...(o.fullScreenMode ? { chrome: o.fullScreenMode === 'focus' ? ('least' as const) : ('all' as const) } : {}),
     ...(o.closed ? { closed: o.closed } : {}),
   }

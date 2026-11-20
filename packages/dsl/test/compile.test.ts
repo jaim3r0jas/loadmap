@@ -201,6 +201,13 @@ describe('compile', () => {
     expect(tabs('compare, live, limits, verdict, headroom')).toEqual(['limits', 'headroom', 'live'])
     expect(tabs('')).toEqual([])
     expect(pageOptions(compile(def({})).definition!.options)).not.toHaveProperty('panels')
+    // the Headroom tab holds both the chart and the comparison: a list with one of them leaves the other out
+    const of = (list: string) => pageOptions(compile(def({ top: `fullScreen: [${list}]` })).definition!.options)
+    expect(of('verdict, headroom')).toMatchObject({ panels: ['limits', 'headroom'], compare: false })
+    expect(of('verdict, headroom')).not.toHaveProperty('headroom')
+    expect(of('compare')).toMatchObject({ panels: ['headroom'], headroom: false })
+    expect(of('headroom, compare')).not.toHaveProperty('headroom')
+    expect(of('headroom, compare')).not.toHaveProperty('compare')
     expect(compile(def({ top: 'fullScreen: []' })).definition!.options.fullScreen).toEqual([])
     expect(errors(def({ top: 'fullScreen: [verdict, contrls]' }))).toEqual([
       {

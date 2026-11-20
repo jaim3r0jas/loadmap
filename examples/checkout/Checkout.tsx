@@ -14,6 +14,7 @@ export function Checkout({
   headroom,
   compare,
   fill,
+  scrolls,
   panels,
 }: {
   theme?: Theme
@@ -22,6 +23,7 @@ export function Checkout({
   headroom?: boolean
   compare?: boolean
   fill?: boolean
+  scrolls?: boolean
   panels?: readonly LoadmapPanel[]
 }) {
   return (
@@ -36,6 +38,7 @@ export function Checkout({
       headroom={headroom}
       compare={compare}
       fill={fill}
+      scrolls={scrolls}
       panels={panels}
       assumptions={['Load scales linearly with users; 1× is the 5-minute peak of an ordinary day.']}
     />

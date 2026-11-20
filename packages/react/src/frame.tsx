@@ -208,9 +208,8 @@ export function Frame({
   const least = lm.fullScreen && lm.fullScreenMode === 'focus'
   const shown = least ? [] : panels.filter((p) => p !== 'controls' || hasDesign(lm))
   // the page's own panels go with the frame's; what it draws over the canvas stays
-  const own = least
-    ? Children.toArray(children).filter((c) => !(isValidElement(c) && c.type === Canvas.Panel))
-    : children
+  // through `toArray` either way, so its children keep their keys, and their state, when the panels go and come
+  const own = Children.toArray(children).filter((c) => !least || !(isValidElement(c) && c.type === Canvas.Panel))
   // the story takes the canvas while a step of it shows or it plays: its text over the bar, the panels away
   // held from its start to Done: stopped before its first step shows (a pause, a value the reader changed), the
   // strip stays, with a way out of its own
@@ -229,10 +228,20 @@ export function Frame({
   }
   // the story's bar comes with the first story shown: a page whose reader never starts it does not load it
   const [StoryBar, setStoryBar] = useState<typeof Story | null>(null)
+  // read when the bar cannot load (offline, a deploy since): the story is left, and the canvas is the reader's again
+  const failed = useRef(() => {})
+  failed.current = () => {
+    lm.setStoryPlaying(false)
+    lm.setStep(null)
+    leave()
+  }
   useEffect(() => {
     if (!told || StoryBar) return
     let on = true
-    import('./story').then((m) => on && setStoryBar(() => m.Story))
+    import('./story').then(
+      (m) => on && setStoryBar(() => m.Story),
+      () => on && failed.current(),
+    )
     return () => {
       on = false
     }

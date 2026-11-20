@@ -326,6 +326,12 @@ export function Canvas({
   // the bars come once the box has a size, so they are measured in its size class; the diagram once they are
   // measured: it is arranged once, for the room it keeps
   const measured = !!box && (!bars.length || !!bar) && (!consoles.length || !!cons)
+  // a canvas hidden from the start (a tab, a phone's other view) has no size to wait for: its diagram is drawn by its
+  // shape, so what drives it from outside (a page's handle) finds it, and takes the canvas's room when it shows. Once
+  // drawn it stays
+  const unseen = !box && !!now
+  const [started, setStarted] = useState(false)
+  if (!started && (measured || unseen)) setStarted(true)
   const has = ids.length > 0
   const tabs = has ? tabsAt(size) : null
   // the menu of a low canvas lies in the bar's row: without a bar, or with an empty one, that row is still kept
@@ -369,7 +375,7 @@ export function Canvas({
             {over}
           </div>
         )}
-        {measured && (
+        {started && (
           <Diagram
             lm={lm}
             legend={legend}

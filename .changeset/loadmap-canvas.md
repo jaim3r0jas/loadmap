@@ -16,6 +16,8 @@ What changes for a page:
 - `panels`, `open`, `defaultOpen` and `onOpen` choose and drive the panels; `chrome="least"` opens full screen (and
   a root that fills) with the diagram, the load and the verdict alone. `fullScreen` and `fullScreenMode` still work
   and say in the console that they are `panels` and `chrome` now; `zoom` is no longer needed.
+  `fullScreen` used to shape full screen only: its list now says which tabs the page offers too (`[]`: none).
+  `scrolls` gives the wheel and one finger back to a page that scrolls around a root that fills its frame.
 - `LOADMAP_PANELS` is the five tabs: `limits` (with the verdict's sentence), `controls`, `headroom` (with the
   scenarios compared), `live`, `assumptions`.
 - Gone from `<Loadmap>`: the dock of compact cards and the drawer of full screen, focus mode's layout, and the

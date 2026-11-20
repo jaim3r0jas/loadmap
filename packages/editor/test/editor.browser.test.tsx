@@ -1261,10 +1261,11 @@ describe('the editor filling its container', () => {
     const rail = host.querySelector<HTMLElement>('.lme-rail[data-side="start"]')!
     expect(rail.textContent).toBe('Code')
     expect(box(host, '.lme-preview').left).toBeCloseTo(rail.getBoundingClientRect().right, 0)
-    // fitted again: wider, and further left
+    // fitted again in the wider room: as large at least (the bars' height can be what holds it), and further left
     await expect
-      .poll(() => drawn(host).right - drawn(host).left, { timeout: 5000 })
-      .toBeGreaterThan(before.right - before.left)
+      .poll(() => drawn(host).left + drawn(host).right, { timeout: 5000 })
+      .toBeLessThan(before.left + before.right)
+    expect(drawn(host).right - drawn(host).left).toBeGreaterThanOrEqual(before.right - before.left - 0.5)
     expect(drawn(host).left).toBeGreaterThan(rail.getBoundingClientRect().right)
     await userEvent.click(page.getByRole('button', { name: 'Show code' }))
     expect(host.querySelector<HTMLElement>('.lme-left')!.hidden).toBe(false)

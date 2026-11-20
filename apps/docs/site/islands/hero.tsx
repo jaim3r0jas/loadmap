@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client'
 export function mount(el: HTMLElement) {
   createRoot(el).render(
     <StrictMode>
-      <Checkout theme="inherit" fill panels={[]} />
+      <Checkout theme="inherit" fill scrolls panels={[]} />
     </StrictMode>,
   )
 }

@@ -165,7 +165,7 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   /** The panel open at first, when the loadmap keeps it itself. */
   defaultOpen?: LoadmapPanel | (string & {}) | null
   /** A panel opened or closed (null). */
-  onOpen?: (panel: LoadmapPanel | null) => void
+  onOpen?: (panel: LoadmapPanel | (string & {}) | null) => void
   /**
    * The page around it scrolls: the plain wheel and one finger are the page's. Default: true in a page, false with
    * `fill` (say so for a root that fills a frame of a page that scrolls). Never in full screen.

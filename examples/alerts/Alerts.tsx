@@ -25,6 +25,8 @@ export function Alerts({
       speed={10}
       transition={1}
       panels={['limits', 'controls', 'headroom', 'live']}
+      // as alerts.loadmap lists them: the headroom, not the scenarios compared
+      compare={false}
       theme={theme}
       zoom={zoom}
       headroom={headroom}
