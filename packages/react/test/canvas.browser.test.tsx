@@ -100,6 +100,19 @@ describe('a canvas on a page', () => {
     ])
   })
 
+  it("takes the height a plain rule of the page gives it, though the page's stylesheet comes first", async () => {
+    // before loadmap's own stylesheet is there: the default height has no weight, so the order does not matter
+    const rule = document.createElement('style')
+    rule.textContent = '.lm-canvas { height: 333px; }'
+    document.head.prepend(rule)
+    try {
+      const canvas = await mount(1000)
+      expect(canvas.getBoundingClientRect().height).toBe(333)
+    } finally {
+      rule.remove()
+    }
+  })
+
   it('takes a default height when the page gives none', async () => {
     const canvas = await mount(1000)
     const h = canvas.getBoundingClientRect().height

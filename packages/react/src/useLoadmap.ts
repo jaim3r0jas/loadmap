@@ -71,7 +71,7 @@ export interface LoadmapOptions<P> extends SimOptions {
   transition?: number
 }
 
-/** @deprecated The names `chrome` had: `panels` is `all`, `focus` is `least`. The controller still holds it by these. */
+/** What stands around the diagram in full screen, as the controller holds it: `panels` is `chrome` `all`, `focus` is `least`. */
 export type FullScreenMode = 'panels' | 'focus'
 /** What stands around the diagram in full screen: everything, or the least. */
 export type Chrome = 'all' | 'least'

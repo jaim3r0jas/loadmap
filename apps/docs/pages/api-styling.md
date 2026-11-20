@@ -120,6 +120,22 @@ by default and as wide as the root. Nothing the reader does changes its height, 
 The default height has no weight of its own, so a plain `.lm-canvas` rule of the page sets it, wherever the page's
 stylesheet stands.
 
+The canvas says how it is arranged on its own element, for a rule of yours that should follow it:
+
+| On `.lm-canvas`              | When                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `data-width="compact"`       | Under 520 px wide: the open panel is a sheet                          |
+| `data-width="regular"`       | From 520 px                                                           |
+| `data-width="wide"`          | From 900 px: the tabs are a rail                                      |
+| `data-short`                 | Under 420 px high: one row over and one under the diagram             |
+| `data-pinned`                | Full screen from 1280 px: a panel stays open                          |
+| `data-tabs`                  | Where the tabs are: `rail`, `row`, `menu` or `head` (a pinned panel)  |
+| `data-over`                  | While the story lies over the bar                                     |
+
+Its parts are `.lm-canvas-bar`, `.lm-canvas-console`, `.lm-canvas-tabs` and `.lm-canvas-panel` (with `data-panel`,
+the panel's id, and `data-place`, `side` or `sheet`). Keep their heights as they are when the reader acts: the
+diagram is arranged for the room they leave.
+
 ## Light, dark and inherit
 
 `<Loadmap theme>` (and `LoadmapRoot`, `<LoadmapSource>`, the editor) takes one of four:
@@ -146,9 +162,9 @@ The stylesheet is one string, `LOADMAP_CSS`. `injectStyles(doc?)` adds it once t
 - Server rendering: put `LOADMAP_CSS` in the page's `<head>` as `<style id="loadmap-css">`, so the first paint is
   styled; the root then finds it by its id and adds nothing.
 - A shadow root: the document's stylesheet does not reach inside it, so put `LOADMAP_CSS` in a `<style>` inside the
-  shadow root yourself. The canvas, the zoom buttons and the path over a zoomed board have small stylesheets of their
-  own (`<style id="loadmap-canvas-css">` and `"loadmap-zoom-css"`), which they put in the shadow root they are
-  drawn in.
+  shadow root yourself: it holds the canvas's styles too. The zoom buttons and the path over a zoomed board have a
+  small stylesheet of their own (`<style id="loadmap-zoom-css">`), which goes into the document only: in a shadow
+  root they show unstyled, and the keys and the pointer still pan and zoom.
 - A frame or a window of your own: `injectStyles(frame.contentDocument)`.
 
 ```ts

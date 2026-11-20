@@ -33,15 +33,12 @@ const ZOOM_CSS = `
 .lm-wrap[data-canvas] > .lm-bar { position: absolute; left: calc(var(--lm-inset-left) + 12px); bottom: calc(var(--lm-inset-bottom) + 12px); z-index: 2; max-width: calc(100% - var(--lm-inset-left) - var(--lm-inset-right) - 260px); padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--lm-surface) 88%, transparent); pointer-events: none; }
 `
 
-/** Once per document, or per shadow root the board is in. */
-function injectZoomStyles(board: HTMLElement): void {
-  const scope = board.getRootNode()
-  const into = scope instanceof ShadowRoot ? scope : board.ownerDocument
-  if (into.getElementById('loadmap-zoom-css')) return
-  const el = board.ownerDocument.createElement('style')
+function injectZoomStyles(doc: Document): void {
+  if (doc.getElementById('loadmap-zoom-css')) return
+  const el = doc.createElement('style')
   el.id = 'loadmap-zoom-css'
   el.textContent = ZOOM_CSS
-  ;(into instanceof ShadowRoot ? into : into.head).appendChild(el)
+  doc.head.appendChild(el)
 }
 
 /** Pixels a press may move and still be a click: a finger wobbles more than a mouse. */
@@ -272,7 +269,7 @@ export function mountZoom(
   engine: Engine,
   shape: () => { canvas: boolean; inset: Insets; reserve?: Insets | null; scrolls?: boolean },
 ): { measure(): void; off(): void } {
-  injectZoomStyles(board)
+  injectZoomStyles(board.ownerDocument)
   let off: ((() => void) & { hands(): void }) | undefined
   const wrap = board.parentElement
   const measure = () => {
