@@ -145,7 +145,8 @@ opens with the diagram, the load and the verdict alone. The reader switches it; 
 the reader's choice.
 
 `fill` makes the root fill its container, with no Full screen button: for a page of its own made to be framed. The
-container gives it its height, and `chrome` says whether it has the tabs. [Embedding](/embedding/) uses it.
+container gives it its height, and `chrome` says whether it has the tabs. It takes the wheel and one finger for
+itself; `scrolls` gives them back to a page that scrolls around the frame. [Embedding](/embedding/) uses both.
 
 `fullScreen` and `fullScreenMode` are the names these had before 0.41: they still work and say so in the console.
 `fullScreen` took the panels' old names (`'verdict'` is in Limits now, `'compare'` in Headroom) and is `panels`;

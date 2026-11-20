@@ -79,21 +79,21 @@ export function BarParts({
         </button>
       )}
       {legend && size.width === 'wide' && !size.short && <Legend lm={lm} />}
-      <span className="lm-canvas-tools">
-        {/* a root that fills its frame for good has neither: the page picks what it shows */}
-        {lm.fullScreen && !lm.fill && (
-          <button
-            type="button"
-            className="lm-btn lm-canvas-chrome"
-            aria-pressed={lm.fullScreenMode === 'panels'}
-            aria-keyshortcuts="F"
-            title="Show the panels (F)"
-            onClick={() => lm.setFullScreenMode(lm.fullScreenMode === 'panels' ? 'focus' : 'panels')}
-          >
-            Panels
-          </button>
-        )}
-        {!lm.fill && (
+      {/* a root that fills its frame for good has neither: the page picks what it shows */}
+      {!lm.fill && (
+        <span className="lm-canvas-tools">
+          {lm.fullScreen && (
+            <button
+              type="button"
+              className="lm-btn lm-canvas-chrome"
+              aria-pressed={lm.fullScreenMode === 'panels'}
+              aria-keyshortcuts="F"
+              title="Show the panels (F)"
+              onClick={() => lm.setFullScreenMode(lm.fullScreenMode === 'panels' ? 'focus' : 'panels')}
+            >
+              Panels
+            </button>
+          )}
           <button
             type="button"
             className="lm-btn lm-canvas-full"
@@ -104,8 +104,8 @@ export function BarParts({
           >
             {lm.fullScreen ? '✕' : '⤢'}
           </button>
-        )}
-      </span>
+        </span>
+      )}
     </>
   )
 }
@@ -151,8 +151,15 @@ export interface FrameProps extends Pick<DiagramProps, 'onNodeClick' | 'selected
   onOpen?: (panel: FramePanel | null) => void
   /** The page's own assumption lines, shown with the model's. */
   assumptions?: readonly ReactNode[]
+  /** The headroom chart, in its tab. Default true. */
+  headroom?: boolean
   /** The scenarios side by side under the headroom chart, when the model has two or more. Default true. */
   compare?: boolean
+  /**
+   * The page around the frame scrolls: the plain wheel and one finger are the page's. Default: true in a page, false
+   * in a root that fills its container (say so for one in a frame of a page that scrolls). Never in full screen.
+   */
+  scrolls?: boolean
   className?: string
   /** The box's own style: its height, when the page's CSS does not give it. */
   style?: CSSProperties
@@ -171,7 +178,9 @@ export function Frame({
   defaultOpen,
   onOpen,
   assumptions,
+  headroom = true,
   compare = true,
+  scrolls,
   className,
   style,
   onNodeClick,
@@ -220,6 +229,7 @@ export function Frame({
     <Canvas
       ref={box}
       lm={lm}
+      scrolls={scrolls}
       over={
         told ? (
           <>
@@ -227,6 +237,18 @@ export function Frame({
             {!live && (
               <button type="button" className="lm-btn lm-canvas-leave" aria-label="Leave the story" onClick={leave}>
                 Done
+              </button>
+            )}
+            {/* the bar is out of reach under the story: full screen keeps a way out (a phone has no Esc) */}
+            {lm.fullScreen && !lm.fill && (
+              <button
+                type="button"
+                className="lm-btn lm-canvas-leave"
+                aria-label="Close full screen"
+                title="Close full screen"
+                onClick={lm.toggleFullScreen}
+              >
+                ✕
               </button>
             )}
           </>
@@ -250,7 +272,7 @@ export function Frame({
       {shown.map((p) => (
         <Canvas.Panel key={p} id={p} title={TITLES[p]}>
           <Suspense fallback={null}>
-            <Body lm={lm} id={p} assumptions={assumptions} compare={compare} />
+            <Body lm={lm} id={p} assumptions={assumptions} headroom={headroom} compare={compare} />
           </Suspense>
         </Canvas.Panel>
       ))}

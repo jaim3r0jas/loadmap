@@ -66,7 +66,7 @@ export const LOADMAP_CSS = `
 .lm[data-full="overlay"] { position: fixed; inset: 0; z-index: 2147483000; width: auto; max-width: none; max-height: none; margin: 0; border: 0; }
 .lm[data-full] > * { flex: none; }
 /* a page of its own keeps the rest outside full screen, as <Loadmap> does */
-.lm[data-full] > :not(.lm-canvas, .lm-head, h2, .lm-scenarios, .lm-loadbar, .lm-story, .lm-wrap, .lm-line, .lm-side) { display: none; }
+.lm[data-full] > :not(.lm-canvas, .lm-head, h2, .lm-scenarios, .lm-loadbar, .lm-story, .lm-wrap, .lm-side) { display: none; }
 .lm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; min-width: 0; }
 .lm-head h2 { font-size: 1.1rem; }
 .lm-head .lm-loadbar { flex: 1 1 520px; }
@@ -80,20 +80,11 @@ export const LOADMAP_CSS = `
 .lm[data-full] .lm-story { padding: 6px 12px; }
 .lm[data-full] [data-out] { display: none; }
 
-.lm-line { display: flex; align-items: center; gap: 6px 14px; min-width: 0; padding: 6px 12px; border-left: 4px solid var(--lm-ok); background: var(--lm-accent-soft); border-radius: 0 6px 6px 0; }
-.lm-line[data-tier="warn"] { border-color: var(--lm-warn); }
-.lm-line[data-tier="over"] { border-color: var(--lm-drop); }
 .lm-headline { flex: 1 1 auto; min-width: 0; margin: 0; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lm-num { font: 600 .95em var(--lm-mono); font-variant-numeric: tabular-nums; }
 .lm-link { font: 500 .8rem var(--lm-font); color: var(--lm-accent); background: none; border: 0; padding: 2px 4px; cursor: pointer; white-space: nowrap; }
 
-/* one grid for every row, so the bars line up whatever the names */
-@container (min-width: 420px) {
-}
 
-/* the drawer: the page's own panel, alone, over the right of the board */
-.lm-side[data-drawer] :is(.lm-panel, .lm-strip, .lm-charts, .lm-card):not([data-drawn]):not(.lm-panel *) { display: none; }
-.lm-side[data-drawer] .lm-strip { grid-template-columns: minmax(0, 1fr); }
 
 /* a page of its own: its .lm-side is a box under the board that scrolls on its own, the board as large as leaves it a
    third of the screen */
@@ -102,7 +93,7 @@ export const LOADMAP_CSS = `
 /* focus: the board and what runs on it in the middle of the screen */
 .lm[data-mode="focus"] > .lm-side { display: none; }
 .lm[data-mode="focus"] > .lm-wrap { margin-top: auto; }
-.lm[data-mode="focus"] > :is(.lm-story, .lm-line) { order: 1; }
+.lm[data-mode="focus"] > .lm-story { order: 1; }
 .lm[data-mode="focus"]::after { content: ""; order: 2; margin-top: auto; }
 .lm[data-mode="focus"] > .lm-story { border-left-width: 4px; padding: 10px 14px; }
 .lm[data-mode="focus"] > .lm-story p { font-size: 1.1rem; }
@@ -117,12 +108,10 @@ export const LOADMAP_CSS = `
   .lm[data-full] > .lm-wrap { height: 40dvh; overflow: auto; row-gap: 0; overscroll-behavior: contain; }
   .lm[data-mode="focus"] > .lm-wrap { height: auto; flex: 1 1 0; min-height: 0; margin-top: 0; }
   .lm[data-full] .lm-bar { position: sticky; top: 0; z-index: 1; padding-bottom: 8px; background: var(--lm-bg); }
-  .lm[data-full] .lm-line { flex-wrap: wrap; }
   .lm[data-full] > .lm-story { padding: 6px 10px; gap: 6px 10px; }
   .lm[data-full] > .lm-story p { font-size: .84rem; }
   .lm[data-full] .lm-story button { padding: 4px 10px; }
   .lm[data-full] .lm-headline { flex-basis: 100%; }
-  /* the load bar takes some of the dock's room: the load is no longer in a card */
   /* the load in thumb reach: the bar under the board and the story, over the verdict */
   .lm[data-full] .lm-head { display: contents; }
   .lm[data-full] .lm-loadbar { order: 2; flex: none; }
@@ -133,7 +122,6 @@ export const LOADMAP_CSS = `
   .lm[data-full] :is(.lm-loadbar legend, .lm-load > label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .lm[data-full] .lm-load > output { margin-left: auto; }
   .lm[data-full] .lm-load-track { flex: 1 1 100%; }
-  .lm[data-full] > .lm-line { order: 3; }
 }
 
 .lm-verdict { margin: 0; padding: 10px 14px; border-left: 4px solid var(--lm-ok); background: var(--lm-accent-soft); border-radius: 0 6px 6px 0; }

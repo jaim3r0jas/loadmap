@@ -40,13 +40,14 @@ export interface LoadmapOptions<P> extends SimOptions {
   rows?: number | 'auto'
   /**
    * How much stands around the diagram in full screen, and in a root that fills its frame: `all`, with the panels'
-   * tabs, or `least`, the diagram, the load and the verdict alone. F switches it. Default `all`.
+   * tabs, or `least`, the diagram, the load and the verdict alone. In full screen the reader switches it (the Panels
+   * button, F); a root that fills shows what the page picked. Default `all`.
    */
   chrome?: Chrome
   /** @deprecated `chrome` now: `panels` is `all`, `focus` is `least`. */
   fullScreenMode?: FullScreenMode
   /**
-   * The root fills its container, laid out as full screen is (in `fullScreenMode`), and stays so: no full screen
+   * The root fills its container, laid out as full screen is (with its `chrome`), and stays so: no full screen
    * button. For a page of its own made to be framed, such as an embed: the container takes the frame's height, and the
    * layout follows the frame's size as full screen follows the screen's.
    */

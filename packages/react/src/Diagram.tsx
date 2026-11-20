@@ -255,7 +255,12 @@ export function Diagram({ lm, legend = true, onNodeClick, selected = null, canva
   useEffect(() => {
     // a canvas has its own button, in its bar
     if (was.current && !full)
-      (buttonRef.current ?? wrapRef.current?.closest('.lm')?.querySelector<HTMLElement>('.lm-canvas-full'))?.focus()
+      (
+        buttonRef.current ??
+        wrapRef.current
+          ?.closest('.lm')
+          ?.querySelector<HTMLElement>('.lm-canvas-bar:not([inert]) .lm-canvas-full, .lm-canvas-over .lm-story')
+      )?.focus()
     was.current = full
   }, [full])
   // the board as large as fits under the bar: as wide as the screen, unless that leaves the rows below it less than

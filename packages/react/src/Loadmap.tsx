@@ -138,11 +138,11 @@ export function panelsOf(names: readonly string[]): LoadmapPanel[] {
   return LOADMAP_PANELS.filter((p) => on.has(p))
 }
 
-let warned = false
+const warned = new Set<string>()
 /** Says once that a prop has another name now. */
 function renamed(old: string, now: string): void {
-  if (warned) return
-  warned = true
+  if (warned.has(old)) return
+  warned.add(old)
   console.warn(`loadmap: \`${old}\` is \`${now}\` now, and goes in a later version.`)
 }
 
@@ -154,7 +154,7 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   title?: ReactNode | false
   /** Lines added before the generated assumptions. */
   assumptions?: readonly ReactNode[]
-  /** The Headroom tab. Default true. */
+  /** The headroom chart, in the Headroom tab. Default true. Without it and the comparison the tab is left out. */
   headroom?: boolean
   /** The scenarios side by side under the headroom chart, when the model declares two or more. Default true. */
   compare?: boolean
@@ -166,6 +166,11 @@ export interface LoadmapProps<P> extends LoadmapOptions<P> {
   defaultOpen?: LoadmapPanel | null
   /** A panel opened or closed (null). */
   onOpen?: (panel: LoadmapPanel | null) => void
+  /**
+   * The page around it scrolls: the plain wheel and one finger are the page's. Default: true in a page, false with
+   * `fill` (say so for a root that fills a frame of a page that scrolls). Never in full screen.
+   */
+  scrolls?: boolean
   /** @deprecated `panels` now, for the page and full screen alike. Its old names still stand for their tabs. */
   fullScreen?: readonly string[]
   /** A click (or Enter) on a box of the diagram, by its id: every box is a button then. */
@@ -193,6 +198,7 @@ export function Loadmap<P>({
   open,
   defaultOpen,
   onOpen,
+  scrolls,
   fullScreen,
   onNodeClick,
   selected,
@@ -204,17 +210,24 @@ export function Loadmap<P>({
   if (fullScreen) renamed('fullScreen', 'panels')
   if (o.fullScreenMode) renamed('fullScreenMode', 'chrome')
   const listed = panels ?? (fullScreen ? panelsOf(fullScreen) : LOADMAP_PANELS)
+  // the Headroom tab holds the chart and the scenarios compared: each can be left out, and the tab with both. A list
+  // by the old names, which had a panel for each, says which of the two it meant
+  const old = !panels && fullScreen ? fullScreen : null
+  const chart = headroom && (!old || old.includes('headroom'))
+  const side = compare && model.scenarios.length > 1 && (!old || old.includes('compare'))
   return (
     <LoadmapRoot lm={lm} theme={theme}>
       <Frame
         lm={lm}
         title={title}
-        panels={headroom ? listed : listed.filter((p) => p !== 'headroom')}
+        panels={chart || side ? listed : listed.filter((p) => p !== 'headroom')}
         open={open}
         defaultOpen={defaultOpen}
         onOpen={onOpen}
         assumptions={assumptions}
-        compare={compare}
+        scrolls={scrolls}
+        headroom={chart}
+        compare={side}
         onNodeClick={onNodeClick}
         selected={selected}
       />

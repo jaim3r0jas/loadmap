@@ -207,6 +207,12 @@ export interface CanvasProps extends Pick<DiagramProps, 'legend' | 'onNodeClick'
    * moves under it, and the tabs and the open panel are away until it goes. The diagram is not laid out again.
    */
   over?: ReactNode
+  /**
+   * The page around the canvas scrolls: the plain wheel and one finger are the page's, and Ctrl or ⌘ with the wheel,
+   * or two fingers, the diagram's. Default: true in a page, false in a root that fills its container. Never in full
+   * screen, which has no page under it.
+   */
+  scrolls?: boolean
   /** The canvas's own element. */
   ref?: Ref<HTMLDivElement>
   className?: string
@@ -240,6 +246,7 @@ export function Canvas({
   defaultOpen = null,
   onOpen,
   over,
+  scrolls,
   ref,
   className,
   style,
@@ -368,9 +375,7 @@ export function Canvas({
             legend={legend}
             onNodeClick={onNodeClick}
             selected={selected}
-            // in a page, and in a frame of one it fills, the wheel and one finger are the page's; a full screen has
-            // no page under it
-            canvas={{ ...inset, reserve, scrolls: lm.fill || !lm.fullScreen }}
+            canvas={{ ...inset, reserve, scrolls: lm.fullScreen && !lm.fill ? false : (scrolls ?? !lm.fill) }}
           />
         )}
         {box && consoles}

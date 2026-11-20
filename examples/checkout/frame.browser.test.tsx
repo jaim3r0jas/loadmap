@@ -13,7 +13,7 @@ let host: HTMLDivElement | null = null
 let handle: LoadmapHandle | null = null
 let ctl: LoadmapController | null = null
 
-function Page({ height, fill = false }: { height: number; fill?: boolean }) {
+function Page({ height, fill = false, scrolls }: { height: number; fill?: boolean; scrolls?: boolean }) {
   const lm = useLoadmap(checkout, view, { fill })
   useEffect(() => {
     handle = handleOf(lm)
@@ -21,7 +21,7 @@ function Page({ height, fill = false }: { height: number; fill?: boolean }) {
   }, [lm])
   return (
     <LoadmapRoot lm={lm}>
-      <Frame lm={lm} style={fill ? undefined : { height }} />
+      <Frame lm={lm} style={fill ? undefined : { height }} scrolls={scrolls} />
     </LoadmapRoot>
   )
 }
@@ -346,12 +346,17 @@ describe('a loadmap in one canvas', () => {
     expect(board.style.touchAction).toBe('pan-x pan-y')
   })
 
-  it('leaves the wheel to the page around a frame it fills, and takes it in full screen', async () => {
+  it('takes the wheel in a frame it fills, unless the page around that frame scrolls', async () => {
     const canvas = await mount(1100, 700, true)
     const board = canvas.querySelector<HTMLElement>('.lm-board')!
-    // a root that fills a frame of a page (an embed) is still in that page
+    // a root that fills its container has no page under it (a pane of an editor), until the host says it has
+    await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('none')
+    expect(wheel(board)).toBe(true)
+    root!.render(<Page height={700} fill scrolls />)
+    board.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, button: 2 }))
     await expect.poll(() => board.style.touchAction, { timeout: 5000 }).toBe('pan-x pan-y')
     expect(wheel(board)).toBe(false)
+    expect(wheel(board, true)).toBe(true)
   })
 
   it('takes the wheel and one finger for itself in full screen', async () => {

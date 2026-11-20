@@ -55,6 +55,9 @@ function Embed({ def, values }: { def: Definition; values: Record<string, string
       view={def.view}
       {...page}
       fill
+      // the doc around the frame keeps its wheel and its one finger: Ctrl or ⌘ with the wheel, two fingers or the
+      // buttons zoom
+      scrolls
       // an embed shows the diagram, the load and the verdict first, whatever the model's own full screen does: a frame
       // is small for panels. `mode=panels` gives it their tabs
       chrome={pick('mode', ['focus', 'panels'] as const) === 'panels' ? 'all' : 'least'}
