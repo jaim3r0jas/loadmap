@@ -80,9 +80,10 @@ compare(checkout).text
 //  against 10× (around February 2030) in Today."
 ```
 
-`<Loadmap>` shows a button per scenario, a headroom chart (utilization over the load multiple, one line per scenario,
-its crossings exactly where the limits are) and the scenarios side by side. Hovering or focusing a box tells its
-utilization, capacity and where it runs out. `compare()` and `headroom()` give the same numbers without React.
+`<Loadmap>` shows a button per scenario and, in its Headroom panel, a headroom chart (utilization over the load
+multiple, one line per scenario, its crossings exactly where the limits are) and the scenarios side by side. Hovering
+or focusing a box tells its utilization, capacity and where it runs out. `compare()` and `headroom()` give the same
+numbers without React.
 
 ## Numbers you can defend
 

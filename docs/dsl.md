@@ -169,7 +169,7 @@ out while a formula of the other parameters is false. A text option (`options: [
 #### Presets
 
 A preset is a button that sets several values at once, the load among them: the reader's shortcut to a moment worth
-looking at. On the load bar its load is a mark.
+looking at. Under the load slider its load is a mark.
 
 ```loadmap
 preset "Black Friday" { load: 12; pods: 8; hitRatio: 0.6 }
@@ -221,7 +221,7 @@ reaches its target at 50 % and runs out at 100 %. A team that runs hotter moves 
 thresholds { target: 0.7; full: 1 }
 ```
 
-The limits, the verdict, the load bar's marks and `underTarget` in an expectation read them. At the top level,
+The limits, the verdict, the load slider's marks and `underTarget` in an expectation read them. At the top level,
 `assume: "…"` adds a line of your own to the assumptions the page lists:
 
 ```loadmap
@@ -306,10 +306,11 @@ A scenario may have an id before its label (from `loadmap 1.2`): `scenario propo
 expect then says `scenario: proposed`, and the button's text can be reworded without touching them; naming it by its
 label, `scenario: "Proposed"`, still works, and so does the label bare when it is one word (`scenario: Proposed`).
 
-The page shows a button per scenario above the diagram, a table of where each one first runs out, and a headroom
-chart with one line per scenario. **Growth** turns load multiples into dates: the load is 1× on `asOf` and grows by
-`rate` every `per`, compounded, so 10× at 6 % a month is about 40 months later ("around February 2030"). Dates come
-from `asOf` alone, never from today's date, so a page and its recordings say the same thing on any day.
+The page shows a button per scenario above the diagram and, in its Headroom panel, a headroom chart with one line
+per scenario and a table of where each one first runs out. **Growth** turns load multiples into dates: the load is
+1× on `asOf` and grows by `rate` every `per`, compounded, so 10× at 6 % a month is about 40 months later ("around
+February 2030"). Dates come from `asOf` alone, never from today's date, so a page and its recordings say the same
+thing on any day.
 
 A share link carries the scenarios in the text and the shown one in its values (`&gateways=2&pods=6`), so it opens
 with that scenario's button pressed.
@@ -908,8 +909,9 @@ step "At 20×, the gateway and the workers are near full." { load: 20; focus: ga
 step "The proposal doubles both: at 20× they are back under half." { scenario: Proposed; load: 20; focus: workerPool }
 ```
 
-The page shows a bar above the diagram with the step's text, play, back and next (← and → while the bar has the
-focus). Back and next show a step at once. Play tells it on the diagram: the whole diagram first, then for each step a
+**▶ Story** above the diagram plays the story, and shows a bar there with the step's text, play, back and next (←
+and → while the bar has the focus); **Done** leaves it. Back and next show a step at once. Play tells it on the
+diagram: the whole diagram first, then for each step a
 close-up on what it changes (the box it points at and any box it reshapes; else what it reshapes; else the boxes whose
 state changes; else the first limit), the change, and the whole diagram again for the step's `seconds`. A short
 `title` names the step on the diagram meanwhile; without one it says what changes ("Users 1× → 20×"). With reduced
@@ -997,26 +999,30 @@ view {
 ```
 
 `speed` is the simulated seconds the dots run per real second (10 by default), `transition` the seconds a change of
-structure takes to draw (0.8; 0 cuts), `lanes` the tiers' shading, `fullScreen` the panels full screen shows below
-the diagram and `fullScreenMode` what it opens with (`panels`, or `focus`: the diagram, the story, the verdict and the
-load), and `closed` the subsystems drawn closed at first. The sections above say what `direction`, `rows` and `layout`
-do.
+structure takes to draw (0.8; 0 cuts), `lanes` the tiers' shading, `fullScreen` the panels the page offers as tabs
+and `fullScreenMode` what stands around the diagram in full screen (`panels`, or `focus`: the diagram, the load and
+the verdict alone), and `closed` the subsystems drawn closed at first. The sections above say what `direction`,
+`rows` and `layout` do.
 
 ### Full screen
 
-The diagram's **Full screen** fits the screen without scrolling: the diagram as wide as it, and below it the panels
-of the page in a compact form, each of which opens whole. `fullScreen` keeps only the ones it lists:
+The page draws everything in one box: the scenarios over the diagram, the load and the verdict under it, and the
+rest in panels that open from their tabs, one at a time. **Full screen** is the same box at the screen's size.
+`fullScreen` says which panels the page offers, in the page and in full screen alike:
 
 ```loadmap
 view { fullScreen: [verdict, live, controls] }
 ```
 
-The names are `verdict`, `live` (the meters), `limits` (where it runs out, in order), `controls`, `headroom`,
-`compare` (the scenarios side by side) and `assumptions`. `<Loadmap fullScreen={[...]}>` takes the same list.
+Each name stands for the tab it is in: `verdict` and `limits` for Limits (the verdict's sentence, and where it runs
+out, in order), `controls` for Design, `headroom` and `compare` for Headroom (the chart, and the scenarios side by
+side), `live` for Live (the meters) and `assumptions` for Assumes. A list with only one of `headroom` and `compare`
+shows only that one in Headroom. Without a list the page offers every panel. `<Loadmap panels={[...]}>` is the same
+in React, by the tabs' own names (`limits`, `controls`, `headroom`, `live`, `assumptions`).
 
-A switch in full screen, or the F key, turns it into **focus**: the diagram, the story, and the verdict and the load
-slider when `fullScreen` lists them. `view { fullScreenMode: focus }` opens full screen there
-(`<Loadmap fullScreenMode="focus">`); the default is `panels`.
+**Panels** in full screen, or the F key, switches the tabs and the open panel off and on.
+`view { fullScreenMode: focus }` opens full screen without them, the diagram, the load and the verdict alone
+(`<Loadmap chrome="least">`); the default is `panels`.
 
 ### What stays code
 
@@ -1741,8 +1747,8 @@ view { direction: right; speed: 10; fullScreen: [verdict, controls] }
 | --- | --- | --- |
 | `speed` | number, constant | Simulated seconds per real second. Default 10. |
 | `transition` | number in seconds, constant | Seconds the diagram takes to move to a new structure (a scenario, a story step, a control that adds pods); 0 cuts. Default 0.8, at most 5; with reduced motion it cuts. |
-| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels full screen shows, compact, below the diagram. Default all of them. |
-| `fullScreenMode` | `panels` \| `focus` | What full screen opens with: the panels, or focus (the diagram, the story, the verdict and the load). Default panels. |
+| `fullScreen` | a list of `verdict`, `live`, `limits`, `controls`, `headroom`, `compare`, `assumptions` | The panels the page offers as tabs, in a page and in full screen alike: verdict is in Limits, compare in Headroom. Default all of them. |
+| `fullScreenMode` | `panels` \| `focus` | What stands around the diagram in full screen: the panels' tabs, or focus (the diagram, the load and the verdict alone). Default panels. |
 | `lanes` | `filled` \| `striped` | filled (the default): every lane in two alternating shades; striped: every other one clear. |
 | `direction` | `right` \| `down` \| `auto` | Which way the diagram runs. Default auto: the way that fits the room it is drawn in larger, and where both fit about as well, right, or down when its widest layer has more boxes than its longest chain. right or down holds it. Narrow screens always run down. From loadmap 1.5. |
 | `rows` | number, constant | The rows a long diagram is folded into (columns, running down), 1 to 6. Default: one row where its titles read with ease in the room it is drawn in, else two or three. 1 never folds; a diagram with fewer layers has fewer rows, and a narrow screen never folds. From loadmap 1.5. |

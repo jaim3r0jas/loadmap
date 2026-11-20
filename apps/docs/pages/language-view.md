@@ -1,7 +1,7 @@
 # The view
 
-How the diagram is drawn: which way it runs, the tiers and the lanes, the settings of the `view { … }` block, and full
-screen. None of it changes a number.
+How the diagram is drawn: which way it runs, the tiers and the lanes, the settings of the `view { … }` block, and
+the panels and full screen. None of it changes a number.
 
 ## Direction and tiers
 

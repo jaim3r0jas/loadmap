@@ -7,8 +7,8 @@ from every box after it; the API adds pods up to its most; the cache answers mos
 the index; and the clients retry a search the limiter turned away, which past the limit multiplies what it sees. It
 is laid out stable: no step or control moves a box, since the pool already draws every pod it may run.
 
-**Try:** **▶ Play**: at 30× the retries multiply at the limiter · click **Cold cache** in the design, and the index
-takes over · zoom into the API: the faded pods are the ones it may add.
+**Try:** **▶ Story**: at 30× the retries multiply at the limiter · open **Design** and click **Cold cache**, and the
+index takes over · zoom into the API: the faded pods are the ones it may add.
 
 <div class="island" data-island="example" data-name="search" data-editor="../../editor/"></div>
 

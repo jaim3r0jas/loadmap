@@ -1,3 +1,5 @@
+import { CANVAS_CSS } from './canvasCss'
+
 const LIGHT = `
   --lm-bg: #eef2f5; --lm-surface: #ffffff; --lm-fg: #17212b; --lm-muted: #5d6d7c; --lm-line: #c6d0da;
   --lm-accent: #0b6b8f; --lm-accent-soft: #d6e9f0; --lm-alt: #7a4f9a; --lm-alt-soft: #efe5f6;
@@ -262,7 +264,7 @@ export const LOADMAP_CSS = `
   .lm-fill { transition: none; }
   .lm-story[data-playing] .lm-story-progress i[data-state="now"]::before { animation: none; transform: none; }
 }
-`
+${CANVAS_CSS}`
 
 /** Adds the stylesheet once per document. */
 export function injectStyles(doc: Document = document): void {

@@ -71,7 +71,7 @@ export interface LoadmapOptions<P> extends SimOptions {
   transition?: number
 }
 
-/** Full screen with every panel it lists in a compact form, or mainly the diagram and the story. */
+/** What stands around the diagram in full screen, as the controller holds it: `panels` is `chrome` `all`, `focus` is `least`. */
 export type FullScreenMode = 'panels' | 'focus'
 /** What stands around the diagram in full screen: everything, or the least. */
 export type Chrome = 'all' | 'least'

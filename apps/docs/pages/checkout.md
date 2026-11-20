@@ -5,8 +5,9 @@ Postgres. The gateway's capacity is a vendor benchmark (± 30 %), the workers' c
 series. It compares today with a proposal, turns load into dates with a growth rate, and carries a story of three
 steps. Its boxes stand in three tiers, and events older than a minute are dropped under backlog.
 
-**Try:** **▶ Play** the story · click **7.4×** under the slider, where the gateway reaches its target · drag the
-diagram, pinch or Ctrl-scroll to zoom, and **Fit** to see it whole.
+**Try:** **▶ Story** plays the story · click **7.4×** under the slider, where the gateway reaches its target · open
+**Limits** for where each part runs out · drag the diagram, pinch or Ctrl-scroll to zoom, and **Fit** to see it
+whole.
 
 <div class="island" data-island="example" data-name="checkout" data-editor="../../editor/"></div>
 

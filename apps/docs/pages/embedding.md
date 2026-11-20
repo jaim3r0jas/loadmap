@@ -1,8 +1,8 @@
 # Embedding
 
 A model made in the [editor](/editor/) can live inside another page: a ClickUp doc, a wiki, a status page. The embed
-page draws it filling its frame, with nothing around it, and never scrolls. This is the checkout example, framed as
-another page frames it:
+page draws it filling its frame, with nothing around it, and never scrolls: the scenarios over the diagram, the load
+and the verdict under it. This is the checkout example, framed as another page frames it:
 
 <div class="island" data-island="framed" data-root="../"></div>
 
@@ -10,7 +10,7 @@ another page frames it:
 
 In the editor, **Embed in a page…** (in **Share**'s ▾ menu, or under **⋯** on a phone) opens a small panel:
 
-- **Show**: the diagram with the verdict and the load (Diagram), or the panels around it too (With panels);
+- **Show**: the diagram with the verdict and the load (Diagram), or with the panels' tabs too (With panels);
 - **Theme**: Auto follows the reader's system, Light and Dark stay so;
 - **Play the story when it comes into view**, when the model has a story;
 - **Copy link** for a tool that takes a link, **Copy &lt;iframe&gt;** for a page that takes HTML.
@@ -25,9 +25,12 @@ A model in several files makes a `#v2.` link, which carries every file it reache
 
 ## In ClickUp
 
-Type `/embed` in a doc, paste the link, and size the block. The board takes the room it is given: wider shows more,
-and below about 260 px of height it keeps the diagram and one line of verdict. **Open ↗** beside the title opens the
-same model in the editor, for anyone who wants to change it.
+Type `/embed` in a doc, paste the link, and size the block. The board takes the room it is given and arranges itself
+by it: from 900 px of width the bar shows the flows' legend, and under 420 px of height the bar and the load fold to
+one row each. **Open ↗** beside the title opens the same model in the editor, for anyone who wants to change it.
+
+The doc keeps its scroll: over the frame the plain wheel and one finger still move the page. Ctrl or ⌘ with the
+wheel, two fingers, or the buttons on the diagram zoom it, and a drag pans it.
 
 ClickUp has no HTML block: use the link, not the `<iframe>`.
 
@@ -51,13 +54,18 @@ The page needs only scripts in the frame: no storage, no cookies, nothing from t
 
 | Option   | Values                                                           | Default                                   |
 | -------- | ---------------------------------------------------------------- | ----------------------------------------- |
-| `mode`   | `focus`, `panels`                                                | `focus`                                   |
-| `panels` | any of `verdict,live,limits,controls,headroom,compare,assumptions` | the model's `fullScreen`, else every one |
+| `mode`   | `focus`: no panels; `panels`: their tabs                         | `focus`                                   |
+| `panels` | any of `limits,controls,headroom,live,assumptions`               | the model's `fullScreen`, else every one  |
 | `theme`  | `auto`, `light`, `dark`                                          | `auto`                                    |
 | `play`   | `1`: plays the story once, when half the frame is in view        | off                                       |
 
-A value it does not know is left at its default. With reduced motion the story never plays by itself. The panels
-need room: give `mode=panels` a frame of 600 px or more in height.
+A value it does not know is left at its default. With reduced motion the story never plays by itself.
+
+`panels` says which tabs `mode=panels` offers: Limits (with the verdict's sentence), Design, Headroom (with the
+scenarios compared), Live and Assumes. A link made before the tabs still works: `verdict` stands for `limits` and
+`compare` for `headroom`. One panel opens at a time, beside the diagram, or as a sheet over it in a frame under
+520 px wide. The tabs are a row over the load, a rail from 900 px of width, and one menu in a frame under 420 px
+high: give `mode=panels` 420 px or more.
 
 ## Who can read it
 
