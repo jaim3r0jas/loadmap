@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Canvas, useCanvasSize } from './Canvas'
+// with the dock in one module until `<Loadmap>` becomes this frame: the line then gets a module of its own, so a
+// first load holds it without the dock
 import { VerdictLine } from './compact'
 import { type DiagramProps, Legend } from './Diagram'
 import { LoadRange } from './panels'
@@ -85,7 +87,14 @@ export interface FrameProps extends Pick<DiagramProps, 'onNodeClick' | 'selected
  */
 export function Frame({ lm, title, legend = true, className, style, onNodeClick, selected }: FrameProps) {
   return (
-    <Canvas lm={lm} legend={false} className={className} style={style} onNodeClick={onNodeClick} selected={selected}>
+    <Canvas
+      lm={lm}
+      legend={false}
+      className={className ? `lm-frame ${className}` : 'lm-frame'}
+      style={style}
+      onNodeClick={onNodeClick}
+      selected={selected}
+    >
       <Canvas.Bar>
         <BarParts lm={lm} title={title} legend={legend} />
       </Canvas.Bar>

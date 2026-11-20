@@ -132,6 +132,10 @@ describe('a loadmap in one canvas', () => {
     const canvas = await mount(800, 320)
     expect(canvas.dataset.short).toBe('')
     expect(canvas.querySelector('.lm-canvas-bar h2')).toBeNull()
+    // the slider keeps its name, unseen
+    const input = canvas.querySelector<HTMLInputElement>('.lm-load input')!
+    expect(input.labels![0]!.textContent).toBe(checkout.load.label)
+    expect(input.labels![0]!.getBoundingClientRect().width).toBeLessThanOrEqual(1)
     const load = canvas.querySelector('.lm-canvas-console .lm-load')!.getBoundingClientRect()
     const verdict = canvas.querySelector('.lm-canvas-verdict')!.getBoundingClientRect()
     expect(verdict.left).toBeGreaterThanOrEqual(load.right)
