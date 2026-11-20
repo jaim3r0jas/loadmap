@@ -240,6 +240,8 @@ describe('pan and zoom on a page', () => {
     expect(viewBox(board)).not.toBe(zoomed)
     handle.step(2)
     expect(handle.engine.playing).toBe(true)
+    // the page has drawn the story before the reader's hand comes: the test steps the clock within one task
+    await expect.poll(() => el.querySelector('.lm-canvas-over .lm-story'), { timeout: 5000 }).not.toBeNull()
     drag(board, board, 50, 0)
     expect(handle.engine.playing).toBe(false)
     expect(handle.engine.viewer!.readerView).not.toBeNull()

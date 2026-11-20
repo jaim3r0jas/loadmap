@@ -27,6 +27,8 @@ import type { LoadmapController } from './useLoadmap'
 const CANVAS_CSS = `
 .lm-canvas { position: relative; box-sizing: border-box; height: clamp(420px, 70dvh, 760px); overflow: hidden; contain: layout; border: 1px solid var(--lm-line); border-radius: var(--lm-radius, 10px); background: var(--lm-surface); }
 .lm.lm[data-full] > .lm-canvas { display: block; flex: 1 1 0; height: auto; min-height: 0; }
+/* the spacer that centres a page of parts with the least around it would take a gap under the canvas */
+.lm.lm[data-full]:has(> .lm-canvas)::after { content: none; }
 .lm-canvas > .lm-wrap[data-canvas] { position: absolute; inset: 0; }
 .lm-canvas-bar, .lm-canvas-console { position: absolute; left: 0; right: var(--lm-canvas-right, 0px); z-index: 3; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; background: var(--lm-surface); }
 .lm-canvas-bar { top: 0; border-bottom: 1px solid var(--lm-line); }
