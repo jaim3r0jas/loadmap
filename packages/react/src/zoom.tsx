@@ -69,9 +69,16 @@ export function actualSize(viewer: Viewer): void {
  * The reader's hands on the board: a drag pans (a press that hardly moves is still a click), a pinch zooms about its
  * middle, and the keys + − 0 and the arrows work while the board or a box has the focus. The wheel zooms about the
  * pointer `always` (a board that fills the page), else only with Ctrl or ⌘ held, or a trackpad's pinch, so a page
- * that scrolls keeps its wheel. Returns a function that lets go.
+ * that scrolls keeps its wheel. On a canvas in such a page (`page`) one finger scrolls the page too, zoomed or not. Returns a function that lets go.
  */
-export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: boolean }): () => void {
+export function attachZoom(
+  board: HTMLElement,
+  viewer: Viewer,
+  o: { always: boolean | (() => boolean); page?: () => boolean },
+): () => void {
+  const always = () => (typeof o.always === 'function' ? o.always() : o.always)
+  // a canvas in a page that scrolls: one finger is the page's for good, two are the board's
+  const paged = () => !!o.page?.()
   // the board and the boxes take the keys that pan and zoom
   board.tabIndex = 0
   board.setAttribute('role', 'group')
@@ -98,11 +105,13 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
   // one finger scrolls a page until the reader has zoomed: then it pans, as it always does on a board of its own. Two
   // fingers pinch the board, never the page
   const touch = () => {
-    const action = o.always || viewer.readerView ? 'none' : 'pan-x pan-y'
+    const action = paged() ? 'pan-x pan-y' : always() || viewer.readerView ? 'none' : 'pan-x pan-y'
     if (board.style.touchAction !== action) board.style.touchAction = action
   }
 
   const down = (e: PointerEvent) => {
+    // for the next press: the canvas may have left its page for a full screen, or come back
+    touch()
     if ((e.button !== 0 && e.button !== 1) || (e.target as Element).closest('.lm-zoom, .lm-crumbs')) return
     if (!viewer.shownView()) return
     points.set(e.pointerId, at(e))
@@ -136,6 +145,8 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
       return
     }
     points.set(e.pointerId, p)
+    // one finger scrolls the page
+    if (!panning && e.pointerType !== 'mouse' && paged()) return
     if (!panning) {
       const slop = e.pointerType === 'mouse' ? SLOP.mouse : SLOP.other
       if (!start || Math.hypot(p.x - start.x, p.y - start.y) < slop) return
@@ -149,7 +160,14 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
   }
   const up = (e: PointerEvent) => {
     if (!points.delete(e.pointerId)) return
-    if (points.size) return
+    if (points.size) {
+      // a pinch over on a canvas in a page: the finger that stays is the page's again
+      if (paged()) {
+        panning = false
+        start = null
+      }
+      return
+    }
     if (panning) swallowUntil = e.timeStamp + 300
     panning = false
     start = null
@@ -163,7 +181,7 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
   }
   const wheel = (e: WheelEvent) => {
     // a trackpad's pinch comes as the wheel with Ctrl held
-    if (!o.always && !e.ctrlKey && !e.metaKey) return
+    if (!always() && !e.ctrlKey && !e.metaKey) return
     const v = viewer.shownView()
     const vp = viewer.viewport
     if (!v || !vp) return
@@ -200,8 +218,17 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
     if (to) viewer.go(to, true)
   }
 
+  // two fingers on a canvas in a page are the board's: the page does not scroll under a pinch
+  const fingers = (e: TouchEvent) => {
+    if (paged() && e.touches.length >= 2 && e.cancelable) e.preventDefault()
+  }
   touch()
   const off = viewer.engine.subscribe(touch)
+  // only a board that can lie in a page waits on these: any other scrolls without asking
+  if (o.page) {
+    board.addEventListener('touchstart', fingers, { passive: false })
+    board.addEventListener('touchmove', fingers, { passive: false })
+  }
   board.addEventListener('pointerdown', down)
   board.addEventListener('pointermove', drag)
   board.addEventListener('pointerup', up)
@@ -216,6 +243,8 @@ export function attachZoom(board: HTMLElement, viewer: Viewer, o: { always: bool
     for (const a of ['tabindex', 'role', 'aria-label']) board.removeAttribute(a)
     board.style.removeProperty('touch-action')
     board.removeAttribute('data-panning')
+    board.removeEventListener('touchstart', fingers)
+    board.removeEventListener('touchmove', fingers)
     board.removeEventListener('pointerdown', down)
     board.removeEventListener('pointermove', drag)
     board.removeEventListener('pointerup', up)
@@ -237,7 +266,7 @@ const SIDES = ['top', 'right', 'bottom', 'left'] as const
 export function mountZoom(
   board: HTMLElement,
   engine: Engine,
-  shape: () => { canvas: boolean; inset: Insets; reserve?: Insets | null },
+  shape: () => { canvas: boolean; inset: Insets; reserve?: Insets | null; scrolls?: boolean },
 ): { measure(): void; off(): void } {
   injectZoomStyles(board.ownerDocument)
   let off: (() => void) | undefined
@@ -265,7 +294,11 @@ export function mountZoom(
     // the hands come with the first size the board has: a board hidden at first (a tab) gets them when it shows
     if (!engine.viewer) {
       engine.viewer = new Viewer(engine, vp)
-      off = attachZoom(board, engine.viewer, { always: canvas })
+      // read at each press: a canvas in a page that scrolls leaves the page its wheel and its one finger
+      off = attachZoom(board, engine.viewer, {
+        always: () => shape().canvas && !shape().scrolls,
+        page: () => !!shape().scrolls,
+      })
     }
     engine.viewer.setViewport(vp)
     // a canvas's room is what Fit has, or what is left by the part of its insets that is always there: a panel that

@@ -6,9 +6,11 @@ import {
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
+  type Ref,
   use,
   useCallback,
   useId,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -29,6 +31,12 @@ const CANVAS_CSS = `
 .lm-canvas-bar, .lm-canvas-console { position: absolute; left: 0; right: var(--lm-canvas-right, 0px); z-index: 3; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; background: var(--lm-surface); }
 .lm-canvas-bar { top: 0; border-bottom: 1px solid var(--lm-line); }
 .lm-canvas-console { bottom: 0; border-top: 1px solid var(--lm-line); }
+/* over the bar for a while, across the whole top: as tall as it needs */
+.lm-canvas-panel[hidden] { display: none; }
+/* never more than the diagram can give: a long step scrolls in its strip */
+.lm-canvas-over { position: absolute; z-index: 5; top: 0; left: 0; right: 0; box-sizing: border-box; display: flex; align-items: center; max-height: 45%; overflow: auto; overscroll-behavior: contain; background: var(--lm-surface); border-bottom: 1px solid var(--lm-line); box-shadow: 0 8px 18px -14px rgb(0 0 0 / .45); }
+.lm-canvas-over > .lm-story { flex: 1 1 auto; border: 0; border-radius: 0; background: none; }
+.lm-canvas-over > .lm-canvas-leave { flex: none; margin-right: 12px; }
 /* a slot that holds nothing takes no room */
 .lm-canvas-bar:empty, .lm-canvas-console:empty { display: none; }
 .lm-canvas[data-width="compact"] :is(.lm-canvas-bar, .lm-canvas-console) { padding: 6px 8px; }
@@ -127,6 +135,8 @@ interface Slots {
   open: string | null
   /** Opens a panel, or closes the open one (null). `from` gets the keyboard back when it closes. */
   show: (id: string | null, from?: HTMLElement | null) => void
+  /** Something lies over the bar for a while (`over`): the bar is out of reach under it. */
+  under: boolean
 }
 
 const Ctx = createContext<Slots | null>(null)
@@ -142,10 +152,13 @@ export function useCanvasSize(): CanvasSize {
   return slots('useCanvasSize()').size
 }
 
-/** The panels of the canvas this is drawn in: their ids, the one that is open, and `show` to open or close one. */
-export function useCanvasPanels(): Pick<Slots, 'panels' | 'open' | 'show'> {
-  const { panels, open, show } = slots('useCanvasPanels()')
-  return { panels, open, show }
+/**
+ * The panels of the canvas this is drawn in: their ids, the one that is open, `show` to open or close one, and
+ * whether they are away for a while (`under`: something lies over the bar).
+ */
+export function useCanvasPanels(): Pick<Slots, 'panels' | 'open' | 'show' | 'under'> {
+  const { panels, open, show, under } = slots('useCanvasPanels()')
+  return { panels, open, show, under }
 }
 
 /**
@@ -182,6 +195,13 @@ export interface CanvasProps extends Pick<DiagramProps, 'legend' | 'onNodeClick'
   defaultOpen?: string | null
   /** A panel opened or closed (null). */
   onOpen?: (id: string | null) => void
+  /**
+   * What takes the canvas's top for a while (a story's text): it lies over the bar, as tall as it needs, the view
+   * moves under it, and the tabs and the open panel are away until it goes. The diagram is not laid out again.
+   */
+  over?: ReactNode
+  /** The canvas's own element. */
+  ref?: Ref<HTMLDivElement>
   className?: string
   /** The box's own style: its height, when the page's CSS does not give it. */
   style?: CSSProperties
@@ -212,6 +232,8 @@ export function Canvas({
   open: given,
   defaultOpen = null,
   onOpen,
+  over,
+  ref,
   className,
   style,
   children,
@@ -222,6 +244,8 @@ export function Canvas({
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const [barEl, setBar] = useState<HTMLElement | null>(null)
   const [consoleEl, setConsole] = useState<HTMLElement | null>(null)
+  const [overEl, setOver] = useState<HTMLElement | null>(null)
+  useImperativeHandle(ref, () => root as HTMLDivElement, [root])
   // before the box is measured: its height is the stylesheet's
   useLayoutEffect(() => {
     if (root) injectCanvasStyles(root.ownerDocument)
@@ -232,6 +256,8 @@ export function Canvas({
   if (now && now.w > 0 && now.h > 0 && now !== box) setBox(now)
   const bar = useBox(barEl)
   const cons = useBox(consoleEl)
+  const lid = useBox(overEl)
+  const under = over != null && over !== false
   // the bar first for the keyboard and a screen reader, then the diagram, the console, the tabs and the panel
   const all = Children.toArray(children)
   const of = (type: unknown) => (c: unknown) => isValidElement(c) && c.type === type
@@ -279,8 +305,8 @@ export function Canvas({
     change.current?.(id)
   }, [])
   const ctx = useMemo<Slots>(
-    () => ({ size, bar: setBar, console: setConsole, panels: idsKey ? idsKey.split('\n') : [], open, show }),
-    [size, idsKey, open, show],
+    () => ({ size, bar: setBar, console: setConsole, panels: idsKey ? idsKey.split('\n') : [], open, show, under }),
+    [size, idsKey, open, show, under],
   )
 
   // the bars come once the box has a size, so they are measured in its size class; the diagram once they are
@@ -294,8 +320,10 @@ export function Canvas({
     bottom: Math.ceil(cons?.h ?? 0),
   }
   const reserve = reserved(size, heights, has)
-  const far = has && open && box ? reach(size, heights, box.w, box.h, whole) : 0
-  const inset = covered(size, heights, far, has)
+  const far = has && open && box && !under ? reach(size, heights, box.w, box.h, whole) : 0
+  const base = covered(size, heights, far, has)
+  // what lies over the bar covers more of the top: the view moves, the room stays
+  const inset = under ? { ...base, top: Math.max(base.top, Math.ceil(lid?.h ?? 0)) } : base
   const place = placement(size)
   const shown = panels.find((p) => p.props.id === open)
   const vars = {
@@ -316,26 +344,37 @@ export function Canvas({
       data-short={size.short ? '' : undefined}
       data-pinned={size.pinned ? '' : undefined}
       data-tabs={tabs ?? undefined}
+      data-over={under ? '' : undefined}
       style={vars}
       ref={setRoot}
     >
       <Ctx value={ctx}>
         {box && bars}
+        {box && under && (
+          <div className="lm-canvas-over" ref={setOver}>
+            {over}
+          </div>
+        )}
         {measured && (
           <Diagram
             lm={lm}
             legend={legend}
             onNodeClick={onNodeClick}
             selected={selected}
-            canvas={{ ...inset, reserve }}
+            // in a page the wheel and one finger are the page's; a full screen has no page under it
+            canvas={{ ...inset, reserve, scrolls: !lm.fullScreen }}
           />
         )}
         {box && consoles}
         {box && rest}
-        {box && tabs && <Tabs uid={uid} panels={panels} open={open} show={show} at={tabs} canClose={!size.pinned} />}
+        {box && tabs && !under && (
+          <Tabs uid={uid} panels={panels} open={open} show={show} at={tabs} canClose={!size.pinned} />
+        )}
         {box && shown && (
           <PanelBox
             uid={uid}
+            // kept while something lies over the bar, unseen: it comes back as the reader left it
+            away={under}
             panel={shown}
             place={place}
             pinned={size.pinned}
@@ -435,6 +474,7 @@ function Tabs({
  */
 function PanelBox({
   uid,
+  away,
   panel,
   place,
   pinned,
@@ -443,6 +483,7 @@ function PanelBox({
   close,
 }: {
   uid: string
+  away: boolean
   panel: ReactElement<PanelProps>
   place: 'side' | 'sheet'
   pinned: boolean
@@ -454,6 +495,7 @@ function PanelBox({
   return (
     <section
       id={panelId(uid)}
+      hidden={away}
       className="lm-canvas-panel"
       data-place={place}
       data-panel={id}
@@ -487,8 +529,9 @@ function PanelBox({
 
 /** Over the canvas's top: what the reader chooses from (the scenarios, the story, the tools). */
 function Bar({ children }: { children?: ReactNode }) {
+  const s = slots('<Canvas.Bar>')
   return (
-    <div className="lm-canvas-bar" ref={slots('<Canvas.Bar>').bar}>
+    <div className="lm-canvas-bar" ref={s.bar} inert={s.under}>
       {children}
     </div>
   )
