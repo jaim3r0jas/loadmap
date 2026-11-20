@@ -1,4 +1,4 @@
-import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef } from 'react'
+import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useCanvasPanels, useCanvasSize } from './Canvas'
 // with the dock in one module until `<Loadmap>` becomes this frame: the line then gets a module of its own, so a
 // first load holds it without the dock
@@ -60,10 +60,13 @@ export function BarParts({
   lm,
   title,
   legend = true,
+  onStory,
 }: {
   lm: LoadmapController
   title?: ReactNode | false
   legend?: boolean
+  /** Starts the story: the bar has its button only where the canvas shows the story (`over`). */
+  onStory?: () => void
 }) {
   const size = useCanvasSize()
   const tight = size.width === 'compact' || size.short
@@ -72,8 +75,8 @@ export function BarParts({
     <>
       {heading && !size.short && <h2>{heading}</h2>}
       {tight ? <ScenarioPick lm={lm} /> : <Scenarios lm={lm} />}
-      {lm.model.story.length > 0 && (
-        <button type="button" className="lm-btn lm-canvas-play" onClick={() => lm.setStoryPlaying(true)}>
+      {onStory && lm.model.story.length > 0 && (
+        <button type="button" className="lm-btn lm-canvas-play" onClick={onStory}>
           ▶ Story
         </button>
       )}
@@ -149,24 +152,55 @@ export function Frame({
   // a model with nothing to set but the load has no Design
   const shown = panels.filter((p) => p !== 'controls' || hasDesign(lm))
   // the story takes the canvas while a step of it shows or it plays: its text over the bar, the panels away
-  const told = lm.model.story.length > 0 && (lm.step != null || lm.storyPlaying || lm.cue != null)
+  // held from its start to Done: stopped before its first step shows (a pause, a value the reader changed), the
+  // strip stays, with a way out of its own
+  const live = lm.step != null || lm.storyPlaying
+  const [told, setTold] = useState(live)
+  const [seen, setSeen] = useState(lm.step != null)
+  if (live && !told) setTold(true)
+  if (told && lm.step != null && !seen) setSeen(true)
+  if (told && !live && seen) {
+    setTold(false)
+    setSeen(false)
+  }
+  const leave = () => {
+    setTold(false)
+    setSeen(false)
+  }
   const box = useRef<HTMLDivElement>(null)
   const was = useRef(told)
+  // the story was started from its button, by the keyboard's owner: the focus goes back there
+  const back = useRef(false)
   useEffect(() => {
     if (was.current === told) return
     was.current = told
-    // the keyboard goes with it, when it was in the canvas or nowhere: into the story, where the arrows step it, and
-    // back to the button that started it
+    // the keyboard goes with it, and only then: from the button that started it into the story, where the arrows
+    // step it; and back to that button when the story it was in is gone. Never from the load or a box, nor from
+    // the page outside
     const root = box.current
     const at = root?.ownerDocument.activeElement
-    if (!root || (at && at !== root.ownerDocument.body && !root.contains(at))) return
-    root.querySelector<HTMLElement>(told ? '.lm-canvas-over .lm-story' : '.lm-canvas-play')?.focus()
+    if (!root || !at) return
+    const play = root.querySelector<HTMLElement>('.lm-canvas-play')
+    if (told ? at === play : at === root.ownerDocument.body && back.current)
+      (told ? root.querySelector<HTMLElement>('.lm-canvas-over .lm-story') : play)?.focus({ preventScroll: true })
+    back.current = told && at === play
   }, [told])
   return (
     <Canvas
       ref={box}
       lm={lm}
-      over={told ? <Story lm={lm} /> : undefined}
+      over={
+        told ? (
+          <>
+            <Story lm={lm} />
+            {!live && (
+              <button type="button" className="lm-btn lm-canvas-leave" aria-label="Leave the story" onClick={leave}>
+                Done
+              </button>
+            )}
+          </>
+        ) : undefined
+      }
       legend={false}
       open={open}
       defaultOpen={defaultOpen}
@@ -177,7 +211,7 @@ export function Frame({
       selected={selected}
     >
       <Canvas.Bar>
-        <BarParts lm={lm} title={title} legend={legend} />
+        <BarParts lm={lm} title={title} legend={legend} onStory={() => lm.setStoryPlaying(true)} />
       </Canvas.Bar>
       <Canvas.Console>
         <ConsoleParts lm={lm} extra={assumptions?.length} />

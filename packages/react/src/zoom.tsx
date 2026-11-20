@@ -146,7 +146,7 @@ export function attachZoom(
     }
     points.set(e.pointerId, p)
     // one finger scrolls the page
-    if (!panning && e.pointerType === 'touch' && paged()) return
+    if (!panning && e.pointerType !== 'mouse' && paged()) return
     if (!panning) {
       const slop = e.pointerType === 'mouse' ? SLOP.mouse : SLOP.other
       if (!start || Math.hypot(p.x - start.x, p.y - start.y) < slop) return
@@ -160,7 +160,14 @@ export function attachZoom(
   }
   const up = (e: PointerEvent) => {
     if (!points.delete(e.pointerId)) return
-    if (points.size) return
+    if (points.size) {
+      // a pinch over on a canvas in a page: the finger that stays is the page's again
+      if (paged()) {
+        panning = false
+        start = null
+      }
+      return
+    }
     if (panning) swallowUntil = e.timeStamp + 300
     panning = false
     start = null
@@ -217,8 +224,11 @@ export function attachZoom(
   }
   touch()
   const off = viewer.engine.subscribe(touch)
-  board.addEventListener('touchstart', fingers, { passive: false })
-  board.addEventListener('touchmove', fingers, { passive: false })
+  // only a board that can lie in a page waits on these: any other scrolls without asking
+  if (o.page) {
+    board.addEventListener('touchstart', fingers, { passive: false })
+    board.addEventListener('touchmove', fingers, { passive: false })
+  }
   board.addEventListener('pointerdown', down)
   board.addEventListener('pointermove', drag)
   board.addEventListener('pointerup', up)

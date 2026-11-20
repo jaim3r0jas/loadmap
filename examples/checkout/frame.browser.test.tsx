@@ -302,7 +302,8 @@ describe('a loadmap in one canvas', () => {
     await expect.poll(() => document.activeElement, { timeout: 5000 }).toBe(story())
     expect(canvas.querySelector('.lm-canvas-bar')!.hasAttribute('inert')).toBe(true)
     expect(canvas.querySelector('.lm-canvas-tabs')).toBeNull()
-    expect(panel(canvas)).toBeNull()
+    // the open panel is kept, unseen
+    expect(panel(canvas)!.hidden).toBe(true)
     expect(canvas.querySelector('.lm-canvas-verdict .lm-link')).toBeNull()
     // a step by hand, so the test does not wait on the story's clock
     ctl!.setStoryPlaying(false)
@@ -319,7 +320,8 @@ describe('a loadmap in one canvas', () => {
     await expect.poll(story, { timeout: 5000 }).toBeNull()
     // everything is back as it was, the keyboard on the button that started it
     expect(canvas.querySelector('.lm-canvas-tabs')).not.toBeNull()
-    await expect.poll(() => panel(canvas)?.dataset.panel, { timeout: 5000 }).toBe('limits')
+    expect(panel(canvas)!.dataset.panel).toBe('limits')
+    expect(panel(canvas)!.hidden).toBe(false)
     await expect.poll(() => document.activeElement, { timeout: 5000 }).toBe(play)
     expect(sizes(canvas)).toEqual(before)
     expect(handle!.engine.room).toBe(room)
@@ -352,5 +354,37 @@ describe('a loadmap in one canvas', () => {
     const k = handle!.engine.viewer!.shownView()!.k
     expect(wheel(board)).toBe(true)
     expect(handle!.engine.viewer!.shownView()!.k).toBeGreaterThan(k)
+  })
+
+  it('keeps the story when it is stopped before its first step shows, with a way out', async () => {
+    const canvas = await mount(1200, 560)
+    const story = () => canvas.querySelector<HTMLElement>('.lm-canvas-over .lm-story')
+    canvas.querySelector<HTMLButtonElement>('.lm-canvas-play')!.click()
+    await expect.poll(story, { timeout: 5000 }).not.toBeNull()
+    // stopped while the camera is still on its way to the first step
+    ctl!.setStoryPlaying(false)
+    await frames()
+    expect(ctl!.step).toBeNull()
+    expect(story()).not.toBeNull()
+    expect(canvas.querySelector('.lm-canvas-tabs')).toBeNull()
+    const leave = canvas.querySelector<HTMLButtonElement>('.lm-canvas-leave')!
+    expect(leave.getAttribute('aria-label')).toBe('Leave the story')
+    leave.click()
+    await expect.poll(story, { timeout: 5000 }).toBeNull()
+    expect(canvas.querySelector('.lm-canvas-tabs')).not.toBeNull()
+  })
+
+  it('leaves the keyboard where it is when the story stops under it', async () => {
+    const canvas = await mount(1200, 560)
+    ctl!.setStep(0)
+    await expect.poll(() => canvas.querySelector('.lm-canvas-over .lm-story'), { timeout: 5000 }).not.toBeNull()
+    // started from outside the canvas: the focus is not taken
+    expect(canvas.contains(document.activeElement)).toBe(false)
+    const load = canvas.querySelector<HTMLInputElement>('.lm-canvas-console input[type="range"]')!
+    load.focus()
+    ctl!.setStep(null)
+    await expect.poll(() => canvas.querySelector('.lm-canvas-over'), { timeout: 5000 }).toBeNull()
+    await frames()
+    expect(document.activeElement).toBe(load)
   })
 })
