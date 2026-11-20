@@ -6,8 +6,7 @@ import { Compare, HeadroomChart } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
 /**
- * What a frame's panel holds, whole: loaded with the first panel a reader opens, so a first load holds the diagram,
- * the load and the verdict's line only.
+ * What a frame's panel holds, whole: put together with the first panel a reader opens.
  */
 export function FramePanelBody({
   lm,

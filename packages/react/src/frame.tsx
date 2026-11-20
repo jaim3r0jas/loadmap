@@ -4,11 +4,13 @@ import { Canvas, useCanvasPanels, useCanvasSize } from './Canvas'
 // first load holds it without the dock
 import { VerdictLine } from './compact'
 import { type DiagramProps, Legend } from './Diagram'
-import { LoadRange } from './panels'
+import { hasDesign, LoadRange } from './panels'
 import { Scenarios } from './scenarios'
 import type { LoadmapController } from './useLoadmap'
 
-// with the first panel a reader opens: a first load never holds the panels
+// what each panel is made of comes with the first one a reader opens. The parts it shares a module with (the load
+// slider's, the scenarios') are in the first load until they are split from it, with the budget, when `<Loadmap>`
+// becomes this frame
 const Body = lazy(() => import('./framePanels').then((m) => ({ default: m.FramePanelBody })))
 
 /** A frame's panels, in the order of their tabs: one opens at a time. */
@@ -90,9 +92,8 @@ export function ConsoleParts({ lm, extra = 0 }: { lm: LoadmapController; extra?:
         <VerdictLine
           lm={lm}
           extra={extra}
-          open={
-            links && panels.includes('limits') ? (p, from) => show(p === 'verdict' ? 'limits' : p, from) : undefined
-          }
+          open={links ? (p, from) => show(p === 'verdict' ? 'limits' : p, from) : undefined}
+          why={panels.includes('limits')}
           assumptions={panels.includes('assumptions')}
         />
       </div>
@@ -106,7 +107,7 @@ export interface FrameProps extends Pick<DiagramProps, 'onNodeClick' | 'selected
   title?: ReactNode | false
   /** The flows' legend in the bar. */
   legend?: boolean
-  /** The panels the frame offers, in the order of their tabs. Default: every one that has something to show. */
+  /** The panels the frame offers, in the order of their tabs. Default: every one; Design only when the model has one. */
   panels?: readonly FramePanel[]
   /** The panel that is open; null for none. Leave it out and the frame keeps it itself. */
   open?: FramePanel | null
@@ -140,8 +141,7 @@ export function Frame({
   selected,
 }: FrameProps) {
   // a model with nothing to set but the load has no Design
-  const designs = lm.model.params.length > 1 || lm.ev.presets.some((p) => !('load' in p.values))
-  const shown = panels.filter((p) => p !== 'controls' || designs)
+  const shown = panels.filter((p) => p !== 'controls' || hasDesign(lm))
   return (
     <Canvas
       lm={lm}

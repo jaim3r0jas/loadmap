@@ -29,6 +29,7 @@ export function VerdictLine({
   verdict = true,
   extra = 0,
   open,
+  why = true,
   assumptions,
 }: {
   lm: LoadmapController
@@ -36,6 +37,8 @@ export function VerdictLine({
   /** The page's own assumption lines, counted with the model's. */
   extra?: number
   open?: OpenPanel
+  /** Shows "Why", which opens the verdict's sentence. */
+  why?: boolean
   /** Shows the count of assumptions that opens them. */
   assumptions?: boolean
 }) {
@@ -88,7 +91,7 @@ export function VerdictLine({
           )}
         </p>
       )}
-      {open && verdict && (
+      {open && verdict && why && (
         <button type="button" className="lm-link" onClick={(e) => open('verdict', e.currentTarget)}>
           Why ›
         </button>

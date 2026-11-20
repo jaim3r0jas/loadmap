@@ -175,6 +175,11 @@ describe('a loadmap in one canvas', () => {
     expect(handle!.engine.room).toBe(room)
     expect(handle!.engine.scene).toBe(scene)
     // between the bars, and the diagram's boxes clear of it
+    await Promise.all(
+      panel(canvas)!
+        .getAnimations()
+        .map((x) => x.finished),
+    )
     const box = panel(canvas)!.getBoundingClientRect()
     expect(box.top).toBeGreaterThanOrEqual(canvas.querySelector('.lm-canvas-bar')!.getBoundingClientRect().bottom - 1)
     expect(box.bottom).toBeLessThanOrEqual(canvas.querySelector('.lm-canvas-console')!.getBoundingClientRect().top + 1)
@@ -227,9 +232,11 @@ describe('a loadmap in one canvas', () => {
     await expect.poll(() => canvas.querySelector('.lm-canvas-panel .lm-controls'), { timeout: 5000 }).not.toBeNull()
     expect(panel(canvas)!.dataset.place).toBe('sheet')
     const tabsTop = canvas.querySelector('.lm-canvas-tabs')!.getBoundingClientRect().top
+    // the load and the verdict stay in view under it, once it has slid in
+    await expect
+      .poll(() => panel(canvas)!.getBoundingClientRect().bottom, { timeout: 5000 })
+      .toBeLessThanOrEqual(tabsTop + 1)
     const half = panel(canvas)!.getBoundingClientRect()
-    // the load and the verdict stay in view under it
-    expect(half.bottom).toBeLessThanOrEqual(tabsTop + 1)
     await page.screenshot({ path: '__screenshots__/frame-panel-sheet.png', element: host! })
     const whole = [...canvas.querySelectorAll<HTMLButtonElement>('.lm-canvas-panel-head button')].find(
       (b) => b.textContent === 'Whole',

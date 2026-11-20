@@ -8,12 +8,13 @@ import {
   type ReactNode,
   use,
   useCallback,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
-import { type CanvasSize, canvasSize, covered, placement, reach, reserved, tabsAt } from './canvasSize'
+import { CANVAS, type CanvasSize, canvasSize, covered, placement, reach, reserved, tabsAt } from './canvasSize'
 import { Diagram, type DiagramProps } from './Diagram'
 import type { LoadmapController } from './useLoadmap'
 
@@ -59,7 +60,7 @@ const CANVAS_CSS = `
 .lm-canvas[data-tabs="head"] .lm-canvas-tabs { top: 0; right: 0; width: var(--lm-canvas-right); height: 40px; border-left: 1px solid var(--lm-line); border-bottom: 1px solid var(--lm-line); overflow-x: auto; scrollbar-width: none; }
 .lm-canvas[data-tabs="head"] .lm-canvas-tabs::-webkit-scrollbar { display: none; }
 .lm-canvas-menu { position: absolute; z-index: 4; top: 5px; right: 8px; width: 116px; font: 500 .8rem var(--lm-font); color: var(--lm-fg); background: var(--lm-surface); border: 1px solid var(--lm-line); border-radius: 6px; padding: 4px 6px; }
-.lm-canvas[data-tabs="menu"] .lm-canvas-bar { padding-right: 132px; }
+.lm-canvas[data-tabs="menu"] .lm-canvas-bar, .lm-canvas[data-tabs="menu"] .lm-canvas-bar:empty { display: flex; min-height: 40px; padding-right: 132px; }
 .lm-canvas-panel { position: absolute; z-index: 4; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--lm-surface); outline: 0; }
 .lm-canvas-panel[data-place="side"] { top: var(--lm-canvas-top); bottom: var(--lm-canvas-under); right: var(--lm-canvas-right); width: calc(var(--lm-canvas-reach) - var(--lm-canvas-right)); border-left: 1px solid var(--lm-line); box-shadow: -8px 0 18px -14px rgb(0 0 0 / .45); }
 .lm-canvas[data-pinned] .lm-canvas-panel { top: 40px; right: 0; bottom: 0; width: var(--lm-canvas-right); box-shadow: none; }
@@ -236,6 +237,9 @@ export function Canvas({
   const bars = all.filter(of(Bar))
   const consoles = all.filter(of(Console))
   const panels = all.filter(of(Panel)) as ReactElement<PanelProps>[]
+  // anything else of the page's own lies over the canvas, after the console
+  const rest = all.filter((c) => ![Bar, Console, Panel].some((t) => of(t)(c)))
+  const uid = useId()
   const ids = panels.map((p) => p.props.id)
   const idsKey = ids.join('\n')
   const { width, short, pinned } = canvasSize(box?.w ?? 0, box?.h ?? 0, lm.fullScreen)
@@ -247,17 +251,28 @@ export function Canvas({
   // a pinned panel is always there: the first one, until the reader picks another
   const open = asked != null && ids.includes(asked) ? asked : size.pinned ? (ids[0] ?? null) : null
   const [whole, setWhole] = useState(false)
+  // a sheet opens half again, however the last one closed
+  if (!open && whole) setWhole(false)
   const back = useRef<HTMLElement | null>(null)
+  const at = useRef({ root, open, uid })
+  at.current = { root, open, uid }
   const change = useRef(onOpen)
   change.current = onOpen
   const show = useCallback((id: string | null, from?: HTMLElement | null) => {
     if (id) back.current = from ?? null
     else {
-      // the keyboard goes back to what opened the panel, when that is still there
-      const to = back.current
+      // closed from inside the panel, the keyboard goes back to what opened it, or else to its tab (the menu on a
+      // low canvas); closed from a control of its own (`from`: its tab), it stays there
+      const { root, open, uid } = at.current
+      const opener = back.current
       back.current = null
-      if (to?.isConnected) to.focus()
-      setWhole(false)
+      if (!from) {
+        const to = opener?.isConnected
+          ? opener
+          : (root?.ownerDocument.getElementById(tabId(uid, open ?? '')) ??
+            root?.querySelector<HTMLElement>('.lm-canvas-menu'))
+        to?.focus()
+      }
     }
     setOwn(id)
     change.current?.(id)
@@ -270,12 +285,16 @@ export function Canvas({
   // the bars come once the box has a size, so they are measured in its size class; the diagram once they are
   // measured: it is arranged once, for the room it keeps
   const measured = !!box && (!bars.length || !!bar) && (!consoles.length || !!cons)
-  const heights = { top: Math.ceil(bar?.h ?? 0), bottom: Math.ceil(cons?.h ?? 0) }
   const has = ids.length > 0
+  const tabs = has ? tabsAt(size) : null
+  // the menu of a low canvas lies in the bar's row: without a bar, or with an empty one, that row is still kept
+  const heights = {
+    top: Math.max(Math.ceil(bar?.h ?? 0), tabs === 'menu' ? CANVAS.menu : 0),
+    bottom: Math.ceil(cons?.h ?? 0),
+  }
   const reserve = reserved(size, heights, has)
   const far = has && open && box ? reach(size, heights, box.w, box.h, whole) : 0
   const inset = covered(size, heights, far, has)
-  const tabs = has ? tabsAt(size) : null
   const place = placement(size)
   const shown = panels.find((p) => p.props.id === open)
   const vars = {
@@ -311,9 +330,11 @@ export function Canvas({
           />
         )}
         {box && consoles}
-        {box && tabs && <Tabs panels={panels} open={open} show={show} at={tabs} canClose={!size.pinned} />}
+        {box && rest}
+        {box && tabs && <Tabs uid={uid} panels={panels} open={open} show={show} at={tabs} canClose={!size.pinned} />}
         {box && shown && (
           <PanelBox
+            uid={uid}
             panel={shown}
             place={place}
             pinned={size.pinned}
@@ -327,20 +348,23 @@ export function Canvas({
   )
 }
 
-const tabId = (id: string) => `lm-canvas-tab-${id}`
-const PANEL_ID = 'lm-canvas-panel'
+// with the canvas's own id: two canvases on a page never share one
+const tabId = (uid: string, id: string) => `${uid}tab-${id}`
+const panelId = (uid: string) => `${uid}panel`
 
 /**
  * The panels' tabs: a button each, which opens its panel and closes it again (a pinned panel stays). The arrows move
  * between them. A low canvas has one menu in their place.
  */
 function Tabs({
+  uid,
   panels,
   open,
   show,
   at,
   canClose,
 }: {
+  uid: string
   panels: readonly ReactElement<PanelProps>[]
   open: string | null
   show: Slots['show']
@@ -364,7 +388,11 @@ function Tabs({
       </select>
     )
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape' && open && canClose) return show(null)
+    if (e.key === 'Escape' && open && canClose) {
+      // the panel's alone: a full screen over it stays
+      e.stopPropagation()
+      return show(null, e.target as HTMLElement)
+    }
     const by = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
     if (!by) return
     const all = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')]
@@ -387,10 +415,10 @@ function Tabs({
           <button
             type="button"
             key={p.props.id}
-            id={tabId(p.props.id)}
+            id={tabId(uid, p.props.id)}
             aria-expanded={on}
-            aria-controls={on ? PANEL_ID : undefined}
-            onClick={(e) => (on ? canClose && show(null) : show(p.props.id, e.currentTarget))}
+            aria-controls={on ? panelId(uid) : undefined}
+            onClick={(e) => (on ? canClose && show(null, e.currentTarget) : show(p.props.id, e.currentTarget))}
           >
             <span>{p.props.title}</span>
           </button>
@@ -405,6 +433,7 @@ function Tabs({
  * the keyboard back to its tab; nothing but the panel scrolls in a canvas.
  */
 function PanelBox({
+  uid,
   panel,
   place,
   pinned,
@@ -412,6 +441,7 @@ function PanelBox({
   setWhole,
   close,
 }: {
+  uid: string
   panel: ReactElement<PanelProps>
   place: 'side' | 'sheet'
   pinned: boolean
@@ -422,20 +452,22 @@ function PanelBox({
   const { id, title, children } = panel.props
   return (
     <section
-      id={PANEL_ID}
+      id={panelId(uid)}
       className="lm-canvas-panel"
       data-place={place}
       data-panel={id}
-      aria-labelledby={`${PANEL_ID}-title`}
+      aria-labelledby={`${panelId(uid)}-title`}
       tabIndex={-1}
       onKeyDown={(e) => {
-        if (e.key !== 'Escape' || pinned) return
+        // not an Escape something in the panel took for itself (a chart's reading, a list of choices)
+        if (e.key !== 'Escape' || pinned || e.defaultPrevented) return
+        if ((e.target as HTMLElement).closest('select, input, textarea')) return
         e.stopPropagation()
         close()
       }}
     >
       <div className="lm-canvas-panel-head">
-        <h3 id={`${PANEL_ID}-title`}>{title}</h3>
+        <h3 id={`${panelId(uid)}-title`}>{title}</h3>
         {place === 'sheet' && (
           <button type="button" className="lm-btn" aria-pressed={whole} onClick={() => setWhole(!whole)}>
             {whole ? 'Half' : 'Whole'}

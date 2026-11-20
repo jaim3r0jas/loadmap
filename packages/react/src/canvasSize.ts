@@ -1,11 +1,11 @@
 import type { Insets } from './viewpoint'
 
 /**
- * Where a canvas changes its arrangement, by its own size in pixels (never the window's): from `wide` the panel stands
- * beside the diagram behind a rail, narrower it is a sheet over the console (under `compact` the bars tighten too),
- * lower than `short` the bars fold to a row each, and a full screen from `pin` wide keeps the panel open. `rail` and
- * `panel` are the widths of the rail and of the panel beside the diagram, `tabs` the height of the row of tabs over
- * the console, `sheet` the least a sheet stands.
+ * Where a canvas changes its arrangement, by its own size in pixels (never the window's): from `wide` the panels' tabs
+ * are a rail down its edge, narrower a row over the console; under `compact` the open panel is a sheet on the console;
+ * lower than `short` the bars fold to a row each; and a full screen from `pin` wide keeps the panel open. `rail` and
+ * `panel` are the widths of the rail and of the panel beside the diagram, `tabs` the height of the row of tabs,
+ * `menu` that of the row the menu of a low canvas lies in, `sheet` the least a sheet stands.
  */
 export const CANVAS = {
   compact: 520,
@@ -15,6 +15,7 @@ export const CANVAS = {
   rail: 44,
   panel: 340,
   tabs: 36,
+  menu: 40,
   sheet: 160,
 } as const
 

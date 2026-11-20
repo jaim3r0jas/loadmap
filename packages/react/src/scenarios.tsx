@@ -283,7 +283,11 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       e.preventDefault()
       setHover(Math.max(0, Math.min(xs.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1))))
-    } else if (e.key === 'Escape') setHover(null)
+    } else if (e.key === 'Escape' && hover != null) {
+      // the reading's own: a panel the chart is in stays open
+      e.preventDefault()
+      setHover(null)
+    }
   }
 
   const area = (b: NonNullable<HeadroomLine['band']>) => {
