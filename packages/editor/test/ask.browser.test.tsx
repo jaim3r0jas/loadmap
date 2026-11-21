@@ -53,9 +53,9 @@ describe('the Ask panel', () => {
     expect(model.requests[0]!.system).toContain('# the reference')
     await userEvent.click(card.getByRole('button', { name: 'Accept' }))
     await expect.poll(() => handle.source()).toContain('scenario "Eight" { pods: 6; gateways: 2 }')
-    const versions = Object.values(handle.history()!.commits)
     await expect.poll(() => Object.values(handle.history()!.commits).some((c) => c.author === 'assistant')).toBe(true)
-    expect(versions.length).toBeGreaterThanOrEqual(1)
+    const mine = Object.values(handle.history()!.commits).find((c) => c.author === 'assistant')!
+    expect(mine.trace).toMatchObject({ request: 'Add a scenario with six pods and two gateways', model: 'recorded' })
   })
 
   it('drops a proposal on Reject, and refuses one the text moved away from', async () => {

@@ -1,6 +1,5 @@
 import {
   type AssistEvent,
-  type ChatMessage,
   createAssistant,
   diffLines,
   type ModelProvider,
@@ -9,7 +8,8 @@ import {
   type ProviderPreset,
   providerFor,
 } from '@loadmap/dsl/assist'
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { AskMemory, Turn } from './AskMemory'
 import { applyFiles } from './apply'
 import { type Author, subject, type Trace } from './history'
 import { forgetKey, readKey, takeKey } from './modelKeys'
@@ -40,6 +40,8 @@ export interface AskPanelProps {
   confirmSend?: (provider: { id: string; name: string }) => boolean | Promise<boolean>
   /** A model of the page's own: no provider or key to pick. */
   model?: ModelProvider
+  /** Where the conversation is kept while the panel is closed. */
+  memory: AskMemory
 }
 
 export const ASK_CSS = `
@@ -66,13 +68,6 @@ export const ASK_CSS = `
 .lme-ask textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; }
 `
 
-interface Turn {
-  /** Counts the turns of the conversation: what React keys them by. */
-  n: number
-  role: 'user' | 'assistant'
-  text: string
-}
-
 /** The reader's choice of model, kept in this tab: the provider and the model's name, never the key. */
 const PICK = 'loadmap-assist-model'
 
@@ -93,31 +88,46 @@ export default function AskPanel(p: AskPanelProps) {
   const stored = readKey(preset.id)
   const [key, setKey] = useState(stored?.key ?? '')
   const [keep, setKeep] = useState(stored?.kept ?? false)
-  const [turns, setTurns] = useState<Turn[]>([])
+  const m = p.memory
+  const [turns, setTurns] = useState<Turn[]>(m.turns)
   const [streaming, setStreaming] = useState('')
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState('')
-  const [request, setRequest] = useState('')
+  const [note, setNote] = useState(m.note)
+  const [request, setRequest] = useState(m.request)
   const [scoped, setScoped] = useState(true)
-  const [proposal, setProposal] = useState<Proposal | null>(null)
-  const [usage, setUsage] = useState('')
-  const thread = useRef<ChatMessage[]>([])
-  const asked = useRef<string>('')
-  const ops = useRef<string[]>([])
-  const used = useRef<{ input: number; output: number; cached?: number } | undefined>(undefined)
+  const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
+  const [usage, setUsage] = useState(m.usage)
   const stop = useRef<AbortController | null>(null)
-  const confirmed = useRef(false)
+  // what the panel draws, kept for the next time it opens
+  m.turns = turns
+  m.note = note
+  m.request = request
+  m.proposal = proposal
+  m.usage = usage
 
   useEffect(() => {
     try {
       sessionStorage.setItem(PICK, JSON.stringify(pick))
     } catch {}
   }, [pick])
-  useEffect(() => () => stop.current?.abort(), [])
-  // a new proposal draws in the canvas; none, the files again
+  // closing the panel mid-answer stops it, and says so when it opens again
+  useEffect(
+    () => () => {
+      if (!stop.current) return
+      stop.current.abort()
+      m.note = 'The answer was stopped: the panel closed.'
+    },
+    [m],
+  )
+  // a proposal drawn in the canvas, and the files again once it goes: opening the panel changes nothing drawn
   const preview = useRef(p.onPreview)
   preview.current = p.onPreview
-  useEffect(() => preview.current(proposal), [proposal])
+  const drawn = useRef(proposal)
+  useEffect(() => {
+    if (drawn.current === proposal) return
+    drawn.current = proposal
+    preview.current(proposal)
+  }, [proposal])
 
   const box = scoped ? p.selected : null
   const send = async (e?: FormEvent) => {
@@ -129,10 +139,8 @@ export default function AskPanel(p: AskPanelProps) {
       return
     }
     const to = p.model ? { id: p.model.kind, name: p.model.model } : preset
-    if (!confirmed.current && p.confirmSend) {
-      if (!(await p.confirmSend(to))) return
-      confirmed.current = true
-    }
+    // asked each time: the page remembers what the reader said for what it holds now
+    if (p.confirmSend && !(await p.confirmSend(to))) return
     let model: ModelProvider
     try {
       if (p.model) model = p.model
@@ -149,7 +157,7 @@ export default function AskPanel(p: AskPanelProps) {
     setProposal(null)
     setBusy(true)
     setTurns((t) => [...t, { n: t.length, role: 'user', text: words }])
-    asked.current = words
+    m.asked = { request: words, box, model: model.model }
     const files = p.files()
     const assistant = createAssistant({ model, reference: p.reference })
     const control = new AbortController()
@@ -160,7 +168,7 @@ export default function AskPanel(p: AskPanelProps) {
         request: words,
         project: { entry: files.path, files: files.files },
         ...(box && { selection: { box } }),
-        thread: thread.current,
+        thread: m.thread,
         signal: control.signal,
       }) as AsyncGenerator<AssistEvent>) {
         if (ev.type === 'text') {
@@ -177,11 +185,11 @@ export default function AskPanel(p: AskPanelProps) {
           setNote('The model asks to read your metrics: this page has no connection to them.')
         } else if (ev.type === 'refused') setNote(`No change: ${ev.error}`)
         else if (ev.type === 'proposal') {
-          ops.current = ev.proposal.operations.map((o) => JSON.stringify(o))
+          m.ops = ev.proposal.operations.map((o) => JSON.stringify(o))
           setProposal(ev.proposal)
         } else if (ev.type === 'done') {
-          thread.current = ev.thread
-          used.current = ev.usage
+          m.thread = ev.thread
+          m.used = ev.usage
           setUsage(
             `${model.model}: ${ev.usage.input} tokens in${ev.usage.cached ? ` (${ev.usage.cached} cached)` : ''}, ${ev.usage.output} out`,
           )
@@ -201,26 +209,32 @@ export default function AskPanel(p: AskPanelProps) {
     if (!chosen) return
     setProposal(null)
     // a proposal is a change of the files as they were asked about: never laid over text typed since
-    const now = p.files().files
-    const before = chosen.before.files
-    const same =
-      Object.keys(now).length === Object.keys(before).length && Object.entries(before).every(([k, v]) => now[k] === v)
-    if (!same) {
-      setNote('The text changed since the question: ask again to change it as it is now.')
-      return
+    const unchanged = () => {
+      const now = p.files().files
+      const before = chosen.before.files
+      return (
+        Object.keys(now).length === Object.keys(before).length && Object.entries(before).every(([k, v]) => now[k] === v)
+      )
     }
-    // the reader's own edits first, then the assistant's change: each a version of its own
-    await p.keep('you', 'Edited')
-    applyFiles(p.host, chosen.project.files)
-    await p.keep('assistant', subject(asked.current), {
-      request: asked.current,
-      ...(box && { selection: box }),
-      model: p.model?.model ?? (pick.model || preset.model || preset.id),
-      operations: ops.current,
-      notes: chosen.notes,
-      ...(used.current && { usage: used.current }),
-    })
-    setNote('Accepted: one undo step per file, and a version in the Timeline.')
+    if (!unchanged()) return setNote('The text changed since the question: ask again to change it as it is now.')
+    const { request: words, box: about, model: by } = m.asked
+    try {
+      // the reader's own edits first, then the assistant's change: each a version of its own
+      await p.keep('you', 'Edited')
+      if (!unchanged()) return setNote('The text changed since the question: ask again to change it as it is now.')
+      applyFiles(p.host, chosen.project.files)
+      await p.keep('assistant', subject(words), {
+        request: words,
+        ...(about && { selection: about }),
+        model: by,
+        operations: m.ops,
+        notes: chosen.notes,
+        ...(m.used && { usage: m.used }),
+      })
+      setNote('Accepted: one undo step per file, and a version in the Timeline.')
+    } catch (err) {
+      setNote(`Not accepted: ${(err as Error).message}`)
+    }
   }
 
   return (
@@ -351,6 +365,10 @@ function ProposalCard({
 }) {
   const files = [...proposal.changed, ...proposal.added]
   const [open, setOpen] = useState<string | null>(files.length === 1 ? files[0]! : null)
+  const diff = useMemo(
+    () => (open ? diffLines(proposal.before.files[open] ?? '', proposal.project.files[open] ?? '') : []),
+    [open, proposal],
+  )
   return (
     <section className="lme-ask-card" aria-label="Proposal">
       <strong>
@@ -399,7 +417,7 @@ function ProposalCard({
           </button>
           {open === path && (
             <pre>
-              {diffLines(proposal.before.files[path] ?? '', proposal.project.files[path] ?? '').map((l, i) => (
+              {diff.map((l, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: a diff's lines are drawn once, in order, never moved
                 <span key={i} className={l.kind === '+' ? 'lme-add' : l.kind === '-' ? 'lme-del' : undefined}>
                   {l.kind === '@' ? '…' : `${l.kind}${l.text}`}

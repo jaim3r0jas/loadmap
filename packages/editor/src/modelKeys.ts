@@ -16,13 +16,13 @@ function tab(): Storage | undefined {
 }
 
 export function readKey(provider: string): { key: string; kept: boolean } | undefined {
-  const m = memory.get(provider)
-  if (m) return { key: m, kept: false }
+  // the tab's copy first: a key kept there is kept, whether this page has it in memory too or not
   try {
     const t = tab()?.getItem(KEY(provider))
     if (t) return { key: t, kept: true }
   } catch {}
-  return undefined
+  const m = memory.get(provider)
+  return m ? { key: m, kept: false } : undefined
 }
 
 export function takeKey(provider: string, key: string, keep: boolean): void {

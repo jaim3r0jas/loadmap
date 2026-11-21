@@ -2,6 +2,7 @@ import { compile, type Definition, type HostFunctions } from '@loadmap/dsl'
 import type { Proposal } from '@loadmap/dsl/assist'
 import { Canvas } from '@loadmap/react'
 import { type ReactNode, Suspense } from 'react'
+import { type AskMemory, askMemory } from './AskMemory'
 import { type Author, History, type Trace } from './history'
 import type { EditorAssist } from './LoadmapEditor'
 import { later } from './Menu'
@@ -33,6 +34,8 @@ export class Studio {
   history: History | null = null
   /** Counts the history's changes, for the panels to draw again. */
   version = 0
+  /** The Ask panel's conversation, kept while its tab is closed. */
+  ask: AskMemory = askMemory()
 
   constructor(
     private host: () => StudioHost,
@@ -106,6 +109,7 @@ export class Studio {
               providers={o.assist.providers}
               confirmSend={o.assist.confirmSend}
               model={o.assist.model}
+              memory={this.ask}
               selected={o.selected}
             />
           </Suspense>

@@ -1,0 +1,37 @@
+import type { ChatMessage, Proposal } from '@loadmap/dsl/assist'
+
+/** A turn of the conversation as the panel draws it. */
+export interface Turn {
+  /** Counts the turns of the conversation: what React keys them by. */
+  n: number
+  role: 'user' | 'assistant'
+  text: string
+}
+
+/**
+ * The Ask panel's conversation, held by the studio: the canvas draws only the open panel, so the Ask panel is mounted
+ * anew each time its tab opens, and finds the conversation and its proposal where it left them.
+ */
+export interface AskMemory {
+  turns: Turn[]
+  note: string
+  request: string
+  proposal: Proposal | null
+  usage: string
+  thread: ChatMessage[]
+  /** What was asked, about which box, of which model: what an accepted version's trace says. */
+  asked: { request: string; box: string | null; model: string }
+  ops: string[]
+  used?: { input: number; output: number; cached?: number }
+}
+
+export const askMemory = (): AskMemory => ({
+  turns: [],
+  note: '',
+  request: '',
+  proposal: null,
+  usage: '',
+  thread: [],
+  asked: { request: '', box: null, model: '' },
+  ops: [],
+})

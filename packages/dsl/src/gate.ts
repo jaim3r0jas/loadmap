@@ -1,4 +1,4 @@
-import { compareDefinitions } from '@loadmap/core'
+import type { Model } from '@loadmap/core'
 import type { Answer } from './answer'
 import { childrenOf, type Expr, formulasOf } from './ast'
 import { type CompileOptions, type CompileResult, compile } from './compile'
@@ -181,8 +181,7 @@ export function gate(before: Project, answer: Answer, o: GateOptions = {}): Gate
     .map(([k, v]) => ({ label: k, ...(b.has(k) && { before: b.get(k) }), after: v }))
   let moved: Proposal['moved']
   if (base?.definition && head?.definition) {
-    const c = compareDefinitions(base.definition.model, head.definition.model)
-    moved = { text: c.text, worse: c.triggers.map((t) => t.text) }
+    moved = movedBy(base.definition.model, head.definition.model)
   }
   return {
     ok: true,
@@ -202,6 +201,32 @@ export function gate(before: Project, answer: Answer, o: GateOptions = {}): Gate
       ...(moved && { moved }),
     },
   }
+}
+
+/**
+ * Where the first limit was and is, and where the target is reached, from `evaluate()` alone: what a page that draws a
+ * model loads already (`compareDefinitions` would put the comparison in every such page's first load, through the
+ * chunk it shares with the editor's lazy parts). Worse: the first limit reaches the target 10 % sooner or more.
+ */
+function movedBy(base: Model, head: Model): { text: string; worse: string[] } {
+  const b = base.evaluate()
+  const h = head.evaluate()
+  const at = (x: number | null | undefined) =>
+    x == null || !Number.isFinite(x) ? 'never in range' : `${Number(x.toPrecision(2))}×`
+  const was = b.firstLimit?.name
+  const now = h.firstLimit?.name
+  const text =
+    !was && !now
+      ? 'Nothing reaches its limit in range, before or after.'
+      : was === now
+        ? `${now} stays the first limit, at ${at(h.target?.low)}.`
+        : `The first limit moves from ${was ?? 'none'} to ${now ?? 'none'}, at ${at(h.target?.low)} (was ${at(b.target?.low)}).`
+  const worse: string[] = []
+  const bt = b.target?.low
+  const ht = h.target?.low
+  if (bt != null && ht != null && Number.isFinite(bt) && ht < bt * 0.9)
+    worse.push(`the target holds up to ${at(ht)} instead of ${at(bt)}`)
+  return { text, worse }
 }
 
 /** An operation in a few words, for a refusal. */

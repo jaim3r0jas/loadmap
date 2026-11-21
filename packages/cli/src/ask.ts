@@ -183,6 +183,7 @@ export function summary(p: Proposal): string {
 /** A file's change as a unified diff, three lines around each change. */
 export function unified(path: string, before: string, after: string): string {
   const lines = diffLines(before, after).map((l) => (l.kind === '@' ? '@@' : `${l.kind}${l.text}`))
+  if (!lines.length) return `${path}: no change`
   return [`--- ${before ? path : '/dev/null'}`, `+++ ${path}`, '@@', ...lines].join('\n')
 }
 

@@ -6,8 +6,8 @@ export interface DiffLine {
 
 /**
  * Two texts compared line by line (the longest run of lines they share), with the lines around each change: what a
- * proposal shows of a file, in the editor and on the command line. Past about four million line pairs it gives the
- * whole file out and in, rather than take the time.
+ * proposal shows of a file, in the editor and on the command line. Past about four million line pairs it says the
+ * file is too large, rather than take the time; two texts the same give nothing.
  */
 export function diffLines(before: string, after: string, around = 3): (DiffLine | { kind: '@' })[] {
   const a = before ? before.replace(/\n$/, '').split('\n') : []
@@ -15,10 +15,8 @@ export function diffLines(before: string, after: string, around = 3): (DiffLine 
   const n = a.length
   const m = b.length
   const ops: DiffLine[] = []
-  if (n * m > 4_000_000) {
-    for (const t of a) ops.push({ kind: '-', text: t })
-    for (const t of b) ops.push({ kind: '+', text: t })
-  } else {
+  if (n * m > 4_000_000) return [{ kind: ' ', text: '(the file is too large to compare line by line)' }]
+  {
     const L: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))
     for (let i = n - 1; i >= 0; i--)
       for (let j = m - 1; j >= 0; j--)

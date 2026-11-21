@@ -260,11 +260,15 @@ function Editor({ root }: { root: URL }) {
   const assist = useMemo(
     () => ({
       reference: loadReference,
-      confirmSend: (p: { name: string }) =>
-        !repo.current?.origin.private ||
-        window.confirm(
-          `These files come from the private repository ${repo.current.origin.owner}/${repo.current.origin.name}. Send them to ${p.name}?`,
-        ),
+      confirmSend: (p: { name: string }) => {
+        const o = repo.current?.origin
+        if (!o?.private) return true
+        const at = `${o.owner}/${o.name}`
+        if (allowed.has(at)) return true
+        const yes = window.confirm(`These files come from the private repository ${at}. Send them to ${p.name}?`)
+        if (yes) allowed.add(at)
+        return yes
+      },
     }),
     [],
   )
@@ -645,10 +649,19 @@ const HISTORY = { key: 'loadmap-editor-history' }
 /** The reference the Ask panel's model reads, fetched once from the site. */
 let reference: Promise<string> | undefined
 const loadReference = () =>
-  (reference ??= fetch(new URL('../llms-full.txt', location.href)).then((r) => {
-    if (!r.ok) throw new Error('the reference did not load')
-    return r.text()
-  }))
+  (reference ??= fetch(new URL('../llms-full.txt', location.href))
+    .then((r) => {
+      if (!r.ok) throw new Error('the reference did not load')
+      return r.text()
+    })
+    .catch((err: unknown) => {
+      // tried again on the next question
+      reference = undefined
+      throw err
+    }))
+
+/** The private repositories whose files the reader said may go to a model, this page's session. */
+const allowed = new Set<string>()
 
 /** What the editor opens with: a link's, a repository's or the draft's; a draft can come with why the rest did not. */
 type Start = Shared | (Extract<Shared, { source: string }> & { error: string })
