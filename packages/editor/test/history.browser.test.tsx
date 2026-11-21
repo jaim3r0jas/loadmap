@@ -36,7 +36,8 @@ function type(host: HTMLElement, from: string, to: string) {
 }
 
 const versions = () => page.getByRole('list', { name: 'Versions on main' })
-const count = () => versions().getByRole('button').elements().length
+/** The versions listed: rows, not the buttons an open row shows. */
+const count = () => versions().getByRole('listitem').elements().length
 
 async function openTimeline() {
   await userEvent.click(page.getByRole('button', { name: 'Timeline' }))
