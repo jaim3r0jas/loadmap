@@ -1628,6 +1628,28 @@ A part is checked through its model, and a problem is reported in the file it is
 rename cross the files of a model; in a head, a path completes to the workspace's `.loadmap` files and an import's
 braces to the library's names; a name that a library declares has a quick fix that imports it.
 
+## Ask a model
+
+`loadmap ask` asks a language model for a change to a definition and shows it as a diff; nothing is written unless you
+say so:
+
+```bash
+export ANTHROPIC_API_KEY=…            # or LOADMAP_AI_PROVIDER=deepseek and DEEPSEEK_API_KEY, or ollama with no key
+npx loadmap ask shop.loadmap "add a scenario with 16 worker pods"
+npx loadmap ask shop.loadmap "read the workers' CPU from Prometheus" --box orderWorkers --write
+```
+
+The model gets this guide, the definition's files and what the engine computes from them, never a key or an address.
+It answers with operations by name (`rename`, `set`, `put`, `remove`, `connect`, `move`, a file added; the same as the
+language server's command), or with whole files when `--files` asks it to. Before you see a change, it is laid out by
+`fmt`, every model it reaches is compiled, and a capacity written as `measured(…)` or `configured(…)` must use a number
+you gave: anything else goes back to the model with the reason, at most twice. A number the model chose is written
+`estimated(…, "assistant's guess")` and listed. `--write` writes the files, `--commit` also commits them with
+`Assisted-by:` and the model's name. `LOADMAP_AI_PROVIDER` names the provider (anthropic, deepseek, openai, openrouter,
+groq, mistral, gemini, ollama, lmstudio), `LOADMAP_AI_MODEL` the model, `LOADMAP_AI_KEY` or the provider's own variable
+the key, and `LOADMAP_AI_URL` any other server that speaks OpenAI's chat API. The same assistant is
+`@loadmap/dsl/assist` for a host of its own.
+
 ## Reference
 
 <!-- reference: written by reference() in packages/dsl; UPDATE_DOCS=1 pnpm test:node rewrites it -->

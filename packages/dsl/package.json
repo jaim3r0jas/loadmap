@@ -24,7 +24,8 @@
     "./internal": "./src/internal.ts",
     "./completion": "./src/completion.ts",
     "./add": "./src/add.ts",
-    "./ops": "./src/ops.ts"
+    "./ops": "./src/ops.ts",
+    "./assist": "./src/assist.ts"
   },
   "publishConfig": {
     "exports": {
@@ -47,6 +48,10 @@
       "./ops": {
         "types": "./dist/ops.d.ts",
         "import": "./dist/ops.js"
+      },
+      "./assist": {
+        "types": "./dist/assist.d.ts",
+        "import": "./dist/assist.js"
       }
     }
   },

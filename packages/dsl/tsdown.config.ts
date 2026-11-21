@@ -4,7 +4,15 @@ import { defineConfig } from 'tsdown'
 // module, so only the pages that edit load it, not every page that reads a definition; what the catalog picker writes
 // (add.ts) is one too, loaded with the picker, and completion (completion.ts), loaded with the first list
 export default defineConfig({
-  entry: ['src/index.ts', 'src/internal.ts', 'src/help.ts', 'src/completion.ts', 'src/add.ts', 'src/ops.ts'],
+  entry: [
+    'src/index.ts',
+    'src/internal.ts',
+    'src/help.ts',
+    'src/completion.ts',
+    'src/add.ts',
+    'src/ops.ts',
+    'src/assist.ts',
+  ],
   dts: true,
   platform: 'neutral',
 })

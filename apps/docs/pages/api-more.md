@@ -433,6 +433,7 @@ rules.
 | `loadmap drift <file>`  | Finds what moved in the measured data that no change of the definition shows   |
 | `loadmap record <src>`  | GIF, WebM, MP4, PNG or SVG of a page or a `.loadmap`, on a fixed clock         |
 | `loadmap bundle <file>` | A model in several files written as one                                        |
+| `loadmap ask <file>`    | Asks a model for a change, shown as a checked diff; `--write`, `--commit`      |
 | `loadmap lsp`           | The language server, for any editor that speaks the protocol                   |
 
 [The command line](/recording/) has each command's options; `loadmap --help` prints them. Only `record` needs
