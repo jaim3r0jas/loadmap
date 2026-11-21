@@ -311,6 +311,8 @@ class Work {
     const { keyword, path } = readTarget(target)
     const found: Found[] = []
     const names = new Set<string>()
+    // the first word no file has, for the suggestion
+    let missed: string | undefined
     for (const f of this.order(file)) {
       const { doc } = parse(this.text(f))
       // the block searched, the statement found in it, and the block that statement stands in
@@ -340,6 +342,7 @@ class Work {
           const at = body.find((s): s is Property => s.kind === 'prop' && s.key.name === name)
           if (at || create) hit = { file: f, ...(decl && { decl }), owner: scope, prop: { name, ...(at && { at }) } }
         }
+        missed ??= name
         break
       }
       if (hit) found.push(hit)
@@ -349,8 +352,9 @@ class Work {
     const list = named.length ? named : found
     if (list.length > 1) refuse(`"${target}" is in ${list.map((x) => x.file).join(' and ')}: say which with "file"`)
     if (list[0]) return list[0]
-    const near = closest(path.at(-1)!, names)
-    return refuse(`nothing is named "${target}"${near && near !== path.at(-1) ? `: did you mean "${near}"?` : ''}`)
+    const word = missed ?? path.at(-1)!
+    const near = closest(word, names)
+    return refuse(`nothing is named "${target}"${near && near !== word ? `: did you mean "${near}"?` : ''}`)
   }
 
   run(op: Operation, o: OperationOptions): string {
