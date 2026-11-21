@@ -1,5 +1,23 @@
 # @loadmap/dsl
 
+## 0.42.0
+
+### Patch Changes
+
+- 69133ee: The editor's Box panel changes a box of one copy of a subsystem in that copy's `with`: **This copy** shows the inputs
+  that reach the box, as the copy sets them or as their default, and a change writes the copy's line (or a new one, or a
+  `with` block). The definition every copy shares is read-only until **Change the definition every copy shares** is
+  ticked.
+
+  Docs: /using-the-editor/#sharing-and-the-inspector
+- d6c4316: The editor's Box panel shows a box that is written inside a subsystem. It said "That box is no longer in the
+  definition": a box in a subsystem is one statement, perhaps in a library, for a box in every subsystem like it, and
+  none is written under the id the diagram gives it (`eu.api`). The panel now finds the statement by its place, says
+  which other boxes it also draws ("Written once for 2 boxes: a change here also changes us.api."), reads the parameters
+  and components of the subsystems around it, and tells what the box takes from the box it is like.
+- @loadmap/core@0.42.0
+  - @loadmap/layout@0.42.0
+
 ## 0.41.0
 
 ### Patch Changes
