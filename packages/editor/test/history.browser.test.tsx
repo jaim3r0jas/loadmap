@@ -55,7 +55,9 @@ describe('the history in the editor', () => {
     // Back draws the version before in the canvas; the text stays
     await userEvent.click(page.getByRole('button', { name: 'Back to the version before' }))
     // a new layout: given its time
-    await expect.element(page.getByText('Showing an older version.'), { timeout: 5000 }).toBeVisible()
+    await expect
+      .poll(() => document.querySelector('.lme-stale')?.textContent, { timeout: 5000 })
+      .toContain('Showing an older version.')
     expect(handle.source()).toContain('Checkout, edited')
     // Restore makes it the files again, with a version on top
     await userEvent.click(versions().getByText('Opened'))
