@@ -219,6 +219,54 @@ describe('the editor', () => {
     expect(await handle.shareHash()).toMatch(/^v1\./)
   })
 
+  it('keeps the diagram as it is drawn when a click on a box opens the file that declares it', async () => {
+    // the order line starts closed, and nothing moves over time: what is compared is at rest
+    const model = shop.replace('title:', 'view { closed: [orderLine]; transition: 0 }\ntitle:')
+    const files = { path: 'shop.loadmap', files: { ...several.files, 'shop.loadmap': model } }
+    const { host, handle, edit } = await mount({ source: model, several: files })
+    const lm = handle.loadmap()!
+    const box = (id: string) => host.querySelector<SVGGElement>(`.lme-preview [data-node="${id}"]`)
+    const open = () =>
+      [...host.querySelectorAll('.lme-preview [data-subsystem-id]')].map((g) => g.getAttribute('data-subsystem-id'))
+    const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    // each box by its middle: the outline of the one selected is around it
+    const places = () =>
+      [...host.querySelectorAll('.lme-preview [data-node]')].map((n) => {
+        const r = n.getBoundingClientRect()
+        return `${n.getAttribute('data-node')} ${Math.round(r.x + r.width / 2)} ${Math.round(r.y + r.height / 2)}`
+      })
+    const camera = () => box('gateway')!.ownerSVGElement!.getAttribute('viewBox')
+    await expect.poll(() => box('orderLine'), { timeout: 5000 }).toBeTruthy()
+    // the reader opens it
+    await userEvent.click(box('orderLine')!)
+    await expect.poll(open, { timeout: 5000 }).toEqual(['orderLine'])
+    await expect.poll(() => box('orderLine.consumers'), { timeout: 5000 }).toBeTruthy()
+    await lm.ready()
+    await frames()
+    const was = { places: places(), camera: camera(), model: lm.engine.model }
+    // a box the library declares: its file comes into the editor, and that is all that changes
+    await userEvent.click(box('orderLine.consumers')!)
+    await expect.poll(() => activeTab(host)).toBe('platform.loadmap')
+    await expect.poll(() => box('orderLine.consumers')?.hasAttribute('data-selected')).toBe(true)
+    await frames()
+    await frames()
+    await lm.ready()
+    // the same model, whichever file is open: nothing was drawn anew
+    expect(lm.engine.model).toBe(was.model)
+    expect(open()).toEqual(['orderLine'])
+    expect(box('orderLine')).toBeNull()
+    expect(places()).toEqual(was.places)
+    expect(camera()).toBe(was.camera)
+    // the text edited is a new model: what the reader opened stays open
+    edit('let messageCost = 2ms', 'let messageCost = 3ms')
+    await expect.poll(() => lm.engine.model, { timeout: 5000 }).not.toBe(was.model)
+    await lm.ready()
+    await frames()
+    expect(open()).toEqual(['orderLine'])
+    expect(box('orderLine')).toBeNull()
+    expect(box('orderLine.consumers')).toBeTruthy()
+  })
+
   it('opens files from the explorer as one row of tabs; a tab closed keeps its file', async () => {
     const { host, handle, view, edit } = await mount({ source: shop, several })
     const row = () => host.querySelector('.lme-ftabs')!.getBoundingClientRect()

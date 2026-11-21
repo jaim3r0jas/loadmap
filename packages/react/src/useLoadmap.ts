@@ -133,16 +133,29 @@ export interface LoadmapController<P = any> {
 
 /** The rows `auto` may fold a diagram into. */
 const FOLDS = [1, 2, 3]
+/** A page that closes no subsystem. */
+const NONE: readonly string[] = []
 /** Stands for a room that is still to come. */
 const DUE = { w: 0, h: 0 }
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
-  // the subsystems drawn closed: the page's, until the reader or a story step says otherwise; a new view (the text
-  // edited, another definition) starts from the page's again. What closes them and draws their frames comes with the
-  // first view that has a subsystem, before it is laid out
-  const [shut, setShut] = useState<{ view: View; ids: readonly string[] } | null>(null)
-  const closed = shut?.view === whole ? shut.ids : (o.closed ?? [])
+  // the subsystems drawn closed: the page's, but those the reader or a story step opened, and with those they closed.
+  // Held by id, not by view: a new view (the text edited, a file of it opened) keeps every one as it stands, so
+  // nothing closes or opens but by its own control; an id the new view lacks closes nothing. What closes them and
+  // draws their frames comes with the first view that has a subsystem, before it is laid out
+  const [turned, setTurned] = useState<{ open: readonly string[]; shut: readonly string[] } | null>(null)
+  const own = o.closed ?? NONE
+  const ownRef = useRef(own)
+  ownRef.current = own
+  const closed = turned
+    ? [...own.filter((id) => !turned.open.includes(id)), ...turned.shut.filter((id) => !own.includes(id))]
+    : own
+  /** These drawn closed and every other one open, as what it changes of the page's own; null is the page's own. */
+  const turn = useCallback((ids: readonly string[] | null) => {
+    const page = ownRef.current
+    setTurned(ids && { open: page.filter((id) => !ids.includes(id)), shut: ids.filter((id) => !page.includes(id)) })
+  }, [])
   // one function for every view: once it is there it stays
   const [close, setClose] = useState<((view: View, closed: readonly string[]) => View) | null>(null)
   useEffect(() => {
@@ -160,7 +173,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const unready = !close && Object.keys(whole.def.subsystems ?? {}).length > 0
   // closed, the diagram is another view: it moves there as it moves to an edited one
   const view = close && closed.length ? close(whole, closed) : whole
-  const setClosed = useCallback((ids: readonly string[]) => setShut({ view: whole, ids }), [whole])
+  const setClosed = useCallback((ids: readonly string[]) => turn(ids), [turn])
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
   // setValues evaluates once for the engine; the render reuses that evaluation. It also holds the values set last
@@ -353,9 +366,9 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
       engine.storyStep = st ? i : null
       setStepState({ model, i: st ? i : null })
       // a step says what it shows closed; without it, and outside the story, the page's own
-      setShut(st?.closed ? { view: whole, ids: st.closed } : null)
+      turn(st?.closed ?? null)
     },
-    [model, apply, engine, whole],
+    [model, apply, engine, turn],
   )
   const setStep = useCallback(
     (i: number | null) => {

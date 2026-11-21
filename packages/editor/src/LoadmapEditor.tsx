@@ -354,7 +354,12 @@ export function LoadmapEditor({
       source: initial,
       result,
       good: result.definition ?? null,
-      goodKey: fingerprint(initial),
+      goodKey: Object.keys(set.current.others).length
+        ? modelKey([
+            [set.current.entry, fingerprint(initial)],
+            ...Object.entries(set.current.others).map(([p, text]) => [p, fingerprint(text)] as const),
+          ])
+        : fingerprint(initial),
       doc: 0,
       given: set.current.entry,
       file: set.current.entry,
@@ -528,7 +533,7 @@ export function LoadmapEditor({
     return () => el.removeEventListener('keydown', keydown, true)
   }, [])
   // the other files' tokens, once per change of them: with the open text's they say whether the model is the same
-  const othersKey = useRef({ version: -1, key: '' })
+  const othersKey = useRef<{ version: number; prints: (readonly [string, string])[] }>({ version: -1, prints: [] })
   const accept = (source: string, own: CompileResult) => {
     const f = set.current
     symbols.current = own.symbols.filter((s) => s.file == null)
@@ -545,12 +550,9 @@ export function LoadmapEditor({
     if (othersKey.current.version !== f.version)
       othersKey.current = {
         version: f.version,
-        key: Object.keys(f.others)
-          .sort()
-          .map((p) => `${p}\n${fingerprint(f.others[p]!)}`)
-          .join('\n'),
+        prints: Object.keys(f.others).map((p) => [p, fingerprint(f.others[p]!)] as const),
       }
-    const all = `${fingerprint(source)}\n${f.active}\n${othersKey.current.key}`
+    const all = modelKey([...othersKey.current.prints, [f.active, fingerprint(source)]])
     const h = preview.current
     // a whole new text stays one until a version of it compiles: fixing its errors starts it fitted, from its defaults
     const whole = fresh.current
@@ -1879,6 +1881,18 @@ export function LoadmapEditor({
       {shortcutsSheet}
     </div>
   )
+}
+
+/**
+ * What says a definition in several files is the same model: every file's tokens under its path, whichever file is in
+ * the editor. Another file opened (a click on a box it declares) is the same model, and the diagram stays as it is
+ * drawn.
+ */
+function modelKey(prints: readonly (readonly [path: string, print: string])[]): string {
+  return [...prints]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([path, print]) => `${path}\n${print}`)
+    .join('\n')
 }
 
 /** The inspector's panel among the canvas's, by its id: the first of the tabs while the code is hidden. */
