@@ -695,6 +695,12 @@ describe('a box inside a subsystem, in the inspector', () => {
     const paths = (id: string, path: string) => inspect(one, { node: id, path })!.sections.map((s) => s.path)
     expect(paths('eu.a', 'subsystem:eu/node:a')).toEqual(['subsystem:eu/node:a', 'param:cost'])
     expect(paths('a', 'node:a')).toEqual(['node:a', 'param:cost'])
+    // a name its subsystem declares hides the same name of the top: the box does not read that parameter
+    const hidden = one.replace('let twice = cost * 2', 'let cost = 3').replace('flows.f * twice', 'flows.f * cost')
+    expect(errors(compile(hidden))).toEqual([])
+    expect(inspect(hidden, { node: 'eu.a', path: 'subsystem:eu/node:a' })!.sections.map((s) => s.path)).toEqual([
+      'subsystem:eu/node:a',
+    ])
     // "a" is the box of the top, as the compiler takes it, not the one beside it
     const b = inspect(one, { node: 'eu.b', path: 'subsystem:eu/node:b' })!.sections[0]!
     expect(b.like).toEqual({

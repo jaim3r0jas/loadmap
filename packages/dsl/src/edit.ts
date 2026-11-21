@@ -116,32 +116,41 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
     .sort((a, b) => b.depth - a.depth)
   // a stage may use a component declared on its mine; and the parameters its formulas read (through lets too) come along
   const components = new Set(mine.flatMap((o) => o.uses))
+  // each name as the box reads it: the nearest statement that declares it hides the same name further out (an input
+  // of its subsystem, a parameter of the top)
+  const named = new Map<string, Owner>()
+  for (const o of scope) {
+    const name = declared(o)
+    if (name && !named.has(name)) named.set(name, o)
+  }
   // a published figure reads parameters as a let does
-  const lets = new Map(
-    scope
-      .filter((o) => o.keyword === 'let' || o.keyword === 'published' || o.keyword === 'measure')
-      .map((o) => [o.id, o.reads] as const)
-      // the nearest of a name is the one read
-      .reverse(),
-  )
   const reads = new Set(mine.flatMap((o) => [...o.reads]))
-  for (const r of reads) for (const x of lets.get(r) ?? []) reads.add(x)
+  for (const r of reads) {
+    const o = named.get(r)
+    if (o && (o.keyword === 'let' || o.keyword === 'published' || o.keyword === 'measure'))
+      for (const x of o.reads) reads.add(x)
+  }
   const extra = scope.filter(
-    (o, i) =>
+    (o) =>
       !!o.id &&
-      ((o.keyword === 'component' && components.has(o.id)) ||
-        ((o.keyword === 'param' || o.keyword === 'published' || o.keyword === 'measure') && reads.has(o.id))) &&
-      scope.findIndex((x) => x.keyword === o.keyword && x.id === o.id) === i,
+      ((o.keyword === 'component' &&
+        components.has(o.id) &&
+        scope.find((x) => x.keyword === 'component' && x.id === o.id) === o) ||
+        ((o.keyword === 'param' || o.keyword === 'published' || o.keyword === 'measure') &&
+          reads.has(o.id) &&
+          named.get(o.id) === o)),
   )
   const sections = [...mine, ...extra].map(section).filter((s) => s.fields.length)
-  // where the lines it does not write come from: said on the box's own section
-  // the other box is one of the top, also for a box in a subsystem
+  // where the lines it does not write come from: said on the box's own section. The other box is one of the top,
+  // also for a box in a subsystem
   const body = parse(source).doc.body
-  const self = declAt(body, box.path)
-  const like = likeness(body, box.id, self)
+  const like = likeness(body, box.id, box.decl)
   const first = sections.find((s) => s.path === box.path)
   if (like && first)
-    first.like = { ...like, lines: takenLines(source, box.id, body, self).map(({ name, text }) => ({ name, text })) }
+    first.like = {
+      ...like,
+      lines: takenLines(source, box.id, body, box.decl).map(({ name, text }) => ({ name, text })),
+    }
 
   return { title: box.title, sections }
 }
@@ -167,23 +176,40 @@ export function edit(source: string, key: string, value: EditValue, options?: Co
  * them all: this is that statement, by the names around it, which hold while the text changes elsewhere.
  */
 export function boxPath(source: string, offset: number): string | undefined {
-  return walk(source)
-    ?.owners.filter((o) => isBox(o.keyword) && !!o.id && o.from <= offset && offset <= o.to)
-    .at(-1)?.path
+  const { doc, report } = parse(source)
+  if (report.failed) return undefined
+  let found: string | undefined
+  let path = ''
+  for (let body: readonly Stmt[] | undefined = doc.body; body; ) {
+    const d: Decl | undefined = body.find((s): s is Decl => s.kind === 'decl' && s.from <= offset && offset <= s.to)
+    if (!d) break
+    path = `${path}${path ? '/' : ''}${segment(d)}`
+    if (isBox(d.keyword.name) && idOf(d)) found = path
+    body = d.body
+  }
+  return found
+}
+
+/** A statement's id, where it has one: its first word after the keyword. */
+const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0].name : undefined)
+/** A statement in a path, as `walk()` names it. */
+const segment = (d: Decl) => `${d.keyword.name}${idOf(d) ? `:${idOf(d)}` : ''}`
+/** The names a statement can be read by, among those the inspector follows; an input by its last word. */
+const NAMES = new Set(['input', 'let', 'param', 'published', 'measure', 'fit', 'metric'])
+const declared = (o: Owner) => {
+  if (!NAMES.has(o.keyword)) return undefined
+  const last = o.keyword === 'input' ? o.decl?.args.findLast((a) => a.t === 'id') : undefined
+  return last?.t === 'id' ? last.name : o.id
 }
 
 /** Whether the statement at `path` is around the one at `inner` (the top, `''`, is around every one). */
 const holds = (path: string, inner: string) => !path || inner.startsWith(`${path}/`)
 
-/** The statement at `path`, a place `inspect()` gives its sections. */
+/** The statement at `path`, a place `boxPath()` gives. */
 function declAt(body: readonly Stmt[], path: string): Decl | undefined {
   let d: Decl | undefined
   for (const part of path.split('/')) {
-    const [keyword, id] = part.split(':')
-    d = (d ? (d.body ?? []) : body).find(
-      (s): s is Decl =>
-        s.kind === 'decl' && s.keyword.name === keyword && s.args[0]?.t === 'id' && s.args[0].name === id,
-    )
+    d = (d ? (d.body ?? []) : body).find((s): s is Decl => s.kind === 'decl' && segment(s) === part)
     if (!d) return undefined
   }
   return d
@@ -251,7 +277,7 @@ function takenLines(
 /**
  * The text with a line a box takes from the box it is like written into the box itself, as the box reads it: from then
  * on it is this box's own, and a change to it changes this box only. Refused when the box takes no such line. A box
- * inside a subsystem is `box` there, at `path` (`boxPath()`).
+ * inside a subsystem is given by `path` (`boxPath()`), which says its name there: `box` is then only for the message.
  */
 export function takeLine(
   source: string,
@@ -263,7 +289,7 @@ export function takeLine(
   const { doc, report } = parse(source)
   if (report.failed) return { error: 'the text has a syntax error' }
   const d = path ? declAt(doc.body, path) : boxNamed(doc.body, box)
-  const taken = takenLines(source, box, doc.body, d).find((l) => l.name === name)
+  const taken = d && takenLines(source, idOf(d) ?? box, doc.body, d).find((l) => l.name === name)
   if (!d || !taken) return { error: `"${box}" takes no "${name}" from another box` }
   const last = d.body?.at(-1)
   if (!d.bodySpan || !last) return { error: `"${box}" has no block to write it in` }
@@ -415,9 +441,8 @@ interface Owner {
   id?: string
   title: string
   depth: number
-  /** Its statement in the text; the whole text for the model. */
-  from: number
-  to: number
+  /** Its statement in the text; none for the model. */
+  decl?: Decl
   fields: InspectField[]
   children: Owner[]
   /** The names its formulas read, and the components its stages name. */
@@ -464,8 +489,7 @@ function walk(source: string) {
       ...(id ? { id } : {}),
       title: label?.t === 'str' ? label.value : (id ?? words(keyword || 'model')),
       depth,
-      from: d?.from ?? 0,
-      to: d?.to ?? source.length,
+      ...(d ? { decl: d } : {}),
       fields: [],
       children: [],
       reads: new Set(),

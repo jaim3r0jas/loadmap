@@ -1160,8 +1160,11 @@ export function LoadmapEditor({
     // a library in the editor has boxes the model does not draw: its own compile names them
     const own = symbols.current.filter(node).map((s) => ({ ...s, file: state.file }))
     const box = drawn.find((s) => s.id === selected) ?? own.find((s) => s.id === selected)
-    const file = box?.file
-    if (!box || file !== active) return { node: selected, shared: [] }
+    // one the compile does not know yet (a pick from the catalog) is looked for at the top, by its id
+    if (!box) return { node: selected, shared: [] }
+    const file = box.file
+    // its lines are in a file that is not in the editor: nothing of this text is the box
+    if (file !== active) return null
     // a file that has just come into the editor is as the compiler read it
     const path = boxPath(file === state.file ? state.source : text, box.decl.from)
     const shared = drawn.filter((s) => s.id !== selected && s.file === file && s.decl.from === box.decl.from)
@@ -1206,7 +1209,7 @@ export function LoadmapEditor({
             : setOwn([`tier:${id}`, 'fill', null], [`tier:${id}`, 'fillDark', null])
         }
         blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
-        gone={tab === 'box' && !!selected && !inspection}
+        gone={tab === 'box' && !!target && !inspection}
         shared={tab === 'box' ? target?.shared : undefined}
         onClose={() => setSelected(null)}
       />
