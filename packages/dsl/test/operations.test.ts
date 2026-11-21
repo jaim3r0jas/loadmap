@@ -74,7 +74,7 @@ describe('operations by name', () => {
       },
     ])
     expect(text(again).match(/node db /g)).toHaveLength(1)
-    expect(text(again)).toContain('estimated(10_000 ± 30%, "queries/s")')
+    expect(text(again)).toContain('estimated(10_000 +- 30%, "queries/s")')
     expect(again.notes).toEqual(['Replaced node db'])
   })
 
@@ -218,5 +218,91 @@ describe('operations across files', () => {
       ok: true,
       notes: ['Removed let k'],
     })
+  })
+
+  it('keeps the names of a library apart from those of the model when it removes', () => {
+    const p: Project = {
+      entry: 'm.loadmap',
+      files: {
+        'm.loadmap':
+          'loadmap 1.6\nimport "./lib.loadmap" { }\nload "x" { max: 2; default: 1 }\nnode api "API"\nnode cache "Cache"\napi -> cache\n',
+        'lib.loadmap': 'loadmap 1.6\nlibrary "lib"\nnode cache "Cache"\n',
+      },
+    }
+    const r = applied(p, [{ op: 'remove', target: 'cache', file: 'lib.loadmap' }])
+    expect(text(r)).toContain('api -> cache')
+    expect(text(r, 'lib.loadmap')).not.toContain('node cache')
+  })
+
+  it('puts into the file it names, and replaces there only', () => {
+    const p: Project = {
+      entry: 'm.loadmap',
+      files: {
+        'm.loadmap': 'loadmap 1.6\nload "x" { max: 2; default: 1 }\nparam pods { default: 2 }\n',
+        'm.big.loadmap': 'loadmap 1.6\nextends "./m.loadmap"\n',
+      },
+    }
+    const r = applied(p, [{ op: 'put', text: 'param pods { default: 8 }', file: 'm.big.loadmap' }])
+    expect(text(r)).toContain('param pods { default: 2 }')
+    expect(text(r, 'm.big.loadmap')).toContain('param pods { default: 8 }')
+  })
+
+  it('folds a file renamed twice into one rename', () => {
+    const r = applied(regions, [
+      { op: 'renameFile', from: 'platform.loadmap', to: 'lib/platform' },
+      { op: 'renameFile', from: 'lib/platform.loadmap', to: 'lib/base' },
+    ])
+    expect(r.renamed).toEqual([{ from: 'platform.loadmap', to: 'lib/base.loadmap' }])
+    expect(r.changed).not.toContain('lib/base.loadmap')
+  })
+})
+
+describe('operations, untrusted input', () => {
+  it('finds a statement inside another', () => {
+    const p: Project = {
+      entry: 'm.loadmap',
+      files: {
+        'm.loadmap':
+          'loadmap 1.6\nload "x" { max: 2; default: 1 }\nnode topic "Top"\ncluster k "K" {\n  members: 3\n  queue topic { partitions { a: 2 } }\n  queue other { partitions { a: 2 } }\n}\n',
+      },
+    }
+    const r = applied(p, [{ op: 'remove', target: 'k.topic' }])
+    expect(text(r)).not.toContain('queue topic')
+    expect(text(r)).toContain('node topic "Top"\n')
+  })
+
+  it('refuses what is no operation, no target or no name, instead of throwing', () => {
+    for (const op of [
+      { op: 'rename' },
+      { op: 'set', target: 'db.short' },
+      { op: 'remove', target: 7 },
+      { op: 'rename', target: 'scenario "a\\q"', to: 'b' },
+      { op: 'rename', target: 'db', to: '"a\\"' },
+      { op: 'set', target: `${'a '.repeat(400)}`, value: '1' },
+      null,
+    ])
+      expect(applyOperations(shop, [op as never])).toMatchObject({ ok: false, index: 0 })
+  })
+
+  it('says a property it cannot find is not there, and lets set write a new one', () => {
+    expect(applyOperations(shop, [{ op: 'unset', target: 'nothing' }])).toMatchObject({
+      ok: false,
+      error: 'nothing is named "nothing"',
+    })
+    expect(applyOperations(shop, [{ op: 'set', target: 'db.nope', value: '1' }])).toMatchObject({
+      ok: false,
+      index: -1,
+    })
+  })
+
+  it('refuses to split an edge that has a label around a removed box', () => {
+    const p: Project = {
+      entry: 'm.loadmap',
+      files: {
+        'm.loadmap':
+          'loadmap 1.6\nload "x" { max: 2; default: 1 }\nnode a "A"\nnode b "B"\nnode c "C"\nnode d "D"\na -> b -> c -> d: "x"\n',
+      },
+    }
+    expect(applyOperations(p, [{ op: 'remove', target: 'b' }])).toMatchObject({ ok: false, index: 0 })
   })
 })

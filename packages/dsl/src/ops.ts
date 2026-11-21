@@ -5,6 +5,7 @@ export {
   type Dsl,
   type FileChange,
   type FileSet,
+  fileAt,
   headOf,
   type NewKind,
   newFile,

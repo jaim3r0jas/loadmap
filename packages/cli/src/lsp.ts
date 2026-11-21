@@ -10,6 +10,7 @@ import {
   type Diagnostic,
   definitionAcross,
   format,
+  gather,
   hoverAcross,
   importersOf,
   imports,
@@ -231,19 +232,15 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
     return p ? { path: p.path, files: p.files, ...(withPaths && { paths: p.paths() }) } : {}
   }
 
-  /** The project a document is in, as the operations take it: its model and every file of the root. */
+  /**
+   * The definition a document is in, as the operations take it: its model and every file the model reaches (parts,
+   * libraries), not the rest of the workspace, whose names are another model's.
+   */
   function projectOf(d: Doc): (Project & { self: string }) | undefined {
     const here = place(d)
     if (!here) return undefined
-    const files: Record<string, string> = {}
-    for (const path of here.paths()) {
-      const t = here.files(path)
-      if (t != null) files[path] = t
-    }
-    files[here.path] = d.text
-    const head = imports(d.text, here.path)
-    const entry = head.role === 'part' ? (head.files.find((f) => f.kind === 'part')?.path ?? here.path) : here.path
-    return { entry, files, self: here.path }
+    const g = gather(d.text, { path: here.path, files: here.files })
+    return { entry: g.path, files: g.files, self: here.path }
   }
 
   /** What a list of operations did, as one workspace edit: each changed file whole, then the files made, moved, gone. */
@@ -273,18 +270,19 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
     return { documentChanges }
   }
 
-  /** The refactorings at a place: the statement there removed, or moved to each other file of its model. */
-  function refactors(d: Doc, at: number): object[] {
+  /** The refactorings at a place that `want` asks for: the statement there removed, or moved to another file of its model. */
+  function refactors(d: Doc, at: number, want: (kind: string) => boolean): object[] {
     const project = projectOf(d)
     if (!project) return []
     const { doc } = parse(d.text, new Reporter(d.text))
     const s = doc.body.find((x): x is Decl => x.kind === 'decl' && x.from <= at && at <= x.to)
     const a = s?.args[0]
-    if (!s || !a || (a.t !== 'id' && a.t !== 'str') || HEAD_WORDS.has(s.keyword.name)) return []
+    if (!s || !a || (a.t !== 'id' && a.t !== 'str')) return []
     const name = a.t === 'id' ? a.name : JSON.stringify(a.value)
     const target = `${s.keyword.name} ${name}`
     const out: object[] = []
     const offer = (title: string, kind: string, ops: Operation[]) => {
+      if (!want(kind)) return
       const r = applyOperations(project, ops)
       if (r.ok) out.push({ title, kind, edit: editOf(d, r, project) })
     }
@@ -542,8 +540,7 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
         const named = Array.isArray(only) ? only.filter((o): o is string => typeof o === 'string') : []
         const want = (k: string) =>
           named.length ? named.some((o) => k === o || k.startsWith(`${o}.`)) : p.context?.triggerKind === 1
-        const extra =
-          want('refactor.rewrite') || want('refactor.move') ? refactors(d, from).filter((x: any) => want(x.kind)) : []
+        const extra = want('refactor.rewrite') || want('refactor.move') ? refactors(d, from, want) : []
         return [...fixesHere, ...extra]
       }
       case 'textDocument/definition': {
@@ -673,7 +670,6 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
 /** A rename the dsl refuses: an error the client shows, not a fault. */
 class Refused extends Error {}
 const NO_METHOD = Symbol('no method')
-const HEAD_WORDS = new Set(['loadmap', 'include', 'import', 'part', 'library', 'extends'])
 
 function lineStarts(text: string): number[] {
   const out = [0]

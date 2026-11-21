@@ -2,7 +2,7 @@ import type { Decl, Edge, Property, Stmt } from './ast'
 import { type CompileOptions, compile } from './compile'
 import { closest, type Span } from './diagnostics'
 import type { TextChange } from './edit'
-import { type Dsl, removeFile as dropFile, renameFile as moveFile, underHead } from './fileops'
+import { type Dsl, removeFile as dropFile, fileAt, renameFile as moveFile } from './fileops'
 import { imports, MAX_FILES, MAX_TOTAL, normalizePath, type Role, relativePath, resolvePath } from './files'
 import { format } from './format'
 import { parse } from './parser'
@@ -69,6 +69,21 @@ export const OPERATIONS = [
   'renameFile',
   'removeFile',
 ] as const satisfies readonly Operation['op'][]
+
+/** The texts each operation needs. */
+const FIELDS: Readonly<Record<Operation['op'], readonly string[]>> = {
+  rename: ['target', 'to'],
+  set: ['target', 'value'],
+  unset: ['target'],
+  put: ['text'],
+  remove: ['target'],
+  connect: ['from', 'to'],
+  disconnect: ['from', 'to'],
+  move: ['target', 'to'],
+  addFile: ['path', 'role'],
+  renameFile: ['from', 'to'],
+  removeFile: ['path'],
+}
 
 export interface OperationsApplied {
   ok: true
@@ -137,25 +152,58 @@ const idOf = (d: Decl): string | undefined => {
   return a?.t === 'id' ? a.name : a?.t === 'str' ? a.value : undefined
 }
 
-const TOKEN = /\s*("(?:[^"\\\n]|\\.)*"|[A-Za-z_][\w]*|\.)/y
+const MAX_TARGET = 500
+const NOT_A_TARGET = (t: string) =>
+  `"${t.slice(0, 80)}" is no target: a name, a keyword and a name, or names joined by "."`
 
-function readTarget(t: string): { keyword?: string; path: string[] } {
-  const words: string[] = []
-  let end = 0
-  TOKEN.lastIndex = 0
-  for (let m = TOKEN.exec(t); m; m = TOKEN.exec(t)) {
-    words.push(m[1]!)
-    end = TOKEN.lastIndex
+/** A quoted name's text: `\"` and `\\` read as the character, nothing else escaped. */
+function unquote(q: string): string {
+  let out = ''
+  for (let i = 1; i < q.length - 1; i++) {
+    const c = q[i]!
+    if (c === '\\') {
+      const n = q[i + 1]
+      if (n !== '"' && n !== '\\') refuse(`${q.slice(0, 80)}: only \\" and \\\\ are written with a backslash`)
+      out += n
+      i++
+    } else out += c
   }
-  if (t.slice(end).trim()) refuse(`"${t}" is no target: a name, a keyword and a name, or names joined by "."`)
+  return out
+}
+
+/** The words of a target, read one character at a time: a name, a text in quotes, or a dot. */
+function readTarget(t: unknown): { keyword?: string; path: string[] } {
+  if (typeof t !== 'string' || !t.trim()) return refuse('a target names something')
+  if (t.length > MAX_TARGET) refuse(`a target is at most ${MAX_TARGET} characters`)
+  const words: string[] = []
+  let i = 0
+  const word = (c: string) => /[A-Za-z0-9_]/.test(c)
+  while (i < t.length) {
+    const c = t[i]!
+    if (c === ' ' || c === '\t') i++
+    else if (c === '.') {
+      words.push('.')
+      i++
+    } else if (c === '"') {
+      let j = i + 1
+      while (j < t.length && t[j] !== '"') j += t[j] === '\\' ? 2 : 1
+      if (j >= t.length) refuse(NOT_A_TARGET(t))
+      words.push(t.slice(i, j + 1))
+      i = j + 1
+    } else if (/[A-Za-z_]/.test(c)) {
+      let j = i + 1
+      while (j < t.length && word(t[j]!)) j++
+      words.push(t.slice(i, j))
+      i = j
+    } else refuse(NOT_A_TARGET(t))
+  }
   const keyword = words.length > 1 && /^\w/.test(words[0]!) && words[1] !== '.' ? words.shift() : undefined
   const path: string[] = []
-  for (const [i, w] of words.entries()) {
-    if ((i % 2 === 1) !== (w === '.'))
-      refuse(`"${t}" is no target: a name, a keyword and a name, or names joined by "."`)
-    if (w !== '.') path.push(w.startsWith('"') ? JSON.parse(w) : w)
+  for (const [k, w] of words.entries()) {
+    if ((k % 2 === 1) !== (w === '.')) refuse(NOT_A_TARGET(t))
+    if (w !== '.') path.push(w.startsWith('"') ? unquote(w) : w)
   }
-  if (!path.length) refuse('a target names something')
+  if (!path.length || words.at(-1) === '.') refuse(NOT_A_TARGET(t))
   return { ...(keyword && { keyword }), path }
 }
 
@@ -236,7 +284,16 @@ class Work {
     return imports(this.text(path), path).role
   }
 
-  /** The files in the order they are searched: the model first, then its parts, then the rest. */
+  /**
+   * The files whose statements share one set of names with `file`: a library's own, or the model with its parts and
+   * variants (a library declares names of its own).
+   */
+  namespace(file: string): string[] {
+    if (this.role(file) === 'library') return [file]
+    return this.order().filter((p) => this.role(p) !== 'library')
+  }
+
+  /** The files in the order they are searched: the model first, then the rest. */
   order(file?: string) {
     if (file != null) {
       const p = normalizePath(file) ?? file
@@ -246,51 +303,65 @@ class Work {
     return [this.entry, ...[...this.files.keys()].filter((p) => p !== this.entry)]
   }
 
-  find(target: string, file?: string): Found {
+  /**
+   * The statement or the property a target names. A property not written yet is found only with `create` (what
+   * `set` writes).
+   */
+  find(target: string, file?: string, create = false): Found {
     const { keyword, path } = readTarget(target)
     const found: Found[] = []
     const names = new Set<string>()
     for (const f of this.order(file)) {
       const { doc } = parse(this.text(f))
-      let owner: { body?: Stmt[]; bodySpan?: Span } = { body: doc.body }
+      // the block searched, the statement found in it, and the block that statement stands in
+      let scope: { body?: Stmt[]; bodySpan?: Span } = { body: doc.body }
+      let owner = scope
       let decl: Decl | undefined
-      let ok = true
+      let hit: Found | undefined
       for (const [i, name] of path.entries()) {
-        const here = (owner.body ?? []).filter(
-          (s): s is Decl => s.kind === 'decl' && !HEAD.has(s.keyword.name) && idOf(s) === name,
+        const body = scope.body ?? []
+        for (const s of body) if (s.kind === 'decl' && idOf(s)) names.add(idOf(s)!)
+        const fit = body.filter(
+          (s): s is Decl =>
+            s.kind === 'decl' && !HEAD.has(s.keyword.name) && idOf(s) === name && (i > 0 || kindFits(keyword, s)),
         )
-        for (const s of owner.body ?? []) if (s.kind === 'decl' && idOf(s)) names.add(idOf(s)!)
-        const fit = here.filter((d) => i > 0 || kindFits(keyword, d))
         if (fit.length > 1) refuse(`${f} has ${fit.length} statements named "${name}": say which with its keyword`)
         if (fit[0]) {
-          if (decl) owner = decl
+          owner = scope
           decl = fit[0]
+          scope = decl
+          if (i === path.length - 1) hit = { file: f, decl, owner }
           continue
         }
-        // the last word: a property of the statement before it, or of the model
-        const top = !decl && f === (file ?? this.entry) && !keyword && path.length === 1
+        // the last word: a property of the statement before it, or of the model (in the model's file only)
+        const top =
+          !decl && !keyword && path.length === 1 && f === (file != null ? (normalizePath(file) ?? file) : this.entry)
         if (i === path.length - 1 && (decl || top)) {
-          const body = decl ? (decl.body ?? []) : (owner.body ?? [])
           const at = body.find((s): s is Property => s.kind === 'prop' && s.key.name === name)
-          found.push({ file: f, ...(decl && { decl }), owner: decl ?? owner, prop: { name, ...(at && { at }) } })
+          if (at || create) hit = { file: f, ...(decl && { decl }), owner: scope, prop: { name, ...(at && { at }) } }
         }
-        ok = false
         break
       }
-      if (ok && decl) found.push({ file: f, decl, owner })
+      if (hit) found.push(hit)
     }
     // a statement named wins over a property of the model with the same word
-    const named = found.filter((x) => x.decl && !x.prop)
-    const list = named.length ? named : found.filter((x) => x.prop?.at || x.decl)
+    const named = found.filter((x) => !x.prop)
+    const list = named.length ? named : found
     if (list.length > 1) refuse(`"${target}" is in ${list.map((x) => x.file).join(' and ')}: say which with "file"`)
     if (list[0]) return list[0]
-    const top = found.find((x) => !x.decl && x.prop)
-    if (top) return top
-    const near = closest(path[0]!, names)
-    return refuse(`nothing is named "${target}"${near && near !== path[0] ? `: did you mean "${near}"?` : ''}`)
+    const near = closest(path.at(-1)!, names)
+    return refuse(`nothing is named "${target}"${near && near !== path.at(-1) ? `: did you mean "${near}"?` : ''}`)
   }
 
   run(op: Operation, o: OperationOptions): string {
+    // a list from a model or a client's command is untrusted: each field it needs is checked before it is read
+    if (typeof op !== 'object' || op === null) return refuse('an operation is an object with "op"')
+    const need = FIELDS[op.op as keyof typeof FIELDS]
+    if (!need) return refuse(`no operation "${String((op as { op: unknown }).op).slice(0, 40)}"`)
+    const fields = op as unknown as Record<string, unknown>
+    for (const k of need) if (typeof fields[k] !== 'string') refuse(`${op.op} takes "${k}"`)
+    for (const k of ['file', 'label'])
+      if (fields[k] != null && typeof fields[k] !== 'string') refuse(`"${k}" of ${op.op} is a text`)
     switch (op.op) {
       case 'rename':
         return this.rename(op.target, op.to, op.file, o)
@@ -320,13 +391,14 @@ class Work {
   }
 
   rename(target: string, to: string, file: string | undefined, o: OperationOptions) {
-    if (!/^[A-Za-z_]\w*$/.test(to) && !/^"[^"\n]*"$/.test(to)) refuse(`"${to}" is no name`)
+    const quoted = to.length > 1 && to.startsWith('"') && to.endsWith('"')
+    const name = quoted ? to.slice(1, -1) : to
+    if (quoted ? /["\\\n]/.test(name) : !/^[A-Za-z_]\w*$/.test(name)) refuse(`"${to.slice(0, 80)}" is no name`)
     const f = this.find(target, file)
     if (!f.decl || f.prop) return refuse(`only a statement is renamed: "${target}" is a property`)
     const source = this.text(f.file)
     const arg = f.decl.args[0]!
-    const name = to.startsWith('"') ? JSON.parse(to) : to
-    const r = renameAcross(source, arg.from + 1, arg.t === 'str' ? JSON.stringify(name) : name, {
+    const r = renameAcross(source, arg.from + 1, arg.t === 'str' ? `"${name}"` : name, {
       path: f.file,
       files: this.record(),
       ...o,
@@ -349,7 +421,7 @@ class Work {
   }
 
   set(target: string, value: string, file?: string) {
-    const f = this.find(target, file)
+    const f = this.find(target, file, true)
     if (!f.prop) return refuse(`"${target}" names a statement: set takes a property, as "${target}.capacity"`)
     if (!value.trim()) refuse('set takes a value: unset takes a property out')
     const source = this.text(f.file)
@@ -392,6 +464,7 @@ class Work {
     const into = file != null ? (normalizePath(file) ?? file) : this.entry
     if (file != null && !this.files.has(into)) refuse(`there is no ${into}: addFile makes it first`)
     const done: string[] = []
+    this.explicit = file != null
     let prev = 0
     for (const s of doc.body) {
       // the comment lines over a statement go with it
@@ -410,6 +483,9 @@ class Work {
     return done.join('; ')
   }
 
+  /** Whether the put being applied names its file. */
+  explicit = false
+
   putOne(s: Stmt, chunk: string, into: string): string {
     const name =
       s.kind === 'decl'
@@ -419,8 +495,10 @@ class Work {
           : s.kind === 'prop'
             ? s.key.name
             : 'a row'
-    // the same statement written already: replaced where it is
-    for (const f of this.order()) {
+    // the same statement written already: replaced where it is, in the file named (a variant overrides there), else
+    // in the files that share names with it (never a library's own statement for the model's)
+    const where = this.explicit ? [into] : this.namespace(into)
+    for (const f of where) {
       const source = this.text(f)
       const { doc } = parse(source)
       const same = doc.body.find((x) => {
@@ -475,7 +553,7 @@ class Work {
     let values = 0
     // what flows pass through: a box, or a stage written inside one
     const box = isBox(d.keyword.name) || (STAGES as readonly string[]).includes(d.keyword.name)
-    for (const p of this.order()) {
+    for (const p of this.namespace(f.file)) {
       const text = this.text(p)
       const { doc } = parse(text)
       const changes: TextChange[] = []
@@ -487,10 +565,14 @@ class Work {
           const left = e.chain.slice(0, i)
           const right = e.chain.slice(i + 1)
           const keep = [left, right].filter((c) => c.length > 1).map((c) => c.map((x) => x.name).join(' -> '))
+          if (keep.length && (e.value || e.body))
+            refuse(
+              `${e.chain.map((c) => c.name).join(' -> ')} has a label or a block: put it again without ${id} first`,
+            )
           if (!keep.length) {
             const owner = ownerOf(doc.body, e) ?? { body: doc.body }
             changes.push(takeOut(text, owner, e))
-          } else changes.push({ from: e.from, to: e.to, insert: keep.join('\n') })
+          } else changes.push({ from: e.from, to: e.to, insert: keep.join(`\n${indentAt(text, e.from)}`) })
         }
       }
       for (const [x] of declsIn(doc.body, { body: doc.body })) {
@@ -543,21 +625,16 @@ class Work {
    */
   stillNamed(id: string, from: string): string[] {
     const out: string[] = []
-    const word = new RegExp(`(^|[^\\w.])${id}(?![\\w])`)
-    const library = this.role(from) === 'library'
-    for (const [p, text] of this.files) {
-      if (library ? p !== from : this.role(p) === 'library') continue
-      const lines = text.split('\n')
-      for (const [i, l] of lines.entries()) {
-        const code = l.replace(/#.*$/, '').replace(/"[^"]*"/g, '""')
-        if (word.test(code)) out.push(`${p}:${i + 1}`)
-      }
+    if (!/^[A-Za-z_]\w*$/.test(id)) return out
+    for (const p of this.namespace(from)) {
+      for (const line of namesAt(this.text(p), id)) out.push(`${p}:${line}`)
+      if (out.length >= 8) break
     }
     return out.slice(0, 8)
   }
 
   edgeWith(from: string, to: string) {
-    for (const p of this.order()) {
+    for (const p of this.namespace(this.entry)) {
       const text = this.text(p)
       const { doc } = parse(text)
       for (const e of edgesIn(doc.body)) {
@@ -618,28 +695,13 @@ class Work {
 
   addFile(path: string, role: 'part' | 'library' | 'variant', text?: string) {
     const p = normalizePath(path)
-    if (!p?.endsWith('.loadmap')) return refuse(`"${path}" is no path of a .loadmap file`)
-    if (this.files.has(p)) refuse(`there is a ${p} already`)
-    if (this.files.size >= MAX_FILES) refuse(`a definition has at most ${MAX_FILES} files`)
-    const model = this.text(this.entry)
-    const version = /^loadmap (\d+(?:\.\d+)?)/.exec(model)?.[1] ?? LANGUAGE_VERSION
-    const back = relativePath(p, this.entry)
-    const stem = p
-      .split('/')
-      .at(-1)!
-      .replace(/\.loadmap$/, '')
-    const head =
-      role === 'part'
-        ? `loadmap ${version}\npart of "${back}"\n`
-        : role === 'variant'
-          ? `loadmap ${version}\nextends "${back}"\n`
-          : `loadmap ${LANGUAGE_VERSION}\nlibrary "${stem}"\n`
-    const body = text?.trim() ? `\n${text.trim()}\n` : ''
-    this.files.set(p, head + body)
+    if (!p?.endsWith('.loadmap')) return refuse(`"${path.slice(0, 80)}" is no path of a .loadmap file`)
+    if (!['part', 'library', 'variant'].includes(role)) refuse('a new file is a part, a library or a variant')
+    const r = fileAt(DSL, { path: this.entry, files: this.record() }, role, p, text)
+    if ('error' in r) return refuse(r.error)
+    for (const [q, t] of Object.entries(r.texts ?? {})) this.files.set(q, t)
+    this.files.set(p, r.add!.text)
     this.added.add(p)
-    const there = relativePath(this.entry, p)
-    if (role === 'part') this.files.set(this.entry, underHead(model, `include "${there}"`))
-    if (role === 'library') this.files.set(this.entry, underHead(model, `import "${there}" { }`))
     return `Added ${p}`
   }
 
@@ -653,7 +715,10 @@ class Work {
       this.files.delete(r.rename.from)
       this.files.set(r.rename.to, t)
       if (this.entry === r.rename.from) this.entry = r.rename.to
+      // a file renamed again keeps one entry, from where it was before the list
+      const was = this.renamed.find((x) => x.to === r.rename!.from)
       if (this.added.delete(r.rename.from)) this.added.add(r.rename.to)
+      else if (was) was.to = r.rename.to
       else this.renamed.push(r.rename)
     }
     return r.note
@@ -722,6 +787,39 @@ class Work {
       notes: this.notes,
     }
   }
+}
+
+/** The lines (from 1) where `id` is written as a name: outside texts and comments, read one character at a time. */
+function namesAt(text: string, id: string): number[] {
+  const lines: number[] = []
+  let line = 1
+  for (let i = 0; i < text.length; ) {
+    const c = text[i]!
+    if (c === '\n') {
+      line++
+      i++
+    } else if (c === '#') {
+      while (i < text.length && text[i] !== '\n') i++
+    } else if (c === '"' || c === "'") {
+      i++
+      while (i < text.length && text[i] !== c && text[i] !== '\n') i += text[i] === '\\' ? 2 : 1
+      i++
+    } else if (/[A-Za-z_]/.test(c)) {
+      let j = i + 1
+      while (j < text.length && /\w/.test(text[j]!)) j++
+      if (j - i === id.length && text.startsWith(id, i) && lines.at(-1) !== line) lines.push(line)
+      i = j
+    } else i++
+  }
+  return lines
+}
+
+/** The spaces in front of the line `at` is on. */
+function indentAt(text: string, at: number): string {
+  const start = lineStart(text, at)
+  let end = start
+  while (text[end] === ' ' || text[end] === '\t') end++
+  return text.slice(start, end)
 }
 
 /** A line written as the last of a statement's block, indented as the lines before it. */

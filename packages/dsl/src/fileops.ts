@@ -95,29 +95,36 @@ export function pathFor(name: string): { path: string } | { error: string } {
 export function newFile(dsl: Dsl, all: FileSet, kind: NewKind, name: string): FileChange | { error: string } {
   const typed = name.trim()
   if (!/^[\w-]+$/.test(typed)) return { error: 'A file name is letters, digits, "-" and "_"' }
-  if (Object.keys(all.files).length >= dsl.MAX_FILES)
-    return { error: `A definition has at most ${dsl.MAX_FILES} files` }
   const folder = all.path.split('/').slice(0, -1)
   const base = stem(nameOf(all.path))
   const file = kind === 'library' ? `${typed}.loadmap` : `${base}.${typed}.loadmap`
-  const path = [...folder, file].join('/')
+  return fileAt(dsl, all, kind, [...folder, file].join('/'))
+}
+
+/**
+ * A new file at `path` (from the project root): its head (the model's version, then `part of`, `extends` or
+ * `library`), and for a part or a library the line in the model's head that names it. `body` follows the head.
+ */
+export function fileAt(dsl: Dsl, all: FileSet, kind: NewKind, path: string, body = ''): FileChange | { error: string } {
+  if (Object.keys(all.files).length >= dsl.MAX_FILES)
+    return { error: `A definition has at most ${dsl.MAX_FILES} files` }
+  const file = nameOf(path)
   if (Object.hasOwn(all.files, path)) return { error: `There is a ${file} already` }
   const model = all.files[all.path] ?? ''
   const version = /^loadmap (\d+(?:\.\d+)?)/.exec(model)?.[1] ?? dsl.LANGUAGE_VERSION
-  const text =
+  const back = dsl.relativePath(path, all.path)
+  const head =
     kind === 'part'
-      ? `loadmap ${version}\npart of "./${base}.loadmap"\n`
+      ? `loadmap ${version}\npart of "${back}"\n`
       : kind === 'variant'
-        ? `loadmap ${version}\nextends "./${base}.loadmap"\n`
-        : `loadmap ${dsl.LANGUAGE_VERSION}\nlibrary "${typed}"\n`
+        ? `loadmap ${version}\nextends "${back}"\n`
+        : `loadmap ${dsl.LANGUAGE_VERSION}\nlibrary "${stem(file)}"\n`
+  const text = body.trim() ? `${head}\n${body.trim()}\n` : head
   // a variant names its model; the model never names its variants
   if (kind === 'variant') return { add: { path, text }, note: `Added ${file}` }
-  const line = kind === 'part' ? `include "./${file}"` : `import "./${file}" { }`
-  return {
-    add: { path, text },
-    texts: { [all.path]: underHead(model, line) },
-    note: `Added ${file}`,
-  }
+  const there = dsl.relativePath(all.path, path)
+  const line = kind === 'part' ? `include "${there}"` : `import "${there}" { }`
+  return { add: { path, text }, texts: { [all.path]: underHead(model, line) }, note: `Added ${file}` }
 }
 
 /** A head line written under the model's last one: the "loadmap" line, then every include and import. */
