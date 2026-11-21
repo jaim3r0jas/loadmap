@@ -30,7 +30,9 @@ export interface AskPanelProps {
   /** Keeps the files as a version of the history (nothing without one). */
   keep: (author: Author, message: string, trace?: Trace) => Promise<void>
   /** Draws a proposal in the canvas, or the files again (null). */
-  onPreview: (p: Proposal | null) => void
+  onPreview: (p: Proposal | null, before?: boolean) => void
+  /** What the canvas draws: the files (before), the proposal (after), or something else (an older version). */
+  shows?: 'before' | 'after' | null
   reference: string | (() => Promise<string>)
   /** The providers offered, by id; every one by default. */
   providers?: readonly string[]
@@ -65,6 +67,9 @@ export const ASK_CSS = `
 .lme-ask-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .lme-ask-chip { display: inline-flex; gap: 4px; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--lm-line); background: var(--lm-surface); font: inherit; color: inherit; }
 .lme-ask-usage { color: var(--lm-muted); font-size: .76rem; }
+.lme-ask fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.lme-preview [data-node][data-proposed] { filter: drop-shadow(0 0 3px var(--lm-accent)) drop-shadow(0 0 1px var(--lm-accent)); }
+.lme-preview [data-node][data-proposed="added"] > :is(:first-child, path:nth-child(2)) { stroke: var(--lm-accent); stroke-dasharray: 5 4; }
 .lme-ask textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; }
 `
 
@@ -314,7 +319,13 @@ export default function AskPanel(p: AskPanelProps) {
         )}
       </div>
       {proposal && (
-        <ProposalCard proposal={proposal} onAccept={() => void accept()} onReject={() => setProposal(null)} />
+        <ProposalCard
+          proposal={proposal}
+          shows={p.shows ?? null}
+          onBefore={(b) => p.onPreview(proposal, b)}
+          onAccept={() => void accept()}
+          onReject={() => setProposal(null)}
+        />
       )}
       {note && <p className="lme-hint">{note}</p>}
       <form onSubmit={send}>
@@ -356,10 +367,16 @@ export default function AskPanel(p: AskPanelProps) {
 
 function ProposalCard({
   proposal,
+  shows,
+  onBefore,
   onAccept,
   onReject,
 }: {
   proposal: Proposal
+  /** What the canvas draws, which the pressed button says: it may have left the proposal by other ways. */
+  shows: 'before' | 'after' | null
+  /** Draws the files as they are (true) or as the proposal leaves them (false). */
+  onBefore: (before: boolean) => void
   onAccept: () => void
   onReject: () => void
 }) {
@@ -428,6 +445,15 @@ function ProposalCard({
           )}
         </div>
       ))}
+      <fieldset className="lme-ask-row">
+        <legend className="lm-sr">The canvas shows</legend>
+        <button type="button" className="lme-ask-chip" aria-pressed={shows === 'before'} onClick={() => onBefore(true)}>
+          Before
+        </button>
+        <button type="button" className="lme-ask-chip" aria-pressed={shows === 'after'} onClick={() => onBefore(false)}>
+          After
+        </button>
+      </fieldset>
       <div className="lme-ask-row">
         <button type="button" className="lm-btn lme-primary" onClick={onAccept}>
           Accept

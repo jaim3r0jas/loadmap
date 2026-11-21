@@ -1116,6 +1116,10 @@ export function LoadmapEditor({
     else if (layout === 'reader' && view.current) setText(view.current.state.doc.toString())
   }, [textHidden, layout])
 
+  // the proposal's marks go once the canvas draws anything else: Back to now, an older version, an edit
+  useEffect(() => {
+    if (shownVersion?.id !== 'proposal') studio.current?.unmark()
+  }, [shownVersion])
   const studioHost = useRef<StudioHost>(null!)
   studioHost.current = {
     fileHost,
@@ -1124,6 +1128,7 @@ export function LoadmapEditor({
     changed: () => setStudioVersion((n) => n + 1),
     functions,
     replace: (f) => replace(f.files[f.path] ?? '', f, true),
+    root: () => root.current,
   }
   const histKey = typeof keepHistory === 'object' ? keepHistory.key : undefined
   // biome-ignore lint/correctness/useExhaustiveDependencies: started once a page asks; the host is read through a ref

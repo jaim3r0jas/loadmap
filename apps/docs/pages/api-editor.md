@@ -73,15 +73,16 @@ closing the tab drops them. The handle's `history()` gives them as plain data (`
 
 ## Ask
 
-With `assist`, the canvas has an **Ask** panel: a conversation about the diagram with a model, a box's question
-about that box first. The reader picks a provider (Anthropic, DeepSeek, OpenAI, OpenRouter, Groq, Mistral, Gemini, or
-a local Ollama or LM Studio) and a model, and pastes their own key: it stays in this page's memory, or in this tab with
-**Keep for this tab**, and **Forget** drops it. The model reads `reference` (the site's `llms-full.txt`), the files and
-what the engine computes from them, and answers with operations by name. A change arrives as a proposal the compiler
-has checked: what it does, a diff per file, the capacities it wrote (a number nobody gave is marked as the assistant's
-guess), and what moves; the canvas draws it. **Accept** puts it in the text, one undo step per file and, with
-`history`, a version that keeps the request, the model and the operations; **Reject** drops it. A proposal about a
-text that changed since is refused.
+With `assist`, the canvas has an **Ask** panel: a conversation about the diagram with a model, a box's question about
+that box first. The reader picks a provider (Anthropic, DeepSeek, OpenAI, OpenRouter, Groq, Mistral, Gemini, or a local
+Ollama or LM Studio) and a model, and pastes their own key: it stays in this page's memory, or in this tab with **Keep
+for this tab**, and **Forget** drops it. The model reads `reference` (the site's `llms-full.txt`), the files and what
+the engine computes from them, and answers with operations by name. A change arrives as a proposal the compiler has
+checked: what it does, a diff per file, the capacities it wrote (a number nobody gave is marked as the assistant's
+guess), and what moves; the canvas draws it, the boxes it adds dashed and those it changes outlined, and **Before** and
+**After** switch between the files and the proposal. **Accept** puts it in the text, one undo step per file and, with
+`history`, a version that keeps the request, the model and the operations; **Reject** drops it. A proposal about a text
+that changed since is refused.
 
 ```tsx
 <LoadmapEditor
