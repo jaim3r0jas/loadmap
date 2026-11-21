@@ -46,6 +46,7 @@ import {
 } from '@loadmap/dsl'
 import type { AddResult } from '@loadmap/dsl/add'
 import {
+  boxPath,
   changedBoxes,
   type Drawn,
   type EditValue,
@@ -262,6 +263,8 @@ interface Compiled {
   doc: number
   /** The file the result is about: a problem that names no file is in this one. */
   given: string
+  /** The file `source` is the text of: the one in the editor when it was compiled. */
+  file: string
 }
 
 /** A text editor for a `.loadmap` definition next to its live diagram. */
@@ -351,6 +354,7 @@ export function LoadmapEditor({
       goodKey: fingerprint(initial),
       doc: 0,
       given: set.current.entry,
+      file: set.current.entry,
     }
   })
   // a first text with a published statement: compiled again once the catalog has loaded
@@ -556,10 +560,11 @@ export function LoadmapEditor({
     } else if (tracking.current && !before.current && e?.scene) before.current = { scene: e.scene, ev: e.ev }
     setState((prev) => {
       if (prev.source === source && prev.result === result) return prev
-      if (!result.definition) return { ...prev, source, result, given }
+      const file = f.active
+      if (!result.definition) return { ...prev, source, result, given, file }
       const key = Object.keys(f.others).length ? all : fingerprint(source)
-      if (key === prev.goodKey && prev.good) return { ...prev, source, result, given }
-      return { source, result, good: result.definition, goodKey: key, doc: prev.doc + (whole ? 1 : 0), given }
+      if (key === prev.goodKey && prev.good) return { ...prev, source, result, given, file }
+      return { source, result, good: result.definition, goodKey: key, doc: prev.doc + (whole ? 1 : 0), given, file }
     })
   }
   const acceptRef = useRef(accept)
@@ -920,7 +925,7 @@ export function LoadmapEditor({
   const take = (box: string, name: string): string | null => {
     const v = view.current
     if (!v) return 'the editor is not ready'
-    const r = takeLine(v.state.doc.toString(), box, name, { functions, ...beside() })
+    const r = takeLine(v.state.doc.toString(), box, name, { functions, ...beside() }, target?.path)
     if ('error' in r) return r.error
     if (r.changes.length)
       v.dispatch({
@@ -1145,10 +1150,26 @@ export function LoadmapEditor({
   const stale = !state.result.ok && !!def
   // `inherit` follows the page's own switch, for the editor's frame and the diagram alike
   const look = usePageTheme(theme)
+  // The selected box as the text writes it. One inside a subsystem has no statement under its id: `eu.api` is the
+  // `api` of the subsystem `eu` is like, written once for every subsystem like it, perhaps in a library. Its place is
+  // found where the compiler's offsets are true, in the text it read, and holds while the text changes
+  const target = useMemo(() => {
+    if (!reader || !selected) return null
+    const node = (s: DslSymbol) => s.kind === 'node'
+    const drawn = state.result.symbols.filter(node).map((s) => ({ ...s, file: s.file ?? state.given }))
+    // a library in the editor has boxes the model does not draw: its own compile names them
+    const own = symbols.current.filter(node).map((s) => ({ ...s, file: state.file }))
+    const box = drawn.find((s) => s.id === selected) ?? own.find((s) => s.id === selected)
+    const file = box?.file
+    if (!box || file !== active) return { node: selected, shared: [] }
+    // a file that has just come into the editor is as the compiler read it
+    const path = boxPath(file === state.file ? state.source : text, box.decl.from)
+    const shared = drawn.filter((s) => s.id !== selected && s.file === file && s.decl.from === box.decl.from)
+    return { node: selected, ...(path ? { path } : {}), shared: shared.map((s) => s.id) }
+  }, [reader, selected, state, active, text])
   const inspection = useMemo(
-    () =>
-      !reader ? null : tab === 'model' ? inspect(text, 'model') : selected ? inspect(text, { node: selected }) : null,
-    [reader, text, tab, selected],
+    () => (!reader ? null : tab === 'model' ? inspect(text, 'model') : target ? inspect(text, target) : null),
+    [reader, text, tab, target],
   )
 
   // a phone: the text or the diagram, one at a time; typing, the keyboard takes the bottom
@@ -1186,6 +1207,7 @@ export function LoadmapEditor({
         }
         blocked={errors ? 'The text has errors: show the code to fix them.' : undefined}
         gone={tab === 'box' && !!selected && !inspection}
+        shared={tab === 'box' ? target?.shared : undefined}
         onClose={() => setSelected(null)}
       />
     </Suspense>

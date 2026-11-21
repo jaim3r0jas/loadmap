@@ -182,9 +182,14 @@ class Walk {
  * For a box that says `like:`, the other box and what this one takes from it, by the names of its lines and stages,
  * as the compiler takes them (expand.ts): a line written here replaces the same line there, a stage written here
  * replaces its stages, and what the other takes from a third comes along. `taken` is empty when the other is not a box
- * of these statements (a prototype a library gave).
+ * of these statements (a prototype a library gave). A box inside a subsystem is given as `self`: the other is still a
+ * box of the top.
  */
-export function likeness(body: readonly Stmt[], id: string): { from: string; taken: string[] } | undefined {
+export function likeness(
+  body: readonly Stmt[],
+  id: string,
+  self?: Decl,
+): { from: string; taken: string[] } | undefined {
   const stages: readonly string[] = STAGES
   const box = (name: string) =>
     body.find(
@@ -211,7 +216,7 @@ export function likeness(body: readonly Stmt[], id: string): { from: string; tak
     )
     return [...theirs, ...own]
   }
-  const mine = box(id)
+  const mine = self ?? box(id)
   const like = mine?.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === 'like')
   if (!mine || like?.value.t !== 'id') return undefined
   const own = new Set((mine.body ?? []).map(named))
