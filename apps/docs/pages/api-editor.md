@@ -45,6 +45,7 @@ editor a new `key`, or call `setSource` on its handle.
 | `actions`     | Controls in the bar before Share: a theme, help. On a phone they go in the sheet of actions                               |
 | `fileName`    | The name the downloaded file takes, without `.loadmap`; default the model's title                                         |
 | `fonts`       | The fonts View offers for the code: `CodeFont[]`; default `CODE_FONTS`, `[]` for the system's alone                       |
+| `history`     | A Timeline of versions, each a commit: `true`, or `{ key }` to keep it in this tab (see below)                            |
 | `ref`         | A `LoadmapEditorHandle`                                                                                                   |
 
 In `'code'` layout a click on a box selects its lines in the text. In `'reader'` layout the text is hidden: a click on
@@ -57,6 +58,17 @@ them. Off, the view stays where the reader left it.
 
 Without `onSave`, ⌘S only says what keeps the text: `onChange` or `onFiles` (a draft), or nothing (Share does). Either
 way the browser's Save Page never opens over the editor.
+
+## History
+
+With `history`, the editor keeps every version of the files as a commit, as git writes one (the same ids): what the
+reader keeps (**Keep this version** in the Timeline, with a few words), every change accepted from the assistant, every
+⌘S, and each whole definition loaded. The **Timeline** panel lists the versions of the branch, newest first, with who
+made each and, for the assistant, the request, the model and the operations. **Back** and **Forward** draw an older
+version in the canvas while the text stays as it is; **Restore this version** makes it the files again, as a new
+version on top; **Branch from here** tries another design from any version, and the branch's menu goes back. Nothing
+is rewritten. `history={{ key }}` mirrors the versions to this tab's storage (sessionStorage): a reload keeps them,
+closing the tab drops them. The handle's `history()` gives them as plain data (`HistoryData`).
 
 ## The handle
 
@@ -77,6 +89,7 @@ const hash = await editor.current?.shareHash()
 | `format()`        | Lays the text out the one way; `false` when it has a syntax error                               |
 | `files()`         | `EditorFiles`: every file by its path, and the path of its model; one entry for one file        |
 | `setFiles(files)` | Replaces the whole definition with one in several files; its model shows first                  |
+| `history()`       | `HistoryData` of the versions with `history`, else `null`                                       |
 
 `loadmap()` is what export and recording drive: [React and the page](/api/react/#the-handle) has its methods.
 

@@ -555,6 +555,8 @@ function Editor({ root }: { root: URL }) {
         onLayout={(l) => !linked && write(LAYOUT, l)}
         track={read(TRACK) === 'on'}
         onTrack={(on) => write(TRACK, on ? 'on' : 'off')}
+        // every version of this tab's files, gone with the tab, as the repository's files are
+        history={{ key: 'loadmap-editor-history' }}
         start={
           <>
             <a
