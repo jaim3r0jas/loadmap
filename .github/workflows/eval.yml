@@ -1,6 +1,6 @@
 # The assistant's eval (apps/eval): every case against the models named, by hand only. A model's answer differs from
-# run to run and costs money, so this is never part of check. The keys are the repository's secrets; each provider's
-# key reaches only the step that runs, and the table lands in the job's summary and as an artifact.
+# run to run and costs money, so this is never part of check. The keys are the repository's secrets, each read only by
+# its own provider; the table lands in the job's summary and as an artifact, written after each model as it ends.
 name: eval
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
   eval:
     name: eval
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:

@@ -157,7 +157,7 @@ export const CASES: Case[] = [
     id: 'box-split',
     example: SEARCH,
     request: 'Add a third index shard like the second one.',
-    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'like: db' }, { kind: 'declares', id: 'db3' }],
+    asserts: [{ kind: 'change' }, { kind: 'declares', id: 'db3' }, { kind: 'contains', text: 'like: db' }],
   },
   {
     id: 'tier',

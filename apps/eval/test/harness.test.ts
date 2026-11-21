@@ -22,7 +22,9 @@ describe('the eval', () => {
   it('passes a case a good answer meets, and says why a poor one fails', async () => {
     const c = CASES.find((x) => x.id === 'scenario-add')!
     const good = await runCase(c, {
-      model: recorded(['```ops\nput\n  scenario "Sixteen pods" { pods: 16 }\n```']),
+      model: recorded([
+        '```ops\nput\n  param pods "Worker pods" { options: [2, 4, 8, 16]; default: 4 }\nput\n  scenario "Sixteen pods" { pods: 16 }\n```',
+      ]),
       reference: '# ref',
       clock,
     })

@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { compile, gather } from '@loadmap/dsl'
+import { readdirSync, readFileSync } from 'node:fs'
+import { compile, gather, imports } from '@loadmap/dsl'
 import { type AssistEvent, createAssistant, type ModelProvider, type Proposal } from '@loadmap/dsl/assist'
 import type { Project } from '@loadmap/dsl/ops'
 
@@ -66,8 +66,18 @@ export function exampleProject(example: string): Project {
   const source = at(file)
   if (source == null) throw new Error(`no ${example}`)
   const g = gather(source, { path: file, files: at })
-  return { entry: g.path, files: g.files }
+  // a variant names its model, the model never names it: the folder's variants of this model come too
+  const files: Record<string, string> = { ...g.files }
+  for (const f of readdirSync(new URL(`${dir}/`, ROOT))) {
+    const text = f.endsWith('.loadmap') && !Object.hasOwn(files, f) ? at(f) : undefined
+    if (text && imports(text, f).files.some((x) => x.kind === 'extends' && x.path === g.path)) files[f] = text
+  }
+  return { entry: g.path, files }
 }
+
+/** "8_000" and "8000" are one number: the separators a model may or may not write are not what a case checks. */
+const plain = (t: string) => t.replace(/(\d)_(?=\d)/g, '$1')
+const count = (t: string, part: string) => plain(t).split(plain(part)).length - 1
 
 /** Whether a line of the text declares `id`: a keyword (this one, or any), then the id, bare or in quotes. */
 const declares = (text: string, id: string, keyword?: string) =>
@@ -80,7 +90,7 @@ const declares = (text: string, id: string, keyword?: string) =>
 /** Each assert that the outcome fails, said in a few words. */
 export function judge(
   c: Case,
-  outcome: { proposal?: Proposal; questions: boolean; text: string; refused?: string },
+  outcome: { proposal?: Proposal; questions: boolean; text: string; refused?: string; invented?: number },
 ): string[] {
   const failed: string[] = []
   const p = outcome.proposal
@@ -99,11 +109,14 @@ export function judge(
         for (const m of a.mentions ?? [])
           if (!outcome.text.toLowerCase().includes(m.toLowerCase())) failed.push(`does not mention ${m}`)
         break
-      case 'contains':
-        if (!after(a.file).includes(a.text)) failed.push(`lacks ${a.text}`)
+      case 'contains': {
+        // written by the change: there after it, more often than before it
+        const was = p ? (p.before.files[a.file ?? p.before.entry] ?? '') : ''
+        if (count(after(a.file), a.text) <= count(was, a.text)) failed.push(`lacks ${a.text}`)
         break
+      }
       case 'lacks':
-        if (p && after(a.file).includes(a.text)) failed.push(`still has ${a.text}`)
+        if (p && count(after(a.file), a.text) > 0) failed.push(`still has ${a.text}`)
         break
       case 'declares':
         if (
@@ -117,7 +130,9 @@ export function judge(
           failed.push(`${a.id} is still declared`)
         break
       case 'honest':
-        if (p?.figures.some((f) => !f.given && f.provenance !== 'estimated')) failed.push('a figure nobody gave')
+        // the gate refuses a figure nobody gave before a proposal exists: the refusals are what this counts
+        if (outcome.invented)
+          failed.push(`wrote a figure nobody gave ${outcome.invented} time${outcome.invented > 1 ? 's' : ''}`)
         break
       case 'files': {
         const got = p ? [...p.changed, ...p.added].sort() : []
@@ -146,13 +161,30 @@ export async function runCase(
 ): Promise<CaseResult> {
   const clock = o.clock ?? (() => performance.now())
   const start = clock()
-  const assistant = createAssistant({ model: o.model, reference: o.reference })
+  // every request's tokens, counted as they come: a case that fails after two paid rounds still says what it cost
+  const usage = { input: 0, output: 0, cached: 0 }
+  const counted: ModelProvider = {
+    kind: o.model.kind,
+    model: o.model.model,
+    async *chat(r) {
+      for await (const e of o.model.chat(r)) {
+        if (e.type === 'usage') {
+          usage.input += e.usage.input
+          usage.output += e.usage.output
+          usage.cached += e.usage.cached ?? 0
+        }
+        yield e
+      }
+    },
+  }
+  const assistant = createAssistant({ model: counted, reference: o.reference })
   let proposal: Proposal | undefined
   let questions = false
   let text = ''
   let refused: string | undefined
   let repairs = 0
-  const usage = { input: 0, output: 0, cached: 0 }
+  let invented = 0
+  const invents = (error: string) => error.includes('uses a number the reader did not give')
   try {
     for await (const e of assistant.ask({
       request: c.request,
@@ -163,12 +195,12 @@ export async function runCase(
       if (e.type === 'proposal') proposal = e.proposal
       else if (e.type === 'questions') questions = true
       else if (e.type === 'answer') text += e.text
-      else if (e.type === 'repair') repairs++
-      else if (e.type === 'refused') refused = e.error
-      else if (e.type === 'done') {
-        usage.input = e.usage.input
-        usage.output = e.usage.output
-        usage.cached = e.usage.cached ?? 0
+      else if (e.type === 'repair') {
+        repairs++
+        if (invents(e.error)) invented++
+      } else if (e.type === 'refused') {
+        refused = e.error
+        if (invents(e.error)) invented++
       }
     }
   } catch (err) {
@@ -182,7 +214,7 @@ export async function runCase(
       error: (err as Error).message,
     }
   }
-  const failed = judge(c, { ...(proposal && { proposal }), questions, text, ...(refused && { refused }) })
+  const failed = judge(c, { ...(proposal && { proposal }), questions, text, ...(refused && { refused }), invented })
   return { id: c.id, pass: !failed.length, failed, repairs, ...usage, ms: clock() - start }
 }
 
