@@ -1846,7 +1846,7 @@ export function LoadmapEditor({
               // the canvas every loadmap is, filling the room: the editor's own bar has the title, and the editor
               // shows every panel whatever the definition picks for a page
               <Loadmap
-                key={shownVersion ? `v${shownVersion.id}` : state.doc}
+                key={state.doc}
                 ref={preview}
                 model={(shownVersion?.def ?? def).model}
                 view={(shownVersion?.def ?? def).view}
