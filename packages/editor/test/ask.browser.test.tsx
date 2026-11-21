@@ -99,5 +99,16 @@ describe('the Ask panel', () => {
     await expect
       .poll(() => document.querySelector('.lme-stale')?.textContent, { timeout: 5000 })
       .toContain('Showing the proposal')
+    // the new box is marked once the canvas draws it, however long its layout takes
+    await expect
+      .poll(() => document.querySelector('.lme-preview [data-node="cache"]')?.getAttribute('data-proposed'), {
+        timeout: 5000,
+      })
+      .toBe('added')
+    await expect.element(card.getByRole('button', { name: 'After' })).toHaveAttribute('aria-pressed', 'true')
+    // leaving the proposal another way takes its marks, and the card says what the canvas shows
+    await userEvent.click(page.getByRole('button', { name: 'Back to now' }))
+    await expect.poll(() => document.querySelector('[data-proposed]')).toBeNull()
+    await expect.element(card.getByRole('button', { name: 'Before' })).toHaveAttribute('aria-pressed', 'true')
   })
 })

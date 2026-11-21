@@ -25,47 +25,70 @@ export interface StudioHost {
   functions?: HostFunctions
   /** Every file replaced, the model too: a restore across a rename of the model. No version of its own. */
   replace(f: { path: string; files: Readonly<Record<string, string>> }): void
+  /** The editor's own element: what the proposal's marks are put on, never another editor's boxes. */
+  root(): HTMLElement | null
 }
 
 const Timeline = later(() => import('./Timeline'), 'The history did not load: reload the page.')
 
-/** The boxes a proposal adds and changes, by id: marked in the canvas while it is drawn. */
-let marked: { added: string[]; changed: string[] } = { added: [], changed: [] }
+/** What a proposal draws, worked out once: its definition, and the boxes it adds and changes, by id. */
+interface Draft {
+  def?: Definition
+  added: ReadonlySet<string>
+  changed: ReadonlySet<string>
+}
 
-/** Each box's statement as written: what tells a changed box from one the proposal left alone. */
-function boxTexts(r: CompileResult, files: Readonly<Record<string, string>>, entry: string): Map<string, string> {
+/** A statement without its comments and with its spaces collapsed: a comment changed is no change. */
+function bare(text: string): string {
+  let out = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!
+    if (c === '"' && text[i - 1] !== '\\') quoted = !quoted
+    if (c === '#' && !quoted) {
+      const end = text.indexOf('\n', i)
+      if (end < 0) break
+      i = end - 1
+      continue
+    }
+    out += c
+  }
+  return out.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Each box's statement as written, and its component's figures at the defaults: a box changes when either does, so
+ * a library, a variant or a published figure that moves it counts, and a comment does not.
+ */
+function boxes(r: CompileResult, files: Readonly<Record<string, string>>, entry: string): Map<string, string> {
   const out = new Map<string, string>()
+  const ev = r.definition?.model.evaluate()
   for (const s of r.symbols) {
     if (s.kind !== 'node') continue
-    const text = files[s.file ?? entry] ?? ''
-    out.set(s.id, text.slice(s.decl.from, s.decl.to).replace(/\s+/g, ' '))
+    const text = bare((files[s.file ?? entry] ?? '').slice(s.decl.from, s.decl.to))
+    const id = ev?.stages[s.id]?.component ?? s.id
+    const c = ev?.components[id]
+    out.set(s.id, `${text}|${c?.demand}|${c?.capacity?.value}|${c?.target}`)
   }
   return out
 }
 
-function proposed(was: CompileResult, now: CompileResult, p: Proposal) {
-  const a = boxTexts(was, p.before.files, p.before.entry)
-  const b = boxTexts(now, p.project.files, p.project.entry)
+function drafted(p: Proposal, functions: HostFunctions | undefined): Draft {
+  const { entry, files } = p.project
+  const r = compile(files[entry] ?? '', { path: entry, files, functions })
+  if (!r.definition) return { added: new Set(), changed: new Set() }
+  const was = compile(p.before.files[p.before.entry] ?? '', { path: p.before.entry, files: p.before.files, functions })
+  const a = boxes(was, p.before.files, p.before.entry)
+  const b = boxes(r, p.project.files, p.project.entry)
+  // files that did not compile may hold fewer boxes than they draw: none is called new against them
+  const whole = !was.diagnostics.some((d) => d.severity === 'error')
   return {
-    added: [...b.keys()].filter((id) => !a.has(id)),
-    changed: [...b.keys()].filter((id) => a.has(id) && a.get(id) !== b.get(id)),
+    def: r.definition,
+    added: new Set(whole ? [...b.keys()].filter((id) => !a.has(id)) : []),
+    changed: new Set([...b.keys()].filter((id) => a.has(id) && a.get(id) !== b.get(id))),
   }
 }
 
-/** The marks put on the drawn boxes, again for two seconds: a box the proposal adds is drawn after a new layout. */
-function mark(tries = 20) {
-  for (const el of document.querySelectorAll<HTMLElement>('.lme-preview [data-node]')) {
-    const id = el.getAttribute('data-node')!
-    if (marked.added.includes(id)) el.setAttribute('data-proposed', 'added')
-    else if (marked.changed.includes(id)) el.setAttribute('data-proposed', 'changed')
-  }
-  if (tries > 0 && (marked.added.length || marked.changed.length)) setTimeout(() => mark(tries - 1), 100)
-}
-
-function unmark() {
-  marked = { added: [], changed: [] }
-  for (const el of document.querySelectorAll('.lme-preview [data-proposed]')) el.removeAttribute('data-proposed')
-}
 const AskPanel = later(() => import('./AskPanel'), 'The Ask panel did not load: reload the page.')
 
 export class Studio {
@@ -113,20 +136,41 @@ export class Studio {
 
   /** A proposal drawn in the canvas until it is accepted or dropped; null (or `before`) draws the files again. */
   preview = (p: Proposal | null, before = false) => {
-    unmark()
+    this.unmark()
     if (!p || before) return this.host().show(null)
-    const { entry, files } = p.project
-    const functions = this.host().functions
-    const r = compile(files[entry] ?? '', { path: entry, files, functions })
-    this.host().show(r.definition ? 'proposal' : null, r.definition)
-    if (!r.definition) return
-    const was = compile(p.before.files[p.before.entry] ?? '', {
-      path: p.before.entry,
-      files: p.before.files,
-      functions,
-    })
-    marked = proposed(was, r, p)
-    mark()
+    const d = this.drafts.get(p) ?? drafted(p, this.host().functions)
+    this.drafts.set(p, d)
+    this.host().show(d.def ? 'proposal' : null, d.def)
+    if (d.def) this.mark(d)
+  }
+
+  /** Each proposal's drawing, once: Before and After switch between them without compiling again. */
+  private drafts = new WeakMap<Proposal, Draft>()
+  private watch: MutationObserver | null = null
+
+  /** The boxes a proposal adds and changes, marked in this editor's canvas for as long as it is drawn. */
+  private mark(d: Draft) {
+    const root = this.host().root()
+    if (!root || (!d.added.size && !d.changed.size)) return
+    const put = () => {
+      for (const el of root.querySelectorAll('.lme-preview [data-node]')) {
+        const id = el.getAttribute('data-node') ?? ''
+        const v = d.added.has(id) ? 'added' : d.changed.has(id) ? 'changed' : null
+        if (v && el.getAttribute('data-proposed') !== v) el.setAttribute('data-proposed', v)
+        else if (!v && el.hasAttribute('data-proposed')) el.removeAttribute('data-proposed')
+      }
+    }
+    put()
+    // a new box is drawn after its layout, and a box drawn again when the scene changes: marked each time
+    this.watch = new MutationObserver(put)
+    this.watch.observe(root, { childList: true, subtree: true })
+  }
+
+  /** No marks: the canvas draws something other than the proposal. */
+  unmark = () => {
+    this.watch?.disconnect()
+    this.watch = null
+    for (const el of this.host().root()?.querySelectorAll('[data-proposed]') ?? []) el.removeAttribute('data-proposed')
   }
 
   /** The note over the canvas while a version or a proposal is drawn, with the way back to the files. */
@@ -153,6 +197,7 @@ export class Studio {
               files={host.files}
               keep={this.keep}
               onPreview={this.preview}
+              shows={o.shown === 'proposal' ? 'after' : o.shown === null ? 'before' : null}
               reference={o.assist.reference}
               providers={o.assist.providers}
               confirmSend={o.assist.confirmSend}
