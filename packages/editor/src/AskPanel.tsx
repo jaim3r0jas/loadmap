@@ -43,16 +43,18 @@ export interface AskPanelProps {
 }
 
 export const ASK_CSS = `
-.lme-ask { display: grid; gap: 10px; font-size: .84rem; }
+.lme-ask { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-size: .84rem; min-width: 0; }
+.lme-ask > *, .lme-ask-card > *, .lme-ask-thread > * { min-width: 0; max-width: 100%; }
+.lme-ask form { display: grid; gap: 6px; }
 .lme-ask-model { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .lme-ask-model select, .lme-ask-model input, .lme-ask textarea { min-width: 0; font: inherit; color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 5px; padding: 4px 7px; }
 .lme-ask-key { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .lme-ask-key input[type="password"] { flex: 1; }
-.lme-ask-thread { display: grid; gap: 8px; }
+.lme-ask-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .lme-ask-msg { padding: 6px 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lme-ask-msg[data-role="user"] { background: var(--lm-accent-soft); justify-self: end; max-width: 90%; }
 .lme-ask-msg[data-role="assistant"] { background: color-mix(in srgb, var(--lm-fg) 5%, transparent); }
-.lme-ask-card { border: 1px solid var(--lm-accent); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.lme-ask-card { border: 1px solid var(--lm-accent); border-radius: 8px; padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; overflow-wrap: anywhere; }
 .lme-ask-card ul { margin: 0; padding-left: 1.1em; }
 .lme-ask-card pre { margin: 0; max-height: 240px; overflow: auto; font: .74rem/1.45 var(--lm-mono); }
 .lme-ask-card .lme-add { background: color-mix(in srgb, var(--lm-ok) 16%, transparent); display: block; }
