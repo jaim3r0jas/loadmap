@@ -32,7 +32,7 @@ export interface TimelineProps {
 const WHO: Record<Commit['author'], string> = {
   you: 'You',
   assistant: 'Assistant',
-  opened: 'Opened',
+  opened: 'Start',
   restore: 'Restore',
 }
 
