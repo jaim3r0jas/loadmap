@@ -46,6 +46,7 @@ editor a new `key`, or call `setSource` on its handle.
 | `fileName`    | The name the downloaded file takes, without `.loadmap`; default the model's title                                         |
 | `fonts`       | The fonts View offers for the code: `CodeFont[]`; default `CODE_FONTS`, `[]` for the system's alone                       |
 | `history`     | A Timeline of versions, each a commit: `true`, or `{ key }` to keep it in this tab (see below)                            |
+| `assist`      | An Ask panel: a model the reader picks, its changes as proposals they accept (see below)                                  |
 | `ref`         | A `LoadmapEditorHandle`                                                                                                   |
 
 In `'code'` layout a click on a box selects its lines in the text. In `'reader'` layout the text is hidden: a click on
@@ -69,6 +70,31 @@ version in the canvas while the text stays as it is; **Restore this version** ma
 version on top; **Branch from here** tries another design from any version, and the branch's menu goes back. Nothing
 is rewritten. `history={{ key }}` mirrors the versions to this tab's storage (sessionStorage): a reload keeps them,
 closing the tab drops them. The handle's `history()` gives them as plain data (`HistoryData`).
+
+## Ask
+
+With `assist`, the canvas has an **Ask** panel: a conversation about the diagram with a model, a box's question
+about that box first. The reader picks a provider (Anthropic, DeepSeek, OpenAI, OpenRouter, Groq, Mistral, Gemini, or
+a local Ollama or LM Studio) and a model, and pastes their own key: it stays in this page's memory, or in this tab with
+**Keep for this tab**, and **Forget** drops it. The model reads `reference` (the site's `llms-full.txt`), the files and
+what the engine computes from them, and answers with operations by name. A change arrives as a proposal the compiler
+has checked: what it does, a diff per file, the capacities it wrote (a number nobody gave is marked as the assistant's
+guess), and what moves; the canvas draws it. **Accept** puts it in the text, one undo step per file and, with
+`history`, a version that keeps the request, the model and the operations; **Reject** drops it. A proposal about a
+text that changed since is refused.
+
+```tsx
+<LoadmapEditor
+  initial={source}
+  history
+  assist={{ reference: () => fetch('/llms-full.txt').then((r) => r.text()), providers: ['anthropic', 'deepseek'] }}
+/>
+```
+
+`assist.model` gives the panel a model of the page's own (behind its server, or `recorded` in a test) and hides the
+provider and the key. `assist.confirmSend` is asked before the first request of a session, with the provider: a page
+says there what leaves it. The page's Content-Security-Policy must allow the providers' origins
+(`PROVIDER_ORIGINS` of `@loadmap/dsl/assist`); the docs' editor lists them, with Ollama's and LM Studio's local ports.
 
 ## The handle
 

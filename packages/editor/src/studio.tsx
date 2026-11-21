@@ -1,7 +1,10 @@
 import { compile, type Definition, type HostFunctions } from '@loadmap/dsl'
+import type { Proposal } from '@loadmap/dsl/assist'
 import { Canvas } from '@loadmap/react'
 import { type ReactNode, Suspense } from 'react'
+import { type AskMemory, askMemory } from './AskMemory'
 import { type Author, History, type Trace } from './history'
+import type { EditorAssist } from './LoadmapEditor'
 import { later } from './Menu'
 import type { FileHost } from './reshape'
 
@@ -25,20 +28,24 @@ export interface StudioHost {
 }
 
 const Timeline = later(() => import('./Timeline'), 'The history did not load: reload the page.')
+const AskPanel = later(() => import('./AskPanel'), 'The Ask panel did not load: reload the page.')
 
 export class Studio {
   history: History | null = null
   /** Counts the history's changes, for the panels to draw again. */
   version = 0
+  /** The Ask panel's conversation, kept while its tab is closed. */
+  ask: AskMemory = askMemory()
 
   constructor(
     private host: () => StudioHost,
     private key?: string,
+    private keeps = true,
   ) {}
 
-  /** The history read back from the tab, or started from the files. */
+  /** The history read back from the tab, or started from the files, when the page asked for one. */
   async open(): Promise<this> {
-    this.history = await History.open(this.host().files(), this.key)
+    if (this.keeps) this.history = await History.open(this.host().files(), this.key)
     this.touch()
     return this
   }
@@ -66,10 +73,48 @@ export class Studio {
     this.host().show(r.definition ? c.id : null, r.definition)
   }
 
+  /** A proposal drawn in the canvas until it is accepted or dropped; null draws the files again. */
+  preview = (p: Proposal | null) => {
+    if (!p) return this.host().show(null)
+    const { entry, files } = p.project
+    const r = compile(files[entry] ?? '', { path: entry, files, functions: this.host().functions })
+    this.host().show(r.definition ? 'proposal' : null, r.definition)
+  }
+
+  /** The note over the canvas while a version or a proposal is drawn, with the way back to the files. */
+  note(id: string): ReactNode {
+    return (
+      <p className="lme-stale">
+        {id === 'proposal' ? 'Showing the proposal.' : 'Showing an older version.'}{' '}
+        <button type="button" className="lm-btn lme-quiet" onClick={() => this.host().show(null)}>
+          Back to now
+        </button>
+      </p>
+    )
+  }
+
   /** The panels for the canvas, in its slot's order. */
-  panels(o: { history: boolean; shown: string | null }): ReactNode[] {
+  panels(o: { history: boolean; assist?: EditorAssist; selected: string | null; shown: string | null }): ReactNode[] {
     const host = this.host()
     return [
+      o.assist && (
+        <Canvas.Panel key="ask" id="ask" title="Ask">
+          <Suspense fallback={null}>
+            <AskPanel
+              host={host.fileHost}
+              files={host.files}
+              keep={this.keep}
+              onPreview={this.preview}
+              reference={o.assist.reference}
+              providers={o.assist.providers}
+              confirmSend={o.assist.confirmSend}
+              model={o.assist.model}
+              memory={this.ask}
+              selected={o.selected}
+            />
+          </Suspense>
+        </Canvas.Panel>
+      ),
       o.history && (
         <Canvas.Panel key="timeline" id="timeline" title="Timeline">
           {this.history ? (

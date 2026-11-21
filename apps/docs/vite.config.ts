@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { PROVIDER_ORIGINS } from '@loadmap/dsl/assist'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { withPolicy } from './csp'
@@ -62,6 +63,9 @@ function exchangeOrigin(mode: string): string[] {
   return app ? [new URL(app.exchange).origin] : []
 }
 
+/** The model providers the Ask panel may call from the browser, and the local servers on their usual ports. */
+const MODELS = [...PROVIDER_ORIGINS, 'http://localhost:11434', 'http://localhost:1234']
+
 /** The editor's page gets its Content-Security-Policy once built: the dev server's own scripts would break it. */
 function policy(mode: string): Plugin {
   return {
@@ -70,7 +74,9 @@ function policy(mode: string): Plugin {
     transformIndexHtml: {
       order: 'post',
       handler: (html, ctx) =>
-        ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html, exchangeOrigin(mode)) : html,
+        ctx.path.replace(/^\//, '') === 'editor/index.html'
+          ? withPolicy(html, [...exchangeOrigin(mode), ...MODELS])
+          : html,
     },
   }
 }

@@ -16,6 +16,7 @@ export {
   gate,
   type Proposal,
 } from './gate'
+export { type DiffLine, diffLines } from './lines'
 export {
   type AnthropicOptions,
   anthropic,
