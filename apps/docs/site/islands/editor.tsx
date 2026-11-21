@@ -30,7 +30,7 @@ import jetbrainsMono from '../fonts/jetbrains-mono.woff2?url'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { changedCount, changedText, changes } from './github/changes'
-import { allVersions, type Version, versionsSince } from './github/commits'
+import { allVersions, endingWith, type Version, versionsSince } from './github/commits'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
 import { clearAside, leave as leaveTab, type RepoTab, readAside, readTab, writeTab } from './github/tab'
@@ -258,18 +258,13 @@ function useHelp(): [boolean, (open: boolean) => void] {
 
 function Editor({ root }: { root: URL }) {
   const editor = useRef<LoadmapEditorHandle>(null)
-  const [newRepo, setNewRepo] = useState(false)
-  /** What a new repository starts with: every version of the history, else the files as they are. */
+  /** What a new repository starts with, worked out when its dialog opens: every version, then the files as they are. */
+  const [newRepo, setNewRepo] = useState<Version[] | null>(null)
   const allNow = (): Version[] => {
     const h = editor.current?.history()
     const live = editor.current?.files().files ?? {}
     const v = h ? allVersions(h) : []
-    const last = v.at(-1)?.files
-    const same =
-      !!last &&
-      Object.keys(live).length === Object.keys(last).length &&
-      Object.entries(live).every(([p, x]) => last[p] === x)
-    return same ? v : [...v, { message: v.length ? 'Edited' : 'A loadmap model', files: { ...live } }]
+    return endingWith(v, live, null, v.length ? 'Edited' : 'A loadmap model')
   }
   /** The editor's versions since the repository's files were opened, the files as they are now the last. */
   const versionsNow = (): Version[] | undefined => {
@@ -277,12 +272,7 @@ function Editor({ root }: { root: URL }) {
     const t = repo.current
     if (!h || !t) return undefined
     const v = versionsSince(h, t.origin.originals)
-    if (!v) return undefined
-    const live = editor.current!.files().files
-    const last = v.at(-1)?.files ?? t.origin.originals
-    const same =
-      Object.keys(live).length === Object.keys(last).length && Object.entries(live).every(([p, x]) => last[p] === x)
-    return same ? v : [...v, { message: 'Edited', files: { ...live } }]
+    return v && endingWith(v, editor.current!.files().files, t.origin.originals)
   }
   // a private repository's files leave this page only once the reader says so, once per session
   const assist = useMemo(
@@ -319,6 +309,9 @@ function Editor({ root }: { root: URL }) {
   const [changed, setChanged] = useState(() => (tab ? changedCount(tab) : 0))
   const [showChanges, setShowChanges] = useState(false)
   const [showSave, setShowSave] = useState(false)
+  // worked out once as the save opens, not on every draw while it is open
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read as the dialog opens; the editor is read through a ref
+  const saveVersions = useMemo(() => (showSave ? versionsNow() : undefined), [showSave])
   // the tab could not keep a private repository's files: a reload would lose the edits, and the page says so
   const [unkept, setUnkept] = useState(false)
   const keep = (t: RepoTab) => {
@@ -522,7 +515,7 @@ function Editor({ root }: { root: URL }) {
         {
           label: 'Save to a new repository…',
           hint: 'In your account, private unless you choose; every version a commit',
-          onSelect: () => setNewRepo(true),
+          onSelect: () => setNewRepo(allNow()),
         },
         ...(aside
           ? [
@@ -557,9 +550,9 @@ function Editor({ root }: { root: URL }) {
       {newRepo && (
         <Suspense fallback={null}>
           <NewRepoDialog
-            versions={allNow()}
+            versions={newRepo}
             name={(editor.current?.files().path.split('/').pop() ?? 'model').replace(/\.loadmap$/, '')}
-            onClose={() => setNewRepo(false)}
+            onClose={() => setNewRepo(null)}
           />
         </Suspense>
       )}
@@ -583,7 +576,7 @@ function Editor({ root }: { root: URL }) {
             origin={repo.current.origin}
             path={repo.current.path}
             list={changes(repo.current)}
-            versions={versionsNow()}
+            versions={saveVersions}
             onSaved={saved}
             onClose={() => {
               setShowSave(false)

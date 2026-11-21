@@ -128,6 +128,9 @@ export class Studio {
   download = async () => {
     const h = this.history
     if (!h) return
+    // a browser without the compression git's objects need says so, rather than nothing happening
+    if (typeof CompressionStream === 'undefined' || !globalThis.crypto?.subtle)
+      throw new Error('this browser cannot write a git bundle (it lacks CompressionStream or crypto.subtle).')
     const { bundle } = await import('./bundle')
     const bytes = await bundle(h)
     const name =

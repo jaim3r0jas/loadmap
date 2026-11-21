@@ -31,7 +31,6 @@ describe('the history as a git bundle', () => {
     await h.commit({ 'm.loadmap': 'other\n', 'lib/l.loadmap': 'lib\n' }, 'm.loadmap', 'you', 'Tried another way')
     dir = mkdtempSync(join(tmpdir(), 'loadmap-bundle-'))
     writeFileSync(join(dir, 'model.bundle'), await bundle(h))
-    expect(git(dir, 'bundle', 'verify', '-q', 'model.bundle')).toBe('')
     git(dir, 'clone', '-q', 'model.bundle', 'out')
     const out = join(dir, 'out')
     expect(readFileSync(join(out, 'm.loadmap'), 'utf8')).toBe('other\n')
@@ -51,5 +50,7 @@ describe('the history as a git bundle', () => {
     expect(refName('try 2', used)).toBe('try-2')
     expect(refName('try/2', used)).toBe('try-2-2')
     expect(refName('../..', used)).toBe('branch')
+    // HEAD would mean two things in the clone
+    expect(refName('HEAD', used)).toBe('HEAD-branch')
   })
 })

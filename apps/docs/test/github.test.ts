@@ -5,7 +5,7 @@ import type { HistoryData } from '@loadmap/editor'
 import { describe, expect, it, vi } from 'vitest'
 import { client, GitHubError } from '../site/islands/github/api'
 import { changedCount, changedText, changes } from '../site/islands/github/changes'
-import { allVersions, createRepo, versionsSince } from '../site/islands/github/commits'
+import { allVersions, createRepo, RepoMade, versionsSince } from '../site/islands/github/commits'
 import { lineDiff } from '../site/islands/github/Diff'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
@@ -616,6 +616,24 @@ describe('saving to GitHub', () => {
     expect((c2![2] as { parents: string[] }).parents).toEqual([expect.stringMatching(/^[0-9a-f]{40}$/)])
     expect((c2![2] as { parents: string[] }).parents[0]).not.toBe(shaOf('commit:main'))
     expect(ref![2]).toEqual({ ref: 'refs/heads/loadmap/versions', sha: saved.commit })
+    // the next save writes its tree on this one: never on an empty tree, which would drop every other file
+    expect(saved.tree).toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  it('makes no commit for a version that changes no file', async () => {
+    const fake = fakeGitHub({ ...REPO, token })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    const versions = [
+      { message: 'Edited', files: { 'shop.loadmap': 'a\nb' } },
+      { message: 'Another model file, same text', files: { 'shop.loadmap': 'a\nb' } },
+    ]
+    await save(gh, origin({ originals: { 'shop.loadmap': 'a' }, crlf: [] }), list.slice(0, 1), {
+      branch: 'loadmap/same',
+      onto: 'new',
+      message: 'x',
+      versions,
+    })
+    expect(posts(fake).filter(([, path]) => String(path).endsWith('/git/commits'))).toHaveLength(1)
   })
 
   it("makes a repository in the reader's account and writes every version to it, once its branch is there", async () => {
@@ -654,5 +672,33 @@ describe('saving to GitHub', () => {
     await expect(createRepo(gh, { name: 'bad name', private: true }, [], () => {}, 0)).rejects.toThrow(
       'A repository name is letters, digits',
     )
+  })
+
+  it('says a repository was made when its versions were not written, and writes them there on the next press', async () => {
+    const fake = fakeGitHub({
+      owner: 'reader',
+      name: 'my-model',
+      refs: { main: { 'README.md': '# my-model' } },
+      token,
+      // longer than the reads wait: the first press gives up
+      creatable: { notYet: 6 },
+    })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    const failed = await createRepo(gh, { name: 'my-model', private: true }, allVersions(history), () => {}, 0).catch(
+      (e: unknown) => e,
+    )
+    expect(failed).toBeInstanceOf(RepoMade)
+    expect((failed as RepoMade).message).toMatch(/^reader\/my-model was made, but its versions were not written: /)
+    const made = await createRepo(
+      gh,
+      { name: 'ignored', private: true },
+      allVersions(history),
+      () => {},
+      0,
+      (failed as RepoMade).made,
+    )
+    expect(made.name).toBe('my-model')
+    // one repository: the second press made none
+    expect(posts(fake).filter(([, path]) => path === '/user/repos')).toHaveLength(1)
   })
 })

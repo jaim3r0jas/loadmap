@@ -46,7 +46,9 @@ function concat(parts: Uint8Array[]): Uint8Array {
  * "try-2" is "try-2-2").
  */
 export function refName(name: string, used: Set<string>): string {
-  const base = name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'branch'
+  const cut = name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'branch'
+  // a branch called HEAD would make HEAD mean two things in the clone
+  const base = cut.toUpperCase() === 'HEAD' ? `${cut}-branch` : cut
   let out = base
   for (let n = 2; used.has(out); n++) out = `${base}-${n}`
   used.add(out)

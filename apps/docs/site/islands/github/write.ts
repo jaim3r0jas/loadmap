@@ -72,7 +72,7 @@ export async function save(
         exec: origin.exec,
       },
     )
-    return moved(gh, origin, r, last, '', step)
+    return moved(gh, origin, r, last.commit, last.tree, step)
   }
   const tree = await gh.json<{ sha: string }>(`${at}/git/trees`, {
     method: 'POST',

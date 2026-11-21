@@ -133,7 +133,10 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
       if (method === 'PATCH' && rest.startsWith('/git/refs/heads/')) {
         const b = rest.slice('/git/refs/heads/'.length)
         if (!tip(b)) return json(422, { message: 'Reference does not exist' })
-        if (!body.force && parents.get(body.sha) !== tip(b))
+        // a fast forward: the branch's commit is among the new one's ancestors, however many commits back
+        const ahead = (sha: string | undefined, n = 0): boolean =>
+          sha != null && n < 1000 && (sha === tip(b) || ahead(parents.get(sha), n + 1))
+        if (!body.force && body.sha !== tip(b) && !ahead(parents.get(body.sha)))
           return json(422, { message: 'Update is not a fast forward' })
         made.set(b, body.sha)
         return json(200, { ref: `refs/heads/${b}`, object: { sha: body.sha } })
