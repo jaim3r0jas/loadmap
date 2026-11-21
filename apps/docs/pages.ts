@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { LANGUAGE_VERSION } from '@loadmap/dsl'
 import { Marked, type Token } from 'marked'
-import { shippedReference } from '../../scripts/reference'
+import { fullReference } from '../../scripts/reference'
 import { changelogFiles, releases, whatsNew } from './changelog'
 import { highlight } from './highlight'
 import { HEAD } from './site/theme'
@@ -729,31 +729,7 @@ export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
     `- [llms-full.txt](${PUBLISHED}llms-full.txt): the language guide and the whole reference in one file, and one model that uses every statement`,
     '',
   ].join('\n')
-  const model = readFileSync(join(repo, 'docs/every-statement.loadmap'), 'utf8').trimEnd()
-  const full = [
-    shippedReference().trimEnd(),
-    '',
-    '## A complete model',
-    '',
-    'Every statement and top-level property of the language at least once, and an edge with a block and one without:',
-    '',
-    '```loadmap',
-    model,
-    '```',
-    '',
-    '## A model in several files',
-    '',
-    'A model (`shop.loadmap`), a part of it, the library it imports and a variant of it:',
-    '',
-    ...['shop.loadmap', 'shop.story.loadmap', 'platform.loadmap', 'shop.big.loadmap'].flatMap((f) => [
-      `\`docs/multi-file/${f}\`:`,
-      '',
-      '```loadmap',
-      readFileSync(join(repo, 'docs/multi-file', f), 'utf8').trimEnd(),
-      '```',
-      '',
-    ]),
-  ].join('\n')
+  const full = fullReference()
   return { 'llms.txt': map, 'llms-full.txt': full }
 }
 
