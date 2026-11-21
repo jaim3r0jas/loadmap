@@ -23,7 +23,8 @@
     ".": "./src/index.ts",
     "./internal": "./src/internal.ts",
     "./completion": "./src/completion.ts",
-    "./add": "./src/add.ts"
+    "./add": "./src/add.ts",
+    "./ops": "./src/ops.ts"
   },
   "publishConfig": {
     "exports": {
@@ -42,6 +43,10 @@
       "./add": {
         "types": "./dist/add.d.ts",
         "import": "./dist/add.js"
+      },
+      "./ops": {
+        "types": "./dist/ops.d.ts",
+        "import": "./dist/ops.js"
       }
     }
   },

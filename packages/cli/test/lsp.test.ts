@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { lsp } from '../src'
 
@@ -255,5 +259,94 @@ describe('loadmap lsp', () => {
     const { c } = await started()
     c.end()
     expect(await c.exit).toBe(1)
+  })
+})
+
+describe('loadmap lsp, refactorings', () => {
+  const shop = readFileSync(new URL('../../../examples/shop-live/shop.loadmap', import.meta.url), 'utf8')
+  const story = 'loadmap 1.6\npart of "./shop.loadmap"\n'
+
+  /** A project on disk, the model open in a client that can make, move and remove files. */
+  async function project() {
+    const dir = await mkdtemp(join(tmpdir(), 'loadmap-lsp-'))
+    const model = shop.replace('loadmap 1.6\n', 'loadmap 1.6\ninclude "./shop.story.loadmap"\n')
+    await writeFile(join(dir, 'shop.loadmap'), model)
+    await writeFile(join(dir, 'shop.story.loadmap'), story)
+    const c = client()
+    open = c
+    const workspaceEdit = { documentChanges: true, resourceOperations: ['create', 'rename', 'delete'] }
+    await c.request('initialize', {
+      processId: null,
+      rootUri: pathToFileURL(dir).href,
+      capabilities: { workspace: { workspaceEdit } },
+    })
+    c.notify('initialized')
+    const at = pathToFileURL(join(dir, 'shop.loadmap')).href
+    c.notify('textDocument/didOpen', { textDocument: { uri: at, languageId: 'loadmap', version: 1, text: model } })
+    return { c, dir, model, at }
+  }
+
+  it('offers a statement removed with its edges, or moved to a part, only when asked', async () => {
+    const { c, model, at } = await project()
+    const where = { start: pos(model, 'pool orderWorkers', 5), end: pos(model, 'pool orderWorkers', 5) }
+    const quiet = await c.request('textDocument/codeAction', {
+      textDocument: { uri: at },
+      range: where,
+      context: { diagnostics: [] },
+    })
+    expect(quiet.result).toEqual([])
+    const asked = await c.request('textDocument/codeAction', {
+      textDocument: { uri: at },
+      range: where,
+      context: { diagnostics: [], only: ['refactor'] },
+    })
+    expect(asked.result.map((a: any) => [a.title, a.kind])).toEqual([
+      ['Remove pool orderWorkers with its edges and routes', 'refactor.rewrite'],
+      ['Move orderWorkers to shop.story.loadmap', 'refactor.move'],
+    ])
+    const remove = asked.result[0].edit.changes[at][0].newText as string
+    expect(remove).not.toMatch(/\borderWorkers\b/)
+  })
+
+  it('applies a list of operations sent as a command, as one edit across files', async () => {
+    const { c, at, dir } = await project()
+    const r = await c.request('workspace/executeCommand', {
+      command: 'loadmap.applyOperations',
+      arguments: [
+        {
+          uri: at,
+          operations: [
+            { op: 'move', target: 'orderWorkers', to: 'shop.story.loadmap' },
+            { op: 'rename', target: 'orderWorkers', to: 'checkoutWorkers' },
+          ],
+        },
+      ],
+    })
+    expect(r.result).toMatchObject({
+      notes: [
+        'Moved orderWorkers to shop.story.loadmap',
+        'Renamed orderWorkers to checkoutWorkers, also in shop.loadmap',
+      ],
+    })
+    const apply = c.notes.find((n) => n.method === 'workspace/applyEdit')
+    const part = pathToFileURL(join(dir, 'shop.story.loadmap')).href
+    expect(Object.keys(apply.params.edit.changes).sort()).toEqual([at, part].sort())
+    expect(apply.params.edit.changes[part][0].newText).toContain('pool checkoutWorkers ')
+    const refused = await c.request('workspace/executeCommand', {
+      command: 'loadmap.applyOperations',
+      arguments: [{ uri: at, operations: [{ op: 'remove', target: 'nothing' }] }],
+    })
+    expect(refused.error).toEqual({ code: -32803, message: 'operation 1: nothing is named "nothing"' })
+  })
+
+  it('makes a new file through the client', async () => {
+    const { c, at, dir } = await project()
+    await c.request('workspace/executeCommand', {
+      command: 'loadmap.applyOperations',
+      arguments: [{ uri: at, operations: [{ op: 'addFile', path: 'workers.loadmap', role: 'part' }] }],
+    })
+    const apply = c.notes.find((n) => n.method === 'workspace/applyEdit')
+    const made = pathToFileURL(join(dir, 'workers.loadmap')).href
+    expect(apply.params.edit.documentChanges[0]).toEqual({ kind: 'create', uri: made })
   })
 })
