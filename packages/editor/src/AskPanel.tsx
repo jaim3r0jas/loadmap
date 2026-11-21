@@ -73,6 +73,26 @@ export const ASK_CSS = `
 .lme-ask textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; }
 `
 
+/** Questions about a box, one press each: the model answers in words, and "Draft this" turns advice into a change. */
+const QUICK: { label: string; ask: (box: string) => string }[] = [
+  { label: 'Explain it', ask: (b) => `Explain ${b}: what it is in this model, what limits it, and at what load.` },
+  {
+    label: 'What runs through it',
+    ask: (b) => `What runs through ${b}: each flow that reaches it, how much, and what it costs it.`,
+  },
+  {
+    label: 'Is a flow missing?',
+    ask: (b) => `Is a flow missing at ${b}? Look at what reaches it and at what it does. Change nothing yet.`,
+  },
+  {
+    label: 'Critique it',
+    ask: (b) =>
+      `Critique how ${b} is modelled: its capacity's source, its demand, what is missing. Change nothing yet.`,
+  },
+]
+
+const DRAFT = 'Draft the change you suggest, as operations.'
+
 /** The reader's choice of model, kept in this tab: the provider and the model's name, never the key. */
 const PICK = 'loadmap-assist-model'
 
@@ -102,6 +122,7 @@ export default function AskPanel(p: AskPanelProps) {
   const [scoped, setScoped] = useState(true)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
+  const [advice, setAdvice] = useState(m.advice)
   const stop = useRef<AbortController | null>(null)
   // what the panel draws, kept for the next time it opens
   m.turns = turns
@@ -109,6 +130,7 @@ export default function AskPanel(p: AskPanelProps) {
   m.request = request
   m.proposal = proposal
   m.usage = usage
+  m.advice = advice
 
   useEffect(() => {
     try {
@@ -135,9 +157,11 @@ export default function AskPanel(p: AskPanelProps) {
   }, [proposal])
 
   const box = scoped ? p.selected : null
-  const send = async (e?: FormEvent) => {
+  /** `drafting`: "Draft this", about what the advice was about, and the version keeps the question that led to it. */
+  const send = async (e?: FormEvent, said?: string, drafting = false) => {
     e?.preventDefault()
-    const words = request.trim()
+    const about = drafting ? m.asked.box : box
+    const words = (said ?? request).trim()
     if (!words || busy) return
     if (!p.model && !preset.local && !key.trim()) {
       setNote(`${preset.name} needs a key: paste one above.`)
@@ -158,11 +182,12 @@ export default function AskPanel(p: AskPanelProps) {
       return
     }
     setNote('')
-    setRequest('')
+    if (said == null) setRequest('')
     setProposal(null)
+    setAdvice(false)
     setBusy(true)
     setTurns((t) => [...t, { n: t.length, role: 'user', text: words }])
-    m.asked = { request: words, box, model: model.model }
+    m.asked = { request: drafting ? m.asked.request : words, box: about, model: model.model }
     const files = p.files()
     const assistant = createAssistant({ model, reference: p.reference })
     const control = new AbortController()
@@ -172,7 +197,7 @@ export default function AskPanel(p: AskPanelProps) {
       for await (const ev of assistant.ask({
         request: words,
         project: { entry: files.path, files: files.files },
-        ...(box && { selection: { box } }),
+        ...(about && { selection: { box: about } }),
         thread: m.thread,
         signal: control.signal,
       }) as AsyncGenerator<AssistEvent>) {
@@ -183,13 +208,16 @@ export default function AskPanel(p: AskPanelProps) {
           text = ''
           setStreaming('')
           setNote(`The answer did not compile; asked again (${ev.attempt} of 2).`)
-        } else if (ev.type === 'answer') setTurns((t) => [...t, { n: t.length, role: 'assistant', text: ev.text }])
-        else if (ev.type === 'questions')
+        } else if (ev.type === 'answer') {
+          setTurns((t) => [...t, { n: t.length, role: 'assistant', text: ev.text }])
+          setAdvice(true)
+        } else if (ev.type === 'questions')
           setTurns((t) => [...t, { n: t.length, role: 'assistant', text: ev.questions.join('\n') }])
         else if (ev.type === 'explore') {
           setNote('The model asks to read your metrics: this page has no connection to them.')
         } else if (ev.type === 'refused') setNote(`No change: ${ev.error}`)
         else if (ev.type === 'proposal') {
+          setAdvice(false)
           m.ops = ev.proposal.operations.map((o) => JSON.stringify(o))
           setProposal(ev.proposal)
         } else if (ev.type === 'done') {
@@ -328,6 +356,28 @@ export default function AskPanel(p: AskPanelProps) {
         />
       )}
       {note && <p className="lme-hint">{note}</p>}
+      {box && !busy && (
+        <fieldset className="lme-ask-row">
+          <legend className="lm-sr">Ask about {box}</legend>
+          {QUICK.map((q) => (
+            <button
+              key={q.label}
+              type="button"
+              className="lme-ask-chip"
+              onClick={() => void send(undefined, q.ask(box))}
+            >
+              {q.label}
+            </button>
+          ))}
+        </fieldset>
+      )}
+      {advice && !busy && !proposal && (
+        <div className="lme-ask-row">
+          <button type="button" className="lm-btn" onClick={() => void send(undefined, DRAFT, true)}>
+            Draft this
+          </button>
+        </div>
+      )}
       <form onSubmit={send}>
         <div className="lme-ask-row">
           {p.selected && (

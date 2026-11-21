@@ -23,6 +23,8 @@ export interface AskMemory {
   asked: { request: string; box: string | null; model: string }
   ops: string[]
   used?: { input: number; output: number; cached?: number }
+  /** The last answer was words only: "Draft this" may follow. */
+  advice: boolean
 }
 
 export const askMemory = (): AskMemory => ({
@@ -34,4 +36,5 @@ export const askMemory = (): AskMemory => ({
   thread: [],
   asked: { request: '', box: null, model: '' },
   ops: [],
+  advice: false,
 })

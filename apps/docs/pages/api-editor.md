@@ -84,6 +84,11 @@ guess), and what moves; the canvas draws it, the boxes it adds dashed and those 
 `history`, a version that keeps the request, the model and the operations; **Reject** drops it. A proposal about a text
 that changed since is refused.
 
+With a box selected, **Explain it**, **What runs through it**, **Is a flow missing?** and **Critique it** ask about it
+in one press. The model gets what the engine computes for the box: its use, demand and capacity, where the capacity
+came from, and what reaches it per flow. An answer in words alone offers **Draft this**, which asks for the change it
+advised.
+
 ```tsx
 <LoadmapEditor
   initial={source}
@@ -93,8 +98,8 @@ that changed since is refused.
 ```
 
 `assist.model` gives the panel a model of the page's own (behind its server, or `recorded` in a test) and hides the
-provider and the key. `assist.confirmSend` is asked before the first request of a session, with the provider: a page
-says there what leaves it. The page's Content-Security-Policy must allow the providers' origins
+provider and the key. `assist.confirmSend` is asked before each request, with the provider: a page says there what
+leaves it. The page's Content-Security-Policy must allow the providers' origins
 (`PROVIDER_ORIGINS` of `@loadmap/dsl/assist`); the docs' editor lists them, with Ollama's and LM Studio's local ports.
 
 ## The handle
