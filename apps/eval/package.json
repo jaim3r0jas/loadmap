@@ -1,0 +1,12 @@
+{
+  "name": "@loadmap/eval",
+  "private": true,
+  "description": "Which models write loadmap well: requests against the examples, run by hand against a model, never in check.",
+  "type": "module",
+  "scripts": {
+    "eval": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@loadmap/dsl": "workspace:*"
+  }
+}

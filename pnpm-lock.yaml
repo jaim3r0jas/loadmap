@@ -300,6 +300,12 @@ importers:
         specifier: 1.0.4
         version: 1.0.4
 
+  apps/eval:
+    dependencies:
+      '@loadmap/dsl':
+        specifier: workspace:*
+        version: link:../../packages/dsl
+
   examples/alerts:
     dependencies:
       '@loadmap/core':

@@ -24,6 +24,7 @@
     "apps/docs/test",
     "apps/docs/*.ts",
     "apps/github-auth",
+    "apps/eval",
     "vitest.config.ts",
     "scripts/budget"
   ],
