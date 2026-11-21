@@ -1,3 +1,4 @@
+import { EditorView } from '@codemirror/view'
 import { recorded } from '@loadmap/dsl/assist'
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -67,9 +68,13 @@ describe('the Ask panel', () => {
     expect(handle.source()).not.toContain('scenario "Eight"')
     await ask('Add a scenario')
     await expect.element(card).toBeVisible()
-    handle.setSource(`${checkout}\n# typed since\n`)
+    // the reader types meanwhile
+    const view = EditorView.findFromDOM(document.querySelector('.cm-editor') as HTMLElement)!
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '\n# typed since\n' } })
     await userEvent.click(card.getByRole('button', { name: 'Accept' }))
-    await expect.element(page.getByText('The text changed since the question')).toBeVisible()
+    await expect
+      .poll(() => document.querySelector('.lme-ask .lme-hint')?.textContent)
+      .toContain('The text changed since the question')
     expect(handle.source()).not.toContain('scenario "Eight"')
   })
 })
