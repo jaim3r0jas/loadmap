@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { type EditorLayout, LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { type EditorFiles, type EditorLayout, LoadmapEditor, type LoadmapEditorHandle } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -16,7 +16,13 @@ afterEach(() => {
 })
 
 async function mount(
-  o: { source?: string; values?: Record<string, ParamValue>; layout?: EditorLayout; width?: number } = {},
+  o: {
+    source?: string
+    values?: Record<string, ParamValue>
+    layout?: EditorLayout
+    width?: number
+    files?: EditorFiles
+  } = {},
 ) {
   await page.viewport(o.width ?? 1440, 1000)
   const host = document.createElement('div')
@@ -28,6 +34,7 @@ async function mount(
     <LoadmapEditor
       ref={ref}
       initial={o.source ?? checkout}
+      files={o.files}
       values={o.values}
       layout={o.layout}
       onShare={(h) => {
@@ -90,6 +97,65 @@ describe('the editor for readers', () => {
     const at = view.state.doc.toString().indexOf('shape: cylinder')
     view.dispatch({ selection: { anchor: at }, scrollIntoView: true })
     await expect.poll(() => box(host, 'db').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('shows a box written inside a subsystem, in the file that writes it for every subsystem like it', async () => {
+    const lib = [
+      'loadmap 1.5',
+      'library "Regions"',
+      'subsystem line "Orders" {',
+      '  input flow main',
+      '  node workers "Workers" { pass; demand: flows.main; capacity: estimated(10, "req/s"); over: "x" }',
+      '}',
+      'subsystem region "Region" {',
+      '  input flow main',
+      '  node api "API" { pass; demand: flows.main; capacity: estimated(100, "req/s"); over: "x" }',
+      '  subsystem orders { like: line; with { main: main } }',
+      '  api -> orders.workers',
+      '}',
+      '',
+    ].join('\n')
+    const model = [
+      'loadmap 1.5',
+      'import "./regions.loadmap" { region }',
+      'load "x" { max: 10; default: 1 }',
+      'flow eu "eu" { rate: load; route: eu.api -> eu.orders.workers; from: s }',
+      'flow us "us" { rate: 2 * load; route: us.api -> us.orders.workers; from: s }',
+      'node s "Start"',
+      'subsystem eu "EU region" { like: region; with { main: eu } }',
+      'subsystem us "US region" { like: region; with { main: us } }',
+      's -> eu.api',
+      's -> us.api',
+      '',
+    ].join('\n')
+    const { host, handle } = await mount({
+      source: model,
+      layout: 'reader',
+      files: { path: 'm.loadmap', files: { 'm.loadmap': model, 'regions.loadmap': lib } },
+    })
+    const heading = () => host.querySelector('.lme-inspector h3')?.textContent
+    const shared = () => host.querySelector('.lme-inspector [data-kind="shared"]')?.textContent
+    // "eu.api" is no statement of any file: it is the api of the subsystem "eu" is like, in the library
+    await userEvent.click(box(host, 'eu.api'))
+    await expect.poll(heading).toBe('API')
+    expect(shared()).toBe('Written once for 2 boxes: a change here also changes us.api.')
+    // a subsystem in a subsystem, from the same library
+    await userEvent.click(box(host, 'us.orders.workers'))
+    await expect.poll(heading).toBe('Workers')
+    expect(shared()).toBe('Written once for 2 boxes: a change here also changes eu.orders.workers.')
+    // a box of the model is its own
+    await userEvent.click(box(host, 's'))
+    await expect.poll(heading).toBe('Start')
+    expect(shared()).toBeUndefined()
+    // a change is written once, in the library, and both regions draw it
+    await userEvent.click(box(host, 'us.api'))
+    await expect.poll(heading).toBe('API')
+    await type(input(host, 'subsystem:region/node:api/@label'), 'Front')
+    await expect.poll(() => box(host, 'eu.api').textContent, { timeout: 5000 }).toContain('Front')
+    expect(box(host, 'us.api').textContent).toContain('Front')
+    await expect.poll(heading, { timeout: 5000 }).toBe('Front')
+    expect(handle.files().files['regions.loadmap']).toContain('  node api "Front" { pass;')
+    expect(handle.files().files['m.loadmap']).toBe(model)
   })
 
   it('opens without the text; a click, two changes and a link that reopens with them', async () => {

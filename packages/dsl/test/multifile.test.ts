@@ -16,7 +16,7 @@ import {
   renameAcross,
 } from '../src'
 import { completionsAcross } from '../src/completion'
-import { edit, fileText, inspect, relativePath, resolvePath, takeLine } from '../src/internal'
+import { boxPath, edit, fileText, inspect, relativePath, resolvePath, takeLine } from '../src/internal'
 
 /** The multi-file example of the docs: a model, its part, the library it imports and a variant. */
 const DIR = 'docs/multi-file'
@@ -593,6 +593,133 @@ describe('a box like another', () => {
     ])
     // a prototype of a library: the other box is not in this text
     expect(inspect(base[MODEL]!, { node: 'db' })!.sections[0]!.like).toMatchObject({ from: 'postgres', taken: [] })
+  })
+})
+
+describe('a box inside a subsystem, in the inspector', () => {
+  const lib = [
+    'loadmap 1.5',
+    'library "Regions"',
+    'subsystem line "Orders" {',
+    '  input flow main',
+    '  node workers "Workers" { pass; demand: flows.main; capacity: estimated(10, "req/s"); over: "x" }',
+    '}',
+    'subsystem region "Region" {',
+    '  input flow main',
+    '  node api "API" { pass; demand: flows.main; capacity: estimated(100, "req/s"); over: "x" }',
+    '  subsystem orders { like: line; with { main: main } }',
+    '  api -> orders.workers',
+    '}',
+    '',
+  ].join('\n')
+  const model = [
+    'loadmap 1.5',
+    'import "./regions.loadmap" { region }',
+    'load "x" { max: 10; default: 1 }',
+    'flow eu "eu" { rate: load; route: eu.api -> eu.orders.workers; from: s }',
+    'flow us "us" { rate: 2 * load; route: us.api -> us.orders.workers; from: s }',
+    'node s "S"',
+    'subsystem eu "EU region" { like: region; with { main: eu } }',
+    'subsystem us "US region" { like: region; with { main: us } }',
+    's -> eu.api',
+    's -> us.api',
+    '',
+  ].join('\n')
+  const files = { 'm.loadmap': model, 'regions.loadmap': lib }
+
+  it('is found by its place in the file that writes it, one statement for a box in each subsystem like it', () => {
+    const r = compile(model, { path: 'm.loadmap', files })
+    expect(errors(r)).toEqual([])
+    // the diagram's ids are of the model; the statement that writes each is in the library, under another name
+    const boxes = r.symbols.filter((s) => s.kind === 'node' && s.file === 'regions.loadmap')
+    expect(Object.fromEntries(boxes.map((s) => [s.id, boxPath(lib, s.decl.from)]))).toEqual({
+      'eu.api': 'subsystem:region/node:api',
+      'eu.orders.workers': 'subsystem:line/node:workers',
+      'us.api': 'subsystem:region/node:api',
+      'us.orders.workers': 'subsystem:line/node:workers',
+    })
+    // no statement at the top says "eu.api": its place finds it
+    expect(inspect(lib, { node: 'eu.api' })).toBeNull()
+    const box = inspect(lib, { node: 'eu.api', path: 'subsystem:region/node:api' })!
+    expect(box.title).toBe('API')
+    expect(box.sections.map((s) => [s.path, s.fields.map((f) => f.key)])).toEqual([
+      [
+        'subsystem:region/node:api',
+        [
+          'subsystem:region/node:api/@label',
+          'subsystem:region/node:api/demand',
+          'subsystem:region/node:api/capacity',
+          'subsystem:region/node:api/over',
+        ],
+      ],
+    ])
+    // a change is one edit of the library, and of the box in every region
+    const e = edit(lib, 'subsystem:region/node:api/@label', 'Front', { path: 'regions.loadmap', files })
+    if ('error' in e) throw new Error(e.error)
+    expect(e.source).toContain('  node api "Front" { pass;')
+    const nodes = compile(model, { path: 'm.loadmap', files: { ...files, 'regions.loadmap': e.source } }).definition!
+      .view.def.nodes
+    expect([nodes['eu.api']!.label, nodes['us.api']!.label]).toEqual(['Front', 'Front'])
+    // anywhere in its lines; no box outside them, none in a text with a syntax error
+    expect(boxPath(lib, lib.indexOf('estimated(100'))).toBe('subsystem:region/node:api')
+    expect(boxPath(lib, lib.indexOf('input flow main'))).toBeUndefined()
+    expect(boxPath('node a {', 2)).toBeUndefined()
+  })
+
+  it('reads what is around it, and is like a box of the top', () => {
+    const one = [
+      'loadmap 1.5',
+      'load "L" { max: 2 }',
+      'param cost "Cost" { default: 2; min: 1; max: 4 }',
+      'flow f "f" { rate: load; route: a -> eu.b; from: start }',
+      'node start "Start"',
+      'node a "A" { store; demand: flows.f * cost; capacity: estimated(1_000, "req/s", "a test"); over: "requests queue" }',
+      'subsystem eu "EU" {',
+      '  let twice = cost * 2',
+      '  node a "Inner A" { pass; demand: flows.f * twice; capacity: estimated(5, "req/s"); over: "y" }',
+      '  node b "B" { like: a; short: "the second" }',
+      '}',
+      'start -> a',
+      'a -> eu.b',
+      '',
+    ].join('\n')
+    const r = compile(one)
+    expect(errors(r)).toEqual([])
+    expect(r.symbols.filter((s) => s.kind === 'node').map((s) => [s.id, boxPath(one, s.decl.from)])).toEqual([
+      ['start', 'node:start'],
+      ['a', 'node:a'],
+      ['eu.a', 'subsystem:eu/node:a'],
+      ['eu.b', 'subsystem:eu/node:b'],
+    ])
+    // the parameter it reads through a let of its subsystem comes along, as for a box of the top
+    const paths = (id: string, path: string) => inspect(one, { node: id, path })!.sections.map((s) => s.path)
+    expect(paths('eu.a', 'subsystem:eu/node:a')).toEqual(['subsystem:eu/node:a', 'param:cost'])
+    expect(paths('a', 'node:a')).toEqual(['node:a', 'param:cost'])
+    // a name its subsystem declares hides the same name of the top: the box does not read that parameter
+    const hidden = one.replace('let twice = cost * 2', 'let cost = 3').replace('flows.f * twice', 'flows.f * cost')
+    expect(errors(compile(hidden))).toEqual([])
+    expect(inspect(hidden, { node: 'eu.a', path: 'subsystem:eu/node:a' })!.sections.map((s) => s.path)).toEqual([
+      'subsystem:eu/node:a',
+    ])
+    // "a" is the box of the top, as the compiler takes it, not the one beside it
+    const b = inspect(one, { node: 'eu.b', path: 'subsystem:eu/node:b' })!.sections[0]!
+    expect(b.like).toEqual({
+      from: 'a',
+      taken: ['store', 'demand', 'capacity', 'over'],
+      lines: [
+        { name: 'demand', text: 'flows.f * cost' },
+        { name: 'capacity', text: 'estimated(1_000, "req/s", "a test")' },
+        { name: 'over', text: '"requests queue"' },
+      ],
+    })
+    const taken = takeLine(one, 'b', 'capacity', {}, 'subsystem:eu/node:b')
+    if ('error' in taken) throw new Error(taken.error)
+    expect(taken.source).toContain(
+      '  node b "B" { like: a; short: "the second"; capacity: estimated(1_000, "req/s", "a test") }',
+    )
+    // without its place there is no "b" at the top
+    expect(takeLine(one, 'b', 'capacity')).toHaveProperty('error')
+    expect(takeLine(one, 'b', 'short', {}, 'subsystem:eu/node:b')).toHaveProperty('error')
   })
 })
 

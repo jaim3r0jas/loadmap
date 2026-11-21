@@ -27,6 +27,11 @@ export interface InspectorProps {
   blocked?: string
   /** A box is selected but no longer in the text. */
   gone?: boolean
+  /**
+   * The other boxes of the diagram the selected box's lines draw: one written in a subsystem is a box in every
+   * subsystem like it.
+   */
+  shared?: readonly string[]
   /** Lets go of the box: on a phone the panel shrinks back to its hint. */
   onClose?: () => void
   /** The tiers, with the fills of their own, for the model's tab. */
@@ -54,6 +59,7 @@ export function Inspector({
   onTake,
   blocked,
   gone,
+  shared,
   onClose,
   lanes,
   onLane,
@@ -101,6 +107,11 @@ export function Inspector({
       ) : (
         <>
           <h3>{inspection.title}</h3>
+          {!!shared?.length && (
+            <p className="lme-hint" data-kind="shared">
+              {`Written once for ${shared.length + 1} boxes: a change here also changes ${listed(shared)}.`}
+            </p>
+          )}
           {inspection.sections.map((s) => (
             <Section key={s.path} s={s} onEdit={onEdit} onTake={onTake} />
           ))}
@@ -117,6 +128,12 @@ export function Inspector({
     </aside>
   )
 }
+
+/** A few ids by name, the rest counted. */
+const listed = (ids: readonly string[]) =>
+  ids.length > 3
+    ? `${ids.slice(0, 2).join(', ')} and ${ids.length - 2} more`
+    : ids.join(', ').replace(/, ([^,]*)$/, ' and $1')
 
 const LEGEND: Record<string, (s: InspectSection) => string> = {
   '': () => 'Model',

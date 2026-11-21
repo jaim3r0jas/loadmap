@@ -4,6 +4,7 @@ export { latestEdition } from './catalog'
 export { LIMITS, pageOptions } from './compile'
 export { closest, didYouMean, Reporter } from './diagnostics'
 export {
+  boxPath,
   type EditResult,
   type EditValue,
   edit,
