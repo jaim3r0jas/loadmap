@@ -25,6 +25,7 @@ import {
 } from '@loadmap/dsl'
 import { completionsAcross } from '@loadmap/dsl/completion'
 import { BOXES, type Decl, parse, Reporter, relativePath, SCHEMA, STAGES } from '@loadmap/dsl/internal'
+import { applyOperations, type Operation, type OperationsApplied, type Project } from '@loadmap/dsl/ops'
 import { loadmapFiles, project } from './project'
 
 /**
@@ -36,6 +37,10 @@ import { loadmapFiles, project } from './project'
  * A definition in several files is read with them: a part through its model, a model with its parts and libraries.
  * An open document wins over the file on disk, and nothing outside the workspace folder (else the git checkout) is
  * read. Definition, references and rename cross the files of a model; a change to any file checks the open ones again.
+ *
+ * The refactorings are the operations of @loadmap/dsl/ops: a statement removed with its edges and routes, or moved to
+ * a part, as code actions; any list of operations through the command `loadmap.applyOperations`, as an assistant
+ * sends them.
  */
 
 interface Message {
@@ -106,7 +111,8 @@ export const CAPABILITIES = {
   documentHighlightProvider: true,
   documentSymbolProvider: true,
   documentFormattingProvider: true,
-  codeActionProvider: { codeActionKinds: ['quickfix'] },
+  codeActionProvider: { codeActionKinds: ['quickfix', 'refactor.rewrite', 'refactor.move'] },
+  executeCommandProvider: { commands: ['loadmap.applyOperations'] },
   renameProvider: { prepareProvider: true },
   workspace: { workspaceFolders: { supported: true } },
 }
@@ -129,7 +135,8 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
   let shutdown = false
   let stopped = false
   // what the client can show: plain text where it reads no snippets or Markdown
-  let client = { snippets: true, markdown: true }
+  let client = { snippets: true, markdown: true, files: false }
+  let requests = 0
   let done: (code: number) => void = () => {}
   const finished = new Promise<number>((resolve) => {
     done = (code) => {
@@ -224,6 +231,80 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
     return p ? { path: p.path, files: p.files, ...(withPaths && { paths: p.paths() }) } : {}
   }
 
+  /** The project a document is in, as the operations take it: its model and every file of the root. */
+  function projectOf(d: Doc): (Project & { self: string }) | undefined {
+    const here = place(d)
+    if (!here) return undefined
+    const files: Record<string, string> = {}
+    for (const path of here.paths()) {
+      const t = here.files(path)
+      if (t != null) files[path] = t
+    }
+    files[here.path] = d.text
+    const head = imports(d.text, here.path)
+    const entry = head.role === 'part' ? (head.files.find((f) => f.kind === 'part')?.path ?? here.path) : here.path
+    return { entry, files, self: here.path }
+  }
+
+  /** What a list of operations did, as one workspace edit: each changed file whole, then the files made, moved, gone. */
+  function editOf(d: Doc, r: OperationsApplied, before: Project) {
+    const here = place(d)!
+    const whole = (path: string, old: string, text: string) => ({
+      textDocument: { uri: here.uriOf(path), version: null },
+      edits: [
+        { range: range({ uri: '', version: 0, text: old, lines: lineStarts(old) }, 0, old.length), newText: text },
+      ],
+    })
+    const from = (p: string) => r.renamed.find((x) => x.to === p)?.from ?? p
+    const plain = !r.added.length && !r.removed.length && !r.renamed.length
+    if (plain) {
+      const changes: Record<string, object[]> = {}
+      for (const p of r.changed) changes[here.uriOf(p)] = whole(p, before.files[p] ?? '', r.project.files[p]!).edits
+      return { changes }
+    }
+    if (!client.files) throw new Refused('this editor cannot make, move or remove files from the server')
+    const documentChanges: object[] = []
+    for (const x of r.renamed)
+      documentChanges.push({ kind: 'rename', oldUri: here.uriOf(x.from), newUri: here.uriOf(x.to) })
+    for (const p of r.added) documentChanges.push({ kind: 'create', uri: here.uriOf(p) })
+    for (const p of r.changed) documentChanges.push(whole(p, before.files[from(p)] ?? '', r.project.files[p]!))
+    for (const p of r.added) documentChanges.push(whole(p, '', r.project.files[p]!))
+    for (const p of r.removed) documentChanges.push({ kind: 'delete', uri: here.uriOf(p) })
+    return { documentChanges }
+  }
+
+  /** The refactorings at a place: the statement there removed, or moved to each other file of its model. */
+  function refactors(d: Doc, at: number): object[] {
+    const project = projectOf(d)
+    if (!project) return []
+    const { doc } = parse(d.text, new Reporter(d.text))
+    const s = doc.body.find((x): x is Decl => x.kind === 'decl' && x.from <= at && at <= x.to)
+    const a = s?.args[0]
+    if (!s || !a || (a.t !== 'id' && a.t !== 'str') || HEAD_WORDS.has(s.keyword.name)) return []
+    const name = a.t === 'id' ? a.name : JSON.stringify(a.value)
+    const target = `${s.keyword.name} ${name}`
+    const out: object[] = []
+    const offer = (title: string, kind: string, ops: Operation[]) => {
+      const r = applyOperations(project, ops)
+      if (r.ok) out.push({ title, kind, edit: editOf(d, r, project) })
+    }
+    offer(
+      `Remove ${target}${BOXES.includes(s.keyword.name as never) ? ' with its edges and routes' : ''}`,
+      'refactor.rewrite',
+      [{ op: 'remove', target, file: project.self }],
+    )
+    for (const [path, text] of Object.entries(project.files)) {
+      if (path === project.self) continue
+      const role = imports(text, path).role
+      const ours =
+        path === project.entry ||
+        (role === 'part' && imports(text, path).files.some((f) => f.kind === 'part' && f.path === project.entry))
+      if (ours)
+        offer(`Move ${name} to ${path}`, 'refactor.move', [{ op: 'move', target, to: path, file: project.self }])
+    }
+    return out
+  }
+
   function receive(m: Message) {
     // an answer to a request of ours (registering for file events): nothing to do with it
     if (m.method === undefined) return
@@ -253,6 +334,11 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
         client = {
           snippets: c?.completion?.completionItem?.snippetSupport !== false,
           markdown: markdown(c?.hover?.contentFormat) && markdown(c?.completion?.completionItem?.documentationFormat),
+          files: (() => {
+            const e = p.capabilities?.workspace?.workspaceEdit
+            const ops = Array.isArray(e?.resourceOperations) ? e.resourceOperations : []
+            return e?.documentChanges === true && ['create', 'rename', 'delete'].every((k) => ops.includes(k))
+          })(),
         }
         const first = p.workspaceFolders?.[0]?.uri ?? p.rootUri
         folder = typeof first === 'string' ? fileOf(first) : undefined
@@ -288,6 +374,22 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
       case 'workspace/didChangeConfiguration':
       case 'textDocument/didSave':
         return undefined
+      case 'workspace/executeCommand': {
+        if (p.command !== 'loadmap.applyOperations') return NO_METHOD
+        const arg = p.arguments?.[0]
+        const d = docs.get(arg?.uri)
+        if (!d) throw new Refused('the command takes { uri, operations } for an open document')
+        const project = projectOf(d)
+        if (!project) throw new Refused('the document is no file of a project')
+        const r = applyOperations(project, Array.isArray(arg.operations) ? arg.operations : [])
+        if (!r.ok) throw new Refused(r.index < 0 ? r.error : `operation ${r.index + 1}: ${r.error}`)
+        send({
+          id: `loadmap-apply-${++requests}`,
+          method: 'workspace/applyEdit',
+          params: { label: 'loadmap', edit: editOf(d, r, project) },
+        })
+        return { notes: r.notes, changed: r.changed, added: r.added, removed: r.removed, renamed: r.renamed }
+      }
       case 'shutdown':
         shutdown = true
         return null
@@ -394,7 +496,7 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
         const list = problems(result(d)).filter((x) => x.file == null)
         const fixes = quickFixes(d.text, list)
         const here = place(d)
-        return list.flatMap((diag, i) => {
+        const fixesHere = list.flatMap((diag, i) => {
           if (diag.to < from || diag.from > to) return []
           const own = fixes[i]!.map((f) => ({
             title: f.title,
@@ -434,6 +536,15 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
           }
           return [...own, ...across]
         })
+        // refactorings only when the reader asks (the menu, or a kind named): each one compiles the model, and a
+        // client asks for actions at every move of the cursor
+        const only: unknown = p.context?.only
+        const named = Array.isArray(only) ? only.filter((o): o is string => typeof o === 'string') : []
+        const want = (k: string) =>
+          named.length ? named.some((o) => k === o || k.startsWith(`${o}.`)) : p.context?.triggerKind === 1
+        const extra =
+          want('refactor.rewrite') || want('refactor.move') ? refactors(d, from).filter((x: any) => want(x.kind)) : []
+        return [...fixesHere, ...extra]
       }
       case 'textDocument/definition': {
         const s = definitionAcross(d.text, at, around(d))
@@ -562,6 +673,7 @@ export function lsp(input: Readable = process.stdin, output: Writable = process.
 /** A rename the dsl refuses: an error the client shows, not a fault. */
 class Refused extends Error {}
 const NO_METHOD = Symbol('no method')
+const HEAD_WORDS = new Set(['loadmap', 'include', 'import', 'part', 'library', 'extends'])
 
 function lineStarts(text: string): number[] {
   const out = [0]

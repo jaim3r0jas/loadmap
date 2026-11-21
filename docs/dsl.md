@@ -1584,8 +1584,11 @@ copies a link that opens the text in this editor, and **Open in the Live Editor*
 `loadmap lsp` (in `@loadmap/cli`) speaks the language server protocol over standard input and output, so an editor
 that speaks it gets the help the docs' editor has: errors and failing `expect` lines as you type, completion with
 snippets, hover with the values at the defaults, the arguments of a call, formatting, quick fixes, go to definition,
-references, rename and an outline. It needs no browser. Install the CLI in the project (`npm i -D @loadmap/cli`), then
-tell the editor about it. Neovim (0.11 or later):
+references, rename and an outline. Its refactorings remove a statement with its edges and its place in routes, or move
+it to a part of the model; the command `loadmap.applyOperations` takes any list of the operations of
+`@loadmap/dsl/ops` (rename, set, unset, put, remove, connect, disconnect, move, and a file added, renamed or removed) and
+applies them as one edit, or none of them. It needs no browser. Install the CLI in the project (`npm i -D
+@loadmap/cli`), then tell the editor about it. Neovim (0.11 or later):
 
 ```lua
 vim.filetype.add({ extension = { loadmap = 'loadmap' } })
