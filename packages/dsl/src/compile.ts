@@ -311,6 +311,21 @@ const ALONE_QUIET = new Set<Code>(['unused-stage', 'unused-component', 'tier-ord
 /** For each result, the one list of statements its files came to, and the text their places are in. */
 const LINKED = new WeakMap<CompileResult, { body: readonly Stmt[]; source: string }>()
 
+/** A place in a file of the definition; no `file` for the text that was compiled. */
+export type Where = Span & { file?: string }
+
+/** What a compile wrote out, by where it is written: each subsystem of the diagram, and each `like:` it followed. */
+export interface Copies {
+  subsystems: readonly { id: string; decl: Where }[]
+  likes: readonly { site: Where; to: Where }[]
+}
+const COPIES = new WeakMap<CompileResult, Copies>()
+
+/** The subsystems and the `like`s of a compile: how a box of a copy came to be. */
+export function copiesOf(r: CompileResult): Copies {
+  return COPIES.get(r) ?? { subsystems: [], likes: [] }
+}
+
 /** The statements a compile read, its files joined and written out: what `flatten()` prints. */
 export function linkedOf(r: CompileResult): { body: readonly Stmt[]; source: string } | undefined {
   return LINKED.get(r)
@@ -435,7 +450,17 @@ export function compile(source: string, o: CompileOptions = {}): CompileResult {
     role,
     files,
   }
-  if (linked) LINKED.set(result, { body: linked.body, source: report.source })
+  if (linked) {
+    LINKED.set(result, { body: linked.body, source: report.source })
+    const placed = (s: Span): Where => {
+      const { file, from, to } = report.local(s)
+      return { from, to, ...(file != null && { file }) }
+    }
+    COPIES.set(result, {
+      subsystems: (c?.subsystems ?? []).map((s) => ({ id: s.id, decl: placed(s.decl) })),
+      likes: linked.likes.map((l) => ({ site: placed(l.site), to: placed(l.to) })),
+    })
+  }
   return result
 }
 
@@ -578,6 +603,8 @@ export class Compiler {
   private measureIds = new Set<string>()
   /** The subsystems that hold a box: what `closed` may name. */
   private subsystemIds = new Set<string>()
+  /** Each subsystem of the diagram and the statement that writes it: one statement writes one in every copy. */
+  readonly subsystems: { id: string; decl: Span }[] = []
   /** The measures whose fallback is a number. */
   private numbers = new Set<string>()
   /** The language version the model says it is written in; a library's lines are read under its own. */
@@ -660,7 +687,11 @@ export class Compiler {
       .filter((b) => (BOXES as readonly string[]).includes(b.keyword) && b.args.id)
       .map((b) => this.box(b))
     const loose = byKind('component')
-    for (const b of byKind('subsystem')) if (b.args.id) this.subsystemIds.add(b.args.id.name)
+    for (const b of byKind('subsystem'))
+      if (b.args.id) {
+        this.subsystemIds.add(b.args.id.name)
+        this.subsystems.push({ id: b.args.id.name, decl: b.decl ?? b.at })
+      }
 
     const formulaNames = new Map<string, Span>()
     const own = (kind: DslSymbol['kind'], b: Block, taken: Map<string, Span>) => {

@@ -49,10 +49,12 @@ import {
   boxPath,
   changedBoxes,
   type Drawn,
+  type EditResult,
   type EditValue,
   edit,
   fingerprint,
   inspect,
+  inspectCopy,
   latestEdition,
   MAX_FILES,
   pageOptions,
@@ -62,6 +64,7 @@ import {
   resolvePath,
   setProperty,
   takeLine,
+  writeInput,
 } from '@loadmap/dsl/internal'
 import { Canvas, Loadmap, type LoadmapHandle, type Theme, useCanvasPanels, usePageTheme } from '@loadmap/react'
 import {
@@ -908,11 +911,15 @@ export function LoadmapEditor({
       : encodeShare(view.current?.state.doc.toString() ?? state.source, changed)
   }
 
-  /** One change from the inspector: the smallest edit of the text, its own undo step. */
-  const change = (key: string, value: EditValue): string | null => {
+  /**
+   * One change from the inspector, in `file` (else the file in the editor): that file comes into the editor, and the
+   * change is the smallest edit of its text, its own undo step there.
+   */
+  const inspectorEdit = (file: string | undefined, make: (source: string) => EditResult): string | null => {
+    if (file && file !== set.current.active && !switchTo(file)) return `"${file}" is not a file of this definition`
     const v = view.current
     if (!v) return 'the editor is not ready'
-    const r = edit(v.state.doc.toString(), key, value, { functions, ...beside() })
+    const r = make(v.state.doc.toString())
     if ('error' in r) return r.error
     if (r.changes.length)
       v.dispatch({
@@ -921,19 +928,14 @@ export function LoadmapEditor({
       })
     return null
   }
+  const change = (key: string, value: EditValue, file?: string) =>
+    inspectorEdit(file, (source) => edit(source, key, value, { functions, ...beside() }))
   /** A line the box takes from the box it is like, written into the box: its own from then on. One undo step. */
-  const take = (box: string, name: string): string | null => {
-    const v = view.current
-    if (!v) return 'the editor is not ready'
-    const r = takeLine(v.state.doc.toString(), box, name, { functions, ...beside() }, target?.path)
-    if ('error' in r) return r.error
-    if (r.changes.length)
-      v.dispatch({
-        changes: r.changes,
-        annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.inspector')],
-      })
-    return null
-  }
+  const take = (box: string, name: string, file?: string) =>
+    inspectorEdit(file, (source) => takeLine(source, box, name, { functions, ...beside() }, target?.path))
+  /** An input of a copy written in its `with` as its default was: from then on this copy's own. */
+  const write = (key: string, text: string, file?: string) =>
+    inspectorEdit(file, (source) => writeInput(source, key, text, { functions, ...beside() }))
   /** What the catalog picker reads and writes through: the catalog, the figure for a pick, its text. */
   const catalogApi: CatalogApi = {
     components: () => loadCatalog().then((e) => Object.values(e[latestEdition(e)]!.components)),
@@ -1155,25 +1157,40 @@ export function LoadmapEditor({
   // found where the compiler's offsets are true, in the text it read, and holds while the text changes
   const target = useMemo(() => {
     if (!reader || !selected) return null
+    // each file as it is now, and as the last compile read it: its places are in those
+    const now: Record<string, string> = { ...set.current.others, [active]: text }
+    const read = { ...now, [state.file]: state.source }
     const node = (s: DslSymbol) => s.kind === 'node'
     const drawn = state.result.symbols.filter(node).map((s) => ({ ...s, file: s.file ?? state.given }))
     // a library in the editor has boxes the model does not draw: its own compile names them
     const own = symbols.current.filter(node).map((s) => ({ ...s, file: state.file }))
     const box = drawn.find((s) => s.id === selected) ?? own.find((s) => s.id === selected)
-    // one the compile does not know yet (a pick from the catalog) is looked for at the top, by its id
-    if (!box) return { node: selected, shared: [] }
+    // one the compile does not know yet (a pick from the catalog) is looked for at the top of the file in the editor
+    if (!box) return { node: selected, file: active, text, shared: [], copy: null }
     const file = box.file
-    // its lines are in a file that is not in the editor: nothing of this text is the box
-    if (file !== active) return null
-    // a file that has just come into the editor is as the compiler read it
-    const path = boxPath(file === state.file ? state.source : text, box.decl.from)
+    const source = read[file]
+    if (source == null) return null
+    const path = boxPath(source, box.decl.from)
     const shared = drawn.filter((s) => s.id !== selected && s.file === file && s.decl.from === box.decl.from)
-    return { node: selected, ...(path ? { path } : {}), shared: shared.map((s) => s.id) }
-  }, [reader, selected, state, active, text])
-  const inspection = useMemo(
-    () => (!reader ? null : tab === 'model' ? inspect(text, 'model') : target ? inspect(text, target) : null),
-    [reader, text, tab, target],
-  )
+    // a box written once for several: what its copy alone sets
+    const copy =
+      shared.length && tab === 'box' ? inspectCopy(state.result, selected, { path: state.given, read, now }) : null
+    return {
+      node: selected,
+      ...(path ? { path } : {}),
+      file,
+      text: now[file] ?? source,
+      shared: shared.map((s) => s.id),
+      copy,
+    }
+  }, [reader, selected, state, active, text, tab])
+  const inspection = useMemo(() => {
+    if (!reader) return null
+    if (tab === 'model') return inspect(text, 'model')
+    const i = target && inspect(target.text, target)
+    // each section says its file: a change there goes to it
+    return i && { ...i, sections: i.sections.map((s) => ({ ...s, file: target.file })) }
+  }, [reader, text, tab, target])
 
   // a phone: the text or the diagram, one at a time; typing, the keyboard takes the bottom
   const phone = fill && narrow
@@ -1202,6 +1219,9 @@ export function LoadmapEditor({
         }}
         onEdit={change}
         onTake={take}
+        onWrite={write}
+        copy={tab === 'box' ? target?.copy : null}
+        box={target?.node}
         lanes={Object.entries(def?.view.def.tiers ?? {}).map(([id, t]) => ({ id, ...t }))}
         onLane={(id, key, value) =>
           key

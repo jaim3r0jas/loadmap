@@ -16,7 +16,18 @@ import {
   renameAcross,
 } from '../src'
 import { completionsAcross } from '../src/completion'
-import { boxPath, edit, fileText, inspect, relativePath, resolvePath, takeLine } from '../src/internal'
+import {
+  boxPath,
+  edit,
+  fileText,
+  type InspectField,
+  inspect,
+  inspectCopy,
+  relativePath,
+  resolvePath,
+  takeLine,
+  writeInput,
+} from '../src/internal'
 
 /** The multi-file example of the docs: a model, its part, the library it imports and a variant. */
 const DIR = 'docs/multi-file'
@@ -720,6 +731,115 @@ describe('a box inside a subsystem, in the inspector', () => {
     // without its place there is no "b" at the top
     expect(takeLine(one, 'b', 'capacity')).toHaveProperty('error')
     expect(takeLine(one, 'b', 'short', {}, 'subsystem:eu/node:b')).toHaveProperty('error')
+  })
+})
+
+describe('a box of one copy of a subsystem, in the inspector', () => {
+  const dir = new URL('../../../examples/regions/', import.meta.url)
+  const files: Record<string, string> = Object.fromEntries(
+    ['regions.loadmap', 'regions.story.loadmap', 'region.loadmap', 'platform.loadmap', 'regions.even.loadmap'].map(
+      (f) => [f, readFileSync(new URL(f, dir), 'utf8')],
+    ),
+  )
+  const MAIN = 'regions.loadmap'
+  const value = (f: InspectField) =>
+    f.kind === 'number' || f.kind === 'boolean' || f.kind === 'text'
+      ? String(f.value)
+      : f.kind === 'formula'
+        ? f.parts.map((p) => (typeof p === 'string' ? p : `[${p.value}]`)).join('')
+        : f.kind
+  const copyOf = (box: string, now: Record<string, string> = files) => {
+    const r = compile(now[MAIN]!, { path: MAIN, files: now })
+    const c = inspectCopy(r, box, { path: MAIN, read: now, now })
+    return (
+      c && {
+        copy: c.copy,
+        title: c.title,
+        file: c.file,
+        fields: c.sections[0]!.fields.map((f) => `${f.label}: ${value(f)}${f.from ? ` (${f.from})` : ''}`),
+        more: c.sections.slice(1).map((s) => s.path),
+      }
+    )
+  }
+
+  it("shows what each copy's with sets of the inputs that reach the box, through every file between", () => {
+    // its own line of the with of "eu", in the model: the box is written in the library
+    expect(copyOf('eu.api')).toEqual({
+      copy: 'eu',
+      title: 'EU region',
+      file: MAIN,
+      fields: ['apiPods: 10'],
+      more: [],
+    })
+    // a default where the copy sets none
+    expect(copyOf('us.db')?.fields).toEqual(['dbLimit: 4000 (region)'])
+    // through a prototype's with in the library (db is like postgres, its limit is dbLimit) and a subsystem in a
+    // subsystem (the workers' pods are the region's); a value that reads a parameter brings it along
+    expect(copyOf('eu.db')?.fields).toEqual(['dbLimit: 6000'])
+    expect(copyOf('eu.orders.workers')?.fields).toEqual(['pods: 4'])
+    expect(copyOf('us.orders.workers')).toMatchObject({ fields: ['pods: usPods'], more: ['param:usPods'] })
+    // nothing of the load balancer is set per copy; a box written for itself alone has no copy
+    expect(copyOf('us.lb')?.fields).toEqual([])
+    expect(copyOf('router')).toBeNull()
+    // a with in the library that every copy shares sets it for all of them: the copy has nothing of it
+    const fixed = {
+      ...files,
+      'region.loadmap': files['region.loadmap']!.replace('pods: pods }', 'pods: 3 }'),
+    }
+    expect(copyOf('us.orders.workers', fixed)?.fields).toEqual([])
+    // a default that reads another input of the subsystem brings that one along, where the copy does not set it
+    const reads = {
+      ...files,
+      'region.loadmap': files['region.loadmap']!.replace('input dbLimit = 4_000', 'input dbLimit = pods * 1_000'),
+    }
+    expect(copyOf('us.db', reads)?.fields).toEqual(['pods: usPods', 'dbLimit: pods * 1_000 (region)'])
+    expect(copyOf('eu.db', reads)?.fields).toEqual(['dbLimit: 6000'])
+  })
+
+  it('offers to write a default in the copy only when it reads no name of the subsystem', () => {
+    const write = (from: string) => {
+      const now: Record<string, string> = {
+        ...files,
+        'region.loadmap': files['region.loadmap']!.replace('input dbLimit = 4_000', from),
+      }
+      const r = compile(now[MAIN]!, { path: MAIN, files: now })
+      return inspectCopy(r, 'us.db', { path: MAIN, read: now, now })!.sections[0]!.fields.map((f) => f.write)
+    }
+    expect(write('input dbLimit = 4_000 * 1')).toEqual(['4_000 * 1'])
+    // in the model, "pods" would be another name, or none
+    expect(write('input dbLimit = pods * 1_000')).toEqual([undefined, undefined])
+  })
+
+  it("writes a change in the copy's with: the line, a new line, a new block; refused for an input it lacks", () => {
+    const o = { path: MAIN, files }
+    const line = (src: string) => src.split('\n').find((l) => l.startsWith('subsystem us'))
+    const changed = (r: ReturnType<typeof edit>) => {
+      if ('error' in r) throw new Error(r.error)
+      return line(r.source)
+    }
+    const us = 'subsystem us "US region" { like: region; with { main: us; spill: euInUs; pods: usPods; apiPods:'
+    expect(changed(edit(files[MAIN]!, 'subsystem:us/with/apiPods', 9, o))).toBe(`${us} 9 } }`)
+    expect(changed(edit(files[MAIN]!, 'subsystem:us/with/dbLimit', 4500, o))).toBe(`${us} 8; dbLimit: 4500 } }`)
+    // a default that is a formula is written as it is, to be changed there
+    expect(changed(writeInput(files[MAIN]!, 'subsystem:us/with/dbLimit', '4_000', o))).toBe(
+      `${us} 8; dbLimit: 4_000 } }`,
+    )
+    expect(edit(files[MAIN]!, 'subsystem:us/with/nope', 3, o)).toEqual({ error: '"region" has no input "nope"' })
+    // a copy without a with gets one
+    const bare = files[MAIN]!.replace(
+      'subsystem us "US region" { like: region; with { main: us; spill: euInUs; pods: usPods; apiPods: 8 } }',
+      'subsystem us "US region" {\n  like: region\n  with { main: us; spill: euInUs; pods: usPods }\n}',
+    )
+    const added = edit(bare, 'subsystem:us/with/apiPods', 5, { path: MAIN, files: { ...files, [MAIN]: bare } })
+    if ('error' in added) throw new Error(added.error)
+    expect(added.source).toContain('  with { main: us; spill: euInUs; pods: usPods; apiPods: 5 }\n}')
+    const none = bare.replace('  with { main: us; spill: euInUs; pods: usPods }\n', '')
+    expect(edit(none, 'subsystem:us/with/apiPods', 5)).toMatchObject({
+      changes: [{ insert: '\n  with { apiPods: 5 }' }],
+    })
+    // an empty block over several lines keeps them
+    const open = none.replace('  like: region\n}', '  like: region\n  with {\n  }\n}')
+    expect(edit(open, 'subsystem:us/with/apiPods', 5)).toMatchObject({ changes: [{ insert: '\n    apiPods: 5' }] })
   })
 })
 

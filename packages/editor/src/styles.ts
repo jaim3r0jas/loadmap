@@ -127,6 +127,11 @@ export const EDITOR_CSS = `
 .lme-taken code { font: 12px/1.4 var(--lm-mono); color: var(--lm-fg); overflow-wrap: anywhere; }
 .lme-taken .lm-btn { flex: none; }
 .lme-hint[data-kind="blocked"] { color: var(--lm-drop); }
+.lme-shared { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 10px; }
+.lme-shared[data-locked] .lme-section > :not(legend) { opacity: .62; }
+.lme-switch { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.lme-from { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; color: var(--lm-muted); }
+.lme-from .lm-btn { flex: none; }
 .lme-section { border: 0; border-top: 1px solid var(--lm-line); margin: 0; padding: 8px 0 0; display: grid; gap: 8px; min-width: 0; }
 .lme-section > legend { padding: 0 6px 0 0; font-weight: 600; color: var(--lm-muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .03em; }
 .lme-section details { display: grid; gap: 8px; }

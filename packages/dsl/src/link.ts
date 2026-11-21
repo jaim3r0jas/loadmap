@@ -16,6 +16,8 @@ export interface Linked {
   preview: boolean
   /** The inputs a box of the model set with a formula, each beside its default: checked once names are known. */
   checks: readonly InputCheck[]
+  /** Each statement that says `like:` and the one it is like, by where they are written. */
+  likes: readonly { site: Span; to: Span }[]
   /**
    * For a library on its own: where the boxes that stand in for a model are said to be (its `library` line). A
    * prototype may leave a required line to the box that is like it: one missing there is no mistake of the library.
@@ -115,6 +117,7 @@ export function link(loader: Loader, entry: SourceFile, hosted: ReadonlySet<stri
   return {
     body,
     checks: l.checks,
+    likes: [...l.likes],
     ...(entry.role === 'library' && { stand: l.stand }),
     version: entry.version ?? CURRENT,
     versionAt: (offset) => loader.at(offset).version ?? CURRENT,
@@ -169,6 +172,10 @@ class Linker {
 
   get checks() {
     return this.expander.checks
+  }
+
+  get likes() {
+    return this.expander.likes.values()
   }
 
   model(m: SourceFile, variant?: SourceFile): Stmt[] {

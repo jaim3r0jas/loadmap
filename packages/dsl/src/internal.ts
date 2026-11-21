@@ -1,10 +1,11 @@
 // For loadmap's own packages (the editor, the docs): no promise of stability between versions
 export type { Decl, Document, Edge, Expr, Ident, Property, Row, Stmt } from './ast'
 export { latestEdition } from './catalog'
-export { LIMITS, pageOptions } from './compile'
+export { type Copies, copiesOf, LIMITS, pageOptions, type Where } from './compile'
 export { closest, didYouMean, Reporter } from './diagnostics'
 export {
   boxPath,
+  type CopyInspection,
   type EditResult,
   type EditValue,
   edit,
@@ -14,11 +15,13 @@ export {
   type InspectSection,
   type InspectTarget,
   inspect,
+  inspectCopy,
   type OptionValue,
   type Provenance,
   setProperty,
   type TextChange,
   takeLine,
+  writeInput,
 } from './edit'
 export { BUILTINS } from './expr'
 export { DEFAULT_PATH, fileText, MAX_FILES, MAX_TOTAL, normalizePath, relativePath, resolvePath } from './files'
