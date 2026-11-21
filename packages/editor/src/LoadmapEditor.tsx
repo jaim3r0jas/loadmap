@@ -1106,7 +1106,9 @@ export function LoadmapEditor({
     void import('./studio')
       .then((m) => new m.Studio(() => studioHost.current, histKey).open())
       .then((s) => {
-        if (!gone) studio.current = s
+        if (gone) return
+        studio.current = s
+        setStudioVersion((n) => n + 1)
       })
     return () => {
       gone = true
