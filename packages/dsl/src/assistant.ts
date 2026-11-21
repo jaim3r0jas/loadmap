@@ -1,8 +1,8 @@
-import type { CompileOptions } from '../compile'
-import type { Project } from '../operations'
 import { type Answer, type ExploreCall, readAnswer } from './answer'
+import type { CompileOptions } from './compile'
 import { gate, type Proposal } from './gate'
 import type { ChatMessage, ModelProvider, Usage } from './models'
+import type { Project } from './operations'
 import { contextText, type Selection, systemText } from './prompt'
 
 /**
@@ -52,6 +52,9 @@ export interface Assistant {
   ask(r: AskRequest): AsyncGenerator<AssistEvent>
 }
 
+/** How a refusal sent back to the model starts. */
+const REFUSED = 'Your change was refused, nothing was applied:'
+
 const FILES_FORM =
   'Answer with whole files this time: one ```loadmap <path> block per file you change, each the whole file.'
 
@@ -74,8 +77,9 @@ export function createAssistant(o: AssistantOptions): Assistant {
         for await (const e of o.model.chat({
           system,
           context,
-          messages: thread,
-          maxTokens: o.maxTokens,
+          // a copy: the thread grows after this request, and a provider may keep what it was sent
+          messages: [...thread],
+          maxTokens: o.maxTokens ?? 16_000,
           signal: r.signal,
         })) {
           if (e.type === 'text') {
@@ -98,7 +102,10 @@ export function createAssistant(o: AssistantOptions): Assistant {
           yield { type: 'done', usage, thread }
           return
         }
-        const g = gate(r.project, answer, { ...o, request: r.request })
+        // a number the reader gave in any turn of the conversation counts, not only in this one
+        // (the gate's own refusals quote the model's numbers: they are no reader's words)
+        const said = thread.filter((m) => m.role === 'user' && !m.content.startsWith(REFUSED)).map((m) => m.content)
+        const g = gate(r.project, answer, { ...o, request: said.join('\n') })
         if (g.ok) {
           yield { type: 'proposal', proposal: g.proposal }
           yield { type: 'done', usage, thread }
@@ -112,7 +119,7 @@ export function createAssistant(o: AssistantOptions): Assistant {
         yield { type: 'repair', attempt: attempt + 1, error: g.error }
         thread.push({
           role: 'user',
-          content: `Your change was refused, nothing was applied:\n${g.error}\nAnswer again with the whole change.`,
+          content: `${REFUSED}\n${g.error}\nAnswer again with the whole change.`,
         })
       }
     },

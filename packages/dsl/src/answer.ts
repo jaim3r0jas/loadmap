@@ -1,4 +1,4 @@
-import type { Operation } from '../operations'
+import type { Operation } from './operations'
 
 /**
  * What a model answers, read from plain text: a few sentences, then fenced blocks. No tool calls and no JSON schema,
@@ -32,38 +32,76 @@ export interface Answer {
   problems: string[]
 }
 
-const FENCE = /^```[ \t]*([\w-]*)[ \t]*([^\n`]*)\n([\s\S]*?)^```[ \t]*$/gm
+/** The fenced blocks of a text, read line by line: each with its language, the rest of its first line, its body. */
+function fences(text: string): { from: number; to: number; lang: string; info: string; body: string }[] {
+  const out: { from: number; to: number; lang: string; info: string; body: string }[] = []
+  const lines = text.split('\n')
+  let at = 0
+  let open: { from: number; lang: string; info: string; body: string[] } | undefined
+  for (const line of lines) {
+    const end = at + line.length + 1
+    const bare = line.trim()
+    if (!open && line.startsWith('```')) {
+      const head = line.slice(3).trim()
+      const space = head.indexOf(' ')
+      open = {
+        from: at,
+        lang: space < 0 ? head : head.slice(0, space),
+        info: space < 0 ? '' : head.slice(space + 1).trim(),
+        body: [],
+      }
+    } else if (open && bare === '```') {
+      out.push({
+        from: open.from,
+        to: Math.min(end, text.length),
+        lang: open.lang,
+        info: open.info,
+        body: open.body.join('\n') + (open.body.length ? '\n' : ''),
+      })
+      open = undefined
+    } else if (open) open.body.push(line)
+    at = end
+  }
+  return out
+}
 
 /** The answer's blocks, read; the text left is what the reader sees. */
 export function readAnswer(answer: string): Answer {
   const out: Answer = { text: '', operations: [], files: {}, questions: [], explore: [], problems: [] }
   const prose: string[] = []
   let last = 0
-  for (const m of answer.matchAll(FENCE)) {
-    prose.push(answer.slice(last, m.index))
-    last = m.index + m[0].length
-    const [, lang = '', info = '', body = ''] = m
-    const kind = lang.toLowerCase()
+  for (const f of fences(answer)) {
+    const kind = f.lang.toLowerCase()
+    const path = f.info.replace(/^path=/, '')
+    const known =
+      kind === 'ops' ||
+      kind === 'operations' ||
+      kind === 'questions' ||
+      kind === 'explore' ||
+      (kind === 'loadmap' && path)
+    if (!known) continue
+    prose.push(answer.slice(last, f.from))
+    last = f.to
     if (kind === 'ops' || kind === 'operations') {
-      const r = readOperations(body)
+      const r = readOperations(f.body)
       out.operations.push(...r.operations)
       out.problems.push(...r.problems)
-    } else if (kind === 'loadmap' && info.trim()) out.files[info.trim().replace(/^path=/, '')] = body
+    } else if (kind === 'loadmap') out.files[path] = f.body
     else if (kind === 'questions')
       out.questions.push(
-        ...body
+        ...f.body
           .split('\n')
           .map((l) => l.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
           .filter(Boolean),
       )
-    else if (kind === 'explore') {
-      const r = readExplore(body)
+    else {
+      const r = readExplore(f.body)
       out.explore.push(...r.calls)
       out.problems.push(...r.problems)
-    } else if (kind === 'loadmap') out.problems.push('a ```loadmap block names its file: ```loadmap shop.loadmap')
-    else prose.push(m[0])
+    }
   }
   prose.push(answer.slice(last))
+  // a snippet the model quotes (a ```loadmap block with no path) stays in the sentences: it changes nothing
   out.text = prose
     .join('')
     .replace(/\n{3,}/g, '\n\n')

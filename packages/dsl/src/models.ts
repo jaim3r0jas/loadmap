@@ -37,6 +37,13 @@ export interface ModelProvider {
   chat(r: ChatRequest): AsyncIterable<ChatEvent>
 }
 
+/** The address without the slashes at its end, read without a pattern. */
+export function trimSlashes(url: string): string {
+  let end = url.length
+  while (end > 0 && url[end - 1] === '/') end--
+  return url.slice(0, end)
+}
+
 export class ModelError extends Error {
   /** HTTP status, when the provider answered. */
   constructor(
@@ -65,6 +72,8 @@ export interface AnthropicOptions {
   fetch?: typeof fetch
 }
 
+const CUT = 'the answer was cut off at its length limit: ask for less at once, or for operations instead of whole files'
+
 /** Lines of a server-sent event stream: each `data:` payload. */
 async function* events(res: Response, signal?: AbortSignal): AsyncGenerator<string> {
   const body = res.body
@@ -74,7 +83,8 @@ async function* events(res: Response, signal?: AbortSignal): AsyncGenerator<stri
   let buffer = ''
   try {
     for (;;) {
-      if (signal?.aborted) return
+      // a cancel stops the answer: never read on as if it had ended
+      signal?.throwIfAborted()
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
@@ -122,7 +132,7 @@ async function post(name: string, call: typeof fetch, url: string, init: Request
 /** A server that speaks OpenAI's chat completions, streamed. */
 export function openaiCompatible(o: OpenAICompatibleOptions): ModelProvider {
   const call = o.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init))
-  const root = o.url.replace(/\/+$/, '')
+  const root = trimSlashes(o.url)
   const host = (() => {
     try {
       return new URL(root).host
@@ -158,7 +168,7 @@ export function openaiCompatible(o: OpenAICompatibleOptions): ModelProvider {
       for await (const data of events(res, r.signal)) {
         if (data === '[DONE]') break
         let j: {
-          choices?: { delta?: { content?: string | null } }[]
+          choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[]
           usage?: {
             prompt_tokens?: number
             completion_tokens?: number
@@ -173,6 +183,7 @@ export function openaiCompatible(o: OpenAICompatibleOptions): ModelProvider {
         }
         const text = j.choices?.[0]?.delta?.content
         if (text) yield { type: 'text', text }
+        if (j.choices?.[0]?.finish_reason === 'length') throw new ModelError(CUT)
         if (j.usage) {
           const cached = j.usage.prompt_tokens_details?.cached_tokens ?? j.usage.prompt_cache_hit_tokens
           yield {
@@ -195,7 +206,7 @@ export function openaiCompatible(o: OpenAICompatibleOptions): ModelProvider {
  */
 export function anthropic(o: AnthropicOptions): ModelProvider {
   const call = o.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init))
-  const root = (o.url ?? 'https://api.anthropic.com').replace(/\/+$/, '')
+  const root = trimSlashes(o.url ?? 'https://api.anthropic.com')
   return {
     kind: 'anthropic',
     model: o.model,
@@ -244,6 +255,7 @@ export function anthropic(o: AnthropicOptions): ModelProvider {
           if (u.cache_read_input_tokens != null) usage.cached = u.cache_read_input_tokens
           if (u.cache_creation_input_tokens != null) usage.written = u.cache_creation_input_tokens
         }
+        if (j.type === 'message_delta' && j.delta?.stop_reason === 'max_tokens') throw new ModelError(CUT)
         if (j.type === 'message_delta' && j.delta?.stop_reason === 'refusal')
           throw new ModelError('Anthropic: the model declined this request')
         if (j.type === 'error') throw new ModelError(`Anthropic: ${j.error?.message ?? 'an error in the stream'}`)

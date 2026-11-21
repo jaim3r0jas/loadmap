@@ -1,6 +1,6 @@
-import { type CompileOptions, compile } from '../compile'
-import { imports } from '../files'
-import type { Project } from '../operations'
+import { type CompileOptions, compile } from './compile'
+import { imports } from './files'
+import type { Project } from './operations'
 
 /**
  * What a model reads: the rules and the language (the same for every request, so a provider can cache them), then

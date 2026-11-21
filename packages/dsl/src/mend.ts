@@ -1,6 +1,6 @@
-import type { CompileResult } from '../compile'
-import type { TextChange } from '../edit'
-import { quickFixes } from '../fixes'
+import type { CompileResult } from './compile'
+import type { TextChange } from './edit'
+import { quickFixes } from './fixes'
 
 /**
  * The text with every error mended that one quick fix alone mends (a misspelt name, an old spelling): free, before

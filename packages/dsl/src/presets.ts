@@ -107,12 +107,16 @@ export function providerFromEnv(
   o: { provider?: string; model?: string; fetch?: typeof fetch } = {},
 ): ModelProvider {
   const id = o.provider ?? env.LOADMAP_AI_PROVIDER ?? (env.LOADMAP_AI_URL ? 'custom' : 'anthropic')
-  const url = env.LOADMAP_AI_URL?.trim() || undefined
+  const custom = env.LOADMAP_AI_URL?.trim() || undefined
+  const named = PROVIDERS.find((p) => p.id === id)
+  // a hosted provider keeps its own address: its key never goes anywhere else. LOADMAP_AI_URL is for another server
+  // (custom, with LOADMAP_AI_KEY alone), or a local one on another port
   const preset: ProviderPreset | undefined =
-    PROVIDERS.find((p) => p.id === id) ??
-    (id === 'custom' && url ? { id, name: url, kind: 'openai-compatible', url, local: true } : undefined)
+    named ??
+    (id === 'custom' && custom ? { id, name: custom, kind: 'openai-compatible', url: custom, local: true } : undefined)
   if (!preset)
     throw new Error(`no provider "${id}": one of ${PROVIDERS.map((p) => p.id).join(', ')}, or LOADMAP_AI_URL`)
+  const url = preset.local ? custom : undefined
   const key = env.LOADMAP_AI_KEY?.trim() || (preset.keyEnv ? env[preset.keyEnv]?.trim() : undefined) || undefined
   const model = o.model ?? (env.LOADMAP_AI_MODEL?.trim() || undefined)
   try {

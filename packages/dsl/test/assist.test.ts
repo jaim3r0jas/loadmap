@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   type AssistEvent,
   anthropic,
+  type ChatMessage,
   contextText,
   createAssistant,
   ModelError,
@@ -263,5 +264,95 @@ describe('the models', () => {
     const c = contextText(shop, { selection: { box: 'db' } })
     expect(c).toContain('The box db: the request is about it first.')
     expect(c).toContain('```loadmap\nloadmap 1.6')
+  })
+
+  it('stops when the reader cancels, and says when an answer was cut off', async () => {
+    const stream = (lines: string[]) =>
+      new Response(
+        new ReadableStream({
+          start: (c) => {
+            for (const l of lines) c.enqueue(new TextEncoder().encode(`${l}\n\n`))
+            c.close()
+          },
+        }),
+      )
+    const cut = openaiCompatible({
+      url: 'https://api.example.com/v1',
+      model: 'x',
+      fetch: async () => stream(['data: {"choices":[{"delta":{"content":"```ops"},"finish_reason":"length"}]}']),
+    })
+    await expect(
+      (async () => {
+        for await (const _ of cut.chat({ system: 'S', messages: [] })) void _
+      })(),
+    ).rejects.toThrow('the answer was cut off')
+    const stop = new AbortController()
+    stop.abort()
+    const live = openaiCompatible({
+      url: 'https://api.example.com/v1',
+      model: 'x',
+      fetch: async () => stream(['data: {"choices":[{"delta":{"content":"Hi"}}]}']),
+    })
+    await expect(
+      (async () => {
+        for await (const _ of live.chat({ system: 'S', messages: [], signal: stop.signal })) void _
+      })(),
+    ).rejects.toThrow()
+  })
+
+  it('sends the key of a hosted provider to its own address only', async () => {
+    let to = ''
+    const m = providerFromEnv(
+      {
+        LOADMAP_AI_PROVIDER: 'openai',
+        OPENAI_API_KEY: 'k',
+        LOADMAP_AI_MODEL: 'm',
+        LOADMAP_AI_URL: 'http://elsewhere/v1',
+      },
+      {
+        fetch: async (u) => {
+          to = String(u)
+          return new Response('{}', { status: 500 })
+        },
+      },
+    )
+    await (async () => {
+      for await (const _ of m.chat({ system: 'S', messages: [] })) void _
+    })().catch(() => {})
+    expect(to).toBe('https://api.openai.com/v1/chat/completions')
+  })
+})
+
+describe('the gate, on what a model may get wrong', () => {
+  it('keeps a quoted snippet in an explanation as words, not a change', async () => {
+    const { of } = await run(['The database is first.\n```loadmap\ncapacity: 3\n```'])
+    expect(of('repair')).toEqual([])
+    expect(of('answer')[0]!.text).toContain('capacity: 3')
+  })
+
+  it('refuses a path that is not one of the project, written any way', async () => {
+    const bad = '```loadmap ..\\..\\x.loadmap\nloadmap 1.6\n```'
+    const { of } = await run([bad, bad, bad], 'x', 'files')
+    expect(of('refused')[0]!.error).toContain('is no path of a .loadmap file in the project')
+  })
+
+  it('counts a number from an earlier turn as given, never one from a refusal', async () => {
+    const model = recorded([
+      '```questions\nWhich one?\n```',
+      '```ops\nset db.capacity to measured(8_000, "queries/s", "load test")\n```',
+    ])
+    const a = createAssistant({ model, reference })
+    let thread: ChatMessage[] = []
+    for await (const e of a.ask({ request: 'the database does 8000 queries a second', project: shop }))
+      if (e.type === 'done') thread = e.thread
+    const events: AssistEvent[] = []
+    for await (const e of a.ask({ request: 'the primary', project: shop, thread })) events.push(e)
+    expect(events.find((e) => e.type === 'proposal')).toBeTruthy()
+  })
+
+  it('refuses a measured capacity that reads a name the change adds', async () => {
+    const sneaky = '```ops\nput\n  let made = 1234\nset db.capacity to measured(made, "queries/s", "load test")\n```'
+    const { of } = await run([sneaky, sneaky, sneaky])
+    expect(of('refused')[0]!.error).toContain('uses a number the reader did not give')
   })
 })

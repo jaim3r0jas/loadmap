@@ -145,7 +145,12 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
 
 /** The proposal's files on disk, under the project root: changed and added written, renamed moved, removed gone. */
 async function writeProposal(root: string, p: Proposal): Promise<string[]> {
-  const at = (path: string) => join(root, ...path.split('/'))
+  const at = (path: string) => {
+    // the gate took only paths from the root with "/"; never a backslash, a drive or a way up, whatever comes
+    if (/[\\:]/.test(path) || path.split('/').some((p) => p === '..' || p === ''))
+      throw new Error(`"${path}" is no path in the project`)
+    return join(root, ...path.split('/'))
+  }
   const touched: string[] = []
   for (const r of p.renamed) {
     await mkdir(dirname(at(r.to)), { recursive: true })
