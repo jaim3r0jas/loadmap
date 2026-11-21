@@ -1,5 +1,18 @@
 # @loadmap/react
 
+## 0.42.1
+
+### Patch Changes
+
+- 34d855c: A subsystem the reader opened or closed stays so when a new version of the model is drawn (the text edited, another
+  `view` handed to `<Loadmap>`): only its own control closes or opens it, and a page's `closed` still says how each one
+  starts. In the editor, a click on a box that another file declares opens that file and no longer draws the diagram
+  anew: the subsystem stays open, no box moves, the view and the selection stay.
+- @loadmap/core@0.42.1
+  - @loadmap/dsl@0.42.1
+  - @loadmap/layout@0.42.1
+  - @loadmap/sim@0.42.1
+
 ## 0.42.0
 
 ### Patch Changes
