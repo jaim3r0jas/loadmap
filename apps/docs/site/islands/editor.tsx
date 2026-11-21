@@ -19,7 +19,7 @@ import { alertsSource } from '@loadmap/example-alerts'
 import { checkoutSource } from '@loadmap/example-checkout'
 import { regionsFiles } from '@loadmap/example-regions'
 import { searchSource } from '@loadmap/example-search'
-import { lazy, type MouseEvent, StrictMode, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, type MouseEvent, StrictMode, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import platformSource from '../../../../docs/multi-file/platform.loadmap?raw'
 import shopSource from '../../../../docs/multi-file/shop.loadmap?raw'
@@ -256,6 +256,18 @@ function useHelp(): [boolean, (open: boolean) => void] {
 
 function Editor({ root }: { root: URL }) {
   const editor = useRef<LoadmapEditorHandle>(null)
+  // a private repository's files leave this page only once the reader says so, once per session
+  const assist = useMemo(
+    () => ({
+      reference: loadReference,
+      confirmSend: (p: { name: string }) =>
+        !repo.current?.origin.private ||
+        window.confirm(
+          `These files come from the private repository ${repo.current.origin.owner}/${repo.current.origin.name}. Send them to ${p.name}?`,
+        ),
+    }),
+    [],
+  )
   const [get] = useState(() => () => editor.current?.loadmap())
   const { png, poster, record } = useRecorder('editor', get)
   const [help, setHelp] = useHelp()
@@ -556,7 +568,9 @@ function Editor({ root }: { root: URL }) {
         track={read(TRACK) === 'on'}
         onTrack={(on) => write(TRACK, on ? 'on' : 'off')}
         // every version of this tab's files, gone with the tab, as the repository's files are
-        history={{ key: 'loadmap-editor-history' }}
+        history={HISTORY}
+        // the Ask panel: the reader's own key and model; the model reads the site's llms-full.txt
+        assist={assist}
         start={
           <>
             <a
@@ -625,6 +639,16 @@ function Editor({ root }: { root: URL }) {
     </>
   )
 }
+
+const HISTORY = { key: 'loadmap-editor-history' }
+
+/** The reference the Ask panel's model reads, fetched once from the site. */
+let reference: Promise<string> | undefined
+const loadReference = () =>
+  (reference ??= fetch(new URL('../llms-full.txt', location.href)).then((r) => {
+    if (!r.ok) throw new Error('the reference did not load')
+    return r.text()
+  }))
 
 /** What the editor opens with: a link's, a repository's or the draft's; a draft can come with why the rest did not. */
 type Start = Shared | (Extract<Shared, { source: string }> & { error: string })

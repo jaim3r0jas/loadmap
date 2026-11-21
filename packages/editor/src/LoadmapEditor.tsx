@@ -45,6 +45,7 @@ import {
   sharedValues,
 } from '@loadmap/dsl'
 import type { AddResult } from '@loadmap/dsl/add'
+import type { ModelProvider } from '@loadmap/dsl/assist'
 import {
   boxPath,
   changedBoxes,
@@ -264,7 +265,32 @@ export interface LoadmapEditorProps {
    * default.
    */
   history?: boolean | { key?: string }
+  /**
+   * An Ask panel: a conversation about the diagram with a model the reader picks, with their own key, whose changes
+   * come as proposals the compiler has checked; nothing reaches the text before the reader accepts. Loaded once the
+   * editor is up; a page's Content-Security-Policy must allow the providers' origins (`PROVIDER_ORIGINS` of
+   * `@loadmap/dsl/assist`).
+   */
+  assist?: EditorAssist
   ref?: Ref<LoadmapEditorHandle>
+}
+
+/** What the Ask panel needs from the page. */
+export interface EditorAssist {
+  /** The language reference the model reads: its text, or a function that loads it once (the site's llms-full.txt). */
+  reference: string | (() => Promise<string>)
+  /** The providers offered, by id (`PROVIDERS` of `@loadmap/dsl/assist`); all of them by default. */
+  providers?: readonly string[]
+  /**
+   * A model of the page's own (behind its server, or `recorded` in a test): the panel asks it and shows no provider
+   * or key.
+   */
+  model?: ModelProvider
+  /**
+   * Asked before the first request of the page's session, with the provider: the page says what leaves it (the files
+   * of a private repository). False sends nothing.
+   */
+  confirmSend?: (provider: { id: string; name: string }) => boolean | Promise<boolean>
 }
 
 interface Compiled {
@@ -310,6 +336,7 @@ export function LoadmapEditor({
   catalog = true,
   layout: initialLayout = 'code',
   history: keepHistory = false,
+  assist,
   ref,
 }: LoadmapEditorProps) {
   useEffect(() => injectEditorStyles(), [])
@@ -1101,10 +1128,10 @@ export function LoadmapEditor({
   const histKey = typeof keepHistory === 'object' ? keepHistory.key : undefined
   // biome-ignore lint/correctness/useExhaustiveDependencies: started once a page asks; the host is read through a ref
   useEffect(() => {
-    if (!keepHistory) return
+    if (!keepHistory && !assist) return
     let gone = false
     void import('./studio')
-      .then((m) => new m.Studio(() => studioHost.current, histKey).open())
+      .then((m) => new m.Studio(() => studioHost.current, histKey, !!keepHistory).open())
       .then((s) => {
         if (gone) return
         studio.current = s
@@ -1114,7 +1141,7 @@ export function LoadmapEditor({
       gone = true
       studio.current = null
     }
-  }, [!!keepHistory, histKey])
+  }, [!!keepHistory, histKey, !!assist])
 
   useImperativeHandle(ref, () => ({
     source: () => view.current?.state.doc.toString() ?? state.source,
@@ -1293,6 +1320,8 @@ export function LoadmapEditor({
     </Suspense>
   )
   const staleNote = stale && <p className="lme-stale">Showing the last version without errors.</p>
+  // an older version or a proposal drawn instead of the files
+  const drawn = shownVersion?.def ?? def
   const title = def?.model.title ?? 'Untitled'
   const hasTemplates = templates == null || (templates !== false && templates.length > 0)
   const embedOn = !!embedLink && !!def
@@ -1848,10 +1877,10 @@ export function LoadmapEditor({
               <Loadmap
                 key={state.doc}
                 ref={preview}
-                model={(shownVersion?.def ?? def).model}
-                view={(shownVersion?.def ?? def).view}
+                model={drawn!.model}
+                view={drawn!.view}
                 theme={look}
-                {...pageOptions((shownVersion?.def ?? def).options)}
+                {...pageOptions(drawn!.options)}
                 panels={undefined}
                 chrome="all"
                 fill
@@ -1867,17 +1896,8 @@ export function LoadmapEditor({
                   </Canvas.Panel>
                 )}
                 {reader && <InspectOnClick selected={selected} />}
-                {studio.current?.panels({ history: !!keepHistory, shown: shownVersion?.id ?? null })}
-                {shownVersion ? (
-                  <p className="lme-stale">
-                    Showing an older version.{' '}
-                    <button type="button" className="lm-btn lme-quiet" onClick={() => showDef(null)}>
-                      Back to now
-                    </button>
-                  </p>
-                ) : (
-                  staleNote
-                )}
+                {studio.current?.panels({ history: !!keepHistory, assist, selected, shown: shownVersion?.id ?? null })}
+                {(shownVersion && studio.current?.note(shownVersion.id)) || staleNote}
               </Loadmap>
             ) : (
               <p className="lme-empty">Fix the errors in the text to see the diagram.</p>

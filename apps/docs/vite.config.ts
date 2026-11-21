@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { PROVIDER_ORIGINS } from '@loadmap/dsl/assist'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { withPolicy } from './csp'
@@ -57,6 +58,9 @@ function pages(): Plugin {
  * The sign-in Worker's origin, when the build is given the site's GitHub App: the editor's page may call it. The same
  * rule (`signInConfig`) decides whether the editor shows the button, so the two never disagree.
  */
+/** The model providers the Ask panel may call from the browser, and the local servers on their usual ports. */
+const MODELS = [...PROVIDER_ORIGINS, 'http://localhost:11434', 'http://localhost:1234']
+
 function exchangeOrigin(mode: string): string[] {
   const app = signInConfig(loadEnv(mode, import.meta.dirname, 'VITE_'))
   return app ? [new URL(app.exchange).origin] : []
@@ -70,7 +74,9 @@ function policy(mode: string): Plugin {
     transformIndexHtml: {
       order: 'post',
       handler: (html, ctx) =>
-        ctx.path.replace(/^\//, '') === 'editor/index.html' ? withPolicy(html, exchangeOrigin(mode)) : html,
+        ctx.path.replace(/^\//, '') === 'editor/index.html'
+          ? withPolicy(html, [...exchangeOrigin(mode), ...MODELS])
+          : html,
     },
   }
 }

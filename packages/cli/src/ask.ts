@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs, promisify } from 'node:util'
 import { gather } from '@loadmap/dsl'
-import { createAssistant, type ModelProvider, type Proposal, providerFromEnv } from '@loadmap/dsl/assist'
+import { createAssistant, diffLines, type ModelProvider, type Proposal, providerFromEnv } from '@loadmap/dsl/assist'
 import { loadCatalogForFiles, project } from './project'
 
 export interface AskCommandOptions {
@@ -182,39 +182,8 @@ export function summary(p: Proposal): string {
 
 /** A file's change as a unified diff, three lines around each change. */
 export function unified(path: string, before: string, after: string): string {
-  const a = before.split('\n')
-  const b = after.split('\n')
-  // the longest common subsequence of lines, from the end
-  const n = a.length
-  const m = b.length
-  if (n * m > 4_000_000) return `--- ${path}\n+++ ${path}\n(too large to show)`
-  const L: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))
-  for (let i = n - 1; i >= 0; i--)
-    for (let j = m - 1; j >= 0; j--)
-      L[i]![j] = a[i] === b[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!)
-  const ops: { k: ' ' | '-' | '+'; t: string }[] = []
-  let i = 0
-  let j = 0
-  while (i < n || j < m) {
-    if (i < n && j < m && a[i] === b[j]) {
-      ops.push({ k: ' ', t: a[i]! })
-      i++
-      j++
-    } else if (j < m && (i >= n || L[i]![j + 1]! >= L[i + 1]![j]!)) ops.push({ k: '+', t: b[j++]! })
-    else ops.push({ k: '-', t: a[i++]! })
-  }
-  const keep = new Set<number>()
-  ops.forEach((o, x) => {
-    if (o.k !== ' ') for (let y = Math.max(0, x - 3); y <= Math.min(ops.length - 1, x + 3); y++) keep.add(y)
-  })
-  const lines = [`--- ${before ? path : '/dev/null'}`, `+++ ${path}`]
-  let last = -2
-  for (const x of [...keep].sort((p, q) => p - q)) {
-    if (x !== last + 1) lines.push('@@')
-    lines.push(`${ops[x]!.k}${ops[x]!.t}`)
-    last = x
-  }
-  return lines.join('\n')
+  const lines = diffLines(before, after).map((l) => (l.kind === '@' ? '@@' : `${l.kind}${l.text}`))
+  return [`--- ${before ? path : '/dev/null'}`, `+++ ${path}`, '@@', ...lines].join('\n')
 }
 
 /**
