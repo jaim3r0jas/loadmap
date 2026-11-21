@@ -277,7 +277,7 @@ on it knowing it can change in any release.
 
 ## Not covered here
 
-`@loadmap/dsl/internal` holds what only loadmap's own packages use: the inspector's `inspect`, `edit` and
-`setProperty` (the smallest replacement of a value in the text, refused when the result would not compile),
-`pageOptions` (a definition's options as `<Loadmap>` props, the unset ones left out), the parser, the schema and the
-lexer. It promises nothing between versions.
+`@loadmap/dsl/internal` holds what only loadmap's own packages use: the inspector's `inspect`, `inspectCopy`, `edit`,
+`writeInput` and `setProperty` (the smallest replacement of a value in the text, refused when the result would not
+compile), `pageOptions` (a definition's options as `<Loadmap>` props, the unset ones left out), the parser, the schema
+and the lexer. It promises nothing between versions.

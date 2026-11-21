@@ -99,7 +99,7 @@ describe('the editor for readers', () => {
     await expect.poll(() => box(host, 'db').getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('shows a box written inside a subsystem, in the file that writes it for every subsystem like it', async () => {
+  it("changes a box of one copy in its with, and the definition every copy shares on the reader's word", async () => {
     const lib = [
       'loadmap 1.5',
       'library "Regions"',
@@ -109,7 +109,8 @@ describe('the editor for readers', () => {
       '}',
       'subsystem region "Region" {',
       '  input flow main',
-      '  node api "API" { pass; demand: flows.main; capacity: estimated(100, "req/s"); over: "x" }',
+      '  input pods = 2',
+      '  node api "API" `${pods} pods` { pass; demand: flows.main; capacity: estimated(100 * pods, "req/s"); over: "x" }',
       '  subsystem orders { like: line; with { main: main } }',
       '  api -> orders.workers',
       '}',
@@ -122,7 +123,7 @@ describe('the editor for readers', () => {
       'flow eu "eu" { rate: load; route: eu.api -> eu.orders.workers; from: s }',
       'flow us "us" { rate: 2 * load; route: us.api -> us.orders.workers; from: s }',
       'node s "Start"',
-      'subsystem eu "EU region" { like: region; with { main: eu } }',
+      'subsystem eu "EU region" { like: region; with { main: eu; pods: 4 } }',
       'subsystem us "US region" { like: region; with { main: us } }',
       's -> eu.api',
       's -> us.api',
@@ -133,29 +134,54 @@ describe('the editor for readers', () => {
       layout: 'reader',
       files: { path: 'm.loadmap', files: { 'm.loadmap': model, 'regions.loadmap': lib } },
     })
-    const heading = () => host.querySelector('.lme-inspector h3')?.textContent
-    const shared = () => host.querySelector('.lme-inspector [data-kind="shared"]')?.textContent
-    // "eu.api" is no statement of any file: it is the api of the subsystem "eu" is like, in the library
+    const panel = () => host.querySelector('.lme-inspector')!
+    const heading = () => panel().querySelector('h3')?.textContent
+    const hint = (kind: string) => panel().querySelector(`[data-kind="${kind}"]`)?.textContent
+    const label = () => input(host, 'subsystem:region/node:api/@label')
+    const files = () => handle.files().files
+    // "eu.api" is no statement of any file: it is the api of the subsystem "eu" is like, in the library. What tells
+    // it from "us.api" is the with of "eu": that comes first, and the definition both share is read-only
     await userEvent.click(box(host, 'eu.api'))
     await expect.poll(heading).toBe('API')
-    expect(shared()).toBe('Written once for 2 boxes: a change here also changes us.api.')
-    // a subsystem in a subsystem, from the same library
-    await userEvent.click(box(host, 'us.orders.workers'))
-    await expect.poll(heading).toBe('Workers')
-    expect(shared()).toBe('Written once for 2 boxes: a change here also changes eu.orders.workers.')
-    // a box of the model is its own
-    await userEvent.click(box(host, 's'))
-    await expect.poll(heading).toBe('Start')
-    expect(shared()).toBeUndefined()
-    // a change is written once, in the library, and both regions draw it
+    expect(hint('copy')).toBe('A box of EU region: a change here changes eu alone, in its "with".')
+    expect(input(host, 'subsystem:eu/with/pods').value).toBe('4')
+    expect(label().disabled).toBe(true)
+    expect(hint('shared')).toBeUndefined()
+    await type(input(host, 'subsystem:eu/with/pods'), '6')
+    await expect.poll(() => box(host, 'eu.api').textContent, { timeout: 5000 }).toContain('6 pods')
+    expect(box(host, 'us.api').textContent).toContain('2 pods')
+    expect(files()['m.loadmap']).toContain('subsystem eu "EU region" { like: region; with { main: eu; pods: 6 } }')
+    expect(files()['regions.loadmap']).toBe(lib)
+    // a copy that does not set an input shows the default, and a change writes it in its with
     await userEvent.click(box(host, 'us.api'))
-    await expect.poll(heading).toBe('API')
-    await type(input(host, 'subsystem:region/node:api/@label'), 'Front')
+    await expect.poll(() => input(host, 'subsystem:us/with/pods')?.value).toBe('2')
+    expect(panel().querySelector('[data-key="subsystem:us/with/pods"] .lme-from')?.textContent).toBe(
+      'Not set for this copy: the default of region.',
+    )
+    await type(input(host, 'subsystem:us/with/pods'), '3')
+    await expect.poll(() => box(host, 'us.api').textContent, { timeout: 5000 }).toContain('3 pods')
+    expect(files()['m.loadmap']).toContain('subsystem us "US region" { like: region; with { main: us; pods: 3 } }')
+    // the definition every copy shares, on the reader's word: one change in the library, both regions draw it
+    host.querySelector<HTMLInputElement>('.lme-switch input')!.click()
+    await expect.poll(() => label().disabled).toBe(false)
+    expect(hint('shared')).toBe('Written once for 2 boxes: a change here also changes eu.api.')
+    await type(label(), 'Front')
     await expect.poll(() => box(host, 'eu.api').textContent, { timeout: 5000 }).toContain('Front')
     expect(box(host, 'us.api').textContent).toContain('Front')
     await expect.poll(heading, { timeout: 5000 }).toBe('Front')
-    expect(handle.files().files['regions.loadmap']).toContain('  node api "Front" { pass;')
-    expect(handle.files().files['m.loadmap']).toBe(model)
+    expect(files()['regions.loadmap']).toContain('  node api "Front" `${pods} pods` { pass;')
+    // a subsystem in a subsystem, from the same library: nothing of it is set per copy. Another box starts read-only
+    await userEvent.click(box(host, 'us.orders.workers'))
+    await expect.poll(heading).toBe('Workers')
+    expect(hint('no-copy')).toBe(
+      'Nothing of Workers is set for us alone: what it shows is written once for every copy.',
+    )
+    expect(input(host, 'subsystem:line/node:workers/@label').disabled).toBe(true)
+    // a box of the model is its own
+    await userEvent.click(box(host, 's'))
+    await expect.poll(heading).toBe('Start')
+    expect(hint('copy')).toBeUndefined()
+    expect(input(host, 'node:s/@label').disabled).toBe(false)
   })
 
   it('opens without the text; a click, two changes and a link that reopens with them', async () => {

@@ -1,4 +1,5 @@
 import type {
+  CopyInspection,
   EditValue,
   FormulaPart,
   InspectField,
@@ -16,13 +17,22 @@ export interface InspectorProps {
   inspection: Inspection | null
   tab: InspectorTab
   onTab: (tab: InspectorTab) => void
-  /** Makes a change; returns why it was refused, or null. */
-  onEdit: (key: string, value: EditValue) => string | null
+  /** Makes a change in `file` (a section's own, else the open one); returns why it was refused, or null. */
+  onEdit: (key: string, value: EditValue, file?: string) => string | null
   /**
    * A line a box takes from the box it is like, written into the box itself so it can be changed there; answers
    * with why not, or null.
    */
-  onTake?: (box: string, name: string) => string | null
+  onTake?: (box: string, name: string, file?: string) => string | null
+  /** An input of a copy written in its `with` as `text`, the default it had: answers with why not, or null. */
+  onWrite?: (key: string, text: string, file?: string) => string | null
+  /**
+   * For a box of a copy of a subsystem: what that copy sets. Its fields change this copy alone; the box's own sections
+   * are then the definition every copy shares, read-only until the reader asks to change it.
+   */
+  copy?: CopyInspection | null
+  /** The box shown: a new one starts with the shared definition read-only again. */
+  box?: string
   /** Why nothing can be changed now. */
   blocked?: string
   /** A box is selected but no longer in the text. */
@@ -57,6 +67,9 @@ export function Inspector({
   onTab,
   onEdit,
   onTake,
+  onWrite,
+  copy,
+  box,
   blocked,
   gone,
   shared,
@@ -66,6 +79,14 @@ export function Inspector({
 }: InspectorProps) {
   // Close goes away when pressed: the focus moves to the panel, not to the page
   const self = useRef<HTMLElement>(null)
+  // the definition every copy shares opens for changes on the reader's word, for one box at a time
+  const [open, setOpen] = useState(false)
+  const [shown, setShown] = useState(box)
+  if (shown !== box) {
+    setShown(box)
+    setOpen(false)
+  }
+  const locked = !!copy && !open
   return (
     <aside className="lme-inspector" aria-label="Inspector" ref={self} tabIndex={-1}>
       <div className="lme-tabs" role="tablist">
@@ -107,14 +128,37 @@ export function Inspector({
       ) : (
         <>
           <h3>{inspection.title}</h3>
-          {!!shared?.length && (
+          {copy && tab === 'box' && (
+            <>
+              <p className="lme-hint" data-kind="copy">
+                {`A box of ${copy.title}: a change here changes ${copy.copy} alone, in its "with".`}
+              </p>
+              {copy.sections.map((s) => (
+                <Section key={`copy:${s.path}`} s={s} onEdit={onEdit} onWrite={onWrite} />
+              ))}
+              {!copy.sections[0]?.fields.length && (
+                <p className="lme-hint" data-kind="no-copy">
+                  {`Nothing of ${inspection.title} is set for ${copy.copy} alone: what it shows is written once for every copy.`}
+                </p>
+              )}
+              {!!shared?.length && (
+                <label className="lme-switch">
+                  <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} />
+                  {`Change the definition every copy shares (${shared.length + 1} boxes)`}
+                </label>
+              )}
+            </>
+          )}
+          {!!shared?.length && !locked && tab === 'box' && (
             <p className="lme-hint" data-kind="shared">
               {`Written once for ${shared.length + 1} boxes: a change here also changes ${listed(shared)}.`}
             </p>
           )}
-          {inspection.sections.map((s) => (
-            <Section key={s.path} s={s} onEdit={onEdit} onTake={onTake} />
-          ))}
+          <fieldset className="lme-shared" disabled={locked} data-locked={locked || undefined}>
+            {inspection.sections.map((s) => (
+              <Section key={s.path} s={s} onEdit={onEdit} onTake={onTake} />
+            ))}
+          </fieldset>
           {tab === 'model' && onLane && !!lanes?.length && (
             <fieldset className="lme-section" data-keyword="lanes">
               <legend>Lanes</legend>
@@ -140,6 +184,7 @@ const LEGEND: Record<string, (s: InspectSection) => string> = {
   node: () => 'Box',
   cluster: () => 'Box',
   pool: () => 'Box',
+  with: (s) => `This copy · ${s.title}`,
   param: (s) => `Parameter · ${s.title}`,
   flow: (s) => `Flow · ${s.title}`,
   component: (s) => `Component · ${s.title}`,
@@ -148,14 +193,19 @@ const LEGEND: Record<string, (s: InspectSection) => string> = {
 
 function Section({
   s,
-  onEdit,
+  onEdit: edit,
   onTake,
+  onWrite: write,
 }: {
   s: InspectSection
   onEdit: InspectorProps['onEdit']
   onTake?: InspectorProps['onTake']
+  onWrite?: InspectorProps['onWrite']
 }) {
   const [refused, setRefused] = useState<string | null>(null)
+  // each change goes to the file the section is written in
+  const onEdit = (key: string, value: EditValue) => edit(key, value, s.file)
+  const onWrite = write && ((key: string, text: string) => write(key, text, s.file))
   const section = useRef<HTMLFieldSetElement>(null)
   const main = s.fields.filter((f) => !f.more)
   const more = s.fields.filter((f) => f.more)
@@ -182,7 +232,7 @@ function Section({
                   onClick={() => {
                     // the line, and this button with it, goes once it is written here: the focus stays in the section
                     section.current?.focus()
-                    setRefused(onTake(s.id!, l.name))
+                    setRefused(onTake(s.id!, l.name, s.file))
                   }}
                 >
                   Write here
@@ -198,7 +248,7 @@ function Section({
         </div>
       )}
       {main.map((f) => (
-        <Field key={f.key} f={f} onEdit={onEdit} />
+        <Field key={f.key} f={f} onEdit={onEdit} onWrite={onWrite} />
       ))}
       {more.length > 0 && (
         <details>
@@ -212,7 +262,15 @@ function Section({
   )
 }
 
-function Field({ f, onEdit }: { f: InspectField; onEdit: InspectorProps['onEdit'] }) {
+function Field({
+  f,
+  onEdit,
+  onWrite,
+}: {
+  f: InspectField
+  onEdit: (key: string, value: EditValue) => string | null
+  onWrite?: (key: string, text: string) => string | null
+}) {
   const [error, setError] = useState<string | null>(null)
   const commit = (key: string, v: EditValue) => setError(onEdit(key, v))
   const id = useId()
@@ -287,6 +345,23 @@ function Field({ f, onEdit }: { f: InspectField; onEdit: InspectorProps['onEdit'
       </label>
       {control}
       {f.kind === 'options' && <small>separated by commas</small>}
+      {f.from && (
+        <small className="lme-from">
+          {`Not set for this copy: the default of ${f.from}.`}
+          {f.kind === 'formula' && onWrite && (
+            <button
+              type="button"
+              className="lm-btn"
+              title="Write it in this copy's with, to change it there"
+              onClick={() =>
+                setError(onWrite(f.key, f.parts.map((p) => (typeof p === 'string' ? p : String(p.value))).join('')))
+              }
+            >
+              Write here
+            </button>
+          )}
+        </small>
+      )}
       {error && (
         <small className="lme-error" role="alert">
           {error}

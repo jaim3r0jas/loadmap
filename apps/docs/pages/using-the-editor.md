@@ -98,3 +98,9 @@ an **Inspect** tab first among the panels. Click a box to change its label, its 
 or open **Model** for the title, the load, growth and the flows. Each change is a small edit of the text, so **Undo** takes it
 back, the link carries it, and **Show code** shows what changed. For a box `like` another, the inspector lists each
 line it takes from the other, as written there; **Write here** puts it in the box, to change it there.
+
+A box in a subsystem that several others are `like` is one set of lines for a box in each copy: `eu.api` and `us.api`
+are the `api` of `region`. Its inspector starts with **This copy**: the inputs that reach the box, as the copy's `with`
+sets them, or as their default when it does not (a change writes the line). They change that copy alone. The lines
+every copy shares come after, read-only until you tick **Change the definition every copy shares**; a change there
+changes every copy, and the inspector names them.

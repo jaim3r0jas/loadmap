@@ -108,6 +108,11 @@ export class Expander {
    * names, checks that the two are one type and one unit.
    */
   readonly checks: InputCheck[] = []
+  /**
+   * Each statement that says `like:`, by where it starts, and the statement it is like: an editor follows a box of a
+   * copy back to the `with` that sets it for that copy alone.
+   */
+  readonly likes = new Map<number, { site: Span; to: Span }>()
   private boxes = 0
   private tooMany = false
   /** The boxes of a loop of `like`s, said once: each is then left as it is written. */
@@ -151,6 +156,10 @@ export class Expander {
       else out.push(s)
     }
     return paths.size ? through(out, paths, this.report, keyword) : out
+  }
+
+  private liked(site: Decl, to: Decl) {
+    this.likes.set(site.from, { site: { from: site.from, to: site.to }, to: { from: to.from, to: to.to } })
   }
 
   private count(at: Span) {
@@ -212,6 +221,7 @@ export class Expander {
       )
       return stripped
     }
+    this.liked(d, proto)
     // the other box in full, in its own file's names, its inputs still open
     const base = this.box(proto, found.env, [...trail, d])
     const theirs = (base.body ?? []).filter(isInput)
@@ -630,6 +640,7 @@ export class Expander {
       this.report.error('bad-box', like.value, `a subsystem cannot be like itself: ${loop}`)
       return undefined
     }
+    this.liked(d, found.decl)
     const base = this.content(found.decl, found.env, depth, [...trail, d])
     if (!base) return undefined
     const given = this.given(d, withs, base.inputs, found.env, `"${name}"`, env)

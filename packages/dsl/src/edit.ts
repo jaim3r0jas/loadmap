@@ -1,7 +1,8 @@
 import type { Published } from '@loadmap/core'
 import { childrenOf, type Decl, type Expr, type Property, type Stmt } from './ast'
 import { componentOf } from './catalog'
-import { type CompileOptions, compile } from './compile'
+import { type CompileOptions, type CompileResult, compile, copiesOf, type Where } from './compile'
+import { type Files, fileText } from './files'
 import { type Suffix, unitScale } from './lexer'
 import { likeness } from './names'
 import { parse } from './parser'
@@ -27,6 +28,11 @@ interface FieldBase {
   doc: string
   /** Waits under "More": the schema marks the ones shown first. */
   more: boolean
+  /**
+   * For an input of a copy that its `with` does not set: the statement whose default it shows (`region`). A change
+   * writes it in the `with`.
+   */
+  from?: string
 }
 
 export type InspectField = FieldBase &
@@ -60,6 +66,8 @@ export interface InspectSection {
   path: string
   /** The statement's keyword: node, workers, autoscale, param, flow, … */
   keyword: string
+  /** The file it is written in, from the project root, when that is not the text that was inspected. */
+  file?: string
   id?: string
   title: string
   fields: InspectField[]
@@ -110,35 +118,12 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
   )
   if (!box?.id) return null
   const mine = [box, ...descendants(box)]
-  // what its lines can name: the statements at the top and those of each subsystem around it, the nearest first
-  const scope = w.owners
-    .filter((o) => o.depth > 0 && o !== box && holds(o.path.slice(0, Math.max(0, o.path.lastIndexOf('/'))), box.path))
-    .sort((a, b) => b.depth - a.depth)
   // a stage may use a component declared on its mine; and the parameters its formulas read (through lets too) come along
-  const components = new Set(mine.flatMap((o) => o.uses))
-  // each name as the box reads it: the nearest statement that declares it hides the same name further out (an input
-  // of its subsystem, a parameter of the top)
-  const named = new Map<string, Owner>()
-  for (const o of scope) {
-    const name = declared(o)
-    if (name && !named.has(name)) named.set(name, o)
-  }
-  // a published figure reads parameters as a let does
-  const reads = new Set(mine.flatMap((o) => [...o.reads]))
-  for (const r of reads) {
-    const o = named.get(r)
-    if (o && (o.keyword === 'let' || o.keyword === 'published' || o.keyword === 'measure'))
-      for (const x of o.reads) reads.add(x)
-  }
-  const extra = scope.filter(
-    (o) =>
-      !!o.id &&
-      ((o.keyword === 'component' &&
-        components.has(o.id) &&
-        scope.find((x) => x.keyword === 'component' && x.id === o.id) === o) ||
-        ((o.keyword === 'param' || o.keyword === 'published' || o.keyword === 'measure') &&
-          reads.has(o.id) &&
-          named.get(o.id) === o)),
+  const extra = around(
+    w.owners,
+    box,
+    mine.flatMap((o) => [...o.reads]),
+    mine.flatMap((o) => o.uses),
   )
   const sections = [...mine, ...extra].map(section).filter((s) => s.fields.length)
   // where the lines it does not write come from: said on the box's own section. The other box is one of the top,
@@ -156,14 +141,245 @@ export function inspect(source: string, target: InspectTarget): Inspection | nul
 }
 
 /**
+ * What a statement at `at` reads that the inspector shows beside it: the parameters, published figures and measures
+ * its formulas read (through lets too), and the components its stages use. Each name as it is read there: the
+ * nearest statement that declares it hides the same name further out (an input of its subsystem, a parameter of the
+ * top).
+ */
+function around(owners: readonly Owner[], at: { path: string }, read: Iterable<string>, uses: Iterable<string>) {
+  // what it can name: the statements at the top and those of each subsystem around it, the nearest first
+  const scope = owners
+    .filter((o) => o.depth > 0 && o !== at && holds(o.path.slice(0, Math.max(0, o.path.lastIndexOf('/'))), at.path))
+    .sort((a, b) => b.depth - a.depth)
+  const named = new Map<string, Owner>()
+  for (const o of scope) {
+    const name = declared(o)
+    if (name && !named.has(name)) named.set(name, o)
+  }
+  // a published figure reads parameters as a let does
+  const reads = new Set(read)
+  for (const r of reads) {
+    const o = named.get(r)
+    if (o && (o.keyword === 'let' || o.keyword === 'published' || o.keyword === 'measure'))
+      for (const x of o.reads) reads.add(x)
+  }
+  const components = new Set(uses)
+  return scope.filter(
+    (o) =>
+      !!o.id &&
+      ((o.keyword === 'component' &&
+        components.has(o.id) &&
+        scope.find((x) => x.keyword === 'component' && x.id === o.id) === o) ||
+        ((o.keyword === 'param' || o.keyword === 'published' || o.keyword === 'measure') &&
+          reads.has(o.id) &&
+          named.get(o.id) === o)),
+  )
+}
+
+/** A copy of a subsystem, as the Box panel shows it for a box drawn in it (`inspectCopy()`). */
+export interface CopyInspection {
+  /** The subsystem of the diagram whose `with` sets this copy: `us`. */
+  copy: string
+  title: string
+  /** The file its statement is written in, from the project root. */
+  file: string
+  /**
+   * The inputs that reach the box, as this copy sets them (keyword `with`; a field with `from` shows a default), then
+   * the parameters those values read. Every key is of `file`.
+   */
+  sections: InspectSection[]
+}
+
+/**
+ * The values a box of a copy takes from that copy alone. A box written in a subsystem is one statement for a box in
+ * every copy of it (`eu.api`, `us.api`); what tells the copies apart is the `with` of each, the innermost statement
+ * that writes this copy only. Its inputs that reach the box's lines are followed in from there (through the `with`s
+ * of the subsystems and prototypes in between, which every copy shares) and shown as that `with` sets them, or as their
+ * default when it does not: a change writes the `with`, and changes this copy alone.
+ *
+ * `read` are the texts `r` was compiled from (its places are in them), `now` the texts as they are: places are worked
+ * out in the first, values read in the second. `path` is the file the result's places without one are in. Null for a
+ * box written for itself alone, or when the texts have moved too far since the compile.
+ */
+export function inspectCopy(
+  r: CompileResult,
+  box: string,
+  o: { path: string; read: Files; now: Files },
+): CopyInspection | null {
+  const fileOf = (w: Where) => w.file ?? o.path
+  const same = (a: Where, b: Where) => fileOf(a) === fileOf(b) && a.from === b.from
+  const nodes = r.symbols.filter((s) => s.kind === 'node')
+  const b = nodes.find((s) => s.id === box)
+  if (!b) return null
+  const at: Where = { ...b.decl, ...(b.file != null && { file: b.file }) }
+  if (nodes.filter((s) => same({ ...s.decl, ...(s.file != null && { file: s.file }) }, at)).length < 2) return null
+  const { subsystems, likes } = copiesOf(r)
+  const outer = subsystems.filter((s) => box.startsWith(`${s.id}.`)).sort((x, y) => x.id.length - y.id.length)
+  // the innermost statement written for this copy alone
+  const i = outer.findLastIndex((s) => subsystems.filter((x) => same(x.decl, s.decl)).length === 1)
+  const site = outer[i]
+  if (!site) return null
+  const likeOf = (w: Where) => likes.find((l) => same(l.site, w))?.to
+  // from that statement in: each statement, then the ones it is like; the next subsystem inside, then the box
+  const chain: Where[] = []
+  const follow = (w: Where) => {
+    chain.push(w)
+    for (let t = likeOf(w), n = 0; t && n < 16; t = likeOf(t), n++) chain.push(t)
+  }
+  for (const s of outer.slice(i)) follow(s.decl)
+  follow(at)
+  if (!likeOf(chain[0]!)) return null
+
+  // each statement in the texts compiled, by its place, then as it is written now
+  const parsed = new Map<string, readonly Stmt[]>()
+  const bodyOf = (files: Files, file: string, tag: string) => {
+    const key = `${tag}\n${file}`
+    if (!parsed.has(key)) {
+      const text = fileText(files, file)
+      parsed.set(key, text == null ? [] : parse(text).doc.body)
+    }
+    return parsed.get(key)!
+  }
+  const places = chain.map((w) => placeOf(bodyOf(o.read, fileOf(w), 'read'), w.from))
+  const decls = places.map((p, k) => (p ? declAt(bodyOf(o.now, fileOf(chain[k]!), 'now'), p.path) : undefined))
+  if (decls.some((d) => !d)) return null
+  const d = decls as Decl[]
+  const liked = (k: number) => k > 0 && !!likeOf(chain[k - 1]!) && same(likeOf(chain[k - 1]!)!, chain[k]!)
+
+  // the names the box's lines read, followed out to the statement that is like the copy's subsystem
+  let pending = readsOf(d.at(-1)!)
+  let need = new Set<string>()
+  for (let k = d.length - 1; k > 0; k--) {
+    const lets = letsOf(d[k]!)
+    for (const x of pending) for (const y of lets.get(x) ?? []) pending.add(y)
+    const inputs = inputsOf(d[k]!)
+    need = new Set([...pending].filter((x) => inputs.has(x)))
+    if (!liked(k)) {
+      // written inside the one before: what it does not declare is read there
+      pending = new Set([...pending].filter((x) => !inputs.has(x) && !lets.has(x)))
+      continue
+    }
+    if (k === 1) break
+    // the one before sets them in its `with`; a box also reads its own lines there
+    const p = d[k - 1]!
+    pending = isBox(p.keyword.name) ? readsOf(p) : new Set()
+    for (const x of need) {
+      const line = withLine(p, x)
+      if (line) names(line.value, pending)
+    }
+  }
+  if (!liked(1)) return null
+
+  const siteFile = fileOf(chain[0]!)
+  const siteText = fileText(o.now, siteFile) ?? ''
+  const sitePath = places[0]!.path
+  const template = d[1]!
+  const templateText = fileText(o.now, fileOf(chain[1]!)) ?? ''
+  const w = walk(siteText, true)
+  if (!w) return null
+  const withPath = `${sitePath}/with`
+  const fields: InspectField[] = []
+  const read = new Set<string>()
+  const doc = `A value of ${site.id} alone: a change writes it in its "with", and changes no other copy.`
+  for (const [name, input] of inputsOf(template)) {
+    if (!need.has(name)) continue
+    const key = `${withPath}/${name}`
+    const set = w.entries.get(key)
+    if (set) {
+      fields.push({ ...set.field, label: name, doc, more: false })
+      const line = withLine(d[0]!, name)
+      if (line) names(line.value, read)
+    } else if (input.init) fields.push(defaulted(key, name, input.init, templateText, idOf(template) ?? '', doc))
+  }
+  const owner = w.owners.find((x) => x.path === sitePath)
+  const extra = owner ? around(w.owners, owner, read, []) : []
+  const label = d[0]!.args[1]
+  return {
+    copy: site.id,
+    title: label?.t === 'str' ? label.value : site.id,
+    file: siteFile,
+    sections: [
+      { path: withPath, keyword: 'with', title: label?.t === 'str' ? label.value : site.id, fields, file: siteFile },
+      ...extra.map((x) => ({ ...section(x), file: siteFile })).filter((x) => x.fields.length),
+    ],
+  }
+}
+
+/** An input's default, shown for a copy that does not set it: a value to change, or a formula to read. */
+function defaulted(key: string, name: string, e: Expr, text: string, from: string, doc: string): InspectField {
+  const base = { key, label: name, doc, more: false, from }
+  const n = literal(e)
+  if (n != null && !unitOf(e)) return { ...base, kind: 'number', value: n }
+  if (e.t === 'bool') return { ...base, kind: 'boolean', value: e.value }
+  if (e.t === 'str') return { ...base, kind: 'text', value: e.value }
+  return { ...base, kind: 'formula', parts: [text.slice(e.from, e.to)] }
+}
+
+/** The statement that starts at `from`, and its place as `walk()` names it. */
+function placeOf(body: readonly Stmt[], from: number): { decl: Decl; path: string } | undefined {
+  let path = ''
+  for (let list: readonly Stmt[] | undefined = body; list; ) {
+    const d: Decl | undefined = list.find((s): s is Decl => s.kind === 'decl' && s.from <= from && from < s.to)
+    if (!d) return undefined
+    path = `${path}${path ? '/' : ''}${segment(d)}`
+    if (d.from === from) return { decl: d, path }
+    list = d.body
+  }
+  return undefined
+}
+
+/** Every name a statement's own lines read, its stages and nested statements too, but not its `with` or inputs. */
+function readsOf(d: Decl, out = new Set<string>()): Set<string> {
+  for (const [k, a] of d.args.entries()) if (k > 0 || a.t !== 'id') names(a, out)
+  if (d.init) names(d.init, out)
+  for (const s of d.body ?? [])
+    if (s.kind === 'prop' && s.key.name !== 'like') names(s.value, out)
+    else if (s.kind === 'decl' && s.keyword.name !== 'with' && s.keyword.name !== 'input') readsOf(s, out)
+    else if (s.kind === 'edge' && s.value) names(s.value, out)
+  return out
+}
+
+/** The inputs a prototype or a subsystem declares, by name, but those that take a flow. */
+function inputsOf(d: Decl): Map<string, Decl> {
+  const out = new Map<string, Decl>()
+  for (const s of d.body ?? []) {
+    if (s.kind !== 'decl' || s.keyword.name !== 'input') continue
+    const [first, second] = s.args
+    if (first?.t === 'id' && !(first.name === 'flow' && second?.t === 'id')) out.set(first.name, s)
+  }
+  return out
+}
+
+/** The lets of a subsystem, each with the names it reads. */
+function letsOf(d: Decl): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  for (const s of d.body ?? [])
+    if (s.kind === 'decl' && s.keyword.name === 'let' && s.args[0]?.t === 'id')
+      out.set(s.args[0].name, s.init ? readsOf(s) : new Set())
+  return out
+}
+
+/** The line of a `with` that sets `name`. */
+const withLine = (d: Decl, name: string) =>
+  d.body
+    ?.find((s): s is Decl => s.kind === 'decl' && s.keyword.name === 'with')
+    ?.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === name)
+
+/** An input of a copy, `subsystem:us/with/pods`: the place of the statement that is like, and the input's name. */
+const INPUT_KEY = /^(.+)\/with\/([A-Za-z_]\w*)$/
+
+/**
  * The text with one field changed: the smallest replacement, worked out from `source`. Refused (with the reason)
- * when the value does not fit the field, or the definition would no longer compile.
+ * when the value does not fit the field, or the definition would no longer compile. An input of a copy that its
+ * `with` does not set yet (`inspectCopy()`) is written there, the `with` block too when there is none.
  */
 export function edit(source: string, key: string, value: EditValue, options?: CompileOptions): EditResult {
-  const w = walk(source)
+  const w = walk(source, INPUT_KEY.test(key.replace(/#\d+$/, '')))
   if (!w) return { error: 'the text has a syntax error' }
   const base = key.replace(/(#\d+|\.(provenance|within|unit|source))$/, '')
   const entry = w.entries.get(base)
+  const input = !entry && INPUT_KEY.exec(key)
+  if (input) return setInput(source, input[1]!, input[2]!, value, options)
   if (!entry) return { error: `nothing to change at "${key}"` }
   const changes = entry.apply(key.slice(base.length), value)
   if (typeof changes === 'string') return { error: changes }
@@ -291,20 +507,79 @@ export function takeLine(
   const d = path ? declAt(doc.body, path) : boxNamed(doc.body, box)
   const taken = d && takenLines(source, idOf(d) ?? box, doc.body, d).find((l) => l.name === name)
   if (!d || !taken) return { error: `"${box}" takes no "${name}" from another box` }
+  const change = appendTo(source, d, taken.line)
+  return typeof change === 'string' ? { error: `"${box}" ${change}` } : checked(source, [change], options)
+}
+
+/**
+ * A line written last in a statement's block: after a ";" in a block on one line, else on a line of its own under
+ * the last statement's line, a comment at its end left where it is. The reason when it cannot be.
+ */
+function appendTo(source: string, d: Decl, line: string): TextChange | string {
+  if (!d.bodySpan) return 'has no block to write it in'
   const last = d.body?.at(-1)
-  if (!d.bodySpan || !last) return { error: `"${box}" has no block to write it in` }
+  if (!last) {
+    const inner = { from: d.bodySpan.from + 1, to: d.bodySpan.to - 1 }
+    if (!/^\s*$/.test(source.slice(inner.from, inner.to))) return 'has only comments in its block'
+    return { ...inner, insert: ` ${line} ` }
+  }
   const end =
     last.kind === 'prop' ? (last.as?.to ?? last.to) : last.kind === 'row' ? last.to : (last.bodySpan?.to ?? last.to)
-  // a block on one line: after a ";"
-  if (!source.slice(d.bodySpan.from, d.bodySpan.to).includes('\n'))
-    return checked(source, [{ from: end, to: end, insert: `; ${taken.line}` }], options)
-  // else on a line of its own under the last statement's line, a comment at its end left where it is
+  if (!source.slice(d.bodySpan.from, d.bodySpan.to).includes('\n')) return { from: end, to: end, insert: `; ${line}` }
   const lineStart = source.lastIndexOf('\n', last.from - 1) + 1
   const lead = source.slice(lineStart, last.from)
   const indent = /^[ \t]*$/.test(lead) ? lead : '  '
   const lineEnd = source.indexOf('\n', end)
   const at = lineEnd < 0 || lineEnd > d.bodySpan.to - 1 ? end : lineEnd
-  return checked(source, [{ from: at, to: at, insert: `\n${indent}${taken.line}` }], options)
+  return { from: at, to: at, insert: `\n${indent}${line}` }
+}
+
+/**
+ * The text with an input of the statement at `path` (one that says `like:`) set in its `with`: the line changed when
+ * it is there, else written, in a `with` block of its own when there is none. `value` is written as a number, a text
+ * or true or false; `text` (from `writeInput()`) as it is.
+ */
+function setInput(
+  source: string,
+  path: string,
+  name: string,
+  value: EditValue | { text: string },
+  options?: CompileOptions,
+): EditResult {
+  const { doc, report } = parse(source)
+  if (report.failed) return { error: 'the text has a syntax error' }
+  const site = declAt(doc.body, path)
+  if (!site?.body?.some((s) => s.kind === 'prop' && s.key.name === 'like'))
+    return { error: `nothing to change at "${path}/with/${name}"` }
+  const { number, quote } = writer(source)
+  const text =
+    typeof value === 'object' && value && 'text' in value
+      ? value.text
+      : typeof value === 'number' && Number.isFinite(value)
+        ? number(value)
+        : typeof value === 'boolean'
+          ? String(value)
+          : typeof value === 'string'
+            ? quote(value)
+            : undefined
+  if (text == null) return { error: 'a number, a text, or true or false' }
+  const block = site.body.find((s): s is Decl => s.kind === 'decl' && s.keyword.name === 'with')
+  const line = block?.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === name)
+  if (line) return checked(source, [replace(line.value, text)], options)
+  const change = block
+    ? appendTo(source, block, `${name}: ${text}`)
+    : appendTo(source, site, `with { ${name}: ${text} }`)
+  return typeof change === 'string' ? { error: `"with" ${change}` } : checked(source, [change], options)
+}
+
+/**
+ * The text with an input of a copy set in its `with` to `text` as it is written: the default it had, written here to
+ * be changed for this copy alone. `key` is the field's (`inspectCopy()`).
+ */
+export function writeInput(source: string, key: string, text: string, options?: CompileOptions): EditResult {
+  const input = INPUT_KEY.exec(key)
+  if (!input) return { error: `nothing to change at "${key}"` }
+  return setInput(source, input[1]!, input[2]!, { text }, options)
 }
 
 /**
@@ -462,7 +737,7 @@ const section = (o: Owner): InspectSection => ({
   fields: o.fields,
 })
 
-function walk(source: string) {
+function walk(source: string, withs = false) {
   const { doc, report } = parse(source)
   if (report.failed) return null
   const entries = new Map<string, Entry>()
@@ -542,7 +817,10 @@ function walk(source: string) {
         // an old name (`target` in expect) fills the slot of the property it is now
         const named = propNamed(spec.props, s.key.name)
         const k = named?.name ?? s.key.name
-        const p = named?.spec ?? (o.catalog && own(o.catalog.conditions, s.key.name) ? spec.open?.spec : undefined)
+        const p =
+          named?.spec ??
+          (o.catalog && own(o.catalog.conditions, s.key.name) ? spec.open?.spec : undefined) ??
+          (withs && keyword === 'with' ? spec.open?.spec : undefined)
         // a repeated property (assume) is told apart by its place
         const n = (seen.get(k) ?? 0) + 1
         seen.set(k, n)
