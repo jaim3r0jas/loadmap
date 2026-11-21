@@ -1173,7 +1173,8 @@ export function LoadmapEditor({
     const path = boxPath(source, box.decl.from)
     const shared = drawn.filter((s) => s.id !== selected && s.file === file && s.decl.from === box.decl.from)
     // a box written once for several: what its copy alone sets
-    const copy = shared.length ? inspectCopy(state.result, selected, { path: state.given, read, now }) : null
+    const copy =
+      shared.length && tab === 'box' ? inspectCopy(state.result, selected, { path: state.given, read, now }) : null
     return {
       node: selected,
       ...(path ? { path } : {}),
@@ -1182,7 +1183,7 @@ export function LoadmapEditor({
       shared: shared.map((s) => s.id),
       copy,
     }
-  }, [reader, selected, state, active, text])
+  }, [reader, selected, state, active, text, tab])
   const inspection = useMemo(() => {
     if (!reader) return null
     if (tab === 'model') return inspect(text, 'model')

@@ -33,6 +33,8 @@ interface FieldBase {
    * writes it in the `with`.
    */
   from?: string
+  /** For such a default that reads no name: its text, to be written in the copy's `with` as it is (`writeInput()`). */
+  write?: string
 }
 
 export type InspectField = FieldBase &
@@ -231,17 +233,16 @@ export function inspectCopy(
   if (!likeOf(chain[0]!)) return null
 
   // each statement in the texts compiled, by its place, then as it is written now
+  // by text: a file the same in both is parsed once
   const parsed = new Map<string, readonly Stmt[]>()
-  const bodyOf = (files: Files, file: string, tag: string) => {
-    const key = `${tag}\n${file}`
-    if (!parsed.has(key)) {
-      const text = fileText(files, file)
-      parsed.set(key, text == null ? [] : parse(text).doc.body)
-    }
-    return parsed.get(key)!
+  const bodyOf = (files: Files, file: string) => {
+    const text = fileText(files, file)
+    if (text == null) return []
+    if (!parsed.has(text)) parsed.set(text, parse(text).doc.body)
+    return parsed.get(text)!
   }
-  const places = chain.map((w) => placeOf(bodyOf(o.read, fileOf(w), 'read'), w.from))
-  const decls = places.map((p, k) => (p ? declAt(bodyOf(o.now, fileOf(chain[k]!), 'now'), p.path) : undefined))
+  const places = chain.map((w) => placeOf(bodyOf(o.read, fileOf(w)), w.from))
+  const decls = places.map((p, k) => (p ? declAt(bodyOf(o.now, fileOf(chain[k]!)), p.path) : undefined))
   if (decls.some((d) => !d)) return null
   const d = decls as Decl[]
   const liked = (k: number) => k > 0 && !!likeOf(chain[k - 1]!) && same(likeOf(chain[k - 1]!)!, chain[k]!)
@@ -251,8 +252,22 @@ export function inspectCopy(
   let need = new Set<string>()
   for (let k = d.length - 1; k > 0; k--) {
     const lets = letsOf(d[k]!)
-    for (const x of pending) for (const y of lets.get(x) ?? []) pending.add(y)
     const inputs = inputsOf(d[k]!)
+    // a let reads names here, and so does the default of an input the one before does not set
+    const setBy = liked(k) ? d[k - 1] : undefined
+    for (let grew = true; grew; ) {
+      grew = false
+      for (const x of [...pending]) {
+        const more = new Set(lets.get(x))
+        const i = inputs.get(x)
+        if (i?.init && !(setBy && withLine(setBy, x))) names(i.init, more)
+        for (const y of more)
+          if (!pending.has(y)) {
+            pending.add(y)
+            grew = true
+          }
+      }
+    }
     need = new Set([...pending].filter((x) => inputs.has(x)))
     if (!liked(k)) {
       // written inside the one before: what it does not declare is read there
@@ -312,7 +327,11 @@ function defaulted(key: string, name: string, e: Expr, text: string, from: strin
   if (n != null && !unitOf(e)) return { ...base, kind: 'number', value: n }
   if (e.t === 'bool') return { ...base, kind: 'boolean', value: e.value }
   if (e.t === 'str') return { ...base, kind: 'text', value: e.value }
-  return { ...base, kind: 'formula', parts: [text.slice(e.from, e.to)] }
+  const written = text.slice(e.from, e.to)
+  // the copy's `with` reads its own file's names: a default that reads the subsystem's stays there
+  const read = new Set<string>()
+  names(e, read)
+  return { ...base, kind: 'formula', parts: [written], ...(read.size ? {} : { write: written }) }
 }
 
 /** The statement that starts at `from`, and its place as `walk()` names it. */
@@ -520,8 +539,13 @@ function appendTo(source: string, d: Decl, line: string): TextChange | string {
   const last = d.body?.at(-1)
   if (!last) {
     const inner = { from: d.bodySpan.from + 1, to: d.bodySpan.to - 1 }
-    if (!/^\s*$/.test(source.slice(inner.from, inner.to))) return 'has only comments in its block'
-    return { ...inner, insert: ` ${line} ` }
+    const within = source.slice(inner.from, inner.to)
+    if (!/^\s*$/.test(within)) return 'has only comments in its block'
+    if (!within.includes('\n')) return { ...inner, insert: ` ${line} ` }
+    // a block over several lines keeps them: the line goes under its opening, indented one step
+    const start = source.lastIndexOf('\n', d.from - 1) + 1
+    const indent = /^[ \t]*/.exec(source.slice(start, d.from))![0]
+    return { from: inner.from, to: inner.from, insert: `\n${indent}  ${line}` }
   }
   const end =
     last.kind === 'prop' ? (last.as?.to ?? last.to) : last.kind === 'row' ? last.to : (last.bodySpan?.to ?? last.to)
@@ -563,9 +587,9 @@ function setInput(
             ? quote(value)
             : undefined
   if (text == null) return { error: 'a number, a text, or true or false' }
-  const block = site.body.find((s): s is Decl => s.kind === 'decl' && s.keyword.name === 'with')
-  const line = block?.body?.find((s): s is Property => s.kind === 'prop' && s.key.name === name)
+  const line = withLine(site, name)
   if (line) return checked(source, [replace(line.value, text)], options)
+  const block = site.body.find((s): s is Decl => s.kind === 'decl' && s.keyword.name === 'with')
   const change = block
     ? appendTo(source, block, `${name}: ${text}`)
     : appendTo(source, site, `with { ${name}: ${text} }`)

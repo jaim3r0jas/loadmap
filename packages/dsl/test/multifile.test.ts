@@ -787,6 +787,27 @@ describe('a box of one copy of a subsystem, in the inspector', () => {
       'region.loadmap': files['region.loadmap']!.replace('pods: pods }', 'pods: 3 }'),
     }
     expect(copyOf('us.orders.workers', fixed)?.fields).toEqual([])
+    // a default that reads another input of the subsystem brings that one along, where the copy does not set it
+    const reads = {
+      ...files,
+      'region.loadmap': files['region.loadmap']!.replace('input dbLimit = 4_000', 'input dbLimit = pods * 1_000'),
+    }
+    expect(copyOf('us.db', reads)?.fields).toEqual(['pods: usPods', 'dbLimit: pods * 1_000 (region)'])
+    expect(copyOf('eu.db', reads)?.fields).toEqual(['dbLimit: 6000'])
+  })
+
+  it('offers to write a default in the copy only when it reads no name of the subsystem', () => {
+    const write = (from: string) => {
+      const now: Record<string, string> = {
+        ...files,
+        'region.loadmap': files['region.loadmap']!.replace('input dbLimit = 4_000', from),
+      }
+      const r = compile(now[MAIN]!, { path: MAIN, files: now })
+      return inspectCopy(r, 'us.db', { path: MAIN, read: now, now })!.sections[0]!.fields.map((f) => f.write)
+    }
+    expect(write('input dbLimit = 4_000 * 1')).toEqual(['4_000 * 1'])
+    // in the model, "pods" would be another name, or none
+    expect(write('input dbLimit = pods * 1_000')).toEqual([undefined, undefined])
   })
 
   it("writes a change in the copy's with: the line, a new line, a new block; refused for an input it lacks", () => {
@@ -816,6 +837,9 @@ describe('a box of one copy of a subsystem, in the inspector', () => {
     expect(edit(none, 'subsystem:us/with/apiPods', 5)).toMatchObject({
       changes: [{ insert: '\n  with { apiPods: 5 }' }],
     })
+    // an empty block over several lines keeps them
+    const open = none.replace('  like: region\n}', '  like: region\n  with {\n  }\n}')
+    expect(edit(open, 'subsystem:us/with/apiPods', 5)).toMatchObject({ changes: [{ insert: '\n    apiPods: 5' }] })
   })
 })
 

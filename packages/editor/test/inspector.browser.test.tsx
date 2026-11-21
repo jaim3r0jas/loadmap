@@ -139,13 +139,17 @@ describe('the editor for readers', () => {
     const hint = (kind: string) => panel().querySelector(`[data-kind="${kind}"]`)?.textContent
     const label = () => input(host, 'subsystem:region/node:api/@label')
     const files = () => handle.files().files
+    // read-only through the fieldset around it: the field's own disabled says nothing of that
+    const locked = (el: HTMLInputElement) => el.matches(':disabled')
     // "eu.api" is no statement of any file: it is the api of the subsystem "eu" is like, in the library. What tells
     // it from "us.api" is the with of "eu": that comes first, and the definition both share is read-only
     await userEvent.click(box(host, 'eu.api'))
     await expect.poll(heading).toBe('API')
-    expect(hint('copy')).toBe('A box of EU region: a change here changes eu alone, in its "with".')
+    expect(hint('copy')).toBe(
+      'A box of EU region: what eu sets in its "with" comes first, a change there changes eu alone.',
+    )
     expect(input(host, 'subsystem:eu/with/pods').value).toBe('4')
-    expect(label().disabled).toBe(true)
+    expect(locked(label())).toBe(true)
     expect(hint('shared')).toBeUndefined()
     await type(input(host, 'subsystem:eu/with/pods'), '6')
     await expect.poll(() => box(host, 'eu.api').textContent, { timeout: 5000 }).toContain('6 pods')
@@ -163,7 +167,7 @@ describe('the editor for readers', () => {
     expect(files()['m.loadmap']).toContain('subsystem us "US region" { like: region; with { main: us; pods: 3 } }')
     // the definition every copy shares, on the reader's word: one change in the library, both regions draw it
     host.querySelector<HTMLInputElement>('.lme-switch input')!.click()
-    await expect.poll(() => label().disabled).toBe(false)
+    await expect.poll(() => locked(label())).toBe(false)
     expect(hint('shared')).toBe('Written once for 2 boxes: a change here also changes eu.api.')
     await type(label(), 'Front')
     await expect.poll(() => box(host, 'eu.api').textContent, { timeout: 5000 }).toContain('Front')
@@ -176,12 +180,12 @@ describe('the editor for readers', () => {
     expect(hint('no-copy')).toBe(
       'Nothing of Workers is set for us alone: what it shows is written once for every copy.',
     )
-    expect(input(host, 'subsystem:line/node:workers/@label').disabled).toBe(true)
+    expect(locked(input(host, 'subsystem:line/node:workers/@label'))).toBe(true)
     // a box of the model is its own
     await userEvent.click(box(host, 's'))
     await expect.poll(heading).toBe('Start')
     expect(hint('copy')).toBeUndefined()
-    expect(input(host, 'node:s/@label').disabled).toBe(false)
+    expect(locked(input(host, 'node:s/@label'))).toBe(false)
   })
 
   it('opens without the text; a click, two changes and a link that reopens with them', async () => {

@@ -131,11 +131,14 @@ export function Inspector({
           {copy && tab === 'box' && (
             <>
               <p className="lme-hint" data-kind="copy">
-                {`A box of ${copy.title}: a change here changes ${copy.copy} alone, in its "with".`}
+                {`A box of ${copy.title}: what ${copy.copy} sets in its "with" comes first, a change there changes ${copy.copy} alone.`}
               </p>
-              {copy.sections.map((s) => (
-                <Section key={`copy:${s.path}`} s={s} onEdit={onEdit} onWrite={onWrite} />
-              ))}
+              {copy.sections
+                // a parameter the box's own lines read too is shown once, with them
+                .filter((s, i) => !i || !inspection.sections.some((x) => x.path === s.path && x.file === s.file))
+                .map((s) => (
+                  <Section key={`copy:${s.path}`} s={s} onEdit={onEdit} onWrite={onWrite} />
+                ))}
               {!copy.sections[0]?.fields.length && (
                 <p className="lme-hint" data-kind="no-copy">
                   {`Nothing of ${inspection.title} is set for ${copy.copy} alone: what it shows is written once for every copy.`}
@@ -348,14 +351,12 @@ function Field({
       {f.from && (
         <small className="lme-from">
           {`Not set for this copy: the default of ${f.from}.`}
-          {f.kind === 'formula' && onWrite && (
+          {f.write != null && onWrite && (
             <button
               type="button"
               className="lm-btn"
               title="Write it in this copy's with, to change it there"
-              onClick={() =>
-                setError(onWrite(f.key, f.parts.map((p) => (typeof p === 'string' ? p : String(p.value))).join('')))
-              }
+              onClick={() => setError(onWrite(f.key, f.write!))}
             >
               Write here
             </button>
