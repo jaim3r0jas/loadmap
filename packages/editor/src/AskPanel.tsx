@@ -67,7 +67,7 @@ export const ASK_CSS = `
 .lme-ask-usage { color: var(--lm-muted); font-size: .76rem; }
 .lme-ask fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .lme-preview [data-node][data-proposed] { filter: drop-shadow(0 0 3px var(--lm-accent)) drop-shadow(0 0 1px var(--lm-accent)); }
-.lme-preview [data-node][data-proposed="added"] { outline: 2px dashed var(--lm-accent); outline-offset: 3px; }
+.lme-preview [data-node][data-proposed="added"] :is(rect, path, ellipse) { stroke: var(--lm-accent); stroke-dasharray: 5 4; }
 .lme-ask textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; }
 `
 

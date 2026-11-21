@@ -52,15 +52,14 @@ function proposed(was: CompileResult, now: CompileResult, p: Proposal) {
   }
 }
 
-/** The marks put on the drawn boxes, again until the board has drawn them (a frame or two later). */
+/** The marks put on the drawn boxes, again for two seconds: a box the proposal adds is drawn after a new layout. */
 function mark(tries = 20) {
-  const boxes = [...document.querySelectorAll<HTMLElement>('.lme-preview [data-node]')]
-  if (!boxes.length && tries > 0) return void setTimeout(() => mark(tries - 1), 100)
-  for (const el of boxes) {
+  for (const el of document.querySelectorAll<HTMLElement>('.lme-preview [data-node]')) {
     const id = el.getAttribute('data-node')!
     if (marked.added.includes(id)) el.setAttribute('data-proposed', 'added')
     else if (marked.changed.includes(id)) el.setAttribute('data-proposed', 'changed')
   }
+  if (tries > 0 && (marked.added.length || marked.changed.length)) setTimeout(() => mark(tries - 1), 100)
 }
 
 function unmark() {
