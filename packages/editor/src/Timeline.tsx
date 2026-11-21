@@ -124,12 +124,19 @@ export default function Timeline(p: TimelineProps) {
     <div className="lme-timeline">
       <style>{TIMELINE_CSS}</style>
       <div className="lme-timeline-tools">
-        <button type="button" className="lm-btn" aria-disabled={atOldest} onClick={() => !atOldest && step(-1)}>
+        <button
+          type="button"
+          className="lm-btn"
+          aria-label="Back to the version before"
+          aria-disabled={atOldest}
+          onClick={() => !atOldest && step(-1)}
+        >
           Back
         </button>
         <button
           type="button"
           className="lm-btn"
+          aria-label="Forward to the version after"
           aria-disabled={atNewest}
           onClick={() => (p.shown ? step(1) : undefined)}
         >

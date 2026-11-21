@@ -13,10 +13,13 @@ export function applyFiles(h: FileHost, next: Readonly<Record<string, string>>, 
   if (!v) return
   const f = h.set.current
   const now: Record<string, string> = { ...f.others, [f.active]: v.state.doc.toString() }
+  // each file added or removed as the explorer does it, but the page hears of the files once, at the end, and the
+  // editor stays on the file it shows
+  const quiet: FileHost = { ...h, changed: () => {}, open: () => {} }
   for (const path of Object.keys(now))
-    if (!Object.hasOwn(next, path) && path !== f.entry) reshape(h, { remove: path, note: '' })
+    if (!Object.hasOwn(next, path) && path !== f.entry) reshape(quiet, { remove: path, note: '' })
   for (const [path, text] of Object.entries(next))
-    if (!Object.hasOwn(now, path)) reshape(h, { add: { path, text }, note: '' })
+    if (!Object.hasOwn(now, path)) reshape(quiet, { add: { path, text }, note: '' })
   const set = h.set.current
   const others = { ...set.others }
   for (const [path, text] of Object.entries(next)) {

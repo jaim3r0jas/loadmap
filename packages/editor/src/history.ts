@@ -205,21 +205,29 @@ export class History {
     return a.length === Object.keys(now).length && a.every((p) => now[p] === files[p])
   }
 
+  /** The commits asked for, one after the other: two at once would take the same parent. */
+  private queue: Promise<unknown> = Promise.resolve()
+
   /**
    * A new version on the branch: none when the files are the head's. The reader's own edits are committed this way
-   * before the assistant's lands, so the assistant's commit holds only what it did.
+   * before the assistant's lands, so the assistant's commit holds only what it did. Commits are made in the order
+   * they are asked for, each on the one before.
    */
-  async commit(
+  commit(
     files: Readonly<Record<string, string>>,
     entry: string,
     author: Author,
     message: string,
     trace?: Trace,
   ): Promise<Commit | null> {
-    if (this.same(files) && this.head.entry === entry) return null
-    const c = await this.make(files, entry, this.head.id, author, message, trace)
-    this.branches = this.branches.map((b) => (b.name === this.branch ? { ...b, head: c.id } : b))
-    return c
+    const next = this.queue.then(async () => {
+      if (this.same(files) && this.head.entry === entry) return null
+      const c = await this.make(files, entry, this.head.id, author, message, trace)
+      this.branches = this.branches.map((b) => (b.name === this.branch ? { ...b, head: c.id } : b))
+      return c
+    })
+    this.queue = next.catch(() => undefined)
+    return next
   }
 
   /** The commits of the branch, newest first. */
