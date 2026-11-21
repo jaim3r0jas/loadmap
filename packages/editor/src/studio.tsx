@@ -1,4 +1,4 @@
-import { compile, type Definition, type HostFunctions } from '@loadmap/dsl'
+import { type CompileResult, compile, type Definition, type HostFunctions } from '@loadmap/dsl'
 import type { Proposal } from '@loadmap/dsl/assist'
 import { Canvas } from '@loadmap/react'
 import { type ReactNode, Suspense } from 'react'
@@ -28,6 +28,45 @@ export interface StudioHost {
 }
 
 const Timeline = later(() => import('./Timeline'), 'The history did not load: reload the page.')
+
+/** The boxes a proposal adds and changes, by id: marked in the canvas while it is drawn. */
+let marked: { added: string[]; changed: string[] } = { added: [], changed: [] }
+
+/** Each box's statement as written: what tells a changed box from one the proposal left alone. */
+function boxTexts(r: CompileResult, files: Readonly<Record<string, string>>, entry: string): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const s of r.symbols) {
+    if (s.kind !== 'node') continue
+    const text = files[s.file ?? entry] ?? ''
+    out.set(s.id, text.slice(s.decl.from, s.decl.to).replace(/\s+/g, ' '))
+  }
+  return out
+}
+
+function proposed(was: CompileResult, now: CompileResult, p: Proposal) {
+  const a = boxTexts(was, p.before.files, p.before.entry)
+  const b = boxTexts(now, p.project.files, p.project.entry)
+  return {
+    added: [...b.keys()].filter((id) => !a.has(id)),
+    changed: [...b.keys()].filter((id) => a.has(id) && a.get(id) !== b.get(id)),
+  }
+}
+
+/** The marks put on the drawn boxes, again until the board has drawn them (a frame or two later). */
+function mark(tries = 20) {
+  const boxes = [...document.querySelectorAll<HTMLElement>('.lme-preview [data-node]')]
+  if (!boxes.length && tries > 0) return void setTimeout(() => mark(tries - 1), 100)
+  for (const el of boxes) {
+    const id = el.getAttribute('data-node')!
+    if (marked.added.includes(id)) el.setAttribute('data-proposed', 'added')
+    else if (marked.changed.includes(id)) el.setAttribute('data-proposed', 'changed')
+  }
+}
+
+function unmark() {
+  marked = { added: [], changed: [] }
+  for (const el of document.querySelectorAll('.lme-preview [data-proposed]')) el.removeAttribute('data-proposed')
+}
 const AskPanel = later(() => import('./AskPanel'), 'The Ask panel did not load: reload the page.')
 
 export class Studio {
@@ -73,12 +112,22 @@ export class Studio {
     this.host().show(r.definition ? c.id : null, r.definition)
   }
 
-  /** A proposal drawn in the canvas until it is accepted or dropped; null draws the files again. */
-  preview = (p: Proposal | null) => {
-    if (!p) return this.host().show(null)
+  /** A proposal drawn in the canvas until it is accepted or dropped; null (or `before`) draws the files again. */
+  preview = (p: Proposal | null, before = false) => {
+    unmark()
+    if (!p || before) return this.host().show(null)
     const { entry, files } = p.project
-    const r = compile(files[entry] ?? '', { path: entry, files, functions: this.host().functions })
+    const functions = this.host().functions
+    const r = compile(files[entry] ?? '', { path: entry, files, functions })
     this.host().show(r.definition ? 'proposal' : null, r.definition)
+    if (!r.definition) return
+    const was = compile(p.before.files[p.before.entry] ?? '', {
+      path: p.before.entry,
+      files: p.before.files,
+      functions,
+    })
+    marked = proposed(was, r, p)
+    mark()
   }
 
   /** The note over the canvas while a version or a proposal is drawn, with the way back to the files. */

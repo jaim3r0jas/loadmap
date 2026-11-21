@@ -79,7 +79,8 @@ a local Ollama or LM Studio) and a model, and pastes their own key: it stays in 
 **Keep for this tab**, and **Forget** drops it. The model reads `reference` (the site's `llms-full.txt`), the files and
 what the engine computes from them, and answers with operations by name. A change arrives as a proposal the compiler
 has checked: what it does, a diff per file, the capacities it wrote (a number nobody gave is marked as the assistant's
-guess), and what moves; the canvas draws it. **Accept** puts it in the text, one undo step per file and, with
+guess), and what moves; the canvas draws it, the boxes it adds dashed and those it changes outlined, and
+**Before** and **After** switch between the files and the proposal. **Accept** puts it in the text, one undo step per file and, with
 `history`, a version that keeps the request, the model and the operations; **Reject** drops it. A proposal about a
 text that changed since is refused.
 

@@ -77,4 +77,27 @@ describe('the Ask panel', () => {
       .toContain('The text changed since the question')
     expect(handle.source()).not.toContain('scenario "Eight"')
   })
+
+  it('marks what the proposal adds and changes, and switches Before and After', async () => {
+    const answer =
+      '```ops\nset db.short to "the store"\nput\n  node cache "Cache" {\n    pass\n    demand: flows.orders\n    capacity: estimated(9_000, "req/s", "assistant\'s guess")\n    over: "orders wait"\n  }\n```'
+    await mount([answer])
+    await ask('Shorten the database name and add a cache')
+    const card = page.getByRole('region', { name: 'Proposal' })
+    await expect.element(card.getByText('Added node cache'), { timeout: 5000 }).toBeVisible()
+    await expect
+      .poll(() => document.querySelector('.lme-preview [data-node="db"]')?.getAttribute('data-proposed'), {
+        timeout: 5000,
+      })
+      .toBe('changed')
+    await userEvent.click(card.getByRole('button', { name: 'Before' }))
+    await expect
+      .poll(() => document.querySelector('.lme-stale')?.textContent ?? '')
+      .not.toContain('Showing the proposal')
+    expect(document.querySelector('[data-proposed]')).toBeNull()
+    await userEvent.click(card.getByRole('button', { name: 'After' }))
+    await expect
+      .poll(() => document.querySelector('.lme-stale')?.textContent, { timeout: 5000 })
+      .toContain('Showing the proposal')
+  })
 })
