@@ -31,4 +31,4 @@ export {
   type Usage,
 } from './models'
 export { PROVIDER_ORIGINS, PROVIDERS, type ProviderPreset, providerFor, providerFromEnv } from './presets'
-export { contextText, facts, PROTOCOL, type Selection, systemText } from './prompt'
+export { boxFacts, contextText, facts, PROTOCOL, type Selection, systemText } from './prompt'

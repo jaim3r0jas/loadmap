@@ -103,7 +103,10 @@ export function contextText(
   parts.push(...facts(project, o.options))
   if (o.selection?.box || o.selection?.flows?.length) {
     parts.push('', '# What the reader selected')
-    if (o.selection.box) parts.push(`The box ${o.selection.box}: the request is about it first.`)
+    if (o.selection.box) {
+      parts.push(`The box ${o.selection.box}: the request is about it first.`)
+      parts.push(...boxFacts(project, o.selection.box, o.options))
+    }
     if (o.selection.flows?.length) parts.push(`The flows ${o.selection.flows.join(', ')}.`)
   }
   return parts.join('\n')
@@ -112,6 +115,49 @@ export function contextText(
 const pct = (u: number | null | undefined) => (u == null || !Number.isFinite(u) ? '—' : `${Math.round(u * 100)} %`)
 const times = (x: number | null | undefined) =>
   x == null || !Number.isFinite(x) ? 'never in range' : `${Number(x.toPrecision(3))} ×`
+
+/**
+ * A box at the defaults: its component's use, demand and capacity (with where the capacity came from), where it
+ * reaches the target, and what reaches it per flow.
+ */
+export function boxFacts(
+  project: Project,
+  box: string,
+  options: Pick<CompileOptions, 'functions' | 'catalog'> = {},
+): string[] {
+  const r = compile(project.files[project.entry] ?? '', { path: project.entry, files: project.files, ...options })
+  const model = r.definition?.model
+  if (!model) return []
+  const ev = model.evaluate()
+  const out: string[] = []
+  // a box is a stage of its own name, whose component may have another
+  const stage = (ev.stages as Record<string, { component?: string } | undefined>)[box]
+  const c = (ev.components as Record<string, ComponentFacts | undefined>)[stage?.component ?? box]
+  if (c) {
+    const cap = c.capacity
+    const source = cap?.provenance ? ` (${cap.provenance}${cap.source ? `: ${cap.source}` : ''})` : ''
+    out.push(
+      `Its component: use ${pct(c.util)}, demand ${c.demand ?? '—'}, capacity ${cap?.value ?? '—'}${cap?.unit ? ` ${cap.unit}` : ''}${source}, the target at ${times(c.target)} the load.`,
+    )
+  }
+  const at = (ev.at as Record<string, Record<string, number> | undefined>)[box]
+  if (at) {
+    const flows = Object.entries(at).filter(([, v]) => v > 0)
+    out.push(
+      flows.length
+        ? `What reaches it, per second: ${flows.map(([f, v]) => `${f} ${Number(v.toPrecision(3))}`).join(', ')}.`
+        : 'No flow reaches it.',
+    )
+  }
+  return out
+}
+
+interface ComponentFacts {
+  util?: number | null
+  demand?: number | null
+  target?: number | null
+  capacity?: { value?: number; unit?: string; provenance?: string; source?: string } | null
+}
 
 /** What the engine computes at the defaults: problems, each box's use, the first limit, the expectations. */
 export function facts(project: Project, options: Pick<CompileOptions, 'functions' | 'catalog'> = {}): string[] {

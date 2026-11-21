@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   type AssistEvent,
   anthropic,
+  boxFacts,
   type ChatMessage,
   contextText,
   createAssistant,
@@ -354,5 +355,12 @@ describe('the gate, on what a model may get wrong', () => {
     const sneaky = '```ops\nput\n  let made = 1234\nset db.capacity to measured(made, "queries/s", "load test")\n```'
     const { of } = await run([sneaky, sneaky, sneaky])
     expect(of('refused')[0]!.error).toContain('uses a number the reader did not give')
+  })
+
+  it('tells the model what it knows of the box the reader picked', () => {
+    const facts = boxFacts(shop, 'db')
+    expect(facts[0]).toMatch(/^Its component: use \d+ %, demand [\d.]+, capacity 8000 queries\/s \(estimated\)/)
+    expect(facts[1]).toMatch(/^What reaches it, per second: visits [\d.]+, orders [\d.]+\.$/)
+    expect(contextText(shop, { selection: { box: 'db' } })).toContain('Its component: use')
   })
 })
