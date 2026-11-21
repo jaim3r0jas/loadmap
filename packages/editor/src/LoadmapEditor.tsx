@@ -287,8 +287,8 @@ export interface EditorAssist {
    */
   model?: ModelProvider
   /**
-   * Asked before the first request of the page's session, with the provider: the page says what leaves it (the files
-   * of a private repository). False sends nothing.
+   * Asked before each request, with the provider: the page says what leaves it (the files of a private repository),
+   * and may remember the answer (the docs ask once per repository). False sends nothing.
    */
   confirmSend?: (provider: { id: string; name: string }) => boolean | Promise<boolean>
 }

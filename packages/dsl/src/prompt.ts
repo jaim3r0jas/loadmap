@@ -1,4 +1,5 @@
-import { type CompileOptions, compile } from './compile'
+import type { ComponentResult, Evaluation, ResolvedStage } from '@loadmap/core'
+import { type CompileOptions, type CompileResult, compile } from './compile'
 import { imports } from './files'
 import type { Project } from './operations'
 
@@ -100,78 +101,88 @@ export function contextText(
       '',
     )
   }
-  parts.push(...facts(project, o.options))
+  // compiled and evaluated once: the facts and the selected box read the same evaluation
+  const r = compileProject(project, o.options)
+  const ev = r.definition?.model.evaluate()
+  parts.push(...factsOf(r, ev, project.entry))
   if (o.selection?.box || o.selection?.flows?.length) {
     parts.push('', '# What the reader selected')
     if (o.selection.box) {
       parts.push(`The box ${o.selection.box}: the request is about it first.`)
-      parts.push(...boxFacts(project, o.selection.box, o.options))
+      if (ev) parts.push(...boxFacts(ev, o.selection.box))
     }
     if (o.selection.flows?.length) parts.push(`The flows ${o.selection.flows.join(', ')}.`)
   }
   return parts.join('\n')
 }
 
+const compileProject = (project: Project, options: Pick<CompileOptions, 'functions' | 'catalog'> = {}) =>
+  compile(project.files[project.entry] ?? '', { path: project.entry, files: project.files, ...options })
+
 const pct = (u: number | null | undefined) => (u == null || !Number.isFinite(u) ? '—' : `${Math.round(u * 100)} %`)
 const times = (x: number | null | undefined) =>
   x == null || !Number.isFinite(x) ? 'never in range' : `${Number(x.toPrecision(3))} ×`
+const num = (x: number) => Number(x.toPrecision(3))
 
 /**
- * A box at the defaults: its component's use, demand and capacity (with where the capacity came from), where it
- * reaches the target, and what reaches it per flow.
+ * A box at the values of an evaluation: its component's use, demand and capacity (with where the capacity came from
+ * and its ±), where it reaches the target on the pessimistic edge, and what reaches it per flow. What the editor's Ask
+ * panel sends with a question about a box.
  */
-export function boxFacts(
-  project: Project,
-  box: string,
-  options: Pick<CompileOptions, 'functions' | 'catalog'> = {},
-): string[] {
-  const r = compile(project.files[project.entry] ?? '', { path: project.entry, files: project.files, ...options })
-  const model = r.definition?.model
-  if (!model) return []
-  const ev = model.evaluate()
+export function boxFacts(ev: Evaluation, box: string): string[] {
   const out: string[] = []
-  // a box is a stage of its own name, whose component may have another
-  const stage = (ev.stages as Record<string, { component?: string } | undefined>)[box]
-  const c = (ev.components as Record<string, ComponentFacts | undefined>)[stage?.component ?? box]
-  if (c) {
-    const cap = c.capacity
-    const source = cap?.provenance ? ` (${cap.provenance}${cap.source ? `: ${cap.source}` : ''})` : ''
-    out.push(
-      `Its component: use ${pct(c.util)}, demand ${c.demand ?? '—'}, capacity ${cap?.value ?? '—'}${cap?.unit ? ` ${cap.unit}` : ''}${source}, the target at ${times(c.target)} the load.`,
-    )
-  }
-  const at = (ev.at as Record<string, Record<string, number> | undefined>)[box]
+  // a box is a stage of its own name, which names its component (a sink names none); else a component of that name
+  const stages: Readonly<Record<string, ResolvedStage | undefined>> = ev.stages
+  const components: Readonly<Record<string, ComponentResult | undefined>> = ev.components
+  const stage = stages[box]
+  const id = stage ? ('component' in stage ? stage.component : undefined) : box
+  const c = id == null ? undefined : components[id]
+  if (c) out.push(componentText(c))
+  const at: Readonly<Record<string, number>> | undefined = (ev.at as Record<string, Record<string, number>>)[box]
   if (at) {
     const flows = Object.entries(at).filter(([, v]) => v > 0)
     out.push(
       flows.length
-        ? `What reaches it, per second: ${flows.map(([f, v]) => `${f} ${Number(v.toPrecision(3))}`).join(', ')}.`
+        ? `What reaches it, per second: ${flows.map(([f, v]) => `${f} ${num(v)}`).join(', ')}.`
         : 'No flow reaches it.',
     )
   }
   return out
 }
 
-interface ComponentFacts {
-  util?: number | null
-  demand?: number | null
-  target?: number | null
-  capacity?: { value?: number; unit?: string; provenance?: string; source?: string } | null
+function componentText(c: ComponentResult): string {
+  const who = `Its component, ${c.name} (${c.id})`
+  if (c.missing) return `${who}, has no published figure for this configuration and is not ranked: ${c.missing}.`
+  if (c.util == null) return `${who}, is switched off at these values.`
+  const cap = c.capacity
+  const unit = cap?.unit ? ` ${cap.unit}` : ''
+  const within = cap?.within ? ` ± ${Math.round(cap.within * 100)} %` : ''
+  const source = cap ? ` (${cap.provenance}${cap.source ? `: ${cap.source}` : ''})` : ''
+  const capacity = cap && Number.isFinite(cap.value) ? `${num(cap.value)}${unit}${within}${source}` : 'none'
+  const demand = c.demand == null ? '—' : `${num(c.demand)}${unit}`
+  const r = c.targetRange
+  const target =
+    r && r.high !== r.low
+      ? `${times(r.low)} the load (${times(r.high)} at the high bound)`
+      : `${times(r?.low ?? c.target)} the load`
+  return `${who}: use ${pct(c.util)}, demand ${demand}, capacity ${capacity}; it reaches the target at ${target}.`
 }
 
 /** What the engine computes at the defaults: problems, each box's use, the first limit, the expectations. */
 export function facts(project: Project, options: Pick<CompileOptions, 'functions' | 'catalog'> = {}): string[] {
-  const r = compile(project.files[project.entry] ?? '', { path: project.entry, files: project.files, ...options })
+  const r = compileProject(project, options)
+  return factsOf(r, r.definition?.model.evaluate(), project.entry)
+}
+
+function factsOf(r: CompileResult, ev: Evaluation | undefined, entry: string): string[] {
   const out = ['# What the engine says, at the defaults']
   const errors = r.diagnostics.filter((d) => d.severity === 'error')
   if (errors.length) {
     out.push('The definition has errors now:')
-    for (const d of errors.slice(0, 10)) out.push(`- ${d.file ?? project.entry}:${d.line}: ${d.message}`)
+    for (const d of errors.slice(0, 10)) out.push(`- ${d.file ?? entry}:${d.line}: ${d.message}`)
     return out
   }
-  const model = r.definition?.model
-  if (!model) return out
-  const ev = model.evaluate()
+  if (!ev) return out
   out.push(`First limit: ${ev.firstLimit ? `${ev.firstLimit.name} (${ev.firstLimit.id})` : 'none'}.`)
   out.push(`The target is reached at ${times(ev.target?.low)} the load, 100 % at ${times(ev.full?.low)}.`)
   out.push('Use of each component at the default load:')

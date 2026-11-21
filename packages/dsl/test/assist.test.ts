@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { compile } from '../src'
 import {
   type AssistEvent,
   anthropic,
@@ -358,9 +359,14 @@ describe('the gate, on what a model may get wrong', () => {
   })
 
   it('tells the model what it knows of the box the reader picked', () => {
-    const facts = boxFacts(shop, 'db')
-    expect(facts[0]).toMatch(/^Its component: use \d+ %, demand [\d.]+, capacity 8000 queries\/s \(estimated\)/)
+    const ev = compile(shop.files['shop.loadmap']!, { path: 'shop.loadmap' }).definition!.model.evaluate()
+    const facts = boxFacts(ev, 'db')
+    // the ± and the pessimistic edge first, as the ranking reads them
+    expect(facts[0]).toMatch(
+      /^Its component, [^(]+ \(db\): use \d+ %, demand [\d.]+ queries\/s, capacity 8000 queries\/s ± 30 % \(estimated\); it reaches the target at [\d.]+ × the load \([\d.]+ × at the high bound\)\.$/,
+    )
     expect(facts[1]).toMatch(/^What reaches it, per second: visits [\d.]+, orders [\d.]+\.$/)
-    expect(contextText(shop, { selection: { box: 'db' } })).toContain('Its component: use')
+    expect(contextText(shop, { selection: { box: 'db' } })).toContain(facts[0])
+    expect(boxFacts(ev, 'nothing-here')).toEqual([])
   })
 })
