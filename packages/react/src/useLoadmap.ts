@@ -61,7 +61,9 @@ export interface LoadmapOptions<P> extends SimOptions {
   /**
    * The subsystems drawn closed at first, each as one box that stands for everything inside it, by the ids the view
    * gives them. The reader opens one with a click on it and closes one with a click on its name; a story step says
-   * its own (`closed` in the step). Default none.
+   * its own (`closed` in the step). Default none. What the reader opened and closed holds, by id, across a new `model`
+   * and `view` (the text edited); a subsystem this list changes later follows the list. Another definition altogether
+   * takes a `key` of its own.
    */
   closed?: readonly string[]
   /**
@@ -135,26 +137,57 @@ export interface LoadmapController<P = any> {
 const FOLDS = [1, 2, 3]
 /** A page that closes no subsystem. */
 const NONE: readonly string[] = []
+/**
+ * What the reader or a story step (`story`) changed of the page's closed subsystems (`own`, as it was then): those of
+ * the page's they opened, and the others they closed.
+ */
+interface Turned {
+  own: readonly string[]
+  open: readonly string[]
+  shut: readonly string[]
+  story: boolean
+}
+const sameIds = (a: readonly string[], b: readonly string[]) =>
+  a === b || (a.length === b.length && a.every((id, i) => id === b[i]))
 /** Stands for a room that is still to come. */
 const DUE = { w: 0, h: 0 }
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
+  const [stepState, setStepState] = useState<{ model: Model<P>; i: number | null }>({ model, i: null })
+  const step = stepState.model === model && stepState.i != null && stepState.i < model.story.length ? stepState.i : null
   // the subsystems drawn closed: the page's, but those the reader or a story step opened, and with those they closed.
-  // Held by id, not by view: a new view (the text edited, a file of it opened) keeps every one as it stands, so
-  // nothing closes or opens but by its own control; an id the new view lacks closes nothing. What closes them and
-  // draws their frames comes with the first view that has a subsystem, before it is laid out
-  const [turned, setTurned] = useState<{ open: readonly string[]; shut: readonly string[] } | null>(null)
+  // Held by id, not by view: a new view (the text edited, a file of it opened) keeps every one as the reader left it,
+  // so nothing closes or opens but by its own control; an id the new view lacks closes nothing. What a step says
+  // holds while the step shows. What closes them and draws their frames comes with the first view that has a
+  // subsystem, before it is laid out
+  const [turned, setTurned] = useState<Turned | null>(null)
   const own = o.closed ?? NONE
   const ownRef = useRef(own)
   ownRef.current = own
-  const closed = turned
-    ? [...own.filter((id) => !turned.open.includes(id)), ...turned.shut.filter((id) => !own.includes(id))]
+  let kept = turned
+  if (kept && !sameIds(kept.own, own)) {
+    // the page closes another set (its `closed` edited): for each subsystem it changed, the page's word is the newer
+    const was = kept.own
+    const stays = (id: string) => was.includes(id) === own.includes(id)
+    kept = { ...kept, own, open: kept.open.filter(stays), shut: kept.shut.filter(stays) }
+    setTurned(kept)
+  }
+  const turn = kept && !(kept.story && step == null) ? kept : null
+  const closed = turn
+    ? [...own.filter((id) => !turn.open.includes(id)), ...turn.shut.filter((id) => !own.includes(id))]
     : own
   /** These drawn closed and every other one open, as what it changes of the page's own; null is the page's own. */
-  const turn = useCallback((ids: readonly string[] | null) => {
+  const setTurn = useCallback((ids: readonly string[] | null, story: boolean) => {
     const page = ownRef.current
-    setTurned(ids && { open: page.filter((id) => !ids.includes(id)), shut: ids.filter((id) => !page.includes(id)) })
+    setTurned(
+      ids && {
+        own: page,
+        open: page.filter((id) => !ids.includes(id)),
+        shut: ids.filter((id) => !page.includes(id)),
+        story,
+      },
+    )
   }, [])
   // one function for every view: once it is there it stays
   const [close, setClose] = useState<((view: View, closed: readonly string[]) => View) | null>(null)
@@ -173,7 +206,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const unready = !close && Object.keys(whole.def.subsystems ?? {}).length > 0
   // closed, the diagram is another view: it moves there as it moves to an edited one
   const view = close && closed.length ? close(whole, closed) : whole
-  const setClosed = useCallback((ids: readonly string[]) => turn(ids), [turn])
+  const setClosed = useCallback((ids: readonly string[]) => setTurn(ids, false), [setTurn])
   const init = () => ({ ...model.defaults(), ...o.initial }) as Values<P>
   const [state, setState] = useState(() => ({ model, values: init() }))
   // setValues evaluates once for the engine; the render reuses that evaluation. It also holds the values set last
@@ -356,8 +389,6 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     [model, setValues],
   )
 
-  const [stepState, setStepState] = useState<{ model: Model<P>; i: number | null }>({ model, i: null })
-  const step = stepState.model === model && stepState.i != null && stepState.i < model.story.length ? stepState.i : null
   const show = useCallback(
     (i: number | null) => {
       const st = i == null ? undefined : model.story[i]
@@ -366,9 +397,9 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
       engine.storyStep = st ? i : null
       setStepState({ model, i: st ? i : null })
       // a step says what it shows closed; without it, and outside the story, the page's own
-      turn(st?.closed ?? null)
+      setTurn(st?.closed ?? null, true)
     },
-    [model, apply, engine, turn],
+    [model, apply, engine, setTurn],
   )
   const setStep = useCallback(
     (i: number | null) => {

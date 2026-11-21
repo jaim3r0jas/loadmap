@@ -354,12 +354,10 @@ export function LoadmapEditor({
       source: initial,
       result,
       good: result.definition ?? null,
-      goodKey: Object.keys(set.current.others).length
-        ? modelKey([
-            [set.current.entry, fingerprint(initial)],
-            ...Object.entries(set.current.others).map(([p, text]) => [p, fingerprint(text)] as const),
-          ])
-        : fingerprint(initial),
+      goodKey: modelKey([
+        [set.current.entry, fingerprint(initial)],
+        ...Object.entries(set.current.others).map(([p, text]) => [p, fingerprint(text)] as const),
+      ]),
       doc: 0,
       given: set.current.entry,
       file: set.current.entry,
@@ -552,7 +550,7 @@ export function LoadmapEditor({
         version: f.version,
         prints: Object.keys(f.others).map((p) => [p, fingerprint(f.others[p]!)] as const),
       }
-    const all = modelKey([...othersKey.current.prints, [f.active, fingerprint(source)]])
+    const key = modelKey([...othersKey.current.prints, [f.active, fingerprint(source)]])
     const h = preview.current
     // a whole new text stays one until a version of it compiles: fixing its errors starts it fitted, from its defaults
     const whole = fresh.current
@@ -567,7 +565,6 @@ export function LoadmapEditor({
       if (prev.source === source && prev.result === result) return prev
       const file = f.active
       if (!result.definition) return { ...prev, source, result, given, file }
-      const key = Object.keys(f.others).length ? all : fingerprint(source)
       if (key === prev.goodKey && prev.good) return { ...prev, source, result, given, file }
       return { source, result, good: result.definition, goodKey: key, doc: prev.doc + (whole ? 1 : 0), given, file }
     })

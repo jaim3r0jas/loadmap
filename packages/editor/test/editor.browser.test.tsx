@@ -248,6 +248,7 @@ describe('the editor', () => {
     await userEvent.click(box('orderLine.consumers')!)
     await expect.poll(() => activeTab(host)).toBe('platform.loadmap')
     await expect.poll(() => box('orderLine.consumers')?.hasAttribute('data-selected')).toBe(true)
+    // the file's compile is asked for by the click itself and done before a frame: a model it made would be here now
     await frames()
     await frames()
     await lm.ready()

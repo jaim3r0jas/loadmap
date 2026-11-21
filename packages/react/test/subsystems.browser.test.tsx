@@ -174,6 +174,17 @@ describe('a subsystem on the board', () => {
     expect(box('eu.line')).toBeNull()
     expect(places()).toEqual(was.places)
     expect(camera()).toBe(was.camera)
+    // the page's own `closed` edited is the newer word for the subsystems it changes: opened by both, then closed again
+    const page = (closed: string[]) =>
+      root!.render(<Loadmap ref={ref} model={edited.model} view={edited.view} closed={closed} transition={0} />)
+    page([])
+    await twoFrames()
+    expect(frames()).toEqual(['eu', 'eu.line'])
+    page(['eu.line'])
+    await expect.poll(() => box('eu.line'), { timeout: 5000 }).toBeTruthy()
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu'])
+    click(box('eu.line')!)
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
     // and what they closed stays closed
     click(host.querySelector('[data-subsystem-id="eu"] text')!)
     await expect.poll(() => box('eu'), { timeout: 5000 }).toBeTruthy()
@@ -182,12 +193,26 @@ describe('a subsystem on the board', () => {
     await ref.current!.ready()
     await twoFrames()
     expect(box('eu')).toBeTruthy()
-    expect(frames()).toEqual([])
-    // a page that closes another set moves only what the reader left alone: the region stays as they closed it
-    root.render(<Loadmap ref={ref} model={first.model} view={first.view} closed={[]} transition={0} />)
-    await ref.current!.ready()
-    await twoFrames()
-    expect(box('eu')).toBeTruthy()
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual([])
+  })
+
+  it('shows what a story step closes only while the step shows: a new view of the model is outside the story', async () => {
+    const text = `${SOURCE}step "The region as one box." { closed: [eu] }\n`
+    const first = compile(text).definition!
+    const edited = compile(text.replace('requests are refused', 'requests are turned away')).definition!
+    host = document.createElement('div')
+    host.style.width = '1200px'
+    document.body.appendChild(host)
+    root = createRoot(host)
+    const ref = createRef<LoadmapHandle>()
+    root.render(<Loadmap ref={ref} model={first.model} view={first.view} transition={0} />)
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
+    ref.current!.setStoryStep(0)
+    await expect.poll(() => box('eu'), { timeout: 5000 }).toBeTruthy()
+    // the text edited: the story is left, and with it what its step closed
+    root.render(<Loadmap ref={ref} model={edited.model} view={edited.view} transition={0} />)
+    await expect.poll(() => ref.current!.storyStep()).toBeNull()
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
   })
 
   it('plays a story through a step that closes a subsystem: the story goes on, and so do the dots', async () => {
