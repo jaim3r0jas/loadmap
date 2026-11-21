@@ -278,6 +278,32 @@ export class History {
     return null
   }
 
+  /**
+   * An editor's history: read back from the tab's storage under `key`, else started from the files; the files as they
+   * are now a version on top when they changed since.
+   */
+  static async open(f: { path: string; files: Readonly<Record<string, string>> }, key?: string): Promise<History> {
+    let saved: unknown = null
+    try {
+      saved = key ? JSON.parse(sessionStorage.getItem(key) ?? 'null') : null
+    } catch {
+      saved = null
+    }
+    const h = History.fromData(saved) ?? (await History.start(f.files, f.path))
+    await h.commit(f.files, f.path, 'you', 'Edited')
+    return h
+  }
+
+  /** Mirrored to the tab's storage under `key`; a full or blocked storage keeps it for this page only. */
+  keep(key?: string): void {
+    if (!key) return
+    try {
+      sessionStorage.setItem(key, JSON.stringify(this.toData()))
+    } catch {
+      // kept in memory alone
+    }
+  }
+
   toData(): HistoryData {
     const blobs: Record<string, string> = {}
     for (const [id, t] of this.blobs) blobs[id] = t
@@ -290,16 +316,41 @@ export class History {
   static fromData(d: unknown, clock?: () => number): History | undefined {
     if (typeof d !== 'object' || d === null) return undefined
     const x = d as Partial<HistoryData>
-    if (x.version !== 1 || !x.blobs || !x.commits || !Array.isArray(x.branches) || typeof x.branch !== 'string')
+    if (x.version !== 1 || typeof x.blobs !== 'object' || !x.blobs || typeof x.commits !== 'object' || !x.commits)
       return undefined
+    if (!Array.isArray(x.branches) || typeof x.branch !== 'string') return undefined
     const h = new History(clock)
-    for (const [id, t] of Object.entries(x.blobs)) if (typeof t === 'string') h.blobs.set(id, t)
+    for (const [id, t] of Object.entries(x.blobs)) {
+      if (typeof t !== 'string') return undefined
+      h.blobs.set(id, t)
+    }
+    const AUTHORS = new Set(['you', 'assistant', 'opened', 'restore'])
+    const text = (v: unknown) => typeof v === 'string'
     for (const [id, c] of Object.entries(x.commits)) {
-      if (!c || typeof c !== 'object' || Object.values(c.files ?? {}).some((b) => !h.blobs.has(b))) return undefined
+      const ok =
+        c &&
+        typeof c === 'object' &&
+        c.id === id &&
+        text(c.tree) &&
+        text(c.entry) &&
+        text(c.message) &&
+        typeof c.time === 'number' &&
+        AUTHORS.has(c.author) &&
+        (c.parent === null || text(c.parent)) &&
+        typeof c.files === 'object' &&
+        c.files !== null &&
+        Object.values(c.files).every((b) => typeof b === 'string' && h.blobs.has(b))
+      if (!ok) return undefined
       h.commits.set(id, c as Commit)
     }
-    h.branches = x.branches.filter((b) => h.commits.has(b.head))
-    h.branch = h.branches.some((b) => b.name === x.branch) ? x.branch : (h.branches[0]?.name ?? 'main')
-    return h.branches.length ? h : undefined
+    // every parent is there: a line can be walked to its start
+    for (const c of h.commits.values()) if (c.parent !== null && !h.commits.has(c.parent)) return undefined
+    const branches = x.branches.filter(
+      (b): b is Branch => !!b && typeof b === 'object' && text(b.name) && text(b.head) && h.commits.has(b.head),
+    )
+    if (branches.length !== x.branches.length || !branches.length) return undefined
+    h.branches = branches
+    h.branch = branches.some((b) => b.name === x.branch) ? x.branch : branches[0]!.name
+    return h
   }
 }

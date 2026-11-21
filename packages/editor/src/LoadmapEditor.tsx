@@ -90,7 +90,7 @@ import type { FileTabsProps } from './FileTabs'
 import type { FileMark } from './filenames'
 import type { Dsl, NewKind } from './fileops'
 import { CODE_FONTS, CODE_SIZE, CODE_SIZES, type CodeFont, fontStack, loadFont } from './fonts'
-import type { Author, History, HistoryData, Trace } from './history'
+import type { Author, HistoryData } from './history'
 import type { InspectorProps, InspectorTab } from './Inspector'
 import { editorKeys, isSaveKey } from './keys'
 import { type Around, loadmapLanguage, renameMark, startRename } from './language'
@@ -99,6 +99,7 @@ import { PanelHead, RAIL, Rail, Resize } from './Panel'
 import { plusMinusSigns, redrawMarks } from './plusMinus'
 import type { FileHost } from './reshape'
 import { lazySearch, openSearch } from './search'
+import type { Studio, StudioHost } from './studio'
 import { injectEditorStyles } from './styles'
 import type { Template } from './templates'
 
@@ -256,11 +257,11 @@ export interface LoadmapEditorProps {
    */
   layout?: EditorLayout
   /**
-   * Keep a history of the files: each version the reader keeps, each change accepted from the assistant, each save is
-   * a commit, as git writes one. A Timeline panel shows them: Back and Forward draw an older version, Restore makes it
-   * the files again with a new version on top, "Branch from here" tries another design. With `key` it is mirrored to
-   * this tab's storage (sessionStorage) under that key: a reload keeps it, closing the tab drops it. Loaded on first
-   * use; off by default.
+   * Keep a history of the files: each version the reader keeps, each save and each definition loaded is a commit, as
+   * git writes one. A Timeline panel shows them: Back and Forward draw an older version, Restore makes it the files
+   * again with a new version on top, "Branch from here" tries another design. With `key` it is mirrored to this tab's
+   * storage (sessionStorage) under that key: a reload keeps it, closing the tab drops it. Loaded on first use; off by
+   * default.
    */
   history?: boolean | { key?: string }
   ref?: Ref<LoadmapEditorHandle>
@@ -511,35 +512,17 @@ export function LoadmapEditor({
     const open = view.current?.state.doc.toString() ?? state.source
     return { path: f.entry, files: { ...f.others, [f.active]: open } }
   }
-  // the history of the files (history.ts, loaded once the editor is up when the page asks for one)
-  const hist = useRef<History | null>(null)
-  const [histVersion, setHistVersion] = useState(0)
-  /** An older version drawn in the canvas instead of the files, from the Timeline. */
+  // the history and its panel (studio.tsx), loaded once the editor is up when the page asks for them
+  const studio = useRef<Studio | null>(null)
+  const [, setStudioVersion] = useState(0)
+  /** An older version drawn in the canvas instead of the files. */
   const [shownVersion, setShownVersion] = useState<{ id: string; def: Definition } | null>(null)
-  const histKey = typeof keepHistory === 'object' ? keepHistory.key : undefined
-  const histChanged = () => {
-    setHistVersion((n) => n + 1)
-    if (!histKey || !hist.current) return
-    try {
-      sessionStorage.setItem(histKey, JSON.stringify(hist.current.toData()))
-    } catch {
-      // a full or blocked storage keeps the history for this page only
-    }
+  const shownRef = useRef(shownVersion)
+  const showDef = (id: string | null, def?: Definition) => {
+    shownRef.current = id && def ? { id, def } : null
+    setShownVersion(shownRef.current)
   }
-  /** The files as they are now, a version of the history: none when they are the newest one's. */
-  const keepVersion = async (author: Author, message: string, trace?: Trace) => {
-    const h = hist.current
-    if (!h) return
-    const f = filesNow()
-    if (await h.commit(f.files, f.path, author, message, trace)) histChanged()
-  }
-  const showVersion = (id: string | null) => {
-    const c = id ? hist.current?.commits.get(id) : undefined
-    if (!c || !hist.current) return setShownVersion(null)
-    const files = hist.current.filesOf(c)
-    const r = compile(files[c.entry] ?? '', { path: c.entry, files, functions: latest.current.functions })
-    setShownVersion(r.definition ? { id: c.id, def: r.definition } : null)
-  }
+  const keepVersion = (author: Author, message: string) => void studio.current?.keep(author, message)
   // ⌘S from habit: the page's own save, or a word on what keeps the text; never the browser's Save Page
   // one save at a time: a second ⌘S while the page saves would race it with older files
   const saving = useRef(false)
@@ -547,7 +530,7 @@ export function LoadmapEditor({
   pressedSave.current = () => {
     const { onSave: own, onChange: change, onFiles: files } = latest.current
     setNote(saveSays(!!own, !!(change || files)).note)
-    void keepVersion('you', 'Saved')
+    keepVersion('you', 'Saved')
     if (!own || saving.current) return
     saving.current = true
     Promise.resolve()
@@ -593,7 +576,8 @@ export function LoadmapEditor({
         prints: Object.keys(f.others).map((p) => [p, fingerprint(f.others[p]!)] as const),
       }
     const key = modelKey([...othersKey.current.prints, [f.active, fingerprint(source)]])
-    const h = preview.current
+    const h = shownRef.current ? null : preview.current
+    if (shownRef.current) showDef(null)
     // a whole new text stays one until a version of it compiles: fixing its errors starts it fitted, from its defaults
     const whole = fresh.current
     if (whole) fresh.current = !result.definition
@@ -898,9 +882,12 @@ export function LoadmapEditor({
   }
 
   /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
-  const replace = (source: string, files?: EditorFiles) => {
+  const replace = (source: string, files?: EditorFiles, quiet = false) => {
     const v = view.current
     if (!v) return
+    // the reader's unkept edits first, then the new definition: each a version (the history keeps their order)
+    if (!quiet) keepVersion('you', 'Edited')
+    showDef(null)
     // one file, unless it comes with others: the tabs go with the definition they were of
     const entry = files?.path ?? ONE
     const others = Object.fromEntries(Object.entries(files?.files ?? {}).filter(([p]) => p !== entry))
@@ -919,8 +906,7 @@ export function LoadmapEditor({
       // its own undo step, never merged with the typing just before it
       annotations: isolateHistory.of('full'),
     })
-    // a whole new definition (a template, a link, a repository) is a version of its own: a save finds where it began
-    void keepVersion('opened', 'Opened')
+    if (!quiet) keepVersion('opened', 'Opened')
   }
   const startFrom = async (t: Template | TemplateEntry) => {
     const text = view.current?.state.doc.toString()
@@ -1103,29 +1089,30 @@ export function LoadmapEditor({
     else if (layout === 'reader' && view.current) setText(view.current.state.doc.toString())
   }, [textHidden, layout])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: started once, with the files the editor opened with
+  const studioHost = useRef<StudioHost>(null!)
+  studioHost.current = {
+    fileHost,
+    files: filesNow,
+    show: showDef,
+    changed: () => setStudioVersion((n) => n + 1),
+    functions,
+    replace: (f) => replace(f.files[f.path] ?? '', f, true),
+  }
+  const histKey = typeof keepHistory === 'object' ? keepHistory.key : undefined
+  // biome-ignore lint/correctness/useExhaustiveDependencies: started once a page asks; the host is read through a ref
   useEffect(() => {
     if (!keepHistory) return
     let gone = false
-    void import('./history').then(async ({ History }) => {
-      let saved: unknown = null
-      try {
-        saved = histKey ? JSON.parse(sessionStorage.getItem(histKey) ?? 'null') : null
-      } catch {
-        saved = null
-      }
-      const f = filesNow()
-      const h = History.fromData(saved) ?? (await History.start(f.files, f.path))
-      if (gone) return
-      hist.current = h
-      // what the files became since the tab kept the history is a version of its own
-      await h.commit(f.files, f.path, 'you', 'Edited')
-      histChanged()
-    })
+    void import('./studio')
+      .then((m) => new m.Studio(() => studioHost.current, histKey).open())
+      .then((s) => {
+        if (!gone) studio.current = s
+      })
     return () => {
       gone = true
+      studio.current = null
     }
-  }, [keepHistory, histKey])
+  }, [!!keepHistory, histKey])
 
   useImperativeHandle(ref, () => ({
     source: () => view.current?.state.doc.toString() ?? state.source,
@@ -1135,7 +1122,7 @@ export function LoadmapEditor({
     format: formatText,
     files: filesNow,
     setFiles: (files) => replace(files.files[files.path] ?? '', files),
-    history: () => hist.current?.toData() ?? null,
+    history: () => studio.current?.history?.toData() ?? null,
   }))
 
   const shareLink = async () => {
@@ -1878,29 +1865,11 @@ export function LoadmapEditor({
                   </Canvas.Panel>
                 )}
                 {reader && <InspectOnClick selected={selected} />}
-                {keepHistory && (
-                  <Canvas.Panel id={TIMELINE} title="Timeline">
-                    {hist.current ? (
-                      <Suspense fallback={null}>
-                        <Timeline
-                          history={hist.current}
-                          host={fileHost}
-                          files={filesNow}
-                          version={histVersion}
-                          shown={shownVersion?.id ?? null}
-                          onShow={showVersion}
-                          onChanged={histChanged}
-                        />
-                      </Suspense>
-                    ) : (
-                      <p className="lme-hint">The history is loading.</p>
-                    )}
-                  </Canvas.Panel>
-                )}
+                {studio.current?.panels({ history: !!keepHistory, shown: shownVersion?.id ?? null })}
                 {shownVersion ? (
                   <p className="lme-stale">
                     Showing an older version.{' '}
-                    <button type="button" className="lm-btn lme-quiet" onClick={() => setShownVersion(null)}>
+                    <button type="button" className="lm-btn lme-quiet" onClick={() => showDef(null)}>
                       Back to now
                     </button>
                   </p>
@@ -1991,7 +1960,6 @@ function modelKey(prints: readonly (readonly [path: string, print: string])[]): 
 
 /** The inspector's panel among the canvas's, by its id: the first of the tabs while the code is hidden. */
 const INSPECT = 'inspect'
-const TIMELINE = 'timeline'
 
 /**
  * In the canvas: a box clicked while the code is hidden opens its fields. Once for each box, so a panel the reader
@@ -2095,7 +2063,6 @@ const Starters = later(() => import('./Starters'), 'The templates did not load: 
 const Shortcuts = later(() => import('./Shortcuts'), 'The list of keys did not load: reload the page.')
 const Actions = later(() => import('./Actions'))
 const CatalogPicker = later(() => import('./CatalogPicker'), 'The catalog did not load: reload the page.')
-const Timeline = later(() => import('./Timeline'), 'The history did not load: reload the page.')
 const FileTabs = later<FileTabsProps>(() => import('./FileTabs'))
 const Explorer = later<ExplorerProps>(() => import('./Explorer'), 'The files did not load: reload the page.')
 const Inspector = later<InspectorProps>(

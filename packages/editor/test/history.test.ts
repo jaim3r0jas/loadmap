@@ -77,4 +77,30 @@ describe('the history', () => {
     ).toBeUndefined()
     expect(History.fromData('nonsense')).toBeUndefined()
   })
+
+  it('makes commits asked for at once one after the other, each on the one before', async () => {
+    const h = await History.start({ 'm.loadmap': 'one\n' }, 'm.loadmap', { clock: clock() })
+    const [a, b] = await Promise.all([
+      h.commit({ 'm.loadmap': 'two\n' }, 'm.loadmap', 'you', 'A'),
+      h.commit({ 'm.loadmap': 'three\n' }, 'm.loadmap', 'you', 'B'),
+    ])
+    expect(b!.parent).toBe(a!.id)
+    expect(h.line().map((c) => c.message)).toEqual(['B', 'A', 'Opened'])
+  })
+
+  it('refuses stored data with a commit, a parent or a branch that does not hold together', async () => {
+    const h = await History.start({ 'm.loadmap': 'one\n' }, 'm.loadmap', { clock: clock() })
+    await h.commit({ 'm.loadmap': 'two\n' }, 'm.loadmap', 'you', 'Typed')
+    const good = JSON.parse(JSON.stringify(h.toData())) as any
+    const broken = (f: (d: any) => void) => {
+      const d = structuredClone(good)
+      f(d)
+      return History.fromData(d)
+    }
+    expect(broken(() => {})).toBeDefined()
+    const commits = (d: any) => Object.values(d.commits) as { files?: unknown; parent: string | null }[]
+    expect(broken((d) => delete commits(d)[0]!.files)).toBeUndefined()
+    expect(broken((d) => (commits(d).find((c) => c.parent)!.parent = 'gone'))).toBeUndefined()
+    expect(broken((d) => d.branches.push({ head: 'x' }))).toBeUndefined()
+  })
 })

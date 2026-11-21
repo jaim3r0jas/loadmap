@@ -20,7 +20,10 @@ export interface TimelineProps {
   version: number
   /** The version shown in the canvas instead of the live files; null for the live files. */
   shown: string | null
+  /** Draws a version in the canvas, or the files again (null). */
   onShow: (id: string | null) => void
+  /** Every file replaced, the model too: a version whose model is another file than now. */
+  onReplace: (f: { path: string; files: Readonly<Record<string, string>> }) => void
   /** The history changed: kept, and drawn again. */
   onChanged: () => void
   now?: () => number
@@ -77,9 +80,14 @@ export default function Timeline(p: TimelineProps) {
     if (dirty) await h.commit(live.files, live.path, 'you', 'Edited')
   }
   const put = (c: Commit | null) => {
-    if (!c) return
-    applyFiles(p.host, h.filesOf(c), 'input.history')
-    p.onShow(null)
+    if (c) {
+      const files = h.filesOf(c)
+      // a version whose model is another file (renamed since) replaces every file, the model too
+      if (c.entry !== live.path || !Object.hasOwn(files, live.path)) p.onReplace({ path: c.entry, files })
+      else applyFiles(p.host, files, 'input.history')
+      p.onShow(null)
+    }
+    // a version kept on the way (the reader's edits) is drawn even when nothing else changed
     p.onChanged()
   }
   const restore = async (cid: string) => {
@@ -101,12 +109,15 @@ export default function Timeline(p: TimelineProps) {
   const [message, setMessage] = useState('')
   const now = (p.now ?? (() => Math.floor(Date.now() / 1000)))()
   const line = h.line()
-  const current = p.shown ?? line[0]?.id ?? null
+  // the version drawn; none is now (the files), which is the newest version unless the reader has edited since
+  const current = p.shown ?? (dirty ? null : (line[0]?.id ?? null))
   const step = (by: -1 | 1) => {
-    if (!current) return
+    if (!current) return by < 0 && line[0] ? p.onShow(line[0].id) : undefined
     const next = h.step(current, by)
     if (next) p.onShow(next.id === line[0]?.id && !dirty ? null : next.id)
+    else if (by > 0) p.onShow(null)
   }
+  const counts = new Map(line.map((c) => [c.id, changedCount(h, c)]))
   const atOldest = current === line.at(-1)?.id
   const atNewest = p.shown == null
   return (
@@ -182,7 +193,7 @@ export default function Timeline(p: TimelineProps) {
               </span>
               <span>{c.message}</span>
               <span className="lme-when">
-                {ago(c.time, now)} · {changedCount(h, c)} file{changedCount(h, c) === 1 ? '' : 's'} · {c.id.slice(0, 7)}
+                {ago(c.time, now)} · {counts.get(c.id)} file{counts.get(c.id) === 1 ? '' : 's'} · {c.id.slice(0, 7)}
               </span>
             </button>
             {open === c.id && (
