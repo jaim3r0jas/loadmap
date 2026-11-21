@@ -90,6 +90,12 @@ token that may write (Contents, and Pull requests for the pull request), asked f
 you press **Save to GitHub**. Where the site has its GitHub App, **Sign in with GitHub** gets the token in a popup
 instead: it reaches only the repositories the app is installed on, for 8 hours.
 
+When the Timeline holds more than one version since the files were opened, the save can write **every version as its
+own commit**, in order (an assistant's says so, with its model), the last with the message you write. **New → Save to
+a new repository…** makes a repository in your own account, private unless you choose public, and writes every version
+of the Timeline to it as a commit; it needs a token that may create repositories. The Timeline's **Download** saves
+the whole history as one file `git clone` reads (a git bundle): every version and branch, nothing sent anywhere.
+
 ## Sharing, and the inspector
 
 **Share** puts the whole definition and the values you set into a link and copies it; its **▾** has **Embed in a

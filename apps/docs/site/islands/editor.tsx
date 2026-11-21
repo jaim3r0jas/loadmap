@@ -30,6 +30,7 @@ import jetbrainsMono from '../fonts/jetbrains-mono.woff2?url'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { changedCount, changedText, changes } from './github/changes'
+import { allVersions, type Version, versionsSince } from './github/commits'
 import type { Listing, Opened } from './github/load'
 import type { RepoTarget } from './github/parse'
 import { clearAside, leave as leaveTab, type RepoTab, readAside, readTab, writeTab } from './github/tab'
@@ -130,6 +131,7 @@ const fromRepo = () => !fromLink() && query().has('repo')
 const OpenDialog = lazy(() => import('./github').then((m) => ({ default: m.OpenDialog })))
 const ChangesDialog = lazy(() => import('./github').then((m) => ({ default: m.ChangesDialog })))
 const SaveDialog = lazy(() => import('./github').then((m) => ({ default: m.SaveDialog })))
+const NewRepoDialog = lazy(() => import('./github').then((m) => ({ default: m.NewRepoDialog })))
 /** The button's own rules, with it: docs.css is every page's first load. */
 const REPO_CSS = `
 .app-repo { max-width: 260px; font-family: var(--lm-mono); font-size: .78rem; }
@@ -256,6 +258,32 @@ function useHelp(): [boolean, (open: boolean) => void] {
 
 function Editor({ root }: { root: URL }) {
   const editor = useRef<LoadmapEditorHandle>(null)
+  const [newRepo, setNewRepo] = useState(false)
+  /** What a new repository starts with: every version of the history, else the files as they are. */
+  const allNow = (): Version[] => {
+    const h = editor.current?.history()
+    const live = editor.current?.files().files ?? {}
+    const v = h ? allVersions(h) : []
+    const last = v.at(-1)?.files
+    const same =
+      !!last &&
+      Object.keys(live).length === Object.keys(last).length &&
+      Object.entries(live).every(([p, x]) => last[p] === x)
+    return same ? v : [...v, { message: v.length ? 'Edited' : 'A loadmap model', files: { ...live } }]
+  }
+  /** The editor's versions since the repository's files were opened, the files as they are now the last. */
+  const versionsNow = (): Version[] | undefined => {
+    const h = editor.current?.history()
+    const t = repo.current
+    if (!h || !t) return undefined
+    const v = versionsSince(h, t.origin.originals)
+    if (!v) return undefined
+    const live = editor.current!.files().files
+    const last = v.at(-1)?.files ?? t.origin.originals
+    const same =
+      Object.keys(live).length === Object.keys(last).length && Object.entries(live).every(([p, x]) => last[p] === x)
+    return same ? v : [...v, { message: 'Edited', files: { ...live } }]
+  }
   // a private repository's files leave this page only once the reader says so, once per session
   const assist = useMemo(
     () => ({
@@ -491,6 +519,11 @@ function Editor({ root }: { root: URL }) {
       label: 'GitHub',
       items: [
         { label: 'Open from GitHub…', onSelect: () => setGithub({}) },
+        {
+          label: 'Save to a new repository…',
+          hint: 'In your account, private unless you choose; every version a commit',
+          onSelect: () => setNewRepo(true),
+        },
         ...(aside
           ? [
               {
@@ -521,6 +554,15 @@ function Editor({ root }: { root: URL }) {
         </Suspense>
       )}
       {from && <style>{REPO_CSS}</style>}
+      {newRepo && (
+        <Suspense fallback={null}>
+          <NewRepoDialog
+            versions={allNow()}
+            name={(editor.current?.files().path.split('/').pop() ?? 'model').replace(/\.loadmap$/, '')}
+            onClose={() => setNewRepo(false)}
+          />
+        </Suspense>
+      )}
       {showChanges && repo.current && (
         <Suspense fallback={null}>
           <ChangesDialog
@@ -541,6 +583,7 @@ function Editor({ root }: { root: URL }) {
             origin={repo.current.origin}
             path={repo.current.path}
             list={changes(repo.current)}
+            versions={versionsNow()}
             onSaved={saved}
             onClose={() => {
               setShowSave(false)

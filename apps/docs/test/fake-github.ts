@@ -22,6 +22,11 @@ export interface FakeRepo {
   token?: string
   /** GitHub refuses a pull request with this message. */
   refusePull?: string
+  /**
+   * `POST /user/repos` makes this repository (its `refs` as GitHub's README leaves them); the first reads of its branch
+   * answer 404 this many times, as GitHub does while it writes the README.
+   */
+  creatable?: { notYet?: number }
 }
 
 export interface Call {
@@ -62,6 +67,7 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
       ...(typeof f === 'string' ? { text: f, mode: '100644' } : { text: f.text, mode: f.mode ?? '100644' }),
     }))
   const at = (refOrSha: string) => (commits.has(refOrSha) ? commits.get(refOrSha)! : refOrSha)
+  const tip = (b: string) => made.get(b) ?? (repo.refs[b] ? shaOf(`commit:${b}`) : undefined)
 
   const fetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(String(input))
@@ -91,6 +97,20 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
     if (url.origin !== 'https://api.github.com') throw new TypeError('Failed to fetch')
     const base = `/repos/${repo.owner}/${repo.name}`
     const path = decodeURIComponent(url.pathname)
+    if (path === '/user/repos' && init.method === 'POST') {
+      if (repo.token == null || authorization !== `Bearer ${repo.token}`)
+        return json(403, { message: 'Resource not accessible by personal access token' })
+      const body = JSON.parse(String(init.body ?? '{}'))
+      if (!repo.creatable || body.name !== repo.name)
+        return json(422, { message: 'name already exists on this account' })
+      repo.private = !!body.private
+      return json(201, {
+        name: repo.name,
+        owner: { login: repo.owner },
+        html_url: `https://github.com/${repo.owner}/${repo.name}`,
+        default_branch: repo.defaultBranch ?? 'main',
+      })
+    }
     if (!allowed || !path.startsWith(base)) return json(404, { message: 'Not Found' })
     const rest = path.slice(base.length)
     const method = init.method ?? 'GET'
@@ -104,7 +124,6 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
         parents.set(sha, body.parents[0])
         return json(201, { sha })
       }
-      const tip = (b: string) => made.get(b) ?? (repo.refs[b] ? shaOf(`commit:${b}`) : undefined)
       if (method === 'POST' && rest === '/git/refs') {
         const b = String(body.ref).replace(/^refs\/heads\//, '')
         if (tip(b)) return json(422, { message: 'Reference already exists' })
@@ -124,6 +143,20 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
         return json(201, { number: 7, html_url: `https://github.com/${repo.owner}/${repo.name}/pull/7` })
       }
       return json(404, { message: 'Not Found' })
+    }
+    if (rest.startsWith('/git/ref/heads/')) {
+      const b = rest.slice('/git/ref/heads/'.length)
+      if (repo.creatable?.notYet) {
+        repo.creatable.notYet--
+        return json(404, { message: 'Not Found' })
+      }
+      return tip(b)
+        ? json(200, { ref: `refs/heads/${b}`, object: { sha: tip(b) } })
+        : json(404, { message: 'Not Found' })
+    }
+    if (rest.startsWith('/git/commits/')) {
+      const ref = commits.get(rest.slice('/git/commits/'.length))
+      return ref == null ? json(404, { message: 'Not Found' }) : json(200, { tree: { sha: shaOf(`tree:${ref}`) } })
     }
     if (rest === '')
       return json(200, {

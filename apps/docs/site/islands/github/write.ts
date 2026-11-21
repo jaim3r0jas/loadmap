@@ -4,6 +4,7 @@
 // token, after they press Save.
 import { type Client, filePath, GitHubError, repoApi, repoWeb } from './api'
 import type { Change } from './changes'
+import { commitVersions, type Version } from './commits'
 import { goodRef } from './parse'
 import type { RepoOrigin } from './tab'
 
@@ -14,6 +15,11 @@ export interface SaveRequest {
   message: string
   /** Open a pull request into the branch the files came from (a new branch only). */
   pull?: { title: string; body: string }
+  /**
+   * Every version of the editor's history since the files were opened, oldest first, each its own commit (the last is
+   * the files as they are now): instead of one commit with `message`.
+   */
+  versions?: readonly Version[]
 }
 
 export interface Saved {
@@ -54,6 +60,20 @@ export async function save(
   if (wrong) throw new Error(wrong)
   const at = repoApi(origin)
   step('tree')
+  if (r.versions?.length) {
+    const last = await commitVersions(
+      gh,
+      origin,
+      { commit: origin.sha, tree: origin.tree, files: origin.originals },
+      r.versions,
+      () => step('commit'),
+      {
+        crlf: origin.crlf,
+        exec: origin.exec,
+      },
+    )
+    return moved(gh, origin, r, last, '', step)
+  }
   const tree = await gh.json<{ sha: string }>(`${at}/git/trees`, {
     method: 'POST',
     body: {
@@ -77,15 +97,28 @@ export async function save(
     method: 'POST',
     body: { message: r.message.trim(), tree: tree.sha, parents: [origin.sha] },
   })
+  return moved(gh, origin, r, commit.sha, tree.sha, step)
+}
+
+/** The branch made or moved to the commit, and the pull request when asked: a save's last steps. */
+async function moved(
+  gh: Client,
+  origin: RepoOrigin,
+  r: SaveRequest,
+  commit: string,
+  tree: string,
+  step: (s: SaveStep) => void,
+): Promise<Saved> {
+  const at = repoApi(origin)
   step('branch')
   if (r.onto === 'new')
-    await gh.json(`${at}/git/refs`, { method: 'POST', body: { ref: `refs/heads/${r.branch}`, sha: commit.sha } })
+    await gh.json(`${at}/git/refs`, { method: 'POST', body: { ref: `refs/heads/${r.branch}`, sha: commit } })
   else {
     // only forward: a branch someone else moved meanwhile is not overwritten
     try {
       await gh.json(`${at}/git/refs/heads/${filePath(r.branch)}`, {
         method: 'PATCH',
-        body: { sha: commit.sha, force: false },
+        body: { sha: commit, force: false },
       })
     } catch (e) {
       if (e instanceof GitHubError && e.failure === 'invalid' && /does not exist/i.test(e.said))
@@ -105,7 +138,7 @@ export async function save(
   }
   const branchUrl = `${repoWeb(origin)}/tree/${filePath(r.branch)}`
   const compare = `${repoWeb(origin)}/compare/${filePath(origin.base)}...${filePath(r.branch)}?expand=1`
-  const saved: Saved = { branch: r.branch, commit: commit.sha, tree: tree.sha, url: branchUrl, compare }
+  const saved: Saved = { branch: r.branch, commit, tree, url: branchUrl, compare }
   if (r.pull && wantsPull(origin, r.onto, true)) {
     step('pull')
     try {

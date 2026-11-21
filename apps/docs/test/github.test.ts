@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { compile } from '@loadmap/dsl'
+import type { HistoryData } from '@loadmap/editor'
 import { describe, expect, it, vi } from 'vitest'
 import { client, GitHubError } from '../site/islands/github/api'
 import { changedCount, changedText, changes } from '../site/islands/github/changes'
+import { allVersions, createRepo, versionsSince } from '../site/islands/github/commits'
 import { lineDiff } from '../site/islands/github/Diff'
 import { list, open } from '../site/islands/github/load'
 import { cleanPath, goodRef, parseRepo, refSplits, repoQuery, targetFromQuery } from '../site/islands/github/parse'
@@ -224,6 +226,14 @@ describe('a token', () => {
     expect(read.searchParams.has('pull_requests')).toBe(false)
     const write = new URL(tokenPage('acme', 'write')).searchParams
     expect([write.get('contents'), write.get('pull_requests')]).toEqual(['write', 'write'])
+    expect(write.has('administration')).toBe(false)
+    // a new repository: administration, which GitHub asks for to make one, and contents to write its versions
+    const create = new URL(tokenPage(undefined, 'create')).searchParams
+    expect([create.get('administration'), create.get('contents'), create.has('pull_requests')]).toEqual([
+      'write',
+      'write',
+      false,
+    ])
     expect(read.searchParams.get('name')!.length).toBeLessThanOrEqual(40)
   })
 
@@ -529,5 +539,120 @@ describe('saving to GitHub', () => {
     expect(messageFor(list.slice(0, 1))).toBe('Change shop.loadmap')
     expect(messageFor(list.slice(2))).toBe('Remove gone.loadmap')
     expect(messageFor(list)).toBe('Change shop.loadmap, win.loadmap, gone.loadmap')
+  })
+
+  const history: HistoryData = {
+    version: 1,
+    blobs: { b1: 'a', b2: 'a\nb', b3: 'a\nb\nc' },
+    commits: {
+      c1: {
+        id: 'c1',
+        parent: null,
+        tree: 't1',
+        files: { 'shop.loadmap': 'b1' },
+        entry: 'shop.loadmap',
+        author: 'opened',
+        message: 'Opened',
+        time: 1,
+      },
+      c2: {
+        id: 'c2',
+        parent: 'c1',
+        tree: 't2',
+        files: { 'shop.loadmap': 'b2' },
+        entry: 'shop.loadmap',
+        author: 'you',
+        message: 'Edited',
+        time: 2,
+      },
+      c3: {
+        id: 'c3',
+        parent: 'c2',
+        tree: 't3',
+        files: { 'shop.loadmap': 'b3' },
+        entry: 'shop.loadmap',
+        author: 'assistant',
+        message: 'Add c',
+        time: 3,
+        trace: { request: 'add c', model: 'm1', operations: [], notes: [] },
+      },
+    },
+    branches: [{ name: 'main', head: 'c3' }],
+    branch: 'main',
+  }
+
+  it("lists the versions since the repository's files, an assistant's with its model, or every one for a new home", () => {
+    expect(versionsSince(history, { 'shop.loadmap': 'a' })).toEqual([
+      { message: 'Edited', files: { 'shop.loadmap': 'a\nb' } },
+      { message: 'Add c\n\nAssisted-by: m1', files: { 'shop.loadmap': 'a\nb\nc' } },
+    ])
+    // no version holds the files the repository has: the save is one commit
+    expect(versionsSince(history, { 'shop.loadmap': 'other' })).toBeUndefined()
+    expect(allVersions(history).map((v) => v.message)).toEqual(['Opened', 'Edited', 'Add c\n\nAssisted-by: m1'])
+  })
+
+  it('saves each version as its own commit on the one before, then moves the branch once', async () => {
+    const fake = fakeGitHub({ ...REPO, token })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    const steps: string[] = []
+    const versions = versionsSince(history, { 'shop.loadmap': 'a' })!
+    const saved = await save(
+      gh,
+      origin({ originals: { 'shop.loadmap': 'a' }, crlf: [] }),
+      list.slice(0, 1),
+      { branch: 'loadmap/versions', onto: 'new', message: 'x', versions },
+      (s) => steps.push(s),
+    )
+    expect(steps).toEqual(['tree', 'commit', 'commit', 'branch'])
+    const [t1, c1, t2, c2, ref] = posts(fake)
+    expect(t1![2]).toEqual({
+      base_tree: shaOf('tree:main'),
+      tree: [{ path: 'shop.loadmap', mode: '100644', type: 'blob', content: 'a\nb' }],
+    })
+    expect(c1![2]).toMatchObject({ message: 'Edited', parents: [shaOf('commit:main')] })
+    expect(t2![2]).toMatchObject({ tree: [{ content: 'a\nb\nc' }] })
+    // the second commit's parent is the first one made, not the commit read
+    expect(c2![2]).toMatchObject({ message: 'Add c\n\nAssisted-by: m1' })
+    expect((c2![2] as { parents: string[] }).parents).toEqual([expect.stringMatching(/^[0-9a-f]{40}$/)])
+    expect((c2![2] as { parents: string[] }).parents[0]).not.toBe(shaOf('commit:main'))
+    expect(ref![2]).toEqual({ ref: 'refs/heads/loadmap/versions', sha: saved.commit })
+  })
+
+  it("makes a repository in the reader's account and writes every version to it, once its branch is there", async () => {
+    const fake = fakeGitHub({
+      owner: 'reader',
+      name: 'my-model',
+      refs: { main: { 'README.md': '# my-model' } },
+      token,
+      creatable: { notYet: 2 },
+    })
+    const gh = client({ fetch: fake.fetch, token: () => token })
+    const steps: string[] = []
+    const made = await createRepo(
+      gh,
+      { name: 'my-model', private: true },
+      allVersions(history),
+      (s, n) => steps.push(n == null ? s : `${s} ${n}`),
+      0,
+    )
+    expect(made).toEqual({
+      owner: 'reader',
+      name: 'my-model',
+      url: 'https://github.com/reader/my-model',
+      branch: 'main',
+    })
+    expect(steps).toEqual(['repo', 'commits 0', 'commits 1', 'commits 2', 'commits 3', 'branch'])
+    const writes = posts(fake)
+    expect(writes[0]).toEqual([
+      'POST',
+      '/user/repos',
+      { name: 'my-model', private: true, description: 'A loadmap model, made in the loadmap editor.', auto_init: true },
+    ])
+    expect(writes.at(-1)).toMatchObject(['PATCH', '/repos/reader/my-model/git/refs/heads/main', { force: false }])
+    // the README stays: each tree is written on the one before
+    expect(writes[1]![2]).toMatchObject({ base_tree: shaOf('tree:main') })
+    await expect(createRepo(gh, { name: 'bad name', private: true }, [], () => {}, 0)).rejects.toThrow(
+      'A repository name is letters, digits',
+    )
   })
 })

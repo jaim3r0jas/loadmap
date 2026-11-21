@@ -24,6 +24,8 @@ export interface TimelineProps {
   onShow: (id: string | null) => void
   /** Every file replaced, the model too: a version whose model is another file than now. */
   onReplace: (f: { path: string; files: Readonly<Record<string, string>> }) => void
+  /** Saves the whole history as a git bundle. */
+  onExport?: () => void
   /** The history changed: kept, and drawn again. */
   onChanged: () => void
   now?: () => number
@@ -145,6 +147,11 @@ export default function Timeline(p: TimelineProps) {
         {p.shown && (
           <button type="button" className="lm-btn" onClick={() => p.onShow(null)}>
             Back to now
+          </button>
+        )}
+        {p.onExport && (
+          <button type="button" className="lm-btn lme-quiet" onClick={p.onExport} title="A file git clone reads">
+            Download
           </button>
         )}
         {h.branches.length > 1 && (

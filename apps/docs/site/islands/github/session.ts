@@ -50,14 +50,16 @@ export const hasToken = () => token != null
  * permissions the editor needs (reading the files; writing a branch and opening a pull request for a save). The
  * reader still picks the repository there: GitHub's form takes no repository from an address.
  */
-export function tokenPage(owner: string | undefined, need: 'read' | 'write'): string {
+export function tokenPage(owner: string | undefined, need: 'read' | 'write' | 'create'): string {
   const q = new URLSearchParams({
     name: 'loadmap editor',
     description: 'Opens and saves .loadmap files from the loadmap editor.',
     expires_in: '7',
-    contents: need,
+    contents: need === 'read' ? 'read' : 'write',
   })
   if (owner) q.set('target_name', owner)
   if (need === 'write') q.set('pull_requests', 'write')
+  // making a repository is an administration right, on every repository of the account: a new one is in no list yet
+  if (need === 'create') q.set('administration', 'write')
   return `https://github.com/settings/personal-access-tokens/new?${q}`
 }
