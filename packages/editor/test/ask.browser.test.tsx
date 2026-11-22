@@ -152,10 +152,16 @@ describe('the Ask panel', () => {
   it("connects the reader's metrics, runs the looks they allow, and draws an accepted measure with them", async () => {
     const looked: unknown[] = []
     const pulled: string[][] = []
+    let down = true
     const data: EditorData = {
       where: 'a test bridge',
-      connect: async () => ['prometheus'],
+      connect: async () => ({ explore: ['prometheus'], measure: ['prometheus'] }),
       explore: async (calls) => {
+        // the first press finds the bridge gone: the reader hears it, the model does not
+        if (down) {
+          down = false
+          throw new Error('the bridge went away')
+        }
         looked.push(calls)
         return 'search orders:\n  shop_orders_total (counter): Orders placed'
       },
@@ -197,6 +203,11 @@ describe('the Ask panel', () => {
     const looks = page.getByRole('region', { name: 'Looks in your metrics' })
     await expect.element(looks.getByText('search orders')).toBeVisible()
     expect(looked).toEqual([])
+    await userEvent.click(looks.getByRole('button', { name: 'Run', exact: true }))
+    await expect
+      .poll(() => document.querySelector('.lme-ask')?.textContent ?? '')
+      .toContain('The looks did not run: the bridge went away')
+    expect(model.requests).toHaveLength(1)
     await userEvent.click(looks.getByRole('button', { name: 'Run', exact: true }))
     const card = page.getByRole('region', { name: 'Proposal' })
     await expect.element(card.getByText('Accept'), { timeout: 5000 }).toBeVisible()

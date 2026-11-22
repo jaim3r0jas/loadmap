@@ -200,8 +200,11 @@ export class Studio {
    * The files drawn with measured data, until the reader goes back or edits: the text stays as written, the snapshot
    * only fills its measures. `@loadmap/core/measure` loads with the first snapshot, never before.
    */
-  measured = async (snap: Snapshot | null) => {
-    if (!snap) return this.host().show(null)
+  measured = async (snap: Snapshot | null): Promise<boolean> => {
+    if (!snap) {
+      this.host().show(null)
+      return true
+    }
     const { fromSnapshot } = await import('@loadmap/core/measure')
     const f = this.host().files()
     const r = compile(f.files[f.path] ?? '', {
@@ -214,6 +217,7 @@ export class Studio {
     const utc = /T(\d\d:\d\d)(:\d\d(\.\d+)?)?Z$/.exec(snap.fetched)?.[1]
     this.measuredAt = utc ? `${utc} UTC` : snap.fetched
     this.host().show(r.definition ? 'measured' : null, r.definition)
+    return !!r.definition
   }
 
   /** When the snapshot drawn was read. */
@@ -255,6 +259,7 @@ export class Studio {
               memory={this.ask}
               data={o.assist.data}
               onMeasured={this.measured}
+              functions={host.functions}
               selected={o.selected}
             />
           </Suspense>

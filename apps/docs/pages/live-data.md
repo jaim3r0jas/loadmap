@@ -98,5 +98,6 @@ words, `loadmap explore labels <metric>` its labels and their most common values
 --explore` lets the model make those looks itself, read only, before it writes the metric and the measure.
 
 The [editor](/editor/) reaches your metrics the same way, from your own computer: `npx @loadmap/cli bridge` serves
-them on `localhost:7788` to this site alone (`--origin` names another), holding the address and the token. Press
-**Connect** in the Ask panel: the model may then ask to look, and a measure you accept is read and drawn at once.
+them on `localhost:7788` to this site alone (`--origin` names another), holding the address and the token, and only
+to a page given the code it prints. Type it beside **Connect** in the Ask panel: the model may then ask to look, and a
+measure you accept is read and drawn at once.

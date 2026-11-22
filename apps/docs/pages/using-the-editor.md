@@ -47,8 +47,8 @@ lost box for a loss nothing counts), and the other uses of the name under the cu
 
 The **Ask** panel asks a model you choose, with your own key, for a change: it comes as a proposal the compiler has
 checked, drawn in the canvas, and goes into the text only when you accept it. To let the model look at your own
-metrics, run `npx @loadmap/cli bridge` on your computer with `LOADMAP_PROMETHEUS_URL` set (and its token), and press
-**Connect** in the panel. Every look it asks for waits for your press; the bridge keeps the address and the token,
+metrics, run `npx @loadmap/cli bridge` on your computer with `LOADMAP_PROMETHEUS_URL` set (and its token), type the
+code it prints beside **Connect** in the panel, and press it. Every look it asks for waits for your press; the bridge keeps the address and the token,
 and the page sees only what was read. A measure you accept is read at once, and the diagram drawn with it.
 
 ## Keys, saving and View

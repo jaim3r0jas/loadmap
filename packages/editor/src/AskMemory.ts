@@ -1,4 +1,5 @@
 import type { ChatMessage, ExploreCall, Proposal } from '@loadmap/dsl/assist'
+import type { Connected } from './AskPanel'
 
 /** A turn of the conversation as the panel draws it. */
 export interface Turn {
@@ -26,7 +27,7 @@ export interface AskMemory {
   /** The last answer was words only: "Draft this" may follow. */
   advice: boolean
   /** The stores the reader connected, by id; null until they press Connect. */
-  stores: readonly string[] | null
+  stores: Connected | null
   /** The reader said yes to every look this session. */
   allowed: boolean
   /** The looks the model asked for, waiting for the reader's press. */
