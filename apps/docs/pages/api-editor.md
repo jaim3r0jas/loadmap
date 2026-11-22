@@ -103,6 +103,12 @@ provider and the key. `assist.confirmSend` is asked before each request, with th
 leaves it. The page's Content-Security-Policy must allow the providers' origins
 (`PROVIDER_ORIGINS` of `@loadmap/dsl/assist`); the docs' editor lists them, with Ollama's and LM Studio's local ports.
 
+`assist.signIn` offers a way to get a key without pasting one, by provider (`{ openrouter: () => Promise<key> }`:
+the docs' editor signs in with OpenRouter in a popup, PKCE, no server of its own). `assist.vault` (a `KeyVault`:
+`where`, `open(provider, passphrase)`, `keep(provider, key, passphrase)`) lets the reader keep a key sealed with a
+passphrase of 12 characters or more and open it on another device; the docs keep it in a private repository of the
+reader's GitHub (`loadmap-keys`), sealed in the page (PBKDF2, then AES-GCM), so GitHub holds the sealed text alone.
+
 `assist.data` (an `EditorData`) gives the panel the reader's metrics. Nothing is asked of it before the reader presses
 **Connect** (`connect(code?)` names the stores to explore and to measure from; with `code`, the panel asks for one
 beside it). Then the model may ask to look in them before it writes a metric: each

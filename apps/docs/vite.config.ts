@@ -34,7 +34,7 @@ function pages(): Plugin {
         }
         server.ws.send({ type: 'full-reload' })
       })
-      // llms.txt, llms-full.txt and the search's index, made fresh on each request
+      // llms.txt, llms-full.txt, llms-small.txt and the search's index, made fresh on each request
       server.middlewares.use((req, res, next) => {
         const path = req.url?.split('?')[0] ?? ''
         const name = path.startsWith(base) ? path.slice(base.length) : ''
@@ -42,7 +42,7 @@ function pages(): Plugin {
           res.setHeader('content-type', 'application/json')
           return res.end(JSON.stringify(searchIndex()))
         }
-        if (name !== 'llms.txt' && name !== 'llms-full.txt') return next()
+        if (name !== 'llms.txt' && name !== 'llms-full.txt' && name !== 'llms-small.txt') return next()
         res.setHeader('content-type', 'text/plain; charset=utf-8')
         res.end(llms()[name])
       })

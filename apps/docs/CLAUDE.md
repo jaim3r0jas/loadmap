@@ -49,9 +49,12 @@ highlighter, whose workspace imports the default loader hands to Node as TypeScr
 The editor opens GitHub repositories (`?repo=owner/name&ref=…&path=…`, New → Open from GitHub): `site/islands/github/`,
 loaded only on that menu or address, talks to `api.github.com` and `raw.githubusercontent.com` and nothing else
 (`api.ts`), pins the commit a ref names, and reads the model and what it reaches through `imports()` within the
-definition's limits (`load.ts`). A repository is untrusted input: its paths go through `cleanPath`. A token never goes
-into an address, a share link or localStorage. Tests answer from `test/fake-github.ts` (as `fetch` in node, through
-`page.route` in Chromium): nothing reaches the real GitHub. The editor page alone gets a Content-Security-Policy, as a
-`<meta>` put in at build (`csp.ts`: the dev server's scripts would break it). **Sign in with GitHub** shows only in a build
-given a GitHub App (`VITE_GITHUB_APP_*`, repository variables in `docs.yml`): a popup to GitHub, back to `/signed-in/`,
-and the code swapped for a token by the Worker in `apps/github-auth` (its README has the setup, which is the owner's to do).
+definition's limits (`load.ts`); `github/vault.ts` keeps the Ask panel's sealed key in a private repository there.
+`site/islands/openrouter.ts`, loaded only on its button, talks to `openrouter.ai` alone (the Ask panel's sign-in);
+`site/islands/bridge.ts` to `localhost:7788` (`loadmap bridge`). A repository is untrusted input: its paths go through
+`cleanPath`. A token never goes into an address, a share link or localStorage. Tests answer from `test/fake-github.ts`
+(as `fetch` in node, through `page.route` in Chromium): nothing reaches the real GitHub. The editor page alone gets a
+Content-Security-Policy, as a `<meta>` put in at build (`csp.ts`: the dev server's scripts would break it). **Sign in
+with GitHub** shows only in a build given a GitHub App (`VITE_GITHUB_APP_*`, repository variables in `docs.yml`): a
+popup to GitHub, back to `/signed-in/`, and the code swapped for a token by the Worker in `apps/github-auth` (its README
+has the setup, which is the owner's to do).

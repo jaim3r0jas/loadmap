@@ -1,4 +1,4 @@
-export type { Connected, EditorData } from './AskPanel'
+export type { Connected, EditorData, KeyVault } from './AskPanel'
 export type { EmbedOptions } from './Embed'
 export { CODE_FONTS, type CodeFont } from './fonts'
 export type { Author, Branch, Commit, HistoryData, Trace } from './history'

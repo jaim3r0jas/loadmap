@@ -10,6 +10,7 @@ import {
   type CodeFont,
   type EditorLayout,
   type EmbedOptions,
+  type KeyVault,
   LoadmapEditor,
   type LoadmapEditorHandle,
   TEMPLATES,
@@ -280,6 +281,8 @@ function Editor({ root }: { root: URL }) {
     () => ({
       reference: loadReference,
       data: bridge,
+      signIn: { openrouter: () => import('./openrouter').then((m) => m.openRouterSignIn()) },
+      vault: VAULT,
       confirmSend: (p: { name: string }) => {
         const o = repo.current?.origin
         if (!o?.private) return true
@@ -697,6 +700,31 @@ const loadReference = () =>
       reference = undefined
       throw err
     }))
+
+/**
+ * A model key kept sealed in the reader's own GitHub (a private repository, `loadmap-keys`), opened with their
+ * passphrase: GitHub holds the sealed text alone. It needs the GitHub token the editor already asks for.
+ */
+const VAULT: KeyVault = {
+  where: 'your GitHub',
+  open: async (provider, passphrase) => {
+    const { gh, v } = await vaultReady()
+    const sealed = await v.loadSealed(gh, provider)
+    return sealed === undefined ? undefined : v.unseal(sealed, passphrase)
+  },
+  keep: async (provider, key, passphrase) => {
+    const { gh, v } = await vaultReady()
+    await v.saveSealed(gh, provider, await v.seal(key, passphrase))
+  },
+}
+
+/** The vault's code and the GitHub client, loaded on first use, with the token the editor already asks for. */
+async function vaultReady() {
+  const [{ gh, hasToken }, v] = await Promise.all([import('./github/session'), import('./github/vault')])
+  if (!hasToken())
+    throw new Error('Give the editor a GitHub token first (New → Open from GitHub…): the key is kept there.')
+  return { gh, v }
+}
 
 /** The private repositories whose files the reader said may go to a model, this page's session. */
 const allowed = new Set<string>()

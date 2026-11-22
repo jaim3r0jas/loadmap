@@ -38,8 +38,8 @@ function expectLinks(html: string, route: string, label: string) {
   // data-editor: where an island's Edit link leads
   for (const [, href] of html.matchAll(/(?:href|data-editor)="([^"]+)"/g)) {
     // vscode: opens the extension's page in a desktop VS Code
-    // llms.txt and llms-full.txt: files the build writes beside the pages
-    if (/^(https?:|mailto:|vscode:|\/assets\/)/.test(href!) || /(^|\/)llms(-full)?\.txt$/.test(href!)) continue
+    // llms.txt, llms-full.txt and llms-small.txt: files the build writes beside the pages
+    if (/^(https?:|mailto:|vscode:|\/assets\/)/.test(href!) || /(^|\/)llms(-full|-small)?\.txt$/.test(href!)) continue
     if (href!.startsWith('#')) expect(html, `${label} links to ${href}`).toContain(`id="${href!.slice(1)}"`)
     else {
       const path = routeOf(href!, route).replace(/#.*$/, '')
@@ -494,8 +494,9 @@ describe('the built site', () => {
     // groups 0.1 kB: 6.41 kB; the search's button and its keys 0.3 kB (the search itself loads on first use): 6.72 kB.
     // The chunks' hashed names compress a few bytes better or worse with each build (6.79 to 6.80 kB with no change
     // to the client): the bound leaves that room. The canvas loads its panels, its story and its zoom in chunks of
-    // their own, each one more name here: 6.86 kB
-    expect(kb).toBeLessThan(6.9)
+    // their own, each one more name here: 6.86 kB. The Ask panel's OpenRouter sign-in and sealed key are chunks of
+    // their own too: 6.91 kB
+    expect(kb).toBeLessThan(6.95)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
