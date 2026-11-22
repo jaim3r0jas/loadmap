@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { LANGUAGE_VERSION } from '@loadmap/dsl'
 import { Marked, type Token } from 'marked'
-import { fullReference } from '../../scripts/reference'
+import { fullReference, smallReference } from '../../scripts/reference'
 import { changelogFiles, releases, whatsNew } from './changelog'
 import { highlight } from './highlight'
 import { HEAD } from './site/theme'
@@ -704,7 +704,7 @@ const PUBLISHED = 'https://jaim3r0jas.github.io/loadmap/'
  * reference in one file with a model that uses every statement. Links are absolute, to the published site: the file
  * is often read away from where it was served.
  */
-export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
+export function llms(): Record<'llms.txt' | 'llms-full.txt' | 'llms-small.txt', string> {
   const groups = new Map<string, Page[]>()
   for (const p of DOCS) groups.set(p.group!, [...(groups.get(p.group!) ?? []), p])
   const map = [
@@ -727,10 +727,11 @@ export function llms(): Record<'llms.txt' | 'llms-full.txt', string> {
     '## Optional',
     '',
     `- [llms-full.txt](${PUBLISHED}llms-full.txt): the language guide and the whole reference in one file, and one model that uses every statement`,
+    `- [llms-small.txt](${PUBLISHED}llms-small.txt): the statement reference and one complete model, for a model with a small window`,
     '',
   ].join('\n')
   const full = fullReference()
-  return { 'llms.txt': map, 'llms-full.txt': full }
+  return { 'llms.txt': map, 'llms-full.txt': full, 'llms-small.txt': smallReference() }
 }
 
 /** Writes a file only when its text changes: the dev server reloads the page on every write it sees. */

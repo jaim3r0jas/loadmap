@@ -49,7 +49,7 @@ export const repoWeb = (r: { owner: string; name: string }) => `https://github.c
 
 export interface Client {
   /** A JSON call to the API: `path` from the API's root (`/repos/o/r`). */
-  json<T>(path: string, init?: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown }): Promise<T>
+  json<T>(path: string, init?: { method?: 'GET' | 'POST' | 'PATCH' | 'PUT'; body?: unknown }): Promise<T>
   /** A text answer from the API: a file's raw text, a commit's sha. */
   text(path: string, accept: string): Promise<string>
   /** A public file's text at a commit, from raw.githubusercontent.com. */
@@ -123,7 +123,7 @@ export function client(o: ClientOptions = {}): Client {
   }
 
   return {
-    async json<T>(path: string, init: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown } = {}) {
+    async json<T>(path: string, init: { method?: 'GET' | 'POST' | 'PATCH' | 'PUT'; body?: unknown } = {}) {
       const h = headers('application/vnd.github+json')
       if (init.body !== undefined) h['Content-Type'] = 'application/json'
       const res = await send(api(path), {

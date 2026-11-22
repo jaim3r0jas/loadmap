@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { type EditorData, LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { type EditorData, type KeyVault, LoadmapEditor, type LoadmapEditorHandle } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -220,5 +220,57 @@ describe('the Ask panel', () => {
       .poll(() => document.querySelector('.lme-stale')?.textContent ?? '', { timeout: 5000 })
       .toContain('Drawn with your metrics, read at 00:00 UTC.')
     await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('1 of 1 measures read')
+  })
+
+  it('gets a key by signing in, keeps it sealed with a passphrase, and opens it again', async () => {
+    await page.viewport(1440, 900)
+    const host = document.createElement('div')
+    host.style.cssText = 'width: 1440px; height: 760px'
+    document.body.appendChild(host)
+    const kept = new Map<string, { key: string; passphrase: string }>()
+    const vault: KeyVault = {
+      where: 'a test vault',
+      keep: async (provider, key, passphrase) => {
+        kept.set(provider, { key, passphrase })
+      },
+      open: async (provider, passphrase) => {
+        const k = kept.get(provider)
+        if (k && k.passphrase !== passphrase) throw new Error('That passphrase does not open the key.')
+        return k?.key
+      },
+    }
+    root = createRoot(host)
+    root.render(
+      <LoadmapEditor
+        fill
+        initial={checkout}
+        assist={{
+          reference: '# the reference',
+          providers: ['openrouter'],
+          signIn: { openrouter: async () => 'sk-or-v1-made' },
+          vault,
+        }}
+      />,
+    )
+    await userEvent.click(page.getByRole('button', { name: 'Ask', exact: true }))
+    const key = page.getByLabelText('OpenRouter key')
+    await userEvent.click(page.getByRole('button', { name: 'Sign in with OpenRouter' }))
+    await expect.element(key).toHaveValue('sk-or-v1-made')
+    const passphrase = page.getByLabelText('Passphrase')
+    // a short passphrase is all that would guard the key: refused
+    await userEvent.fill(passphrase, 'short')
+    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
+    await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('12 characters at least')
+    expect(kept.size).toBe(0)
+    await userEvent.fill(passphrase, 'a long passphrase here')
+    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
+    await expect.poll(() => kept.get('openrouter')?.key).toBe('sk-or-v1-made')
+    // the passphrase is never kept in the field
+    await expect.element(passphrase).toHaveValue('')
+    await userEvent.click(page.getByRole('button', { name: 'Forget' }))
+    await expect.element(key).toHaveValue('')
+    await userEvent.fill(passphrase, 'a long passphrase here')
+    await userEvent.click(page.getByRole('button', { name: 'Open from a test vault' }))
+    await expect.element(key).toHaveValue('sk-or-v1-made')
   })
 })

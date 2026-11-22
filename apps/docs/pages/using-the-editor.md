@@ -46,7 +46,11 @@ them. An error's tooltip offers its quick fixes (the name meant, a missing prope
 lost box for a loss nothing counts), and the other uses of the name under the cursor are marked.
 
 The **Ask** panel asks a model you choose, with your own key, for a change: it comes as a proposal the compiler has
-checked, drawn in the canvas, and goes into the text only when you accept it. To let the model look at your own
+checked, drawn in the canvas, and goes into the text only when you accept it. The key stays in this page (or this
+tab, if you say so). **Sign in with OpenRouter** makes one for you instead, and **Keep sealed in your GitHub** keeps
+it sealed with a passphrase, in a private repository of yours, to open on another device. A model on your own
+computer needs no key: start Ollama with `OLLAMA_ORIGINS` naming this site (LM Studio: allow CORS in its server
+settings), and pick it in the panel. To let the model look at your own
 metrics, run `npx @loadmap/cli bridge` on your computer with `LOADMAP_PROMETHEUS_URL` set (and its token), type the
 code it prints beside **Connect** in the panel, and press it. Every look it asks for waits for your press; the bridge keeps the address and the token,
 and the page sees only what was read. A measure you accept is read at once, and the diagram drawn with it.

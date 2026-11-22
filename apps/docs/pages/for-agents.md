@@ -10,6 +10,8 @@ of these is made for that, and each says the same as these pages, for the versio
 - **[llms-full.txt](/llms-full.txt)** is the whole language guide and reference
   in one file, with one model that uses every statement and a model in several files (a model, a part, a library and
   a variant). Hand it to a model that writes `.loadmap` files.
+- **[llms-small.txt](/llms-small.txt)** is the statement reference alone and that one model, about a third as long:
+  for a model whose window is small (a local one).
 - **`@loadmap/dsl`'s `dist/REFERENCE.md`** is the same guide and reference, shipped in the package: an agent working in
   a project that installs it reads the reference for the version it has, offline.
 

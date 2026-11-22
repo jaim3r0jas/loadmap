@@ -54,6 +54,21 @@ export interface AskPanelProps {
   onMeasured?: (snapshot: Snapshot | null) => Promise<boolean>
   /** The page's own formula functions: the measures are read from a compile with them. */
   functions?: HostFunctions
+  /** Ways to get a key without pasting one, by provider id: OpenRouter's sign-in. */
+  signIn?: Readonly<Record<string, () => Promise<string>>>
+  /** Where the reader may keep a key sealed with a passphrase. */
+  vault?: KeyVault
+}
+
+/**
+ * Where a page keeps a model key sealed with the reader's passphrase (the docs keep it in a private repository of the
+ * reader's): the key is sealed and opened on the page, only the sealed text is kept.
+ */
+export interface KeyVault {
+  /** Where it is kept, in a few words: "your GitHub". */
+  where: string
+  open(provider: string, passphrase: string): Promise<string | undefined>
+  keep(provider: string, key: string, passphrase: string): Promise<void>
 }
 
 /** What the reader's metrics hold, once connected: the stores the model may explore, and those measures read from. */
@@ -93,7 +108,7 @@ export const ASK_CSS = `
 .lme-ask-model { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .lme-ask-model select, .lme-ask-model input, .lme-ask textarea { min-width: 0; font: inherit; color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 5px; padding: 4px 7px; }
 .lme-ask-key { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.lme-ask-key input[type="password"] { flex: 1; }
+.lme-ask-key input[type="password"] { flex: 1 1 12rem; }
 .lme-ask-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .lme-ask-msg { padding: 6px 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lme-ask-msg[data-role="user"] { background: var(--lm-accent-soft); justify-self: end; max-width: 90%; }
@@ -163,6 +178,29 @@ export default function AskPanel(p: AskPanelProps) {
   const [scoped, setScoped] = useState(true)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
+  const [passphrase, setPassphrase] = useState('')
+  /** The key opened from, or sealed into, the page's vault with the passphrase; the passphrase is never kept. */
+  const sealed = async (how: 'open' | 'keep') => {
+    const v = p.vault
+    if (!v) return
+    if (passphrase.length < 12) return setNote('A passphrase of 12 characters at least: it is all that guards the key.')
+    try {
+      if (how === 'keep') {
+        if (!key.trim()) return setNote('Paste the key first, then keep it sealed.')
+        await v.keep(preset.id, key.trim(), passphrase)
+        setNote(`The ${preset.name} key is kept sealed in ${v.where}.`)
+      } else {
+        const k = await v.open(preset.id, passphrase)
+        if (!k) return setNote(`No ${preset.name} key is kept in ${v.where}.`)
+        setKey(k)
+        takeKey(preset.id, k, keep)
+        setNote(`The ${preset.name} key is open for this page.`)
+      }
+      setPassphrase('')
+    } catch (err) {
+      setNote((err as Error).message)
+    }
+  }
   const [advice, setAdvice] = useState(m.advice)
   const [stores, setStores] = useState(m.stores)
   const [code, setCode] = useState('')
@@ -459,6 +497,45 @@ export default function AskPanel(p: AskPanelProps) {
               >
                 Forget
               </button>
+              {p.signIn?.[preset.id] && (
+                <button
+                  type="button"
+                  className="lm-btn"
+                  onClick={() =>
+                    void p.signIn![preset.id]!().then(
+                      (k) => {
+                        setKey(k)
+                        takeKey(preset.id, k, keep)
+                        setNote(`Signed in: a key from ${preset.name}, kept as this page keeps keys.`)
+                      },
+                      (err: Error) => setNote(err.message),
+                    )
+                  }
+                >
+                  Sign in with {preset.name}
+                </button>
+              )}
+              {p.vault && (
+                <span className="lme-ask-key">
+                  <label htmlFor={`${id}p`} className="lm-sr">
+                    Passphrase
+                  </label>
+                  <input
+                    id={`${id}p`}
+                    type="password"
+                    autoComplete="off"
+                    value={passphrase}
+                    placeholder="Passphrase"
+                    onChange={(e) => setPassphrase(e.target.value)}
+                  />
+                  <button type="button" className="lm-btn lme-quiet" onClick={() => void sealed('open')}>
+                    Open from {p.vault.where}
+                  </button>
+                  <button type="button" className="lm-btn lme-quiet" onClick={() => void sealed('keep')}>
+                    Keep sealed in {p.vault.where}
+                  </button>
+                </span>
+              )}
             </div>
           )}
         </div>

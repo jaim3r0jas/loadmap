@@ -42,4 +42,28 @@ export function fullReference(): string {
   ].join('\n')
 }
 
+/**
+ * llms-small.txt: the statement reference alone (every statement and property, from the schema) and the model that
+ * uses every statement, about a third of llms-full.txt, for a model whose window is small.
+ */
+export function smallReference(): string {
+  const guide = shippedReference()
+  const at = guide.indexOf('\n## Reference\n')
+  return [
+    '# loadmap, the short reference',
+    '',
+    'The `.loadmap` language: every statement and property, then one model that uses every statement. The whole guide',
+    'is llms-full.txt.',
+    '',
+    guide.slice(at < 0 ? 0 : at + 1).trimEnd(),
+    '',
+    '## A complete model',
+    '',
+    '```loadmap',
+    read('docs/every-statement.loadmap').trimEnd(),
+    '```',
+    '',
+  ].join('\n')
+}
+
 if (import.meta.main) writeFileSync(process.argv[2]!, shippedReference())

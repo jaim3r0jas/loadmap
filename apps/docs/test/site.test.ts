@@ -38,8 +38,8 @@ function expectLinks(html: string, route: string, label: string) {
   // data-editor: where an island's Edit link leads
   for (const [, href] of html.matchAll(/(?:href|data-editor)="([^"]+)"/g)) {
     // vscode: opens the extension's page in a desktop VS Code
-    // llms.txt and llms-full.txt: files the build writes beside the pages
-    if (/^(https?:|mailto:|vscode:|\/assets\/)/.test(href!) || /(^|\/)llms(-full)?\.txt$/.test(href!)) continue
+    // llms.txt, llms-full.txt and llms-small.txt: files the build writes beside the pages
+    if (/^(https?:|mailto:|vscode:|\/assets\/)/.test(href!) || /(^|\/)llms(-full|-small)?\.txt$/.test(href!)) continue
     if (href!.startsWith('#')) expect(html, `${label} links to ${href}`).toContain(`id="${href!.slice(1)}"`)
     else {
       const path = routeOf(href!, route).replace(/#.*$/, '')

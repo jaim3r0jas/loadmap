@@ -7,7 +7,7 @@ const editor = window.opener as Window | null
 if (editor && q.get('state')) {
   editor.postMessage(
     {
-      type: 'loadmap-github-sign-in',
+      type: q.get('for') === 'openrouter' ? 'loadmap-openrouter-sign-in' : 'loadmap-github-sign-in',
       state: q.get('state'),
       code: q.get('code'),
       error: q.get('error_description') ?? q.get('error'),
