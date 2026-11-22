@@ -16,6 +16,7 @@ import {
   type Proposal,
   providerFromEnv,
 } from '@loadmap/dsl/assist'
+import { LOOKS } from '@loadmap/dsl/internal'
 import { type Explorer, explorersFromEnv, runExplore } from '@loadmap/providers'
 import { loadCatalogForFiles, project } from './project'
 
@@ -35,9 +36,6 @@ export interface AskCommandOptions {
 
 const USAGE =
   'loadmap ask <file.loadmap> "<request>" [--box <id>] [--files] [--write] [--commit] [--explore] [--provider <id>] [--model <name>] [--reference <file>]'
-
-/** Looks the model may take in a row before it must answer. */
-const MAX_ROUNDS = 3
 
 /**
  * `loadmap ask`: a request to a model about a definition, answered with a change the gate has checked: shown as a
@@ -125,7 +123,7 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
   let code = 0
   let thread: ChatMessage[] = []
   let words = request
-  for (let round = 0; round <= MAX_ROUNDS; round++) {
+  for (let round = 0; round <= LOOKS; round++) {
     let calls: ExploreCall[] = []
     for await (const e of assistant.ask({
       request: words,
@@ -158,8 +156,8 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
       code = 1
       break
     }
-    if (round === MAX_ROUNDS) {
-      log(`\n— the model asked to look ${MAX_ROUNDS + 1} times: stopped there`)
+    if (round === LOOKS) {
+      log(`\n— the model asked to look more than ${LOOKS} times: stopped there`)
       code = 1
       break
     }

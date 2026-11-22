@@ -307,7 +307,7 @@ for await (const e of assistant.ask({ request: 'add a cache in front of the data
 
 | Export                                                 | What                                                         |
 | ------------------------------------------------------ | ------------------------------------------------------------ |
-| `createAssistant({ model, reference })`                | `ask(request)`: the events of one answer, a proposal at most |
+| `createAssistant({ model, reference })`                | `ask({ request, project })`: one answer's events             |
 | `anthropic(o)`, `openaiCompatible(o)`, `recorded(...)` | A model: Anthropic, any OpenAI-style API, or answers written |
 | `PROVIDERS`, `providerFor`, `providerFromEnv`          | The providers the panel offers, and one from a preset or env |
 | `gate(project, answer, options?)`                      | An answer checked: `{ ok, proposal }` or the error in words  |
@@ -317,9 +317,10 @@ for await (const e of assistant.ask({ request: 'add a cache in front of the data
 | `diffLines(before, after)`                             | A line diff with the lines around each change                |
 | `PROVIDER_ORIGINS`                                     | The origins a page's CSP must allow for the providers        |
 
-`ask` yields `text` as it streams, `repair` when the compiler refused and the model was asked again (twice at most),
-then one of `proposal`, `answer` (words alone), `questions`, `explore` (looks it asks for: the caller runs them and
-asks again with `explored(...)`) or `refused`, and `done` with the usage and the thread for the next question. A
+`ask({ request, project, selection?, thread?, explore?, signal? })` yields `text` as it streams, `repair` when the
+compiler refused and the model was asked again (twice at most), `answer` with the answer's words when it has some, then
+one of `proposal`, `questions`, `explore` (looks it asks for: the caller runs them and asks again with
+`explored(...)`) or `refused`, and `done` with the usage and the thread for the next question. A
 proposal is never applied: it holds `project` (the files after), the diff's `before`, `notes`, `warnings`, what
 `moved`, and `figures`, each capacity it wrote with whether its numbers were `given` by the reader, `read` from their
 metrics, or neither (a guess, written as an estimate; a measured figure nobody gave is refused).

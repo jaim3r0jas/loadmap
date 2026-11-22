@@ -84,7 +84,7 @@ and the provider's key), or `--provider` and `--model`.
 
 ## Which model
 
-`apps/eval` in the repository holds forty requests against the examples, each with what a good answer must do, and
+`apps/eval` in the repository holds over forty requests against the examples, each with what a good answer must do, and
 some that look in a recorded store first. Its workflow runs them against a model with a key from the repository's
 secrets and writes a table: which cases pass, how many repairs they took, what they cost. No run has filled the table
 yet; until one does, pick a capable model, and prefer one that writes the operations well.
