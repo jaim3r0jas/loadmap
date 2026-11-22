@@ -6,6 +6,24 @@ const ALERTS = 'examples/alerts/alerts.loadmap'
 const SEARCH = 'examples/search/search.loadmap'
 const REGIONS = 'examples/regions/regions.loadmap'
 
+/** A shop's Prometheus, recorded: its metric names, their help, the labels of its requests, and a range of points. */
+const STORE: Record<string, unknown> = {
+  '/api/v1/label/__name__/values': ['shop_requests_total', 'shop_orders_total', 'shop_worker_cpu_cores', 'up'],
+  '/api/v1/metadata': {
+    shop_requests_total: [{ type: 'counter', help: 'Requests the shop served, by service' }],
+    shop_orders_total: [{ type: 'counter', help: 'Orders the checkout took' }],
+  },
+  '/api/v1/series': [
+    { __name__: 'shop_requests_total', service: 'web', pod: 'web-1' },
+    { __name__: 'shop_requests_total', service: 'web', pod: 'web-2' },
+    { __name__: 'shop_requests_total', service: 'checkout', pod: 'checkout-1' },
+  ],
+  '/api/v1/query_range': {
+    resultType: 'matrix',
+    result: [{ values: Array.from({ length: 60 }, (_, i) => [1_795_000_000 + i * 60, String(9 + (i % 3))]) }],
+  },
+}
+
 /**
  * What a reader asks, from the small change to the broad one, with what a good answer must do. Every capacity a case
  * leads to is checked for honesty: a number nobody gave is an estimate that says so.
@@ -302,5 +320,32 @@ export const CASES: Case[] = [
     example: CHECKOUT,
     request: 'Give the gateway enough instances that the workers run out first.',
     asserts: [{ kind: 'change' }, { kind: 'firstLimit', id: 'workerPool' }],
+  },
+  // a store to look in first: the metric comes from what is there, never from a guess at a name
+  {
+    id: 'explore-measure',
+    example: SHOP,
+    request: 'Our Prometheus counts the orders the checkout takes. Measure the order rate from it.',
+    store: STORE,
+    asserts: [
+      { kind: 'explored' },
+      { kind: 'change' },
+      { kind: 'contains', text: 'shop_orders_total' },
+      { kind: 'honest' },
+    ],
+  },
+  {
+    id: 'explore-label',
+    example: SHOP,
+    request: 'Measure the requests the web service gets from our Prometheus, only that service.',
+    store: STORE,
+    asserts: [{ kind: 'explored' }, { kind: 'change' }, { kind: 'contains', text: 'service="web"' }],
+  },
+  {
+    id: 'explore-missing',
+    example: SHOP,
+    request: "Measure the cache's hit rate from our Prometheus.",
+    store: STORE,
+    asserts: [{ kind: 'explored' }, { kind: 'lacks', text: 'cache_hits' }],
   },
 ]

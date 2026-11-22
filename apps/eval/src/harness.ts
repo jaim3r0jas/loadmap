@@ -1,7 +1,16 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { compile, gather, imports } from '@loadmap/dsl'
-import { type AssistEvent, createAssistant, type ModelProvider, type Proposal } from '@loadmap/dsl/assist'
+import {
+  type AssistEvent,
+  type ChatMessage,
+  createAssistant,
+  type ExploreCall,
+  explored,
+  type ModelProvider,
+  type Proposal,
+} from '@loadmap/dsl/assist'
 import type { Project } from '@loadmap/dsl/ops'
+import { prometheusExplorer, runExplore } from '@loadmap/providers'
 
 /**
  * The eval: requests a reader makes, each against one of the examples, with what a good answer must do. Run against a
@@ -28,6 +37,8 @@ export type Assert =
   | { kind: 'files'; changed: string[] }
   /** The first limit, after the change. */
   | { kind: 'firstLimit'; id: string }
+  /** The model looked in the store before it answered. */
+  | { kind: 'explored' }
 
 export interface Case {
   id: string
@@ -35,6 +46,11 @@ export interface Case {
   example: string
   request: string
   box?: string
+  /**
+   * A recorded Prometheus the model may look in: each API path and the `data` it answers. The model's looks run
+   * against it, read only, as the editor's would against the reader's.
+   */
+  store?: Record<string, unknown>
   asserts: Assert[]
 }
 
@@ -90,7 +106,14 @@ const declares = (text: string, id: string, keyword?: string) =>
 /** Each assert that the outcome fails, said in a few words. */
 export function judge(
   c: Case,
-  outcome: { proposal?: Proposal; questions: boolean; text: string; refused?: string; invented?: number },
+  outcome: {
+    proposal?: Proposal
+    questions: boolean
+    text: string
+    refused?: string
+    invented?: number
+    looks?: number
+  },
 ): string[] {
   const failed: string[] = []
   const p = outcome.proposal
@@ -140,6 +163,9 @@ export function judge(
           failed.push(`changed ${got.join(', ') || 'nothing'}`)
         break
       }
+      case 'explored':
+        if (!outcome.looks) failed.push('did not look in the store')
+        break
       case 'firstLimit': {
         const m =
           p &&
@@ -152,6 +178,23 @@ export function judge(
     }
   }
   return failed
+}
+
+/** The instant a recorded store's windows end at: every run reads the same. */
+const NOW = new Date('2026-11-21T12:00:00Z')
+
+/** A Prometheus answering from a table, read only: the store a case's looks run against. */
+export function recordedStore(table: Record<string, unknown>) {
+  return prometheusExplorer({
+    url: 'http://recorded.invalid',
+    fetch: async (input) => {
+      const data = table[new URL(String(input)).pathname]
+      return new Response(
+        JSON.stringify(data === undefined ? { status: 'error', error: 'not recorded' } : { status: 'success', data }),
+        { status: data === undefined ? 400 : 200 },
+      )
+    },
+  })
 }
 
 /** One case against a model. */
@@ -185,23 +228,38 @@ export async function runCase(
   let repairs = 0
   let invented = 0
   const invents = (error: string) => error.includes('uses a number the reader did not give')
+  const store = c.store && recordedStore(c.store)
+  let looks = 0
   try {
-    for await (const e of assistant.ask({
-      request: c.request,
-      project: exampleProject(c.example),
-      ...(c.box && { selection: { box: c.box } }),
-      ...(o.form && { form: o.form }),
-    }) as AsyncGenerator<AssistEvent>) {
-      if (e.type === 'proposal') proposal = e.proposal
-      else if (e.type === 'questions') questions = true
-      else if (e.type === 'answer') text += e.text
-      else if (e.type === 'repair') {
-        repairs++
-        if (invents(e.error)) invented++
-      } else if (e.type === 'refused') {
-        refused = e.error
-        if (invents(e.error)) invented++
+    let thread: ChatMessage[] = []
+    let request = c.request
+    // the looks it asks for run against the recorded store, four rounds at most, as the editor allows
+    for (let round = 0; round < 5; round++) {
+      let calls: ExploreCall[] = []
+      for await (const e of assistant.ask({
+        request,
+        project: exampleProject(c.example),
+        thread,
+        ...(c.box && { selection: { box: c.box } }),
+        ...(o.form && { form: o.form }),
+        ...(store && { explore: [store.id] }),
+      }) as AsyncGenerator<AssistEvent>) {
+        if (e.type === 'proposal') proposal = e.proposal
+        else if (e.type === 'questions') questions = true
+        else if (e.type === 'answer') text += e.text
+        else if (e.type === 'explore') calls = e.calls
+        else if (e.type === 'done') thread = e.thread
+        else if (e.type === 'repair') {
+          repairs++
+          if (invents(e.error)) invented++
+        } else if (e.type === 'refused') {
+          refused = e.error
+          if (invents(e.error)) invented++
+        }
       }
+      if (!calls.length || !store || round === 4) break
+      looks++
+      request = explored(await runExplore(store, calls, { now: NOW }))
     }
   } catch (err) {
     return {
@@ -214,7 +272,14 @@ export async function runCase(
       error: (err as Error).message,
     }
   }
-  const failed = judge(c, { ...(proposal && { proposal }), questions, text, ...(refused && { refused }), invented })
+  const failed = judge(c, {
+    ...(proposal && { proposal }),
+    questions,
+    text,
+    ...(refused && { refused }),
+    invented,
+    looks,
+  })
   return { id: c.id, pass: !failed.length, failed, repairs, ...usage, ms: clock() - start }
 }
 

@@ -19,6 +19,36 @@ describe('the eval', () => {
     }
   })
 
+  it('runs the looks a model asks for against the recorded store, and says when it wrote without looking', async () => {
+    const c = CASES.find((x) => x.id === 'explore-measure')!
+    const model = recorded([
+      '```explore\nsearch orders\n```',
+      [
+        '```ops',
+        'put',
+        '  metric orders "Orders taken" {',
+        "    prometheus { query: 'sum(rate(shop_orders_total[1m]))' }",
+        '  }',
+        '  measure orderTaken orders { fallback: 10; unit: "orders/s" }',
+        '```',
+      ].join('\n'),
+    ])
+    const looked = await runCase(c, { model, reference: '# ref', clock })
+    expect(looked).toMatchObject({ id: 'explore-measure', pass: true, failed: [] })
+    // what the store read went back to the model, as data
+    expect(model.requests[1]!.messages.at(-1)!.content).toContain(
+      'shop_orders_total (counter): Orders the checkout took',
+    )
+    const blind = await runCase(c, {
+      model: recorded([
+        '```ops\nput\n  metric orders "Orders" {\n    prometheus { query: \'sum(rate(orders_total[1m]))\' }\n  }\n```',
+      ]),
+      reference: '# ref',
+      clock,
+    })
+    expect(blind.failed).toEqual(['did not look in the store', 'lacks shop_orders_total'])
+  })
+
   it('passes a case a good answer meets, and says why a poor one fails', async () => {
     const c = CASES.find((x) => x.id === 'scenario-add')!
     const good = await runCase(c, {
