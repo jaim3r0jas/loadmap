@@ -1,8 +1,9 @@
 import { compile } from '@loadmap/dsl'
 import { recorded } from '@loadmap/dsl/assist'
+import { runExplore } from '@loadmap/providers'
 import { describe, expect, it } from 'vitest'
 import { CASES } from '../src/cases'
-import { exampleProject, runCase, table } from '../src/harness'
+import { exampleProject, metricsIn, recordedStore, runCase, table } from '../src/harness'
 
 const clock = () => 0
 
@@ -17,6 +18,68 @@ describe('the eval', () => {
       )
       expect(errors, example).toEqual([])
     }
+  })
+
+  it('runs the looks a model asks for against the recorded store, and says when it wrote without looking', async () => {
+    const c = CASES.find((x) => x.id === 'explore-measure')!
+    const model = recorded([
+      '```explore\nsearch orders\n```',
+      [
+        '```ops',
+        'put',
+        '  metric orders "Orders taken" {',
+        "    prometheus { query: 'sum(rate(shop_orders_total[1m]))' }",
+        '  }',
+        '  measure orderTaken orders { fallback: 10; unit: "orders/s" }',
+        '```',
+      ].join('\n'),
+    ])
+    const looked = await runCase(c, { model, reference: '# ref', clock })
+    expect(looked).toMatchObject({ id: 'explore-measure', pass: true, failed: [] })
+    // what the store read went back to the model, as data
+    expect(model.requests[1]!.messages.at(-1)!.content).toContain(
+      'shop_orders_total (counter): Orders the checkout took',
+    )
+    const blind = await runCase(c, {
+      model: recorded([
+        '```ops\nput\n  metric orders "Orders" {\n    prometheus { query: \'sum(rate(orders_total[1m]))\' }\n  }\n```',
+      ]),
+      reference: '# ref',
+      clock,
+    })
+    expect(blind.failed).toEqual([
+      'did not look in the store',
+      'names orders_total, which the store lacks',
+      'lacks shop_orders_total',
+    ])
+  })
+
+  it('reads the metric names a query writes, and answers a look as a store would: by the name it gives', async () => {
+    expect(metricsIn('sum by (service) (rate(shop_requests_total{service="web",status_code!="500"}[5m]))')).toEqual([
+      'shop_requests_total',
+    ])
+    expect(metricsIn('histogram_quantile(0.95, sum(rate(http_seconds_bucket[5m])) by (le))')).toEqual([
+      'http_seconds_bucket',
+    ])
+    const store = recordedStore({
+      shop_orders_total: { type: 'counter', help: 'Orders', series: [{ service: 'checkout' }], value: 9 },
+    })
+    const now = new Date('2026-11-21T12:00:00Z')
+    const read = await runExplore(
+      store,
+      [
+        { tool: 'labels', arg: 'shop_orders_total' },
+        { tool: 'labels', arg: 'cache_hits_total' },
+        { tool: 'try', arg: 'sum(rate(cache_hits_total[1m]))' },
+        { tool: 'try', arg: 'sum(rate(shop_orders_total[1m]))' },
+      ],
+      { now },
+    )
+    // a metric it lacks finds nothing, as on a real store: never another metric's numbers
+    expect(read).toContain('labels shop_orders_total:\n  1 series\n  service: checkout (1)')
+    expect(read).toContain('labels cache_hits_total:\n  0 series')
+    expect(read).toContain('try over 1h sum(rate(cache_hits_total[1m])):\n  0 series, 0 samples')
+    expect(read).toMatch(/try over 1h sum\(rate\(shop_orders_total\[1m\]\)\):\n {2}1 series, \d+ samples, mean 9/)
   })
 
   it('passes a case a good answer meets, and says why a poor one fails', async () => {

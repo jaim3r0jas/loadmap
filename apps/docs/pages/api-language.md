@@ -11,6 +11,8 @@ and no network: a host hands it the text and, for a model in several files, the 
 | ------------------------- | -------------------------------------------------------------------------------- |
 | `@loadmap/dsl`            | Compile, format, diagnostics, the editor help, files, share links, the catalog   |
 | `@loadmap/dsl/completion` | `completions` and `completionsAcross`: loaded with the first list an editor asks |
+| `@loadmap/dsl/ops`        | Changes by name across a model's files: what the assistant and the editor share  |
+| `@loadmap/dsl/assist`     | The assistant: a model asked for a change, its answer checked by the compiler    |
 | `@loadmap/dsl/add`        | What the editor's catalog picker writes: no promise between versions (see below) |
 | `@loadmap/dsl/internal`   | For loadmap's own packages: no promise between versions                          |
 
@@ -264,6 +266,64 @@ const r = compile(source)
 Without the catalog, `compile` says so on the statement that names it (`catalog-not-loaded`). A chunk that failed to
 load is tried again on the next call. [Published figures](/language/published/) has the statements; the catalog itself
 is `@loadmap/core/catalog` ([Media, simulation and layout](/api/more/#the-catalog-loadmap-core-catalog)).
+
+## @loadmap/dsl/ops
+
+Changes to a model's files by name, never by offset: what the assistant answers with, what the language server's
+refactorings apply, and what an editor of your own can use.
+
+```ts
+import { applyOperations } from '@loadmap/dsl/ops'
+
+const r = applyOperations({ entry: 'shop.loadmap', files }, [
+  { op: 'set', target: 'db.capacity', value: 'measured(5_000, "commits/s", "load test")' },
+  { op: 'rename', target: 'db', to: 'primary' },
+])
+if (r.ok) save(r.project.files)
+else console.log(r.error) // which operation, and why
+```
+
+`applyOperations(project, operations, options?)` applies them in order, each found by name (`db`, `db.capacity`,
+`scenario "Peak"`; `file` names the file, a library's own), and refuses the whole list when one does not apply or when
+the result would gain an error: `{ ok: true, project, changed, added, removed, renamed, notes }` or `{ ok: false, error,
+index }`. There are eleven (`OPERATIONS`): `rename` (across every file that uses the name), `set`, `unset`, `put` (whole
+statements), `remove`, `connect`, `disconnect`, `move` (a statement into a part), and `addFile`, `renameFile`,
+`removeFile`. A file laid out by `format()` stays so. The file operations alone (`newFile`, `renameFile`, `removeFile`,
+`fileAt`) are what the editor's file menu uses.
+
+## @loadmap/dsl/assist
+
+The assistant, without a page: what the editor's Ask panel and `loadmap ask` run. It loads nothing before it is
+imported.
+
+```ts
+import { createAssistant, providerFromEnv } from '@loadmap/dsl/assist'
+
+const assistant = createAssistant({ model: providerFromEnv(process.env)!, reference })
+for await (const e of assistant.ask({ request: 'add a cache in front of the database', project })) {
+  if (e.type === 'proposal') console.log(e.proposal.notes, e.proposal.figures)
+}
+```
+
+| Export                                                 | What                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------ |
+| `createAssistant({ model, reference })`                | `ask({ request, project })`: one answer's events             |
+| `anthropic(o)`, `openaiCompatible(o)`, `recorded(...)` | A model: Anthropic, any OpenAI-style API, or answers written |
+| `PROVIDERS`, `providerFor`, `providerFromEnv`          | The providers the panel offers, and one from a preset or env |
+| `gate(project, answer, options?)`                      | An answer checked: `{ ok, proposal }` or the error in words  |
+| `readAnswer(text)`                                     | An answer's operations, files, questions and looks           |
+| `contextText`, `boxFacts`, `systemText`, `PROTOCOL`    | What the model reads, from the files and the engine          |
+| `explored(text)`                                       | What the reader's metrics answered, as data for the model    |
+| `diffLines(before, after)`                             | A line diff with the lines around each change                |
+| `PROVIDER_ORIGINS`                                     | The origins a page's CSP must allow for the providers        |
+
+`ask({ request, project, selection?, thread?, explore?, signal? })` yields `text` as it streams, `repair` when the
+compiler refused and the model was asked again (twice at most), `answer` with the answer's words when it has some, then
+one of `proposal`, `questions`, `explore` (looks it asks for: the caller runs them and asks again with
+`explored(...)`) or `refused`, and `done` with the usage and the thread for the next question. A
+proposal is never applied: it holds `project` (the files after), the diff's `before`, `notes`, `warnings`, what
+`moved`, and `figures`, each capacity it wrote with whether its numbers were `given` by the reader, `read` from their
+metrics, or neither (a guess, written as an estimate; a measured figure nobody gave is refused).
 
 ## @loadmap/dsl/add
 

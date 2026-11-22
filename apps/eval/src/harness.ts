@@ -1,7 +1,17 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { compile, gather, imports } from '@loadmap/dsl'
-import { type AssistEvent, createAssistant, type ModelProvider, type Proposal } from '@loadmap/dsl/assist'
+import {
+  type AssistEvent,
+  type ChatMessage,
+  createAssistant,
+  type ExploreCall,
+  explored,
+  type ModelProvider,
+  type Proposal,
+} from '@loadmap/dsl/assist'
+import { LOOKS } from '@loadmap/dsl/internal'
 import type { Project } from '@loadmap/dsl/ops'
+import { prometheusExplorer, runExplore } from '@loadmap/providers'
 
 /**
  * The eval: requests a reader makes, each against one of the examples, with what a good answer must do. Run against a
@@ -28,6 +38,10 @@ export type Assert =
   | { kind: 'files'; changed: string[] }
   /** The first limit, after the change. */
   | { kind: 'firstLimit'; id: string }
+  /** The model looked in the store before it answered. */
+  | { kind: 'explored' }
+  /** Every metric a query the change writes names is one the store has. */
+  | { kind: 'storeMetrics' }
 
 export interface Case {
   id: string
@@ -35,6 +49,11 @@ export interface Case {
   example: string
   request: string
   box?: string
+  /**
+   * A recorded Prometheus the model may look in: each metric it has. The model's looks run against it, read only, as
+   * the editor's would against the reader's.
+   */
+  store?: Recorded
   asserts: Assert[]
 }
 
@@ -90,7 +109,16 @@ const declares = (text: string, id: string, keyword?: string) =>
 /** Each assert that the outcome fails, said in a few words. */
 export function judge(
   c: Case,
-  outcome: { proposal?: Proposal; questions: boolean; text: string; refused?: string; invented?: number },
+  outcome: {
+    proposal?: Proposal
+    questions: boolean
+    text: string
+    refused?: string
+    invented?: number
+    looks?: number
+    /** It still asked to look when the rounds ran out. */
+    stalled?: boolean
+  },
 ): string[] {
   const failed: string[] = []
   const p = outcome.proposal
@@ -98,7 +126,14 @@ export function judge(
   for (const a of c.asserts) {
     switch (a.kind) {
       case 'change':
-        if (!p) failed.push(outcome.refused ? `no change: ${outcome.refused}` : 'no change')
+        if (!p)
+          failed.push(
+            outcome.stalled
+              ? `kept looking: no answer after ${LOOKS} rounds of looks`
+              : outcome.refused
+                ? `no change: ${outcome.refused}`
+                : 'no change',
+          )
         break
       case 'question':
         if (!outcome.questions) failed.push('no question back')
@@ -140,6 +175,19 @@ export function judge(
           failed.push(`changed ${got.join(', ') || 'nothing'}`)
         break
       }
+      case 'explored':
+        if (!outcome.looks) failed.push('did not look in the store')
+        break
+      case 'storeMetrics': {
+        // every metric a query the change writes names is one the store has: never a guess at a name
+        const store = c.store ?? {}
+        // the names the files' queries wrote before: those were there already, the change did not guess them
+        const before = new Set(p ? Object.values(p.before.files).flatMap(queriesIn).flatMap(metricsIn) : [])
+        const after = new Set(p ? Object.values(p.project.files).flatMap(queriesIn).flatMap(metricsIn) : [])
+        for (const name of after)
+          if (!Object.hasOwn(store, name) && !before.has(name)) failed.push(`names ${name}, which the store lacks`)
+        break
+      }
       case 'firstLimit': {
         const m =
           p &&
@@ -152,6 +200,83 @@ export function judge(
     }
   }
   return failed
+}
+
+/** The instant a recorded store's windows end at: every run reads the same. */
+const NOW = new Date('2026-11-21T12:00:00Z')
+
+/** A metrics store, recorded: each metric it has, with its type, its help, its series' labels and a typical value. */
+export type Recorded = Record<string, { type?: string; help?: string; series: Record<string, string>[]; value: number }>
+
+/** PromQL's own words: a name a query writes that is none of these, and holds a "_", is a metric's name. */
+const PROMQL = new Set(['by', 'without', 'on', 'ignoring', 'group_left', 'group_right', 'offset', 'bool'])
+
+/** The PromQL queries a definition's metrics hold, quoted either way (format() picks the quote). */
+export function queriesIn(text: string): string[] {
+  return [...text.matchAll(/query:\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g)].map((m) => m[1] ?? m[2] ?? '')
+}
+
+/** The metric names a PromQL query writes: names with a "_" that are not a function called or a word of PromQL. */
+export function metricsIn(query: string): string[] {
+  // what is quoted is a label's value, never a name
+  const bare = query.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
+  const out = new Set<string>()
+  for (const m of bare.matchAll(/[A-Za-z_:][\w:]*/g)) {
+    const name = m[0]
+    const after = bare.slice((m.index ?? 0) + name.length).trimStart()
+    if (
+      !name.includes('_') ||
+      PROMQL.has(name) ||
+      after.startsWith('(') ||
+      after.startsWith('=') ||
+      after.startsWith('!')
+    )
+      continue
+    out.add(name)
+  }
+  return [...out]
+}
+
+/**
+ * A Prometheus answering from a recording, read only, as a real one would: the names it has, a metric's series by the
+ * name a look gives, and a range only for a query that names a metric it has (inside the window asked for). A name it
+ * lacks finds nothing, as on a real store.
+ */
+export function recordedStore(store: Recorded) {
+  const json = (data: unknown) => new Response(JSON.stringify({ status: 'success', data }), { status: 200 })
+  return prometheusExplorer({
+    url: 'http://recorded.invalid',
+    fetch: async (input) => {
+      const url = new URL(String(input))
+      const q = url.searchParams
+      switch (url.pathname) {
+        case '/api/v1/label/__name__/values':
+          return json(Object.keys(store))
+        case '/api/v1/metadata':
+          return json(
+            Object.fromEntries(
+              Object.entries(store).map(([n, m]) => [n, [{ type: m.type ?? '', help: m.help ?? '' }]]),
+            ),
+          )
+        case '/api/v1/series': {
+          const name = q.get('match[]') ?? ''
+          return json(Object.hasOwn(store, name) ? store[name]!.series.map((l) => ({ __name__: name, ...l })) : [])
+        }
+        case '/api/v1/query_range': {
+          const known = metricsIn(q.get('query') ?? '').filter((n) => Object.hasOwn(store, n))
+          if (!known.length) return json({ resultType: 'matrix', result: [] })
+          const from = Date.parse(q.get('start') ?? '') / 1000
+          const to = Date.parse(q.get('end') ?? '') / 1000
+          const step = Number(q.get('step')) || 60
+          const v = store[known[0]!]!.value
+          const values: [number, string][] = []
+          for (let t = from; t <= to && values.length < 500; t += step) values.push([t, String(v)])
+          return json({ resultType: 'matrix', result: [{ values }] })
+        }
+      }
+      return new Response(JSON.stringify({ status: 'error', error: 'not recorded' }), { status: 400 })
+    },
+  })
 }
 
 /** One case against a model. */
@@ -178,6 +303,7 @@ export async function runCase(
     },
   }
   const assistant = createAssistant({ model: counted, reference: o.reference })
+  const project = exampleProject(c.example)
   let proposal: Proposal | undefined
   let questions = false
   let text = ''
@@ -185,23 +311,46 @@ export async function runCase(
   let repairs = 0
   let invented = 0
   const invents = (error: string) => error.includes('uses a number the reader did not give')
+  const store = c.store && recordedStore(c.store)
+  let looks = 0
+  let stalled = false
   try {
-    for await (const e of assistant.ask({
-      request: c.request,
-      project: exampleProject(c.example),
-      ...(c.box && { selection: { box: c.box } }),
-      ...(o.form && { form: o.form }),
-    }) as AsyncGenerator<AssistEvent>) {
-      if (e.type === 'proposal') proposal = e.proposal
-      else if (e.type === 'questions') questions = true
-      else if (e.type === 'answer') text += e.text
-      else if (e.type === 'repair') {
-        repairs++
-        if (invents(e.error)) invented++
-      } else if (e.type === 'refused') {
-        refused = e.error
-        if (invents(e.error)) invented++
+    let thread: ChatMessage[] = []
+    let request = c.request
+    // the looks it asks for run against the recorded store, as many rounds as the editor allows
+    for (let round = 0; ; round++) {
+      let calls: ExploreCall[] = []
+      // what counts is the last answer: words that only said "I will look" are not the explanation
+      text = ''
+      questions = false
+      for await (const e of assistant.ask({
+        request,
+        project,
+        thread,
+        ...(c.box && { selection: { box: c.box } }),
+        ...(o.form && { form: o.form }),
+        ...(store && { explore: [store.id] }),
+      }) as AsyncGenerator<AssistEvent>) {
+        if (e.type === 'proposal') proposal = e.proposal
+        else if (e.type === 'questions') questions = true
+        else if (e.type === 'answer') text += e.text
+        else if (e.type === 'explore') calls = e.calls
+        else if (e.type === 'done') thread = e.thread
+        else if (e.type === 'repair') {
+          repairs++
+          if (invents(e.error)) invented++
+        } else if (e.type === 'refused') {
+          refused = e.error
+          if (invents(e.error)) invented++
+        }
       }
+      if (!calls.length || !store) break
+      if (round === LOOKS) {
+        stalled = true
+        break
+      }
+      looks++
+      request = explored(await runExplore(store, calls, { now: NOW }))
     }
   } catch (err) {
     return {
@@ -214,7 +363,15 @@ export async function runCase(
       error: (err as Error).message,
     }
   }
-  const failed = judge(c, { ...(proposal && { proposal }), questions, text, ...(refused && { refused }), invented })
+  const failed = judge(c, {
+    ...(proposal && { proposal }),
+    questions,
+    text,
+    ...(refused && { refused }),
+    invented,
+    looks,
+    stalled,
+  })
   return { id: c.id, pass: !failed.length, failed, repairs, ...usage, ms: clock() - start }
 }
 

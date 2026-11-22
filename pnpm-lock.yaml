@@ -305,6 +305,9 @@ importers:
       '@loadmap/dsl':
         specifier: workspace:*
         version: link:../../packages/dsl
+      '@loadmap/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
 
   examples/alerts:
     dependencies:

@@ -12,6 +12,7 @@ import {
   type ProviderPreset,
   providerFor,
 } from '@loadmap/dsl/assist'
+import { LOOKS } from '@loadmap/dsl/internal'
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { AskMemory, Turn } from './AskMemory'
 import { applyFiles } from './apply'
@@ -97,9 +98,6 @@ export interface EditorData {
   /** Reads the measures over a recent window: the snapshot the diagram is drawn with. */
   pull?(measures: readonly MeasureQuery[]): Promise<Snapshot>
 }
-
-/** Rounds of looks the model may take before it must answer the reader. */
-const LOOKS = 4
 
 export const ASK_CSS = `
 .lme-ask { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-size: .84rem; min-width: 0; }
