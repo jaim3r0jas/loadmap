@@ -333,6 +333,7 @@ export const CASES: Case[] = [
     store: STORE,
     asserts: [
       { kind: 'explored' },
+      { kind: 'storeMetrics' },
       { kind: 'change' },
       { kind: 'contains', text: 'shop_orders_total' },
       { kind: 'honest' },
@@ -345,7 +346,6 @@ export const CASES: Case[] = [
     store: STORE,
     asserts: [
       { kind: 'explored' },
-      { kind: 'storeMetrics' },
       { kind: 'storeMetrics' },
       { kind: 'change' },
       { kind: 'contains', text: 'service="web"' },

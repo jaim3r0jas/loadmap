@@ -181,12 +181,11 @@ export function judge(
       case 'storeMetrics': {
         // every metric a query the change writes names is one the store has: never a guess at a name
         const store = c.store ?? {}
-        const before = p ? Object.values(p.before.files).join('\n') : ''
-        for (const text of p ? Object.values(p.project.files) : [])
-          for (const m of text.matchAll(/query:\s*'((?:[^'\\]|\\.)*)'/g))
-            for (const name of metricsIn(m[1]!))
-              if (!Object.hasOwn(store, name) && !before.includes(name))
-                failed.push(`names ${name}, which the store lacks`)
+        // the names the files' queries wrote before: those were there already, the change did not guess them
+        const before = new Set(p ? Object.values(p.before.files).flatMap(queriesIn).flatMap(metricsIn) : [])
+        const after = new Set(p ? Object.values(p.project.files).flatMap(queriesIn).flatMap(metricsIn) : [])
+        for (const name of after)
+          if (!Object.hasOwn(store, name) && !before.has(name)) failed.push(`names ${name}, which the store lacks`)
         break
       }
       case 'firstLimit': {
@@ -211,6 +210,11 @@ export type Recorded = Record<string, { type?: string; help?: string; series: Re
 
 /** PromQL's own words: a name a query writes that is none of these, and holds a "_", is a metric's name. */
 const PROMQL = new Set(['by', 'without', 'on', 'ignoring', 'group_left', 'group_right', 'offset', 'bool'])
+
+/** The PromQL queries a definition's metrics hold, quoted either way (format() picks the quote). */
+export function queriesIn(text: string): string[] {
+  return [...text.matchAll(/query:\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")/g)].map((m) => m[1] ?? m[2] ?? '')
+}
 
 /** The metric names a PromQL query writes: names with a "_" that are not a function called or a word of PromQL. */
 export function metricsIn(query: string): string[] {
