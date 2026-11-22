@@ -1,5 +1,49 @@
 # @loadmap/dsl
 
+## 0.43.0
+
+### Minor Changes
+
+- 7b3620b: `loadmap ask <file> "<request>"` asks a language model for a change to a definition and shows it as a diff; `--write`
+  writes it, `--commit` commits it. The model answers with operations by name, or with whole files; the change is laid
+  out, compiled and checked before anyone sees it, a refused answer goes back to the model at most twice, and a capacity
+  it writes must use a number you gave or say it is the assistant's guess. `@loadmap/dsl/assist` is the same assistant
+  for any host: `createAssistant`, two adapters that need only `fetch` (`openaiCompatible`, `anthropic`), the providers
+  by name, and `recorded` for tests.
+
+  Docs: /in-your-editor/#ask-a-model
+- 82dc3ee: The Ask panel asks about the selected box in one press (Explain it, What runs through it, Is a flow missing?,
+  Critique it), with what the engine computes for it, and **Draft this** turns an answer in words into a proposal.
+  `boxFacts` in `@loadmap/dsl/assist` writes those facts.
+
+  Docs: /api/editor/#ask
+- 2dfac4c: The editor's Ask panel (`assist`): a conversation about the diagram with a model the reader picks and their own key,
+  kept in the page's memory or the tab only. Its changes come as proposals the compiler has checked, drawn in the canvas
+  with a diff per file and the capacities they write; Accept puts one in the text as an undo step per file and, with
+  `history`, a version that keeps the request and the operations. `diffLines` in `@loadmap/dsl/assist` is the line diff
+  the panel and `loadmap ask` show. The docs' editor offers it, and its policy allows the providers it lists.
+
+  Docs: /api/editor/#ask
+- 2fb0cda: An assistant can look in the reader's metrics before it writes a metric: `prometheusExplorer`, `explorersFromEnv` and
+  `runExplore` in `@loadmap/providers` answer `search`, `labels` and `try`, read only and capped. `loadmap explore`
+  runs one look; `loadmap ask --explore` runs the looks the model asks for and sends back what they read. The
+  assistant's protocol has an `explore` block, and `contextText` says which stores the page can read.
+
+  Docs: /live-data/#with-your-own-prometheus-or-grafana
+- c50c688: Changes to a definition by name, across its files: `applyOperations()` in the new entry `@loadmap/dsl/ops` takes a
+  list of operations (rename, set, unset, put, remove, connect, disconnect, move, and a part, a library or a variant
+  added, renamed or removed) and applies all of them, or none when one is refused or a model that compiled no longer
+  does. A removed box takes its edges and its place in routes with it; what a formula still reads of it is said. The
+  language server offers two of them as refactorings (remove a statement, move it to a part of the model) and all of them
+  through the command `loadmap.applyOperations`.
+
+  Docs: /in-your-editor/#setup
+
+### Patch Changes
+
+- @loadmap/core@0.43.0
+  - @loadmap/layout@0.43.0
+
 ## 0.42.1
 
 ### Patch Changes

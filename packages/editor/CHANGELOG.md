@@ -1,5 +1,60 @@
 # @loadmap/editor
 
+## 0.43.0
+
+### Minor Changes
+
+- 82dc3ee: The Ask panel asks about the selected box in one press (Explain it, What runs through it, Is a flow missing?,
+  Critique it), with what the engine computes for it, and **Draft this** turns an answer in words into a proposal.
+  `boxFacts` in `@loadmap/dsl/assist` writes those facts.
+
+  Docs: /api/editor/#ask
+- 0110765: The Ask panel's proposal marks in the canvas the boxes it adds (dashed) and those it changes (outlined), and its
+  **Before** and **After** switch the canvas between the files and the proposal.
+
+  Docs: /api/editor/#ask
+- 2dfac4c: The editor's Ask panel (`assist`): a conversation about the diagram with a model the reader picks and their own key,
+  kept in the page's memory or the tab only. Its changes come as proposals the compiler has checked, drawn in the canvas
+  with a diff per file and the capacities they write; Accept puts one in the text as an undo step per file and, with
+  `history`, a version that keeps the request and the operations. `diffLines` in `@loadmap/dsl/assist` is the line diff
+  the panel and `loadmap ask` show. The docs' editor offers it, and its policy allows the providers it lists.
+
+  Docs: /api/editor/#ask
+- 1df4b66: The editor keeps a history of the files with `history`: each version the reader keeps, each save and each definition
+  loaded is a commit, as git writes one. The Timeline panel lists them: Back and Forward draw an older version in the
+  canvas, Restore makes it the files again as a new version, "Branch from here" tries another design. `history={{ key }}`
+  keeps it in the tab's storage; the handle's `history()` gives it as data. The docs' editor keeps one for its tab.
+
+  Docs: /api/editor/#history
+- 3e584b1: The Ask panel reaches the reader's metrics through `assist.data`: after **Connect**, the model may ask to look in
+  them, each round of looks waiting for **Run** or **Run, and allow for this session**, and a measure an accepted change
+  adds is read at once and drawn ("Drawn with your metrics"). `loadmap bridge` serves the metrics on localhost to one
+  site, holding the address and the credentials.
+
+  Docs: /api/editor/#ask
+- 74e6947: More ways to give the Ask panel a model: `assist.signIn` (the docs' editor signs in with OpenRouter, PKCE, in a
+  popup) and `assist.vault`, a key sealed with the reader's passphrase and kept where the page says (the docs: a
+  private repository of the reader's GitHub). The docs site also writes `llms-small.txt`, the statement reference and
+  one complete model, for a model with a small window.
+
+  Docs: /api/editor/#ask
+- f0037cb: The Timeline's **Download** saves the editor's history as a git bundle: `git clone` reads every version as a commit
+  and every branch. The docs' editor can save every version as its own commit, and make a new repository in the
+  reader's account with the whole history.
+
+  Docs: /using-the-editor/#opening-and-saving-on-github
+
+### Patch Changes
+
+- Updated dependencies [7b3620b]
+- Updated dependencies [82dc3ee]
+- Updated dependencies [2dfac4c]
+- Updated dependencies [2fb0cda]
+- Updated dependencies [c50c688]
+  - @loadmap/dsl@0.43.0
+  - @loadmap/react@0.43.0
+  - @loadmap/core@0.43.0
+
 ## 0.42.1
 
 ### Patch Changes
