@@ -6,7 +6,17 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs, promisify } from 'node:util'
 import { gather } from '@loadmap/dsl'
-import { createAssistant, diffLines, type ModelProvider, type Proposal, providerFromEnv } from '@loadmap/dsl/assist'
+import {
+  type ChatMessage,
+  createAssistant,
+  diffLines,
+  type ExploreCall,
+  explored,
+  type ModelProvider,
+  type Proposal,
+  providerFromEnv,
+} from '@loadmap/dsl/assist'
+import { type Explorer, explorersFromEnv, runExplore } from '@loadmap/providers'
 import { loadCatalogForFiles, project } from './project'
 
 export interface AskCommandOptions {
@@ -17,11 +27,17 @@ export interface AskCommandOptions {
   env?: Readonly<Record<string, string | undefined>>
   /** For tests: the model, instead of the one the environment names. */
   model?: ModelProvider
+  /** For tests: the stores --explore reads, instead of the environment's. */
+  explorers?: Record<string, Explorer>
+  now?: () => Date
   cwd?: string
 }
 
 const USAGE =
-  'loadmap ask <file.loadmap> "<request>" [--box <id>] [--files] [--write] [--commit] [--provider <id>] [--model <name>] [--reference <file>]'
+  'loadmap ask <file.loadmap> "<request>" [--box <id>] [--files] [--write] [--commit] [--explore] [--provider <id>] [--model <name>] [--reference <file>]'
+
+/** Looks the model may take in a row before it must answer. */
+const MAX_ROUNDS = 3
 
 /**
  * `loadmap ask`: a request to a model about a definition, answered with a change the gate has checked: shown as a
@@ -48,6 +64,7 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
         provider: { type: 'string' },
         model: { type: 'string' },
         reference: { type: 'string' },
+        explore: { type: 'boolean' },
       },
     })
     values = p.values
@@ -91,25 +108,55 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
     return 2
   }
   const assistant = createAssistant({ model, reference })
+  // --explore is the reader's yes to every look the model asks for, in the store `loadmap pull` reads
+  const stores = values.explore === true ? (o.explorers ?? explorersFromEnv(env)) : {}
+  const store = Object.values(stores)[0]
+  if (values.explore === true && !store) {
+    log('loadmap ask: --explore reads the metrics `loadmap pull` reads: set LOADMAP_PROMETHEUS_URL')
+    return 2
+  }
   let proposal: Proposal | undefined
   let code = 0
-  for await (const e of assistant.ask({
-    request,
-    project: before,
-    ...(typeof values.box === 'string' && { selection: { box: values.box } }),
-    ...(values.files === true && { form: 'files' as const }),
-  })) {
-    if (e.type === 'text') out(e.text)
-    else if (e.type === 'repair') log(`\n— refused, asked again (${e.attempt}): ${e.error}`)
-    else if (e.type === 'refused') {
-      log(`\n— refused: ${e.error}`)
-      code = 1
-    } else if (e.type === 'explore') log('\n— the model asks to read your metrics; `loadmap ask` cannot yet')
-    else if (e.type === 'proposal') proposal = e.proposal
-    else if (e.type === 'done')
+  let thread: ChatMessage[] = []
+  let words = request
+  for (let round = 0; round <= MAX_ROUNDS; round++) {
+    let calls: ExploreCall[] = []
+    for await (const e of assistant.ask({
+      request: words,
+      project: before,
+      thread,
+      ...(typeof values.box === 'string' && { selection: { box: values.box } }),
+      ...(values.files === true && { form: 'files' as const }),
+      ...(store && { explore: [store.id] }),
+    })) {
+      if (e.type === 'text') out(e.text)
+      else if (e.type === 'repair') log(`\n— refused, asked again (${e.attempt}): ${e.error}`)
+      else if (e.type === 'refused') {
+        log(`\n— refused: ${e.error}`)
+        code = 1
+      } else if (e.type === 'explore') calls = e.calls
+      else if (e.type === 'proposal') proposal = e.proposal
+      else if (e.type === 'done') {
+        thread = e.thread
+        log(
+          `\n— ${model.model}: ${e.usage.input} tokens in${e.usage.cached ? ` (${e.usage.cached} cached)` : ''}, ${e.usage.output} out`,
+        )
+      }
+    }
+    if (!calls.length) break
+    if (!store) {
       log(
-        `\n— ${model.model}: ${e.usage.input} tokens in${e.usage.cached ? ` (${e.usage.cached} cached)` : ''}, ${e.usage.output} out`,
+        `\n— the model asks to read your metrics: ${calls.map((c) => `${c.tool} ${c.arg}`).join('; ')}. --explore lets it.`,
       )
+      break
+    }
+    if (round === MAX_ROUNDS) {
+      log(`\n— the model asked to look ${MAX_ROUNDS + 1} times: stopped there`)
+      break
+    }
+    const read = await runExplore(store, calls, { now: o.now?.() ?? new Date() })
+    log(`\n— read from ${store.id}:\n${read}`)
+    words = explored(read)
   }
   if (!proposal) return code
   log(summary(proposal))

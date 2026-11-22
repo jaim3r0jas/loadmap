@@ -1,8 +1,21 @@
 import { type ElasticsearchOptions, elasticsearch } from './elasticsearch'
+import { type Explorer, prometheusExplorer } from './explore'
 import { type PrometheusOptions, prometheus } from './prometheus'
 import type { Provider } from './pull'
 
 export { type ElasticsearchOptions, elasticsearch } from './elasticsearch'
+export {
+  EXPLORE_LIMITS,
+  type ExploreCall,
+  type Explorer,
+  type LabelInfo,
+  type MetricInfo,
+  prometheusExplorer,
+  rank,
+  runExplore,
+  type TryResult,
+  type Window,
+} from './explore'
 export { type PrometheusOptions, prometheus } from './prometheus'
 export {
   type Provider,
@@ -46,6 +59,29 @@ export function providersFromEnv(
     out.elasticsearch = elasticsearch(e)
   }
   return out
+}
+
+/**
+ * The stores the environment configures that can say what they hold, for an assistant to look in: Prometheus (the
+ * same address and credentials `loadmap pull` reads). Read only.
+ */
+export function explorersFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  o: { fetch?: typeof fetch } = {},
+): Record<string, Explorer> {
+  const url = env.LOADMAP_PROMETHEUS_URL
+  if (!url) return {}
+  return {
+    prometheus: prometheusExplorer({
+      url,
+      ...(o.fetch && { fetch: o.fetch }),
+      ...(env.LOADMAP_PROMETHEUS_TOKEN
+        ? { token: env.LOADMAP_PROMETHEUS_TOKEN }
+        : env.LOADMAP_PROMETHEUS_USER
+          ? { user: env.LOADMAP_PROMETHEUS_USER, password: env.LOADMAP_PROMETHEUS_PASSWORD ?? '' }
+          : {}),
+    }),
+  }
 }
 
 /** What a provider needs to be configured, as a line to print. */

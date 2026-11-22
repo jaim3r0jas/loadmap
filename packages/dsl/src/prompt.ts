@@ -50,6 +50,17 @@ loadmap 1.6
 ...
 \`\`\`
 
+When the request needs live data and the reader's page can read their metrics (the context says so), look before
+you write a metric: one call a line, and nothing else in that answer. The reader runs them and sends you what they read.
+
+\`\`\`explore
+search orders checkout
+labels http_requests_total
+try over 6h sum(rate(http_requests_total{job="checkout"}[5m]))
+\`\`\`
+
+Then write the metric (its query from what you read) and the measure, its fallback the number the formula uses now.
+
 When you cannot do the request without the reader, ask instead, one question a line, and change nothing:
 
 \`\`\`questions
@@ -80,7 +91,13 @@ export function systemText(reference: string): string {
 /** The files, each fenced under its path with its role, then the engine's facts and the selection. */
 export function contextText(
   project: Project,
-  o: { selection?: Selection; options?: Pick<CompileOptions, 'functions' | 'catalog'>; files?: 'all' } = {},
+  o: {
+    selection?: Selection
+    options?: Pick<CompileOptions, 'functions' | 'catalog'>
+    files?: 'all'
+    /** The stores the reader's page can read, by id ("prometheus"): the model may ask to look in them. */
+    explore?: readonly string[]
+  } = {},
 ): string {
   const parts: string[] = ['# The definition', '']
   const paths = [
@@ -105,6 +122,8 @@ export function contextText(
   const r = compileProject(project, o.options)
   const ev = r.definition?.model.evaluate()
   parts.push(...factsOf(r, ev, project.entry))
+  if (o.explore?.length)
+    parts.push('', `# What the page can read`, `The reader's ${o.explore.join(' and ')}: you may ask to explore it.`)
   if (o.selection?.box || o.selection?.flows?.length) {
     parts.push('', '# What the reader selected')
     if (o.selection.box) {

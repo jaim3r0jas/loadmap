@@ -9,6 +9,7 @@ import { ask } from './ask'
 import { bundle } from './bundle'
 import { check } from './check'
 import { drift } from './drift'
+import { explore } from './explore'
 import { fmt } from './fmt'
 import { lsp } from './lsp'
 import { type Chromium, playwright } from './playwright'
@@ -19,6 +20,7 @@ export { type AskCommandOptions, ask } from './ask'
 export { type BundleOptions, bundle } from './bundle'
 export { type CheckOptions, check, github } from './check'
 export { type Drift, drift } from './drift'
+export { type ExploreCommandOptions, explore } from './explore'
 export { type FmtOptions, fmt } from './fmt'
 export { lsp } from './lsp'
 export { type PullCommandOptions, pull } from './pull'
@@ -29,7 +31,8 @@ loadmap pull <file.loadmap> [--window 7d] [--step 5m] [--to <instant>] [--out <f
 loadmap drift <file.loadmap> (--snapshot <file.json> | --pull) [--history <dir>] [options]
 loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [options]
 loadmap bundle <file.loadmap> [--out <file.loadmap>]
-loadmap ask <file.loadmap> "<request>" [--box <id>] [--write] [--commit] [--files] [--provider <id>] [--model <name>]
+loadmap ask <file.loadmap> "<request>" [--box <id>] [--write] [--commit] [--files] [--explore] [--provider <id>] [--model <name>]
+loadmap explore (search <words> | labels <metric> | try <query>) [--window 1h]
 loadmap lsp
 
 check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
@@ -142,6 +145,7 @@ export async function main(argv: string[], log: (s: string) => void = console.lo
   if (command === 'drift') return drift(rest, { log })
   if (command === 'bundle') return bundle(rest, { log })
   if (command === 'ask') return ask(rest, { log })
+  if (command === 'explore') return explore(rest, { log })
   // --stdio is what most clients pass: standard input and output are the only channel
   if (command === 'lsp') return lsp()
   if (command !== 'record') {

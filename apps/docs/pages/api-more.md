@@ -342,6 +342,9 @@ const { definition } = compile(source, { snapshot: fromSnapshot(snapshot) })
 | `elasticsearch({ url, apiKey?, user?, password?, fetch? })` | A provider: an index as a date histogram at the step            |
 | `providersFromEnv(env, { fetch?, only? }?)`                 | The providers the environment configures, by id                 |
 | `PROVIDER_ENV`                                              | What each provider needs set, as a line to print                |
+| `prometheusExplorer({ url, token?, user?, password? })`     | What a Prometheus holds, read only: for an assistant            |
+| `explorersFromEnv(env, { fetch? }?)`                        | The stores the environment configures that can explore          |
+| `runExplore(explorer, calls, { now, max? })`                | The calls run, their answers as text a model reads              |
 
 `pull` takes `compile(…).measures` (each a `PullRequest`: `id`, `provider`, `query`, `unit`, and optionally `metric`,
 `label`, `stat` and `minSamples`). The window, `from` and `to`, is the same for every measurement; `step` is the
@@ -361,6 +364,12 @@ credential.
 and `LOADMAP_ELASTICSEARCH_URL` with `LOADMAP_ELASTICSEARCH_API_KEY` (or `_USER` and `_PASSWORD`). `only` builds just
 the providers named, so an address set for another one cannot fail this pull; `fetch` goes to every provider (a
 proxy, a test).
+
+An explorer answers three questions about a store, for an assistant to ask and the reader to run: `search` (the
+metric names that hold the most of some words, with their type and help), `labels` (a metric's labels, the most common
+values first) and `try` (what a query gives over a window: series, samples, mean, max, p95). Each answer is capped
+(`EXPLORE_LIMITS`: 50 metrics, 12 labels of 20 values, a window of 24 h at most) and never names the address or a
+credential. `runExplore` runs at most five calls a round; a window is `30m`, `6h` or `1d`, the last hour by default.
 
 ## Drift (`@loadmap/core/drift`)
 
@@ -434,6 +443,7 @@ rules.
 | `loadmap record <src>`  | GIF, WebM, MP4, PNG or SVG of a page or a `.loadmap`, on a fixed clock         |
 | `loadmap bundle <file>` | A model in several files written as one                                        |
 | `loadmap ask <file>`    | Asks a model for a change, shown as a checked diff; `--write`, `--commit`      |
+| `loadmap explore`       | Looks in the store `pull` reads, read only: what `ask --explore` runs          |
 | `loadmap lsp`           | The language server, for any editor that speaks the protocol                   |
 
 [The command line](/recording/) has each command's options; `loadmap --help` prints them. Only `record` needs
