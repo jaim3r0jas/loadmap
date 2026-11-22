@@ -179,24 +179,38 @@ export default function AskPanel(p: AskPanelProps) {
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
   const [passphrase, setPassphrase] = useState('')
+  /** The passphrase typed again, to keep: a typo would seal the key with a passphrase nobody knows. */
+  const [again, setAgain] = useState('')
+  const [signing, setSigning] = useState(false)
+  // the provider shown now: a key that comes after a wait goes to the provider it was asked for, never to another
+  const shown = useRef(preset.id)
+  shown.current = preset.id
+  /** A key that came for `forId`: kept for it, and in the field only while it is still the provider shown. */
+  const took = (forId: string, k: string) => {
+    takeKey(forId, k, keep)
+    if (shown.current === forId) setKey(k)
+  }
   /** The key opened from, or sealed into, the page's vault with the passphrase; the passphrase is never kept. */
   const sealed = async (how: 'open' | 'keep') => {
     const v = p.vault
     if (!v) return
     if (passphrase.length < 12) return setNote('A passphrase of 12 characters at least: it is all that guards the key.')
+    const forId = preset.id
+    const name = preset.name
     try {
       if (how === 'keep') {
         if (!key.trim()) return setNote('Paste the key first, then keep it sealed.')
-        await v.keep(preset.id, key.trim(), passphrase)
-        setNote(`The ${preset.name} key is kept sealed in ${v.where}.`)
+        if (again !== passphrase) return setNote('Type the passphrase again, the same, to keep the key with it.')
+        await v.keep(forId, key.trim(), passphrase)
+        setNote(`The ${name} key is kept sealed in ${v.where}.`)
       } else {
-        const k = await v.open(preset.id, passphrase)
-        if (!k) return setNote(`No ${preset.name} key is kept in ${v.where}.`)
-        setKey(k)
-        takeKey(preset.id, k, keep)
-        setNote(`The ${preset.name} key is open for this page.`)
+        const k = await v.open(forId, passphrase)
+        if (!k) return setNote(`No ${name} key is kept in ${v.where}.`)
+        took(forId, k)
+        setNote(`The ${name} key is open for this page.`)
       }
       setPassphrase('')
+      setAgain('')
     } catch (err) {
       setNote((err as Error).message)
     }
@@ -501,18 +515,25 @@ export default function AskPanel(p: AskPanelProps) {
                 <button
                   type="button"
                   className="lm-btn"
-                  onClick={() =>
-                    void p.signIn![preset.id]!().then(
-                      (k) => {
-                        setKey(k)
-                        takeKey(preset.id, k, keep)
-                        setNote(`Signed in: a key from ${preset.name}, kept as this page keeps keys.`)
-                      },
-                      (err: Error) => setNote(err.message),
-                    )
-                  }
+                  aria-disabled={signing}
+                  onClick={() => {
+                    // one sign-in at a time: a second would share its window and answer for the first
+                    if (signing) return
+                    const forId = preset.id
+                    const name = preset.name
+                    setSigning(true)
+                    void p.signIn![forId]!()
+                      .then(
+                        (k) => {
+                          took(forId, k)
+                          setNote(`Signed in: a key from ${name}, kept as this page keeps keys.`)
+                        },
+                        (err: Error) => setNote(err.message),
+                      )
+                      .finally(() => setSigning(false))
+                  }}
                 >
-                  Sign in with {preset.name}
+                  {signing ? `Signing in with ${preset.name}…` : `Sign in with ${preset.name}`}
                 </button>
               )}
               {p.vault && (
@@ -527,6 +548,17 @@ export default function AskPanel(p: AskPanelProps) {
                     value={passphrase}
                     placeholder="Passphrase"
                     onChange={(e) => setPassphrase(e.target.value)}
+                  />
+                  <label htmlFor={`${id}a`} className="lm-sr">
+                    Passphrase again, to keep
+                  </label>
+                  <input
+                    id={`${id}a`}
+                    type="password"
+                    autoComplete="off"
+                    value={again}
+                    placeholder="Again, to keep"
+                    onChange={(e) => setAgain(e.target.value)}
                   />
                   <button type="button" className="lm-btn lme-quiet" onClick={() => void sealed('open')}>
                     Open from {p.vault.where}

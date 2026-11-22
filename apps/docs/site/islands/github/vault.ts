@@ -12,10 +12,10 @@ const dec = new TextDecoder()
 const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b))
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 
-async function keyOf(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+async function keyOf(passphrase: string, salt: Uint8Array, rounds = ROUNDS): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as BufferSource, iterations: ROUNDS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: rounds, hash: 'SHA-256' },
     base,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -45,11 +45,21 @@ export async function seal(secret: string, passphrase: string): Promise<string> 
 /** The key, or why not: a wrong passphrase and a damaged file say the same, as they must. */
 export async function unseal(sealed: string, passphrase: string): Promise<string> {
   try {
-    const s = JSON.parse(sealed) as { v?: number; salt?: string; iv?: string; box?: string }
-    if (s.v !== 1 || !s.salt || !s.iv || !s.box) throw new Error()
+    const s = JSON.parse(sealed) as {
+      v?: number
+      kdf?: string
+      rounds?: number
+      salt?: string
+      iv?: string
+      box?: string
+    }
+    // the rounds a key was sealed with open it, whatever a later release seals with
+    const rounds = s.rounds ?? ROUNDS
+    if (s.v !== 1 || s.kdf !== 'PBKDF2-SHA256' || !s.salt || !s.iv || !s.box) throw new Error()
+    if (!Number.isInteger(rounds) || rounds < 100_000 || rounds > 10_000_000) throw new Error()
     const plain = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: unb64(s.iv) as BufferSource },
-      await keyOf(passphrase, unb64(s.salt)),
+      await keyOf(passphrase, unb64(s.salt), rounds),
       unb64(s.box) as BufferSource,
     )
     return dec.decode(plain)
@@ -83,7 +93,7 @@ export async function loadSealed(gh: Client, provider: string): Promise<string |
  * The sealed key saved for a provider in the reader's private repository, made private the first time. Only the
  * sealed text leaves this page.
  */
-export async function saveSealed(gh: Client, provider: string, sealed: string): Promise<void> {
+export async function saveSealed(gh: Client, provider: string, sealed: string, wait = 500): Promise<void> {
   const owner = await login(gh)
   const at = `/repos/${seg(owner)}/${REPO}`
   let fresh = false
@@ -94,15 +104,21 @@ export async function saveSealed(gh: Client, provider: string, sealed: string): 
       throw new Error(`${owner}/${REPO} is public: make it private on GitHub first, then keep the key there.`)
   } catch (e) {
     if (!(e instanceof GitHubError && e.status === 404)) throw e
-    await gh.json('/user/repos', {
-      method: 'POST',
-      body: {
-        name: REPO,
-        private: true,
-        auto_init: true,
-        description: 'Model keys for the loadmap editor, sealed with a passphrase.',
-      },
-    })
+    try {
+      await gh.json('/user/repos', {
+        method: 'POST',
+        body: {
+          name: REPO,
+          private: true,
+          auto_init: true,
+          description: 'Model keys for the loadmap editor, sealed with a passphrase.',
+        },
+      })
+    } catch (err) {
+      throw new Error(
+        `${(err as Error).message} Keeping a key makes ${owner}/${REPO}, which needs a token that may create repositories; or make it on GitHub yourself, private, and give the token Contents on it.`,
+      )
+    }
     fresh = true
   }
   let sha: string | undefined
@@ -112,12 +128,23 @@ export async function saveSealed(gh: Client, provider: string, sealed: string): 
     } catch (e) {
       if (!(e instanceof GitHubError && e.status === 404)) throw e
     }
-  await gh.json(`${at}/contents/${filePath(path(provider))}`, {
-    method: 'PUT',
-    body: {
-      message: `Keep the ${provider} key, sealed`,
-      content: b64(enc.encode(sealed)),
-      ...(sha && { sha }),
-    },
-  })
+  const put = () =>
+    gh.json(`${at}/contents/${filePath(path(provider))}`, {
+      method: 'PUT',
+      body: {
+        message: `Keep the ${provider} key, sealed`,
+        content: b64(enc.encode(sealed)),
+        ...(sha && { sha }),
+      },
+    })
+  // a repository just made gets its first commit a moment after GitHub answers: the first write waits for it
+  for (let i = 0; ; i++)
+    try {
+      await put()
+      return
+    } catch (e) {
+      const early = fresh && e instanceof GitHubError && (e.status === 404 || e.status === 409)
+      if (!early || i >= 4) throw e
+      await new Promise((r) => setTimeout(r, wait * (i + 1)))
+    }
 }

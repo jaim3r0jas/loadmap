@@ -263,6 +263,14 @@ describe('the Ask panel', () => {
     await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('12 characters at least')
     expect(kept.size).toBe(0)
     await userEvent.fill(passphrase, 'a long passphrase here')
+    // a typo would seal it with a passphrase nobody knows: the same twice, or nothing is kept
+    await userEvent.fill(page.getByLabelText('Passphrase again, to keep'), 'a long passphrase hera')
+    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
+    await expect
+      .poll(() => document.querySelector('.lme-ask')?.textContent ?? '')
+      .toContain('Type the passphrase again')
+    expect(kept.size).toBe(0)
+    await userEvent.fill(page.getByLabelText('Passphrase again, to keep'), 'a long passphrase here')
     await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
     await expect.poll(() => kept.get('openrouter')?.key).toBe('sk-or-v1-made')
     // the passphrase is never kept in the field

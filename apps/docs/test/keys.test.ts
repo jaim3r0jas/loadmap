@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { client } from '../site/islands/github/api'
-import { type OpenRouterHost, openRouterSignIn, openRouterUrl } from '../site/islands/github/openrouter'
 import { loadSealed, saveSealed, seal, unseal } from '../site/islands/github/vault'
+import { type OpenRouterHost, openRouterSignIn } from '../site/islands/openrouter'
 
 const token = `github_pat_${'K'.repeat(40)}`
 
 /** A GitHub that knows one reader and one repository's files, by path, for the vault's few calls. */
-function github(o: { repo?: { private: boolean } } = {}) {
+function github(o: { repo?: { private: boolean }; early?: number } = {}) {
   let repo = o.repo
+  let early = o.early ?? 0
   const files = new Map<string, { content: string; sha: string }>()
   const calls: { method: string; path: string; body?: unknown }[] = []
   const json = (status: number, body: unknown) =>
@@ -28,6 +29,8 @@ function github(o: { repo?: { private: boolean } } = {}) {
     if (url.pathname.startsWith(at)) {
       const path = url.pathname.slice(at.length)
       if (method === 'PUT') {
+        // a repository just made, before its first commit
+        if (early-- > 0) return json(409, { message: 'Git Repository is empty.' })
         files.set(path, { content: body.content, sha: `sha${files.size + 1}` })
         return json(201, {})
       }
@@ -48,17 +51,28 @@ describe('a model key kept sealed', () => {
     const refusal = 'That passphrase does not open the key kept on GitHub.'
     await expect(unseal(sealed, 'another passphrase')).rejects.toThrow(refusal)
     await expect(unseal('{"v":1}', 'a long passphrase here')).rejects.toThrow(refusal)
+    // the rounds the file says are the ones that open it: other rounds, another key; rounds out of reason, refused
+    const other = JSON.stringify({ ...JSON.parse(sealed), rounds: 200_000 })
+    await expect(unseal(other, 'a long passphrase here')).rejects.toThrow(refusal)
+    const absurd = JSON.stringify({ ...JSON.parse(sealed), rounds: 1e12 })
+    await expect(unseal(absurd, 'a long passphrase here')).rejects.toThrow(refusal)
   })
 
   it('is kept in a private repository of the reader, made private the first time, and read back', async () => {
     const { gh, calls, files } = github()
     expect(await loadSealed(gh, 'openrouter')).toBeUndefined()
-    await saveSealed(gh, 'openrouter', '{"sealed":1}')
+    await saveSealed(gh, 'openrouter', '{"sealed":1}', 0)
     expect(calls.find((c) => c.path === '/user/repos')?.body).toMatchObject({ name: 'loadmap-keys', private: true })
     expect([...files.keys()]).toEqual(['keys/openrouter.sealed'])
     expect(await loadSealed(gh, 'openrouter')).toBe('{"sealed":1}')
     // only the sealed text left the page
     expect(JSON.stringify(calls)).not.toContain('sk-')
+  })
+
+  it('waits for a repository it just made to take its first write', async () => {
+    const { gh, files } = github({ early: 2 })
+    await saveSealed(gh, 'openrouter', '{"sealed":1}', 0)
+    expect([...files.keys()]).toEqual(['keys/openrouter.sealed'])
   })
 
   it('refuses a repository of that name the reader made public', async () => {
@@ -74,8 +88,8 @@ describe('signing in with OpenRouter', () => {
   it('asks for a key with a challenge, and swaps the code for it with the verifier that never left the page', async () => {
     let posted: Record<string, unknown> = {}
     let opened = ''
-    let deliver: (e: MessageEvent) => void = () => {}
-    const popup = { closed: false } as Window
+    let deliver: (data: unknown, from: Window | null) => void = () => {}
+    const popup = { closed: true } as Window
     const host: OpenRouterHost = {
       open: (url) => {
         opened = url
@@ -85,7 +99,6 @@ describe('signing in with OpenRouter', () => {
         deliver = f
         return () => {}
       },
-      origin: 'https://docs.example',
       back: 'https://docs.example/signed-in/',
       fetch: async (_input, init) => {
         posted = JSON.parse(String(init?.body))
@@ -97,30 +110,20 @@ describe('signing in with OpenRouter', () => {
     const url = new URL(opened)
     expect(url.origin + url.pathname).toBe('https://openrouter.ai/auth')
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
+    // the state rides in the way back's fragment: OpenRouter adds its code to the address however it likes
     const back = new URL(url.searchParams.get('callback_url')!)
-    expect(back.searchParams.get('for')).toBe('openrouter')
-    const state = back.searchParams.get('state')!
-    // a message from another window, or with another state, is not the answer
-    deliver({
-      origin: 'https://docs.example',
-      source: {},
-      data: { type: 'loadmap-openrouter-sign-in', state, code: 'x' },
-    } as MessageEvent)
-    deliver({
-      origin: 'https://docs.example',
-      source: popup,
-      data: { type: 'loadmap-openrouter-sign-in', state: 'other', code: 'x' },
-    } as MessageEvent)
-    deliver({
-      origin: 'https://docs.example',
-      source: popup,
-      data: { type: 'loadmap-openrouter-sign-in', state, code: 'c0de' },
-    } as MessageEvent)
+    expect(back.search).toBe('')
+    const said = new URLSearchParams(back.hash.slice(1))
+    expect(said.get('for')).toBe('openrouter')
+    const state = said.get('state')!
+    // a window that is not the popup, or another state, is not the answer; a popup that reads as closed (an opener
+    // cut off) is not given up on
+    deliver({ type: 'loadmap-openrouter-sign-in', state, code: 'x' }, {} as Window)
+    deliver({ type: 'loadmap-openrouter-sign-in', state: 'other', code: 'x' }, popup)
+    // the site's own channel, when OpenRouter cut the opener off
+    deliver({ type: 'loadmap-openrouter-sign-in', state, code: 'c0de' }, null)
     expect(await key).toBe('sk-or-v1-made')
     expect(posted).toMatchObject({ code: 'c0de', code_challenge_method: 'S256' })
     expect(typeof posted.code_verifier).toBe('string')
-    expect(openRouterUrl({ back: 'https://docs.example/signed-in/', state: 's', challenge: 'c' })).toContain(
-      'callback_url=https%3A%2F%2Fdocs.example%2Fsigned-in%2F%3Ffor%3Dopenrouter%26state%3Ds',
-    )
   })
 })

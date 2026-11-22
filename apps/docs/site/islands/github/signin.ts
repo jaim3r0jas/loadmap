@@ -42,7 +42,8 @@ export async function challengeOf(verifier: string): Promise<string> {
   return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
 }
 
-const random = () => b64url(crypto.getRandomValues(new Uint8Array(32)))
+/** A PKCE verifier or a state: 32 random bytes, base64url. */
+export const random = () => b64url(crypto.getRandomValues(new Uint8Array(32)))
 
 /** GitHub's authorization page for the app, for this sign-in. */
 export function authorizeUrl(app: SignIn, o: { state: string; challenge: string; back: string }): string {
