@@ -63,8 +63,11 @@ function exchangeOrigin(mode: string): string[] {
   return app ? [new URL(app.exchange).origin] : []
 }
 
-/** The model providers the Ask panel may call from the browser, and the local servers on their usual ports. */
-const MODELS = [...PROVIDER_ORIGINS, 'http://localhost:11434', 'http://localhost:1234']
+/**
+ * The model providers the Ask panel may call from the browser, the local servers on their usual ports, and
+ * `loadmap bridge` (the reader's metrics, from their own computer).
+ */
+const MODELS = [...PROVIDER_ORIGINS, 'http://localhost:11434', 'http://localhost:1234', 'http://localhost:7788']
 
 /** The editor's page gets its Content-Security-Policy once built: the dev server's own scripts would break it. */
 function policy(mode: string): Plugin {

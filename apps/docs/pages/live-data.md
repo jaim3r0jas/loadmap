@@ -96,3 +96,8 @@ Not sure what the store holds? `loadmap explore search checkout requests` lists 
 words, `loadmap explore labels <metric>` its labels and their most common values, and `loadmap explore try '<query>'
 --window 6h` what a query gives (mean, max, p95). `loadmap ask model.loadmap "measure the checkout's traffic"
 --explore` lets the model make those looks itself, read only, before it writes the metric and the measure.
+
+The [editor](/editor/) reaches your metrics the same way, from your own computer: `npx @loadmap/cli bridge` serves
+them on `localhost:7788` to this site alone (`--origin` names another), holding the address and the token, and only
+to a page given the code it prints. Type it beside **Connect** in the Ask panel: the model may then ask to look, and a
+measure you accept is read and drawn at once.

@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util'
 import { compile, formatDiagnostic, gather } from '@loadmap/dsl'
 import type { PageRecorder } from '@loadmap/export'
 import { ask } from './ask'
+import { bridge } from './bridge'
 import { bundle } from './bundle'
 import { check } from './check'
 import { drift } from './drift'
@@ -17,6 +18,7 @@ import { loadCatalogForFiles, project } from './project'
 import { pull } from './pull'
 
 export { type AskCommandOptions, ask } from './ask'
+export { type BridgeOptions, bridge } from './bridge'
 export { type BundleOptions, bundle } from './bundle'
 export { type CheckOptions, check, github } from './check'
 export { type Drift, drift } from './drift'
@@ -33,6 +35,7 @@ loadmap record <url | file.loadmap> --out <file.gif|.webm|.mp4|.png|.svg> [optio
 loadmap bundle <file.loadmap> [--out <file.loadmap>]
 loadmap ask <file.loadmap> "<request>" [--box <id>] [--write] [--commit] [--files] [--explore] [--provider <id>] [--model <name>]
 loadmap explore (search <words> | labels <metric> | try <query>) [--window 1h]
+loadmap bridge [--port 7788] [--origin <site>]
 loadmap lsp
 
 check compiles each definition and tests its expect lines on the pessimistic edge (every capacity at its low
@@ -146,6 +149,7 @@ export async function main(argv: string[], log: (s: string) => void = console.lo
   if (command === 'bundle') return bundle(rest, { log })
   if (command === 'ask') return ask(rest, { log })
   if (command === 'explore') return explore(rest, { log })
+  if (command === 'bridge') return bridge(rest, { log })
   // --stdio is what most clients pass: standard input and output are the only channel
   if (command === 'lsp') return lsp()
   if (command !== 'record') {

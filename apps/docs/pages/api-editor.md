@@ -103,6 +103,15 @@ provider and the key. `assist.confirmSend` is asked before each request, with th
 leaves it. The page's Content-Security-Policy must allow the providers' origins
 (`PROVIDER_ORIGINS` of `@loadmap/dsl/assist`); the docs' editor lists them, with Ollama's and LM Studio's local ports.
 
+`assist.data` (an `EditorData`) gives the panel the reader's metrics. Nothing is asked of it before the reader presses
+**Connect** (`connect(code?)` names the stores to explore and to measure from; with `code`, the panel asks for one
+beside it). Then the model may ask to look in them before it writes a metric: each
+round of looks waits on a card for **Run**, or **Run, and allow for this session**, and `explore(calls)` answers. What
+they read goes back to the model as data, and a capacity taken from it is marked as read from the metrics. With
+`pull(measures)`, a measure an accepted change adds is read at once and the canvas draws the files with it ("Drawn
+with your metrics"); **Draw with them** reads every measure again. The text stays as written. The docs' editor reaches
+the metrics through `loadmap bridge`.
+
 ## The handle
 
 ```tsx

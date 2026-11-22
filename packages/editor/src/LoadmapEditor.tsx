@@ -83,6 +83,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { EditorData } from './AskPanel'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
@@ -291,6 +292,8 @@ export interface EditorAssist {
    * and may remember the answer (the docs ask once per repository). False sends nothing.
    */
   confirmSend?: (provider: { id: string; name: string }) => boolean | Promise<boolean>
+  /** The reader's metrics, when the page can reach them: the model may ask to look, the diagram drawn with them. */
+  data?: EditorData
 }
 
 interface Compiled {

@@ -1,3 +1,4 @@
+import type { Snapshot } from '@loadmap/core/measure'
 import { type CompileResult, compile, type Definition, type HostFunctions } from '@loadmap/dsl'
 import type { Proposal } from '@loadmap/dsl/assist'
 import { Canvas } from '@loadmap/react'
@@ -195,11 +196,42 @@ export class Studio {
     for (const el of this.host().root()?.querySelectorAll('[data-proposed]') ?? []) el.removeAttribute('data-proposed')
   }
 
+  /**
+   * The files drawn with measured data, until the reader goes back or edits: the text stays as written, the snapshot
+   * only fills its measures. `@loadmap/core/measure` loads with the first snapshot, never before.
+   */
+  measured = async (snap: Snapshot | null): Promise<boolean> => {
+    if (!snap) {
+      this.host().show(null)
+      return true
+    }
+    const { fromSnapshot } = await import('@loadmap/core/measure')
+    const f = this.host().files()
+    const r = compile(f.files[f.path] ?? '', {
+      path: f.path,
+      files: f.files,
+      functions: this.host().functions,
+      snapshot: fromSnapshot(snap),
+    })
+    // the snapshot's own time, as it says it (UTC): never this machine's clock or locale
+    const utc = /T(\d\d:\d\d)(:\d\d(\.\d+)?)?Z$/.exec(snap.fetched)?.[1]
+    this.measuredAt = utc ? `${utc} UTC` : snap.fetched
+    this.host().show(r.definition ? 'measured' : null, r.definition)
+    return !!r.definition
+  }
+
+  /** When the snapshot drawn was read. */
+  private measuredAt = ''
+
   /** The note over the canvas while a version or a proposal is drawn, with the way back to the files. */
   note(id: string): ReactNode {
     return (
       <p className="lme-stale">
-        {id === 'proposal' ? 'Showing the proposal.' : 'Showing an older version.'}{' '}
+        {id === 'proposal'
+          ? 'Showing the proposal.'
+          : id === 'measured'
+            ? `Drawn with your metrics, read at ${this.measuredAt}.`
+            : 'Showing an older version.'}{' '}
         <button type="button" className="lm-btn lme-quiet" onClick={() => this.host().show(null)}>
           Back to now
         </button>
@@ -225,6 +257,9 @@ export class Studio {
               confirmSend={o.assist.confirmSend}
               model={o.assist.model}
               memory={this.ask}
+              data={o.assist.data}
+              onMeasured={this.measured}
+              functions={host.functions}
               selected={o.selected}
             />
           </Suspense>
