@@ -91,3 +91,8 @@ Point `LOADMAP_PROMETHEUS_URL` at your server (with `LOADMAP_PROMETHEUS_TOKEN`, 
 queries in the metrics with yours, and keep the fallbacks: they are what a pull request from a fork, or a day when
 Prometheus is away, computes with. Grafana itself is not read: a metric holds the query a panel shows, and the
 provider asks the store behind it (Prometheus, or Elasticsearch and OpenSearch with an `elasticsearch` block).
+
+Not sure what the store holds? `loadmap explore search checkout requests` lists the metrics whose names hold those
+words, `loadmap explore labels <metric>` its labels and their most common values, and `loadmap explore try '<query>'
+--window 6h` what a query gives (mean, max, p95). `loadmap ask model.loadmap "measure the checkout's traffic"
+--explore` lets the model make those looks itself, read only, before it writes the metric and the measure.

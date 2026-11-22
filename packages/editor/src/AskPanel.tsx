@@ -464,7 +464,9 @@ function ProposalCard({
           {proposal.figures.map((f) => (
             <li key={`${f.file}:${f.line}:${f.text}`}>
               {f.text}
-              {!f.given && <span className="lme-ask-guess"> the assistant's guess</span>}
+              {!f.given && (
+                <span className="lme-ask-guess">{f.read ? ' read from your metrics' : " the assistant's guess"}</span>
+              )}
             </li>
           ))}
         </ul>

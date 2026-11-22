@@ -7,6 +7,7 @@ export {
   type AssistantOptions,
   type AssistEvent,
   createAssistant,
+  explored,
 } from './assistant'
 export {
   describe as describeOperation,
