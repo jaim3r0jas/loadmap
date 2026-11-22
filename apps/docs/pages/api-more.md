@@ -444,6 +444,7 @@ rules.
 | `loadmap bundle <file>` | A model in several files written as one                                        |
 | `loadmap ask <file>`    | Asks a model for a change, shown as a checked diff; `--write`, `--commit`      |
 | `loadmap explore`       | Looks in the store `pull` reads, read only: what `ask --explore` runs          |
+| `loadmap bridge`        | Serves your metrics on localhost to the editor's site: its Connect             |
 | `loadmap lsp`           | The language server, for any editor that speaks the protocol                   |
 
 [The command line](/recording/) has each command's options; `loadmap --help` prints them. Only `record` needs

@@ -1,4 +1,4 @@
-import type { ChatMessage, Proposal } from '@loadmap/dsl/assist'
+import type { ChatMessage, ExploreCall, Proposal } from '@loadmap/dsl/assist'
 
 /** A turn of the conversation as the panel draws it. */
 export interface Turn {
@@ -25,6 +25,14 @@ export interface AskMemory {
   used?: { input: number; output: number; cached?: number }
   /** The last answer was words only: "Draft this" may follow. */
   advice: boolean
+  /** The stores the reader connected, by id; null until they press Connect. */
+  stores: readonly string[] | null
+  /** The reader said yes to every look this session. */
+  allowed: boolean
+  /** The looks the model asked for, waiting for the reader's press. */
+  looks: ExploreCall[] | null
+  /** Rounds of looks since the reader last asked: the model must answer after a few. */
+  rounds: number
 }
 
 export const askMemory = (): AskMemory => ({
@@ -37,4 +45,8 @@ export const askMemory = (): AskMemory => ({
   asked: { request: '', box: null, model: '' },
   ops: [],
   advice: false,
+  stores: null,
+  allowed: false,
+  looks: null,
+  rounds: 0,
 })

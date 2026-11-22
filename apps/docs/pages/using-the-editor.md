@@ -45,6 +45,12 @@ defaults, a published figure with its conditions and source. Inside a call, the 
 them. An error's tooltip offers its quick fixes (the name meant, a missing property, a capacity for a bare number, a
 lost box for a loss nothing counts), and the other uses of the name under the cursor are marked.
 
+The **Ask** panel asks a model you choose, with your own key, for a change: it comes as a proposal the compiler has
+checked, drawn in the canvas, and goes into the text only when you accept it. To let the model look at your own
+metrics, run `npx @loadmap/cli bridge` on your computer with `LOADMAP_PROMETHEUS_URL` set (and its token), and press
+**Connect** in the panel. Every look it asks for waits for your press; the bridge keeps the address and the token,
+and the page sees only what was read. A measure you accept is read at once, and the diagram drawn with it.
+
 ## Keys, saving and View
 
 Ctrl+F (⌘F) finds and replaces, F12 goes to where a name is declared and F2 renames it. **View → Keyboard shortcuts**

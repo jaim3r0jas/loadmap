@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { type EditorData, LoadmapEditor, type LoadmapEditorHandle } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -17,7 +17,7 @@ afterEach(() => {
 
 const ANSWER = 'A scenario with eight pods.\n```ops\nput\n  scenario "Eight" { pods: 6; gateways: 2 }\n```'
 
-async function mount(answers: string[]) {
+async function mount(answers: string[], data?: EditorData) {
   await page.viewport(1440, 900)
   const host = document.createElement('div')
   host.style.cssText = 'width: 1440px; height: 760px'
@@ -26,7 +26,13 @@ async function mount(answers: string[]) {
   const model = recorded(answers)
   root = createRoot(host)
   root.render(
-    <LoadmapEditor ref={ref} fill initial={checkout} history assist={{ reference: '# the reference', model }} />,
+    <LoadmapEditor
+      ref={ref}
+      fill
+      initial={checkout}
+      history
+      assist={{ reference: '# the reference', model, ...(data && { data }) }}
+    />,
   )
   await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
   await ref.current!.loadmap()!.ready()
@@ -141,5 +147,67 @@ describe('the Ask panel', () => {
         timeout: 5000,
       })
       .toMatchObject({ request: expect.stringContaining('Explain db'), selection: 'db' })
+  })
+
+  it("connects the reader's metrics, runs the looks they allow, and draws an accepted measure with them", async () => {
+    const looked: unknown[] = []
+    const pulled: string[][] = []
+    const data: EditorData = {
+      where: 'a test bridge',
+      connect: async () => ['prometheus'],
+      explore: async (calls) => {
+        looked.push(calls)
+        return 'search orders:\n  shop_orders_total (counter): Orders placed'
+      },
+      pull: async (measures) => {
+        pulled.push(measures.map((x) => x.id))
+        const origin = {
+          provider: 'prometheus',
+          query: measures[0]!.query,
+          from: '2026-11-21T23:00:00Z',
+          to: '2026-11-22T00:00:00Z',
+          fetched: '2026-11-22T00:00:00Z',
+          samples: 60,
+        }
+        return {
+          format: 'loadmap-snapshot',
+          version: 1,
+          fetched: '2026-11-22T00:00:00Z',
+          from: origin.from,
+          to: origin.to,
+          measurements: { orderRate: { value: 7, unit: 'orders/s', origin } },
+        }
+      },
+    }
+    const change = [
+      '```ops',
+      'put',
+      '  metric orders "Orders placed" {',
+      "    prometheus { query: 'sum(rate(shop_orders_total[1m]))' }",
+      '  }',
+      '  measure orderRate orders { fallback: 10; unit: "orders/s" }',
+      '```',
+    ].join('\n')
+    const { model } = await mount(['```explore\nsearch orders\n```', change], data)
+    // nothing is asked of the page before the reader connects
+    await userEvent.click(page.getByRole('button', { name: 'Connect' }))
+    await expect.element(page.getByText('Your metrics: prometheus, through a test bridge.')).toBeVisible()
+    await ask('Measure the orders')
+    expect(model.requests[0]!.context).toContain("The reader's prometheus: you may ask to explore it.")
+    const looks = page.getByRole('region', { name: 'Looks in your metrics' })
+    await expect.element(looks.getByText('search orders')).toBeVisible()
+    expect(looked).toEqual([])
+    await userEvent.click(looks.getByRole('button', { name: 'Run', exact: true }))
+    const card = page.getByRole('region', { name: 'Proposal' })
+    await expect.element(card.getByText('Accept'), { timeout: 5000 }).toBeVisible()
+    expect(looked).toEqual([[{ tool: 'search', arg: 'orders' }]])
+    expect(model.requests[1]!.messages.at(-1)!.content).toContain('shop_orders_total (counter): Orders placed')
+    await userEvent.click(card.getByRole('button', { name: 'Accept' }))
+    // the measure it added is read at once, and the diagram drawn with it
+    await expect.poll(() => pulled, { timeout: 5000 }).toEqual([['orderRate']])
+    await expect
+      .poll(() => document.querySelector('.lme-stale')?.textContent ?? '', { timeout: 5000 })
+      .toContain('Drawn with your metrics, read at 00:00 UTC.')
+    await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('1 of 1 measures read')
   })
 })

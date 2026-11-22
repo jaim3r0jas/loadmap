@@ -1,3 +1,4 @@
+export type { EditorData } from './AskPanel'
 export type { EmbedOptions } from './Embed'
 export { CODE_FONTS, type CodeFont } from './fonts'
 export type { Author, Branch, Commit, HistoryData, Trace } from './history'

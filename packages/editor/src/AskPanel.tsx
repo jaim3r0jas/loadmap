@@ -1,7 +1,11 @@
+import type { Snapshot } from '@loadmap/core/measure'
+import { compile, type MeasureQuery } from '@loadmap/dsl'
 import {
   type AssistEvent,
   createAssistant,
   diffLines,
+  type ExploreCall,
+  explored,
   type ModelProvider,
   PROVIDERS,
   type Proposal,
@@ -44,7 +48,30 @@ export interface AskPanelProps {
   model?: ModelProvider
   /** Where the conversation is kept while the panel is closed. */
   memory: AskMemory
+  /** The reader's metrics, when the page can reach them: the model may ask to look, the diagram drawn with them. */
+  data?: EditorData
+  /** Draws the files with measured data, or as written (null). */
+  onMeasured?: (snapshot: Snapshot | null) => void
 }
+
+/**
+ * The reader's metrics as a page reaches them (the docs: `loadmap bridge` on the reader's own computer). Nothing is
+ * asked of it before the reader presses Connect, and every look the model asks for waits for their press (or their
+ * yes for the session).
+ */
+export interface EditorData {
+  /** Where the metrics are read, in a few words: "loadmap bridge on this computer". */
+  where: string
+  /** The stores that can be explored, by id: asked when the reader presses Connect. A refusal says why. */
+  connect(): Promise<readonly string[]>
+  /** Runs the looks the model asked for, read only: their answers as text a model reads. */
+  explore(calls: readonly ExploreCall[]): Promise<string>
+  /** Reads the measures over a recent window: the snapshot the diagram is drawn with. */
+  pull?(measures: readonly MeasureQuery[]): Promise<Snapshot>
+}
+
+/** Rounds of looks the model may take before it must answer the reader. */
+const LOOKS = 4
 
 export const ASK_CSS = `
 .lme-ask { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-size: .84rem; min-width: 0; }
@@ -123,6 +150,8 @@ export default function AskPanel(p: AskPanelProps) {
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
   const [advice, setAdvice] = useState(m.advice)
+  const [stores, setStores] = useState(m.stores)
+  const [looks, setLooks] = useState(m.looks)
   const stop = useRef<AbortController | null>(null)
   // what the panel draws, kept for the next time it opens
   m.turns = turns
@@ -131,6 +160,8 @@ export default function AskPanel(p: AskPanelProps) {
   m.proposal = proposal
   m.usage = usage
   m.advice = advice
+  m.stores = stores
+  m.looks = looks
 
   useEffect(() => {
     try {
@@ -157,8 +188,11 @@ export default function AskPanel(p: AskPanelProps) {
   }, [proposal])
 
   const box = scoped ? p.selected : null
-  /** `drafting`: "Draft this", about what the advice was about, and the version keeps the question that led to it. */
-  const send = async (e?: FormEvent, said?: string, drafting = false) => {
+  /**
+   * `drafting`: a follow-up ("Draft this", what the looks read), about what was asked before, and the version keeps
+   * the question that led to it. `shown`: the turn as the thread draws it, when not the words sent.
+   */
+  const send = async (e?: FormEvent, said?: string, drafting = false, shown?: string) => {
     e?.preventDefault()
     const about = drafting ? m.asked.box : box
     const words = (said ?? request).trim()
@@ -186,7 +220,10 @@ export default function AskPanel(p: AskPanelProps) {
     setProposal(null)
     setAdvice(false)
     setBusy(true)
-    setTurns((t) => [...t, { n: t.length, role: 'user', text: words }])
+    setTurns((t) => [...t, { n: t.length, role: 'user', text: shown ?? words }])
+    setLooks(null)
+    if (!drafting) m.rounds = 0
+    let wanted: ExploreCall[] = []
     m.asked = { request: drafting ? m.asked.request : words, box: about, model: model.model }
     const files = p.files()
     const assistant = createAssistant({ model, reference: p.reference })
@@ -198,6 +235,7 @@ export default function AskPanel(p: AskPanelProps) {
         request: words,
         project: { entry: files.path, files: files.files },
         ...(about && { selection: { box: about } }),
+        ...(stores?.length && { explore: stores }),
         thread: m.thread,
         signal: control.signal,
       }) as AsyncGenerator<AssistEvent>) {
@@ -213,9 +251,8 @@ export default function AskPanel(p: AskPanelProps) {
           setAdvice(true)
         } else if (ev.type === 'questions')
           setTurns((t) => [...t, { n: t.length, role: 'assistant', text: ev.questions.join('\n') }])
-        else if (ev.type === 'explore') {
-          setNote('The model asks to read your metrics: this page has no connection to them.')
-        } else if (ev.type === 'refused') setNote(`No change: ${ev.error}`)
+        else if (ev.type === 'explore') wanted = ev.calls
+        else if (ev.type === 'refused') setNote(`No change: ${ev.error}`)
         else if (ev.type === 'proposal') {
           setAdvice(false)
           m.ops = ev.proposal.operations.map((o) => JSON.stringify(o))
@@ -234,6 +271,61 @@ export default function AskPanel(p: AskPanelProps) {
       setStreaming('')
       setBusy(false)
       stop.current = null
+    }
+    if (!wanted.length) return
+    // an answer that asks to look is no advice to draft
+    setAdvice(false)
+    if (!p.data || !stores?.length)
+      return setNote('The model asks to read your metrics: connect them above, then ask again.')
+    if (m.rounds >= LOOKS) return setNote(`The model asked to look ${LOOKS} times: ask again, or say what to use.`)
+    if (m.allowed) await look(wanted)
+    else setLooks(wanted)
+  }
+
+  /** The looks run, read only, and what they read sent back to the model as data. */
+  const look = async (calls: readonly ExploreCall[]) => {
+    const data = p.data
+    if (!data) return
+    setLooks(null)
+    m.rounds++
+    setBusy(true)
+    let text: string
+    try {
+      text = await data.explore(calls)
+    } catch (err) {
+      text = `The looks did not run: ${(err as Error).message}`
+    } finally {
+      setBusy(false)
+    }
+    await send(undefined, explored(text), true, `Read from your metrics:\n${text}`)
+  }
+
+  const connect = async () => {
+    if (!p.data) return
+    setNote('')
+    try {
+      const got = await p.data.connect()
+      if (!got.length) return setNote(`${p.data.where} answers, but reads no store: set LOADMAP_PROMETHEUS_URL there.`)
+      setStores(got)
+    } catch (err) {
+      setNote((err as Error).message)
+    }
+  }
+
+  /** The files drawn with the reader's metrics: every measure read over a recent window. */
+  const measure = async (files: { path: string; files: Readonly<Record<string, string>> }) => {
+    const pull = p.data?.pull
+    if (!pull || !p.onMeasured) return
+    const measures = compile(files.files[files.path] ?? '', { path: files.path, files: files.files }).measures
+    if (!measures.length) return setNote('No measure to read: the definition has none.')
+    setNote('Reading your metrics…')
+    try {
+      const snap = await pull(measures)
+      const read = Object.values(snap.measurements).filter((x) => !x.missing).length
+      p.onMeasured(snap)
+      setNote(`Drawn with your metrics: ${read} of ${measures.length} measures read.`)
+    } catch (err) {
+      setNote(`Your metrics were not read: ${(err as Error).message}`)
     }
   }
 
@@ -265,6 +357,19 @@ export default function AskPanel(p: AskPanelProps) {
         ...(m.used && { usage: m.used }),
       })
       setNote('Accepted: one undo step per file, and a version in the Timeline.')
+      // a measure the change adds is read at once, when the page can: the diagram shows what it measures
+      const was = new Set(
+        compile(chosen.before.files[chosen.before.entry] ?? '', {
+          path: chosen.before.entry,
+          files: chosen.before.files,
+        }).measures.map((x) => `${x.id}|${x.query}`),
+      )
+      const now = compile(chosen.project.files[chosen.project.entry] ?? '', {
+        path: chosen.project.entry,
+        files: chosen.project.files,
+      }).measures
+      if (stores?.length && now.some((x) => !was.has(`${x.id}|${x.query}`)))
+        await measure({ path: chosen.project.entry, files: chosen.project.files })
     } catch (err) {
       setNote(`Not accepted: ${(err as Error).message}`)
     }
@@ -334,6 +439,34 @@ export default function AskPanel(p: AskPanelProps) {
           )}
         </div>
       )}
+      {p.data && (
+        <div className="lme-ask-row">
+          {stores ? (
+            <>
+              <span>
+                Your metrics: {stores.join(', ')}, through {p.data.where}.
+              </span>
+              {p.data.pull && p.onMeasured && (
+                <button
+                  type="button"
+                  className="lm-btn lme-quiet"
+                  aria-disabled={busy}
+                  onClick={() => !busy && void measure(p.files())}
+                >
+                  Draw with them
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <span>Your metrics: not connected.</span>
+              <button type="button" className="lm-btn lme-quiet" onClick={() => void connect()}>
+                Connect
+              </button>
+            </>
+          )}
+        </div>
+      )}
       <div className="lme-ask-thread" aria-live="polite">
         {turns.map((t) => (
           <div key={t.n} className="lme-ask-msg" data-role={t.role}>
@@ -354,6 +487,47 @@ export default function AskPanel(p: AskPanelProps) {
           onAccept={() => void accept()}
           onReject={() => setProposal(null)}
         />
+      )}
+      {looks && !busy && (
+        <section className="lme-ask-card" aria-label="Looks in your metrics">
+          <p>The model asks to read your metrics, read only:</p>
+          <ul>
+            {looks.map((c, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: the same look may be asked twice
+              <li key={i}>
+                <code>
+                  {c.tool} {c.arg}
+                </code>
+                {c.window ? ` over ${c.window}` : ''}
+              </li>
+            ))}
+          </ul>
+          <div className="lme-ask-row">
+            <button type="button" className="lm-btn lme-primary" onClick={() => void look(looks)}>
+              Run
+            </button>
+            <button
+              type="button"
+              className="lm-btn"
+              onClick={() => {
+                m.allowed = true
+                void look(looks)
+              }}
+            >
+              Run, and allow for this session
+            </button>
+            <button
+              type="button"
+              className="lm-btn lme-quiet"
+              onClick={() => {
+                setLooks(null)
+                setNote('Not read: ask again, or say what to use instead.')
+              }}
+            >
+              Not now
+            </button>
+          </div>
+        </section>
       )}
       {note && <p className="lme-hint">{note}</p>}
       {box && !busy && (

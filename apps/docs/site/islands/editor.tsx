@@ -29,6 +29,7 @@ import firaCode from '../fonts/fira-code.woff2?url'
 import jetbrainsMono from '../fonts/jetbrains-mono.woff2?url'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
+import { bridge } from './bridge'
 import { changedCount, changedText, changes } from './github/changes'
 import { allVersions, endingWith, type Version, versionsSince } from './github/commits'
 import type { Listing, Opened } from './github/load'
@@ -278,6 +279,7 @@ function Editor({ root }: { root: URL }) {
   const assist = useMemo(
     () => ({
       reference: loadReference,
+      data: bridge,
       confirmSend: (p: { name: string }) => {
         const o = repo.current?.origin
         if (!o?.private) return true
