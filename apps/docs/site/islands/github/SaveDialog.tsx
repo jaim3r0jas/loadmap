@@ -4,6 +4,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { GitHubError } from './api'
 import type { Change } from './changes'
+import type { Version } from './commits'
 import { DIALOG_CSS, editorTheme } from './dialog'
 import { gh, hasToken } from './session'
 import TokenForm from './TokenForm'
@@ -50,6 +51,8 @@ export interface SaveDialogProps {
   list: Change[]
   onSaved: (saved: Saved) => void
   onClose: () => void
+  /** The editor's versions since the files were opened (the last one the files as they are): each can be a commit. */
+  versions?: readonly Version[]
 }
 
 export default function SaveDialog(props: SaveDialogProps) {
@@ -63,6 +66,8 @@ export default function SaveDialog(props: SaveDialogProps) {
   const [onto, setOnto] = useState<'new' | 'same'>(origin.made ? 'same' : 'new')
   const [branch, setBranch] = useState(() => branchFor(path))
   const [message, setMessage] = useState(() => messageFor(list))
+  const versions = props.versions
+  const [each, setEach] = useState(() => (versions?.length ?? 0) > 1)
   const canPull = origin.pullable
   const [pull, setPull] = useState(canPull)
   // a token is asked for only when there is something to save
@@ -87,6 +92,10 @@ export default function SaveDialog(props: SaveDialogProps) {
       branch: target,
       onto,
       message,
+      // every version its own commit, the last one with the message written here
+      ...(each && versions?.length
+        ? { versions: versions.map((v, i) => (i === versions.length - 1 ? { ...v, message } : v)) }
+        : {}),
       ...(pulls
         ? {
             pull: {
@@ -215,8 +224,14 @@ export default function SaveDialog(props: SaveDialogProps) {
                 <input value={branch} onChange={(e) => setBranch(e.target.value)} spellCheck={false} />
               </label>
             )}
+            {(versions?.length ?? 0) > 1 && (
+              <label className="lmg-check">
+                <input type="checkbox" checked={each} onChange={(e) => setEach(e.target.checked)} />
+                <span>Every version from the Timeline as its own commit ({versions!.length})</span>
+              </label>
+            )}
             <label className="lmg-field">
-              Message
+              {each && (versions?.length ?? 0) > 1 ? 'Message of the last commit' : 'Message'}
               <textarea value={message} onChange={(e) => setMessage(e.target.value)} />
             </label>
             {onto === 'new' && canPull && (

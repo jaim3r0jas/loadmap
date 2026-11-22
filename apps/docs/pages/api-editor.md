@@ -69,7 +69,8 @@ made each and, for the assistant, the request, the model and the operations. **B
 version in the canvas while the text stays as it is; **Restore this version** makes it the files again, as a new
 version on top; **Branch from here** tries another design from any version, and the branch's menu goes back. Nothing
 is rewritten. `history={{ key }}` mirrors the versions to this tab's storage (sessionStorage): a reload keeps them,
-closing the tab drops them. The handle's `history()` gives them as plain data (`HistoryData`).
+closing the tab drops them. The handle's `history()` gives them as plain data (`HistoryData`). The Timeline's
+**Download** saves them as a git bundle: `git clone model.bundle` gives every version as a commit and every branch.
 
 ## Ask
 

@@ -124,6 +124,28 @@ export class Studio {
     if (await this.history?.commit(f.files, f.path, author, message, trace)) this.touch()
   }
 
+  /** The history as a git bundle, saved by the browser: `git clone <file>` reads it. */
+  download = async () => {
+    const h = this.history
+    if (!h) return
+    // a browser without the compression git's objects need says so, rather than nothing happening
+    if (typeof CompressionStream === 'undefined' || !globalThis.crypto?.subtle)
+      throw new Error('this browser cannot write a git bundle (it lacks CompressionStream or crypto.subtle).')
+    const { bundle } = await import('./bundle')
+    const bytes = await bundle(h)
+    const name =
+      h.head.entry
+        .split('/')
+        .pop()!
+        .replace(/\.loadmap$/, '') || 'model'
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}.bundle`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   /** A version drawn in the canvas: compiled here, not in the editor's first load. */
   show = (id: string | null) => {
     const h = this.history
@@ -221,6 +243,7 @@ export class Studio {
                 onShow={this.show}
                 onChanged={this.touch}
                 onReplace={host.replace}
+                onExport={this.download}
               />
             </Suspense>
           ) : (

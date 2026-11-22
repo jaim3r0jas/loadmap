@@ -26,7 +26,8 @@ export interface TokenFormProps {
   reason: string
   /** The repository's owner: GitHub's form starts there. */
   owner?: string
-  need: 'read' | 'write'
+  /** What the token must do: read a repository, write to it, or make a new one in the reader's account. */
+  need: 'read' | 'write' | 'create'
   /** The token is in: try again. */
   onToken: () => void
   onCancel?: () => void
@@ -40,7 +41,9 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
   const [error, setError] = useState('')
   const [signing, setSigning] = useState(false)
   const first = useRef<HTMLButtonElement>(null)
-  useEffect(() => (APP ? first.current : input.current)?.focus(), [])
+  // the app reaches the repositories it is installed on: a new one is not among them, so a new one takes a token
+  const app = need === 'create' ? undefined : APP
+  useEffect(() => (app ? first.current : input.current)?.focus(), [app])
   // a sign-in outlives a click: it reads "Keep" when the token comes, and does nothing once the form is gone (Back,
   // Close), so a save the reader backed out of never runs
   const kept = useRef(keep)
@@ -53,11 +56,11 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
     }
   }, [])
   const signInNow = async () => {
-    if (!APP || signing) return
+    if (!app || signing) return
     setError('')
     setSigning(true)
     try {
-      const token = await signIn(APP)
+      const token = await signIn(app)
       if (!here.current) return
       const wrong = takeToken(token, kept.current)
       if (wrong) setError(wrong)
@@ -85,10 +88,24 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
           <a href={tokenPage(owner, need)} target="_blank" rel="noopener noreferrer">
             Make a token on GitHub ↗
           </a>{' '}
-          (the form is filled in{need === 'write' ? ': Contents and Pull requests, read and write' : ''}).
+          (the form is filled in
+          {need === 'write'
+            ? ': Contents and Pull requests, read and write'
+            : need === 'create'
+              ? ': Administration and Contents, read and write'
+              : ''}
+          ).
         </li>
         <li>
-          Under <b>Repository access</b>, pick <b>Only select repositories</b> and this repository.
+          {need === 'create' ? (
+            <>
+              Under <b>Repository access</b>, pick <b>All repositories</b>: the new one is in no list yet.
+            </>
+          ) : (
+            <>
+              Under <b>Repository access</b>, pick <b>Only select repositories</b> and this repository.
+            </>
+          )}
         </li>
         <li>Generate it, copy it, and paste it here.</li>
       </ol>
@@ -114,7 +131,7 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
     <form className="lmg-token" onSubmit={submit} aria-labelledby={`${id}r`}>
       <style>{CSS}</style>
       <p id={`${id}r`}>{reason}</p>
-      {APP && (
+      {app && (
         <>
           {/* it stays while the popup is open (aria-disabled): the keyboard is never dropped */}
           <button ref={first} type="button" className="lm-btn lmg-signin" aria-disabled={signing} onClick={signInNow}>
@@ -122,13 +139,13 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
           </button>
           <p className="lmg-hint">
             The loadmap editor app reads and writes only the repositories it is installed on.{' '}
-            <a href={installUrl(APP)} target="_blank" rel="noopener noreferrer">
+            <a href={installUrl(app)} target="_blank" rel="noopener noreferrer">
               Install it on {owner ? `${owner}'s` : 'a'} repository ↗
             </a>
           </p>
         </>
       )}
-      {APP ? (
+      {app ? (
         <details>
           <summary>Or paste a token</summary>
           {paste}
@@ -146,7 +163,7 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
       )}
       <p className="lmg-hint">
         The token goes to api.github.com only
-        {APP ? ' (a sign-in gets it through the site’s sign-in service, which keeps nothing)' : ''}. It stays in this
+        {app ? ' (a sign-in gets it through the site’s sign-in service, which keeps nothing)' : ''}. It stays in this
         page
         {keep ? ', and in this tab until it closes' : ''}: never in a link, and never in this browser's lasting storage.
         A token for an organization's repository may wait for an owner's approval.

@@ -24,6 +24,8 @@ export interface TimelineProps {
   onShow: (id: string | null) => void
   /** Every file replaced, the model too: a version whose model is another file than now. */
   onReplace: (f: { path: string; files: Readonly<Record<string, string>> }) => void
+  /** Saves the whole history as a git bundle. */
+  onExport?: () => Promise<void>
   /** The history changed: kept, and drawn again. */
   onChanged: () => void
   now?: () => number
@@ -107,6 +109,13 @@ export default function Timeline(p: TimelineProps) {
   }
   const [open, setOpen] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [failed, setFailed] = useState('')
+  const download = () => {
+    setFailed('')
+    p.onExport?.().catch((err: unknown) =>
+      setFailed(`The download did not work: ${err instanceof Error ? err.message : String(err)}`),
+    )
+  }
   const now = (p.now ?? (() => Math.floor(Date.now() / 1000)))()
   const line = h.line()
   // the version drawn; none is now (the files), which is the newest version unless the reader has edited since
@@ -147,6 +156,11 @@ export default function Timeline(p: TimelineProps) {
             Back to now
           </button>
         )}
+        {p.onExport && (
+          <button type="button" className="lm-btn lme-quiet" onClick={download} title="A file git clone reads">
+            Download
+          </button>
+        )}
         {h.branches.length > 1 && (
           <label>
             <span className="lm-sr">Branch</span>
@@ -160,6 +174,11 @@ export default function Timeline(p: TimelineProps) {
           </label>
         )}
       </div>
+      {failed && (
+        <p className="lme-hint" role="alert">
+          {failed}
+        </p>
+      )}
       {dirty && !p.shown && (
         <form
           className="lme-keep"
