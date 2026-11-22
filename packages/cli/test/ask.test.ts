@@ -108,6 +108,8 @@ describe('loadmap ask', () => {
       dir,
     )
     expect(r.out).toContain('the model asks to read your metrics: search checkout. --explore lets it.')
+    // no change came: not a success
+    expect(r.code).toBe(1)
     expect(r.model.requests).toHaveLength(1)
   })
 

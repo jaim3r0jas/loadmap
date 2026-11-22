@@ -116,8 +116,15 @@ export function createAssistant(o: AssistantOptions): Assistant {
         }
         // a number the reader gave in any turn of the conversation counts, not only in this one
         // (the gate's own refusals quote the model's numbers: they are no reader's words)
-        const said = thread.filter((m) => m.role === 'user' && !m.content.startsWith(REFUSED)).map((m) => m.content)
-        const g = gate(r.project, answer, { ...o, request: said.join('\n') })
+        // what the reader's metrics answered is neither: its numbers are read, not given
+        const user = thread.filter((m) => m.role === 'user')
+        const said = user.filter((m) => !m.content.startsWith(REFUSED) && !m.content.startsWith(EXPLORED))
+        const read = user.filter((m) => m.content.startsWith(EXPLORED))
+        const g = gate(r.project, answer, {
+          ...o,
+          request: said.map((m) => m.content).join('\n'),
+          read: read.map((m) => m.content).join('\n'),
+        })
         if (g.ok) {
           yield { type: 'proposal', proposal: g.proposal }
           yield { type: 'done', usage, thread }

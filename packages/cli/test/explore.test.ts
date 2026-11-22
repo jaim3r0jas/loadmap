@@ -32,6 +32,13 @@ describe('loadmap explore', () => {
   it('says how it is used, and that a store must be set', async () => {
     expect((await run(['look', 'x'])).code).toBe(2)
     expect((await run(['try', 'up', '--window', '6 hours'])).out).toContain('--window is minutes, hours or days')
+    expect((await run(['search', 'x', '--provider', 'elasticsearch'])).out).toBe(
+      '--provider is prometheus: the one store that can be explored yet',
+    )
+    // a refusal is printed, and the exit code says it came
+    const refusing: Explorer = { ...store, search: async () => ({ error: 'Prometheus cannot be reached' }) }
+    const refused = await run(['search', 'x'], { explorer: refusing })
+    expect([refused.code, refused.out]).toEqual([1, 'search x:\n  Prometheus cannot be reached'])
     const none = await run(['search', 'x'], {})
     expect([none.code, none.out]).toEqual([
       2,

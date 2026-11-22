@@ -109,7 +109,13 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
   }
   const assistant = createAssistant({ model, reference })
   // --explore is the reader's yes to every look the model asks for, in the store `loadmap pull` reads
-  const stores = values.explore === true ? (o.explorers ?? explorersFromEnv(env)) : {}
+  let stores: Record<string, Explorer> = {}
+  try {
+    if (values.explore === true) stores = o.explorers ?? explorersFromEnv(env)
+  } catch (err) {
+    log(`loadmap ask: ${(err as Error).message}`)
+    return 2
+  }
   const store = Object.values(stores)[0]
   if (values.explore === true && !store) {
     log('loadmap ask: --explore reads the metrics `loadmap pull` reads: set LOADMAP_PROMETHEUS_URL')
@@ -148,10 +154,13 @@ export async function ask(argv: string[], o: AskCommandOptions = {}): Promise<nu
       log(
         `\n— the model asks to read your metrics: ${calls.map((c) => `${c.tool} ${c.arg}`).join('; ')}. --explore lets it.`,
       )
+      // no change came: a script that asked for one must not read success
+      code = 1
       break
     }
     if (round === MAX_ROUNDS) {
       log(`\n— the model asked to look ${MAX_ROUNDS + 1} times: stopped there`)
+      code = 1
       break
     }
     const read = await runExplore(store, calls, { now: o.now?.() ?? new Date() })
@@ -222,7 +231,10 @@ export function summary(p: Proposal): string {
   for (const n of p.notes) lines.push(`  ${n}`)
   if (p.moved) lines.push(`  ${p.moved.text}`, ...p.moved.worse.map((w) => `  Worse: ${w}`))
   for (const e of p.expectations) lines.push(`  ${e.label}: ${e.before ? `${e.before} → ` : ''}${e.after}`)
-  for (const f of p.figures) lines.push(`  ${f.file}:${f.line} ${f.text}${f.given ? '' : " (the assistant's guess)"}`)
+  for (const f of p.figures)
+    lines.push(
+      `  ${f.file}:${f.line} ${f.text}${f.given ? '' : f.read ? ' (read from your metrics)' : " (the assistant's guess)"}`,
+    )
   for (const w of p.warnings) lines.push(`  Warning: ${w}`)
   return lines.join('\n')
 }

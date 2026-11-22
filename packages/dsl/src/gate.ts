@@ -21,6 +21,8 @@ export interface Figure {
   text: string
   provenance: 'measured' | 'estimated' | 'configured'
   given: boolean
+  /** Not given, but every number is in what the reader's metrics answered (`explore`). */
+  read?: boolean
 }
 
 export interface Proposal {
@@ -49,6 +51,8 @@ export type GateResult = { ok: true; proposal: Proposal } | { ok: false; error: 
 export interface GateOptions extends Pick<CompileOptions, 'functions' | 'catalog'> {
   /** The reader's words: a number written there counts as given. */
   request?: string
+  /** What the reader's metrics answered: a number there is read, neither given nor the assistant's guess. */
+  read?: string
 }
 
 /** A compile's errors: `key` without the line (an error the change only moved is the same one), `text` with it. */
@@ -151,8 +155,8 @@ export function gate(before: Project, answer: Answer, o: GateOptions = {}): Gate
       }
   }
 
-  const figures = figuresOf(before, applied.project, [...applied.changed, ...applied.added], o.request ?? '')
-  const invented = figures.find((f) => !f.given && f.provenance !== 'estimated')
+  const figures = figuresOf(before, applied.project, [...applied.changed, ...applied.added], o.request ?? '', o.read)
+  const invented = figures.find((f) => !f.given && !f.read && f.provenance !== 'estimated')
   if (invented)
     return {
       ok: false,
@@ -258,8 +262,15 @@ function inside(e: Expr, numbers: string[] = [], names: string[] = []) {
  * The capacities the change writes that were not in the files before: each with whether the reader's words or the
  * files before hold every number in it.
  */
-export function figuresOf(before: Project, after: Project, paths: readonly string[], request: string): Figure[] {
+export function figuresOf(
+  before: Project,
+  after: Project,
+  paths: readonly string[],
+  request: string,
+  read = '',
+): Figure[] {
   const said = numbersIn(request)
+  const looked = numbersIn(read)
   const had = new Set<string>()
   // the names the files had: a capacity may read what was there (a parameter, a measure), not a name the change adds
   const known = new Set<string>()
@@ -275,7 +286,19 @@ export function figuresOf(before: Project, after: Project, paths: readonly strin
       if (had.has(c.text.replace(/\s+/g, ''))) continue
       const given =
         c.numbers.every((n) => said.has(String(Number(n.replaceAll('_', ''))))) && c.names.every((n) => known.has(n))
-      out.push({ file: p, line: c.line, text: c.text, provenance: c.provenance, given })
+      const fromData =
+        !given &&
+        c.numbers.length > 0 &&
+        c.numbers.every((n) => looked.has(String(Number(n.replaceAll('_', ''))))) &&
+        c.names.every((n) => known.has(n))
+      out.push({
+        file: p,
+        line: c.line,
+        text: c.text,
+        provenance: c.provenance,
+        given,
+        ...(fromData && { read: true }),
+      })
     }
   }
   return out

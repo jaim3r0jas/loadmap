@@ -8,7 +8,11 @@ import { endpoint, unreachable } from './http'
 export interface Explorer {
   id: string
   search(words: string): Promise<{ metrics: MetricInfo[] } | { error: string }>
-  labels(metric: string, window: Window): Promise<{ series: number; labels: LabelInfo[] } | { error: string }>
+  /** `capped`: there may be more series than were read (`EXPLORE_LIMITS.series`). */
+  labels(
+    metric: string,
+    window: Window,
+  ): Promise<{ series: number; capped?: boolean; labels: LabelInfo[] } | { error: string }>
   try(query: string, window: Window & { step: number }): Promise<TryResult | { error: string }>
 }
 
@@ -50,7 +54,7 @@ const words = (s: string) =>
     .filter((w) => w.length > 1)
 
 /** The metric names that hold the most of the words (every word, when any name holds them all), shortest first. */
-export function rank(names: readonly string[], query: string): string[] {
+function rank(names: readonly string[], query: string): string[] {
   const want = words(query)
   if (!want.length) return []
   const scored = names.map((n) => ({ n, hits: want.filter((w) => n.toLowerCase().includes(w)).length }))
@@ -89,8 +93,10 @@ export function prometheusExplorer(o: {
     url.search = params.toString()
     let res: Response
     try {
-      res = await get(url, { headers })
+      // a store that takes the connection and never answers must not hold the reader or the model forever
+      res = await get(url, { headers, signal: AbortSignal.timeout(30_000) })
     } catch (err) {
+      if ((err as Error)?.name === 'TimeoutError') return { error: 'Prometheus did not answer within 30 s' }
       return unreachable('Prometheus', err)
     }
     let body: { status?: string; error?: string; data?: unknown } | undefined
@@ -113,12 +119,15 @@ export function prometheusExplorer(o: {
   return {
     id: 'prometheus',
     async search(query) {
-      const names = await call<string[]>('api/v1/label/__name__/values', {})
+      // both at once: on a large store each is a long answer
+      const [names, meta] = await Promise.all([
+        call<string[]>('api/v1/label/__name__/values', {}),
+        call<Record<string, { type?: string; help?: string; unit?: string }[]>>('api/v1/metadata', {
+          limit_per_metric: '1',
+        }),
+      ])
       if ('error' in names) return names
       const picked = rank(names, query)
-      const meta = await call<Record<string, { type?: string; help?: string; unit?: string }[]>>('api/v1/metadata', {
-        limit_per_metric: '1',
-      })
       const m = 'error' in meta ? {} : meta
       return {
         metrics: picked.map((name) => {
@@ -142,16 +151,19 @@ export function prometheusExplorer(o: {
         limit: String(EXPLORE_LIMITS.series),
       })
       if ('error' in series) return series
+      // a store too old for `limit` gives every series: only the first are read
+      const read = series.slice(0, EXPLORE_LIMITS.series)
       const counts = new Map<string, Map<string, number>>()
-      for (const s of series)
+      for (const s of read)
         for (const [k, v] of Object.entries(s)) {
           if (k === '__name__') continue
           const c = counts.get(k) ?? new Map<string, number>()
           c.set(v, (c.get(v) ?? 0) + 1)
           counts.set(k, c)
         }
+      // the labels with the fewest values first: the ones a query selects on (job, service), not pod or instance
       const labels = [...counts]
-        .sort((a, b) => b[1].size - a[1].size)
+        .sort((a, b) => a[1].size - b[1].size || (a[0] < b[0] ? -1 : 1))
         .slice(0, EXPLORE_LIMITS.labels)
         .map(([name, c]) => ({
           name,
@@ -160,7 +172,7 @@ export function prometheusExplorer(o: {
             .slice(0, EXPLORE_LIMITS.values)
             .map(([value, n]) => ({ value: value.slice(0, 120), series: n })),
         }))
-      return { series: series.length, labels }
+      return { series: read.length, capped: series.length >= EXPLORE_LIMITS.series, labels }
     },
     async try(query, w) {
       const span = window(w)
@@ -210,9 +222,14 @@ export async function runExplore(
   const fmt = (n: number | null) => (n == null ? 'none' : Number(n.toPrecision(4)).toString())
   for (const c of calls.slice(0, o.max ?? 5)) {
     const m = /^(\d+)([mhd])$/.exec(c.window ?? '1h')
-    const seconds = m ? Number(m[1]) * SPAN[m[2]!]! : 3600
+    if (!m) {
+      out.push(`${c.tool} ${c.arg}:`, `  "${String(c.window).slice(0, 20)}" is no window: write 30m, 6h or 1d`)
+      continue
+    }
+    // the window as asked: the explorer refuses one over a day, rather than read less than it says
+    const seconds = Number(m[1]) * SPAN[m[2]!]!
     const to = o.now.toISOString()
-    const from = new Date(o.now.getTime() - Math.min(seconds, EXPLORE_LIMITS.window) * 1000).toISOString()
+    const from = new Date(o.now.getTime() - seconds * 1000).toISOString()
     if (c.tool === 'search') {
       const r = await explorer.search(c.arg)
       out.push(`search ${c.arg}:`)
@@ -228,7 +245,7 @@ export async function runExplore(
       out.push(`labels ${c.arg}:`)
       if ('error' in r) out.push(`  ${r.error}`)
       else {
-        out.push(`  ${r.series} series`)
+        out.push(`  ${r.series} series${r.capped ? ' or more (the first ones read)' : ''}`)
         for (const l of r.labels) out.push(`  ${l.name}: ${l.values.map((v) => `${v.value} (${v.series})`).join(', ')}`)
       }
     } else {

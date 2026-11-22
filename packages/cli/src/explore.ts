@@ -33,20 +33,39 @@ export async function explore(argv: string[], o: ExploreCommandOptions = {}): Pr
     window = p.values.window
     provider = p.values.provider ?? 'prometheus'
     if (!['search', 'labels', 'try'].includes(tool) || !arg) throw new Error(USAGE)
+    if (provider !== 'prometheus') throw new Error('--provider is prometheus: the one store that can be explored yet')
     if (window && !/^\d+[mhd]$/.test(window)) throw new Error('--window is minutes, hours or days: 30m, 6h, 1d')
   } catch (err) {
     log((err as Error).message)
     return 2
   }
-  const explorer = o.explorer ?? explorersFromEnv(o.env ?? process.env)[provider]
+  let explorer: Explorer | undefined
+  try {
+    explorer = o.explorer ?? explorersFromEnv(o.env ?? process.env)[provider]
+  } catch (err) {
+    log(`loadmap explore: ${(err as Error).message}`)
+    return 2
+  }
   if (!explorer) {
     log(`loadmap explore: no ${provider} to read: set LOADMAP_PROMETHEUS_URL (and its token or user)`)
     return 2
   }
-  const text = await runExplore(explorer, [{ tool: tool as 'search', arg, ...(window && { window }) }], {
+  // a refusal is an answer the reader reads, and the exit code says it came
+  let failed = false
+  const watch = <T>(r: T): T => {
+    if (r && typeof r === 'object' && 'error' in r) failed = true
+    return r
+  }
+  const store = explorer
+  const watched: Explorer = {
+    id: store.id,
+    search: async (w) => watch(await store.search(w)),
+    labels: async (m, w) => watch(await store.labels(m, w)),
+    try: async (q, w) => watch(await store.try(q, w)),
+  }
+  const text = await runExplore(watched, [{ tool: tool as 'search', arg, ...(window && { window }) }], {
     now: o.now?.() ?? new Date(),
   })
-  // what the store answered, a refusal too: a refusal is an answer the reader reads
   log(text)
-  return 0
+  return failed ? 1 : 0
 }

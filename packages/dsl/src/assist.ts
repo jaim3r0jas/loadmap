@@ -7,7 +7,6 @@ export {
   type AssistantOptions,
   type AssistEvent,
   createAssistant,
-  EXPLORED,
   explored,
 } from './assistant'
 export {

@@ -143,6 +143,29 @@ describe('the assistant', () => {
     expect(given.of('proposal')[0]!.proposal.figures[0]).toMatchObject({ provenance: 'measured', given: true })
   })
 
+  it("marks a figure read from the reader's metrics as read: neither given nor a guess", async () => {
+    const model = recorded(['```ops\nset db.capacity to measured(12_345, "queries/s", "Prometheus")\n```'])
+    const events: AssistEvent[] = []
+    const thread = [
+      { role: 'user' as const, content: 'how much can the database take?' },
+      { role: 'assistant' as const, content: '```explore\ntry sum(rate(db_queries_total[5m]))\n```' },
+    ]
+    for await (const e of createAssistant({ model, reference }).ask({
+      request: explored(
+        'try over 1h sum(rate(db_queries_total[5m])):\n  1 series, 240 samples, mean 9000, max 12345, p95 11000',
+      ),
+      project: shop,
+      thread,
+    }))
+      events.push(e)
+    const proposal = events.find((e) => e.type === 'proposal')
+    expect(proposal && proposal.type === 'proposal' && proposal.proposal.figures[0]).toMatchObject({
+      provenance: 'measured',
+      given: false,
+      read: true,
+    })
+  })
+
   it('takes whole files, laid out by format()', async () => {
     const text = `${shop.files['shop.loadmap']}scenario   "Two"   {pods:2}\n`
     const { of, model } = await run([`\`\`\`loadmap shop.loadmap\n${text}\`\`\``], 'add a scenario', 'files')
