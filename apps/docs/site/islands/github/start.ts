@@ -3,6 +3,7 @@
 import { GitHubError } from './api'
 import { inFolder, type Listing, list, type Opened, open } from './load'
 import { type RepoTarget, targetFromQuery } from './parse'
+import { noteRecent } from './repos'
 import { gh } from './session'
 
 /**
@@ -34,7 +35,11 @@ export async function fromQuery(q: URLSearchParams): Promise<Started> {
     if (missed) return { error: missed }
     const here = inFolder(listing)
     const path = listing.want ?? (here.length === 1 ? here[0]!.path : undefined)
-    if (path) return { opened: await open(gh, listing, path) }
+    if (path) {
+      const opened = await open(gh, listing, path)
+      noteRecent({ owner: listing.owner, name: listing.name, ref: listing.ref, path }, listing.private)
+      return { opened }
+    }
     if (!here.length) {
       const folder = listing.folder ? `in ${listing.folder}/ ` : ''
       return { error: `${target.owner}/${target.name} has no .loadmap file ${folder}at ${listing.ref}` }

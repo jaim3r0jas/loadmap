@@ -5,6 +5,8 @@ import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'rea
 import { DIALOG_CSS, editorTheme } from './dialog'
 import { inFolder, type Listing, list, type Opened, open } from './load'
 import { parseRepo, type RepoTarget } from './parse'
+import RepoPicker from './RepoPicker'
+import { noteRecent } from './repos'
 import { gh } from './session'
 import { missedFile, tokenMends } from './start'
 import TokenForm from './TokenForm'
@@ -65,7 +67,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
     const mine = ++turn.current
     setError('')
     setAsk(null)
-    setBusy('look')
+    setBusy(named(target))
     try {
       const l = await list(gh, target)
       if (mine !== turn.current) return
@@ -91,6 +93,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
     try {
       const o = await open(gh, l, path)
       if (mine !== turn.current) return
+      noteRecent({ owner: l.owner, name: l.name, ref: l.ref, path }, l.private)
       onOpen(o)
       dialog.current?.close()
     } catch (e) {
@@ -233,6 +236,15 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
               A public repository opens as it is; a private one asks you to connect to GitHub. An address to a folder or
               a .loadmap file opens there.
             </p>
+            <RepoPicker
+              filter={text}
+              busy={busy != null}
+              onPick={(t) => {
+                if (busy) return
+                setText(named(t))
+                void look(t)
+              }}
+            />
           </form>
         )}
         {error && (

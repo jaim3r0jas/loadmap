@@ -8,15 +8,28 @@ import { DIALOG_CSS, editorTheme } from './dialog'
 import { gh, hasToken, signedIn } from './session'
 import TokenForm from './TokenForm'
 
+export interface Starter {
+  label: string
+  /** The repository's name it suggests. */
+  name: string
+  /** The versions to push, oldest first. */
+  versions: readonly Version[]
+}
+
 export interface NewRepoDialogProps {
   /** The versions to push, oldest first: the history's, or the files as they are when there is none. */
   versions: readonly Version[]
+  /** Other ways to start it, after the model as it is: the templates. */
+  starters?: readonly Starter[]
   /** A name to start from: the model's. */
   name: string
   onClose: () => void
 }
 
-export default function NewRepoDialog({ versions, name: start, onClose }: NewRepoDialogProps) {
+export default function NewRepoDialog({ versions: own, starters = [], name: start, onClose }: NewRepoDialogProps) {
+  const [from, setFrom] = useState(-1)
+  const versions = from < 0 ? own : (starters[from]?.versions ?? own)
+  const nameFor = (i: number) => (i < 0 ? start : (starters[i]?.name ?? start))
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
   const [theme] = useState(editorTheme)
@@ -24,7 +37,8 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
   const [shut, setShut] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
-  const [made, setMade] = useState<Made | null>(null)
+  /** What the press made, with the commits it wrote: the choice of starter may change after. */
+  const [made, setMade] = useState<(Made & { commits: number }) | null>(null)
   /** A repository an earlier press made, its versions not written: the next press writes them there. */
   const [half, setHalf] = useState<Made | null>(null)
   const [ask, setAsk] = useState<string | null>(() =>
@@ -55,7 +69,7 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
         half ?? undefined,
       )
       setHalf(null)
-      setMade(r)
+      setMade({ ...r, commits: versions.length })
     } catch (err) {
       if (err instanceof RepoMade) setHalf(err.made)
       const cause = err instanceof RepoMade ? err.cause : err
@@ -88,7 +102,7 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
             <a href={made.url} target="_blank" rel="noopener noreferrer">
               {made.owner}/{made.name} ↗
             </a>{' '}
-            with {versions.length} commit{versions.length === 1 ? '' : 's'}. Open it from GitHub to keep saving there.
+            with {made.commits} commit{made.commits === 1 ? '' : 's'}. Open it from GitHub to keep saving there.
           </p>
         ) : ask ? (
           <TokenForm reason={ask} need="create" onToken={() => setAsk(null)} onCancel={() => dialog.current?.close()} />
@@ -104,6 +118,28 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
                   Name
                   <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} />
                 </label>
+                {starters.length > 0 && (
+                  <label className="lmg-field">
+                    Start with
+                    <select
+                      value={from}
+                      disabled={!!busy}
+                      onChange={(e) => {
+                        const i = Number(e.target.value)
+                        // a name nobody typed follows the starter: the model's, or the template's
+                        if (name === nameFor(from)) setName(nameFor(i))
+                        setFrom(i)
+                      }}
+                    >
+                      <option value={-1}>This model{own.length > 1 ? `, its ${own.length} versions` : ''}</option>
+                      {starters.map((st, i) => (
+                        <option key={st.label} value={i}>
+                          {st.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label className="lmg-check">
                   <input type="checkbox" checked={shut} onChange={(e) => setShut(e.target.checked)} />
                   <span>Private: only you, and who you invite, can see it</span>

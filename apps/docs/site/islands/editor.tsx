@@ -565,6 +565,7 @@ function Editor({ root }: { root: URL }) {
         <Suspense fallback={null}>
           <NewRepoDialog
             versions={newRepo}
+            starters={STARTERS}
             name={(editor.current?.files().path.split('/').pop() ?? 'model').replace(/\.loadmap$/, '')}
             onClose={() => setNewRepo(null)}
           />
@@ -700,6 +701,13 @@ function Editor({ root }: { root: URL }) {
 }
 
 const HISTORY = { key: 'loadmap-editor-history' }
+
+/** A new repository can start from a template, in place of the model in the editor: one commit, its one file. */
+const STARTERS = TEMPLATES.map((t) => ({
+  label: `The ${t.title} template`,
+  name: t.id,
+  versions: [{ message: `Start from loadmap's ${t.title} template`, files: { [`${t.id}.loadmap`]: t.source } }],
+}))
 
 /** The reference the Ask panel's model reads, fetched once from the site. */
 let reference: Promise<string> | undefined

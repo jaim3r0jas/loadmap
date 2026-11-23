@@ -40,6 +40,9 @@ export function cleanPath(path: string): string | undefined {
   return segs.every((s) => s !== '' && s !== '.' && s !== '..') ? path : undefined
 }
 
+/** Whether `owner/name` is a repository's name as GitHub makes them. */
+export const goodRepo = (owner: string, name: string) => !('error' in repo(owner, name)) && !name.endsWith('.git')
+
 const repo = (owner: string, name: string): RepoTarget | { error: string } => {
   const n = name.replace(/\.git$/, '')
   if (!OWNER.test(owner) || !NAME.test(n) || n === '.' || n === '..')
