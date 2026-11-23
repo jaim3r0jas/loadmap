@@ -672,7 +672,10 @@ export default function AskPanel(p: AskPanelProps) {
   // the newest of the conversation in view, as it streams
   const end = useRef<HTMLDivElement>(null)
   // biome-ignore lint/correctness/useExhaustiveDependencies: on what grows the conversation
-  useEffect(() => end.current?.scrollIntoView?.({ block: 'nearest' }), [turns, streaming, proposal])
+  useEffect(() => {
+    // nothing returned: Chromium's scrollIntoView now answers with a promise, which React would take for a clean-up
+    end.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [turns, streaming, proposal])
   /** A line in the conversation for what became of a proposal. */
   const event = (text: string) => setTurns((t) => [...t, { n: t.length, role: 'assistant', text, event: true }])
 

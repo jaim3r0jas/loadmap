@@ -150,7 +150,10 @@ export function inline(text: string, key = 'i', inLink = false): ReactNode[] {
     if (start > at) out.push(text.slice(at, start))
     const k = `${key}.${n++}`
     if (m[1]) out.push(<code key={k}>{m[2]}</code>)
-    else if (m[4] !== undefined) {
+    else if (inLink && (m[4] !== undefined || m[5] !== undefined || m[11])) {
+      // inside a link's text, another link (or an image, or a bare address) is its text: never an anchor in an anchor
+      out.push(m[0])
+    } else if (m[4] !== undefined) {
       // an image is never loaded: its link, named by its text
       const href = safeHref(m[4])
       out.push(
