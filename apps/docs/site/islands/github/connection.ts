@@ -5,6 +5,7 @@
 // connected before.
 import { app as built, EXPIRES, type SignIn } from './account'
 import { deviceKey, devicePoint, dropSession, forgetDevice, keepSession, readSession, sign } from './device'
+import { forgetRecent } from './repos'
 import { disconnect as forget, hasToken, takeToken, tokenNow } from './session'
 import { browserHost, type SignedIn, type SignInHost, signInFor } from './signin'
 
@@ -204,6 +205,7 @@ export async function disconnect(o: { app?: SignIn; fetch?: typeof fetch } = {})
   clearTimeout(timer)
   timer = undefined
   forget()
+  forgetRecent()
   // after any refresh under way in another tab, which would keep its session
   await locked(forgetSession)
   if (config && token?.startsWith('ghu_'))

@@ -1271,6 +1271,63 @@ describe('the built site', () => {
     }
   }, 120_000)
 
+  it("lists the reader's repositories to open, and keeps the one opened among the recent", async () => {
+    const token = `github_pat_${'D'.repeat(40)}`
+    const text = readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8').replace(
+      'title: "Photo uploads"',
+      'title: "Capacity uploads"',
+    )
+    const fake = fakeGitHub({
+      owner: 'acme',
+      name: 'capacity',
+      private: true,
+      token,
+      refs: { main: { 'm.loadmap': text } },
+    })
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await routeGitHub(page, fake.fetch)
+      await page.goto(`${url}editor/`)
+      await page.waitForSelector('.lme-title')
+      await page.getByRole('button', { name: 'Connect to GitHub' }).click()
+      const connect = page.getByRole('dialog', { name: 'Connect to GitHub' })
+      await connect.getByLabel('Token', { exact: true }).fill(token)
+      await connect.getByRole('button', { name: 'Use it' }).click()
+      const account = page.getByRole('button', { name: 'GitHub: acme' })
+      await account.waitFor()
+
+      await account.click()
+      await page.getByRole('menuitem', { name: 'Open a repository…' }).click()
+      const open = page.getByRole('dialog', { name: 'Open from GitHub' })
+      await open.getByText('Your repositories').waitFor()
+      // what is typed narrows the list
+      await open.getByLabel('Repository').fill('nothing-like-it')
+      await open.getByText('No repository matches.').waitFor()
+      await open.getByLabel('Repository').fill('capa')
+      await open.getByRole('button', { name: /acme\/capacity/ }).click()
+      await page.waitForFunction(() => document.querySelector('.lme-title')?.textContent === 'Capacity uploads')
+
+      // the next open offers it first, with its model
+      await account.click()
+      await page.getByRole('menuitem', { name: 'Open a repository…' }).click()
+      await open.getByText('Recent').waitFor()
+      await open.getByRole('button', { name: 'acme/capacity m.loadmap' }).waitFor()
+      const recent = await page.evaluate(() => localStorage.getItem('loadmap-github-recent') ?? '')
+      expect(JSON.parse(recent)).toEqual([{ owner: 'acme', name: 'capacity', path: 'm.loadmap' }])
+      expect(recent).not.toContain('Capacity uploads')
+      await open.getByRole('button', { name: 'Close' }).click()
+
+      // Disconnect forgets the list too
+      await account.click()
+      await page.getByRole('menuitem', { name: 'Disconnect' }).click()
+      await page.getByRole('button', { name: 'Connect to GitHub' }).waitFor()
+      expect(await page.evaluate(() => localStorage.getItem('loadmap-github-recent'))).toBeNull()
+    } finally {
+      await browser.close()
+    }
+  }, 120_000)
+
   it('asks for a token in place for a private repository, and keeps its text and the token out of lasting storage', async () => {
     const token = `github_pat_${'A'.repeat(40)}`
     const secret = readFileSync(join(import.meta.dirname, '../site/uploads.loadmap'), 'utf8').replace(

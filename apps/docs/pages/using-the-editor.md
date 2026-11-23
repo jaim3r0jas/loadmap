@@ -94,8 +94,11 @@ copy out. Where that is gone (a private window, cleared site data, Safari after 
 reconnect as the same account: one press. **Disconnect** ends the token at GitHub and forgets the account, the key and
 the session in this browser.
 
-**New → Open from GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
-the files it names. A public repository opens as it is; a private one asks you to connect in place. A token
+**New → Open from GitHub…** (or **Open a repository…** in the account's menu) opens a model from a repository with
+the files it names. Pick it from the lists, or type its name (`owner/name`) or the address of a folder or a `.loadmap`
+file in it. **Recent** holds what this browser opened lately, each with its model (Disconnect forgets the list).
+Connected, **Your repositories** lists the ones the app may reach, or those a pasted token sees, newest first; what you
+type narrows it. A public repository opens as it is; a private one asks you to connect in place. A token
 stays in the page (or this tab), never in a link or this browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
 one as well: `/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch), for instance from a
 repository's README:
@@ -113,7 +116,7 @@ written before you press **Save to GitHub**.
 When the Timeline holds more than one version since the files were opened, the save can write **every version as its
 own commit**, in order (an assistant's says so, with its model), the last with the message you write. **New → Save to
 a new repository…** makes a repository in your own account, private unless you choose public, and writes every version
-of the Timeline to it as a commit; connected through the app, it needs the app's "Repository creation" (GitHub asks you to accept it once); a pasted
+of the Timeline to it as a commit, or starts it from one of the templates; connected through the app, it needs the app's "Repository creation" (GitHub asks you to accept it once); a pasted
 token needs Administration and Contents on all repositories. The Timeline's **Download** saves
 the whole history as one file `git clone` reads (a git bundle): every version and branch, nothing sent anywhere.
 

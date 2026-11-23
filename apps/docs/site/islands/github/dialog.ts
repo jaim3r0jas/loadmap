@@ -12,8 +12,8 @@ export const DIALOG_CSS = `
 .lmg-body { display: grid; gap: 10px; min-height: 0; overflow: auto; padding: 12px 14px 14px; }
 .lmg-row { display: flex; gap: 8px; }
 .lmg-row input { flex: 1; min-width: 0; }
-.lmg-dialog input:not([type="checkbox"]), .lmg-dialog textarea { box-sizing: border-box; padding: 6px 8px; font: inherit; color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 6px; }
-.lmg-dialog input:focus-visible, .lmg-dialog textarea:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -1px; }
+.lmg-dialog input:not([type="checkbox"]), .lmg-dialog textarea, .lmg-dialog select { box-sizing: border-box; padding: 6px 8px; font: inherit; color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 6px; }
+.lmg-dialog input:focus-visible, .lmg-dialog textarea:focus-visible, .lmg-dialog select:focus-visible { outline: 2px solid var(--lm-accent); outline-offset: -1px; }
 .lmg-body:focus { outline: none; }
 .lmg-hint { margin: 0; color: var(--lm-muted); font-size: .8rem; line-height: 1.45; }
 .lmg-error { margin: 0; padding: 8px 10px; border-left: 3px solid var(--lm-warn); background: color-mix(in srgb, var(--lm-warn) 8%, transparent); border-radius: 0 6px 6px 0; line-height: 1.45; overflow-wrap: anywhere; }

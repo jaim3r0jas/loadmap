@@ -8,15 +8,25 @@ import { DIALOG_CSS, editorTheme } from './dialog'
 import { gh, hasToken, signedIn } from './session'
 import TokenForm from './TokenForm'
 
+export interface Starter {
+  label: string
+  /** The versions to push, oldest first. */
+  versions: readonly Version[]
+}
+
 export interface NewRepoDialogProps {
   /** The versions to push, oldest first: the history's, or the files as they are when there is none. */
   versions: readonly Version[]
+  /** Other ways to start it, after the model as it is: the templates. */
+  starters?: readonly Starter[]
   /** A name to start from: the model's. */
   name: string
   onClose: () => void
 }
 
-export default function NewRepoDialog({ versions, name: start, onClose }: NewRepoDialogProps) {
+export default function NewRepoDialog({ versions: own, starters = [], name: start, onClose }: NewRepoDialogProps) {
+  const [from, setFrom] = useState(-1)
+  const versions = from < 0 ? own : (starters[from]?.versions ?? own)
   const dialog = useRef<HTMLDialogElement>(null)
   const id = useId()
   const [theme] = useState(editorTheme)
@@ -104,6 +114,19 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
                   Name
                   <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} />
                 </label>
+                {starters.length > 0 && (
+                  <label className="lmg-field">
+                    Start with
+                    <select value={from} onChange={(e) => setFrom(Number(e.target.value))}>
+                      <option value={-1}>This model{own.length > 1 ? `, its ${own.length} versions` : ''}</option>
+                      {starters.map((st, i) => (
+                        <option key={st.label} value={i}>
+                          {st.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label className="lmg-check">
                   <input type="checkbox" checked={shut} onChange={(e) => setShut(e.target.checked)} />
                   <span>Private: only you, and who you invite, can see it</span>

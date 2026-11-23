@@ -102,6 +102,21 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
       if (!authorization) return json(401, { message: 'Requires authentication' })
       return signed ? json(200, { login: repo.owner, id: 1 }) : json(401, { message: 'Bad credentials' })
     }
+    // the reader's repositories: what a pasted token sees, and the app's one installation
+    const mine = {
+      name: repo.name,
+      owner: { login: repo.owner },
+      private: !!repo.private,
+      pushed_at: '2026-11-20T09:00:00Z',
+    }
+    if (path === '/user/repos' && (init.method ?? 'GET') === 'GET')
+      return signed ? json(200, [mine]) : json(401, { message: 'Requires authentication' })
+    if (path === '/user/installations')
+      return signed
+        ? json(200, { total_count: 1, installations: [{ id: 7 }] })
+        : json(401, { message: 'Bad credentials' })
+    if (path === '/user/installations/7/repositories')
+      return signed ? json(200, { total_count: 1, repositories: [mine] }) : json(401, { message: 'Bad credentials' })
     if (path === '/user/repos' && init.method === 'POST') {
       if (repo.token == null || authorization !== `Bearer ${repo.token}`)
         return json(403, { message: 'Resource not accessible by personal access token' })
