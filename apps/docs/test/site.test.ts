@@ -1313,16 +1313,21 @@ describe('the built site', () => {
       await page.getByRole('menuitem', { name: 'Open a repository…' }).click()
       await open.getByText('Recent').waitFor()
       await open.getByRole('button', { name: 'acme/capacity m.loadmap' }).waitFor()
-      const recent = await page.evaluate(() => localStorage.getItem('loadmap-github-recent') ?? '')
-      expect(JSON.parse(recent)).toEqual([{ owner: 'acme', name: 'capacity', path: 'm.loadmap' }])
-      expect(recent).not.toContain('Capacity uploads')
+      // a private repository's name stays in this tab, as its files
+      const recent = await page.evaluate(() => ({
+        tab: sessionStorage.getItem('loadmap-github-recent') ?? '',
+        lasting: localStorage.getItem('loadmap-github-recent'),
+      }))
+      expect(JSON.parse(recent.tab)).toEqual([{ owner: 'acme', name: 'capacity', ref: 'main', path: 'm.loadmap' }])
+      expect(recent.tab).not.toContain('Capacity uploads')
+      expect(recent.lasting).toBeNull()
       await open.getByRole('button', { name: 'Close' }).click()
 
       // Disconnect forgets the list too
       await account.click()
       await page.getByRole('menuitem', { name: 'Disconnect' }).click()
       await page.getByRole('button', { name: 'Connect to GitHub' }).waitFor()
-      expect(await page.evaluate(() => localStorage.getItem('loadmap-github-recent'))).toBeNull()
+      expect(await page.evaluate(() => sessionStorage.getItem('loadmap-github-recent'))).toBeNull()
     } finally {
       await browser.close()
     }

@@ -37,7 +37,7 @@ export async function fromQuery(q: URLSearchParams): Promise<Started> {
     const path = listing.want ?? (here.length === 1 ? here[0]!.path : undefined)
     if (path) {
       const opened = await open(gh, listing, path)
-      noteRecent({ owner: listing.owner, name: listing.name, path })
+      noteRecent({ owner: listing.owner, name: listing.name, ref: listing.ref, path }, listing.private)
       return { opened }
     }
     if (!here.length) {

@@ -2,6 +2,7 @@
 // app), or those a pasted token sees; and the ones this browser opened lately. Names only, read from GitHub when the
 // dialog opens; the recent list is the one thing kept, in localStorage, and Disconnect forgets it.
 import type { Client } from './api'
+import { cleanPath, goodRef, goodRepo } from './parse'
 
 export interface RepoEntry {
   owner: string
@@ -54,16 +55,25 @@ export async function listRepos(gh: Client, via: 'app' | 'token'): Promise<RepoL
     )
     const ids = installations.map((i) => i.id).filter((id): id is number => typeof id === 'number')
     if (ids.length > INSTALLATIONS) more = true
-    for (const id of ids.slice(0, INSTALLATIONS))
-      for (let page = 1; page <= PAGES; page++) {
-        const r = await gh.json<{ total_count?: unknown; repositories?: GitHubRepo[] }>(
-          `/user/installations/${id}/repositories?per_page=100&page=${page}`,
-        )
-        add(r.repositories ?? [])
-        const total = typeof r.total_count === 'number' ? r.total_count : 0
-        if (page * 100 >= total) break
-        if (page === PAGES) more = true
-      }
+    // the installations side by side, each one's pages in turn; GitHub lists them in its own order, not by push
+    const pages = await Promise.all(
+      ids.slice(0, INSTALLATIONS).map(async (id) => {
+        const lists: GitHubRepo[][] = []
+        for (let page = 1; page <= PAGES; page++) {
+          const r = await gh.json<{ total_count?: unknown; repositories?: GitHubRepo[] }>(
+            `/user/installations/${id}/repositories?per_page=100&page=${page}`,
+          )
+          lists.push(r.repositories ?? [])
+          const total = typeof r.total_count === 'number' ? r.total_count : 0
+          if (page * 100 >= total) return { lists, more: false }
+        }
+        return { lists, more: true }
+      }),
+    )
+    for (const p of pages) {
+      for (const l of p.lists) add(l)
+      if (p.more) more = true
+    }
   } else
     for (let page = 1; page <= PAGES; page++) {
       const list = await gh.json<GitHubRepo[]>(`/user/repos?sort=pushed&per_page=100&page=${page}`)
@@ -76,49 +86,72 @@ export async function listRepos(gh: Client, via: 'app' | 'token'): Promise<RepoL
 }
 
 const RECENT = 'loadmap-github-recent'
-const NAME = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/
 
 export interface Recent {
   owner: string
   name: string
+  /** The branch, tag or commit it was opened at. */
+  ref?: string
   /** The model opened there. */
   path?: string
 }
 
-/** What this browser opened lately, newest first: names a GitHub could make, nothing else. */
-export function readRecent(): Recent[] {
+function storage(where: 'local' | 'session'): Storage | undefined {
   try {
-    const list = JSON.parse(localStorage.getItem(RECENT) ?? '[]') as unknown
+    return where === 'local' ? localStorage : sessionStorage
+  } catch {
+    return undefined
+  }
+}
+
+function readFrom(where: 'local' | 'session'): Recent[] {
+  try {
+    const list = JSON.parse(storage(where)?.getItem(RECENT) ?? '[]') as unknown
     if (!Array.isArray(list)) return []
-    return list
-      .filter(
-        (r): r is Recent =>
-          typeof r?.owner === 'string' &&
-          typeof r?.name === 'string' &&
-          NAME.test(`${r.owner}/${r.name}`) &&
-          (r.path === undefined || (typeof r.path === 'string' && r.path.endsWith('.loadmap') && r.path.length < 300)),
-      )
-      .slice(0, 8)
+    return list.filter(
+      (r): r is Recent =>
+        typeof r?.owner === 'string' &&
+        typeof r?.name === 'string' &&
+        goodRepo(r.owner, r.name) &&
+        (r.ref === undefined || (typeof r.ref === 'string' && goodRef(r.ref))) &&
+        (r.path === undefined || (typeof r.path === 'string' && cleanPath(r.path) === r.path)),
+    )
   } catch {
     return []
   }
 }
 
-/** A repository opened: first in the list, once. */
-export function noteRecent(r: Recent): void {
-  const key = `${r.owner}/${r.name}`.toLowerCase()
-  const rest = readRecent().filter((x) => `${x.owner}/${x.name}`.toLowerCase() !== key)
+const same = (a: Recent, b: Recent) => `${a.owner}/${a.name}`.toLowerCase() === `${b.owner}/${b.name}`.toLowerCase()
+
+/**
+ * What this browser opened lately, newest first: names a GitHub could make, nothing else. A private repository's
+ * name stays in this tab (sessionStorage), as its files do; a public one is kept in localStorage.
+ */
+export function readRecent(): Recent[] {
+  const tab = readFrom('session')
+  return [...tab, ...readFrom('local').filter((r) => !tab.some((t) => same(t, r)))].slice(0, 8)
+}
+
+/** A repository opened: first in its list, once. */
+export function noteRecent(r: Recent, shut: boolean): void {
+  const where = shut ? 'session' : 'local'
+  const rest = readFrom(where).filter((x) => !same(x, r))
   try {
-    localStorage.setItem(RECENT, JSON.stringify([r, ...rest].slice(0, 8)))
+    storage(where)?.setItem(RECENT, JSON.stringify([r, ...rest].slice(0, 8)))
+    // a repository that became private, or public, is listed in one place
+    const other = shut ? 'local' : 'session'
+    const there = readFrom(other)
+    if (there.some((x) => same(x, r))) storage(other)?.setItem(RECENT, JSON.stringify(there.filter((x) => !same(x, r))))
   } catch {
     // a convenience
   }
 }
 
 export function forgetRecent(): void {
-  try {
-    localStorage.removeItem(RECENT)
-  } catch {
-    // nothing kept
-  }
+  for (const where of ['local', 'session'] as const)
+    try {
+      storage(where)?.removeItem(RECENT)
+    } catch {
+      // nothing kept
+    }
 }

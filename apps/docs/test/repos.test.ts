@@ -106,28 +106,46 @@ class Store implements Storage {
 
 describe('the recent list', () => {
   let local: Store
+  let tab: Store
   beforeEach(() => {
     local = new Store()
+    tab = new Store()
     vi.stubGlobal('localStorage', local)
+    vi.stubGlobal('sessionStorage', tab)
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('keeps the last eight opened, newest first, each once', () => {
-    for (let i = 0; i < 10; i++) noteRecent({ owner: 'acme', name: `r${i}`, path: 'm.loadmap' })
-    noteRecent({ owner: 'ACME', name: 'r5', path: 'other.loadmap' })
+  it('keeps the last eight opened, newest first, each once, with the ref and the model', () => {
+    for (let i = 0; i < 10; i++) noteRecent({ owner: 'acme', name: `r${i}`, ref: 'main', path: 'm.loadmap' }, false)
+    noteRecent({ owner: 'ACME', name: 'r5', ref: 'dev', path: 'other.loadmap' }, false)
     const r = readRecent()
     expect(r).toHaveLength(8)
-    expect(r[0]).toEqual({ owner: 'ACME', name: 'r5', path: 'other.loadmap' })
+    expect(r[0]).toEqual({ owner: 'ACME', name: 'r5', ref: 'dev', path: 'other.loadmap' })
     expect(r.filter((x) => x.name === 'r5')).toHaveLength(1)
   })
 
-  it('reads only names GitHub could make, and paths to models', () => {
+  it("keeps a private repository's name in this tab only, as its files", () => {
+    noteRecent({ owner: 'acme', name: 'public', path: 'p.loadmap' }, false)
+    noteRecent({ owner: 'acme', name: 'secret', path: 'pricing.loadmap' }, true)
+    expect(readRecent().map((r) => r.name)).toEqual(['secret', 'public'])
+    expect(local.getItem('loadmap-github-recent')).not.toContain('secret')
+    expect(tab.getItem('loadmap-github-recent')).toContain('secret')
+    // made private since: it leaves the lasting list
+    noteRecent({ owner: 'acme', name: 'public', path: 'p.loadmap' }, true)
+    expect(local.getItem('loadmap-github-recent')).not.toContain('public')
+  })
+
+  it('reads only names GitHub could make, refs git takes, and paths to models', () => {
     local.setItem(
       'loadmap-github-recent',
       JSON.stringify([
         { owner: 'acme', name: 'ok', path: 'm.loadmap' },
         { owner: '<b>', name: 'x' },
+        { owner: 'acme', name: '..' },
+        { owner: '-acme', name: 'x' },
         { owner: 'acme', name: 'y', path: 'notes.txt' },
+        { owner: 'acme', name: 'z', path: '../m.loadmap' },
+        { owner: 'acme', name: 'w', ref: 'a..b' },
         'junk',
       ]),
     )
@@ -136,8 +154,9 @@ describe('the recent list', () => {
     expect(readRecent()).toEqual([])
   })
 
-  it('forgets it', () => {
-    noteRecent({ owner: 'acme', name: 'r' })
+  it('forgets both lists', () => {
+    noteRecent({ owner: 'acme', name: 'r' }, false)
+    noteRecent({ owner: 'acme', name: 's' }, true)
     forgetRecent()
     expect(readRecent()).toEqual([])
   })

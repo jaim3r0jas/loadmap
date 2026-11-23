@@ -93,7 +93,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
     try {
       const o = await open(gh, l, path)
       if (mine !== turn.current) return
-      noteRecent({ owner: l.owner, name: l.name, path })
+      noteRecent({ owner: l.owner, name: l.name, ref: l.ref, path }, l.private)
       onOpen(o)
       dialog.current?.close()
     } catch (e) {
@@ -238,7 +238,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
             </p>
             <RepoPicker
               filter={text}
-              busy={busy}
+              busy={busy != null}
               onPick={(t) => {
                 if (busy) return
                 setText(named(t))

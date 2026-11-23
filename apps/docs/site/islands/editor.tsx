@@ -705,6 +705,7 @@ const HISTORY = { key: 'loadmap-editor-history' }
 /** A new repository can start from a template, in place of the model in the editor: one commit, its one file. */
 const STARTERS = TEMPLATES.map((t) => ({
   label: `The ${t.title} template`,
+  name: t.id,
   versions: [{ message: `Start from loadmap's ${t.title} template`, files: { [`${t.id}.loadmap`]: t.source } }],
 }))
 

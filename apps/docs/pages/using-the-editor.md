@@ -96,9 +96,9 @@ the session in this browser.
 
 **New → Open from GitHub…** (or **Open a repository…** in the account's menu) opens a model from a repository with
 the files it names. Pick it from the lists, or type its name (`owner/name`) or the address of a folder or a `.loadmap`
-file in it. **Recent** holds what this browser opened lately, each with its model (Disconnect forgets the list).
-Connected, **Your repositories** lists the ones the app may reach, or those a pasted token sees, newest first; what you
-type narrows it. A public repository opens as it is; a private one asks you to connect in place. A token
+file in it. **Recent** holds what this browser opened lately, each with its model and branch (a private repository's
+name only in this tab; Disconnect forgets the list). Connected, **Your repositories** lists the ones the app may
+reach, or those a pasted token sees, the most recently pushed first; what you type narrows it. A public repository opens as it is; a private one asks you to connect in place. A token
 stays in the page (or this tab), never in a link or this browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
 one as well: `/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch), for instance from a
 repository's README:
