@@ -1,5 +1,44 @@
 # @loadmap/editor
 
+## 0.45.0
+
+### Minor Changes
+
+- 24c5b81: The Ask panel reads as a chat: a model's answer is drawn from its Markdown (paragraphs, headings, lists, quotes,
+  tables, code, links; never raw HTML, never an image loaded, links `http` and `https` only); a proposal stays in the
+  conversation where it came, and a line says whether it was applied or discarded; the whole diagram and each box asked
+  about have a conversation of their own, switched with **Conversation**, and **New conversation** starts one again.
+
+  Docs: /assistant/#a-conversation
+- 03f7595: The Ask panel's conversations stay across reloads: `assist.conversations` (a `ConversationStore`) keeps them by a
+  scope the page names, at most 20 a scope and never a proposal. A model with a small window gets what fits:
+  `createAssistant` takes `window` and `smallReference`, reads the short reference under 64 000 tokens, sends the first
+  question with the newest turns, keeps an answer to a quarter of the window, and says so with a `trimmed` event; the
+  Ollama and LM Studio presets give a `window` of 32 000. `assist.smallReference` passes the short reference to the panel.
+
+  Docs: /assistant/#a-conversation
+- 32414ac: The Ask panel remembers the reader's model and key through the page: `assist.settings` (a `ModelSettings`: `where`,
+  `load()`, `key(provider)`, `save(choice)`, `remove(what)`) replaces `assist.vault`. The panel reads what is kept as it
+  opens, asks for a kept key only when a question needs it, and keeps a new choice or key when the reader asks with
+  **Remember it for my account** ticked; **Forget** removes it there too. `KeyVault` and the passphrase are gone: the
+  docs' editor now keeps these with its own service for a reader connected to GitHub.
+
+  Docs: /assistant/#where-your-key-is-kept
+- 214ef69: The Ask panel's settings fold to one line once set (provider, model, and where the setting in force comes from), and
+  **Settings** opens them again. A page whose `assist.settings` names the open repository (`repository()`) lets the
+  reader give it its own model, with a key of its own or their key for the provider: `load(repo)`, `key(provider, repo)`,
+  `save({ …, repo, ownKey })` and `remove({ repo })`. While it is open, the repository's own is in force; **Use your
+  default here** goes back.
+
+  Docs: /assistant/#where-your-key-is-kept
+
+### Patch Changes
+
+- Updated dependencies [03f7595]
+  - @loadmap/dsl@0.45.0
+  - @loadmap/react@0.45.0
+  - @loadmap/core@0.45.0
+
 ## 0.44.0
 
 ### Minor Changes

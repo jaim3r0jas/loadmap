@@ -1,5 +1,11 @@
 # @loadmap/sim
 
+## 0.45.0
+
+### Patch Changes
+
+- @loadmap/core@0.45.0
+
 ## 0.44.0
 
 ### Patch Changes
