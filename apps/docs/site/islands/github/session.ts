@@ -45,6 +45,9 @@ export function forgetToken(): void {
 
 export const hasToken = () => token != null
 
+/** Whether the token came from Sign in with GitHub (a GitHub App's, on the reader's behalf): it does what the app may. */
+export const signedIn = () => token?.startsWith('ghu_') ?? false
+
 /**
  * GitHub's page for a new fine-grained token, filled in: its name, the owner of the repository, a week, and the
  * permissions the editor needs (reading the files; writing a branch and opening a pull request for a save). The

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { client } from '../site/islands/github/api'
-import { loadSealed, saveSealed, seal, unseal } from '../site/islands/github/vault'
+import { loadSealed, saveSealed, seal, unseal, VaultError } from '../site/islands/github/vault'
 import { type OpenRouterHost, openRouterSignIn } from '../site/islands/openrouter'
 
 const token = `github_pat_${'K'.repeat(40)}`
 
 /** A GitHub that knows one reader and one repository's files, by path, for the vault's few calls. */
-function github(o: { repo?: { private: boolean }; early?: number } = {}) {
+function github(o: { repo?: { private: boolean }; early?: number; create?: number; write?: number } = {}) {
   let repo = o.repo
   let early = o.early ?? 0
   const files = new Map<string, { content: string; sha: string }>()
@@ -20,6 +20,9 @@ function github(o: { repo?: { private: boolean }; early?: number } = {}) {
     calls.push({ method, path: url.pathname, body })
     if (url.pathname === '/user') return json(200, { login: 'reader' })
     if (url.pathname === '/user/repos' && method === 'POST') {
+      // a token that may not make repositories (403), or a name taken by a repository it does not see (422)
+      if (o.create === 403) return json(403, { message: 'Resource not accessible by integration' })
+      if (o.create === 422) return json(422, { message: 'Repository creation failed.' })
       repo = { private: body.private }
       return json(201, { name: body.name })
     }
@@ -29,6 +32,7 @@ function github(o: { repo?: { private: boolean }; early?: number } = {}) {
     if (url.pathname.startsWith(at)) {
       const path = url.pathname.slice(at.length)
       if (method === 'PUT') {
+        if (o.write) return json(o.write, { message: 'Resource not accessible by personal access token' })
         // a repository just made, before its first commit
         if (early-- > 0) return json(409, { message: 'Git Repository is empty.' })
         files.set(path, { content: body.content, sha: `sha${files.size + 1}` })
@@ -39,7 +43,11 @@ function github(o: { repo?: { private: boolean }; early?: number } = {}) {
     }
     return json(404, { message: 'Not Found' })
   }
-  return { gh: client({ fetch, token: () => token }), calls, files }
+  /** The reader makes the repository on GitHub, by hand. */
+  const make = (made: { private: boolean }) => {
+    repo = made
+  }
+  return { gh: client({ fetch, token: () => token }), calls, files, make }
 }
 
 describe('a model key kept sealed', () => {
@@ -61,7 +69,7 @@ describe('a model key kept sealed', () => {
   it('is kept in a private repository of the reader, made private the first time, and read back', async () => {
     const { gh, calls, files } = github()
     expect(await loadSealed(gh, 'openrouter')).toBeUndefined()
-    await saveSealed(gh, 'openrouter', '{"sealed":1}', 0)
+    await saveSealed(gh, 'openrouter', '{"sealed":1}', { wait: 0 })
     expect(calls.find((c) => c.path === '/user/repos')?.body).toMatchObject({ name: 'loadmap-keys', private: true })
     expect([...files.keys()]).toEqual(['keys/openrouter.sealed'])
     expect(await loadSealed(gh, 'openrouter')).toBe('{"sealed":1}')
@@ -71,7 +79,7 @@ describe('a model key kept sealed', () => {
 
   it('waits for a repository it just made to take its first write', async () => {
     const { gh, files } = github({ early: 2 })
-    await saveSealed(gh, 'openrouter', '{"sealed":1}', 0)
+    await saveSealed(gh, 'openrouter', '{"sealed":1}', { wait: 0 })
     expect([...files.keys()]).toEqual(['keys/openrouter.sealed'])
   })
 
@@ -81,6 +89,62 @@ describe('a model key kept sealed', () => {
       'reader/loadmap-keys is public: make it private on GitHub first, then keep the key there.',
     )
     expect(files.size).toBe(0)
+  })
+
+  const app = 'https://github.com/apps/loadmap-editor/installations/new'
+  const refusal = (p: Promise<void>) =>
+    p.then(
+      () => undefined,
+      (e: unknown) => e as VaultError,
+    )
+
+  it('tells a signed-in reader whose app may not make repositories how to make it, and keeps the key once it is there', async () => {
+    const { gh, files, make } = github({ create: 403 })
+    const e = await refusal(saveSealed(gh, 'openrouter', '{"sealed":1}', { app }))
+    expect(e).toBeInstanceOf(VaultError)
+    expect(e?.message).toBe(
+      'The sign-in may not make reader/loadmap-keys. Make it on GitHub, private, and let the app reach it (all repositories, or that one). Then keep the key again.',
+    )
+    expect(e?.link?.label).toBe('Make it on GitHub')
+    const page = new URL(e?.link?.href ?? '')
+    expect(page.origin + page.pathname).toBe('https://github.com/new')
+    expect(Object.fromEntries(page.searchParams)).toMatchObject({
+      name: 'loadmap-keys',
+      owner: 'reader',
+      visibility: 'private',
+    })
+    expect(files.size).toBe(0)
+    // made by hand, the same press keeps the key: nothing is made twice
+    make({ private: true })
+    await saveSealed(gh, 'openrouter', '{"sealed":1}', { app })
+    expect(await loadSealed(gh, 'openrouter')).toBe('{"sealed":1}')
+  })
+
+  it('tells a reader with a pasted token what the token needs', async () => {
+    const { gh } = github({ create: 403 })
+    const e = await refusal(saveSealed(gh, 'openrouter', '{}'))
+    expect(e?.message).toBe(
+      'This token may not make reader/loadmap-keys. Make it on GitHub, private, and give the token Contents, read and write, on it. Then keep the key again.',
+    )
+    expect(e?.link?.label).toBe('Make it on GitHub')
+    const mayRead = github({ repo: { private: true }, write: 403 })
+    expect((await refusal(saveSealed(mayRead.gh, 'openrouter', '{}')))?.message).toBe(
+      'This token may only read reader/loadmap-keys. Give it Contents, read and write, on it, then keep the key again.',
+    )
+  })
+
+  it("says so when the repository is there, out of the token's reach", async () => {
+    const { gh } = github({ create: 422 })
+    const signed = await refusal(saveSealed(gh, 'openrouter', '{}', { app }))
+    expect(signed?.message).toBe(
+      "reader/loadmap-keys seems to be there, out of the sign-in's reach. Let the app reach it (all repositories, or that one), then keep the key again.",
+    )
+    expect(signed?.link).toEqual({ href: app, label: "Pick the app's repositories" })
+    const pasted = await refusal(saveSealed(gh, 'openrouter', '{}'))
+    expect(pasted?.message).toBe(
+      "reader/loadmap-keys seems to be there, out of this token's reach. Give the token Contents, read and write, on it, then keep the key again.",
+    )
+    expect(pasted?.link).toBeUndefined()
   })
 })
 

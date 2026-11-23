@@ -228,9 +228,16 @@ describe('the Ask panel', () => {
     host.style.cssText = 'width: 1440px; height: 760px'
     document.body.appendChild(host)
     const kept = new Map<string, { key: string; passphrase: string }>()
+    let refuse = true
     const vault: KeyVault = {
       where: 'a test vault',
       keep: async (provider, key, passphrase) => {
+        if (refuse) {
+          refuse = false
+          throw Object.assign(new Error('Make the place first.'), {
+            link: { href: 'https://example.com/new', label: 'Make it there' },
+          })
+        }
         kept.set(provider, { key, passphrase })
       },
       open: async (provider, passphrase) => {
@@ -271,8 +278,17 @@ describe('the Ask panel', () => {
       .toContain('Type the passphrase again')
     expect(kept.size).toBe(0)
     await userEvent.fill(page.getByLabelText('Passphrase again, to keep'), 'a long passphrase here')
+    // a vault's refusal comes with where to go for it; the passphrase stays for the next press
+    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
+    const way = page.getByRole('link', { name: 'Make it there' })
+    await expect.element(way).toHaveAttribute('href', 'https://example.com/new')
+    await expect.element(way).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(document.querySelector('.lme-ask')?.textContent).toContain('Make the place first.')
+    expect(kept.size).toBe(0)
     await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
     await expect.poll(() => kept.get('openrouter')?.key).toBe('sk-or-v1-made')
+    // the note that follows carries no link
+    await expect.element(way).not.toBeInTheDocument()
     // the passphrase is never kept in the field
     await expect.element(passphrase).toHaveValue('')
     await userEvent.click(page.getByRole('button', { name: 'Forget' }))

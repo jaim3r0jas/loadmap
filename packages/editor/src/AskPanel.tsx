@@ -63,7 +63,9 @@ export interface AskPanelProps {
 
 /**
  * Where a page keeps a model key sealed with the reader's passphrase (the docs keep it in a private repository of the
- * reader's): the key is sealed and opened on the page, only the sealed text is kept.
+ * reader's): the key is sealed and opened on the page, only the sealed text is kept. An error from `open` or `keep`
+ * is shown by its message; a `link` on it (`{ href, label }`, an https address) follows the message, for what the
+ * reader has to do elsewhere first.
  */
 export interface KeyVault {
   /** Where it is kept, in a few words: "your GitHub". */
@@ -172,6 +174,8 @@ export default function AskPanel(p: AskPanelProps) {
   const [streaming, setStreaming] = useState('')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(m.note)
+  /** Where a vault's refusal sends the reader, and the note it belongs to: any other note drops it. */
+  const [way, setWay] = useState<{ note: string; href: string; label: string }>()
   const [request, setRequest] = useState(m.request)
   const [scoped, setScoped] = useState(true)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
@@ -210,7 +214,11 @@ export default function AskPanel(p: AskPanelProps) {
       setPassphrase('')
       setAgain('')
     } catch (err) {
-      setNote((err as Error).message)
+      const { message, link } = err as Error & { link?: { href?: unknown; label?: unknown } }
+      setNote(message)
+      const { href, label } = link ?? {}
+      const https = typeof href === 'string' && typeof label === 'string' && href.startsWith('https://')
+      setWay(https ? { note: message, href, label } : undefined)
     }
   }
   const [advice, setAdvice] = useState(m.advice)
@@ -676,7 +684,19 @@ export default function AskPanel(p: AskPanelProps) {
           </div>
         </section>
       )}
-      {note && <p className="lme-hint">{note}</p>}
+      {note && (
+        <p className="lme-hint">
+          {note}
+          {way?.note === note && (
+            <>
+              {' '}
+              <a href={way.href} target="_blank" rel="noopener noreferrer">
+                {way.label}
+              </a>
+            </>
+          )}
+        </p>
+      )}
       {box && !busy && (
         <fieldset className="lme-ask-row">
           <legend className="lm-sr">Ask about {box}</legend>

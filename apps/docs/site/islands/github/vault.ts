@@ -5,6 +5,7 @@
 import { type Client, filePath, GitHubError, seg } from './api'
 
 const REPO = 'loadmap-keys'
+const ABOUT = 'Model keys for the loadmap editor, sealed with a passphrase.'
 const ROUNDS = 600_000
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -68,6 +69,21 @@ export async function unseal(sealed: string, passphrase: string): Promise<string
   }
 }
 
+/** A refusal the reader can act on: what to do, and where on GitHub. The Ask panel shows the link after the words. */
+export class VaultError extends Error {
+  constructor(
+    message: string,
+    readonly link?: { href: string; label: string },
+  ) {
+    super(message)
+    this.name = 'VaultError'
+  }
+}
+
+/** GitHub's page for a new repository, filled in: the name, the reader as its owner, private. */
+const newRepoPage = (owner: string) =>
+  `https://github.com/new?${new URLSearchParams({ name: REPO, owner, visibility: 'private', description: ABOUT })}`
+
 /** The signed-in reader's login: the repository is theirs. */
 async function login(gh: Client): Promise<string> {
   return (await gh.json<{ login: string }>('/user')).login
@@ -89,35 +105,58 @@ export async function loadSealed(gh: Client, provider: string): Promise<string |
   }
 }
 
+export interface SaveOptions {
+  /**
+   * For a token from Sign in with GitHub: the page where the reader picks the app's repositories. Such a token does
+   * what the app may do, on the repositories it is installed on; a pasted one, what the reader gave it.
+   */
+  app?: string
+  /** The first wait for a repository just made, in ms. */
+  wait?: number
+}
+
 /**
  * The sealed key saved for a provider in the reader's private repository, made private the first time. Only the
- * sealed text leaves this page.
+ * sealed text leaves this page. A token that may not make the repository is told how the reader makes it.
  */
-export async function saveSealed(gh: Client, provider: string, sealed: string, wait = 500): Promise<void> {
+export async function saveSealed(gh: Client, provider: string, sealed: string, o: SaveOptions = {}): Promise<void> {
+  const { app, wait = 500 } = o
   const owner = await login(gh)
   const at = `/repos/${seg(owner)}/${REPO}`
+  const name = `${owner}/${REPO}`
   let fresh = false
   try {
     // a repository of that name the reader made public is no place for a key, sealed or not
     const repo = await gh.json<{ private?: boolean }>(at)
-    if (!repo.private)
-      throw new Error(`${owner}/${REPO} is public: make it private on GitHub first, then keep the key there.`)
+    if (!repo.private) throw new Error(`${name} is public: make it private on GitHub first, then keep the key there.`)
   } catch (e) {
     if (!(e instanceof GitHubError && e.status === 404)) throw e
     try {
       await gh.json('/user/repos', {
         method: 'POST',
-        body: {
-          name: REPO,
-          private: true,
-          auto_init: true,
-          description: 'Model keys for the loadmap editor, sealed with a passphrase.',
-        },
+        body: { name: REPO, private: true, auto_init: true, description: ABOUT },
       })
     } catch (err) {
-      throw new Error(
-        `${(err as Error).message} Keeping a key makes ${owner}/${REPO}, which needs a token that may create repositories; or make it on GitHub yourself, private, and give the token Contents on it.`,
-      )
+      const why = err instanceof GitHubError ? err.failure : undefined
+      // 403: the app lacks "Repository creation" (or the reader has not approved it), a pasted token Administration
+      if (why === 'forbidden')
+        throw new VaultError(
+          app
+            ? `The sign-in may not make ${name}. Make it on GitHub, private, and let the app reach it (all repositories, or that one). Then keep the key again.`
+            : `This token may not make ${name}. Make it on GitHub, private, and give the token Contents, read and write, on it. Then keep the key again.`,
+          { href: newRepoPage(owner), label: 'Make it on GitHub' },
+        )
+      // 422 with the name and the rest as fixed as here: the name is taken, by a repository the token does not see
+      if (why === 'invalid')
+        throw app
+          ? new VaultError(
+              `${name} seems to be there, out of the sign-in's reach. Let the app reach it (all repositories, or that one), then keep the key again.`,
+              { href: app, label: "Pick the app's repositories" },
+            )
+          : new VaultError(
+              `${name} seems to be there, out of this token's reach. Give the token Contents, read and write, on it, then keep the key again.`,
+            )
+      throw err
     }
     fresh = true
   }
@@ -143,6 +182,11 @@ export async function saveSealed(gh: Client, provider: string, sealed: string, w
       await put()
       return
     } catch (e) {
+      // a sign-in's token writes wherever it reads; a pasted one may have been given the reading alone
+      if (!app && e instanceof GitHubError && e.failure === 'forbidden')
+        throw new VaultError(
+          `This token may only read ${name}. Give it Contents, read and write, on it, then keep the key again.`,
+        )
       const early = fresh && e instanceof GitHubError && (e.status === 404 || e.status === 409)
       if (!early || i >= 4) throw e
       await new Promise((r) => setTimeout(r, wait * (i + 1)))

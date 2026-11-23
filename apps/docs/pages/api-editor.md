@@ -108,6 +108,8 @@ the docs' editor signs in with OpenRouter in a popup, PKCE, no server of its own
 `where`, `open(provider, passphrase)`, `keep(provider, key, passphrase)`) lets the reader keep a key sealed with a
 passphrase of 12 characters or more and open it on another device; the docs keep it in a private repository of the
 reader's GitHub (`loadmap-keys`), sealed in the page (PBKDF2, then AES-GCM), so GitHub holds the sealed text alone.
+An error `open` or `keep` throws is shown by its message; a `link` on it (`{ href, label }`, an https address) follows
+the message as a link, for what the reader has to do elsewhere first.
 
 `assist.data` (an `EditorData`) gives the panel the reader's metrics. Nothing is asked of it before the reader presses
 **Connect** (`connect(code?)` names the stores to explore and to measure from; with `code`, the panel asks for one
