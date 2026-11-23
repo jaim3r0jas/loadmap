@@ -349,6 +349,59 @@ describe("the reader's settings", () => {
     expect(await r.settings({ op: 'key', provider: 'anthropic' })).toEqual({ status: 200, body: {} })
   })
 
+  it("keeps a repository's own choice, with a key of its own or the reader's, under GitHub's id of it", async () => {
+    const r = await reader()
+    await r.settings({ op: 'save', provider: 'openrouter', model: 'default/model', key: 'sk-or-default-01' })
+    // its own choice and key
+    expect(
+      (
+        await r.settings({
+          op: 'save',
+          repo: '7',
+          provider: 'openrouter',
+          model: 'repo/model',
+          ownKey: true,
+          key: 'sk-or-repo-0007',
+        })
+      ).status,
+    ).toBe(204)
+    expect((await r.settings({ op: 'read', repo: '7' })).body).toEqual({
+      choice: { provider: 'openrouter', model: 'default/model' },
+      keys: ['openrouter'],
+      repo: { provider: 'openrouter', model: 'repo/model', ownKey: true },
+    })
+    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({
+      key: 'sk-or-repo-0007',
+    })
+    // asked for another repository's own, there is none; without a repository, the reader's
+    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '8' })).body).toEqual({})
+    expect((await r.settings({ op: 'key', provider: 'openrouter' })).body).toEqual({ key: 'sk-or-default-01' })
+    expect((await r.settings({ op: 'read', repo: '8' })).body).not.toHaveProperty('repo')
+    // a new model keeps the key it had; without a key of its own it uses the reader's
+    await r.settings({ op: 'save', repo: '7', provider: 'openrouter', model: 'repo/other', ownKey: true })
+    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({
+      key: 'sk-or-repo-0007',
+    })
+    // using the reader's key: a key given with it is the reader's for the provider
+    await r.settings({
+      op: 'save',
+      repo: '7',
+      provider: 'openrouter',
+      model: 'repo/other',
+      ownKey: false,
+      key: 'sk-or-default-02',
+    })
+    expect((await r.settings({ op: 'read', repo: '7' })).body).toMatchObject({ repo: { ownKey: false } })
+    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({})
+    expect((await r.settings({ op: 'key', provider: 'openrouter' })).body).toEqual({ key: 'sk-or-default-02' })
+    // the reader's default stays as it was throughout
+    expect((await r.settings({ op: 'read' })).body).toMatchObject({ choice: { model: 'default/model' } })
+    // back to the default
+    expect((await r.settings({ op: 'remove', what: { repo: '7' } })).status).toBe(204)
+    expect((await r.settings({ op: 'read', repo: '7' })).body).not.toHaveProperty('repo')
+    expect((await r.settings({ op: 'read', repo: 'acme/x' })).status).toBe(400)
+  })
+
   it('forgets a key, then everything', async () => {
     const r = await reader()
     await r.settings({ op: 'save', provider: 'openrouter', model: 'm', key: 'sk-or-v1-secret' })

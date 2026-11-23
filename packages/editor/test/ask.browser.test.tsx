@@ -256,7 +256,7 @@ describe('the Ask panel', () => {
             ],
           })
         calls.push(`remove ${JSON.stringify(what)}`)
-        if (what !== 'all') store.keys.delete(what.key)
+        if (what !== 'all' && 'key' in what) store.keys.delete(what.key)
       },
     }
     // the provider answers in words, streamed; what it was sent with is kept
@@ -272,7 +272,12 @@ describe('the Ask panel', () => {
       root = createRoot(host)
       root.render(<LoadmapEditor fill initial={checkout} assist={{ reference: '# the reference', settings }} />)
       await userEvent.click(page.getByRole('button', { name: 'Ask', exact: true }))
-      // the kept choice is back, the key named as kept and not shown
+      // the kept choice is back, folded to one line that says where it comes from
+      const line = () => document.querySelector('.lme-ask-line')?.textContent ?? ''
+      await expect.poll(line).toContain('OpenRouter · some/model · your default')
+      await expect.element(page.getByLabelText('Model')).not.toBeInTheDocument()
+      await userEvent.click(page.getByRole('button', { name: 'Settings' }))
+      // the key named as kept and not shown
       await expect.element(page.getByLabelText('Model')).toHaveValue('some/model')
       const key = page.getByLabelText('OpenRouter key')
       await expect.element(key).toHaveAttribute('placeholder', 'Kept for your account')
@@ -350,5 +355,78 @@ describe('the Ask panel', () => {
     await expect.element(page.getByLabelText('Keep for this tab')).toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: 'Forget' }))
     await expect.element(key).toHaveValue('')
+  })
+
+  it("uses the open repository's own model and key over the reader's default, and goes back to the default", async () => {
+    await page.viewport(1440, 900)
+    const host = document.createElement('div')
+    host.style.cssText = 'width: 1440px; height: 760px'
+    document.body.appendChild(host)
+    const calls: string[] = []
+    let own: { provider: string; model: string; ownKey: boolean } | undefined = {
+      provider: 'openrouter',
+      model: 'repo/model',
+      ownKey: true,
+    }
+    const settings: ModelSettings = {
+      where: 'a test service',
+      repository: () => ({ id: '7', name: 'acme/capacity' }),
+      load: async (repo) => {
+        calls.push(`load ${repo}`)
+        return { choice: { provider: 'openrouter', model: 'default/model' }, keys: ['openrouter'], repo: own }
+      },
+      key: async (provider, repo) => {
+        calls.push(`key ${provider} ${repo ?? '-'}`)
+        return repo ? 'sk-or-repo-0007' : 'sk-or-default-01'
+      },
+      save: async (c) => {
+        calls.push(`save ${JSON.stringify(c)}`)
+      },
+      remove: async (what) => {
+        calls.push(`remove ${JSON.stringify(what)}`)
+        if (what !== 'all' && 'repo' in what) own = undefined
+      },
+    }
+    const sent: string[] = []
+    const real = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).startsWith('https://openrouter.ai/')) return real(input, init)
+      sent.push(new Headers(init?.headers).get('Authorization') ?? '')
+      const body = `data: ${JSON.stringify({ choices: [{ delta: { content: 'Words alone.' } }] })}\n\ndata: [DONE]\n\n`
+      return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+    }) as typeof fetch
+    try {
+      root = createRoot(host)
+      root.render(<LoadmapEditor fill initial={checkout} assist={{ reference: '# the reference', settings }} />)
+      await userEvent.click(page.getByRole('button', { name: 'Ask', exact: true }))
+      const line = () => document.querySelector('.lme-ask-line')?.textContent ?? ''
+      await expect.poll(line).toContain('OpenRouter · repo/model · from acme/capacity')
+      expect(calls).toEqual(['load 7'])
+      // the repository's own key, for its question
+      await ask('What runs through it?')
+      await expect.poll(() => sent).toEqual(['Bearer sk-or-repo-0007'])
+      expect(calls).toContain('key openrouter 7')
+
+      // the settings say whose they are, and switch to the reader's default
+      await userEvent.click(page.getByRole('button', { name: 'Settings' }))
+      await expect.element(page.getByRole('button', { name: 'acme/capacity' })).toHaveAttribute('aria-pressed', 'true')
+      await expect.element(page.getByLabelText('A different key for this repository')).toBeChecked()
+      expect(document.querySelector('.lme-ask')?.textContent).toContain('In force: from acme/capacity.')
+      await userEvent.click(page.getByRole('button', { name: 'Use your default here' }))
+      await expect.poll(() => calls.at(-1)).toBe('remove {"repo":"7"}')
+      await expect.element(page.getByLabelText('Model')).toHaveValue('default/model')
+      expect(document.querySelector('.lme-ask')?.textContent).toContain('In force: your default.')
+
+      // a repository's own choice with the reader's key: saved for it, no key of its own
+      await userEvent.click(page.getByRole('button', { name: 'acme/capacity' }))
+      await userEvent.fill(page.getByLabelText('Model'), 'other/model')
+      await ask('And with this one?')
+      await expect
+        .poll(() => calls.find((c) => c.startsWith('save')))
+        .toBe('save {"provider":"openrouter","model":"other/model","repo":"7","ownKey":false}')
+      expect(sent.at(-1)).toBe('Bearer sk-or-default-01')
+    } finally {
+      globalThis.fetch = real
+    }
   })
 })

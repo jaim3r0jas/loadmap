@@ -1,5 +1,5 @@
 // Each reader's model settings, kept by the Worker for "Remember it for my account": the provider and model chosen,
-// and the keys. One sealed row per entry in a D1 database, filed under GitHub's id of the reader and
+// the keys, and a repository's own choice. One sealed row per entry in a D1 database, filed under GitHub's id of the reader and
 // sealed with SEAL_KEY, bound to its reader and slot: a copy of the table opens nothing, and a row moved to another
 // reader or slot fails to open. The Worker reads and writes them only for a request signed by the browser its session
 // is bound to, under 8 hours after its last refresh. A key leaves only for the one question that needs it.
@@ -17,9 +17,9 @@ export interface Stmt {
   run(): Promise<unknown>
 }
 
-/** A slot: the reader's choice of provider and model, or a provider's key. */
-export type Slot = 'default' | `key:${string}`
-const SLOT = /^(default|key:[a-z0-9-]{1,32})$/
+/** A slot: the reader's choice of provider and model, a provider's key, or a repository's own (by GitHub's id). */
+export type Slot = 'default' | `key:${string}` | `repo:${string}`
+const SLOT = /^(default|key:[a-z0-9-]{1,32}|repo:[0-9]{1,15})$/
 export const isSlot = (s: unknown): s is Slot => typeof s === 'string' && SLOT.test(s)
 
 /** Entries one reader may keep, and writes a day. */

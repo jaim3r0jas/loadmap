@@ -19,6 +19,8 @@ export interface RepoOrigin {
   sha: string
   tree: string
   private: boolean
+  /** GitHub's id of the repository, when the page that opened it read one: its own model settings are filed under it. */
+  id?: number
   /** Every file as the commit holds it, by its path (lines ending in "\n"). */
   originals: Record<string, string>
   /** The model that was opened: what an undo of everything opens again. */
@@ -78,6 +80,7 @@ function unpack(raw: string | null): RepoTab | undefined {
       pullable: typeof o.pullable === 'boolean' ? o.pullable : !/^[0-9a-f]{40}$/.test(o.ref),
       made: o.made === true,
       model: typeof o.model === 'string' ? o.model : t.path,
+      id: typeof o.id === 'number' && Number.isSafeInteger(o.id) ? o.id : undefined,
       crlf: paths(o.crlf),
       exec: paths(o.exec),
     }

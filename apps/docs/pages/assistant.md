@@ -25,7 +25,14 @@ Ticked, **Remember it for my account** keeps your choice and your key with this 
 `apps/github-auth` in the repository), encrypted with its own secret and filed under your GitHub account. It is
 read back only for a question that needs it, from a browser you connected, and goes from there to your provider alone.
 The service's owner can read a key it keeps: untick the box to keep the key in this page (or this tab) only.
-**Forget** removes it from your account too. Revoking the loadmap editor app on GitHub ends the service's access within
+**Forget** removes it from your account too.
+
+A repository you opened from GitHub can have its own: in the panel's settings, pick the repository's name in place of
+**Your default**, then its provider and model, and **A different key for this repository** or your key for that
+provider. While it is open, its own is in force, and the panel says so (**from owner/name**, or **your default**). It
+is filed under GitHub's id of the repository, so a rename keeps it, and nothing is written to the repository:
+collaborators each set their own. **Use your default here** forgets it. Once set, the settings fold to one line;
+**Settings** opens them again. Revoking the loadmap editor app on GitHub ends the service's access within
 8 hours; **Disconnect** forgets the connection in this browser.
 
 ## What it sends

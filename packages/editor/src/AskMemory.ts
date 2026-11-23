@@ -41,7 +41,15 @@ export interface AskMemory {
   /** "Remember it for my account". */
   remember: boolean
   /** The key the page gave back, for this page: asked of it once. */
-  fetched?: { provider: string; key: string } | null
+  fetched?: { provider: string; key: string; repo?: string; typed?: boolean } | null
+  /** The repository the scope and the kept settings were for (undefined: none open). */
+  repoId?: string
+  /** Whose setting the panel edits: the reader's default, or the open repository's own. */
+  scope?: 'default' | 'repo'
+  /** The repository's own setting has a key of its own. */
+  ownKey?: boolean
+  /** The settings folded to their one line. */
+  folded?: boolean
 }
 
 export const askMemory = (): AskMemory => ({

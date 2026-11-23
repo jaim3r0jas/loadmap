@@ -70,14 +70,22 @@ export interface AskPanelProps {
 export interface ModelSettings {
   /** Who keeps them, in a few words, for the sentence under the box: "this site's service". */
   where: string
-  /** What is kept for the reader now, or null when nothing can be kept now (the reader is not connected). */
-  load(): Promise<KeptSettings | null>
-  /** The key kept for a provider. */
-  key(provider: string): Promise<string | undefined>
-  /** Keeps the choice of provider and model, and the key when one is given. */
-  save(choice: { provider: string; model: string; key?: string }): Promise<void>
-  /** Forgets the key kept for a provider, or everything kept for the reader. */
-  remove(what: { key: string } | 'all'): Promise<void>
+  /**
+   * The repository open now, when it may have a model and key of its own (the docs: one opened from GitHub): an id that
+   * names it for good, and its name to show.
+   */
+  repository?(): { id: string; name: string } | undefined
+  /** What is kept for the reader now (with `repo`, that repository's own too), or null when nothing can be kept now. */
+  load(repo?: string): Promise<KeptSettings | null>
+  /** The key kept for a provider: with `repo`, that repository's own when it has one for the provider. */
+  key(provider: string, repo?: string): Promise<string | undefined>
+  /**
+   * Keeps a choice of provider and model, and the key when one is given. With `repo`, the repository's own: `ownKey`
+   * says it has a key of its own (the one given, or the one it had), else it uses the reader's key for the provider.
+   */
+  save(choice: { provider: string; model: string; key?: string; repo?: string; ownKey?: boolean }): Promise<void>
+  /** Forgets the key kept for a provider, a repository's own choice, or everything kept for the reader. */
+  remove(what: { key: string } | { repo: string } | 'all'): Promise<void>
 }
 
 /** What a page keeps for the reader: never a key itself, only which providers have one. */
@@ -86,6 +94,8 @@ export interface KeptSettings {
   choice?: { provider: string; model: string }
   /** The providers with a key kept. */
   keys: readonly string[]
+  /** The repository asked about, when it has its own choice: whether it has a key of its own too. */
+  repo?: { provider: string; model: string; ownKey: boolean }
 }
 
 /** What the reader's metrics hold, once connected: the stores the model may explore, and those measures read from. */
@@ -123,6 +133,11 @@ export const ASK_CSS = `
 .lme-ask-model select, .lme-ask-model input, .lme-ask textarea { min-width: 0; font: inherit; color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 5px; padding: 4px 7px; }
 .lme-ask-key { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .lme-ask-key input[type="password"] { flex: 1 1 12rem; }
+.lme-ask-key legend, .lme-ask-scope legend { padding: 0; }
+.lme-ask-scope { grid-column: 1 / -1; display: flex; gap: 4px; flex-wrap: wrap; }
+.lme-ask-scope button[aria-pressed="true"] { background: var(--lm-accent-soft); font-weight: 600; }
+.lme-ask-model > .lme-ask-row { grid-column: 1 / -1; }
+.lme-ask-line { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 4px 8px; border: 1px solid var(--lm-line); border-radius: 6px; overflow-wrap: anywhere; }
 .lme-ask-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .lme-ask-msg { padding: 6px 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lme-ask-msg[data-role="user"] { background: var(--lm-accent-soft); justify-self: end; max-width: 90%; }
@@ -227,32 +242,79 @@ export default function AskPanel(p: AskPanelProps) {
   }
   // what the page keeps, read as the panel opens: the reader's last choice comes back unless this tab chose
   const settings = p.settings
-  // biome-ignore lint/correctness/useExhaustiveDependencies: read once as the panel opens, with what the tab held then
+  /** The repository open now: it may have a model and key of its own. */
+  const repository = settings?.repository?.()
+  const repoId = repository?.id
+  // the panel's memory is the page's: what it held for another repository (or none) starts again from the default
+  const same = m.repoId === repoId
+  /** What is edited and in force: the reader's default, or the open repository's own. */
+  const [scope, setScope] = useState<'default' | 'repo'>(same ? (m.scope ?? 'default') : 'default')
+  /** In the repository's scope: it has a key of its own, rather than the reader's key for the provider. */
+  const [ownKey, setOwnKey] = useState(same ? (m.ownKey ?? false) : false)
+  /** Folded to its one line: once set, until the reader opens it or changes something. */
+  const [folded, setFolded] = useState(m.folded ?? true)
+  /**
+   * A provider and model to show, with that provider's own key in the field (or none, for a repository's own key,
+   * which is never in the field): never another provider's key. False when this panel does not offer the provider.
+   */
+  const choose = (c: { provider: string; model: string }, o: { ownKey?: boolean } = {}) => {
+    const offered = list.some((x) => x.id === c.provider)
+    if (offered) setPick(c)
+    const own = o.ownKey ? undefined : readKey(offered ? c.provider : preset.id)
+    setKey(own?.key ?? '')
+    setKeep(own?.kept ?? false)
+    return offered
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read as the panel opens, and again for another repository
   useEffect(() => {
     if (!settings) return
+    m.repoId = repoId
+    if (!same) {
+      setKept(undefined)
+      setScope('default')
+      setOwnKey(false)
+    }
     let gone = false
-    settings.load().then(
+    settings.load(repoId).then(
       (k) => {
         if (gone) return
         setKept(k)
+        if (touched.current) return
+        // the open repository's own choice wins, unless the reader chose meanwhile
+        const r = repoId ? k?.repo : undefined
+        if (r && list.some((x) => x.id === r.provider)) {
+          setScope('repo')
+          setOwnKey(r.ownKey)
+          choose(r, { ownKey: r.ownKey })
+          return
+        }
+        setScope('default')
+        setOwnKey(false)
         const c = k?.choice
-        // only while the reader has touched nothing: a choice made meanwhile is theirs
-        if (!c || chosenHere || touched.current || !list.some((x) => x.id === c.provider)) return
-        setPick(c)
-        // the provider's own key, as the select does: never another provider's in the field
-        const own = readKey(c.provider)
-        setKey(own?.key ?? '')
-        setKeep(own?.kept ?? false)
+        // a choice this tab made stays
+        if (c && !chosenHere) choose(c)
       },
       () => !gone && setKept(null),
     )
     return () => {
       gone = true
     }
-  }, [settings])
+  }, [settings, repoId])
   /** The reader changed the provider, the model or the key since the panel opened. */
   const touched = useRef(false)
-  const keyKept = !!kept?.keys.includes(preset.id)
+  const inRepo = scope === 'repo' && !!repository
+  /** The repository the key is asked for: only when it has one of its own. */
+  const keyRepo = inRepo && ownKey ? repository.id : undefined
+  const keyKept = keyRepo ? kept?.repo?.provider === preset.id && kept.repo.ownKey : !!kept?.keys.includes(preset.id)
+  /** Where the setting in force comes from, said beside it. */
+  const source = settings && kept ? (inRepo ? `from ${repository.name}` : 'your default') : undefined
+  /** Ready to ask: a model, and a key unless none is needed. */
+  const settled = !!p.model || (!!pick.model.trim() && (preset.local || !!key.trim() || keyKept))
+  /** The reader changed something: the form stays open while they work in it. */
+  const touch = () => {
+    touched.current = true
+    setFolded(false)
+  }
   /** The key that came from the page's keeping: asking with it again keeps nothing new. */
   const fetched = useRef(m.fetched ?? null)
   const [advice, setAdvice] = useState(m.advice)
@@ -267,6 +329,9 @@ export default function AskPanel(p: AskPanelProps) {
   m.kept = kept
   m.remember = remember
   m.fetched = fetched.current
+  m.scope = scope
+  m.ownKey = ownKey
+  m.folded = folded
   m.request = request
   m.proposal = proposal
   m.usage = usage
@@ -298,16 +363,34 @@ export default function AskPanel(p: AskPanelProps) {
     preview.current(proposal)
   }, [proposal])
 
-  /** Keeps the choice, and a key the reader gave (not the one the page gave back), when they changed. */
-  const rememberChoice = async (st: ModelSettings, had: KeptSettings, k: string) => {
+  /**
+   * Keeps the choice, and a key the reader gave (not the one the page gave back), when they changed: the default's, or
+   * the open repository's own.
+   */
+  const rememberChoice = async (st: ModelSettings, kept0: KeptSettings, k: string) => {
+    let had = kept0
     const model = pick.model.trim()
-    const fresh = !preset.local && !!k && !(fetched.current?.provider === preset.id && fetched.current.key === k)
-    const same = had.choice?.provider === preset.id && had.choice.model === model
-    if (same && !fresh) return
+    const f = fetched.current
+    // a key the page gave back is not new; one typed for the repository is, until it is kept
+    const fresh = !preset.local && !!k && !(f?.provider === preset.id && f.key === k && f.repo === keyRepo && !f.typed)
     try {
+      if (inRepo) {
+        const r = had.repo
+        const same = r?.provider === preset.id && r.model === model && r.ownKey === ownKey
+        if (same && !fresh) return
+        // a key typed here is the repository's own with "A different key", else the reader's for the provider
+        await st.save({ provider: preset.id, model, repo: repository.id, ownKey, ...(fresh && { key: k }) })
+        if (fresh) fetched.current = { provider: preset.id, key: k, ...(ownKey && { repo: repository.id }) }
+        if (fresh && !ownKey && !had.keys.includes(preset.id)) had = { ...had, keys: [...had.keys, preset.id] }
+        setKept({ ...had, repo: { provider: preset.id, model, ownKey: ownKey && (fresh || !!r?.ownKey) } })
+        return
+      }
+      const same = had.choice?.provider === preset.id && had.choice.model === model
+      if (same && !fresh) return
       await st.save({ provider: preset.id, model, ...(fresh && { key: k }) })
-      fetched.current = fresh ? { provider: preset.id, key: k } : fetched.current
+      if (fresh) fetched.current = { provider: preset.id, key: k }
       setKept({
+        ...had,
         choice: { provider: preset.id, model },
         keys: fresh && !had.keys.includes(preset.id) ? [...had.keys, preset.id] : had.keys,
       })
@@ -315,6 +398,18 @@ export default function AskPanel(p: AskPanelProps) {
       // the question goes on: only remembering failed
       refused(err)
     }
+  }
+
+  /** Back to the reader's default in this repository: its own choice is forgotten. */
+  const backToDefault = () => {
+    if (!settings || !repository) return
+    settings.remove({ repo: repository.id }).then(() => {
+      setScope('default')
+      setOwnKey(false)
+      setKept((k) => k && { ...k, repo: undefined })
+      choose(kept?.choice ?? pick)
+      setNote(`${repository.name} uses your default now.`)
+    }, refused)
   }
 
   const box = scoped ? p.selected : null
@@ -346,19 +441,30 @@ export default function AskPanel(p: AskPanelProps) {
           given = false
           // asked of the page once per page: then from this page's memory
           k =
-            (fetched.current?.provider === preset.id ? fetched.current.key : (await settings.key(preset.id))?.trim()) ??
-            ''
+            (fetched.current?.provider === preset.id && fetched.current.repo === keyRepo
+              ? fetched.current.key
+              : (await settings.key(preset.id, keyRepo))?.trim()) ?? ''
           if (!k) {
-            setKept({ ...kept!, keys: kept!.keys.filter((x) => x !== preset.id) })
+            setKept(
+              keyRepo
+                ? { ...kept!, repo: kept!.repo && { ...kept!.repo, ownKey: false } }
+                : { ...kept!, keys: kept!.keys.filter((x) => x !== preset.id) },
+            )
             setNote(`No ${preset.name} key is kept any more: paste one above.`)
             return
           }
           // in the panel's memory for the next question, never in the tab's storage: the field stays empty, saying
           // where it is kept
-          fetched.current = { provider: preset.id, key: k }
+          fetched.current = { provider: preset.id, key: k, repo: keyRepo }
           m.fetched = fetched.current
         }
-        if (given) takeKey(preset.id, k, keep && !(settings && kept && remember))
+        // a repository's own key is never the reader's key for the provider: it stays in the panel's memory alone
+        if (given && keyRepo) {
+          const f = fetched.current
+          if (!(f?.provider === preset.id && f.repo === keyRepo && f.key === k))
+            fetched.current = { provider: preset.id, key: k, repo: keyRepo, typed: true }
+          m.fetched = fetched.current
+        } else if (given) takeKey(preset.id, k, keep && !(settings && kept && remember))
         model = providerFor(preset, { key: k || undefined, model: pick.model.trim() || undefined })
         if (settings && kept && remember) {
           const st = settings
@@ -544,19 +650,63 @@ export default function AskPanel(p: AskPanelProps) {
   return (
     <div className="lme-ask">
       <style>{ASK_CSS}</style>
-      {!p.model && (
+      {!p.model && settled && folded && (
+        <div className="lme-ask-line">
+          <span>
+            <b>{preset.name}</b>
+            {pick.model.trim() && ` · ${pick.model.trim()}`}
+            {source && ` · ${source}`}
+          </span>
+          <button type="button" className="lm-btn lme-quiet" aria-expanded={false} onClick={() => setFolded(false)}>
+            Settings
+          </button>
+        </div>
+      )}
+      {!p.model && !(settled && folded) && (
         <div className="lme-ask-model">
+          {settings && kept && repository && (
+            <fieldset className="lme-ask-scope">
+              <legend className="lm-sr">Whose setting</legend>
+              <button
+                type="button"
+                className="lm-btn lme-quiet"
+                aria-pressed={!inRepo}
+                onClick={() => {
+                  if (!inRepo) return
+                  // the repository's own stays kept until "Use your default here"
+                  touch()
+                  setScope('default')
+                  setOwnKey(false)
+                  choose(kept.choice ?? pick)
+                }}
+              >
+                Your default
+              </button>
+              <button
+                type="button"
+                className="lm-btn lme-quiet"
+                aria-pressed={inRepo}
+                onClick={() => {
+                  if (inRepo) return
+                  touch()
+                  setScope('repo')
+                  const r = kept.repo
+                  setOwnKey(r?.ownKey ?? false)
+                  choose(r ?? pick, { ownKey: r?.ownKey })
+                }}
+              >
+                {repository.name}
+              </button>
+            </fieldset>
+          )}
           <label>
             <span className="lm-sr">Provider</span>
             <select
               value={preset.id}
               onChange={(e) => {
                 const next = list.find((x) => x.id === e.target.value)!
-                touched.current = true
-                setPick({ provider: next.id, model: next.model ?? '' })
-                const k = readKey(next.id)
-                setKey(k?.key ?? '')
-                setKeep(k?.kept ?? false)
+                touch()
+                choose({ provider: next.id, model: next.model ?? '' }, { ownKey: inRepo && ownKey })
               }}
             >
               {list.map((x) => (
@@ -572,11 +722,42 @@ export default function AskPanel(p: AskPanelProps) {
               value={pick.model}
               placeholder="model"
               onChange={(e) => {
-                touched.current = true
+                touch()
                 setPick({ ...pick, model: e.target.value })
               }}
             />
           </label>
+          {!preset.local && inRepo && (
+            <fieldset className="lme-ask-key">
+              <legend className="lm-sr">Which key</legend>
+              <label>
+                <input
+                  type="radio"
+                  name={`${id}own`}
+                  checked={!ownKey}
+                  onChange={() => {
+                    touch()
+                    setOwnKey(false)
+                    choose(pick)
+                  }}
+                />{' '}
+                Your {preset.name} key
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name={`${id}own`}
+                  checked={ownKey}
+                  onChange={() => {
+                    touch()
+                    setOwnKey(true)
+                    choose(pick, { ownKey: true })
+                  }}
+                />{' '}
+                A different key for this repository
+              </label>
+            </fieldset>
+          )}
           {!preset.local && (
             <div className="lme-ask-key">
               <label htmlFor={`${id}k`} className="lm-sr">
@@ -588,9 +769,11 @@ export default function AskPanel(p: AskPanelProps) {
                 autoComplete="off"
                 spellCheck={false}
                 value={key}
-                placeholder={keyKept ? 'Kept for your account' : `${preset.name} key`}
+                placeholder={
+                  keyKept ? (keyRepo ? 'Kept for this repository' : 'Kept for your account') : `${preset.name} key`
+                }
                 onChange={(e) => {
-                  touched.current = true
+                  touch()
                   setKey(e.target.value)
                 }}
               />
@@ -651,7 +834,7 @@ export default function AskPanel(p: AskPanelProps) {
               {settings && kept && (
                 <p className="lme-hint">
                   {remember
-                    ? `${settings.where[0]!.toUpperCase()}${settings.where.slice(1)} keeps your choice and key, encrypted, for your next visit and your other devices. Untick to keep a new key in this page only.`
+                    ? `${settings.where[0]!.toUpperCase()}${settings.where.slice(1)} keeps your choice and key, encrypted, for your next visit and your other devices${inRepo ? `, and ${repository.name}'s own` : ''}. Untick to keep a new key in this page only.`
                     : 'A new key stays in this page, or this tab if you tick it.'}
                 </p>
               )}
@@ -673,6 +856,19 @@ export default function AskPanel(p: AskPanelProps) {
               )}
             </div>
           )}
+          <div className="lme-ask-row">
+            {source && <span className="lme-ask-usage">In force: {source}.</span>}
+            {inRepo && kept?.repo && (
+              <button type="button" className="lm-btn lme-quiet" onClick={backToDefault}>
+                Use your default here
+              </button>
+            )}
+            {settled && (
+              <button type="button" className="lm-btn lme-quiet" onClick={() => setFolded(true)}>
+                Done
+              </button>
+            )}
+          </div>
         </div>
       )}
       {p.data && (

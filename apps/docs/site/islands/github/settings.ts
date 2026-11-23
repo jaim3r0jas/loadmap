@@ -23,25 +23,30 @@ async function call(request: object): Promise<Response> {
 
 export const settings: ModelSettings = {
   where: "this site's service",
-  load: async (): Promise<KeptSettings | null> => {
+  load: async (repo): Promise<KeptSettings | null> => {
     let res: Response | undefined
     try {
-      res = await signedSettings({ op: 'read' })
+      res = await signedSettings({ op: 'read', ...(repo && { repo }) })
     } catch {
       return null
     }
     // not connected through the app, or the service keeps nothing (not set up): nothing to remember with
     if (!res?.ok) return null
-    const got = (await res.json().catch(() => ({}))) as { choice?: unknown; keys?: unknown }
+    const got = (await res.json().catch(() => ({}))) as { choice?: unknown; keys?: unknown; repo?: unknown }
     const c = got.choice as { provider?: unknown; model?: unknown } | undefined
+    const r = got.repo as { provider?: unknown; model?: unknown; ownKey?: unknown } | undefined
     return {
       ...(typeof c?.provider === 'string' &&
         typeof c.model === 'string' && { choice: { provider: c.provider, model: c.model } }),
       keys: Array.isArray(got.keys) ? got.keys.filter((k): k is string => typeof k === 'string') : [],
+      ...(typeof r?.provider === 'string' &&
+        typeof r.model === 'string' && { repo: { provider: r.provider, model: r.model, ownKey: r.ownKey === true } }),
     }
   },
-  key: async (provider) => {
-    const got = (await (await call({ op: 'key', provider })).json().catch(() => ({}))) as { key?: unknown }
+  key: async (provider, repo) => {
+    const got = (await (await call({ op: 'key', provider, ...(repo && { repo }) })).json().catch(() => ({}))) as {
+      key?: unknown
+    }
     return typeof got.key === 'string' ? got.key : undefined
   },
   save: async (choice) => {
