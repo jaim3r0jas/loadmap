@@ -105,8 +105,11 @@ leaves it. The page's Content-Security-Policy must allow the providers' origins
 
 `assist.signIn` offers a way to get a key without pasting one, by provider (`{ openrouter: () => Promise<key> }`:
 the docs' editor signs in with OpenRouter in a popup, PKCE, no server of its own). `assist.settings` (a
-`ModelSettings`: `where`, `load()`, `key(provider)`, `save({ provider, model, key? })`, `remove({ key } | 'all')`)
-remembers the reader's choice of model and their keys for them, so a return or another device finds them set. The
+`ModelSettings`: `where`, `repository?()`, `load(repo?)`, `key(provider, repo?)`,
+`save({ provider, model, key?, repo?, ownKey? })`, `remove({ key } | { repo } | 'all')`) remembers the reader's choice
+of model and their keys for them, so a return or another device finds them set. With `repository()` (the repository
+open now: an id that names it for good, and its name), a repository may have its own choice, with a key of its own
+(`ownKey`) or the reader's for the provider; while it is open, it wins, and the panel says which is in force. The
 panel reads `load()` as it opens (a `KeptSettings`: the choice, and the providers with a key kept; `null` when nothing
 can be kept now), asks `key(provider)` only when a question needs the key, and saves a choice or a new key when the
 reader asks with **Remember it for my account** ticked. The docs keep them with the site's service for a reader

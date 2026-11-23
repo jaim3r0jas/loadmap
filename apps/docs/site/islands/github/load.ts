@@ -29,6 +29,8 @@ export interface Listing {
   sha: string
   tree: string
   private: boolean
+  /** GitHub's id of the repository: it stays through a rename. */
+  id?: number
   files: RepoFile[]
   /** GitHub cut the tree short: files past its limit are not listed. */
   truncated: boolean
@@ -78,7 +80,7 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
   // a ref named outright is looked up beside the repository: one round trip less before the first file
   const named = !target.rest && target.ref != null ? commit(target.ref) : undefined
   named?.catch(() => {})
-  let info: { default_branch: string; private: boolean }
+  let info: { default_branch: string; private: boolean; id?: unknown }
   try {
     info = await gh.json(repoPath(target))
   } catch (e) {
@@ -122,6 +124,7 @@ export async function list(gh: Client, target: RepoTarget): Promise<Listing> {
       sha,
       tree: t.sha,
       private: info.private,
+      ...(typeof info.id === 'number' && { id: info.id }),
       files,
       truncated: !!t.truncated,
       ...(kind === 'blob' && file && (files.some((f) => f.path === file) || (t.truncated && cleanPath(file) === file))

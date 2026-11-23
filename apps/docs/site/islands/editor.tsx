@@ -285,7 +285,7 @@ function Editor({ root }: { root: URL }) {
       reference: loadReference,
       data: bridge,
       signIn: { openrouter: () => import('./openrouter').then((m) => m.openRouterSignIn()) },
-      settings: SETTINGS,
+      settings: settingsFor(() => repo.current),
       confirmSend: (p: { name: string }) => {
         const o = repo.current?.origin
         if (!o?.private) return true
@@ -725,19 +725,27 @@ const loadReference = () =>
     }))
 
 /**
- * The reader's model and keys, remembered by the site's Worker for a reader connected through the app. Its code loads
- * only for such a reader: anyone else gets nothing to remember with, without a request.
+ * The reader's model and keys, remembered by the site's Worker for a reader connected through the app, and the open
+ * repository's own (filed under GitHub's id of it). Its code loads only for such a reader: anyone else gets nothing to
+ * remember with, without a request.
  */
-const SETTINGS: ModelSettings = {
-  where: "this site's service",
-  load: async () => {
-    const a = account()
-    if (!a.login || a.via !== 'app') return null
-    return (await import('./github/settings')).settings.load()
-  },
-  key: async (provider) => (await import('./github/settings')).settings.key(provider),
-  save: async (choice) => (await import('./github/settings')).settings.save(choice),
-  remove: async (what) => (await import('./github/settings')).settings.remove(what),
+function settingsFor(open: () => RepoTab | undefined): ModelSettings {
+  const code = () => import('./github/settings').then((m) => m.settings)
+  return {
+    where: "this site's service",
+    repository: () => {
+      const o = open()?.origin
+      return o?.id != null ? { id: String(o.id), name: `${o.owner}/${o.name}` } : undefined
+    },
+    load: async (repo) => {
+      const a = account()
+      if (!a.login || a.via !== 'app') return null
+      return (await code()).load(repo)
+    },
+    key: async (provider, repo) => (await code()).key(provider, repo),
+    save: async (choice) => (await code()).save(choice),
+    remove: async (what) => (await code()).remove(what),
+  }
 }
 
 /** The private repositories whose files the reader said may go to a model, this page's session. */
@@ -751,7 +759,7 @@ const draftStart = (): Shared => startFrom() ?? { source: readDraft() ?? SOURCES
 
 /** A repository's model as this tab keeps it: where it came from, and its files, as they came and as they are. */
 function tabOf(o: Opened): RepoTab {
-  const { owner, name, ref, sha, tree, private: shut, branch } = o.listing
+  const { owner, name, ref, sha, tree, private: shut, branch, id } = o.listing
   return {
     origin: {
       owner,
@@ -763,6 +771,7 @@ function tabOf(o: Opened): RepoTab {
       sha,
       tree,
       private: shut,
+      id,
       originals: o.files,
       model: o.path,
       crlf: o.crlf,

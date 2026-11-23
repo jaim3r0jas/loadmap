@@ -225,13 +225,22 @@ export const settingsText = (at: number, session: string, request: string) =>
   `loadmap settings\n${at}\n${session}\n${request}`
 
 const PROVIDER = /^[a-z0-9-]{1,32}$/
+const REPO = /^[0-9]{1,15}$/
+
+/** A repository's own choice: its provider and model, and a key of its own when it has one. */
+interface RepoChoice {
+  provider?: unknown
+  model?: unknown
+  key?: unknown
+}
 /** A key as providers make them: printable, no spaces, not absurdly long. */
 const KEY = /^[\x21-\x7e]{8,512}$/
 /** How long after its last refresh a session may read and write settings: revoking the app ends it within this. */
 const AGE = 8 * 3600_000
 
 /**
- * The reader's model settings: their choice of provider and model, and the keys kept for them. Only for a request signed by the browser the session is bound to, of a session GitHub refreshed in
+ * The reader's model settings: their choice of provider and model, the keys kept for them, and (with `repo`, GitHub's
+ * id of a repository) a repository's own choice, with a key of its own or not. Only for a request signed by the browser the session is bound to, of a session GitHub refreshed in
  * the last 8 hours. A key leaves only for `key`, the one question that needs it.
  */
 async function settings(body: Body, env: Env, secret: Uint8Array | undefined, now: () => number, answer: Answer) {
@@ -262,18 +271,30 @@ async function settings(body: Body, env: Env, secret: Uint8Array | undefined, no
   await ready(db)
   const user = s.u
   const provider = typeof r.provider === 'string' && PROVIDER.test(r.provider) ? r.provider : undefined
+  // a repository by GitHub's id: it stays through a rename
+  const repo = r.repo === undefined ? undefined : typeof r.repo === 'string' && REPO.test(r.repo) ? r.repo : null
+  if (repo === null) return answer(400, { error: 'bad_request' })
+  const own = (id: string) => readOne<RepoChoice>(db, secret, user, `repo:${id}`)
   if (r.op === 'read') {
-    // the choice alone is opened: a key is opened only for `key`
+    // the choices alone are opened: a key is opened only for `key`
     const c = await readOne<{ provider?: unknown; model?: unknown }>(db, secret, user, 'default')
     const choice =
       typeof c?.provider === 'string' && typeof c.model === 'string'
         ? { provider: c.provider, model: c.model }
         : undefined
     const keys = (await slots(db, user)).filter((k) => k.startsWith('key:')).map((k) => k.slice(4))
-    return answer(200, { ...(choice && { choice }), keys })
+    const o = repo ? await own(repo) : undefined
+    const mine =
+      typeof o?.provider === 'string' && typeof o.model === 'string'
+        ? { provider: o.provider, model: o.model, ownKey: typeof o.key === 'string' }
+        : undefined
+    return answer(200, { ...(choice && { choice }), keys, ...(mine && { repo: mine }) })
   }
   if (r.op === 'key') {
     if (!provider) return answer(400, { error: 'bad_request' })
+    // the repository's own key for its own provider, else the one kept for the provider
+    const o = repo ? await own(repo) : undefined
+    if (o?.provider === provider && typeof o.key === 'string') return answer(200, { key: o.key })
     const k = await readOne<{ key?: unknown }>(db, secret, user, `key:${provider}`)
     return answer(200, typeof k?.key === 'string' ? { key: k.key } : {})
   }
@@ -282,9 +303,23 @@ async function settings(body: Body, env: Env, secret: Uint8Array | undefined, no
     const key = r.key === undefined ? undefined : typeof r.key === 'string' && KEY.test(r.key) ? r.key : null
     if (!provider || model === null || key === null) return answer(400, { error: 'bad_request' })
     const t = now()
-    const why =
-      (key !== undefined && (await write(db, secret, user, `key:${provider}`, { key }, t))) ||
-      (await write(db, secret, user, 'default', { provider, model }, t))
+    let why: Awaited<ReturnType<typeof write>>
+    if (repo) {
+      // a key of its own: the one given, or the one it had for the same provider; else the default's
+      const had = r.ownKey === true && key === undefined ? await own(repo) : undefined
+      const mine = key ?? (r.ownKey === true && had?.provider === provider ? had.key : undefined)
+      why = await write(
+        db,
+        secret,
+        user,
+        `repo:${repo}`,
+        { provider, model, ...(r.ownKey === true && typeof mine === 'string' && { key: mine }) },
+        t,
+      )
+    } else
+      why =
+        (key !== undefined && (await write(db, secret, user, `key:${provider}`, { key }, t))) ||
+        (await write(db, secret, user, 'default', { provider, model }, t))
     if (why === 'busy') return answer(429, { error: why })
     if (why) return answer(413, { error: why })
     return answer(204, null)
@@ -292,7 +327,8 @@ async function settings(body: Body, env: Env, secret: Uint8Array | undefined, no
   if (r.op === 'remove') {
     if (r.what === 'all') await remove(db, user)
     else {
-      const slot = `key:${typeof r.what === 'object' && r.what !== null ? (r.what as Body).key : ''}`
+      const w = typeof r.what === 'object' && r.what !== null ? (r.what as Body) : {}
+      const slot = typeof w.repo === 'string' && REPO.test(w.repo) ? `repo:${w.repo}` : `key:${w.key}`
       if (!isSlot(slot)) return answer(400, { error: 'bad_request' })
       await remove(db, user, slot)
     }

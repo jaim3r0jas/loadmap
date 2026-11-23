@@ -185,6 +185,7 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
       return json(200, {
         full_name: `${repo.owner}/${repo.name}`,
         private: !!repo.private,
+        id: 4242,
         default_branch: repo.defaultBranch ?? 'main',
       })
     if (rest.startsWith('/branches/')) {
