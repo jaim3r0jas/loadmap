@@ -1,5 +1,5 @@
-// Each reader's model settings, kept by the Worker for "Remember it for my account": the default provider, model and
-// keys, and a repository's own. One sealed row per entry in a D1 database, filed under GitHub's id of the reader and
+// Each reader's model settings, kept by the Worker for "Remember it for my account": the provider and model chosen,
+// and the keys. One sealed row per entry in a D1 database, filed under GitHub's id of the reader and
 // sealed with SEAL_KEY, bound to its reader and slot: a copy of the table opens nothing, and a row moved to another
 // reader or slot fails to open. The Worker reads and writes them only for a request signed by the browser its session
 // is bound to, under 8 hours after its last refresh. A key leaves only for the one question that needs it.
@@ -17,18 +17,10 @@ export interface Stmt {
   run(): Promise<unknown>
 }
 
-/** A slot: the reader's choice, a provider's key, or a repository's own (GitHub's id of the repository). */
-export type Slot = 'default' | `key:${string}` | `repo:${number}`
-const SLOT = /^(default|key:[a-z0-9-]{1,32}|repo:[0-9]{1,15})$/
+/** A slot: the reader's choice of provider and model, or a provider's key. */
+export type Slot = 'default' | `key:${string}`
+const SLOT = /^(default|key:[a-z0-9-]{1,32})$/
 export const isSlot = (s: unknown): s is Slot => typeof s === 'string' && SLOT.test(s)
-
-/** What a slot holds. A key is never in `default` or `repo:` as such: a repository's own key is its `key` field. */
-export interface Choice {
-  provider: string
-  model: string
-  /** A repository's own key, when it has one. */
-  key?: string
-}
 
 /** Entries one reader may keep, and writes a day. */
 export const LIMITS = { rows: 120, writes: 200, value: 2048 }
@@ -46,20 +38,6 @@ export async function ready(db: Db): Promise<void> {
   if (made.has(db)) return
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)))
   made.add(db)
-}
-
-export async function readAll(db: Db, secret: Uint8Array, user: number): Promise<Map<Slot, unknown>> {
-  const { results } = await db
-    .prepare('SELECT slot, box FROM settings WHERE user = ?')
-    .bind(user)
-    .all<{ slot: string; box: string }>()
-  const out = new Map<Slot, unknown>()
-  for (const r of results) {
-    if (!isSlot(r.slot)) continue
-    const v = await unseal(secret, 'settings', r.box, bind(user, r.slot))
-    if (v !== undefined) out.set(r.slot, v)
-  }
-  return out
 }
 
 export async function readOne<T>(db: Db, secret: Uint8Array, user: number, slot: Slot): Promise<T | undefined> {
@@ -104,11 +82,14 @@ export async function write(
   return undefined
 }
 
+/** One entry, or every one of the reader's. The day's count of writes stays: removing never buys more. */
 export async function remove(db: Db, user: number, slot?: Slot): Promise<void> {
   if (slot) await db.prepare('DELETE FROM settings WHERE user = ? AND slot = ?').bind(user, slot).run()
-  else
-    await db.batch([
-      db.prepare('DELETE FROM settings WHERE user = ?').bind(user),
-      db.prepare('DELETE FROM quota WHERE user = ?').bind(user),
-    ])
+  else await db.prepare('DELETE FROM settings WHERE user = ?').bind(user).run()
+}
+
+/** The reader's slots, nothing opened: which keys are kept is all a read needs of them. */
+export async function slots(db: Db, user: number): Promise<Slot[]> {
+  const { results } = await db.prepare('SELECT slot FROM settings WHERE user = ?').bind(user).all<{ slot: string }>()
+  return results.map((r) => r.slot).filter(isSlot)
 }

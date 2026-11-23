@@ -357,6 +357,8 @@ describe("the reader's settings", () => {
     expect((await r.settings({ op: 'read' })).body).toMatchObject({ keys: ['anthropic'] })
     expect((await r.settings({ op: 'remove', what: 'all' })).status).toBe(204)
     expect(r.d1.settings.size).toBe(0)
+    // the day's count of writes stays: removing never buys more
+    expect([...r.d1.quota.values()].map((q) => q.n)).toEqual([4])
   })
 
   it('answers only the browser the session is bound to, a session refreshed in the last 8 hours, a clock near ours', async () => {

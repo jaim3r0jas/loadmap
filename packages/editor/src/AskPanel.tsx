@@ -236,7 +236,13 @@ export default function AskPanel(p: AskPanelProps) {
         if (gone) return
         setKept(k)
         const c = k?.choice
-        if (c && !chosenHere && list.some((x) => x.id === c.provider)) setPick(c)
+        // only while the reader has touched nothing: a choice made meanwhile is theirs
+        if (!c || chosenHere || touched.current || !list.some((x) => x.id === c.provider)) return
+        setPick(c)
+        // the provider's own key, as the select does: never another provider's in the field
+        const own = readKey(c.provider)
+        setKey(own?.key ?? '')
+        setKeep(own?.kept ?? false)
       },
       () => !gone && setKept(null),
     )
@@ -244,6 +250,8 @@ export default function AskPanel(p: AskPanelProps) {
       gone = true
     }
   }, [settings])
+  /** The reader changed the provider, the model or the key since the panel opened. */
+  const touched = useRef(false)
   const keyKept = !!kept?.keys.includes(preset.id)
   /** The key that came from the page's keeping: asking with it again keeps nothing new. */
   const fetched = useRef(m.fetched ?? null)
@@ -327,12 +335,15 @@ export default function AskPanel(p: AskPanelProps) {
     // asked each time: the page remembers what the reader said for what it holds now
     if (p.confirmSend && !(await p.confirmSend(to))) return
     let model: ModelProvider
+    let remembering: (() => Promise<void>) | undefined
     try {
       if (p.model) model = p.model
       else {
         let k = key.trim()
+        let given = true
         // the key kept for the reader comes only now, for the question that needs it
         if (!k && keyKept && settings && !preset.local) {
+          given = false
           // asked of the page once per page: then from this page's memory
           k =
             (fetched.current?.provider === preset.id ? fetched.current.key : (await settings.key(preset.id))?.trim()) ??
@@ -342,18 +353,26 @@ export default function AskPanel(p: AskPanelProps) {
             setNote(`No ${preset.name} key is kept any more: paste one above.`)
             return
           }
-          // in this page's memory for the next question; the field stays empty, saying where it is kept
+          // in the panel's memory for the next question, never in the tab's storage: the field stays empty, saying
+          // where it is kept
           fetched.current = { provider: preset.id, key: k }
+          m.fetched = fetched.current
         }
-        takeKey(preset.id, k, keep)
+        if (given) takeKey(preset.id, k, keep && !(settings && kept && remember))
         model = providerFor(preset, { key: k || undefined, model: pick.model.trim() || undefined })
-        if (settings && kept && remember) await rememberChoice(settings, kept, k)
+        if (settings && kept && remember) {
+          const st = settings
+          const had = kept
+          remembering = () => rememberChoice(st, had, given ? k : '')
+        }
       }
     } catch (err) {
       refused(err)
       return
     }
     setNote('')
+    // after the note is cleared: a refusal to remember stays in view while the question goes on
+    if (remembering) await remembering()
     if (said == null) setRequest('')
     setProposal(null)
     setAdvice(false)
@@ -533,6 +552,7 @@ export default function AskPanel(p: AskPanelProps) {
               value={preset.id}
               onChange={(e) => {
                 const next = list.find((x) => x.id === e.target.value)!
+                touched.current = true
                 setPick({ provider: next.id, model: next.model ?? '' })
                 const k = readKey(next.id)
                 setKey(k?.key ?? '')
@@ -551,7 +571,10 @@ export default function AskPanel(p: AskPanelProps) {
             <input
               value={pick.model}
               placeholder="model"
-              onChange={(e) => setPick({ ...pick, model: e.target.value })}
+              onChange={(e) => {
+                touched.current = true
+                setPick({ ...pick, model: e.target.value })
+              }}
             />
           </label>
           {!preset.local && (
@@ -566,7 +589,10 @@ export default function AskPanel(p: AskPanelProps) {
                 spellCheck={false}
                 value={key}
                 placeholder={keyKept ? 'Kept for your account' : `${preset.name} key`}
-                onChange={(e) => setKey(e.target.value)}
+                onChange={(e) => {
+                  touched.current = true
+                  setKey(e.target.value)
+                }}
               />
               {settings && kept ? (
                 <label>
@@ -625,9 +651,25 @@ export default function AskPanel(p: AskPanelProps) {
               {settings && kept && (
                 <p className="lme-hint">
                   {remember
-                    ? `${settings.where[0]!.toUpperCase()}${settings.where.slice(1)} keeps your choice and key, encrypted, for your next visit and your other devices. Untick to keep the key in this page only.`
-                    : 'The key stays in this page, or this tab if you tick it.'}
+                    ? `${settings.where[0]!.toUpperCase()}${settings.where.slice(1)} keeps your choice and key, encrypted, for your next visit and your other devices. Untick to keep a new key in this page only.`
+                    : 'A new key stays in this page, or this tab if you tick it.'}
                 </p>
+              )}
+              {settings && kept && (kept.choice || kept.keys.length > 0) && (
+                <button
+                  type="button"
+                  className="lm-btn lme-quiet"
+                  onClick={() =>
+                    settings.remove('all').then(() => {
+                      fetched.current = null
+                      m.fetched = null
+                      setKept({ keys: [] })
+                      setNote('Your account keeps no model or key now.')
+                    }, refused)
+                  }
+                >
+                  Remove what your account keeps
+                </button>
               )}
             </div>
           )}

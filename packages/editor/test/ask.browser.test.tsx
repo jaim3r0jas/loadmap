@@ -305,6 +305,12 @@ describe('the Ask panel', () => {
       await userEvent.click(page.getByRole('button', { name: 'Forget' }))
       await expect.poll(() => calls.at(-1)).toBe('remove {"key":"openrouter"}')
       await expect.element(key).toHaveAttribute('placeholder', 'OpenRouter key')
+      // the choice kept too goes on the reader's word
+      await userEvent.click(page.getByRole('button', { name: 'Remove what your account keeps' }))
+      await expect.poll(() => calls.at(-1)).toBe('remove "all"')
+      await expect.element(page.getByRole('button', { name: 'Remove what your account keeps' })).not.toBeInTheDocument()
+      // a key the page gave back never went to the tab's storage
+      expect(JSON.stringify(sessionStorage)).not.toContain('sk-or-kept')
     } finally {
       globalThis.fetch = real
     }

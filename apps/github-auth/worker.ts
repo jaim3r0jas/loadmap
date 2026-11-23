@@ -6,7 +6,7 @@
 // the page gets it sealed with SEAL_KEY and bound to a key its browser cannot export, and only a request signed with that
 // key opens it again. It runs on Cloudflare Workers (apps/github-auth/README.md).
 import { type Device, isDevice, seal, secretBytes, signedBy, unseal } from './seal'
-import { type Db, isSlot, readAll, readOne, ready, remove, write } from './store'
+import { type Db, isSlot, readOne, ready, remove, slots, write } from './store'
 
 export interface Env {
   /** The GitHub App's client id (public) and secret (a Worker secret, never in the page or the repository). */
@@ -231,8 +231,7 @@ const KEY = /^[\x21-\x7e]{8,512}$/
 const AGE = 8 * 3600_000
 
 /**
- * The reader's model settings: their choice of provider and model, the keys kept for them, and (with `repo`) a
- * repository's own. Only for a request signed by the browser the session is bound to, of a session GitHub refreshed in
+ * The reader's model settings: their choice of provider and model, and the keys kept for them. Only for a request signed by the browser the session is bound to, of a session GitHub refreshed in
  * the last 8 hours. A key leaves only for `key`, the one question that needs it.
  */
 async function settings(body: Body, env: Env, secret: Uint8Array | undefined, now: () => number, answer: Answer) {
@@ -264,13 +263,13 @@ async function settings(body: Body, env: Env, secret: Uint8Array | undefined, no
   const user = s.u
   const provider = typeof r.provider === 'string' && PROVIDER.test(r.provider) ? r.provider : undefined
   if (r.op === 'read') {
-    const all = await readAll(db, secret, user)
-    const c = all.get('default') as { provider?: unknown; model?: unknown } | undefined
+    // the choice alone is opened: a key is opened only for `key`
+    const c = await readOne<{ provider?: unknown; model?: unknown }>(db, secret, user, 'default')
     const choice =
       typeof c?.provider === 'string' && typeof c.model === 'string'
         ? { provider: c.provider, model: c.model }
         : undefined
-    const keys = [...all.keys()].filter((k) => k.startsWith('key:')).map((k) => k.slice(4))
+    const keys = (await slots(db, user)).filter((k) => k.startsWith('key:')).map((k) => k.slice(4))
     return answer(200, { ...(choice && { choice }), keys })
   }
   if (r.op === 'key') {

@@ -219,17 +219,22 @@ export async function signedSettings(request: object, o: ResumeOptions = {}): Pr
       credentials: 'omit',
     })
   }
-  let res = await send(0)
+  // the Worker's time, once it said this browser's clock is off: every later request signs with it
+  let skew = 0
+  let res = await send(skew)
   if (res?.status === 409) {
     const got = (await res.json().catch(() => ({}))) as { now?: unknown }
-    if (typeof got.now === 'number') res = await send(got.now - (o.now ?? Date.now)() || 1)
+    if (typeof got.now === 'number') {
+      skew = got.now - (o.now ?? Date.now)() || 1
+      res = await send(skew)
+    }
   }
   if (res?.status === 401) {
     const got = (await res
       .clone()
       .json()
       .catch(() => ({}))) as { error?: unknown }
-    if (got.error === 'stale' && (await resume({ ...o, app: config, force: true }))) res = await send(0)
+    if (got.error === 'stale' && (await resume({ ...o, app: config, force: true }))) res = await send(skew)
   }
   return res
 }

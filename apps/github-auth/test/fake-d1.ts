@@ -10,6 +10,8 @@ export function fakeD1() {
     if (s.startsWith('CREATE TABLE IF NOT EXISTS')) return { rows: [] }
     if (s === 'SELECT slot, box FROM settings WHERE user = ?')
       return { rows: [...settings.values()].filter((r) => r.user === v[0]).map(({ slot, box }) => ({ slot, box })) }
+    if (s === 'SELECT slot FROM settings WHERE user = ?')
+      return { rows: [...settings.values()].filter((r) => r.user === v[0]).map(({ slot }) => ({ slot })) }
     if (s === 'SELECT box FROM settings WHERE user = ? AND slot = ?') {
       const r = settings.get(`${v[0]}:${v[1]}`)
       return { rows: r ? [{ box: r.box }] : [] }

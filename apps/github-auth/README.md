@@ -45,11 +45,10 @@ GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App*
   Device Flow**: off.
 - **Webhook**: untick **Active**.
 - **Repository permissions**: **Contents: Read and write**, **Pull requests: Read and write** (Metadata: read-only comes
-  with them), and **Repository creation: Read and write**, which lets the editor make the reader's private
-  `loadmap-keys` for a key kept sealed (GitHub's narrow permission for it: it creates, forks and generates
-  repositories, and gives the app the ones it made; never **Administration**, which also deletes them, changes their
-  settings and adds collaborators). Nothing else, no account permissions. Without it the editor says how the reader
-  makes `loadmap-keys` by hand. A permission added later is asked of every account that installed the app
+  with them), and **Repository creation: Read and write**, which lets **Save to a new repository** make one in
+  the reader's account (GitHub's narrow permission for it: it creates, forks and generates repositories, and gives the
+  app the ones it made; never **Administration**, which also deletes them, changes their settings and adds
+  collaborators). Nothing else, no account permissions. Without it a new repository needs a pasted token. A permission added later is asked of every account that installed the app
   (Settings → Applications → the app → review the request); a token from before keeps the old ones.
 - **Where can this GitHub App be installed?**: **Any account** for every reader of the docs, or **Only on this account**
   to keep it to yours.
