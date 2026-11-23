@@ -56,6 +56,7 @@ definition's limits (`load.ts`); `github/vault.ts` keeps the Ask panel's sealed 
 (as `fetch` in node, through `page.route` in Chromium): nothing reaches the real GitHub. The editor page alone gets a
 Content-Security-Policy, as a `<meta>` put in at build (`csp.ts`: the dev server's scripts would break it). **Connect to
 GitHub** (the bar's account button, `github/AccountButton.tsx`, drawn from `github/account.ts` before any GitHub code
-loads) signs in through the app only in a build given one (`VITE_GITHUB_APP_*`, repository variables in `docs.yml`): a
+loads) signs in through the app (`github/connection.ts`; a returning reader comes back without a click through a session the
+Worker sealed to this browser's key, `github/device.ts`) only in a build given one (`VITE_GITHUB_APP_*`, repository variables in `docs.yml`): a
 popup to GitHub, back to `/signed-in/`, and the code swapped for a token by the Worker in `apps/github-auth` (its README
 has the setup, which is the owner's to do).

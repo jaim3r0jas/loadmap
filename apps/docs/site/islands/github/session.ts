@@ -2,7 +2,7 @@
 // it goes with. The token lives in memory; a connection through the site's app, or "Keep it for this tab" for a pasted
 // one, puts it in sessionStorage, gone with the tab. It never goes into localStorage, an address, a share link or a
 // message. account.ts tells the bar what changed.
-import { account, setAccount, TOKEN } from './account'
+import { account, EXPIRES, setAccount, TOKEN } from './account'
 import { client } from './api'
 
 function kept(): string | undefined {
@@ -63,6 +63,7 @@ function dropToken(): void {
   token = undefined
   try {
     sessionStorage.removeItem(TOKEN)
+    sessionStorage.removeItem(EXPIRES)
   } catch {
     // nothing kept
   }
@@ -75,6 +76,9 @@ export function disconnect(): void {
 }
 
 export const hasToken = () => token != null
+
+/** The token itself, for the one call that needs it outside the client: revoking it on Disconnect. */
+export const tokenNow = () => token
 
 /** Whether the token came from the site's GitHub App (on the reader's behalf): it does what the app may. */
 export const signedIn = () => token != null && account().via === 'app'

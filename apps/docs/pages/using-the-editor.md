@@ -88,9 +88,11 @@ takes out before it adds them. [Published figures](/language/published/) has the
 you in in a popup: the token reaches only the repositories the app is installed on, lasts 8 hours, and stays in this
 tab. Without the app, or if you choose **Use a pasted token instead**, it asks for a token you make on GitHub's form,
 filled in. Connected, the button shows your account, and its menu opens a repository, saves to a new one, picks the
-app's repositories on GitHub, and disconnects. **Disconnect** forgets the token and the account in this browser. When
-you come back in a new tab, the button offers to reconnect as the same account: one press, and GitHub answers without
-asking again.
+app's repositories on GitHub, and disconnects. When you come back, in a new tab or days later, the editor connects
+again by itself: the site's sign-in service keeps nothing, but this browser holds a session sealed to a key it cannot
+copy out. Where that is gone (a private window, cleared site data, Safari after a week away), the button offers to
+reconnect as the same account: one press. **Disconnect** ends the token at GitHub and forgets the account, the key and
+the session in this browser.
 
 **New → Open from GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
 the files it names. A public repository opens as it is; a private one asks you to connect in place. A token

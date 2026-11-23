@@ -1,4 +1,4 @@
-# Sign in with GitHub for the live editor
+# Connect to GitHub for the live editor
 
 The editor on the docs site (GitHub Pages, no server) reads and saves repositories with a GitHub token. A reader can
 always paste a fine-grained token; with this set up, **Connect to GitHub** gets one in a popup instead.
@@ -6,12 +6,23 @@ always paste a fine-grained token; with this set up, **Connect to GitHub** gets 
 Why a Worker: GitHub's token endpoint (`github.com/login/oauth/access_token`) sends no CORS headers, so no page can call
 it, and it wants the app's client secret even with PKCE
 ([docs](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app)).
-`worker.ts` holds the secret and swaps the popup's code for a token, nothing else: one path (`POST /token`), the site's
-origins only, the PKCE verifier passed through, no refresh token handed out, nothing logged. It fits Cloudflare's free
-Workers plan (100,000 requests a day; one sign-in is one request).
+`worker.ts` holds the secret and does three swaps, nothing else, for the site's origins only, storing nothing and
+logging nothing:
+
+- `POST /token`: the popup's code for a token (the PKCE verifier passed through).
+- `POST /refresh`: a returning reader's sealed session for a new token, without a click.
+- `POST /revoke`: Disconnect ends the token at GitHub at once.
 
 The token is a GitHub App user token: it reaches only the repositories the app is installed on, with only the app's
-permissions, and expires after 8 hours (the reader signs in again; no refresh token is kept anywhere).
+permissions, and expires after 8 hours. GitHub also gives a refresh token (6 months, each used once). The page never
+holds it as it is: when the page sends its browser's public key (a P-256 key it made and cannot export), `seal.ts`
+seals the refresh token, the reader's GitHub id and that public key with `SEAL_KEY` (AES-GCM), and the page keeps that
+text in IndexedDB. `/refresh` opens it only with a signature by the same browser's key over the session and the time
+(5 minutes either way), asks GitHub for a new pair, and seals the next one. A copied session is worth nothing on another
+browser; a reader who revokes the app on GitHub ends it. Without `SEAL_KEY` the Worker hands out no session, and a
+returning reader connects with one click.
+
+It fits Cloudflare's free Workers plan (100,000 requests a day; a sign-in or a return is one or two).
 
 ## 1. The GitHub App
 
@@ -39,19 +50,21 @@ step 2, nowhere else). Install the app on the repositories it may reach (**Insta
 
 ## 2. The Worker
 
-With a Cloudflare account (the free plan is enough), from the repository's root:
+With a Cloudflare account (the free plan is enough), from the repository's root. `wrangler.jsonc` beside the Worker
+holds its name, the app's client id and the site's origins (edit them there for a fork); the two secrets are never in a
+file:
 
 ```bash
 npx wrangler login
-npx wrangler deploy apps/github-auth/worker.ts --name loadmap-github-auth --compatibility-date 2026-11-01 \
-  --var GITHUB_CLIENT_ID:<the app's Client ID> \
-  --var ALLOWED_ORIGINS:https://jaim3r0jas.github.io,http://localhost:5173
-npx wrangler secret put GITHUB_CLIENT_SECRET --name loadmap-github-auth     # paste the client secret
+npx wrangler secret put GITHUB_CLIENT_SECRET --name loadmap-github-auth   # paste the client secret
+openssl rand -base64 32 | npx wrangler secret put SEAL_KEY --name loadmap-github-auth
+npx wrangler deploy --config apps/github-auth/wrangler.jsonc
 ```
 
-The two `--var`s go with every deploy (a deploy replaces the Worker's plain variables with the ones it is given; the
-secret stays). Leave `http://localhost:5173` out if you won't try it with `pnpm dev`. A Worker missing any of the three
-answers `500 {"error":"not_configured"}`.
+A deploy keeps the secrets. Leave `http://localhost:5173` out of `ALLOWED_ORIGINS` if you won't try it with `pnpm dev`.
+A Worker missing the client id, its secret or the origins answers `500 {"error":"not_configured"}`; one without
+`SEAL_KEY` works as before, with one click on return. A new `SEAL_KEY` ends every kept session (each reader clicks
+once): the way to end them all.
 
 The Worker's address is `https://loadmap-github-auth.<your-subdomain>.workers.dev`.
 
