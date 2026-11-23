@@ -71,6 +71,8 @@ describe('the Ask panel', () => {
     const card = page.getByRole('region', { name: 'Proposal' })
     await userEvent.click(card.getByRole('button', { name: 'Reject' }))
     await expect.element(card).not.toBeInTheDocument()
+    // what became of it stays in the conversation, as a line
+    await expect.poll(() => document.querySelector('.lme-ask-event')?.textContent).toBe('Discarded.')
     expect(handle.source()).not.toContain('scenario "Eight"')
     await ask('Add a scenario')
     await expect.element(card).toBeVisible()
@@ -147,6 +149,43 @@ describe('the Ask panel', () => {
         timeout: 5000,
       })
       .toMatchObject({ request: expect.stringContaining('Explain db'), selection: 'db' })
+  })
+
+  it('keeps a conversation for each box and one for the whole diagram, its answers drawn from their Markdown', async () => {
+    const { host, model } = await mount([
+      'The **pool** is the first limit:\n\n- it holds `200` connections\n- it is full at 2.4 × today',
+      'The database takes every order once.',
+      'And the gateway after it.',
+    ])
+    await ask('What runs out first?')
+    const thread = () => document.querySelector('.lme-ask-thread')?.textContent ?? ''
+    await expect.poll(thread, { timeout: 5000 }).toContain('it is full at 2.4 × today')
+    // the answer's Markdown as elements, not its marks
+    expect(document.querySelector('.lme-ask-msg[data-role="assistant"] strong')?.textContent).toBe('pool')
+    expect(document.querySelectorAll('.lme-ask-msg[data-role="assistant"] li')).toHaveLength(2)
+    expect(thread()).not.toContain('**pool**')
+
+    // a question about a box goes in that box's conversation, which starts with nothing before it
+    await userEvent.click(host.querySelector<SVGGElement>('.lme-preview [data-node="db"]')!)
+    await userEvent.click(page.getByRole('button', { name: 'Explain it' }))
+    await expect.poll(thread, { timeout: 5000 }).toContain('every order once')
+    expect(thread()).not.toContain('What runs out first?')
+    expect(model.requests[1]!.messages.map((x) => x.content).join(' ')).not.toContain('What runs out first?')
+    const conversation = page.getByLabelText('Conversation')
+    await expect.element(conversation).toHaveValue('db')
+
+    // the whole diagram's comes back as it was, and goes on from there
+    await userEvent.selectOptions(conversation, '')
+    await expect.poll(thread).toContain('What runs out first?')
+    expect(thread()).not.toContain('every order once')
+    await userEvent.click(page.getByRole('button', { name: 'About db', exact: true }))
+    await ask('And after it?')
+    await expect.poll(thread, { timeout: 5000 }).toContain('the gateway after it')
+    expect(model.requests[2]!.messages.map((x) => x.content).join(' ')).toContain('What runs out first?')
+
+    // a new conversation starts empty in its place
+    await userEvent.click(page.getByRole('button', { name: 'New conversation' }))
+    await expect.poll(thread).toBe('')
   })
 
   it("connects the reader's metrics, runs the looks they allow, and draws an accepted measure with them", async () => {
