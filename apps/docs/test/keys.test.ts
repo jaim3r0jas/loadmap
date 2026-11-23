@@ -92,6 +92,8 @@ describe('a model key kept sealed', () => {
   })
 
   const app = 'https://github.com/apps/loadmap-editor/installations/new'
+  const signed = { signedIn: true, app, wait: 0 }
+  const pick = { href: app, label: "Pick the app's repositories" }
   const refusal = (p: Promise<void>) =>
     p.then(
       () => undefined,
@@ -100,13 +102,15 @@ describe('a model key kept sealed', () => {
 
   it('tells a signed-in reader whose app may not make repositories how to make it, and keeps the key once it is there', async () => {
     const { gh, files, make } = github({ create: 403 })
-    const e = await refusal(saveSealed(gh, 'openrouter', '{"sealed":1}', { app }))
+    const e = await refusal(saveSealed(gh, 'openrouter', '{"sealed":1}', signed))
     expect(e).toBeInstanceOf(VaultError)
     expect(e?.message).toBe(
-      'The sign-in may not make reader/loadmap-keys. Make it on GitHub, private, and let the app reach it (all repositories, or that one). Then keep the key again.',
+      'The sign-in may not make reader/loadmap-keys. Make it on GitHub, private. If it is there already, let the app reach it (all repositories, or that one). Then keep the key again.',
     )
-    expect(e?.link?.label).toBe('Make it on GitHub')
-    const page = new URL(e?.link?.href ?? '')
+    // made by hand where the app does not reach, GitHub answers the same: the way to the app's repositories is there
+    expect(e?.links.map((l) => l.label)).toEqual(['Make it on GitHub', "Pick the app's repositories"])
+    expect(e?.links[1]).toEqual(pick)
+    const page = new URL(e?.links[0]?.href ?? '')
     expect(page.origin + page.pathname).toBe('https://github.com/new')
     expect(Object.fromEntries(page.searchParams)).toMatchObject({
       name: 'loadmap-keys',
@@ -116,35 +120,62 @@ describe('a model key kept sealed', () => {
     expect(files.size).toBe(0)
     // made by hand, the same press keeps the key: nothing is made twice
     make({ private: true })
-    await saveSealed(gh, 'openrouter', '{"sealed":1}', { app })
+    await saveSealed(gh, 'openrouter', '{"sealed":1}', signed)
     expect(await loadSealed(gh, 'openrouter')).toBe('{"sealed":1}')
   })
 
   it('tells a reader with a pasted token what the token needs', async () => {
     const { gh } = github({ create: 403 })
-    const e = await refusal(saveSealed(gh, 'openrouter', '{}'))
+    // a build that knows the app says nothing of it to a pasted token
+    const e = await refusal(saveSealed(gh, 'openrouter', '{}', { app }))
     expect(e?.message).toBe(
-      'This token may not make reader/loadmap-keys. Make it on GitHub, private, and give the token Contents, read and write, on it. Then keep the key again.',
+      'This token may not make reader/loadmap-keys. Make it on GitHub, private, and give the token Contents, read and write, on it (a classic token: the repo scope). Then keep the key again.',
     )
-    expect(e?.link?.label).toBe('Make it on GitHub')
+    expect(e?.links.map((l) => l.label)).toEqual(['Make it on GitHub'])
     const mayRead = github({ repo: { private: true }, write: 403 })
-    expect((await refusal(saveSealed(mayRead.gh, 'openrouter', '{}')))?.message).toBe(
-      'This token may only read reader/loadmap-keys. Give it Contents, read and write, on it, then keep the key again.',
+    const read = await refusal(saveSealed(mayRead.gh, 'openrouter', '{}'))
+    expect(read?.message).toBe(
+      'This token may only read reader/loadmap-keys. Give it Contents, read and write, on it (a classic token: the repo scope), then keep the key again.',
     )
+    expect(read?.links).toEqual([])
+  })
+
+  it('tells a signed-in reader whose write is refused to sign in again, or to let the app reach it', async () => {
+    const { gh } = github({ repo: { private: true }, write: 403 })
+    const e = await refusal(saveSealed(gh, 'openrouter', '{}', signed))
+    expect(e?.message).toBe(
+      'The sign-in may not write to reader/loadmap-keys. Sign in again; if it stays so, let the app reach it (all repositories, or that one).',
+    )
+    expect(e?.links).toEqual([pick])
+    // a sign-in's token in a build that does not know the app: the words, without the way
+    expect((await refusal(saveSealed(gh, 'openrouter', '{}', { signedIn: true })))?.links).toEqual([])
   })
 
   it("says so when the repository is there, out of the token's reach", async () => {
     const { gh } = github({ create: 422 })
-    const signed = await refusal(saveSealed(gh, 'openrouter', '{}', { app }))
-    expect(signed?.message).toBe(
+    const e = await refusal(saveSealed(gh, 'openrouter', '{}', signed))
+    expect(e?.message).toBe(
       "reader/loadmap-keys seems to be there, out of the sign-in's reach. Let the app reach it (all repositories, or that one), then keep the key again.",
     )
-    expect(signed?.link).toEqual({ href: app, label: "Pick the app's repositories" })
+    expect(e?.links).toEqual([pick])
     const pasted = await refusal(saveSealed(gh, 'openrouter', '{}'))
     expect(pasted?.message).toBe(
-      "reader/loadmap-keys seems to be there, out of this token's reach. Give the token Contents, read and write, on it, then keep the key again.",
+      "reader/loadmap-keys seems to be there, out of this token's reach. Give the token Contents, read and write, on it (a classic token: the repo scope), then keep the key again.",
     )
-    expect(pasted?.link).toBeUndefined()
+    expect(pasted?.links).toEqual([])
+  })
+
+  it('waits for a repository made by hand that is empty still, and says what to do when it stays so', async () => {
+    const late = github({ repo: { private: true }, early: 2 })
+    await saveSealed(late.gh, 'openrouter', '{"sealed":1}', { wait: 0 })
+    expect([...late.files.keys()]).toEqual(['keys/openrouter.sealed'])
+    const never = github({ repo: { private: true }, early: 99 })
+    const e = await refusal(saveSealed(never.gh, 'openrouter', '{}', { wait: 0 }))
+    expect(e?.message).toBe(
+      'reader/loadmap-keys did not take the key. If it is empty, add a README to it on GitHub, then keep the key again.',
+    )
+    expect(e?.links).toEqual([{ href: 'https://github.com/reader/loadmap-keys', label: 'Open it on GitHub' }])
+    expect(never.calls.filter((c) => c.method === 'PUT')).toHaveLength(5)
   })
 })
 

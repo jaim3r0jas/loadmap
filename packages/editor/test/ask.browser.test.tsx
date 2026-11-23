@@ -235,7 +235,11 @@ describe('the Ask panel', () => {
         if (refuse) {
           refuse = false
           throw Object.assign(new Error('Make the place first.'), {
-            link: { href: 'https://example.com/new', label: 'Make it there' },
+            // an address that is not https is never a link
+            links: [
+              { href: 'https://example.com/new', label: 'Make it there' },
+              { href: 'javascript:void 0', label: 'Not this' },
+            ],
           })
         }
         kept.set(provider, { key, passphrase })
@@ -284,6 +288,7 @@ describe('the Ask panel', () => {
     await expect.element(way).toHaveAttribute('href', 'https://example.com/new')
     await expect.element(way).toHaveAttribute('rel', 'noopener noreferrer')
     expect(document.querySelector('.lme-ask')?.textContent).toContain('Make the place first.')
+    expect(document.querySelector('.lme-ask')?.textContent).not.toContain('Not this')
     expect(kept.size).toBe(0)
     await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
     await expect.poll(() => kept.get('openrouter')?.key).toBe('sk-or-v1-made')

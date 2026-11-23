@@ -20,7 +20,7 @@ anywhere but to the provider you picked.
   repositories. The editor makes `loadmap-keys` the first time, when the token may: after **Sign in with GitHub**,
   when the app holds "Repository creation"; with a pasted token, one with Administration on all repositories.
   Otherwise it says so with a link to make it yourself, private; then let the app reach it (or give the token
-  Contents, read and write, on it) and keep the key again.
+  Contents, read and write, on it; a classic token needs the `repo` scope) and keep the key again.
 - A model on your own computer needs no key. Start Ollama with `OLLAMA_ORIGINS` naming this site (for LM Studio,
   allow CORS in its server settings).
 

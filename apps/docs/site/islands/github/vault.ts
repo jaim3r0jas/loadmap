@@ -69,11 +69,16 @@ export async function unseal(sealed: string, passphrase: string): Promise<string
   }
 }
 
-/** A refusal the reader can act on: what to do, and where on GitHub. The Ask panel shows the link after the words. */
+export interface VaultLink {
+  href: string
+  label: string
+}
+
+/** A refusal the reader can act on: what to do, and where on GitHub. The Ask panel shows the links after the words. */
 export class VaultError extends Error {
   constructor(
     message: string,
-    readonly link?: { href: string; label: string },
+    readonly links: readonly VaultLink[] = [],
   ) {
     super(message)
     this.name = 'VaultError'
@@ -107,20 +112,26 @@ export async function loadSealed(gh: Client, provider: string): Promise<string |
 
 export interface SaveOptions {
   /**
-   * For a token from Sign in with GitHub: the page where the reader picks the app's repositories. Such a token does
-   * what the app may do, on the repositories it is installed on; a pasted one, what the reader gave it.
+   * The token came from Sign in with GitHub: it does what the app may do, on the repositories the app is installed
+   * on. A pasted one does what the reader gave it.
    */
+  signedIn?: boolean
+  /** The page where the reader picks the app's repositories, when this build knows the app. */
   app?: string
   /** The first wait for a repository just made, in ms. */
   wait?: number
 }
+
+/** What a pasted token needs on the repository: a fine-grained one a permission, a classic one a scope. */
+const NEEDS = 'Contents, read and write, on it (a classic token: the repo scope)'
 
 /**
  * The sealed key saved for a provider in the reader's private repository, made private the first time. Only the
  * sealed text leaves this page. A token that may not make the repository is told how the reader makes it.
  */
 export async function saveSealed(gh: Client, provider: string, sealed: string, o: SaveOptions = {}): Promise<void> {
-  const { app, wait = 500 } = o
+  const { signedIn = false, app, wait = 500 } = o
+  const pick: VaultLink[] = app ? [{ href: app, label: "Pick the app's repositories" }] : []
   const owner = await login(gh)
   const at = `/repos/${seg(owner)}/${REPO}`
   const name = `${owner}/${REPO}`
@@ -138,23 +149,28 @@ export async function saveSealed(gh: Client, provider: string, sealed: string, o
       })
     } catch (err) {
       const why = err instanceof GitHubError ? err.failure : undefined
-      // 403: the app lacks "Repository creation" (or the reader has not approved it), a pasted token Administration
+      const make: VaultLink = { href: newRepoPage(owner), label: 'Make it on GitHub' }
+      // 403: the app lacks "Repository creation" (or the reader has not approved it), a pasted token Administration.
+      // GitHub says the same when the repository is there, out of the token's reach: the words cover both.
       if (why === 'forbidden')
-        throw new VaultError(
-          app
-            ? `The sign-in may not make ${name}. Make it on GitHub, private, and let the app reach it (all repositories, or that one). Then keep the key again.`
-            : `This token may not make ${name}. Make it on GitHub, private, and give the token Contents, read and write, on it. Then keep the key again.`,
-          { href: newRepoPage(owner), label: 'Make it on GitHub' },
-        )
-      // 422 with the name and the rest as fixed as here: the name is taken, by a repository the token does not see
-      if (why === 'invalid')
-        throw app
+        throw signedIn
           ? new VaultError(
-              `${name} seems to be there, out of the sign-in's reach. Let the app reach it (all repositories, or that one), then keep the key again.`,
-              { href: app, label: "Pick the app's repositories" },
+              `The sign-in may not make ${name}. Make it on GitHub, private. If it is there already, let the app reach it (all repositories, or that one). Then keep the key again.`,
+              [make, ...pick],
             )
           : new VaultError(
-              `${name} seems to be there, out of this token's reach. Give the token Contents, read and write, on it, then keep the key again.`,
+              `This token may not make ${name}. Make it on GitHub, private, and give the token ${NEEDS}. Then keep the key again.`,
+              [make],
+            )
+      // 422 with the name and the rest as fixed as here: the name is taken, by a repository the token does not see
+      if (why === 'invalid' || why === 'exists')
+        throw signedIn
+          ? new VaultError(
+              `${name} seems to be there, out of the sign-in's reach. Let the app reach it (all repositories, or that one), then keep the key again.`,
+              pick,
+            )
+          : new VaultError(
+              `${name} seems to be there, out of this token's reach. Give the token ${NEEDS}, then keep the key again.`,
             )
       throw err
     }
@@ -182,13 +198,25 @@ export async function saveSealed(gh: Client, provider: string, sealed: string, o
       await put()
       return
     } catch (e) {
-      // a sign-in's token writes wherever it reads; a pasted one may have been given the reading alone
-      if (!app && e instanceof GitHubError && e.failure === 'forbidden')
+      const why = e instanceof GitHubError ? e.failure : undefined
+      if (why === 'forbidden')
+        throw signedIn
+          ? new VaultError(
+              `The sign-in may not write to ${name}. Sign in again; if it stays so, let the app reach it (all repositories, or that one).`,
+              pick,
+            )
+          : new VaultError(`This token may only read ${name}. Give it ${NEEDS}, then keep the key again.`)
+      // a repository just made gets its first commit late; one made by hand may be empty still
+      const early = why === 'conflict' || (fresh && why === 'missing')
+      if (early && i < 4) {
+        await new Promise((r) => setTimeout(r, wait * (i + 1)))
+        continue
+      }
+      if (why === 'conflict')
         throw new VaultError(
-          `This token may only read ${name}. Give it Contents, read and write, on it, then keep the key again.`,
+          `${name} did not take the key. If it is empty, add a README to it on GitHub, then keep the key again.`,
+          [{ href: `https://github.com/${seg(owner)}/${REPO}`, label: 'Open it on GitHub' }],
         )
-      const early = fresh && e instanceof GitHubError && (e.status === 404 || e.status === 409)
-      if (!early || i >= 4) throw e
-      await new Promise((r) => setTimeout(r, wait * (i + 1)))
+      throw e
     }
 }
