@@ -83,7 +83,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { EditorData, KeyVault } from './AskPanel'
+import type { EditorData, ModelSettings } from './AskPanel'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
@@ -296,8 +296,11 @@ export interface EditorAssist {
   data?: EditorData
   /** Ways to get a key without pasting one, by provider id: a page's OpenRouter sign-in. */
   signIn?: Readonly<Record<string, () => Promise<string>>>
-  /** Where the reader may keep a key sealed with a passphrase (the docs: a private repository of theirs). */
-  vault?: KeyVault
+  /**
+   * Where the page remembers the reader's model and key for them, so a return finds them set (the docs: the site's
+   * service, for a reader connected to GitHub).
+   */
+  settings?: ModelSettings
 }
 
 interface Compiled {

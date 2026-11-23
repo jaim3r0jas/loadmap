@@ -9,5 +9,8 @@
     // the GitHub App's client id: public, the page carries it too
     "GITHUB_CLIENT_ID": "Iv23liI9uue1CFO5PRIJ",
     "ALLOWED_ORIGINS": "https://jaim3r0jas.github.io,http://localhost:5173"
-  }
+  },
+  // each reader's model settings (store.ts makes its tables): without an id, the first deploy makes the database and
+  // writes its id here (wrangler 4.45 or later); commit that line
+  "d1_databases": [{ "binding": "DB", "database_name": "loadmap-settings" }]
 }

@@ -57,21 +57,35 @@ export interface AskPanelProps {
   functions?: HostFunctions
   /** Ways to get a key without pasting one, by provider id: OpenRouter's sign-in. */
   signIn?: Readonly<Record<string, () => Promise<string>>>
-  /** Where the reader may keep a key sealed with a passphrase. */
-  vault?: KeyVault
+  /** Where the page remembers the reader's model and key for them. */
+  settings?: ModelSettings
 }
 
 /**
- * Where a page keeps a model key sealed with the reader's passphrase (the docs keep it in a private repository of the
- * reader's): the key is sealed and opened on the page, only the sealed text is kept. An error from `open` or `keep`
- * is shown by its message; `links` on it (`{ href, label }[]`, https addresses) follow the message, for what the
- * reader has to do elsewhere first.
+ * Where a page remembers the reader's choice of model and their keys, for them, so a return finds them set (the docs:
+ * the site's service, for a reader connected to GitHub). The panel reads what is kept when it opens, asks for a key
+ * only when a question needs it, and keeps a choice when the reader asks with "Remember it" ticked. An error is shown
+ * by its message; `links` on it (`{ href, label }[]`, https addresses) follow the message.
  */
-export interface KeyVault {
-  /** Where it is kept, in a few words: "your GitHub". */
+export interface ModelSettings {
+  /** Who keeps them, in a few words, for the sentence under the box: "this site's service". */
   where: string
-  open(provider: string, passphrase: string): Promise<string | undefined>
-  keep(provider: string, key: string, passphrase: string): Promise<void>
+  /** What is kept for the reader now, or null when nothing can be kept now (the reader is not connected). */
+  load(): Promise<KeptSettings | null>
+  /** The key kept for a provider. */
+  key(provider: string): Promise<string | undefined>
+  /** Keeps the choice of provider and model, and the key when one is given. */
+  save(choice: { provider: string; model: string; key?: string }): Promise<void>
+  /** Forgets the key kept for a provider, or everything kept for the reader. */
+  remove(what: { key: string } | 'all'): Promise<void>
+}
+
+/** What a page keeps for the reader: never a key itself, only which providers have one. */
+export interface KeptSettings {
+  /** The provider and model chosen last. */
+  choice?: { provider: string; model: string }
+  /** The providers with a key kept. */
+  keys: readonly string[]
 }
 
 /** What the reader's metrics hold, once connected: the stores the model may explore, and those measures read from. */
@@ -164,6 +178,14 @@ function readPick(list: readonly ProviderPreset[]): { provider: string; model: s
 export default function AskPanel(p: AskPanelProps) {
   const id = useId()
   const list = PROVIDERS.filter((x) => !p.providers || p.providers.includes(x.id))
+  // whether this tab chose a model already, as the panel opened: the reader's kept choice does not override it
+  const [chosenHere] = useState(() => {
+    try {
+      return sessionStorage.getItem(PICK) != null
+    } catch {
+      return false
+    }
+  })
   const [pick, setPick] = useState(() => readPick(list))
   const preset = list.find((x) => x.id === pick.provider) ?? list[0]!
   const stored = readKey(preset.id)
@@ -179,9 +201,10 @@ export default function AskPanel(p: AskPanelProps) {
   const [scoped, setScoped] = useState(true)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
-  const [passphrase, setPassphrase] = useState('')
-  /** The passphrase typed again, to keep: a typo would seal the key with a passphrase nobody knows. */
-  const [again, setAgain] = useState('')
+  /** What the page keeps for the reader (null: nothing can be kept now; undefined: not read yet). */
+  const [kept, setKept] = useState<KeptSettings | null | undefined>(m.kept)
+  /** "Remember it for my account": ticked until the reader says otherwise. */
+  const [remember, setRemember] = useState(m.remember)
   const [signing, setSigning] = useState(false)
   // the provider shown now: a key that comes after a wait goes to the provider it was asked for, never to another
   const shown = useRef(preset.id)
@@ -191,38 +214,39 @@ export default function AskPanel(p: AskPanelProps) {
     takeKey(forId, k, keep)
     if (shown.current === forId) setKey(k)
   }
-  /** The key opened from, or sealed into, the page's vault with the passphrase; the passphrase is never kept. */
-  const sealed = async (how: 'open' | 'keep') => {
-    const v = p.vault
-    if (!v) return
-    if (passphrase.length < 12) return setNote('A passphrase of 12 characters at least: it is all that guards the key.')
-    const forId = preset.id
-    const name = preset.name
-    try {
-      if (how === 'keep') {
-        if (!key.trim()) return setNote('Paste the key first, then keep it sealed.')
-        if (again !== passphrase) return setNote('Type the passphrase again, the same, to keep the key with it.')
-        await v.keep(forId, key.trim(), passphrase)
-        setNote(`The ${name} key is kept sealed in ${v.where}.`)
-      } else {
-        const k = await v.open(forId, passphrase)
-        if (!k) return setNote(`No ${name} key is kept in ${v.where}.`)
-        took(forId, k)
-        setNote(`The ${name} key is open for this page.`)
-      }
-      setPassphrase('')
-      setAgain('')
-    } catch (err) {
-      const { message, links } = err as Error & { links?: unknown }
-      setNote(message)
-      // https alone: a vault's link is the page's own code, but nothing else belongs behind a note
-      const safe = (Array.isArray(links) ? links : []).filter(
-        (l): l is { href: string; label: string } =>
-          typeof l?.href === 'string' && typeof l.label === 'string' && l.href.startsWith('https://'),
-      )
-      setWays(safe.length ? { note: message, links: safe.map(({ href, label }) => ({ href, label })) } : undefined)
-    }
+  /** A refusal from the page: its message, and its links (https only) after it. */
+  const refused = (err: unknown) => {
+    const { message, links } = err as Error & { links?: unknown }
+    setNote(message)
+    // https alone: a link is the page's own code, but nothing else belongs behind a note
+    const safe = (Array.isArray(links) ? links : []).filter(
+      (l): l is { href: string; label: string } =>
+        typeof l?.href === 'string' && typeof l.label === 'string' && l.href.startsWith('https://'),
+    )
+    setWays(safe.length ? { note: message, links: safe.map(({ href, label }) => ({ href, label })) } : undefined)
   }
+  // what the page keeps, read as the panel opens: the reader's last choice comes back unless this tab chose
+  const settings = p.settings
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read once as the panel opens, with what the tab held then
+  useEffect(() => {
+    if (!settings) return
+    let gone = false
+    settings.load().then(
+      (k) => {
+        if (gone) return
+        setKept(k)
+        const c = k?.choice
+        if (c && !chosenHere && list.some((x) => x.id === c.provider)) setPick(c)
+      },
+      () => !gone && setKept(null),
+    )
+    return () => {
+      gone = true
+    }
+  }, [settings])
+  const keyKept = !!kept?.keys.includes(preset.id)
+  /** The key that came from the page's keeping: asking with it again keeps nothing new. */
+  const fetched = useRef(m.fetched ?? null)
   const [advice, setAdvice] = useState(m.advice)
   const [stores, setStores] = useState(m.stores)
   const [code, setCode] = useState('')
@@ -232,6 +256,9 @@ export default function AskPanel(p: AskPanelProps) {
   m.turns = turns
   m.note = note
   m.ways = ways
+  m.kept = kept
+  m.remember = remember
+  m.fetched = fetched.current
   m.request = request
   m.proposal = proposal
   m.usage = usage
@@ -263,6 +290,25 @@ export default function AskPanel(p: AskPanelProps) {
     preview.current(proposal)
   }, [proposal])
 
+  /** Keeps the choice, and a key the reader gave (not the one the page gave back), when they changed. */
+  const rememberChoice = async (st: ModelSettings, had: KeptSettings, k: string) => {
+    const model = pick.model.trim()
+    const fresh = !preset.local && !!k && !(fetched.current?.provider === preset.id && fetched.current.key === k)
+    const same = had.choice?.provider === preset.id && had.choice.model === model
+    if (same && !fresh) return
+    try {
+      await st.save({ provider: preset.id, model, ...(fresh && { key: k }) })
+      fetched.current = fresh ? { provider: preset.id, key: k } : fetched.current
+      setKept({
+        choice: { provider: preset.id, model },
+        keys: fresh && !had.keys.includes(preset.id) ? [...had.keys, preset.id] : had.keys,
+      })
+    } catch (err) {
+      // the question goes on: only remembering failed
+      refused(err)
+    }
+  }
+
   const box = scoped ? p.selected : null
   /**
    * `drafting`: a follow-up ("Draft this", what the looks read), about what was asked before, and the version keeps
@@ -273,7 +319,7 @@ export default function AskPanel(p: AskPanelProps) {
     const about = drafting ? m.asked.box : box
     const words = (said ?? request).trim()
     if (!words || busy) return
-    if (!p.model && !preset.local && !key.trim()) {
+    if (!p.model && !preset.local && !key.trim() && !keyKept) {
       setNote(`${preset.name} needs a key: paste one above.`)
       return
     }
@@ -284,11 +330,27 @@ export default function AskPanel(p: AskPanelProps) {
     try {
       if (p.model) model = p.model
       else {
-        takeKey(preset.id, key, keep)
-        model = providerFor(preset, { key: key.trim() || undefined, model: pick.model.trim() || undefined })
+        let k = key.trim()
+        // the key kept for the reader comes only now, for the question that needs it
+        if (!k && keyKept && settings && !preset.local) {
+          // asked of the page once per page: then from this page's memory
+          k =
+            (fetched.current?.provider === preset.id ? fetched.current.key : (await settings.key(preset.id))?.trim()) ??
+            ''
+          if (!k) {
+            setKept({ ...kept!, keys: kept!.keys.filter((x) => x !== preset.id) })
+            setNote(`No ${preset.name} key is kept any more: paste one above.`)
+            return
+          }
+          // in this page's memory for the next question; the field stays empty, saying where it is kept
+          fetched.current = { provider: preset.id, key: k }
+        }
+        takeKey(preset.id, k, keep)
+        model = providerFor(preset, { key: k || undefined, model: pick.model.trim() || undefined })
+        if (settings && kept && remember) await rememberChoice(settings, kept, k)
       }
     } catch (err) {
-      setNote((err as Error).message)
+      refused(err)
       return
     }
     setNote('')
@@ -503,19 +565,34 @@ export default function AskPanel(p: AskPanelProps) {
                 autoComplete="off"
                 spellCheck={false}
                 value={key}
-                placeholder={`${preset.name} key`}
+                placeholder={keyKept ? 'Kept for your account' : `${preset.name} key`}
                 onChange={(e) => setKey(e.target.value)}
               />
-              <label>
-                <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep for this tab
-              </label>
+              {settings && kept ? (
+                <label>
+                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember
+                  it for my account
+                </label>
+              ) : null}
+              {!(settings && kept && remember) && (
+                <label>
+                  <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep for this tab
+                </label>
+              )}
               <button
                 type="button"
                 className="lm-btn lme-quiet"
                 onClick={() => {
                   forgetKey(preset.id)
+                  fetched.current = null
                   setKey('')
                   setKeep(false)
+                  if (!settings || !keyKept || !kept) return
+                  const forId = preset.id
+                  settings.remove({ key: forId }).then(() => {
+                    setKept((k) => k && { ...k, keys: k.keys.filter((x) => x !== forId) })
+                    setNote(`The ${preset.name} key is forgotten here and in your account.`)
+                  }, refused)
                 }}
               >
                 Forget
@@ -545,37 +622,12 @@ export default function AskPanel(p: AskPanelProps) {
                   {signing ? `Signing in with ${preset.name}…` : `Sign in with ${preset.name}`}
                 </button>
               )}
-              {p.vault && (
-                <span className="lme-ask-key">
-                  <label htmlFor={`${id}p`} className="lm-sr">
-                    Passphrase
-                  </label>
-                  <input
-                    id={`${id}p`}
-                    type="password"
-                    autoComplete="off"
-                    value={passphrase}
-                    placeholder="Passphrase"
-                    onChange={(e) => setPassphrase(e.target.value)}
-                  />
-                  <label htmlFor={`${id}a`} className="lm-sr">
-                    Passphrase again, to keep
-                  </label>
-                  <input
-                    id={`${id}a`}
-                    type="password"
-                    autoComplete="off"
-                    value={again}
-                    placeholder="Again, to keep"
-                    onChange={(e) => setAgain(e.target.value)}
-                  />
-                  <button type="button" className="lm-btn lme-quiet" onClick={() => void sealed('open')}>
-                    Open from {p.vault.where}
-                  </button>
-                  <button type="button" className="lm-btn lme-quiet" onClick={() => void sealed('keep')}>
-                    Keep sealed in {p.vault.where}
-                  </button>
-                </span>
+              {settings && kept && (
+                <p className="lme-hint">
+                  {remember
+                    ? `${settings.where[0]!.toUpperCase()}${settings.where.slice(1)} keeps your choice and key, encrypted, for your next visit and your other devices. Untick to keep the key in this page only.`
+                    : 'The key stays in this page, or this tab if you tick it.'}
+                </p>
               )}
             </div>
           )}

@@ -10,9 +10,9 @@ import {
   type CodeFont,
   type EditorLayout,
   type EmbedOptions,
-  type KeyVault,
   LoadmapEditor,
   type LoadmapEditorHandle,
+  type ModelSettings,
   TEMPLATES,
 } from '@loadmap/editor'
 import { Icon, isSaveKey, Menu, MenuItem } from '@loadmap/editor/internal'
@@ -32,6 +32,7 @@ import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { bridge } from './bridge'
 import AccountButton from './github/AccountButton'
+import { account } from './github/account'
 import { changedCount, changedText, changes } from './github/changes'
 import { allVersions, endingWith, type Version, versionsSince } from './github/commits'
 import type { Listing, Opened } from './github/load'
@@ -284,7 +285,7 @@ function Editor({ root }: { root: URL }) {
       reference: loadReference,
       data: bridge,
       signIn: { openrouter: () => import('./openrouter').then((m) => m.openRouterSignIn()) },
-      vault: VAULT,
+      settings: SETTINGS,
       confirmSend: (p: { name: string }) => {
         const o = repo.current?.origin
         if (!o?.private) return true
@@ -724,30 +725,19 @@ const loadReference = () =>
     }))
 
 /**
- * A model key kept sealed in the reader's own GitHub (a private repository, `loadmap-keys`), opened with their
- * passphrase: GitHub holds the sealed text alone. It needs the GitHub token the editor already asks for.
+ * The reader's model and keys, remembered by the site's Worker for a reader connected through the app. Its code loads
+ * only for such a reader: anyone else gets nothing to remember with, without a request.
  */
-const VAULT: KeyVault = {
-  where: 'your GitHub',
-  open: async (provider, passphrase) => {
-    const { gh, v } = await vaultReady()
-    const sealed = await v.loadSealed(gh, provider)
-    return sealed === undefined ? undefined : v.unseal(sealed, passphrase)
+const SETTINGS: ModelSettings = {
+  where: "this site's service",
+  load: async () => {
+    const a = account()
+    if (!a.login || a.via !== 'app') return null
+    return (await import('./github/settings')).settings.load()
   },
-  keep: async (provider, key, passphrase) => {
-    const { gh, v, signedIn } = await vaultReady()
-    // a sign-in's token reaches what the app is installed on: a refusal sends the reader to that page
-    const { installUrl, app } = await import('./github/account')
-    const o = { signedIn: signedIn(), app: app && installUrl(app) }
-    await v.saveSealed(gh, provider, await v.seal(key, passphrase), o)
-  },
-}
-
-/** The vault's code and the GitHub client, loaded on first use, with the token the editor already asks for. */
-async function vaultReady() {
-  const [{ gh, hasToken, signedIn }, v] = await Promise.all([import('./github/session'), import('./github/vault')])
-  if (!hasToken()) throw new Error('Connect to GitHub first (the button at the top): the key is kept there.')
-  return { gh, v, signedIn }
+  key: async (provider) => (await import('./github/settings')).settings.key(provider),
+  save: async (choice) => (await import('./github/settings')).settings.save(choice),
+  remove: async (what) => (await import('./github/settings')).settings.remove(what),
 }
 
 /** The private repositories whose files the reader said may go to a model, this page's session. */

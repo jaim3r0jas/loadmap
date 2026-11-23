@@ -1,5 +1,5 @@
 import type { ChatMessage, ExploreCall, Proposal } from '@loadmap/dsl/assist'
-import type { Connected } from './AskPanel'
+import type { Connected, KeptSettings } from './AskPanel'
 
 /** A turn of the conversation as the panel draws it. */
 export interface Turn {
@@ -16,7 +16,7 @@ export interface Turn {
 export interface AskMemory {
   turns: Turn[]
   note: string
-  /** Where a vault's refusal sends the reader, with the note they belong to: any other note drops them. */
+  /** Where a refusal from the page sends the reader, with the note they belong to: any other note drops them. */
   ways?: { note: string; links: readonly { href: string; label: string }[] }
   request: string
   proposal: Proposal | null
@@ -36,6 +36,12 @@ export interface AskMemory {
   looks: ExploreCall[] | null
   /** Rounds of looks since the reader last asked: the model must answer after a few. */
   rounds: number
+  /** What the page keeps for the reader, as last read (null: nothing can be kept now). */
+  kept?: KeptSettings | null
+  /** "Remember it for my account". */
+  remember: boolean
+  /** The key the page gave back, for this page: asked of it once. */
+  fetched?: { provider: string; key: string } | null
 }
 
 export const askMemory = (): AskMemory => ({
@@ -52,4 +58,5 @@ export const askMemory = (): AskMemory => ({
   allowed: false,
   looks: null,
   rounds: 0,
+  remember: true,
 })

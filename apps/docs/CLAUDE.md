@@ -49,7 +49,8 @@ highlighter, whose workspace imports the default loader hands to Node as TypeScr
 The editor opens GitHub repositories (`?repo=owner/name&ref=…&path=…`, New → Open from GitHub): `site/islands/github/`,
 loaded only on that menu or address, talks to `api.github.com` and `raw.githubusercontent.com` and nothing else
 (`api.ts`), pins the commit a ref names, and reads the model and what it reaches through `imports()` within the
-definition's limits (`load.ts`); `github/vault.ts` keeps the Ask panel's sealed key in a private repository there.
+definition's limits (`load.ts`); `github/settings.ts` keeps the Ask panel's model and key with the site's Worker (`apps/github-auth`, `/settings`)
+for a reader connected through the app.
 `site/islands/openrouter.ts`, loaded only on its button, talks to `openrouter.ai` alone (the Ask panel's sign-in);
 `site/islands/bridge.ts` to `localhost:7788` (`loadmap bridge`). A repository is untrusted input: its paths go through
 `cleanPath`. A token never goes into an address, a share link or localStorage. Tests answer from `test/fake-github.ts`

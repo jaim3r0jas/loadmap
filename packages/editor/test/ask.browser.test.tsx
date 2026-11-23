@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { type EditorData, type KeyVault, LoadmapEditor, type LoadmapEditorHandle } from '../src'
+import { type EditorData, LoadmapEditor, type LoadmapEditorHandle, type ModelSettings } from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -222,33 +222,106 @@ describe('the Ask panel', () => {
     await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('1 of 1 measures read')
   })
 
-  it('gets a key by signing in, keeps it sealed with a passphrase, and opens it again', async () => {
+  it('uses the model and key the page remembers for the reader, and remembers a new key when asked to', async () => {
     await page.viewport(1440, 900)
     const host = document.createElement('div')
     host.style.cssText = 'width: 1440px; height: 760px'
     document.body.appendChild(host)
-    const kept = new Map<string, { key: string; passphrase: string }>()
-    let refuse = true
-    const vault: KeyVault = {
-      where: 'a test vault',
-      keep: async (provider, key, passphrase) => {
-        if (refuse) {
-          refuse = false
-          throw Object.assign(new Error('Make the place first.'), {
+    // what a page keeps for the reader: never handed out but for a question
+    const store = {
+      choice: { provider: 'openrouter', model: 'some/model' },
+      keys: new Map([['openrouter', 'sk-or-kept-0001']]),
+    }
+    const calls: string[] = []
+    let refuse = false
+    const settings: ModelSettings = {
+      where: 'a test service',
+      load: async () => ({ choice: store.choice, keys: [...store.keys.keys()] }),
+      key: async (provider) => {
+        calls.push(`key ${provider}`)
+        return store.keys.get(provider)
+      },
+      save: async (c) => {
+        calls.push(`save ${c.provider} ${c.model} ${c.key ?? '-'}`)
+        store.choice = { provider: c.provider, model: c.model }
+        if (c.key) store.keys.set(c.provider, c.key)
+      },
+      remove: async (what) => {
+        if (refuse)
+          throw Object.assign(new Error('Connect again first.'), {
             // an address that is not https is never a link
             links: [
-              { href: 'https://example.com/new', label: 'Make it there' },
+              { href: 'https://example.com/connect', label: 'Connect there' },
               { href: 'javascript:void 0', label: 'Not this' },
             ],
           })
-        }
-        kept.set(provider, { key, passphrase })
+        calls.push(`remove ${JSON.stringify(what)}`)
+        if (what !== 'all') store.keys.delete(what.key)
       },
-      open: async (provider, passphrase) => {
-        const k = kept.get(provider)
-        if (k && k.passphrase !== passphrase) throw new Error('That passphrase does not open the key.')
-        return k?.key
-      },
+    }
+    // the provider answers in words, streamed; what it was sent with is kept
+    const sent: string[] = []
+    const real = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).startsWith('https://openrouter.ai/')) return real(input, init)
+      sent.push(new Headers(init?.headers).get('Authorization') ?? '')
+      const body = `data: ${JSON.stringify({ choices: [{ delta: { content: 'Words alone.' } }] })}\n\ndata: [DONE]\n\n`
+      return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } })
+    }) as typeof fetch
+    try {
+      root = createRoot(host)
+      root.render(<LoadmapEditor fill initial={checkout} assist={{ reference: '# the reference', settings }} />)
+      await userEvent.click(page.getByRole('button', { name: 'Ask', exact: true }))
+      // the kept choice is back, the key named as kept and not shown
+      await expect.element(page.getByLabelText('Model')).toHaveValue('some/model')
+      const key = page.getByLabelText('OpenRouter key')
+      await expect.element(key).toHaveAttribute('placeholder', 'Kept for your account')
+      await expect.element(key).toHaveValue('')
+      await expect.element(page.getByLabelText('Remember it for my account')).toBeChecked()
+      expect(document.querySelector('.lme-ask')?.textContent).toContain('A test service keeps your choice and key')
+      expect(calls).toEqual([])
+
+      // the kept key comes for the question, once, and goes to the provider; nothing new to remember
+      await ask('What runs through it?')
+      await expect.poll(() => sent).toEqual(['Bearer sk-or-kept-0001'])
+      await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('Words alone.')
+      await ask('And then?')
+      await expect.poll(() => sent.length).toBe(2)
+      expect(calls).toEqual(['key openrouter'])
+
+      // a key the reader gives, with the box ticked, is remembered with the choice
+      await userEvent.fill(key, 'sk-or-new-0002')
+      await ask('Once more.')
+      await expect.poll(() => sent.at(-1)).toBe('Bearer sk-or-new-0002')
+      await expect.poll(() => calls.at(-1)).toBe('save openrouter some/model sk-or-new-0002')
+
+      // Forget forgets it in the page and the account; a refusal comes with where to go, https only
+      refuse = true
+      await userEvent.click(page.getByRole('button', { name: 'Forget' }))
+      const way = page.getByRole('link', { name: 'Connect there' })
+      await expect.element(way).toHaveAttribute('href', 'https://example.com/connect')
+      expect(document.querySelector('.lme-ask')?.textContent).not.toContain('Not this')
+      refuse = false
+      await userEvent.click(page.getByRole('button', { name: 'Forget' }))
+      await expect.poll(() => calls.at(-1)).toBe('remove {"key":"openrouter"}')
+      await expect.element(key).toHaveAttribute('placeholder', 'OpenRouter key')
+    } finally {
+      globalThis.fetch = real
+    }
+  })
+
+  it('gets a key by signing in, and keeps it in the page without a place to remember it', async () => {
+    await page.viewport(1440, 900)
+    const host = document.createElement('div')
+    host.style.cssText = 'width: 1440px; height: 760px'
+    document.body.appendChild(host)
+    // the page has nowhere to keep it now: the reader is not connected
+    const settings: ModelSettings = {
+      where: 'a test service',
+      load: async () => null,
+      key: async () => undefined,
+      save: async () => {},
+      remove: async () => {},
     }
     root = createRoot(host)
     root.render(
@@ -259,7 +332,7 @@ describe('the Ask panel', () => {
           reference: '# the reference',
           providers: ['openrouter'],
           signIn: { openrouter: async () => 'sk-or-v1-made' },
-          vault,
+          settings,
         }}
       />,
     )
@@ -267,39 +340,9 @@ describe('the Ask panel', () => {
     const key = page.getByLabelText('OpenRouter key')
     await userEvent.click(page.getByRole('button', { name: 'Sign in with OpenRouter' }))
     await expect.element(key).toHaveValue('sk-or-v1-made')
-    const passphrase = page.getByLabelText('Passphrase')
-    // a short passphrase is all that would guard the key: refused
-    await userEvent.fill(passphrase, 'short')
-    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
-    await expect.poll(() => document.querySelector('.lme-ask')?.textContent ?? '').toContain('12 characters at least')
-    expect(kept.size).toBe(0)
-    await userEvent.fill(passphrase, 'a long passphrase here')
-    // a typo would seal it with a passphrase nobody knows: the same twice, or nothing is kept
-    await userEvent.fill(page.getByLabelText('Passphrase again, to keep'), 'a long passphrase hera')
-    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
-    await expect
-      .poll(() => document.querySelector('.lme-ask')?.textContent ?? '')
-      .toContain('Type the passphrase again')
-    expect(kept.size).toBe(0)
-    await userEvent.fill(page.getByLabelText('Passphrase again, to keep'), 'a long passphrase here')
-    // a vault's refusal comes with where to go for it; the passphrase stays for the next press
-    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
-    const way = page.getByRole('link', { name: 'Make it there' })
-    await expect.element(way).toHaveAttribute('href', 'https://example.com/new')
-    await expect.element(way).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(document.querySelector('.lme-ask')?.textContent).toContain('Make the place first.')
-    expect(document.querySelector('.lme-ask')?.textContent).not.toContain('Not this')
-    expect(kept.size).toBe(0)
-    await userEvent.click(page.getByRole('button', { name: 'Keep sealed in a test vault' }))
-    await expect.poll(() => kept.get('openrouter')?.key).toBe('sk-or-v1-made')
-    // the note that follows carries no link
-    await expect.element(way).not.toBeInTheDocument()
-    // the passphrase is never kept in the field
-    await expect.element(passphrase).toHaveValue('')
+    await expect.element(page.getByLabelText('Remember it for my account')).not.toBeInTheDocument()
+    await expect.element(page.getByLabelText('Keep for this tab')).toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: 'Forget' }))
     await expect.element(key).toHaveValue('')
-    await userEvent.fill(passphrase, 'a long passphrase here')
-    await userEvent.click(page.getByRole('button', { name: 'Open from a test vault' }))
-    await expect.element(key).toHaveValue('sk-or-v1-made')
   })
 })

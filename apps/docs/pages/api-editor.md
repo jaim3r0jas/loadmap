@@ -104,12 +104,14 @@ leaves it. The page's Content-Security-Policy must allow the providers' origins
 (`PROVIDER_ORIGINS` of `@loadmap/dsl/assist`); the docs' editor lists them, with Ollama's and LM Studio's local ports.
 
 `assist.signIn` offers a way to get a key without pasting one, by provider (`{ openrouter: () => Promise<key> }`:
-the docs' editor signs in with OpenRouter in a popup, PKCE, no server of its own). `assist.vault` (a `KeyVault`:
-`where`, `open(provider, passphrase)`, `keep(provider, key, passphrase)`) lets the reader keep a key sealed with a
-passphrase of 12 characters or more and open it on another device; the docs keep it in a private repository of the
-reader's GitHub (`loadmap-keys`), sealed in the page (PBKDF2, then AES-GCM), so GitHub holds the sealed text alone.
-An error `open` or `keep` throws is shown by its message; `links` on it (`{ href, label }[]`, https addresses) follow
-the message, for what the reader has to do elsewhere first.
+the docs' editor signs in with OpenRouter in a popup, PKCE, no server of its own). `assist.settings` (a
+`ModelSettings`: `where`, `load()`, `key(provider)`, `save({ provider, model, key? })`, `remove({ key } | 'all')`)
+remembers the reader's choice of model and their keys for them, so a return or another device finds them set. The
+panel reads `load()` as it opens (a `KeptSettings`: the choice, and the providers with a key kept; `null` when nothing
+can be kept now), asks `key(provider)` only when a question needs the key, and saves a choice or a new key when the
+reader asks with **Remember it for my account** ticked. The docs keep them with the site's service for a reader
+connected to GitHub. An error any of them throws is shown by its message; `links` on it (`{ href, label }[]`, https
+addresses) follow the message, for what the reader has to do elsewhere first.
 
 `assist.data` (an `EditorData`) gives the panel the reader's metrics. Nothing is asked of it before the reader presses
 **Connect** (`connect(code?)` names the stores to explore and to measure from; with `code`, the panel asks for one

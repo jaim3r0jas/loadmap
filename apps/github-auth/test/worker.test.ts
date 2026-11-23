@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { secretBytes, unseal } from '../seal'
-import { type Env, handle, refreshText, type Session } from '../worker'
+import { type Env, handle, refreshText, type Session, settingsText } from '../worker'
+import { fakeD1 } from './fake-d1'
 
 const SITE = 'https://example.github.io'
 const ENV: Env = {
@@ -165,7 +166,7 @@ describe('coming back without a click', () => {
       'loadmap-github-auth',
     ])
     const s = await unseal<Session>(secretBytes(SEALED.SEAL_KEY)!, 'session', body.session)
-    expect(s).toEqual({ r: 'ghr_first', u: 42, k: key.device })
+    expect(s).toEqual({ r: 'ghr_first', u: 42, k: key.device, t: NOW })
   })
 
   it('hands back no session without the secret, or without a browser key', async () => {
@@ -201,7 +202,7 @@ describe('coming back without a click', () => {
       },
     ])
     const s = await unseal<Session>(secretBytes(SEALED.SEAL_KEY)!, 'session', got.session)
-    expect(s).toEqual({ r: 'ghr_next', u: 42, k: key.device })
+    expect(s).toEqual({ r: 'ghr_next', u: 42, k: key.device, t: NOW + 61_000 })
   })
 
   it('refuses a session another browser signs, a changed session, or one sealed elsewhere', async () => {
@@ -293,5 +294,133 @@ describe('coming back without a click', () => {
     ])
     expect(c.headers.get('Authorization')).toBe(`Basic ${btoa(`${ENV.GITHUB_CLIENT_ID}:the-secret`)}`)
     expect((await handle(ask({ access_token: 'github_pat_x' }, { path: '/revoke' }), SEALED, gh.call)).status).toBe(400)
+  })
+})
+
+describe("the reader's settings", () => {
+  /** A Worker with the store, a reader signed in from this browser, and a way to ask it signed. */
+  async function reader(o: { now?: number } = {}) {
+    const d1 = fakeD1()
+    const env: Env = { ...SEALED, DB: d1.db }
+    const key = await browserKey()
+    const { body } = await signedIn(key)
+    const session = body.session!
+    const settings = async (request: unknown, p: { at?: number; by?: typeof key; now?: number } = {}) => {
+      const at = p.at ?? NOW
+      const text = JSON.stringify(request)
+      const res = await handle(
+        ask(
+          { session, at, sig: await (p.by ?? key).sign(settingsText(at, session, text)), request: text },
+          { path: '/settings' },
+        ),
+        env,
+        githubAll().call,
+        () => p.now ?? o.now ?? NOW,
+      )
+      return { status: res.status, body: res.status === 204 ? null : await res.json() }
+    }
+    return { d1, env, key, session, settings }
+  }
+
+  it('keeps the choice and the key sealed, hands back which keys it holds, and the key only when asked for it', async () => {
+    const r = await reader()
+    expect(await r.settings({ op: 'read' })).toEqual({ status: 200, body: { keys: [] } })
+    expect(
+      (await r.settings({ op: 'save', provider: 'openrouter', model: 'some/model', key: 'sk-or-v1-secret' })).status,
+    ).toBe(204)
+    expect(await r.settings({ op: 'read' })).toEqual({
+      status: 200,
+      body: { choice: { provider: 'openrouter', model: 'some/model' }, keys: ['openrouter'] },
+    })
+    expect(await r.settings({ op: 'key', provider: 'openrouter' })).toEqual({
+      status: 200,
+      body: { key: 'sk-or-v1-secret' },
+    })
+    // the table holds sealed text alone, filed under the reader's GitHub id
+    const rows = [...r.d1.settings.values()]
+    expect(rows.map((x) => [x.user, x.slot])).toEqual([
+      [42, 'key:openrouter'],
+      [42, 'default'],
+    ])
+    for (const x of rows) expect(x.box).not.toContain('sk-or')
+    // a row moved to another slot opens nothing
+    const k = r.d1.settings.get('42:key:openrouter')!
+    r.d1.settings.set('42:key:anthropic', { ...k, slot: 'key:anthropic' })
+    expect(await r.settings({ op: 'key', provider: 'anthropic' })).toEqual({ status: 200, body: {} })
+  })
+
+  it('forgets a key, then everything', async () => {
+    const r = await reader()
+    await r.settings({ op: 'save', provider: 'openrouter', model: 'm', key: 'sk-or-v1-secret' })
+    await r.settings({ op: 'save', provider: 'anthropic', model: 'claude-haiku-5-5', key: 'sk-ant-secret' })
+    expect((await r.settings({ op: 'remove', what: { key: 'openrouter' } })).status).toBe(204)
+    expect((await r.settings({ op: 'read' })).body).toMatchObject({ keys: ['anthropic'] })
+    expect((await r.settings({ op: 'remove', what: 'all' })).status).toBe(204)
+    expect(r.d1.settings.size).toBe(0)
+  })
+
+  it('answers only the browser the session is bound to, a session refreshed in the last 8 hours, a clock near ours', async () => {
+    const r = await reader()
+    const other = await browserKey()
+    expect((await r.settings({ op: 'read' }, { by: other })).status).toBe(401)
+    expect(await r.settings({ op: 'read' }, { now: NOW + 8 * 3600_000 + 1, at: NOW + 8 * 3600_000 + 1 })).toEqual({
+      status: 401,
+      body: { error: 'stale' },
+    })
+    expect((await r.settings({ op: 'read' }, { at: NOW - 600_000 })).body).toEqual({ error: 'clock', now: NOW })
+    // the request signed is the request read: another one under the same signature is refused
+    const text = JSON.stringify({ op: 'read' })
+    const res = await handle(
+      ask(
+        {
+          session: r.session,
+          at: NOW,
+          sig: await r.key.sign(settingsText(NOW, r.session, text)),
+          request: JSON.stringify({ op: 'remove', what: 'all' }),
+        },
+        { path: '/settings' },
+      ),
+      r.env,
+      githubAll().call,
+      () => NOW,
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('refuses what is no setting, and more than a reader may keep', async () => {
+    const r = await reader()
+    for (const bad of [
+      { op: 'save', provider: 'Open Router', model: 'm' },
+      { op: 'save', provider: 'openrouter', model: 'm', key: 'has spaces in it' },
+      { op: 'save', provider: 'openrouter', model: 'x'.repeat(201) },
+      { op: 'key', provider: '../x' },
+      { op: 'remove', what: { key: 'A B' } },
+      { op: 'drop' },
+    ])
+      expect((await r.settings(bad)).status).toBe(400)
+    for (let i = 0; i < 200; i++) await r.settings({ op: 'save', provider: 'openrouter', model: `m${i}` })
+    // the day's 200 writes are spent
+    expect(await r.settings({ op: 'save', provider: 'openrouter', model: 'one more' })).toEqual({
+      status: 429,
+      body: { error: 'busy' },
+    })
+  })
+
+  it('says it is not set up without the database or the secret', async () => {
+    const r = await reader()
+    const at = NOW
+    const text = JSON.stringify({ op: 'read' })
+    for (const env of [SEALED, { ...ENV, DB: r.d1.db }]) {
+      const res = await handle(
+        ask(
+          { session: r.session, at, sig: await r.key.sign(settingsText(at, r.session, text)), request: text },
+          { path: '/settings' },
+        ),
+        env,
+        githubAll().call,
+        () => NOW,
+      )
+      expect(res.status).toBe(501)
+    }
   })
 })
