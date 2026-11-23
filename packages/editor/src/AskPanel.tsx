@@ -242,48 +242,64 @@ export default function AskPanel(p: AskPanelProps) {
   }
   // what the page keeps, read as the panel opens: the reader's last choice comes back unless this tab chose
   const settings = p.settings
-  /** The repository open as the panel opened: it may have a model and key of its own. */
-  const [repository] = useState(() => settings?.repository?.())
+  /** The repository open now: it may have a model and key of its own. */
+  const repository = settings?.repository?.()
+  const repoId = repository?.id
+  // the panel's memory is the page's: what it held for another repository (or none) starts again from the default
+  const same = m.repoId === repoId
   /** What is edited and in force: the reader's default, or the open repository's own. */
-  const [scope, setScope] = useState<'default' | 'repo'>(m.scope ?? 'default')
+  const [scope, setScope] = useState<'default' | 'repo'>(same ? (m.scope ?? 'default') : 'default')
   /** In the repository's scope: it has a key of its own, rather than the reader's key for the provider. */
-  const [ownKey, setOwnKey] = useState(m.ownKey ?? false)
+  const [ownKey, setOwnKey] = useState(same ? (m.ownKey ?? false) : false)
   /** Folded to its one line: once set, until the reader opens it or changes something. */
   const [folded, setFolded] = useState(m.folded ?? true)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: read once as the panel opens, with what the tab held then
+  /**
+   * A provider and model to show, with that provider's own key in the field (or none, for a repository's own key,
+   * which is never in the field): never another provider's key. False when this panel does not offer the provider.
+   */
+  const choose = (c: { provider: string; model: string }, o: { ownKey?: boolean } = {}) => {
+    const offered = list.some((x) => x.id === c.provider)
+    if (offered) setPick(c)
+    const own = o.ownKey ? undefined : readKey(offered ? c.provider : preset.id)
+    setKey(own?.key ?? '')
+    setKeep(own?.kept ?? false)
+    return offered
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read as the panel opens, and again for another repository
   useEffect(() => {
     if (!settings) return
+    m.repoId = repoId
+    if (!same) {
+      setKept(undefined)
+      setScope('default')
+      setOwnKey(false)
+    }
     let gone = false
-    settings.load(repository?.id).then(
+    settings.load(repoId).then(
       (k) => {
         if (gone) return
         setKept(k)
+        if (touched.current) return
         // the open repository's own choice wins, unless the reader chose meanwhile
-        const r = repository && k?.repo
-        if (r && !touched.current && list.some((x) => x.id === r.provider)) {
+        const r = repoId ? k?.repo : undefined
+        if (r && list.some((x) => x.id === r.provider)) {
           setScope('repo')
           setOwnKey(r.ownKey)
-          setPick({ provider: r.provider, model: r.model })
-          const own = readKey(r.provider)
-          setKey(r.ownKey ? '' : (own?.key ?? ''))
-          setKeep(r.ownKey ? false : (own?.kept ?? false))
+          choose(r, { ownKey: r.ownKey })
           return
         }
+        setScope('default')
+        setOwnKey(false)
         const c = k?.choice
-        // only while the reader has touched nothing: a choice made meanwhile is theirs
-        if (!c || chosenHere || touched.current || !list.some((x) => x.id === c.provider)) return
-        setPick(c)
-        // the provider's own key, as the select does: never another provider's in the field
-        const own = readKey(c.provider)
-        setKey(own?.key ?? '')
-        setKeep(own?.kept ?? false)
+        // a choice this tab made stays
+        if (c && !chosenHere) choose(c)
       },
       () => !gone && setKept(null),
     )
     return () => {
       gone = true
     }
-  }, [settings])
+  }, [settings, repoId])
   /** The reader changed the provider, the model or the key since the panel opened. */
   const touched = useRef(false)
   const inRepo = scope === 'repo' && !!repository
@@ -351,20 +367,21 @@ export default function AskPanel(p: AskPanelProps) {
    * Keeps the choice, and a key the reader gave (not the one the page gave back), when they changed: the default's, or
    * the open repository's own.
    */
-  const rememberChoice = async (st: ModelSettings, had: KeptSettings, k: string) => {
+  const rememberChoice = async (st: ModelSettings, kept0: KeptSettings, k: string) => {
+    let had = kept0
     const model = pick.model.trim()
-    const fresh =
-      !preset.local &&
-      !!k &&
-      !(fetched.current?.provider === preset.id && fetched.current.key === k && fetched.current.repo === keyRepo)
+    const f = fetched.current
+    // a key the page gave back is not new; one typed for the repository is, until it is kept
+    const fresh = !preset.local && !!k && !(f?.provider === preset.id && f.key === k && f.repo === keyRepo && !f.typed)
     try {
       if (inRepo) {
         const r = had.repo
         const same = r?.provider === preset.id && r.model === model && r.ownKey === ownKey
-        // a key typed here is the repository's own: without one of its own it uses the reader's, kept or not
-        if (same && !(ownKey && fresh)) return
-        await st.save({ provider: preset.id, model, repo: repository.id, ownKey, ...(ownKey && fresh && { key: k }) })
-        if (ownKey && fresh) fetched.current = { provider: preset.id, key: k, repo: repository.id }
+        if (same && !fresh) return
+        // a key typed here is the repository's own with "A different key", else the reader's for the provider
+        await st.save({ provider: preset.id, model, repo: repository.id, ownKey, ...(fresh && { key: k }) })
+        if (fresh) fetched.current = { provider: preset.id, key: k, ...(ownKey && { repo: repository.id }) }
+        if (fresh && !ownKey && !had.keys.includes(preset.id)) had = { ...had, keys: [...had.keys, preset.id] }
         setKept({ ...had, repo: { provider: preset.id, model, ownKey: ownKey && (fresh || !!r?.ownKey) } })
         return
       }
@@ -390,9 +407,7 @@ export default function AskPanel(p: AskPanelProps) {
       setScope('default')
       setOwnKey(false)
       setKept((k) => k && { ...k, repo: undefined })
-      const c = kept?.choice
-      if (c && list.some((x) => x.id === c.provider)) setPick(c)
-      setKey(readKey(c?.provider ?? preset.id)?.key ?? '')
+      choose(kept?.choice ?? pick)
       setNote(`${repository.name} uses your default now.`)
     }, refused)
   }
@@ -443,7 +458,13 @@ export default function AskPanel(p: AskPanelProps) {
           fetched.current = { provider: preset.id, key: k, repo: keyRepo }
           m.fetched = fetched.current
         }
-        if (given) takeKey(preset.id, k, keep && !(settings && kept && remember))
+        // a repository's own key is never the reader's key for the provider: it stays in the panel's memory alone
+        if (given && keyRepo) {
+          const f = fetched.current
+          if (!(f?.provider === preset.id && f.repo === keyRepo && f.key === k))
+            fetched.current = { provider: preset.id, key: k, repo: keyRepo, typed: true }
+          m.fetched = fetched.current
+        } else if (given) takeKey(preset.id, k, keep && !(settings && kept && remember))
         model = providerFor(preset, { key: k || undefined, model: pick.model.trim() || undefined })
         if (settings && kept && remember) {
           const st = settings
@@ -655,8 +676,8 @@ export default function AskPanel(p: AskPanelProps) {
                   // the repository's own stays kept until "Use your default here"
                   touch()
                   setScope('default')
-                  const c = kept.choice
-                  if (c && list.some((x) => x.id === c.provider)) setPick(c)
+                  setOwnKey(false)
+                  choose(kept.choice ?? pick)
                 }}
               >
                 Your default
@@ -671,7 +692,7 @@ export default function AskPanel(p: AskPanelProps) {
                   setScope('repo')
                   const r = kept.repo
                   setOwnKey(r?.ownKey ?? false)
-                  if (r && list.some((x) => x.id === r.provider)) setPick({ provider: r.provider, model: r.model })
+                  choose(r ?? pick, { ownKey: r?.ownKey })
                 }}
               >
                 {repository.name}
@@ -685,10 +706,7 @@ export default function AskPanel(p: AskPanelProps) {
               onChange={(e) => {
                 const next = list.find((x) => x.id === e.target.value)!
                 touch()
-                setPick({ provider: next.id, model: next.model ?? '' })
-                const k = readKey(next.id)
-                setKey(k?.key ?? '')
-                setKeep(k?.kept ?? false)
+                choose({ provider: next.id, model: next.model ?? '' }, { ownKey: inRepo && ownKey })
               }}
             >
               {list.map((x) => (
@@ -720,7 +738,7 @@ export default function AskPanel(p: AskPanelProps) {
                   onChange={() => {
                     touch()
                     setOwnKey(false)
-                    setKey(readKey(preset.id)?.key ?? '')
+                    choose(pick)
                   }}
                 />{' '}
                 Your {preset.name} key
@@ -733,7 +751,7 @@ export default function AskPanel(p: AskPanelProps) {
                   onChange={() => {
                     touch()
                     setOwnKey(true)
-                    setKey('')
+                    choose(pick, { ownKey: true })
                   }}
                 />{' '}
                 A different key for this repository

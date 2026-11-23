@@ -292,9 +292,11 @@ async function settings(body: Body, env: Env, secret: Uint8Array | undefined, no
   }
   if (r.op === 'key') {
     if (!provider) return answer(400, { error: 'bad_request' })
-    // the repository's own key for its own provider, else the one kept for the provider
-    const o = repo ? await own(repo) : undefined
-    if (o?.provider === provider && typeof o.key === 'string') return answer(200, { key: o.key })
+    // with a repository: its own key for its own provider, or none (the page asks so only for a key of its own)
+    if (repo) {
+      const o = await own(repo)
+      return answer(200, o?.provider === provider && typeof o.key === 'string' ? { key: o.key } : {})
+    }
     const k = await readOne<{ key?: unknown }>(db, secret, user, `key:${provider}`)
     return answer(200, typeof k?.key === 'string' ? { key: k.key } : {})
   }
@@ -308,7 +310,12 @@ async function settings(body: Body, env: Env, secret: Uint8Array | undefined, no
       // a key of its own: the one given, or the one it had for the same provider; else the default's
       const had = r.ownKey === true && key === undefined ? await own(repo) : undefined
       const mine = key ?? (r.ownKey === true && had?.provider === provider ? had.key : undefined)
-      why = await write(
+      // a key given for a repository that uses the reader's: it is the reader's key for the provider
+      why =
+        r.ownKey !== true && key !== undefined
+          ? await write(db, secret, user, `key:${provider}`, { key }, t)
+          : undefined
+      why ||= await write(
         db,
         secret,
         user,

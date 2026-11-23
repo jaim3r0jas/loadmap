@@ -373,21 +373,27 @@ describe("the reader's settings", () => {
     expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({
       key: 'sk-or-repo-0007',
     })
-    // another repository, or none, gets the reader's
-    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '8' })).body).toEqual({
-      key: 'sk-or-default-01',
-    })
+    // asked for another repository's own, there is none; without a repository, the reader's
+    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '8' })).body).toEqual({})
+    expect((await r.settings({ op: 'key', provider: 'openrouter' })).body).toEqual({ key: 'sk-or-default-01' })
     expect((await r.settings({ op: 'read', repo: '8' })).body).not.toHaveProperty('repo')
     // a new model keeps the key it had; without a key of its own it uses the reader's
     await r.settings({ op: 'save', repo: '7', provider: 'openrouter', model: 'repo/other', ownKey: true })
     expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({
       key: 'sk-or-repo-0007',
     })
-    await r.settings({ op: 'save', repo: '7', provider: 'openrouter', model: 'repo/other', ownKey: false })
-    expect((await r.settings({ op: 'read', repo: '7' })).body).toMatchObject({ repo: { ownKey: false } })
-    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({
-      key: 'sk-or-default-01',
+    // using the reader's key: a key given with it is the reader's for the provider
+    await r.settings({
+      op: 'save',
+      repo: '7',
+      provider: 'openrouter',
+      model: 'repo/other',
+      ownKey: false,
+      key: 'sk-or-default-02',
     })
+    expect((await r.settings({ op: 'read', repo: '7' })).body).toMatchObject({ repo: { ownKey: false } })
+    expect((await r.settings({ op: 'key', provider: 'openrouter', repo: '7' })).body).toEqual({})
+    expect((await r.settings({ op: 'key', provider: 'openrouter' })).body).toEqual({ key: 'sk-or-default-02' })
     // the reader's default stays as it was throughout
     expect((await r.settings({ op: 'read' })).body).toMatchObject({ choice: { model: 'default/model' } })
     // back to the default
