@@ -1,0 +1,13 @@
+// The Worker behind Connect to GitHub (README.md). From the repository's root:
+// npx wrangler deploy --config apps/github-auth/wrangler.jsonc
+// Its two secrets (GITHUB_CLIENT_SECRET, SEAL_KEY) are set with `wrangler secret put` and never written here.
+{
+  "name": "loadmap-github-auth",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-01",
+  "vars": {
+    // the GitHub App's client id: public, the page carries it too
+    "GITHUB_CLIENT_ID": "Iv23liI9uue1CFO5PRIJ",
+    "ALLOWED_ORIGINS": "https://jaim3r0jas.github.io,http://localhost:5173"
+  }
+}

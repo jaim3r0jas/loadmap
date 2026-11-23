@@ -1,8 +1,9 @@
 // The editor's one switch for GitHub, in its bar: "Connect to GitHub" (or "Reconnect <login>" when this browser
 // connected before), then the account and its menu: open a repository, a new one, the app's repositories on GitHub, a
-// pasted token instead, disconnect. Drawn from account.ts alone; the GitHub code loads on the first press.
+// pasted token instead, disconnect. Drawn from account.ts alone; the GitHub code loads on the first press, or at once
+// for a reader the app connected before: the session this browser keeps brings them back without a click.
 import { Icon, Menu, MenuItem } from '@loadmap/editor/internal'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Account, app as APP, account, installUrl, onAccount } from './account'
 
 /** A person: the account, connected or not. */
@@ -29,7 +30,7 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
 
   const connect = async () => {
     if (!APP) return onDialog({})
-    if (busy) return
+    if (busy || resuming) return
     setBusy(true)
     // the popup opens within the press, empty: loading the sign-in's code first would lose the click in some browsers
     const popup = window.open('', 'loadmap-github-sign-in', 'popup,width=520,height=720')
@@ -42,11 +43,33 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
       setBusy(false)
     }
   }
-  const disconnect = () => void import('./session').then((m) => m.disconnect())
+  const disconnect = () => void github().then((m) => m.disconnect())
   const reconnect = APP && now.via === 'app' && now.login
+  // back without a click, once each time the connection drops (a return, a token past its hours): the bar says it is
+  // connecting meanwhile, and offers the click when the session is gone
+  const [resuming, setResuming] = useState(false)
+  const tried = useRef(false)
+  useEffect(() => {
+    if (now.connected) {
+      tried.current = false
+      return
+    }
+    if (!reconnect || tried.current) return
+    tried.current = true
+    setResuming(true)
+    github()
+      .then((m) => m.resume())
+      .catch(() => false)
+      .finally(() => setResuming(false))
+  }, [now.connected, reconnect])
 
   if (!now.connected) {
-    const label = busy ? 'Connecting…' : reconnect ? `Reconnect ${now.login}` : 'Connect to GitHub'
+    const label =
+      busy || resuming
+        ? `Connecting${reconnect ? ` ${now.login}` : ''}…`
+        : reconnect
+          ? `Reconnect ${now.login}`
+          : 'Connect to GitHub'
     return (
       <>
         <style>{CSS}</style>
@@ -55,7 +78,7 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
           className="lm-btn lme-quiet app-account app-wide"
           aria-label={label}
           title={reconnect ? `Connect to GitHub again, as ${now.login}` : 'Open and save your repositories'}
-          aria-disabled={busy}
+          aria-disabled={busy || resuming}
           onPointerEnter={warm}
           onPointerDown={warm}
           onFocus={warm}
@@ -67,7 +90,7 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
         <button
           type="button"
           className="lme-item app-narrow"
-          aria-disabled={busy}
+          aria-disabled={busy || resuming}
           onPointerDown={warm}
           onFocus={warm}
           onClick={connect}

@@ -61,8 +61,21 @@ export const browserHost = (): SignInHost => ({
   fetch: (input, init) => fetch(input, init),
 })
 
-/** Signs in through the popup; the token, or an error whose message the reader can act on. */
-export async function signIn(app: SignIn, host: SignInHost = browserHost(), login?: string): Promise<string> {
+/** What a sign-in brings: the token, and with a browser key the session sealed to it, for coming back. */
+export interface SignedIn {
+  token: string
+  session?: string
+  /** The token's lifetime in seconds, when GitHub says. */
+  expiresIn?: number
+}
+
+/** Signs in through the popup; what it brings, or an error whose message the reader can act on. */
+export async function signInFor(
+  app: SignIn,
+  host: SignInHost = browserHost(),
+  o: { login?: string; device?: { x: string; y: string } } = {},
+): Promise<SignedIn> {
+  const login = o.login
   const state = random()
   const verifier = random()
   const popup = host.open(authorizeUrl(app, { state, challenge: await challengeOf(verifier), back: host.back, login }))
@@ -94,16 +107,35 @@ export async function signIn(app: SignIn, host: SignInHost = browserHost(), logi
     res = await host.fetch(`${app.exchange}/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: host.back }),
+      body: JSON.stringify({
+        code,
+        code_verifier: verifier,
+        redirect_uri: host.back,
+        ...(o.device && { device: o.device }),
+      }),
       credentials: 'omit',
     })
   } catch {
     throw new Error('The sign-in service could not be reached. Try again, or paste a token.')
   }
-  const got = (await res.json().catch(() => ({}))) as { access_token?: unknown; error_description?: unknown }
+  const got = (await res.json().catch(() => ({}))) as {
+    access_token?: unknown
+    session?: unknown
+    expires_in?: unknown
+    error_description?: unknown
+  }
   if (typeof got.access_token !== 'string')
     throw new Error(
       `GitHub did not sign you in${typeof got.error_description === 'string' ? `: ${got.error_description}` : '.'}`,
     )
-  return got.access_token
+  return {
+    token: got.access_token,
+    ...(typeof got.session === 'string' && { session: got.session }),
+    ...(typeof got.expires_in === 'number' && { expiresIn: got.expires_in }),
+  }
+}
+
+/** Signs in through the popup; the token alone. */
+export async function signIn(app: SignIn, host: SignInHost = browserHost(), login?: string): Promise<string> {
+  return (await signInFor(app, host, { login })).token
 }
