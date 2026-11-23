@@ -253,6 +253,7 @@ export class Studio {
               onPreview={this.preview}
               shows={o.shown === 'proposal' ? 'after' : o.shown === null ? 'before' : null}
               reference={o.assist.reference}
+              smallReference={o.assist.smallReference}
               providers={o.assist.providers}
               confirmSend={o.assist.confirmSend}
               model={o.assist.model}
@@ -260,6 +261,7 @@ export class Studio {
               data={o.assist.data}
               signIn={o.assist.signIn}
               settings={o.assist.settings}
+              conversations={o.assist.conversations}
               onMeasured={this.measured}
               functions={host.functions}
               selected={o.selected}

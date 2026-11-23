@@ -2,6 +2,7 @@ import type { Snapshot } from '@loadmap/core/measure'
 import { compile, type HostFunctions, type MeasureQuery } from '@loadmap/dsl'
 import {
   type AssistEvent,
+  type ChatMessage,
   createAssistant,
   diffLines,
   type ExploreCall,
@@ -40,6 +41,8 @@ export interface AskPanelProps {
   /** What the canvas draws: the files (before), the proposal (after), or something else (an older version). */
   shows?: 'before' | 'after' | null
   reference: string | (() => Promise<string>)
+  /** The short reference, for a model with a small window. */
+  smallReference?: string | (() => Promise<string>)
   /** The providers offered, by id; every one by default. */
   providers?: readonly string[]
   /** The box selected in the diagram: the question is about it first, unless the reader takes the chip off. */
@@ -60,6 +63,8 @@ export interface AskPanelProps {
   signIn?: Readonly<Record<string, () => Promise<string>>>
   /** Where the page remembers the reader's model and key for them. */
   settings?: ModelSettings
+  /** Where the page keeps the conversations across reloads. */
+  conversations?: ConversationStore
 }
 
 /**
@@ -97,6 +102,30 @@ export interface KeptSettings {
   keys: readonly string[]
   /** The repository asked about, when it has its own choice: whether it has a key of its own too. */
   repo?: { provider: string; model: string; ownKey: boolean }
+}
+
+/** A conversation as a page keeps it: what the panel draws and what the model is sent again; never a proposal. */
+export interface KeptConversation {
+  turns: readonly { role: 'user' | 'assistant'; text: string; event?: boolean }[]
+  thread: readonly ChatMessage[]
+}
+
+/** The conversations kept for one scope: the one drawn, and each by the box it is about ('' for the whole diagram). */
+export interface KeptConversations {
+  current: string
+  conversations: Readonly<Record<string, KeptConversation>>
+}
+
+/**
+ * Where a page keeps the Ask panel's conversations across reloads, by scope (the docs: a repository, or the draft;
+ * a private repository's for the tab only, the others in this browser). The panel reads them as it opens and writes
+ * them after each answer; at most 20 conversations of a scope, the newest, and never a proposal.
+ */
+export interface ConversationStore {
+  /** What the conversations are about now: another scope starts with its own. */
+  scope(): string
+  load(scope: string): Promise<KeptConversations | undefined>
+  save(scope: string, kept: KeptConversations): Promise<void>
 }
 
 /** What the reader's metrics hold, once connected: the stores the model may explore, and those measures read from. */
@@ -518,7 +547,13 @@ export default function AskPanel(p: AskPanelProps) {
     let ended = false
     m.asked = { request: drafting ? m.asked.request : words, box: about, model: model.model }
     const files = p.files()
-    const assistant = createAssistant({ model, reference: p.reference })
+    // a model on the reader's own computer has a small window: the short reference, the newest turns
+    const assistant = createAssistant({
+      model,
+      reference: p.reference,
+      ...(!p.model && preset.window && { window: preset.window }),
+      ...(p.smallReference && { smallReference: p.smallReference }),
+    })
     const control = new AbortController()
     stop.current = control
     let text = ''
@@ -534,6 +569,8 @@ export default function AskPanel(p: AskPanelProps) {
         if (ev.type === 'text') {
           text += ev.text
           setStreaming(text)
+        } else if (ev.type === 'trimmed') {
+          setNote('Earlier messages are left out for this model: its window is small.')
         } else if (ev.type === 'repair') {
           text = ''
           setStreaming('')
@@ -676,6 +713,63 @@ export default function AskPanel(p: AskPanelProps) {
     // nothing returned: Chromium's scrollIntoView now answers with a promise, which React would take for a clean-up
     end.current?.scrollIntoView?.({ block: 'nearest' })
   }, [turns, streaming, proposal])
+  // the conversations kept across reloads, by the page's scope (a repository, the draft): read as the panel opens
+  // when this page holds none for that scope yet, written after each change once no answer is coming
+  const store = p.conversations
+  const scopeNow = store?.scope()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read as the panel opens, and for another scope
+  useEffect(() => {
+    if (!store || scopeNow == null) return
+    const same = m.keptScope === scopeNow
+    m.keptScope = scopeNow
+    // another scope's conversations are not this one's: kept by the page already, they leave the panel
+    if (!same) {
+      m.threads = {}
+      switchTo('', true)
+    }
+    if (m.turns.length || Object.keys(m.threads).length) return
+    let gone = false
+    store.load(scopeNow).then(
+      (kept) => {
+        if (gone || !kept || m.turns.length || m.keptScope !== scopeNow) return
+        const back = (c: KeptConversation | undefined): Thread => ({
+          ...freshThread(),
+          turns: (c?.turns ?? []).map((t, n) => ({ n, role: t.role, text: t.text, ...(t.event && { event: true }) })),
+          thread: [...(c?.thread ?? [])],
+        })
+        const others: Record<string, Thread> = {}
+        for (const [k, c] of Object.entries(kept.conversations)) if (k !== kept.current) others[k] = back(c)
+        m.threads = others
+        const now = back(kept.conversations[kept.current])
+        m.thread = now.thread
+        m.turns = now.turns
+        m.current = kept.current
+        setTurns(now.turns)
+        setCurrent(kept.current)
+      },
+      () => {},
+    )
+    return () => {
+      gone = true
+    }
+  }, [store, scopeNow])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: written when what is kept changes, between answers
+  useEffect(() => {
+    if (!store || scopeNow == null || m.keptScope !== scopeNow || busy || streaming) return
+    const all: Record<string, Thread> = { ...m.threads, [current]: { ...snapshot(), turns } }
+    const conversations: Record<string, KeptConversation> = {}
+    // the conversation drawn first, then the others; at most 20, and none empty
+    for (const k of [current, ...Object.keys(m.threads).reverse()]) {
+      const c = all[k]
+      if (!c?.turns.length || Object.keys(conversations).length >= 20) continue
+      conversations[k] = {
+        turns: c.turns.map((t) => ({ role: t.role, text: t.text, ...(t.event && { event: true }) })),
+        thread: c.thread,
+      }
+    }
+    void store.save(scopeNow, { current, conversations }).catch(() => {})
+  }, [turns, current, busy, streaming])
+
   /** A line in the conversation for what became of a proposal. */
   const event = (text: string) => setTurns((t) => [...t, { n: t.length, role: 'assistant', text, event: true }])
 

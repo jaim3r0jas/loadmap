@@ -5,7 +5,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
-import { type EditorData, LoadmapEditor, type LoadmapEditorHandle, type ModelSettings } from '../src'
+import {
+  type ConversationStore,
+  type EditorData,
+  type KeptConversations,
+  LoadmapEditor,
+  type LoadmapEditorHandle,
+  type ModelSettings,
+} from '../src'
 
 let root: Root | null = null
 afterEach(() => {
@@ -468,5 +475,59 @@ describe('the Ask panel', () => {
     } finally {
       globalThis.fetch = real
     }
+  })
+
+  it('keeps the conversations across a reload, by the scope the page names, without a proposal', async () => {
+    await page.viewport(1440, 900)
+    const kept = new Map<string, KeptConversations>()
+    let scope = 'repo:7'
+    const conversations: ConversationStore = {
+      scope: () => scope,
+      load: async (s) => kept.get(s),
+      save: async (s, k) => void kept.set(s, structuredClone(k)),
+    }
+    const open = async (answers: string[]) => {
+      root?.unmount()
+      document.body.replaceChildren()
+      const host = document.createElement('div')
+      host.style.cssText = 'width: 1440px; height: 760px'
+      document.body.appendChild(host)
+      const ref = createRef<LoadmapEditorHandle>()
+      root = createRoot(host)
+      root.render(
+        <LoadmapEditor
+          ref={ref}
+          fill
+          initial={checkout}
+          assist={{ reference: '# the reference', model: recorded(answers), conversations }}
+        />,
+      )
+      await expect.poll(() => ref.current?.loadmap()).toBeTruthy()
+      await userEvent.click(page.getByRole('button', { name: 'Ask', exact: true }))
+    }
+    const thread = () => document.querySelector('.lme-ask-thread')?.textContent ?? ''
+
+    await open(['The **pool** runs out first.', ANSWER])
+    await ask('What runs out first?')
+    await expect.poll(thread, { timeout: 5000 }).toContain('runs out first.')
+    await ask('Add a scenario')
+    await expect.element(page.getByRole('region', { name: 'Proposal' }), { timeout: 5000 }).toBeVisible()
+    await expect.poll(() => kept.get('repo:7')?.conversations['']?.turns.length).toBe(4)
+    // what is kept: the turns and what the model is sent again, never the proposal
+    expect(JSON.stringify(kept.get('repo:7'))).not.toContain('"proposal"')
+    expect(kept.get('repo:7')!.conversations['']!.thread.length).toBeGreaterThan(0)
+
+    // a reload: a new page finds the conversation as it was, and goes on from it
+    await open(['And then the database.'])
+    await expect.poll(thread, { timeout: 5000 }).toContain('What runs out first?')
+    expect(document.querySelector('.lme-ask-msg[data-role="assistant"] strong')?.textContent).toBe('pool')
+    await ask('And then?')
+    await expect.poll(thread, { timeout: 5000 }).toContain('And then the database.')
+
+    // another scope has its own: nothing from this one
+    scope = 'draft'
+    await open([])
+    await new Promise((r) => setTimeout(r, 300))
+    expect(thread()).toBe('')
   })
 })

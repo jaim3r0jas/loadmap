@@ -83,7 +83,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { EditorData, ModelSettings } from './AskPanel'
+import type { ConversationStore, EditorData, ModelSettings } from './AskPanel'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
 import { Embed, type EmbedHandle, type EmbedOptions } from './Embed'
@@ -280,6 +280,11 @@ export interface LoadmapEditorProps {
 export interface EditorAssist {
   /** The language reference the model reads: its text, or a function that loads it once (the site's llms-full.txt). */
   reference: string | (() => Promise<string>)
+  /**
+   * The short reference (the site's llms-small.txt), read in place of the whole one for a model with a small window
+   * (one on the reader's own computer).
+   */
+  smallReference?: string | (() => Promise<string>)
   /** The providers offered, by id (`PROVIDERS` of `@loadmap/dsl/assist`); all of them by default. */
   providers?: readonly string[]
   /**
@@ -301,6 +306,8 @@ export interface EditorAssist {
    * service, for a reader connected to GitHub).
    */
   settings?: ModelSettings
+  /** Where the page keeps the Ask panel's conversations across reloads (the docs: in this browser, per repository). */
+  conversations?: ConversationStore
 }
 
 interface Compiled {

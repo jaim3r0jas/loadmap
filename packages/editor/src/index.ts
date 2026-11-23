@@ -1,4 +1,12 @@
-export type { Connected, EditorData, KeptSettings, ModelSettings } from './AskPanel'
+export type {
+  Connected,
+  ConversationStore,
+  EditorData,
+  KeptConversation,
+  KeptConversations,
+  KeptSettings,
+  ModelSettings,
+} from './AskPanel'
 export type { EmbedOptions } from './Embed'
 export { CODE_FONTS, type CodeFont } from './fonts'
 export type { Author, Branch, Commit, HistoryData, Trace } from './history'
