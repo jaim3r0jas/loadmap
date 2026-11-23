@@ -14,9 +14,10 @@ import {
 } from '@loadmap/dsl/assist'
 import { LOOKS } from '@loadmap/dsl/internal'
 import { type FormEvent, Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { AskMemory, Turn } from './AskMemory'
+import { type AskMemory, freshThread, type Thread, type Turn } from './AskMemory'
 import { applyFiles } from './apply'
 import { type Author, subject, type Trace } from './history'
+import { Markdown } from './Markdown'
 import { forgetKey, readKey, takeKey } from './modelKeys'
 import type { FileHost } from './reshape'
 
@@ -139,7 +140,23 @@ export const ASK_CSS = `
 .lme-ask-model > .lme-ask-row { grid-column: 1 / -1; }
 .lme-ask-line { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 4px 8px; border: 1px solid var(--lm-line); border-radius: 6px; overflow-wrap: anywhere; }
 .lme-ask-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.lme-ask-msg { padding: 6px 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lme-ask-msg { padding: 6px 8px; border-radius: 6px; overflow-wrap: anywhere; }
+.lme-ask-msg[data-role="user"] { white-space: pre-wrap; }
+.lme-ask-msg > :first-child { margin-top: 0; }
+.lme-ask-msg > :last-child { margin-bottom: 0; }
+.lme-ask-msg p, .lme-ask-msg ul, .lme-ask-msg ol, .lme-ask-msg blockquote, .lme-ask-msg pre, .lme-ask-msg .lme-md-table { margin: 0 0 6px; }
+.lme-ask-msg ul, .lme-ask-msg ol { padding-left: 1.2em; }
+.lme-ask-msg h4, .lme-ask-msg h5 { margin: 8px 0 4px; font-size: .9rem; }
+.lme-ask-msg blockquote { padding-left: 8px; border-left: 2px solid var(--lm-line); color: var(--lm-muted); }
+.lme-ask-msg code { font: .78rem var(--lm-mono); padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--lm-fg) 8%, transparent); }
+.lme-ask-msg pre { overflow: auto; padding: 6px 8px; border-radius: 5px; background: var(--lm-bg); border: 1px solid var(--lm-line); }
+.lme-ask-msg pre code { padding: 0; background: none; }
+.lme-ask-msg .lme-md-table { overflow: auto; }
+.lme-ask-msg table { border-collapse: collapse; font-size: .8rem; }
+.lme-ask-msg th, .lme-ask-msg td { border: 1px solid var(--lm-line); padding: 2px 6px; text-align: left; }
+.lme-ask-msg a { color: var(--lm-accent); }
+.lme-ask-event { margin: 0; color: var(--lm-muted); font-size: .76rem; text-align: center; }
+.lme-ask-threads select { font: inherit; color: var(--lm-fg); background: var(--lm-bg); border: 1px solid var(--lm-line); border-radius: 5px; padding: 2px 6px; }
 .lme-ask-msg[data-role="user"] { background: var(--lm-accent-soft); justify-self: end; max-width: 90%; }
 .lme-ask-msg[data-role="assistant"] { background: color-mix(in srgb, var(--lm-fg) 5%, transparent); }
 .lme-ask-card { border: 1px solid var(--lm-accent); border-radius: 8px; padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; overflow-wrap: anywhere; }
@@ -214,6 +231,10 @@ export default function AskPanel(p: AskPanelProps) {
   const [ways, setWays] = useState(m.ways)
   const [request, setRequest] = useState(m.request)
   const [scoped, setScoped] = useState(true)
+  /** The conversation drawn: '' for the whole diagram, else the box it is about. */
+  const [current, setCurrent] = useState(m.current)
+  /** An accepted proposal is being kept: the conversation cannot change under it. */
+  const [deciding, setDeciding] = useState(false)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
   /** What the page keeps for the reader (null: nothing can be kept now; undefined: not read yet). */
@@ -419,9 +440,11 @@ export default function AskPanel(p: AskPanelProps) {
    */
   const send = async (e?: FormEvent, said?: string, drafting = false, shown?: string) => {
     e?.preventDefault()
-    const about = drafting ? m.asked.box : box
+    // the conversation the question goes in: the selected box's while its chip is on, the whole diagram's when the
+    // reader took the chip off, else the one shown (a box's conversation goes on about its box)
+    const about = drafting ? m.asked.box : (box ?? (p.selected && !scoped ? null : current || null))
     const words = (said ?? request).trim()
-    if (!words || busy) return
+    if (!words || busy || deciding) return
     if (!p.model && !preset.local && !key.trim() && !keyKept) {
       setNote(`${preset.name} needs a key: paste one above.`)
       return
@@ -476,10 +499,14 @@ export default function AskPanel(p: AskPanelProps) {
       refused(err)
       return
     }
+    // now that it goes: in the conversation it is about
+    if (!drafting && (about ?? '') !== current) switchTo(about ?? '')
     setNote('')
     // after the note is cleared: a refusal to remember stays in view while the question goes on
     if (remembering) await remembering()
     if (said == null) setRequest('')
+    // a proposal left undecided is set aside by the new question, and the conversation says so
+    if (m.proposal && !drafting) event('Set aside: a new question came before a decision.')
     setProposal(null)
     setAdvice(false)
     setBusy(true)
@@ -607,10 +634,65 @@ export default function AskPanel(p: AskPanelProps) {
     }
   }
 
+  /** The conversation as it is now, to keep while another is drawn. */
+  const snapshot = (): Thread => ({
+    turns: m.turns,
+    thread: m.thread,
+    proposal: m.proposal,
+    usage: m.usage,
+    advice: m.advice,
+    asked: m.asked,
+    ops: m.ops,
+    used: m.used,
+    rounds: m.rounds,
+    looks: m.looks,
+  })
+  /** Draws another conversation, keeping this one: a box's, the whole diagram's, or a new one in this one's place. */
+  const switchTo = (to: string, fresh = false) => {
+    if (to === current && !fresh) return
+    if (to !== current) m.threads[current] = snapshot()
+    const next = fresh ? freshThread() : (m.threads[to] ?? freshThread())
+    delete m.threads[to]
+    m.thread = next.thread
+    m.asked = next.asked
+    m.ops = next.ops
+    m.used = next.used
+    m.rounds = next.rounds
+    m.turns = next.turns
+    m.proposal = next.proposal
+    m.current = to
+    setTurns(next.turns)
+    setProposal(next.proposal)
+    setUsage(next.usage)
+    setAdvice(next.advice)
+    setLooks(next.looks ?? null)
+    setStreaming('')
+    setCurrent(to)
+  }
+  // the newest of the conversation in view, as it streams
+  const end = useRef<HTMLDivElement>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on what grows the conversation
+  useEffect(() => {
+    // nothing returned: Chromium's scrollIntoView now answers with a promise, which React would take for a clean-up
+    end.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [turns, streaming, proposal])
+  /** A line in the conversation for what became of a proposal. */
+  const event = (text: string) => setTurns((t) => [...t, { n: t.length, role: 'assistant', text, event: true }])
+
   const accept = async () => {
     const chosen = proposal
-    if (!chosen) return
+    if (!chosen || deciding) return
     setProposal(null)
+    // the conversation stays the one shown until the change is kept: its line goes in it
+    setDeciding(true)
+    try {
+      await decide(chosen)
+    } finally {
+      setDeciding(false)
+    }
+  }
+
+  const decide = async (chosen: Proposal) => {
     // a proposal is a change of the files as they were asked about: never laid over text typed since
     const unchanged = () => {
       const now = p.files().files
@@ -634,7 +716,8 @@ export default function AskPanel(p: AskPanelProps) {
         notes: chosen.notes,
         ...(m.used && { usage: m.used }),
       })
-      setNote('Accepted: one undo step per file, and a version in the Timeline.')
+      setNote('')
+      event('Applied: one undo step per file, and a version in the Timeline.')
       // a measure the change adds is read at once, when the page can: the diagram shows what it measures
       if (!stores?.measure.length || !p.data?.pull) return
       const of = (f: { entry: string; files: Readonly<Record<string, string>> }) =>
@@ -915,27 +998,73 @@ export default function AskPanel(p: AskPanelProps) {
           )}
         </div>
       )}
+      {(current !== '' || Object.keys(m.threads).length > 0 || turns.length > 0) && (
+        <div className="lme-ask-row lme-ask-threads">
+          {/* a label of its own: one around the select would take the option shown into its name */}
+          <label htmlFor={`${id}c`} className="lm-sr">
+            Conversation
+          </label>
+          <select
+            id={`${id}c`}
+            value={current}
+            disabled={busy || deciding}
+            onChange={(e) => {
+              const to = e.target.value
+              switchTo(to)
+              // the chip follows: a box's conversation is about its box, the whole diagram's about none
+              setScoped(to !== '' && to === p.selected)
+            }}
+          >
+            {[...new Set(['', current, ...Object.keys(m.threads)])].map((k) => (
+              <option key={k} value={k}>
+                {k ? `About ${k}` : 'The whole diagram'}
+              </option>
+            ))}
+          </select>
+
+          {turns.length > 0 && (
+            <button
+              type="button"
+              className="lm-btn lme-quiet"
+              disabled={busy || deciding}
+              onClick={() => switchTo(current, true)}
+            >
+              New conversation
+            </button>
+          )}
+        </div>
+      )}
       <div className="lme-ask-thread" aria-live="polite">
-        {turns.map((t) => (
-          <div key={t.n} className="lme-ask-msg" data-role={t.role}>
-            {t.text}
-          </div>
-        ))}
+        {turns.map((t) =>
+          t.event ? (
+            <p key={t.n} className="lme-ask-event">
+              {t.text}
+            </p>
+          ) : (
+            <div key={t.n} className="lme-ask-msg" data-role={t.role}>
+              {t.role === 'assistant' ? <Markdown text={t.text} /> : t.text}
+            </div>
+          ),
+        )}
         {streaming && (
           <div className="lme-ask-msg" data-role="assistant">
-            {streaming}
+            <Markdown text={streaming} />
           </div>
         )}
+        {proposal && (
+          <ProposalCard
+            proposal={proposal}
+            shows={p.shows ?? null}
+            onBefore={(b) => p.onPreview(proposal, b)}
+            onAccept={() => void accept()}
+            onReject={() => {
+              setProposal(null)
+              event('Discarded.')
+            }}
+          />
+        )}
+        <div ref={end} />
       </div>
-      {proposal && (
-        <ProposalCard
-          proposal={proposal}
-          shows={p.shows ?? null}
-          onBefore={(b) => p.onPreview(proposal, b)}
-          onAccept={() => void accept()}
-          onReject={() => setProposal(null)}
-        />
-      )}
       {looks && !busy && (
         <section className="lme-ask-card" aria-label="Looks in your metrics">
           <p>The model asks to read your metrics, read only:</p>

@@ -60,6 +60,17 @@ model and its changes. **Reject** drops it. A proposal about text you changed si
 With a box selected, **Explain it**, **What runs through it**, **Is a flow missing?** and **Critique it** ask about
 it in one press. An answer in words offers **Draft this**, which asks for the change it advised.
 
+## A conversation
+
+The panel is a conversation: a follow-up goes with what was asked and answered before it, and the answer comes as it
+is written. Answers are drawn from their Markdown (lists, tables, code); the panel never runs what a model writes, never
+loads an image from an answer (its link is shown instead), and opens only `http` and `https` links. A proposal stays in
+the conversation where it came, and once decided a line says what became of it.
+
+The whole diagram has a conversation, and so does each box you ask about: a question with a box selected goes in that
+box's, which starts with nothing from the others. **Conversation** switches between them, and **New conversation**
+starts the one shown again, empty.
+
 ## The Timeline, and saving
 
 Every version of the files is kept as a git commit, as git writes one: what you keep, every accepted proposal, every

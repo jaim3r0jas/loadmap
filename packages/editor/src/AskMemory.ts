@@ -7,7 +7,35 @@ export interface Turn {
   n: number
   role: 'user' | 'assistant'
   text: string
+  /** A line the panel adds, not a message: a proposal applied or discarded. */
+  event?: boolean
 }
+
+/** One conversation: the whole diagram's, or a box's. What the panel draws, and what the model is sent again. */
+export interface Thread {
+  turns: Turn[]
+  thread: ChatMessage[]
+  proposal: Proposal | null
+  usage: string
+  advice: boolean
+  asked: { request: string; box: string | null; model: string }
+  ops: string[]
+  used?: { input: number; output: number; cached?: number }
+  rounds: number
+  /** The looks the model asked for, waiting for the reader's press. */
+  looks?: ExploreCall[] | null
+}
+
+export const freshThread = (): Thread => ({
+  turns: [],
+  thread: [],
+  proposal: null,
+  usage: '',
+  advice: false,
+  asked: { request: '', box: null, model: '' },
+  ops: [],
+  rounds: 0,
+})
 
 /**
  * The Ask panel's conversation, held by the studio: the canvas draws only the open panel, so the Ask panel is mounted
@@ -36,6 +64,10 @@ export interface AskMemory {
   looks: ExploreCall[] | null
   /** Rounds of looks since the reader last asked: the model must answer after a few. */
   rounds: number
+  /** The conversation drawn now: '' for the whole diagram, else the box it is about. */
+  current: string
+  /** The other conversations, by the box they are about ('' for the whole diagram). */
+  threads: Record<string, Thread>
   /** What the page keeps for the reader, as last read (null: nothing can be kept now). */
   kept?: KeptSettings | null
   /** "Remember it for my account". */
@@ -66,5 +98,7 @@ export const askMemory = (): AskMemory => ({
   allowed: false,
   looks: null,
   rounds: 0,
+  current: '',
+  threads: {},
   remember: true,
 })
