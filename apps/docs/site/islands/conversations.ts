@@ -57,22 +57,47 @@ export async function load(scope: string): Promise<KeptConversations | undefined
   return valid(await run('readonly', (s) => s.get(scope)))
 }
 
+/** The newest that fit: the conversations after the one drawn go first, then its oldest turns. */
+function fit(kept: KeptConversations): KeptConversations | undefined {
+  const conversations = { ...kept.conversations }
+  const size = () => JSON.stringify({ current: kept.current, conversations }).length
+  const others = Object.keys(conversations).filter((k) => k !== kept.current)
+  while (size() > MAX && others.length) delete conversations[others.pop()!]
+  const now = conversations[kept.current]
+  if (now && size() > MAX) {
+    const turns = [...now.turns]
+    const thread = [...now.thread]
+    // a question and its answer at a time, from the oldest
+    while (size() > MAX && (turns.length > 2 || thread.length > 2)) {
+      turns.splice(0, 2)
+      thread.splice(0, 2)
+      conversations[kept.current] = { turns, thread }
+    }
+  }
+  return size() > MAX ? undefined : { current: kept.current, conversations }
+}
+
 export async function save(scope: string, kept: KeptConversations): Promise<void> {
-  const text = JSON.stringify(kept)
-  if (text.length > MAX) return
+  const fits = fit(kept)
+  if (!fits) return
   if (inTab(scope)) {
     try {
-      sessionStorage.setItem(TAB + scope, text)
+      sessionStorage.setItem(TAB + scope, JSON.stringify(fits))
     } catch {
       // the tab's storage is full: the page keeps them until it closes
     }
     return
   }
-  await run('readwrite', (s) => s.put(JSON.parse(text), scope))
+  await run('readwrite', (s) => s.put(fits, scope))
 }
 
-/** Disconnect: every conversation this browser kept. */
+/** Disconnect: every conversation this browser kept, and this tab's. */
 export function forgetConversations(): Promise<void> {
+  try {
+    for (const k of Object.keys(sessionStorage)) if (k.startsWith(TAB)) sessionStorage.removeItem(k)
+  } catch {
+    // nothing kept in the tab
+  }
   return new Promise((resolve) => {
     try {
       const r = indexedDB.deleteDatabase(DB)

@@ -722,16 +722,23 @@ export default function AskPanel(p: AskPanelProps) {
     if (!store || scopeNow == null) return
     const same = m.keptScope === scopeNow
     m.keptScope = scopeNow
-    // another scope's conversations are not this one's: kept by the page already, they leave the panel
+    // another scope's conversations are not this one's: kept by the page already, they leave the panel, and an answer
+    // still coming for them stops
     if (!same) {
-      m.threads = {}
+      stop.current?.abort()
       switchTo('', true)
+      m.threads = {}
     }
-    if (m.turns.length || Object.keys(m.threads).length) return
+    if (m.turns.length || Object.keys(m.threads).length) {
+      m.keptLoaded = scopeNow
+      return
+    }
     let gone = false
     store.load(scopeNow).then(
       (kept) => {
-        if (gone || !kept || m.turns.length || m.keptScope !== scopeNow) return
+        if (gone || m.keptScope !== scopeNow) return
+        m.keptLoaded = scopeNow
+        if (!kept || m.turns.length) return
         const back = (c: KeptConversation | undefined): Thread => ({
           ...freshThread(),
           turns: (c?.turns ?? []).map((t, n) => ({ n, role: t.role, text: t.text, ...(t.event && { event: true }) })),
@@ -747,7 +754,9 @@ export default function AskPanel(p: AskPanelProps) {
         setTurns(now.turns)
         setCurrent(kept.current)
       },
-      () => {},
+      () => {
+        if (!gone && m.keptScope === scopeNow) m.keptLoaded = scopeNow
+      },
     )
     return () => {
       gone = true
@@ -755,7 +764,8 @@ export default function AskPanel(p: AskPanelProps) {
   }, [store, scopeNow])
   // biome-ignore lint/correctness/useExhaustiveDependencies: written when what is kept changes, between answers
   useEffect(() => {
-    if (!store || scopeNow == null || m.keptScope !== scopeNow || busy || streaming) return
+    // never before what was kept has been read: an empty panel would write over it
+    if (!store || scopeNow == null || m.keptLoaded !== scopeNow || busy || streaming) return
     const all: Record<string, Thread> = { ...m.threads, [current]: { ...snapshot(), turns } }
     const conversations: Record<string, KeptConversation> = {}
     // the conversation drawn first, then the others; at most 20, and none empty

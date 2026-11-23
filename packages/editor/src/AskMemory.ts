@@ -70,6 +70,8 @@ export interface AskMemory {
   threads: Record<string, Thread>
   /** The scope the conversations are kept for (a repository, the draft); undefined before the page named one. */
   keptScope?: string
+  /** The scope whose kept conversations have been read: only then are they written. */
+  keptLoaded?: string
   /** What the page keeps for the reader, as last read (null: nothing can be kept now). */
   kept?: KeptSettings | null
   /** "Remember it for my account". */

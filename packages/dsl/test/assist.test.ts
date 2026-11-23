@@ -453,10 +453,27 @@ describe('a small window', () => {
     expect(model.requests[0]!.system).toContain('A short reference for the tests.')
   })
 
+  it('keeps the question in a repair: the refusal never goes without what it answers', async () => {
+    const model = recorded(['```ops\nrename nothing_here to x\n```', words])
+    for await (const _ of createAssistant({ model, reference, smallReference: 'short', window: 8000 }).ask({
+      request: 'and now?',
+      project: shop,
+      thread: long,
+    })) {
+      // drained
+    }
+    const repair = model.requests[1]!.messages
+    expect(repair.at(-1)!.content).toMatch(/^Your change was refused/)
+    expect(repair.at(-3)!.content).toBe('and now?')
+    expect(repair.every((m, i) => m.role === (i % 2 ? 'assistant' : 'user'))).toBe(true)
+  })
+
   it('keeps what fits, a question and its answer at a time', () => {
     const fit = fitThread(long.concat({ role: 'user', content: 'now' }), 3000)
     expect(fit.messages.map((m) => m.content.slice(0, 11))).toEqual(['Question 0:', 'Answer 1: x', 'now'])
     expect(fit.dropped).toBe(18)
     expect(fitThread([{ role: 'user', content: 'x'.repeat(40_000) }], 10).messages).toHaveLength(1)
+    // a tail of three stays whole: the first two and the tail at the least
+    expect(fitThread(long.concat({ role: 'user', content: 'now' }), 10, 3).messages).toHaveLength(5)
   })
 })

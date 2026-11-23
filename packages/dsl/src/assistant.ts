@@ -89,12 +89,14 @@ export const tokensOf = (s: string) => Math.ceil(s.length / 4)
 export function fitThread(
   thread: readonly ChatMessage[],
   budget: number,
+  /** The newest messages that always stay: the question asked now, and a repair's answer and refusal after it. */
+  tail = 1,
 ): { messages: ChatMessage[]; dropped: number } {
   const size = (m: readonly ChatMessage[]) => m.reduce((n, x) => n + tokensOf(x.content) + 4, 0)
   const messages = [...thread]
   let dropped = 0
-  // [first question, its answer, …, the last]: drop from the third on, two at a time
-  while (size(messages) > budget && messages.length > 3) {
+  // [first question, its answer, …, the tail]: drop from the third on, two at a time, never into the tail
+  while (size(messages) > budget && 2 + 2 <= messages.length - tail) {
     messages.splice(2, 2)
     dropped += 2
   }
@@ -121,6 +123,8 @@ export function createAssistant(o: AssistantOptions): Assistant {
       })
       const thread: ChatMessage[] = [...(r.thread ?? [])]
       thread.push({ role: 'user', content: r.form === 'files' ? `${r.request}\n\n${FILES_FORM}` : r.request })
+      // the question asked now: it and what follows it in a repair are always sent
+      const asked = thread.length - 1
       const usage: Usage = { input: 0, output: 0, cached: 0, written: 0 }
       const tries = (o.repairs ?? 2) + 1
       let left = 0
@@ -129,7 +133,7 @@ export function createAssistant(o: AssistantOptions): Assistant {
         // a copy: the thread grows after this request, and a provider may keep what it was sent; for a small window,
         // what fits beside the system text, the context and the answer
         const fit = o.window
-          ? fitThread(thread, o.window - tokensOf(system) - tokensOf(context) - reply)
+          ? fitThread(thread, o.window - tokensOf(system) - tokensOf(context) - reply, thread.length - asked)
           : { messages: [...thread], dropped: 0 }
         if (fit.dropped > left) {
           left = fit.dropped

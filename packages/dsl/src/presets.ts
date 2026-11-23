@@ -16,8 +16,9 @@ export interface ProviderPreset {
   model?: string
   local?: boolean
   /**
-   * The context window, in tokens, to plan for when it is small: a model on the reader's own computer often runs with a
-   * few thousand (Ollama's default), so the short reference and the newest turns are sent.
+   * The context window, in tokens, to plan for when it is small: a model on the reader's own computer. Ollama and LM
+   * Studio start with a few thousand, too few for the short reference: the docs say to start them with 32 000 or more
+   * (`OLLAMA_CONTEXT_LENGTH=32000`), and the panel plans for that.
    */
   window?: number
 }

@@ -75,7 +75,8 @@ The conversations stay across a reload and a return: those of a public repositor
 those of a private repository in this tab only, as its files are. At most 20 for each, the newest; a proposal is not
 kept (ask again). **Disconnect** forgets them.
 
-A model on your own computer (Ollama, LM Studio) often runs with a small window: for it the panel sends the short
+A model on your own computer (Ollama, LM Studio) runs with a small window: start it with 32 000 tokens or more
+(`OLLAMA_CONTEXT_LENGTH=32000`; LM Studio: the context length when you load the model). For it the panel sends the short
 reference ([llms-small.txt](/llms-small.txt)) and, in a long conversation, the first question with the newest turns,
 and says when it left earlier ones out.
 
