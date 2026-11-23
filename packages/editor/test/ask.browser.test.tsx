@@ -178,7 +178,8 @@ describe('the Ask panel', () => {
     await userEvent.selectOptions(conversation, '')
     await expect.poll(thread).toContain('What runs out first?')
     expect(thread()).not.toContain('every order once')
-    await userEvent.click(page.getByRole('button', { name: 'About db', exact: true }))
+    // the box stays selected, but the chip follows the conversation picked: the question goes in the one shown
+    await expect.element(page.getByRole('button', { name: 'The whole diagram', exact: true })).toBeVisible()
     await ask('And after it?')
     await expect.poll(thread, { timeout: 5000 }).toContain('the gateway after it')
     expect(model.requests[2]!.messages.map((x) => x.content).join(' ')).toContain('What runs out first?')

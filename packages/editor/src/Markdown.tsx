@@ -3,27 +3,44 @@
 // never loaded (it would tell another server what was asked), a link opens only http and https, in a new tab. The ops
 // fence is the proposal's, drawn as its card: it is left out here. A fence still open while the answer streams is
 // drawn as far as it got.
-import type { ReactNode } from 'react'
+import { memo, type ReactNode, useMemo } from 'react'
 
 type Block =
   | { kind: 'p'; text: string }
   | { kind: 'h'; level: number; text: string }
   | { kind: 'code'; lang: string; text: string }
-  | { kind: 'list'; ordered: boolean; items: string[] }
+  | { kind: 'list'; ordered: boolean; start: number; items: string[] }
   | { kind: 'quote'; text: string }
   | { kind: 'table'; head: string[]; rows: string[][] }
   | { kind: 'rule' }
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([\w+-]*)/
-const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
+const FENCE = /^ {0,3}(`{3,}|~{3,})\s*(\S*)\s*(.*)$/
+const HEADING = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/
 const BULLET = /^ {0,3}[-*+]\s+(.*)$/
-const NUMBER = /^ {0,3}\d{1,9}[.)]\s+(.*)$/
+const NUMBER = /^ {0,3}(\d{1,9})[.)]\s+(.*)$/
 const QUOTE = /^ {0,3}>\s?(.*)$/
 const RULE = /^ {0,3}([-*_])(\s*\1){2,}\s*$/
 const ROW = /^\s*\|(.*)\|\s*$/
 const DIVIDER = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/
 
+/** The fences the answer's reader takes as the model's blocks (packages/dsl answer.ts): drawn elsewhere, or not at all. */
+const machine = (lang: string, info: string) => {
+  const kind = lang.toLowerCase()
+  return (
+    ['ops', 'operations', 'questions', 'explore'].includes(kind) ||
+    (kind === 'loadmap' && !!info.replace(/^path=/, '').trim())
+  )
+}
+
 const cells = (line: string) => (line.match(ROW)?.[1] ?? line).split('|').map((c) => c.trim())
+
+/** An item of a list: a bullet or a number, with what it says. */
+const item = (line: string) => {
+  const b = line.match(BULLET)
+  if (b) return { ordered: false, n: 1, text: b[1]! }
+  const n = line.match(NUMBER)
+  return n ? { ordered: true, n: Number(n[1]), text: n[2]! } : undefined
+}
 
 /** The answer's blocks, line by line. */
 export function blocks(md: string): Block[] {
@@ -43,7 +60,7 @@ export function blocks(md: string): Block[] {
       const body: string[] = []
       i++
       while (i < lines.length && !lines[i]!.trimStart().startsWith(close)) body.push(lines[i++]!)
-      if (fence[2] !== 'ops') out.push({ kind: 'code', lang: fence[2] ?? '', text: body.join('\n') })
+      if (!machine(fence[2]!, fence[3]!)) out.push({ kind: 'code', lang: fence[2]!, text: body.join('\n') })
       continue
     }
     if (!line.trim()) {
@@ -71,22 +88,29 @@ export function blocks(md: string): Block[] {
       out.push({ kind: 'table', head, rows })
       continue
     }
-    const bullet = line.match(BULLET)
-    const number = bullet ? null : line.match(NUMBER)
-    if (bullet || number) {
+    const first = item(line)
+    if (first) {
       flush()
-      const ordered = !!number
-      const items = [(bullet ?? number)![1]!]
+      const items = [first.text]
+      // an item goes on over lines indented under it (a nested list, its code), and a blank line between two items
+      // of the same kind keeps one list
       while (i + 1 < lines.length) {
         const next = lines[i + 1]!
-        const m = ordered ? next.match(NUMBER) : next.match(BULLET)
-        if (m) items.push(m[1]!)
-        // a line indented under an item continues it
-        else if (/^\s{2,}\S/.test(next)) items[items.length - 1] += `\n${next.trim()}`
-        else break
+        const it = item(next)
+        if (it && it.ordered === first.ordered) items.push(it.text)
+        else if (/^\s{2,}\S/.test(next)) items[items.length - 1] += `\n${next.replace(/^ {2,4}/, '')}`
+        else if (!next.trim()) {
+          let j = i + 2
+          while (j < lines.length && !lines[j]!.trim()) j++
+          const after = lines[j]
+          if (after === undefined) break
+          const again = item(after)
+          if (!(again && again.ordered === first.ordered) && !/^\s{2,}\S/.test(after)) break
+          if (!again) items[items.length - 1] += '\n'
+        } else break
         i++
       }
-      out.push({ kind: 'list', ordered, items })
+      out.push({ kind: 'list', ordered: first.ordered, start: first.n, items })
       continue
     }
     const q = line.match(QUOTE)
@@ -117,7 +141,7 @@ const INLINE =
   /(`+)([\s\S]*?[^`])\1(?!`)|!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*([\s\S]+?)\*\*|(?<!\w)__([\s\S]+?)__(?!\w)|\*([^*\s][^*]*?)\*|(?<!\w)_([^_\s][^_]*?)_(?!\w)|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g
 
 /** A line's emphasis, code and links, as elements; everything else as text. */
-export function inline(text: string, key = 'i'): ReactNode[] {
+export function inline(text: string, key = 'i', inLink = false): ReactNode[] {
   const out: ReactNode[] = []
   let at = 0
   let n = 0
@@ -144,14 +168,15 @@ export function inline(text: string, key = 'i'): ReactNode[] {
       out.push(
         href ? (
           <a key={k} href={href} target="_blank" rel="noopener noreferrer">
-            {inline(m[5], k)}
+            {inline(m[5], k, true)}
           </a>
         ) : (
           m[0]
         ),
       )
-    } else if (m[7] !== undefined || m[8] !== undefined) out.push(<strong key={k}>{inline((m[7] ?? m[8])!, k)}</strong>)
-    else if (m[9] !== undefined || m[10] !== undefined) out.push(<em key={k}>{inline((m[9] ?? m[10])!, k)}</em>)
+    } else if (m[7] !== undefined || m[8] !== undefined)
+      out.push(<strong key={k}>{inline((m[7] ?? m[8])!, k, inLink)}</strong>)
+    else if (m[9] !== undefined || m[10] !== undefined) out.push(<em key={k}>{inline((m[9] ?? m[10])!, k, inLink)}</em>)
     else if (m[11]) {
       const href = safeHref(m[11])
       out.push(
@@ -177,11 +202,18 @@ const lines = (text: string, key: string) =>
     // biome-ignore lint/suspicious/noArrayIndexKey: the lines of one paragraph, in order, never moved
     .flatMap((l, i) => (i ? [<br key={`${key}b${i}`} />, ...inline(l, `${key}l${i}`)] : inline(l, `${key}l0`)))
 
-export function Markdown({ text }: { text: string }) {
+/** An item of a list: a line or two as text, or blocks of its own (a nested list, code). */
+function Item({ text, k }: { text: string; k: string }) {
+  const inner = blocks(text)
+  if (inner.length === 1 && inner[0]!.kind === 'p') return <>{lines(inner[0]!.text, k)}</>
+  return <Blocks list={inner} prefix={k} />
+}
+
+function Blocks({ list, prefix }: { list: readonly Block[]; prefix: string }) {
   return (
     <>
-      {blocks(text).map((b, i) => {
-        const k = `b${i}`
+      {list.map((b, i) => {
+        const k = `${prefix}b${i}`
         switch (b.kind) {
           case 'p':
             return <p key={k}>{lines(b.text, k)}</p>
@@ -197,14 +229,18 @@ export function Markdown({ text }: { text: string }) {
               </pre>
             )
           case 'list': {
-            const L = b.ordered ? 'ol' : 'ul'
-            return (
-              <L key={k}>
-                {b.items.map((item, j) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: items are in the answer's order, never moved
-                  <li key={j}>{lines(item, `${k}.${j}`)}</li>
-                ))}
-              </L>
+            const items = b.items.map((text, j) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: items are in the answer's order, never moved
+              <li key={j}>
+                <Item text={text} k={`${k}.${j}`} />
+              </li>
+            ))
+            return b.ordered ? (
+              <ol key={k} start={b.start === 1 ? undefined : b.start}>
+                {items}
+              </ol>
+            ) : (
+              <ul key={k}>{items}</ul>
             )
           }
           case 'quote':
@@ -243,3 +279,9 @@ export function Markdown({ text }: { text: string }) {
     </>
   )
 }
+
+/** Drawn again only when its text changes: a conversation's earlier answers stay as they are while one streams. */
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  const list = useMemo(() => blocks(text), [text])
+  return <Blocks list={list} prefix="" />
+})

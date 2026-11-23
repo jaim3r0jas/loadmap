@@ -22,6 +22,8 @@ export interface Thread {
   ops: string[]
   used?: { input: number; output: number; cached?: number }
   rounds: number
+  /** The looks the model asked for, waiting for the reader's press. */
+  looks?: ExploreCall[] | null
 }
 
 export const freshThread = (): Thread => ({

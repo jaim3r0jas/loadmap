@@ -88,4 +88,29 @@ describe("a model's Markdown", () => {
     const host = await draw('Set max_pool_size in my_app.loadmap, and *this* one.')
     expect([...host.querySelectorAll('em')].map((e) => e.textContent)).toEqual(['this'])
   })
+
+  it('keeps a numbered list numbered across blank lines, and draws a list or code inside an item', async () => {
+    const host = await draw(
+      ['3. Add a replica', '', '4. Route reads:', '   - the orders', '   - the visits', '', '5. Raise the pool'].join(
+        '\n',
+      ),
+    )
+    const ol = host.querySelector('ol')!
+    expect(ol.getAttribute('start')).toBe('3')
+    expect(ol.querySelectorAll(':scope > li')).toHaveLength(3)
+    expect([...ol.querySelectorAll('ul li')].map((l) => l.textContent)).toEqual(['the orders', 'the visits'])
+  })
+
+  it("leaves every machine block to the panel, as the answer's reader names them", () => {
+    for (const fence of ['ops', 'OPS', 'operations', 'questions', 'explore', 'loadmap models/shop.loadmap'])
+      expect(blocks(`Text.\n\`\`\`${fence}\nwhatever\n\`\`\``).map((b) => b.kind)).toEqual(['p'])
+    expect(blocks('```loadmap\ncomponent a\n```').map((b) => b.kind)).toEqual(['code'])
+  })
+
+  it('keeps a heading ending in #, and never puts a link in a link', async () => {
+    const host = await draw('## Calling it from C#\n\n[https://example.com/docs](https://example.com/docs)')
+    expect(host.querySelector('h4')?.textContent).toBe('Calling it from C#')
+    expect(host.querySelectorAll('a')).toHaveLength(1)
+    expect(host.querySelector('a a')).toBeNull()
+  })
 })

@@ -233,6 +233,8 @@ export default function AskPanel(p: AskPanelProps) {
   const [scoped, setScoped] = useState(true)
   /** The conversation drawn: '' for the whole diagram, else the box it is about. */
   const [current, setCurrent] = useState(m.current)
+  /** An accepted proposal is being kept: the conversation cannot change under it. */
+  const [deciding, setDeciding] = useState(false)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
   const [usage, setUsage] = useState(m.usage)
   /** What the page keeps for the reader (null: nothing can be kept now; undefined: not read yet). */
@@ -438,11 +440,11 @@ export default function AskPanel(p: AskPanelProps) {
    */
   const send = async (e?: FormEvent, said?: string, drafting = false, shown?: string) => {
     e?.preventDefault()
-    const about = drafting ? m.asked.box : box
+    // the conversation the question goes in: the selected box's while its chip is on, the whole diagram's when the
+    // reader took the chip off, else the one shown (a box's conversation goes on about its box)
+    const about = drafting ? m.asked.box : (box ?? (p.selected && !scoped ? null : current || null))
     const words = (said ?? request).trim()
-    if (!words || busy) return
-    // a question about a box goes in that box's conversation, one about the whole diagram in its own
-    if (!drafting && (about ?? '') !== current) switchTo(about ?? '')
+    if (!words || busy || deciding) return
     if (!p.model && !preset.local && !key.trim() && !keyKept) {
       setNote(`${preset.name} needs a key: paste one above.`)
       return
@@ -497,10 +499,14 @@ export default function AskPanel(p: AskPanelProps) {
       refused(err)
       return
     }
+    // now that it goes: in the conversation it is about
+    if (!drafting && (about ?? '') !== current) switchTo(about ?? '')
     setNote('')
     // after the note is cleared: a refusal to remember stays in view while the question goes on
     if (remembering) await remembering()
     if (said == null) setRequest('')
+    // a proposal left undecided is set aside by the new question, and the conversation says so
+    if (m.proposal && !drafting) event('Set aside: a new question came before a decision.')
     setProposal(null)
     setAdvice(false)
     setBusy(true)
@@ -639,6 +645,7 @@ export default function AskPanel(p: AskPanelProps) {
     ops: m.ops,
     used: m.used,
     rounds: m.rounds,
+    looks: m.looks,
   })
   /** Draws another conversation, keeping this one: a box's, the whole diagram's, or a new one in this one's place. */
   const switchTo = (to: string, fresh = false) => {
@@ -651,12 +658,14 @@ export default function AskPanel(p: AskPanelProps) {
     m.ops = next.ops
     m.used = next.used
     m.rounds = next.rounds
+    m.turns = next.turns
+    m.proposal = next.proposal
     m.current = to
     setTurns(next.turns)
     setProposal(next.proposal)
     setUsage(next.usage)
     setAdvice(next.advice)
-    setLooks(null)
+    setLooks(next.looks ?? null)
     setStreaming('')
     setCurrent(to)
   }
@@ -669,8 +678,18 @@ export default function AskPanel(p: AskPanelProps) {
 
   const accept = async () => {
     const chosen = proposal
-    if (!chosen) return
+    if (!chosen || deciding) return
     setProposal(null)
+    // the conversation stays the one shown until the change is kept: its line goes in it
+    setDeciding(true)
+    try {
+      await decide(chosen)
+    } finally {
+      setDeciding(false)
+    }
+  }
+
+  const decide = async (chosen: Proposal) => {
     // a proposal is a change of the files as they were asked about: never laid over text typed since
     const unchanged = () => {
       const now = p.files().files
@@ -980,7 +999,16 @@ export default function AskPanel(p: AskPanelProps) {
         <div className="lme-ask-row lme-ask-threads">
           <label>
             <span className="lm-sr">Conversation</span>
-            <select value={current} disabled={busy} onChange={(e) => switchTo(e.target.value)}>
+            <select
+              value={current}
+              disabled={busy || deciding}
+              onChange={(e) => {
+                const to = e.target.value
+                switchTo(to)
+                // the chip follows: a box's conversation is about its box, the whole diagram's about none
+                setScoped(to !== '' && to === p.selected)
+              }}
+            >
               {[...new Set(['', current, ...Object.keys(m.threads)])].map((k) => (
                 <option key={k} value={k}>
                   {k ? `About ${k}` : 'The whole diagram'}
@@ -989,7 +1017,12 @@ export default function AskPanel(p: AskPanelProps) {
             </select>
           </label>
           {turns.length > 0 && (
-            <button type="button" className="lm-btn lme-quiet" disabled={busy} onClick={() => switchTo(current, true)}>
+            <button
+              type="button"
+              className="lm-btn lme-quiet"
+              disabled={busy || deciding}
+              onClick={() => switchTo(current, true)}
+            >
               New conversation
             </button>
           )}
