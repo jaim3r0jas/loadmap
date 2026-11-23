@@ -42,6 +42,9 @@ export function signInConfig(env: Record<string, string | undefined> = import.me
   return { clientId, slug, exchange: exchange.replace(/\/+$/, '') }
 }
 
+/** The app this build connects with: one reading, for the bar, the dialogs and the connection. */
+export const app = signInConfig()
+
 /** Where the reader puts the app on the repositories it may reach. */
 export const installUrl = (app: SignIn) => `https://github.com/apps/${encodeURIComponent(app.slug)}/installations/new`
 

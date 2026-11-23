@@ -3,9 +3,8 @@
 // pasted token instead, disconnect. Drawn from account.ts alone; the GitHub code loads on the first press.
 import { Icon, Menu, MenuItem } from '@loadmap/editor/internal'
 import { useEffect, useState } from 'react'
-import { type Account, account, installUrl, onAccount, signInConfig } from './account'
+import { type Account, app as APP, account, installUrl, onAccount } from './account'
 
-const APP = signInConfig()
 /** A person: the account, connected or not. */
 const PERSON = 'M8 8.2a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2zM3 13.5c.6-2.4 2.6-3.6 5-3.6s4.4 1.2 5 3.6'
 const CSS = `
@@ -19,8 +18,9 @@ export interface AccountButtonProps {
   onDialog: (o: { paste?: boolean; error?: string }) => void
 }
 
-/** The GitHub chunk, asked for as the pointer nears the button: the popup then opens within the press. */
+/** The GitHub chunk, asked for as the pointer nears the button or presses it. */
 const github = () => import('./index')
+const warm = () => void github().catch(() => {})
 
 export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountButtonProps) {
   const [now, setNow] = useState<Account>(account)
@@ -31,9 +31,12 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
     if (!APP) return onDialog({})
     if (busy) return
     setBusy(true)
+    // the popup opens within the press, empty: loading the sign-in's code first would lose the click in some browsers
+    const popup = window.open('', 'loadmap-github-sign-in', 'popup,width=520,height=720')
     try {
-      await (await github()).connect()
+      await (await github()).connect({ popup, login: reconnect || undefined })
     } catch (e) {
+      popup?.close()
       onDialog({ error: e instanceof Error ? e.message : 'GitHub did not connect.' })
     } finally {
       setBusy(false)
@@ -53,14 +56,22 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
           aria-label={label}
           title={reconnect ? `Connect to GitHub again, as ${now.login}` : 'Open and save your repositories'}
           aria-disabled={busy}
-          onPointerEnter={() => void github()}
-          onFocus={() => void github()}
+          onPointerEnter={warm}
+          onPointerDown={warm}
+          onFocus={warm}
           onClick={connect}
         >
           <Icon d={PERSON} />
           <span className="app-label">{label}</span>
         </button>
-        <button type="button" className="lme-item app-narrow" aria-disabled={busy} onClick={connect}>
+        <button
+          type="button"
+          className="lme-item app-narrow"
+          aria-disabled={busy}
+          onPointerDown={warm}
+          onFocus={warm}
+          onClick={connect}
+        >
           {label}
         </button>
       </>
@@ -68,6 +79,7 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
   }
 
   const who = now.login ?? 'GitHub'
+  const viaApp = now.via === 'app' ? APP : undefined
   const items = (sheet?: boolean) => (
     <>
       <MenuItem sheet={sheet} onSelect={onOpen}>
@@ -76,19 +88,19 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
       <MenuItem sheet={sheet} hint="In your account, private unless you choose" onSelect={onNewRepo}>
         Save to a new repository…
       </MenuItem>
-      {APP && now.via === 'app' && (
-        <MenuItem
-          sheet={sheet}
-          hint="The app reads and writes only those"
-          onSelect={() => window.open(installUrl(APP), '_blank', 'noopener,noreferrer')}
-        >
-          Choose repositories on GitHub ↗
-        </MenuItem>
-      )}
-      {APP && now.via === 'app' && (
-        <MenuItem sheet={sheet} onSelect={() => onDialog({ paste: true })}>
-          Use a pasted token instead
-        </MenuItem>
+      {viaApp && (
+        <>
+          <MenuItem
+            sheet={sheet}
+            hint="The app reads and writes only those"
+            onSelect={() => window.open(installUrl(viaApp), '_blank', 'noopener,noreferrer')}
+          >
+            Choose repositories on GitHub ↗
+          </MenuItem>
+          <MenuItem sheet={sheet} onSelect={() => onDialog({ paste: true })}>
+            Use a pasted token instead
+          </MenuItem>
+        </>
       )}
       <MenuItem sheet={sheet} hint="This browser forgets the token and the account" onSelect={disconnect}>
         Disconnect

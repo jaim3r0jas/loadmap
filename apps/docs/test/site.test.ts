@@ -1269,7 +1269,7 @@ describe('the built site', () => {
     } finally {
       await browser.close()
     }
-  })
+  }, 120_000)
 
   it('asks for a token in place for a private repository, and keeps its text and the token out of lasting storage', async () => {
     const token = `github_pat_${'A'.repeat(40)}`

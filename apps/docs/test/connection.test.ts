@@ -135,30 +135,88 @@ describe('Connect to GitHub', () => {
     expect(session.getItem('loadmap-github-token')).toBeNull()
   })
 
-  it('a pasted token connects for the page, or the tab when kept, and shows its own login', async () => {
-    local.setItem('loadmap-github-account', JSON.stringify({ login: 'someone-else', via: 'app' }))
+  it('a pasted token connects for the page, or the tab when kept, and names nobody until GitHub says whose', async () => {
+    local.setItem('loadmap-github-account', JSON.stringify({ login: 'someone-else', via: 'token' }))
     const p = await page(fake(PASTED).fetch)
     expect(p.takeToken('hunter2', false)).toMatch(/not a GitHub token/)
     expect(p.takeToken(PASTED, false)).toBeUndefined()
-    // the app's last login is not this token's
-    expect(p.account()).toEqual({ connected: true, via: 'token', login: undefined })
+    // the last login may not be this token's
+    expect(p.account()).toEqual({ connected: true, via: 'token' })
+    // a pasted token is not the app's, whatever its kind
+    expect(p.signedIn()).toBe(false)
     await until(() => p.account().login === 'acme')
     expect(session.getItem('loadmap-github-token')).toBeNull()
     p.takeToken(PASTED, true)
     expect(session.getItem('loadmap-github-token')).toBe(PASTED)
   })
 
-  it('Disconnect forgets the token and the account; Forget keeps the login to connect again', async () => {
+  it('a late refusal of an older token leaves the newer one alone', async () => {
+    const old = `github_pat_${'o'.repeat(40)}`
+    // GitHub refuses the old token only once the new one is taken
+    let refuse: (r: Response) => void = () => {}
+    const gh = fake(PASTED)
+    const p = await page((async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new Headers(init?.headers).get('Authorization') === `Bearer ${old}`)
+        return new Promise<Response>((r) => {
+          refuse = r
+        })
+      return gh.fetch(input, init)
+    }) as typeof fetch)
+    p.takeToken(old, true)
+    p.takeToken(PASTED, true)
+    refuse(new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 }))
+    await until(() => p.account().login === 'acme')
+    expect(p.hasToken()).toBe(true)
+    expect(session.getItem('loadmap-github-token')).toBe(PASTED)
+  })
+
+  it('Disconnect forgets the token and the account', async () => {
     const p = await page(fake(APP_TOKEN).fetch)
     await p.connect({ app: APP, host: host(APP_TOKEN) })
     await until(() => p.account().login === 'acme')
-    p.forgetToken()
-    expect(p.account()).toEqual({ connected: false, via: 'app', login: 'acme' })
+    expect(p.signedIn()).toBe(true)
     p.disconnect()
     expect(p.account()).toEqual({ connected: false })
     expect(p.hasToken()).toBe(false)
     expect(local.getItem('loadmap-github-account')).toBeNull()
     expect(session.getItem('loadmap-github-token')).toBeNull()
+  })
+
+  it('a reconnect names its account to GitHub, and goes into the popup the press opened', async () => {
+    const p = await page(fake(APP_TOKEN).fetch)
+    const h = host(APP_TOKEN)
+    let hear: ((e: MessageEvent) => void) | undefined
+    const asked: string[] = []
+    const popup = {
+      closed: false,
+      location: {
+        set href(url: string) {
+          asked.push(url)
+          const state = new URL(url).searchParams.get('state')
+          setTimeout(() =>
+            hear?.({
+              origin: ORIGIN,
+              source: popup,
+              data: { type: 'loadmap-github-sign-in', state, code: 'c' },
+            } as MessageEvent),
+          )
+        },
+      },
+    } as unknown as Window
+    const pressed: SignInHost = {
+      ...h,
+      // the press opened the popup already: nothing opens another
+      open: () => null,
+      listen: (on) => {
+        hear = on
+        return () => {
+          hear = undefined
+        }
+      },
+    }
+    await p.connect({ app: APP, host: pressed, popup, login: 'acme' })
+    expect(new URL(asked[0]!).searchParams.get('login')).toBe('acme')
+    expect(p.account()).toMatchObject({ connected: true, via: 'app' })
   })
 
   it('without an app, Connect says to paste a token', async () => {

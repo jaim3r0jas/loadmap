@@ -33,7 +33,7 @@ export default function ConnectDialog({ error, paste, onClose }: ConnectDialogPr
           </p>
         )}
         <TokenForm
-          reason="Connected, the editor opens your repositories, saves to them and makes new ones."
+          reason="Connected, the editor opens your repositories and saves to them."
           need="write"
           paste={paste}
           onToken={() => dialog.current?.close()}

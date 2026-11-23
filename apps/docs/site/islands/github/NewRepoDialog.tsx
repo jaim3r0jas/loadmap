@@ -36,6 +36,8 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
     e.preventDefault()
     if (busy) return
     setError('')
+    // asked now: a 401 drops the token before the error comes back
+    const viaApp = signedIn()
     try {
       const r = await createRepo(
         gh,
@@ -60,7 +62,7 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
       // a token refused, or without the right: the form for another, saying why; anything else as it is
       if (cause instanceof GitHubError && ['auth', 'forbidden'].includes(cause.failure))
         setAsk(
-          signedIn()
+          viaApp
             ? `${(err as Error).message} The loadmap editor app needs "Repository creation": accept its request on GitHub (Settings → Applications), then connect again.`
             : `${(err as Error).message} Making a repository needs a token with Administration and Contents, read and write, on all repositories.`,
         )

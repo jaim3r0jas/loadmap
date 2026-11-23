@@ -3,8 +3,8 @@
 // gets it in a popup; else, or as well, the reader makes one on GitHub's page (filled in by the link) and pastes it
 // here. It stays in this tab.
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
-import { installUrl } from './account'
-import { app, connect } from './connection'
+import { app, installUrl } from './account'
+import { connect } from './connection'
 import { takeToken, tokenPage } from './session'
 
 const CSS = `
@@ -45,8 +45,8 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel, past
   const first = useRef<HTMLButtonElement>(null)
   // the app makes a new repository too ("Repository creation"), and reaches the ones it made
   useEffect(() => (app && !pasting ? first.current : input.current)?.focus(), [pasting])
-  // a sign-in outlives a click: it does nothing once the form is gone (Back, Close), so a save the reader backed out
-  // of never runs
+  // a sign-in outlives a click: finished after Back or Close, the reader is connected (they signed in on GitHub), but
+  // what the form was for (a save, an open) does not run
   const here = useRef(true)
   useEffect(() => {
     here.current = true

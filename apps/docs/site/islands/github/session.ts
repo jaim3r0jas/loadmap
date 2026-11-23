@@ -15,10 +15,11 @@ function kept(): string | undefined {
 
 let token = kept()
 
-// a token GitHub refuses is gone: the bar offers to connect again, as the last login
+// a token GitHub refuses is gone, unless another took its place meanwhile: the bar offers to connect again
 export const gh = client({
   token: () => token,
-  refused: () => {
+  refused: (sent) => {
+    if (sent !== token) return
     dropToken()
     setAccount({ ...account(), connected: false })
   },
@@ -41,9 +42,8 @@ export function takeToken(given: string, keep: boolean, via: 'app' | 'token' = '
   } catch {
     // refused: it stays in memory, for this page
   }
-  const last = account()
-  // the last login stays shown only while it is the same kind of connection: the lookup says whose this one is
-  setAccount({ connected: true, via, login: last.via === via ? last.login : undefined })
+  // whose it is, only GitHub says: the bar names nobody until the lookup answers
+  setAccount({ connected: true, via })
   void whoami(t)
   return undefined
 }
@@ -68,12 +68,6 @@ function dropToken(): void {
   }
 }
 
-/** Forgets the token; the bar still names the last login, to connect again. */
-export function forgetToken(): void {
-  dropToken()
-  setAccount({ ...account(), connected: false })
-}
-
 /** Disconnect: the token and the last login, all this browser kept of the connection. */
 export function disconnect(): void {
   dropToken()
@@ -83,7 +77,7 @@ export function disconnect(): void {
 export const hasToken = () => token != null
 
 /** Whether the token came from the site's GitHub App (on the reader's behalf): it does what the app may. */
-export const signedIn = () => token?.startsWith('ghu_') ?? false
+export const signedIn = () => token != null && account().via === 'app'
 
 /**
  * GitHub's page for a new fine-grained token, filled in: its name, the owner of the repository, a week, and the

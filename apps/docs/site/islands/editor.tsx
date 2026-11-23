@@ -729,9 +729,8 @@ const VAULT: KeyVault = {
   keep: async (provider, key, passphrase) => {
     const { gh, v, signedIn } = await vaultReady()
     // a sign-in's token reaches what the app is installed on: a refusal sends the reader to that page
-    const { installUrl, signInConfig } = await import('./github/signin')
-    const config = signInConfig()
-    const o = { signedIn: signedIn(), app: config && installUrl(config) }
+    const { installUrl, app } = await import('./github/account')
+    const o = { signedIn: signedIn(), app: app && installUrl(app) }
     await v.saveSealed(gh, provider, await v.seal(key, passphrase), o)
   },
 }
