@@ -251,6 +251,8 @@ export async function disconnect(o: { app?: SignIn; fetch?: typeof fetch } = {})
   timer = undefined
   forget()
   forgetRecent()
+  // the Ask panel's conversations this browser kept go with the connection
+  void import('../conversations').then((m) => m.forgetConversations())
   // after any refresh under way in another tab, which would keep its session
   await locked(forgetSession)
   if (config && token?.startsWith('ghu_'))

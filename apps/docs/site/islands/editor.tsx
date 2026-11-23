@@ -8,6 +8,7 @@ import { decodeShare, type Shared } from '@loadmap/dsl'
 import {
   type BarSection,
   type CodeFont,
+  type ConversationStore,
   type EditorLayout,
   type EmbedOptions,
   LoadmapEditor,
@@ -283,9 +284,11 @@ function Editor({ root }: { root: URL }) {
   const assist = useMemo(
     () => ({
       reference: loadReference,
+      smallReference: loadSmallReference,
       data: bridge,
       signIn: { openrouter: () => import('./openrouter').then((m) => m.openRouterSignIn()) },
       settings: settingsFor(() => repo.current),
+      conversations: conversationsFor(() => repo.current),
       confirmSend: (p: { name: string }) => {
         const o = repo.current?.origin
         if (!o?.private) return true
@@ -710,19 +713,24 @@ const STARTERS = TEMPLATES.map((t) => ({
   versions: [{ message: `Start from loadmap's ${t.title} template`, files: { [`${t.id}.loadmap`]: t.source } }],
 }))
 
-/** The reference the Ask panel's model reads, fetched once from the site. */
-let reference: Promise<string> | undefined
-const loadReference = () =>
-  (reference ??= fetch(new URL('../llms-full.txt', location.href))
-    .then((r) => {
-      if (!r.ok) throw new Error('the reference did not load')
-      return r.text()
-    })
-    .catch((err: unknown) => {
-      // tried again on the next question
-      reference = undefined
-      throw err
-    }))
+/** A text of the site, fetched once; tried again on the next question when it did not load. */
+function once(file: string): () => Promise<string> {
+  let text: Promise<string> | undefined
+  return () =>
+    (text ??= fetch(new URL(`../${file}`, location.href))
+      .then((r) => {
+        if (!r.ok) throw new Error('the reference did not load')
+        return r.text()
+      })
+      .catch((err: unknown) => {
+        text = undefined
+        throw err
+      }))
+}
+
+/** The reference the Ask panel's model reads: the whole one, or the short one for a model with a small window. */
+const loadReference = once('llms-full.txt')
+const loadSmallReference = once('llms-small.txt')
 
 /**
  * The reader's model and keys, remembered by the site's Worker for a reader connected through the app, and the open
@@ -745,6 +753,24 @@ function settingsFor(open: () => RepoTab | undefined): ModelSettings {
     key: async (provider, repo) => (await code()).key(provider, repo),
     save: async (choice) => (await code()).save(choice),
     remove: async (what) => (await code()).remove(what),
+  }
+}
+
+/**
+ * The Ask panel's conversations, kept across reloads by what the editor holds: a repository (by GitHub's id when the
+ * page read one), or the draft. A private repository's stay in the tab, as its files do.
+ */
+function conversationsFor(open: () => RepoTab | undefined): ConversationStore {
+  const code = () => import('./conversations')
+  return {
+    scope: () => {
+      const o = open()?.origin
+      if (!o) return 'draft'
+      const id = `repo:${o.id ?? `${o.owner}/${o.name}`}`
+      return o.private ? `private:${id}` : id
+    },
+    load: async (scope) => (await code()).load(scope),
+    save: async (scope, kept) => (await code()).save(scope, kept),
   }
 }
 

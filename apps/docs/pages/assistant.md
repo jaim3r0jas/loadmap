@@ -71,6 +71,15 @@ The whole diagram has a conversation, and so does each box you ask about: a ques
 box's, which starts with nothing from the others. **Conversation** switches between them, and **New conversation**
 starts the one shown again, empty.
 
+The conversations stay across a reload and a return: those of a public repository, or of your draft, in this browser;
+those of a private repository in this tab only, as its files are. At most 20 for each, the newest; a proposal is not
+kept (ask again). **Disconnect** forgets them.
+
+A model on your own computer (Ollama, LM Studio) runs with a small window: start it with 32 000 tokens or more
+(`OLLAMA_CONTEXT_LENGTH=32000`; LM Studio: the context length when you load the model). For it the panel sends the short
+reference ([llms-small.txt](/llms-small.txt)) and, in a long conversation, the first question with the newest turns,
+and says when it left earlier ones out.
+
 ## The Timeline, and saving
 
 Every version of the files is kept as a git commit, as git writes one: what you keep, every accepted proposal, every

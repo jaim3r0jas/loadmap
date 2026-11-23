@@ -15,6 +15,12 @@ export interface ProviderPreset {
   /** A model to start with, when the provider has one cheap enough to try. */
   model?: string
   local?: boolean
+  /**
+   * The context window, in tokens, to plan for when it is small: a model on the reader's own computer. Ollama and LM
+   * Studio start with a few thousand, too few for the short reference: the docs say to start them with 32 000 or more
+   * (`OLLAMA_CONTEXT_LENGTH=32000`), and the panel plans for that.
+   */
+  window?: number
 }
 
 export const PROVIDERS: readonly ProviderPreset[] = [
@@ -69,8 +75,22 @@ export const PROVIDERS: readonly ProviderPreset[] = [
     url: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyEnv: 'GEMINI_API_KEY',
   },
-  { id: 'ollama', name: 'Ollama', kind: 'openai-compatible', url: 'http://localhost:11434/v1', local: true },
-  { id: 'lmstudio', name: 'LM Studio', kind: 'openai-compatible', url: 'http://localhost:1234/v1', local: true },
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    kind: 'openai-compatible',
+    url: 'http://localhost:11434/v1',
+    local: true,
+    window: 32_000,
+  },
+  {
+    id: 'lmstudio',
+    name: 'LM Studio',
+    kind: 'openai-compatible',
+    url: 'http://localhost:1234/v1',
+    local: true,
+    window: 32_000,
+  },
 ]
 
 /** The origins of the hosted providers: what a page's `connect-src` must allow for them. */

@@ -116,6 +116,11 @@ reader asks with **Remember it for my account** ticked. The docs keep them with 
 connected to GitHub. An error any of them throws is shown by its message; `links` on it (`{ href, label }[]`, https
 addresses) follow the message, for what the reader has to do elsewhere first.
 
+`assist.conversations` (a `ConversationStore`: `scope()`, `load(scope)`, `save(scope, kept)`) keeps the panel's
+conversations across reloads, by a scope the page names (the docs: a repository, or the draft); the panel reads them as
+it opens and writes them after each answer, at most 20 a scope and never a proposal. `assist.smallReference` is the short
+reference, read in place of `reference` for a model with a small window (a local preset's `window`).
+
 `assist.data` (an `EditorData`) gives the panel the reader's metrics. Nothing is asked of it before the reader presses
 **Connect** (`connect(code?)` names the stores to explore and to measure from; with `code`, the panel asks for one
 beside it). Then the model may ask to look in them before it writes a metric: each
