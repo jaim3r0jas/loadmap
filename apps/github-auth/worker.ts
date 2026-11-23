@@ -1,10 +1,12 @@
-// What a static page cannot do for "Connect to GitHub": swap the code GitHub gives the popup for a token, and bring a
-// returning reader back without a click. GitHub's token endpoint answers no browser (no CORS) and wants the app's
-// client secret even with PKCE, so this Worker holds the secret and does those swaps, nothing else: three paths, the
-// site's own origins only, the PKCE verifier passed through, nothing stored, nothing logged. GitHub's refresh token never
-// reaches the page as it is: the page gets it sealed with SEAL_KEY and bound to a key its browser cannot export, and only
-// a request signed with that key opens it again. It runs on Cloudflare Workers (apps/github-auth/README.md).
+// What a static page cannot do for "Connect to GitHub": swap the code GitHub gives the popup for a token, bring a
+// returning reader back without a click, and remember the reader's model settings. GitHub's token endpoint answers no
+// browser (no CORS) and wants the app's client secret even with PKCE, so this Worker holds the secret and does those
+// things, nothing else: four paths, the site's own origins only, the PKCE verifier passed through, nothing logged, and
+// nothing stored but each reader's sealed settings (store.ts). GitHub's refresh token never reaches the page as it is:
+// the page gets it sealed with SEAL_KEY and bound to a key its browser cannot export, and only a request signed with that
+// key opens it again. It runs on Cloudflare Workers (apps/github-auth/README.md).
 import { type Device, isDevice, seal, secretBytes, signedBy, unseal } from './seal'
+import { type Db, isSlot, readOne, ready, remove, slots, write } from './store'
 
 export interface Env {
   /** The GitHub App's client id (public) and secret (a Worker secret, never in the page or the repository). */
@@ -14,6 +16,8 @@ export interface Env {
   ALLOWED_ORIGINS: string
   /** 32 random bytes, base64 (a Worker secret): without it a returning reader connects with one click, as before. */
   SEAL_KEY?: string
+  /** The D1 database of each reader's model settings: without it, nothing is remembered for an account. */
+  DB?: Db
 }
 
 const GITHUB = 'https://github.com/login/oauth/access_token'
@@ -35,6 +39,8 @@ export interface Session {
   r: string
   u: number
   k: Device
+  /** When GitHub last gave a token for it (ms): the settings answer a session refreshed in the last 8 hours. */
+  t: number
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -69,7 +75,7 @@ export async function handle(
       }
     : { Vary: 'Origin' }
   const path = new URL(req.url).pathname
-  if (path !== '/token' && path !== '/refresh' && path !== '/revoke') return json(404, { error: 'not_found' }, cors)
+  if (!['/token', '/refresh', '/revoke', '/settings'].includes(path)) return json(404, { error: 'not_found' }, cors)
   if (req.method === 'OPTIONS') return new Response(null, { status: ok ? 204 : 403, headers: cors })
   if (req.method !== 'POST') return json(405, { error: 'method' }, { ...cors, Allow: 'POST, OPTIONS' })
   if (!ok) return json(403, { error: 'origin' }, cors)
@@ -88,8 +94,9 @@ export async function handle(
     b === null
       ? new Response(null, { status, headers: { ...cors, 'Cache-Control': 'no-store' } })
       : json(status, b, cors)
-  if (path === '/token') return token(body, env, allowed, secret, call, answer)
+  if (path === '/token') return token(body, env, allowed, secret, call, now, answer)
   if (path === '/refresh') return refresh(body, env, secret, call, now, answer)
+  if (path === '/settings') return settings(body, env, secret, now, answer)
   return revoke(body, env, call, answer)
 }
 
@@ -134,6 +141,7 @@ async function token(
   allowed: string[],
   secret: Uint8Array | undefined,
   call: typeof fetch,
+  now: () => number,
   answer: Answer,
 ) {
   const { code, code_verifier, redirect_uri, device } = body
@@ -156,7 +164,7 @@ async function token(
   if (!secret || !device || !got.refresh) return answer(200, got.token)
   const who = await whoami(call, got.token.access_token)
   if (!who) return answer(200, got.token)
-  const session = await sealed(secret, { r: got.refresh, u: who.id, k: device })
+  const session = await sealed(secret, { r: got.refresh, u: who.id, k: device, t: now() })
   return answer(200, { ...got.token, session })
 }
 
@@ -209,7 +217,88 @@ async function refresh(
       ? answer(401, { error: 'expired' })
       : answer(502, { error: 'github_refused' })
   if (!got.refresh) return answer(200, got.token)
-  return answer(200, { ...got.token, session: await sealed(secret, { ...s, r: got.refresh }) })
+  return answer(200, { ...got.token, session: await sealed(secret, { ...s, r: got.refresh, t: now() }) })
+}
+
+/** What the page signs for its settings: the time, the session and the request, so no part is swapped for another's. */
+export const settingsText = (at: number, session: string, request: string) =>
+  `loadmap settings\n${at}\n${session}\n${request}`
+
+const PROVIDER = /^[a-z0-9-]{1,32}$/
+/** A key as providers make them: printable, no spaces, not absurdly long. */
+const KEY = /^[\x21-\x7e]{8,512}$/
+/** How long after its last refresh a session may read and write settings: revoking the app ends it within this. */
+const AGE = 8 * 3600_000
+
+/**
+ * The reader's model settings: their choice of provider and model, and the keys kept for them. Only for a request signed by the browser the session is bound to, of a session GitHub refreshed in
+ * the last 8 hours. A key leaves only for `key`, the one question that needs it.
+ */
+async function settings(body: Body, env: Env, secret: Uint8Array | undefined, now: () => number, answer: Answer) {
+  if (!secret || !env.DB) return answer(501, { error: 'not_configured' })
+  const db = env.DB
+  const { session, at, sig, request } = body
+  if (
+    typeof session !== 'string' ||
+    typeof at !== 'number' ||
+    !Number.isFinite(at) ||
+    typeof request !== 'string' ||
+    request.length > 3000
+  )
+    return answer(400, { error: 'bad_request' })
+  if (Math.abs(now() - at) > SKEW) return answer(409, { error: 'clock', now: now() })
+  const s = await unseal<Session>(secret, 'session', session)
+  if (!s || !isDevice(s.k) || !(await signedBy(s.k, settingsText(at, session, request), sig)))
+    return answer(401, { error: 'session' })
+  // the page refreshes it, then asks again
+  if (typeof s.t !== 'number' || now() - s.t > AGE) return answer(401, { error: 'stale' })
+  let r: Body
+  try {
+    r = JSON.parse(request)
+    if (typeof r !== 'object' || r === null) throw new Error()
+  } catch {
+    return answer(400, { error: 'bad_request' })
+  }
+  await ready(db)
+  const user = s.u
+  const provider = typeof r.provider === 'string' && PROVIDER.test(r.provider) ? r.provider : undefined
+  if (r.op === 'read') {
+    // the choice alone is opened: a key is opened only for `key`
+    const c = await readOne<{ provider?: unknown; model?: unknown }>(db, secret, user, 'default')
+    const choice =
+      typeof c?.provider === 'string' && typeof c.model === 'string'
+        ? { provider: c.provider, model: c.model }
+        : undefined
+    const keys = (await slots(db, user)).filter((k) => k.startsWith('key:')).map((k) => k.slice(4))
+    return answer(200, { ...(choice && { choice }), keys })
+  }
+  if (r.op === 'key') {
+    if (!provider) return answer(400, { error: 'bad_request' })
+    const k = await readOne<{ key?: unknown }>(db, secret, user, `key:${provider}`)
+    return answer(200, typeof k?.key === 'string' ? { key: k.key } : {})
+  }
+  if (r.op === 'save') {
+    const model = typeof r.model === 'string' && /^[ -~]{0,200}$/.test(r.model) ? r.model : null
+    const key = r.key === undefined ? undefined : typeof r.key === 'string' && KEY.test(r.key) ? r.key : null
+    if (!provider || model === null || key === null) return answer(400, { error: 'bad_request' })
+    const t = now()
+    const why =
+      (key !== undefined && (await write(db, secret, user, `key:${provider}`, { key }, t))) ||
+      (await write(db, secret, user, 'default', { provider, model }, t))
+    if (why === 'busy') return answer(429, { error: why })
+    if (why) return answer(413, { error: why })
+    return answer(204, null)
+  }
+  if (r.op === 'remove') {
+    if (r.what === 'all') await remove(db, user)
+    else {
+      const slot = `key:${typeof r.what === 'object' && r.what !== null ? (r.what as Body).key : ''}`
+      if (!isSlot(slot)) return answer(400, { error: 'bad_request' })
+      await remove(db, user, slot)
+    }
+    return answer(204, null)
+  }
+  return answer(400, { error: 'bad_request' })
 }
 
 /** Disconnect: the token is revoked at GitHub, so its 8 hours end now. Anyone holding a token may end it. */

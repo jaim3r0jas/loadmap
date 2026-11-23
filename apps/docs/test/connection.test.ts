@@ -1,7 +1,7 @@
 // The one connection to GitHub: what the bar reads before any GitHub code loads, what Connect keeps and where, what
 // a refused token and Disconnect leave. Nothing reaches the real GitHub: the fake answers every call.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { refreshText } from '../../github-auth/worker'
+import { refreshText, settingsText as workerSettingsText } from '../../github-auth/worker'
 import type { SignIn, SignInHost } from '../site/islands/github/signin'
 import { fakeGitHub } from './fake-github'
 
@@ -388,5 +388,42 @@ describe('coming back connected', () => {
     expect(held.size).toBe(0)
     expect(p.account()).toEqual({ connected: false })
     expect(p.hasToken()).toBe(false)
+  })
+})
+
+describe("the reader's settings, signed", () => {
+  it('signs the text the Worker checks, and refreshes a stale session once before asking again', async () => {
+    const p = await page(fake(APP_TOKEN).fetch)
+    held.set('session', 'old-session')
+    const sent: { path: string; body: Record<string, unknown> }[] = []
+    let stale = true
+    const w = (async (url: string, init: RequestInit) => {
+      const path = new URL(url).pathname
+      const body = JSON.parse(String(init.body))
+      sent.push({ path, body })
+      if (path === '/refresh') return new Response(JSON.stringify({ access_token: APP_TOKEN, session: 'new-session' }))
+      if (stale) {
+        stale = false
+        return new Response(JSON.stringify({ error: 'stale' }), { status: 401 })
+      }
+      return new Response(JSON.stringify({ keys: [] }))
+    }) as unknown as typeof fetch
+    const res = await p.signedSettings({ op: 'read' }, { app: APP, fetch: w, now: () => 1_800_000_000_000 })
+    expect(await res!.json()).toEqual({ keys: [] })
+    expect(sent.map((s) => [s.path, s.body.session])).toEqual([
+      ['/settings', 'old-session'],
+      ['/refresh', 'old-session'],
+      ['/settings', 'new-session'],
+    ])
+    const last = sent[2]!.body
+    expect(last.request).toBe('{"op":"read"}')
+    expect(p.settingsText(1, 's', 'r')).toBe(workerSettingsText(1, 's', 'r'))
+  })
+
+  it('asks nothing without a session to sign with', async () => {
+    const p = await page(fake(APP_TOKEN).fetch)
+    const w = worker()
+    expect(await p.signedSettings({ op: 'read' }, { app: APP, fetch: w.fetch })).toBeUndefined()
+    expect(w.sent).toEqual([])
   })
 })

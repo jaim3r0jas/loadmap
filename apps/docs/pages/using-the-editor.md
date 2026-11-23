@@ -47,8 +47,8 @@ lost box for a loss nothing counts), and the other uses of the name under the cu
 
 The **Ask** panel asks a model you choose, with your own key, for a change: it comes as a proposal the compiler has
 checked, drawn in the canvas, and goes into the text only when you accept it. The key stays in this page (or this tab,
-if you say so). **Sign in with OpenRouter** makes one for you instead, and **Keep sealed in your GitHub** keeps it
-sealed with a passphrase, in a private repository of yours, to open on another device. A model on your own computer
+if you say so). **Sign in with OpenRouter** makes one for you instead. Connected to GitHub, **Remember it for my
+account** keeps your choice and key for your next visit and your other devices. A model on your own computer
 needs no key: start Ollama with `OLLAMA_ORIGINS` naming this site (LM Studio: allow CORS in its server settings), and
 pick it in the panel. [Asking a model](/assistant/) tells all of it.
 

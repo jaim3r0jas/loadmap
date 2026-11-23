@@ -194,6 +194,51 @@ async function forgetSession(): Promise<void> {
   }
 }
 
+/** What the page signs for its settings: the Worker checks the same text (apps/github-auth/worker.ts). */
+export const settingsText = (at: number, session: string, request: string) =>
+  `loadmap settings\n${at}\n${session}\n${request}`
+
+/**
+ * A request about the reader's settings, signed with this browser's key over the session it keeps: the Worker's
+ * answer, or undefined when there is nothing to sign with (not connected through the app, or no session kept). A
+ * session the Worker finds too old is refreshed first, and a clock off is corrected, each once.
+ */
+export async function signedSettings(request: object, o: ResumeOptions = {}): Promise<Response | undefined> {
+  const config = o.app ?? app
+  if (!config) return undefined
+  const body = JSON.stringify(request)
+  const send = async (skew: number) => {
+    const session = await readSession().catch(() => undefined)
+    const pair = session ? await deviceKey().catch(() => undefined) : undefined
+    if (!session || !pair) return undefined
+    const at = (o.now ?? Date.now)() + skew
+    return (o.fetch ?? fetch)(`${config.exchange}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, at, sig: await sign(pair, settingsText(at, session, body)), request: body }),
+      credentials: 'omit',
+    })
+  }
+  // the Worker's time, once it said this browser's clock is off: every later request signs with it
+  let skew = 0
+  let res = await send(skew)
+  if (res?.status === 409) {
+    const got = (await res.json().catch(() => ({}))) as { now?: unknown }
+    if (typeof got.now === 'number') {
+      skew = got.now - (o.now ?? Date.now)() || 1
+      res = await send(skew)
+    }
+  }
+  if (res?.status === 401) {
+    const got = (await res
+      .clone()
+      .json()
+      .catch(() => ({}))) as { error?: unknown }
+    if (got.error === 'stale' && (await resume({ ...o, app: config, force: true }))) res = await send(skew)
+  }
+  return res
+}
+
 /**
  * Disconnect: the token revoked at GitHub through the Worker (its 8 hours end now), then everything this browser
  * holds for the connection forgotten, the key and the session too.

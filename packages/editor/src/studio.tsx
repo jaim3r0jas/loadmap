@@ -259,7 +259,7 @@ export class Studio {
               memory={this.ask}
               data={o.assist.data}
               signIn={o.assist.signIn}
-              vault={o.assist.vault}
+              settings={o.assist.settings}
               onMeasured={this.measured}
               functions={host.functions}
               selected={o.selected}

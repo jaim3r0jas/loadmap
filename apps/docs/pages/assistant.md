@@ -14,15 +14,19 @@ until the tab closes, and **Forget** drops it. It is never in a link, in this br
 anywhere but to the provider you picked.
 
 - **Sign in with OpenRouter** makes a key for you in a popup, instead of pasting one.
-- **Keep sealed in your GitHub** keeps the key sealed with a passphrase of 12 characters or more, in a private
-  repository of yours (`loadmap-keys`): on another device, **Open from your GitHub** with the same passphrase. The key
-  is sealed in this page; GitHub holds the sealed text alone. It uses the GitHub token the editor asks for to open
-  repositories. The editor makes `loadmap-keys` the first time, when the token may: after **Connect to GitHub**,
-  when the app holds "Repository creation"; with a pasted token, one with Administration on all repositories.
-  Otherwise it says so with a link to make it yourself, private; then let the app reach it (or give the token
-  Contents, read and write, on it; a classic token needs the `repo` scope) and keep the key again.
+- **Remember it for my account**, when you are connected to GitHub through the site's app: your choice of provider and
+  model and your key are kept for you, so your next visit, or another device, finds them set. See below.
 - A model on your own computer needs no key. Start Ollama with `OLLAMA_ORIGINS` naming this site (for LM Studio,
   allow CORS in its server settings).
+
+## Where your key is kept
+
+Ticked, **Remember it for my account** keeps your choice and your key with this site's service (a Cloudflare Worker,
+`apps/github-auth` in the repository), encrypted with its own secret and filed under your GitHub account. It is
+read back only for a question that needs it, from a browser you connected, and goes from there to your provider alone.
+The service's owner can read a key it keeps: untick the box to keep the key in this page (or this tab) only.
+**Forget** removes it from your account too. Revoking the loadmap editor app on GitHub ends the service's access within
+8 hours; **Disconnect** forgets the connection in this browser.
 
 ## What it sends
 
