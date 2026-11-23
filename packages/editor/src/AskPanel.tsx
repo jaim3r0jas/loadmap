@@ -1000,25 +1000,28 @@ export default function AskPanel(p: AskPanelProps) {
       )}
       {(current !== '' || Object.keys(m.threads).length > 0 || turns.length > 0) && (
         <div className="lme-ask-row lme-ask-threads">
-          <label>
-            <span className="lm-sr">Conversation</span>
-            <select
-              value={current}
-              disabled={busy || deciding}
-              onChange={(e) => {
-                const to = e.target.value
-                switchTo(to)
-                // the chip follows: a box's conversation is about its box, the whole diagram's about none
-                setScoped(to !== '' && to === p.selected)
-              }}
-            >
-              {[...new Set(['', current, ...Object.keys(m.threads)])].map((k) => (
-                <option key={k} value={k}>
-                  {k ? `About ${k}` : 'The whole diagram'}
-                </option>
-              ))}
-            </select>
+          {/* a label of its own: one around the select would take the option shown into its name */}
+          <label htmlFor={`${id}c`} className="lm-sr">
+            Conversation
           </label>
+          <select
+            id={`${id}c`}
+            value={current}
+            disabled={busy || deciding}
+            onChange={(e) => {
+              const to = e.target.value
+              switchTo(to)
+              // the chip follows: a box's conversation is about its box, the whole diagram's about none
+              setScoped(to !== '' && to === p.selected)
+            }}
+          >
+            {[...new Set(['', current, ...Object.keys(m.threads)])].map((k) => (
+              <option key={k} value={k}>
+                {k ? `About ${k}` : 'The whole diagram'}
+              </option>
+            ))}
+          </select>
+
           {turns.length > 0 && (
             <button
               type="button"
