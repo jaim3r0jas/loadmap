@@ -713,17 +713,21 @@ const VAULT: KeyVault = {
     return sealed === undefined ? undefined : v.unseal(sealed, passphrase)
   },
   keep: async (provider, key, passphrase) => {
-    const { gh, v } = await vaultReady()
-    await v.saveSealed(gh, provider, await v.seal(key, passphrase))
+    const { gh, v, signedIn } = await vaultReady()
+    // a sign-in's token reaches what the app is installed on: a refusal sends the reader to that page
+    const { installUrl, signInConfig } = await import('./github/signin')
+    const config = signInConfig()
+    const o = { signedIn: signedIn(), app: config && installUrl(config) }
+    await v.saveSealed(gh, provider, await v.seal(key, passphrase), o)
   },
 }
 
 /** The vault's code and the GitHub client, loaded on first use, with the token the editor already asks for. */
 async function vaultReady() {
-  const [{ gh, hasToken }, v] = await Promise.all([import('./github/session'), import('./github/vault')])
+  const [{ gh, hasToken, signedIn }, v] = await Promise.all([import('./github/session'), import('./github/vault')])
   if (!hasToken())
     throw new Error('Give the editor a GitHub token first (New → Open from GitHub…): the key is kept there.')
-  return { gh, v }
+  return { gh, v, signedIn }
 }
 
 /** The private repositories whose files the reader said may go to a model, this page's session. */

@@ -16,6 +16,8 @@ export interface Turn {
 export interface AskMemory {
   turns: Turn[]
   note: string
+  /** Where a vault's refusal sends the reader, with the note they belong to: any other note drops them. */
+  ways?: { note: string; links: readonly { href: string; label: string }[] }
   request: string
   proposal: Proposal | null
   usage: string

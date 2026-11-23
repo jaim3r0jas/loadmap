@@ -17,7 +17,10 @@ anywhere but to the provider you picked.
 - **Keep sealed in your GitHub** keeps the key sealed with a passphrase of 12 characters or more, in a private
   repository of yours (`loadmap-keys`): on another device, **Open from your GitHub** with the same passphrase. The key
   is sealed in this page; GitHub holds the sealed text alone. It uses the GitHub token the editor asks for to open
-  repositories.
+  repositories. The editor makes `loadmap-keys` the first time, when the token may: after **Sign in with GitHub**,
+  when the app holds "Repository creation"; with a pasted token, one with Administration on all repositories.
+  Otherwise it says so with a link to make it yourself, private; then let the app reach it (or give the token
+  Contents, read and write, on it; a classic token needs the `repo` scope) and keep the key again.
 - A model on your own computer needs no key. Start Ollama with `OLLAMA_ORIGINS` naming this site (for LM Studio,
   allow CORS in its server settings).
 

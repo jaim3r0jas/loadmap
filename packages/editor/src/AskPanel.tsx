@@ -13,7 +13,7 @@ import {
   providerFor,
 } from '@loadmap/dsl/assist'
 import { LOOKS } from '@loadmap/dsl/internal'
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type FormEvent, Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { AskMemory, Turn } from './AskMemory'
 import { applyFiles } from './apply'
 import { type Author, subject, type Trace } from './history'
@@ -63,7 +63,9 @@ export interface AskPanelProps {
 
 /**
  * Where a page keeps a model key sealed with the reader's passphrase (the docs keep it in a private repository of the
- * reader's): the key is sealed and opened on the page, only the sealed text is kept.
+ * reader's): the key is sealed and opened on the page, only the sealed text is kept. An error from `open` or `keep`
+ * is shown by its message; `links` on it (`{ href, label }[]`, https addresses) follow the message, for what the
+ * reader has to do elsewhere first.
  */
 export interface KeyVault {
   /** Where it is kept, in a few words: "your GitHub". */
@@ -172,6 +174,7 @@ export default function AskPanel(p: AskPanelProps) {
   const [streaming, setStreaming] = useState('')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(m.note)
+  const [ways, setWays] = useState(m.ways)
   const [request, setRequest] = useState(m.request)
   const [scoped, setScoped] = useState(true)
   const [proposal, setProposal] = useState<Proposal | null>(m.proposal)
@@ -210,7 +213,14 @@ export default function AskPanel(p: AskPanelProps) {
       setPassphrase('')
       setAgain('')
     } catch (err) {
-      setNote((err as Error).message)
+      const { message, links } = err as Error & { links?: unknown }
+      setNote(message)
+      // https alone: a vault's link is the page's own code, but nothing else belongs behind a note
+      const safe = (Array.isArray(links) ? links : []).filter(
+        (l): l is { href: string; label: string } =>
+          typeof l?.href === 'string' && typeof l.label === 'string' && l.href.startsWith('https://'),
+      )
+      setWays(safe.length ? { note: message, links: safe.map(({ href, label }) => ({ href, label })) } : undefined)
     }
   }
   const [advice, setAdvice] = useState(m.advice)
@@ -221,6 +231,7 @@ export default function AskPanel(p: AskPanelProps) {
   // what the panel draws, kept for the next time it opens
   m.turns = turns
   m.note = note
+  m.ways = ways
   m.request = request
   m.proposal = proposal
   m.usage = usage
@@ -676,7 +687,20 @@ export default function AskPanel(p: AskPanelProps) {
           </div>
         </section>
       )}
-      {note && <p className="lme-hint">{note}</p>}
+      {note && (
+        <p className="lme-hint">
+          {note}
+          {ways?.note === note &&
+            ways.links.map((l) => (
+              <Fragment key={l.href}>
+                {' '}
+                <a href={l.href} target="_blank" rel="noopener noreferrer">
+                  {l.label}
+                </a>
+              </Fragment>
+            ))}
+        </p>
+      )}
       {box && !busy && (
         <fieldset className="lme-ask-row">
           <legend className="lm-sr">Ask about {box}</legend>
