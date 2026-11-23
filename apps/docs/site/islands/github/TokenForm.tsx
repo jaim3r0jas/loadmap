@@ -1,11 +1,11 @@
-// A GitHub token, asked for in place when something needs one: a private repository, the hourly limit, a save. With
-// the site's GitHub App (a build given one), "Sign in with GitHub" gets it in a popup; else, or as well, the reader
-// makes one on GitHub's page (filled in by the link) and pastes it here. It stays in this tab.
+// A GitHub token, asked for in place when something needs one: a private repository, the hourly limit, a save, a new
+// repository; and by the bar's Connect to GitHub. With the site's GitHub App (a build given one), "Connect to GitHub"
+// gets it in a popup; else, or as well, the reader makes one on GitHub's page (filled in by the link) and pastes it
+// here. It stays in this tab.
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
+import { installUrl } from './account'
+import { app, connect } from './connection'
 import { takeToken, tokenPage } from './session'
-import { installUrl, signIn, signInConfig } from './signin'
-
-const APP = signInConfig()
 
 const CSS = `
 .lmg-token { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--lm-line); border-radius: 8px; background: var(--lm-bg); }
@@ -31,9 +31,11 @@ export interface TokenFormProps {
   /** The token is in: try again. */
   onToken: () => void
   onCancel?: () => void
+  /** The pasted token's way open from the start: the reader chose it over the app. */
+  paste?: boolean
 }
 
-export default function TokenForm({ reason, owner, need, onToken, onCancel }: TokenFormProps) {
+export default function TokenForm({ reason, owner, need, onToken, onCancel, paste: pasting }: TokenFormProps) {
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
   const [value, setValue] = useState('')
@@ -41,13 +43,10 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
   const [error, setError] = useState('')
   const [signing, setSigning] = useState(false)
   const first = useRef<HTMLButtonElement>(null)
-  // the app reaches the repositories it is installed on: a new one is not among them, so a new one takes a token
-  const app = need === 'create' ? undefined : APP
-  useEffect(() => (app ? first.current : input.current)?.focus(), [app])
-  // a sign-in outlives a click: it reads "Keep" when the token comes, and does nothing once the form is gone (Back,
-  // Close), so a save the reader backed out of never runs
-  const kept = useRef(keep)
-  kept.current = keep
+  // the app makes a new repository too ("Repository creation"), and reaches the ones it made
+  useEffect(() => (app && !pasting ? first.current : input.current)?.focus(), [pasting])
+  // a sign-in outlives a click: it does nothing once the form is gone (Back, Close), so a save the reader backed out
+  // of never runs
   const here = useRef(true)
   useEffect(() => {
     here.current = true
@@ -60,11 +59,8 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
     setError('')
     setSigning(true)
     try {
-      const token = await signIn(app)
-      if (!here.current) return
-      const wrong = takeToken(token, kept.current)
-      if (wrong) setError(wrong)
-      else onToken()
+      await connect()
+      if (here.current) onToken()
     } catch (e) {
       if (here.current) setError(e instanceof Error ? e.message : 'GitHub did not sign you in.')
     } finally {
@@ -125,6 +121,9 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
           Use it
         </button>
       </div>
+      <label className="lmg-keep">
+        <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it for this tab
+      </label>
     </>
   )
   return (
@@ -135,7 +134,7 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
         <>
           {/* it stays while the popup is open (aria-disabled): the keyboard is never dropped */}
           <button ref={first} type="button" className="lm-btn lmg-signin" aria-disabled={signing} onClick={signInNow}>
-            {signing ? 'Signing in on GitHub…' : 'Sign in with GitHub'}
+            {signing ? 'Connecting on GitHub…' : 'Connect to GitHub'}
           </button>
           <p className="lmg-hint">
             The loadmap editor app reads and writes only the repositories it is installed on.{' '}
@@ -146,16 +145,13 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
         </>
       )}
       {app ? (
-        <details>
+        <details open={pasting}>
           <summary>Or paste a token</summary>
           {paste}
         </details>
       ) : (
         paste
       )}
-      <label className="lmg-keep">
-        <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep it for this tab
-      </label>
       {error && (
         <p className="lmg-error" role="alert">
           {error}
@@ -163,10 +159,11 @@ export default function TokenForm({ reason, owner, need, onToken, onCancel }: To
       )}
       <p className="lmg-hint">
         The token goes to api.github.com only
-        {app ? ' (a sign-in gets it through the site’s sign-in service, which keeps nothing)' : ''}. It stays in this
-        page
-        {keep ? ', and in this tab until it closes' : ''}: never in a link, and never in this browser's lasting storage.
-        A token for an organization's repository may wait for an owner's approval.
+        {app
+          ? ' (connecting gets it through the site’s sign-in service, which keeps nothing, and keeps it for this tab)'
+          : ''}
+        . A pasted one stays in this page{keep ? ', and in this tab until it closes' : ''}. Never in a link, and never
+        in this browser's lasting storage. A token for an organization's repository may wait for an owner's approval.
       </p>
       {/* outside the folded paste: the way back shows whichever way the token comes */}
       {onCancel && (

@@ -31,6 +31,7 @@ import jetbrainsMono from '../fonts/jetbrains-mono.woff2?url'
 import { CHOICES, ICONS, themeSwitch } from '../theme-switch'
 import uploadsSource from '../uploads.loadmap?raw'
 import { bridge } from './bridge'
+import AccountButton from './github/AccountButton'
 import { changedCount, changedText, changes } from './github/changes'
 import { allVersions, endingWith, type Version, versionsSince } from './github/commits'
 import type { Listing, Opened } from './github/load'
@@ -134,6 +135,7 @@ const OpenDialog = lazy(() => import('./github').then((m) => ({ default: m.OpenD
 const ChangesDialog = lazy(() => import('./github').then((m) => ({ default: m.ChangesDialog })))
 const SaveDialog = lazy(() => import('./github').then((m) => ({ default: m.SaveDialog })))
 const NewRepoDialog = lazy(() => import('./github').then((m) => ({ default: m.NewRepoDialog })))
+const ConnectDialog = lazy(() => import('./github').then((m) => ({ default: m.ConnectDialog })))
 /** The button's own rules, with it: docs.css is every page's first load. */
 const REPO_CSS = `
 .app-repo { max-width: 260px; font-family: var(--lm-mono); font-size: .78rem; }
@@ -385,6 +387,8 @@ function Editor({ root }: { root: URL }) {
         : draftStart(),
   )
   const [github, setGithub] = useState<{ target?: RepoTarget; listing?: Listing; ask?: string } | null>(null)
+  // the bar's Connect to GitHub, when it needs a word: no app in this build, a pasted token chosen, a blocked popup
+  const [connecting, setConnecting] = useState<{ paste?: boolean; error?: string } | null>(null)
   useEffect(() => {
     if (start) return
     if (!fromRepo()) {
@@ -551,6 +555,11 @@ function Editor({ root }: { root: URL }) {
           <OpenDialog start={github} onOpen={opened} onClose={() => setGithub(null)} />
         </Suspense>
       )}
+      {connecting && (
+        <Suspense fallback={null}>
+          <ConnectDialog {...connecting} onClose={() => setConnecting(null)} />
+        </Suspense>
+      )}
       {from && <style>{REPO_CSS}</style>}
       {newRepo && (
         <Suspense fallback={null}>
@@ -656,6 +665,11 @@ function Editor({ root }: { root: URL }) {
                 {changed > 0 && <span className="app-changed">{changed}</span>}
               </button>
             )}
+            <AccountButton
+              onOpen={() => setGithub({})}
+              onNewRepo={() => setNewRepo(allNow())}
+              onDialog={setConnecting}
+            />
             <ThemeMenu />
             <button
               type="button"
@@ -725,8 +739,7 @@ const VAULT: KeyVault = {
 /** The vault's code and the GitHub client, loaded on first use, with the token the editor already asks for. */
 async function vaultReady() {
   const [{ gh, hasToken, signedIn }, v] = await Promise.all([import('./github/session'), import('./github/vault')])
-  if (!hasToken())
-    throw new Error('Give the editor a GitHub token first (New → Open from GitHub…): the key is kept there.')
+  if (!hasToken()) throw new Error('Connect to GitHub first (the button at the top): the key is kept there.')
   return { gh, v, signedIn }
 }
 

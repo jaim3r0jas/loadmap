@@ -1188,7 +1188,7 @@ describe('the built site', () => {
 
       await dialog.getByText('Saving writes to acme/capacity: give a token that may write to it.').waitFor()
       // this build has no GitHub App: the token is pasted, with no sign-in offered
-      expect(await dialog.getByRole('button', { name: 'Sign in with GitHub' }).count()).toBe(0)
+      expect(await dialog.getByRole('button', { name: 'Connect to GitHub' }).count()).toBe(0)
       const make = new URL((await dialog.getByRole('link', { name: /Make a token on GitHub/ }).getAttribute('href'))!)
       expect([make.searchParams.get('contents'), make.searchParams.get('pull_requests')]).toEqual(['write', 'write'])
       // nothing is written before the reader says so
@@ -1224,6 +1224,52 @@ describe('the built site', () => {
       await browser.close()
     }
   }, 120_000)
+
+  it("connects from the bar with a pasted token: the account's menu opens repositories, Disconnect forgets it", async () => {
+    const token = `github_pat_${'C'.repeat(40)}`
+    const fake = fakeGitHub({ owner: 'acme', name: 'capacity', token, refs: { main: {} } })
+    const browser = await chromium.launch()
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+      await routeGitHub(page, fake.fetch)
+      await page.goto(`${url}editor/`)
+      await page.waitForSelector('.lme-title')
+      // nothing asks GitHub before the reader does
+      expect(fake.calls).toEqual([])
+      // this build has no GitHub App: Connect asks for a pasted token
+      await page.getByRole('button', { name: 'Connect to GitHub' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Connect to GitHub' })
+      await dialog.getByLabel('Token', { exact: true }).fill(token)
+      await dialog.getByLabel('Keep it for this tab').check()
+      await dialog.getByRole('button', { name: 'Use it' }).click()
+      const account = page.getByRole('button', { name: 'GitHub: acme' })
+      await account.waitFor()
+      await dialog.waitFor({ state: 'hidden' })
+
+      // a reload in this tab keeps the connection, without asking GitHub
+      const asked = fake.calls.length
+      await page.reload()
+      await account.waitFor()
+      expect(fake.calls.length).toBe(asked)
+
+      await account.click()
+      await page.getByRole('menuitem', { name: 'Open a repository…' }).click()
+      const open = page.getByRole('dialog', { name: 'Open from GitHub' })
+      await open.waitFor()
+      await open.getByRole('button', { name: 'Close' }).click()
+
+      await account.click()
+      await page.getByRole('menuitem', { name: 'Disconnect' }).click()
+      await page.getByRole('button', { name: 'Connect to GitHub' }).waitFor()
+      const kept = await page.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(sessionStorage))
+      expect(kept).not.toContain(token)
+      expect(kept).not.toContain('loadmap-github-account')
+      // the token went to api.github.com and nowhere else
+      for (const c of fake.calls) expect(c.url.startsWith('https://api.github.com/')).toBe(true)
+    } finally {
+      await browser.close()
+    }
+  })
 
   it('asks for a token in place for a private repository, and keeps its text and the token out of lasting storage', async () => {
     const token = `github_pat_${'A'.repeat(40)}`
