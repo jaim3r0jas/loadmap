@@ -37,6 +37,8 @@ export interface ClientOptions {
   fetch?: typeof fetch
   /** The time in ms, for "the limit resets in N minutes": the tests set it. */
   now?: () => number
+  /** GitHub refused the token that went with a call (401): it is wrong, expired or revoked. */
+  refused?: (sent: string) => void
 }
 
 /** One segment of an API path: a name from the reader or a repository never adds a "/" or a "?" of its own. */
@@ -71,7 +73,10 @@ export function client(o: ClientOptions = {}): Client {
       throw new GitHubError('GitHub could not be reached. Check the connection and try again.', 'network')
     }
     if (res.ok) return res
-    throw await failure(res, Boolean((init.headers as Record<string, string> | undefined)?.Authorization))
+    const auth = (init.headers as Record<string, string> | undefined)?.Authorization
+    const signed = Boolean(auth)
+    if (auth && res.status === 401) o.refused?.(auth.replace(/^Bearer /, ''))
+    throw await failure(res, signed)
   }
 
   async function failure(res: Response, signed: boolean): Promise<GitHubError> {

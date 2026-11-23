@@ -97,6 +97,11 @@ export function fakeGitHub(repo: FakeRepo, o: { rateLimited?: boolean } = {}) {
     if (url.origin !== 'https://api.github.com') throw new TypeError('Failed to fetch')
     const base = `/repos/${repo.owner}/${repo.name}`
     const path = decodeURIComponent(url.pathname)
+    // the token's own account: the bar shows its login
+    if (path === '/user' && (init.method ?? 'GET') === 'GET') {
+      if (!authorization) return json(401, { message: 'Requires authentication' })
+      return signed ? json(200, { login: repo.owner, id: 1 }) : json(401, { message: 'Bad credentials' })
+    }
     if (path === '/user/repos' && init.method === 'POST') {
       if (repo.token == null || authorization !== `Bearer ${repo.token}`)
         return json(403, { message: 'Resource not accessible by personal access token' })

@@ -1,7 +1,7 @@
 # Sign in with GitHub for the live editor
 
 The editor on the docs site (GitHub Pages, no server) reads and saves repositories with a GitHub token. A reader can
-always paste a fine-grained token; with this set up, **Sign in with GitHub** gets one in a popup instead.
+always paste a fine-grained token; with this set up, **Connect to GitHub** gets one in a popup instead.
 
 Why a Worker: GitHub's token endpoint (`github.com/login/oauth/access_token`) sends no CORS headers, so no page can call
 it, and it wants the app's client secret even with PKCE
@@ -65,7 +65,7 @@ public, the page carries them):
 - `LOADMAP_GITHUB_APP_EXCHANGE`: the Worker's address.
 
 The `docs` workflow passes them to the build (`VITE_GITHUB_APP_*`); the editor page's Content-Security-Policy lets the
-Worker's origin through. The next deploy shows **Sign in with GitHub** wherever the editor asks for a token. With any of
+Worker's origin through. The next deploy's **Connect to GitHub** (the editor's bar, and wherever it asks for a token) signs in through the app. With any of
 the three unset, the editor asks for a pasted token as before. For `pnpm dev`, put the same three in
 `apps/docs/.env.local` as `VITE_GITHUB_APP_CLIENT_ID`, `VITE_GITHUB_APP_SLUG` and `VITE_GITHUB_APP_EXCHANGE`.
 

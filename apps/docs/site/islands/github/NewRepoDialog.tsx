@@ -5,7 +5,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { GitHubError } from './api'
 import { createRepo, type Made, RepoMade, type Version } from './commits'
 import { DIALOG_CSS, editorTheme } from './dialog'
-import { gh, hasToken } from './session'
+import { gh, hasToken, signedIn } from './session'
 import TokenForm from './TokenForm'
 
 export interface NewRepoDialogProps {
@@ -28,7 +28,7 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
   /** A repository an earlier press made, its versions not written: the next press writes them there. */
   const [half, setHalf] = useState<Made | null>(null)
   const [ask, setAsk] = useState<string | null>(() =>
-    hasToken() ? null : 'Making a repository in your account needs a token that may create one.',
+    hasToken() ? null : 'Making a repository in your account needs you connected to GitHub.',
   )
   useEffect(() => dialog.current?.showModal(), [])
 
@@ -36,6 +36,8 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
     e.preventDefault()
     if (busy) return
     setError('')
+    // asked now: a 401 drops the token before the error comes back
+    const viaApp = signedIn()
     try {
       const r = await createRepo(
         gh,
@@ -60,7 +62,9 @@ export default function NewRepoDialog({ versions, name: start, onClose }: NewRep
       // a token refused, or without the right: the form for another, saying why; anything else as it is
       if (cause instanceof GitHubError && ['auth', 'forbidden'].includes(cause.failure))
         setAsk(
-          `${(err as Error).message} Making a repository needs a token with Administration and Contents, read and write, on all repositories.`,
+          viaApp
+            ? `${(err as Error).message} The loadmap editor app needs "Repository creation": accept its request on GitHub (Settings → Applications), then connect again.`
+            : `${(err as Error).message} Making a repository needs a token with Administration and Contents, read and write, on all repositories.`,
         )
       else setError((err as Error).message)
     } finally {

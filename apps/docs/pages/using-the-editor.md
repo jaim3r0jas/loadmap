@@ -84,10 +84,17 @@ takes out before it adds them. [Published figures](/language/published/) has the
 
 ## Opening and saving on GitHub
 
+**Connect to GitHub**, at the top right, is the one switch for all of it. Where the site has its GitHub App, it signs
+you in in a popup: the token reaches only the repositories the app is installed on, lasts 8 hours, and stays in this
+tab. Without the app, or if you choose **Use a pasted token instead**, it asks for a token you make on GitHub's form,
+filled in. Connected, the button shows your account, and its menu opens a repository, saves to a new one, picks the
+app's repositories on GitHub, and disconnects. **Disconnect** forgets the token and the account in this browser. When
+you come back in a new tab, the button offers to reconnect as the same account: one press, and GitHub answers without
+asking again.
+
 **New → Open from GitHub…** opens a model from a repository (`owner/name`, or the address of a folder or a `.loadmap` file in it) with
-the files it names. A public repository opens as it is; a private one asks for a token in place: the dialog links
-to GitHub's form, filled in, and the token stays in the page (or this tab, if you say so), never in a link or this
-browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
+the files it names. A public repository opens as it is; a private one asks you to connect in place. A token
+stays in the page (or this tab), never in a link or this browser's lasting storage. A private repository's files stay in this tab too, apart from your draft. A link can open
 one as well: `/editor/?repo=owner/name&path=models/shop.loadmap` (`&ref=` for another branch), for instance from a
 repository's README:
 
@@ -97,15 +104,15 @@ repository's README:
 
 The repository's name in the bar says how many files you changed; it opens **Changes**: each file's diff, **Undo**
 for one or all. **Save to GitHub…** there (or ⌘S) writes them as a commit on a new branch of the repository, and opens
-a pull request into the branch they came from if you ask; the next save adds a commit to that branch. It needs a
-token that may write (Contents, and Pull requests for the pull request), asked for in place; nothing is written before
-you press **Save to GitHub**. Where the site has its GitHub App, **Sign in with GitHub** gets the token in a popup
-instead: it reaches only the repositories the app is installed on, for 8 hours.
+a pull request into the branch they came from if you ask; the next save adds a commit to that branch. Not
+connected yet, it asks in place; a pasted token needs Contents, and Pull requests for the pull request. Nothing is
+written before you press **Save to GitHub**.
 
 When the Timeline holds more than one version since the files were opened, the save can write **every version as its
 own commit**, in order (an assistant's says so, with its model), the last with the message you write. **New → Save to
 a new repository…** makes a repository in your own account, private unless you choose public, and writes every version
-of the Timeline to it as a commit; it needs a token that may create repositories. The Timeline's **Download** saves
+of the Timeline to it as a commit; connected through the app, it needs the app's "Repository creation" (GitHub asks you to accept it once); a pasted
+token needs Administration and Contents on all repositories. The Timeline's **Download** saves
 the whole history as one file `git clone` reads (a git bundle): every version and branch, nothing sent anywhere.
 
 ## Sharing, and the inspector

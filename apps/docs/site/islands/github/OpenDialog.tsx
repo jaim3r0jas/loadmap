@@ -5,7 +5,7 @@ import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'rea
 import { DIALOG_CSS, editorTheme } from './dialog'
 import { inFolder, type Listing, list, type Opened, open } from './load'
 import { parseRepo, type RepoTarget } from './parse'
-import { forgetToken, gh, hasToken } from './session'
+import { gh } from './session'
 import { missedFile, tokenMends } from './start'
 import TokenForm from './TokenForm'
 
@@ -16,8 +16,6 @@ const CSS = `${DIALOG_CSS}
 .lmg-files button[aria-busy="true"] { background: var(--lm-accent-soft); cursor: progress; }
 .lmg-files .lmg-dir { color: var(--lm-muted); overflow-wrap: anywhere; }
 .lmg-files .lmg-file { font-weight: 600; overflow-wrap: anywhere; }
-.lmg-signed { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--lm-muted); font-size: .8rem; }
-.lmg-signed button { padding: 2px 6px; font-size: .8rem; }
 .lmg-files small { margin-left: auto; padding-left: 8px; color: var(--lm-muted); font-family: var(--lm-font); white-space: nowrap; }
 `
 
@@ -48,7 +46,6 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
   const [ask, setAsk] = useState<{ reason: string; owner: string; retry: () => void } | null>(() =>
     first && start?.ask ? { reason: start.ask, owner: first.owner, retry: () => void look(first) } : null,
   )
-  const [signed, setSigned] = useState(hasToken)
   // one look at a time: an older answer arriving late never replaces a newer one
   const turn = useRef(0)
 
@@ -142,10 +139,7 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
             reason={ask.reason}
             owner={ask.owner}
             need="read"
-            onToken={() => {
-              setSigned(true)
-              ask.retry()
-            }}
+            onToken={() => ask.retry()}
             onCancel={() => setAsk(null)}
           />
         ) : listing ? (
@@ -236,29 +230,14 @@ export default function OpenDialog({ start, onOpen, onClose }: OpenDialogProps) 
               </button>
             </div>
             <p className="lmg-hint">
-              A public repository opens as it is; a private one asks for a token. An address to a folder or a .loadmap
-              file opens there.
+              A public repository opens as it is; a private one asks you to connect to GitHub. An address to a folder or
+              a .loadmap file opens there.
             </p>
           </form>
         )}
         {error && (
           <p className="lmg-error" role="alert">
             {error}
-          </p>
-        )}
-        {signed && !ask && (
-          <p className="lmg-signed">
-            Reading with your token.
-            <button
-              type="button"
-              className="lm-btn lme-quiet"
-              onClick={() => {
-                forgetToken()
-                setSigned(false)
-              }}
-            >
-              Forget it
-            </button>
           </p>
         )}
       </div>
