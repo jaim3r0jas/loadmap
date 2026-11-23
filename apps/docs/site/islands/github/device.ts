@@ -2,6 +2,8 @@
 // sealed to it, both in IndexedDB. A copy of the session is worth nothing without the key, and the key never leaves
 // the browser: the Worker hears only its public half and its signatures. Disconnect deletes both.
 
+import { b64url } from './signin'
+
 const DB = 'loadmap-github'
 const STORE = 'device'
 
@@ -53,12 +55,6 @@ export async function devicePoint(pair: CryptoKeyPair): Promise<Device> {
   return { x: x!, y: y! }
 }
 
-const b64url = (b: Uint8Array) =>
-  btoa(String.fromCharCode(...b))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-
 export async function sign(pair: CryptoKeyPair, text: string): Promise<string> {
   const sig = await crypto.subtle.sign(
     { name: 'ECDSA', hash: 'SHA-256' },
@@ -70,6 +66,8 @@ export async function sign(pair: CryptoKeyPair, text: string): Promise<string> {
 
 export const readSession = () => get<string>('session')
 export const keepSession = (s: string) => put('session', s)
+/** A sign-in that brought no session: the one kept may be another account's. */
+export const dropSession = () => del('session')
 
 /** Disconnect: the key and the session, all this browser holds for coming back. */
 export async function forgetDevice(): Promise<void> {

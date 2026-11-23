@@ -86,7 +86,7 @@ export async function signedBy(device: Device, text: string, sig: unknown): Prom
       false,
       ['verify'],
     )
-    return crypto.subtle.verify(
+    return await crypto.subtle.verify(
       { name: 'ECDSA', hash: 'SHA-256' },
       key,
       unb64url(sig) as BufferSource,

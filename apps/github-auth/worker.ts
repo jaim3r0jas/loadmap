@@ -27,14 +27,14 @@ const USER_TOKEN = /^ghu_[A-Za-z0-9_]{20,255}$/
 /** How far a signed request's time may be from the Worker's: a copied request is worth nothing after. */
 const SKEW = 5 * 60_000
 
-/** What a sealed session holds: GitHub's refresh token, whose it is, and the browser it is bound to. */
+/**
+ * What a sealed session holds: GitHub's refresh token, the browser it is bound to, and whose it is (GitHub's id of the
+ * reader: their settings are filed under it).
+ */
 export interface Session {
   r: string
   u: number
-  l: string
   k: Device
-  /** When it was sealed (ms): a refresh seals it again. */
-  t: number
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -88,7 +88,7 @@ export async function handle(
     b === null
       ? new Response(null, { status, headers: { ...cors, 'Cache-Control': 'no-store' } })
       : json(status, b, cors)
-  if (path === '/token') return token(body, env, allowed, secret, call, now, answer)
+  if (path === '/token') return token(body, env, allowed, secret, call, answer)
   if (path === '/refresh') return refresh(body, env, secret, call, now, answer)
   return revoke(body, env, call, answer)
 }
@@ -108,8 +108,10 @@ async function swap(env: Env, call: typeof fetch, grant: Record<string, string>)
     return { failed: 'github_unreachable' as const }
   }
   const got = (await res.json().catch(() => ({}))) as Body
+  // an outage, a limit, an error page: no answer about the grant at all
+  if (typeof got.access_token !== 'string' && typeof got.error !== 'string') return { failed: 'github_failed' as const }
   if (typeof got.access_token !== 'string') {
-    const error = typeof got.error === 'string' ? got.error : 'no_token'
+    const error = got.error as string
     const description = typeof got.error_description === 'string' ? got.error_description : undefined
     return { refused: { error, ...(description && { error_description: description }) } }
   }
@@ -132,7 +134,6 @@ async function token(
   allowed: string[],
   secret: Uint8Array | undefined,
   call: typeof fetch,
-  now: () => number,
   answer: Answer,
 ) {
   const { code, code_verifier, redirect_uri, device } = body
@@ -155,12 +156,12 @@ async function token(
   if (!secret || !device || !got.refresh) return answer(200, got.token)
   const who = await whoami(call, got.token.access_token)
   if (!who) return answer(200, got.token)
-  const session = await sealed(secret, { r: got.refresh, u: who.id, l: who.login, k: device, t: now() })
+  const session = await sealed(secret, { r: got.refresh, u: who.id, k: device })
   return answer(200, { ...got.token, session })
 }
 
 /** The token's account, read once at sign-in: the session names it. */
-async function whoami(call: typeof fetch, token: string): Promise<{ id: number; login: string } | undefined> {
+async function whoami(call: typeof fetch, token: string): Promise<{ id: number } | undefined> {
   try {
     const res = await call(`${API}/user`, {
       headers: {
@@ -172,7 +173,7 @@ async function whoami(call: typeof fetch, token: string): Promise<{ id: number; 
     })
     if (!res.ok) return undefined
     const u = (await res.json()) as Body
-    return typeof u.id === 'number' && typeof u.login === 'string' ? { id: u.id, login: u.login } : undefined
+    return typeof u.id === 'number' ? { id: u.id } : undefined
   } catch {
     return undefined
   }
@@ -193,16 +194,22 @@ async function refresh(
   const { session, at, sig } = body
   if (typeof session !== 'string' || typeof at !== 'number' || !Number.isFinite(at))
     return answer(400, { error: 'bad_request' })
-  // one answer for every refusal: a session that is not ours, a stale time, a signature by another browser
+  // a clock far from ours is the browser's, not a forgery: it hears the time to sign with, and the session stays
+  if (Math.abs(now() - at) > SKEW) return answer(409, { error: 'clock', now: now() })
+  // one answer for every other refusal: a session that is not ours, a signature by another browser
   const s = await unseal<Session>(secret, 'session', session)
-  if (!s || Math.abs(now() - at) > SKEW || !isDevice(s.k) || !(await signedBy(s.k, refreshText(at, session), sig)))
+  if (!s || !isDevice(s.k) || !(await signedBy(s.k, refreshText(at, session), sig)))
     return answer(401, { error: 'session' })
   const got = await swap(env, call, { grant_type: 'refresh_token', refresh_token: s.r })
   if ('failed' in got) return answer(502, { error: got.failed })
-  // GitHub refused it: six months passed, the reader revoked the app, or it was used already
-  if ('refused' in got) return answer(401, { error: 'expired' })
+  // GitHub refused the refresh token itself: six months passed, the reader revoked the app, or it was used already.
+  // Any other refusal (the app's own credentials, a limit) is ours to mend, and the session stays.
+  if ('refused' in got)
+    return got.refused?.error === 'bad_refresh_token'
+      ? answer(401, { error: 'expired' })
+      : answer(502, { error: 'github_refused' })
   if (!got.refresh) return answer(200, got.token)
-  return answer(200, { ...got.token, session: await sealed(secret, { ...s, r: got.refresh, t: now() }) })
+  return answer(200, { ...got.token, session: await sealed(secret, { ...s, r: got.refresh }) })
 }
 
 /** Disconnect: the token is revoked at GitHub, so its 8 hours end now. Anyone holding a token may end it. */

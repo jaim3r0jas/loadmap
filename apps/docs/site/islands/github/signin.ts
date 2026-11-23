@@ -9,7 +9,7 @@ export { installUrl, type SignIn, signInConfig } from './account'
 /** Where the popup comes back to: the site's own page for it, next to the editor. */
 export const backTo = (page: string = location.href) => new URL('../signed-in/', page).href
 
-const b64url = (bytes: Uint8Array) =>
+export const b64url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')

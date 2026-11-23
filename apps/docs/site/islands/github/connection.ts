@@ -3,8 +3,8 @@
 // (device.ts), the site's Worker also seals GitHub's refresh token to this browser: a returning reader, or a tab whose
 // 8 hours run out, is connected again without a click. Loaded on the first press, or when the bar finds a reader who
 // connected before.
-import { app as built, type SignIn } from './account'
-import { deviceKey, devicePoint, forgetDevice, keepSession, readSession, sign } from './device'
+import { app as built, EXPIRES, type SignIn } from './account'
+import { deviceKey, devicePoint, dropSession, forgetDevice, keepSession, readSession, sign } from './device'
 import { disconnect as forget, hasToken, takeToken, tokenNow } from './session'
 import { browserHost, type SignedIn, type SignInHost, signInFor } from './signin'
 
@@ -58,26 +58,57 @@ export async function connect(o: ConnectOptions = {}): Promise<void> {
   await take(got, config)
 }
 
-/** A token is in: this tab's (8 hours, a reload keeps it), the next session kept, the next refresh planned. */
+/**
+ * A token is in: this tab's (8 hours, a reload keeps it), the session kept (or the old one dropped: it may be another
+ * account's), the next refresh planned.
+ */
 async function take(got: SignedIn, config: SignIn): Promise<void> {
   const wrong = takeToken(got.token, true, 'app')
   if (wrong) throw new Error(wrong)
-  if (got.session)
+  try {
+    if (got.session) await keepSession(got.session)
+    else await dropSession()
+  } catch {
+    // not kept: a click on return
+  }
+  const ends = got.expiresIn ? Date.now() + got.expiresIn * 1000 : undefined
+  if (ends)
     try {
-      await keepSession(got.session)
+      sessionStorage.setItem(EXPIRES, String(ends))
     } catch {
-      // not kept: a click on return
+      // planned for this page only
     }
-  plan(got.expiresIn, config)
+  plan(config, ends)
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined
 
 /** A tab left open past its token's hours refreshes five minutes before they end. */
-function plan(seconds: number | undefined, config: SignIn): void {
+function plan(config: SignIn, ends: number | undefined): void {
   clearTimeout(timer)
-  if (!seconds || seconds < 600) return
-  timer = setTimeout(() => void resume({ app: config, force: true }), (seconds - 300) * 1000)
+  timer = undefined
+  if (!ends) return
+  timer = setTimeout(() => void resume({ app: config, force: true }), Math.max(0, ends - Date.now() - 300_000))
+}
+
+/** A page that loaded with this tab's token plans its refresh again, from when the token ends. */
+export function replan(config: SignIn | undefined = app): void {
+  if (!config || timer) return
+  try {
+    const ends = Number(sessionStorage.getItem(EXPIRES))
+    if (ends > 0) plan(config, ends)
+  } catch {
+    // nothing planned: a refused call brings the reader back
+  }
+}
+
+/** Bumped by Disconnect: a refresh that was under way when it came keeps nothing. */
+let generation = 0
+
+/** Two tabs never spend one refresh token: GitHub takes each once. */
+function locked<T>(run: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  return locks ? locks.request('loadmap-github-refresh', run) : run()
 }
 
 /** What the page signs for a refresh: the Worker checks the same text (apps/github-auth/worker.ts). */
@@ -98,15 +129,13 @@ export interface ResumeOptions {
 export async function resume(o: ResumeOptions = {}): Promise<boolean> {
   const config = o.app ?? app
   if (!config) return false
-  const once = () => refresh(config, o)
-  // two tabs never spend one refresh token: GitHub takes each once
-  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-  return locks ? locks.request('loadmap-github-refresh', once) : once()
+  return locked(() => refresh(config, o))
 }
 
-async function refresh(config: SignIn, o: ResumeOptions): Promise<boolean> {
+async function refresh(config: SignIn, o: ResumeOptions, skew = 0): Promise<boolean> {
   // another call got here first, in this tab
   if (hasToken() && !o.force) return true
+  const mine = generation
   let session: string | undefined
   let pair: CryptoKeyPair | undefined
   try {
@@ -116,7 +145,7 @@ async function refresh(config: SignIn, o: ResumeOptions): Promise<boolean> {
     return false
   }
   if (!session || !pair) return false
-  const at = (o.now ?? Date.now)()
+  const at = (o.now ?? Date.now)() + skew
   let res: Response
   try {
     res = await (o.fetch ?? fetch)(`${config.exchange}/refresh`, {
@@ -129,17 +158,22 @@ async function refresh(config: SignIn, o: ResumeOptions): Promise<boolean> {
     // offline, or the Worker is away: the session stays for the next try
     return false
   }
-  if (res.status === 401) {
-    await forgetSession()
-    return false
-  }
-  if (!res.ok) return false
+  // Disconnect came meanwhile
+  if (mine !== generation) return false
   const got = (await res.json().catch(() => ({}))) as {
     access_token?: unknown
     session?: unknown
     expires_in?: unknown
+    now?: unknown
   }
-  if (typeof got.access_token !== 'string') return false
+  // this browser's clock is off: signed again once, with the Worker's
+  if (res.status === 409 && typeof got.now === 'number' && !skew)
+    return refresh(config, o, got.now - (o.now ?? Date.now)() || 1)
+  if (res.status === 401) {
+    await forgetSession()
+    return false
+  }
+  if (!res.ok || typeof got.access_token !== 'string') return false
   await take(
     {
       token: got.access_token,
@@ -166,9 +200,12 @@ async function forgetSession(): Promise<void> {
 export async function disconnect(o: { app?: SignIn; fetch?: typeof fetch } = {}): Promise<void> {
   const config = o.app ?? app
   const token = tokenNow()
+  generation++
   clearTimeout(timer)
+  timer = undefined
   forget()
-  await forgetSession()
+  // after any refresh under way in another tab, which would keep its session
+  await locked(forgetSession)
   if (config && token?.startsWith('ghu_'))
     try {
       await (o.fetch ?? fetch)(`${config.exchange}/revoke`, {

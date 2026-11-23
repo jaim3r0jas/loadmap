@@ -165,7 +165,7 @@ describe('coming back without a click', () => {
       'loadmap-github-auth',
     ])
     const s = await unseal<Session>(secretBytes(SEALED.SEAL_KEY)!, 'session', body.session)
-    expect(s).toEqual({ r: 'ghr_first', u: 42, l: 'acme', k: key.device, t: NOW })
+    expect(s).toEqual({ r: 'ghr_first', u: 42, k: key.device })
   })
 
   it('hands back no session without the secret, or without a browser key', async () => {
@@ -201,10 +201,10 @@ describe('coming back without a click', () => {
       },
     ])
     const s = await unseal<Session>(secretBytes(SEALED.SEAL_KEY)!, 'session', got.session)
-    expect(s).toEqual({ r: 'ghr_next', u: 42, l: 'acme', k: key.device, t: NOW + 61_000 })
+    expect(s).toEqual({ r: 'ghr_next', u: 42, k: key.device })
   })
 
-  it('refuses a session another browser signs, a stale time, a changed session, or one sealed elsewhere', async () => {
+  it('refuses a session another browser signs, a changed session, or one sealed elsewhere', async () => {
     const key = await browserKey()
     const other = await browserKey()
     const { body } = await signedIn(key)
@@ -214,8 +214,6 @@ describe('coming back without a click', () => {
       handle(ask(b, { path: '/refresh' }), env, gh.call, () => NOW)
     const status = async (b: Record<string, unknown>, env?: Env) => (await refresh(b, env)).status
     expect(await status({ session, at: NOW, sig: await other.sign(refreshText(NOW, session)) })).toBe(401)
-    const old = NOW - 6 * 60_000
-    expect(await status({ session, at: old, sig: await key.sign(refreshText(old, session)) })).toBe(401)
     const changed = `${session.slice(0, -2)}AA`
     expect(await status({ session: changed, at: NOW, sig: await key.sign(refreshText(NOW, changed)) })).toBe(401)
     const elsewhere = { ...SEALED, SEAL_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(9))) }
@@ -224,6 +222,45 @@ describe('coming back without a click', () => {
     expect(await status({ session, at: NOW, sig: await key.sign(refreshText(NOW, session)) }, ENV)).toBe(501)
     expect(await status({ session, at: 'now' })).toBe(400)
     expect(gh.sent).toEqual([])
+  })
+
+  it('tells a browser whose clock is off the time to sign with, and keeps the session', async () => {
+    const key = await browserKey()
+    const { body } = await signedIn(key)
+    const old = NOW - 6 * 60_000
+    const gh = githubAll()
+    const res = await handle(
+      ask(
+        { session: body.session, at: old, sig: await key.sign(refreshText(old, body.session!)) },
+        { path: '/refresh' },
+      ),
+      SEALED,
+      gh.call,
+      () => NOW,
+    )
+    expect([res.status, await res.json()]).toEqual([409, { error: 'clock', now: NOW }])
+    expect(gh.sent).toEqual([])
+  })
+
+  it('keeps the session when GitHub fails for another reason than the refresh token', async () => {
+    const key = await browserKey()
+    const { body } = await signedIn(key)
+    for (const [answer, status] of [
+      [{ error: 'incorrect_client_credentials' }, 200],
+      ['<html>unicorn</html>', 503],
+    ] as const) {
+      const gh = githubAll({ token: answer, status })
+      const res = await handle(
+        ask(
+          { session: body.session, at: NOW, sig: await key.sign(refreshText(NOW, body.session!)) },
+          { path: '/refresh' },
+        ),
+        SEALED,
+        gh.call,
+        () => NOW,
+      )
+      expect(res.status).toBe(502)
+    }
   })
 
   it('says a session GitHub no longer refreshes is over', async () => {

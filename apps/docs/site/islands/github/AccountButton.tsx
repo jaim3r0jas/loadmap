@@ -19,9 +19,11 @@ export interface AccountButtonProps {
   onDialog: (o: { paste?: boolean; error?: string }) => void
 }
 
-/** The GitHub chunk, asked for as the pointer nears the button or presses it. */
-const github = () => import('./index')
+/** The connection's code alone, asked for as the pointer nears the button or presses it. */
+const github = () => import('./connection')
 const warm = () => void github().catch(() => {})
+/** How long after one try the bar tries again by itself: a token GitHub keeps refusing never loops. */
+const AGAIN = 10 * 60_000
 
 export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountButtonProps) {
   const [now, setNow] = useState<Account>(account)
@@ -48,20 +50,25 @@ export default function AccountButton({ onOpen, onNewRepo, onDialog }: AccountBu
   // back without a click, once each time the connection drops (a return, a token past its hours): the bar says it is
   // connecting meanwhile, and offers the click when the session is gone
   const [resuming, setResuming] = useState(false)
-  const tried = useRef(false)
+  const tried = useRef(0)
   useEffect(() => {
+    // connected from an earlier load of this tab: the refresh before the token ends is planned again
     if (now.connected) {
-      tried.current = false
+      if (now.via === 'app')
+        void github().then(
+          (m) => m.replan(),
+          () => {},
+        )
       return
     }
-    if (!reconnect || tried.current) return
-    tried.current = true
+    if (!reconnect || Date.now() - tried.current < AGAIN) return
+    tried.current = Date.now()
     setResuming(true)
     github()
       .then((m) => m.resume())
       .catch(() => false)
       .finally(() => setResuming(false))
-  }, [now.connected, reconnect])
+  }, [now.connected, now.via, reconnect])
 
   if (!now.connected) {
     const label =

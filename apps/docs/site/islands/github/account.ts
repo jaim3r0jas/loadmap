@@ -2,8 +2,9 @@
 // calls, whose it is, and how it came. It imports nothing, so the bar knows this before any GitHub code loads. The
 // token itself is never here: session.ts holds it.
 
-/** Where session.ts keeps the token for this tab, when it does. */
+/** Where session.ts keeps the token for this tab, when it does, and when the app's token ends (ms). */
 export const TOKEN = 'loadmap-github-token'
+export const EXPIRES = 'loadmap-github-expires'
 /** Who connected last, and how: a login is no secret, and it names the account the next Connect brings back. */
 const CARD = 'loadmap-github-account'
 

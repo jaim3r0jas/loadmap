@@ -3,7 +3,6 @@
 
 export { default as ChangesDialog } from './ChangesDialog'
 export { default as ConnectDialog } from './ConnectDialog'
-export { connect, disconnect, resume } from './connection'
 export { default as NewRepoDialog } from './NewRepoDialog'
 export { default as OpenDialog } from './OpenDialog'
 export { default as SaveDialog } from './SaveDialog'

@@ -59,6 +59,7 @@ beforeEach(() => {
       },
       readSession: async () => held.get('session') as string | undefined,
       keepSession: async (s: string) => void held.set('session', s),
+      dropSession: async () => void held.delete('session'),
       forgetDevice: async () => held.clear(),
     }
   })
@@ -325,6 +326,50 @@ describe('coming back connected', () => {
     expect(held.has('session')).toBe(false)
     expect(held.has('key')).toBe(false)
     expect(p.account().connected).toBe(false)
+  })
+
+  it("a sign-in that brings no session drops the one kept: it may be another account's", async () => {
+    const p = await page(fake(APP_TOKEN).fetch)
+    held.set('session', 'someone-elses')
+    await p.connect({ app: APP, host: { ...host(APP_TOKEN), fetch: worker().fetch } })
+    expect(held.has('session')).toBe(false)
+  })
+
+  it("signs again with the Worker's time when this browser's clock is off, once", async () => {
+    const p = await page(fake(APP_TOKEN).fetch)
+    held.set('session', 'the-session')
+    const ours = 1_800_000_000_000
+    let asked = 0
+    const w = worker({
+      refresh: () =>
+        ++asked === 1
+          ? new Response(JSON.stringify({ error: 'clock', now: ours + 600_000 }), { status: 409 })
+          : new Response(JSON.stringify({ access_token: APP_TOKEN, session: 'next-session' })),
+    })
+    expect(await p.resume({ app: APP, fetch: w.fetch, now: () => ours })).toBe(true)
+    expect(w.sent.map((c) => c.body.at)).toEqual([ours, ours + 600_000])
+    expect(held.get('session')).toBe('next-session')
+  })
+
+  it('a refresh under way when Disconnect comes keeps nothing', async () => {
+    const p = await page(fake(APP_TOKEN).fetch)
+    held.set('session', 'the-session')
+    let answer: (r: Response) => void = () => {}
+    const slow = (async (url: string) =>
+      new URL(url).pathname === '/refresh'
+        ? new Promise<Response>((r) => {
+            answer = r
+          })
+        : new Response(null, { status: 204 })) as unknown as typeof fetch
+    const resumed = p.resume({ app: APP, fetch: slow })
+    await until(() => answer !== undefined && held.has('key'))
+    await new Promise((r) => setTimeout(r, 20))
+    const gone = p.disconnect({ app: APP, fetch: slow })
+    answer(new Response(JSON.stringify({ access_token: APP_TOKEN, session: 'next-session' })))
+    expect(await resumed).toBe(false)
+    await gone
+    expect(p.account()).toEqual({ connected: false })
+    expect(held.size).toBe(0)
   })
 
   it('without a session there is nothing to ask', async () => {
