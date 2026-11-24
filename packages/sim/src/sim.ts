@@ -173,6 +173,7 @@ export class Sim {
         if (at.cell == null) return true
         if (st.kind === 'queue') return at.cell < (st.partitions[flow] ?? 0)
         if (st.kind === 'workers') return at.cell < st.pods * st.perPod
+        if (st.shards) return at.cell < (st.shards.parts[flow] ?? 0)
         return false
       }
       this.particles = this.particles.filter((d) => fits(d.from, d.flow) && fits(d.to, d.flow))
@@ -704,6 +705,13 @@ export class Sim {
         return { stage, cell: s.assignment!.owner === 'pod' ? owner + Math.floor(this.#r() * s.perPod) : owner }
       // only among the running pods: the ones an autoscaler has not started take no work
       return { stage, cell: this.#pickWorker(s.id, s.running * s.perPod) }
+    }
+    // a store sharded by key: a hot key's share on part 0, the rest evenly on the others, as on a queue
+    const n = s?.shards?.parts[flow] ?? 0
+    if (n > 0) {
+      const hot = s!.shards!.skew?.[flow]
+      if (hot != null && n > 1) return { stage, cell: this.#r() < hot ? 0 : 1 + Math.floor(this.#r() * (n - 1)) }
+      return { stage, cell: Math.floor(this.#r() * n) }
     }
     return { stage }
   }

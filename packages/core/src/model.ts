@@ -32,6 +32,7 @@ import {
   type ResolvedStage,
   rejectShare,
   resolveStage,
+  type Shards,
   type SplitBranch,
   type StageDef,
   splitOf,
@@ -873,6 +874,7 @@ export function defineModel<
     hot: (s: string) => Record<string, number> | undefined,
     shedBy: (s: string) => Record<string, number> | undefined,
     poolOut: (st: StageDef) => StageDef,
+    shardsOf: (s: string) => Shards | undefined,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
@@ -887,6 +889,8 @@ export function defineModel<
             : skew
               ? ({ ...st, skew } as ResolvedStage)
               : st
+      const sh = shardsOf(s)
+      if (sh) stages[s] = { ...stages[s], shards: sh } as ResolvedStage
     }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
@@ -930,6 +934,7 @@ export function defineModel<
       rate,
       outage,
       poolOut,
+      shardsOf,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -1001,7 +1006,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1099,12 +1104,12 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut } = context(def as any, values)
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf } = context(def as any, values)
       let ways: Record<F, readonly FlowPath<S>[]> | undefined
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -2342,6 +2347,21 @@ function contextAt(
           return { ...base, factor: s.factor, text }
         })
   /** The share of each flow on partition 0 of a queue a key connection with a skew reaches; undefined without one. */
+  /** A key connection with members into a stage that is no queue or pool: its parts on those members. */
+  const shardsOf = (stage: string): Shards | undefined =>
+    memo(`shards of ${stage}`, () => {
+      const st = stages[stage]
+      if (!st || st.kind === 'queue' || st.kind === 'workers') return undefined
+      for (const [k, cn] of Object.entries(connections)) {
+        if (cn.assign !== 'key' || cn.to !== stage || cn.members == null) continue
+        const parts: Record<string, number> = {}
+        for (const f of covered(k)) parts[f] = keyParts(k, f)
+        if (!Object.keys(parts).length) return undefined
+        const skew = hot(stage)
+        return { members: whole(dyn(cn.members, ctx), `connection "${k}"`, 'members'), parts, ...(skew && { skew }) }
+      }
+      return undefined
+    })
   const hot = (stage: string): Record<string, number> | undefined =>
     memo(`hot partitions of ${stage}`, () => {
       let out: Record<string, number> | undefined
@@ -2495,6 +2515,7 @@ function contextAt(
     rate,
     outage,
     poolOut,
+    shardsOf,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,

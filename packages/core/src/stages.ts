@@ -222,7 +222,17 @@ export function split<const C extends string = never>(
 }
 
 /** A stage with its numbers worked out for one set of values. */
-export type ResolvedStage = { id: string; label: string } & (
+/**
+ * A store or a pass that a key connection shards over members: each flow's parts, part i on member i mod members, and
+ * with a skew the share of each flow on part 0, the hottest. What the board draws, and where the dots go.
+ */
+export interface Shards {
+  members: number
+  parts: Readonly<Record<string, number>>
+  skew?: Readonly<Record<string, number>>
+}
+
+export type ResolvedStage = { id: string; label: string; shards?: Shards } & (
   | {
       kind: 'pass' | 'limit'
       component: string
