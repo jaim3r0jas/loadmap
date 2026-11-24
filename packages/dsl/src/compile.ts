@@ -1076,7 +1076,13 @@ export class Compiler {
         )
     }
 
-    // the stretch of the way a slot is held through: two stages, the first before the second
+    const stageDefs: Record<string, StageDef> = {}
+    for (const box of boxes)
+      for (const s of box.stages) {
+        const def = this.stage(s.block, box, componentNames, resolveStage, flowNames, reached, s.id)
+        if (def) stageDefs[s.id] = def
+      }
+    // the stretch of the way a slot is held through: two stages, from the one that holds it
     for (const [id, b] of componentBlocks) {
       const through = this.prop(b, 'through')
       if (!through) continue
@@ -1086,15 +1092,20 @@ export class Compiler {
         continue
       }
       const stages = chain.map((n) => resolveStage(n, 'stage'))
-      if (stages.every((s) => s)) componentDefs[id]!.through = stages
+      if (!stages.every((s) => s)) continue
+      componentDefs[id]!.through = stages
+      // its slots are held on the stretch's first stage: said there, or the one stage that runs it
+      const on =
+        (componentDefs[id]!.on as string[] | undefined) ??
+        Object.keys(stageDefs).filter((s) => (stageDefs[s] as { component?: string }).component === id)
+      if (on.length !== 1 || on[0] !== stages[0])
+        this.report.error(
+          'bad-box',
+          through.value,
+          `a slot held through ${stages[0]} -> ${stages[1]} is held on "${stages[0]}"`,
+          `on: ${stages[0]}`,
+        )
     }
-
-    const stageDefs: Record<string, StageDef> = {}
-    for (const box of boxes)
-      for (const s of box.stages) {
-        const def = this.stage(s.block, box, componentNames, resolveStage, flowNames, reached, s.id)
-        if (def) stageDefs[s.id] = def
-      }
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
         this.report.warning('unused-stage', s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
@@ -2010,7 +2021,7 @@ export class Compiler {
             `a stock's capacity is what it holds, a count; the capacity is ${describe(cap)}`,
             'say what it holds: configured(500, "GB", "volume size")',
           )
-      } else if (this.prop(b, 'held') || b.children.some((c) => c.keyword === 'held')) {
+      } else if (this.prop(b, 'held') || this.prop(b, 'through') || b.children.some((c) => c.keyword === 'held')) {
         if (cap.time !== 0)
           this.report.warning(
             'unit-mismatch',
@@ -3659,8 +3670,8 @@ export class Compiler {
       }
     }
     const held = this.held(b, flows)
-    if (held !== undefined) {
-      o.held = held
+    if (held !== undefined) o.held = held
+    if (held !== undefined || this.prop(b, 'through')) {
       const demand = this.prop(b, 'demand')
       if (demand)
         this.report.error('bad-box', demand.key, 'a component that is held works out its demand: drop one of them')

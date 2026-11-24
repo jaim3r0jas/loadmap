@@ -3,7 +3,7 @@ import { cache, configured, defineModel, measured, p, pass, sink } from '../src'
 
 // 40 orders a second through the API (5 ms) to payments (100 ms when idle, 100 a second), 10 ms apart; each holds one
 // of 20 connections from the API until payments has answered, and 5 ms more
-const shop = (o: { timeout?: number; held?: number | null; own?: true; hit?: number } = {}) =>
+const shop = (o: { timeout?: number; held?: number | null | { orders: number }; own?: true; hit?: number } = {}) =>
   defineModel({
     load: p.load({ max: 10 }),
     flows: {
@@ -17,7 +17,7 @@ const shop = (o: { timeout?: number; held?: number | null; own?: true; hit?: num
       conns: {
         name: 'Connections',
         ...(o.held === null ? {} : { held: o.held ?? 0.005 }),
-        on: ['api'],
+        on: [o.own ? 'held' : 'api'],
         through: o.own ? ['held', 'payments'] : ['api', 'payments'],
         capacity: configured(20, 'connections', 'the pool'),
         ...(o.own ? { service: 0.001 } : {}),
@@ -62,8 +62,9 @@ describe('a slot held through a stretch of the way', () => {
   it('is bounded by the flow’s timeout, and stays a number past where a stage is full', () => {
     const m = shop({ timeout: 0.3 })
     expect(m.evaluate({ load: 1 }).components.conns.held!.orders).toBeCloseTo(0.005 + time(1), 12)
-    expect(m.evaluate({ load: 2.4 }).components.conns.held!.orders).toBeCloseTo(0.305, 12)
-    expect(m.evaluate({ load: 5 }).components.conns.held!.orders).toBeCloseTo(0.305, 12)
+    // the client gives up at 300 ms, and its slot is free again
+    expect(m.evaluate({ load: 2.4 }).components.conns.held!.orders).toBeCloseTo(0.3, 12)
+    expect(m.evaluate({ load: 5 }).components.conns.held!.orders).toBeCloseTo(0.3, 12)
     // no timeout: payments past full counts a million service times, so the pool is gone and the demand is a number
     const c = shop().evaluate({ load: 5 }).components.conns
     expect(c.held!.orders).toBeGreaterThan(1e5)
@@ -80,13 +81,26 @@ describe('a slot held through a stretch of the way', () => {
     expect(some).toBeLessThan(all)
   })
 
-  it('names two stages there are, and no timed stage it runs itself', () => {
+  it('is of the flows a held block names: the others hold no slot', () => {
+    const c = shop({ held: { orders: 0.005 } }).evaluate({ load: 1 }).components.conns
+    expect(c.held!.orders).toBeCloseTo(0.005 + time(1), 12)
+    expect(c.held!.pings).toBe(0)
+    expect(c.demand).toBeCloseTo(40 * (0.005 + time(1)), 9)
+  })
+
+  it('names two stages there are, from the one that holds the slot, and no timed stage it runs itself', () => {
     const bad = (through: readonly [string, string]) => () =>
       defineModel({
         ...shop().def,
         components: { ...shop().def.components, conns: { ...shop().def.components.conns, through } },
       } as never)
     expect(bad(['api', 'nope'])).toThrow('component "conns" is held through unknown stage "nope"')
+    expect(bad(['seen', 'payments'])).toThrow(
+      'component "conns" is held through seen -> payments, so its slots are held on "seen": not on "api"',
+    )
+    expect(bad(['api', 'held'])).toThrow(
+      'component "conns" is held through api -> held, and no flow goes from "api" on to "held"',
+    )
     expect(() => shop({ own: true }).evaluate()).toThrow(
       'component "conns" is held through "held", which it runs itself: its time there would depend on its own slots',
     )

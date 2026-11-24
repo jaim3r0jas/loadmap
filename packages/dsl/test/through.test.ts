@@ -68,6 +68,13 @@ describe('a slot held through a stretch, in the language', () => {
     ])
     expect(errors(SRC.replace('  on: api\n', ''))).toEqual([
       'error: unused-component: the component "conns" is held on no stage | on: stage',
+      'error: bad-box: a slot held through api -> payments is held on "api" | on: api',
     ])
+    expect(errors(SRC.replace('on: api', 'on: payments'))).toEqual([
+      'error: bad-box: a slot held through api -> payments is held on "api" | on: api',
+    ])
+    expect(errors(SRC.replace('  held: 5ms\n', '  demand: flows.orders\n'))).toContain(
+      'error: bad-box: a component that is held works out its demand: drop one of them',
+    )
   })
 })

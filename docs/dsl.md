@@ -911,8 +911,10 @@ component threads "API worker threads" {
 A unit then holds its slot for the time it takes from `api` through `payments`: each stage's time at its utilization
 (its `service`), and the delays of the edges between them, on top of `held` if there is one. So the threads run out
 when payments slows down, well before the API itself is busy: payments at 80 % answers five times slower than idle, and
-holds five times the threads. A flow's `timeout` bounds the time a unit holds its slot. A cache's hits leave the
-stretch at the cache. A stage past full has no mean time: it counts as a million service times, which no pool
+holds five times the threads. The stretch starts at the stage that holds the slot (`on`, or the one stage the
+component runs). A flow's `timeout` bounds the time a unit holds its slot: the client gives up, and the slot is free
+again. A cache's hits and what a limiter turns away leave the stretch there. With a `held { … }` block, only the
+flows it names hold a slot. A stage past full has no mean time: it counts as a million service times, which no pool
 holds. The component may not run a timed stage of the stretch itself: its time there would depend on its own slots.
 In TypeScript it is `through: ['api', 'payments']`.
 
