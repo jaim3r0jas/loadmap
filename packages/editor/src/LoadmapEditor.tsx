@@ -1402,9 +1402,13 @@ export function LoadmapEditor({
   /** The diagram laid out as a reload draws it, done once that is drawn. */
   const tidy = async () => {
     if (!held.current.from) return
+    const was = preview.current?.engine.scene
     held.current = { ...held.current, from: undefined }
-    // drawn before this returns: the diagram is not ready from here on, until the tidy layout is drawn
     flushSync(() => retidy((n) => n + 1))
+    // the tidy scene has the held one's key, so "ready" alone could be said of the held one: until the engine has
+    // another scene (or ten seconds, for a diagram that is gone)
+    for (let i = 0; i < 600 && preview.current?.engine.scene === was; i++)
+      await new Promise((r) => requestAnimationFrame(r))
     await preview.current?.ready()
   }
   const title = def?.model.title ?? 'Untitled'
