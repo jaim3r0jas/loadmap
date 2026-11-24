@@ -14,6 +14,7 @@ import {
   store,
   workers,
 } from '@loadmap/core'
+import { backlog } from '@loadmap/core/backlog'
 import { describe, expect, it } from 'vitest'
 import { busyOf, createSim, fillOrder } from '../src'
 
@@ -172,6 +173,25 @@ describe('queues', () => {
 })
 
 describe('a new version of the model', () => {
+  it('build the backlog the model says a peak leaves, and clear it in the time it says', () => {
+    // at 2×, 300 units a second against 200: priority 1 (a, 200) keeps up, b (100) waits; at 1× 150 against 200
+    const m = pipeline({ a: 100, b: 50, cap: 200 })
+    const [said] = backlog(m, { load: 2 }, 60)
+    expect(said).toMatchObject({ stage: 'topic' })
+    expect(said!.flows.a).toBeCloseTo(0, 9)
+    expect(said!.flows.b).toBeCloseTo(6_000, 6)
+    // the reader clears 50 a second at 1×
+    expect(said!.empties).toBeCloseTo(120, 6)
+    const sim = createSim(m, m.evaluate({ load: 2 }), { seed: 1, speed: 10 })
+    for (let i = 0; i < 60 * 6; i++) sim.step(1 / 60)
+    expect(sim.queue('topic', 'a').backlog).toBeLessThan(10)
+    expect(Math.abs(sim.queue('topic', 'b').backlog / 6_000 - 1)).toBeLessThan(0.02)
+    sim.update(m.evaluate({ load: 1 }))
+    const start = sim.time
+    while (sim.queue('topic', 'b').backlog > 0 && sim.time - start < 600) sim.step(1 / 60)
+    expect(Math.abs((sim.time - start) / 120 - 1)).toBeLessThan(0.05)
+  })
+
   it('is adopted with its dots and backlog when its flows, stages and routes are the same, at its own figures', () => {
     // over capacity: a backlog grows
     const sim = run(pipeline({ a: 100, b: 0, cap: 50 }), 60)

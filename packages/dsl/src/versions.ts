@@ -80,6 +80,10 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
     if (e.t === 'call' && e.callee.name === 'mod' && !ownMod) add('mod', SYNTAX.mod.since, SYNTAX.mod.what, e.callee)
     for (const c of childrenOf(e, true)) expr(c)
   }
+  // a parameter named lasts is set in a preset as it always was: that is no peak's length
+  const paramLasts = body.some(
+    (s) => s.kind === 'decl' && s.keyword.name === 'param' && s.args[0]?.t === 'id' && s.args[0].name === 'lasts',
+  )
   const stmts = (list: readonly Stmt[], parent: string) => {
     for (const s of list) {
       if (s.kind === 'decl') {
@@ -95,7 +99,8 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
           parent === '->'
             ? own(EDGE_PROPS, s.key.name)
             : (own(own(SCHEMA, parent)?.props ?? {}, s.key.name) ?? own(COMPONENT_PROPS, s.key.name))
-        add(`property ${parent} ${s.key.name}`, spec?.since, `"${s.key.name}:"`, s.key)
+        if (!(parent === 'preset' && s.key.name === 'lasts' && paramLasts))
+          add(`property ${parent} ${s.key.name}`, spec?.since, `"${s.key.name}:"`, s.key)
         if (s.as) add('as', SYNTAX.as.since, SYNTAX.as.what, s.as)
         if (parent === '' && s.key.name === 'direction' && s.value.t === 'id' && s.value.name === 'auto')
           add('autoDirection', SYNTAX.autoDirection.since, SYNTAX.autoDirection.what, s.value)

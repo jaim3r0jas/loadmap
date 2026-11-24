@@ -166,6 +166,11 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   params?: P
   presets?: Readonly<Record<string, Partial<NoInfer<Values<P>>>>>
   /**
+   * How long a preset's moment lasts, in seconds, by its label: a peak of two hours. The backlog it leaves in each
+   * queue, and the time to clear it at the default load, are `model.backlog()`.
+   */
+  peaks?: Readonly<Record<string, number>>
+  /**
    * Named designs to compare, by label: the defaults plus these values, never the load. The first is the baseline the
    * others are measured against.
    */
@@ -282,6 +287,8 @@ export interface VerdictResult {
 export interface Preset<P> {
   label: string
   values: Partial<Values<P>>
+  /** How long the moment lasts, in seconds, when the definition says. */
+  lasts?: number
   /** Computed from the model (the target and the first limit), not declared. */
   derived: boolean
 }
@@ -546,6 +553,10 @@ export function defineModel<
     const { load: _, ...values } = { ...defaults(), ...set } as Values<P>
     return { label, values }
   })
+  for (const [label, s] of Object.entries(def.peaks ?? {})) {
+    if (!Object.hasOwn(def.presets ?? {}, label)) throw new Error(`loadmap: a peak names unknown preset "${label}"`)
+    if (!(s > 0 && Number.isFinite(s))) throw new Error(`loadmap: preset "${label}" lasts ${s} s: a time above 0`)
+  }
   const scenarioOf = (values: LooseValues) =>
     scenarios.find((s) => Object.entries(s.values).every(([k, v]) => values[k] === v)) ?? null
 
@@ -2535,8 +2546,10 @@ function presets<P>(
   const { min, max, step } = def.load
   const out: Preset<P>[] = []
   if (min <= 1 && max >= 1) out.push({ label: 'Today · 1×', values: { load: 1 } as Partial<Values<P>>, derived: false })
-  for (const [label, values] of Object.entries(def.presets ?? {}))
-    out.push({ label, values: values as Partial<Values<P>>, derived: false })
+  for (const [label, values] of Object.entries(def.presets ?? {})) {
+    const lasts = def.peaks?.[label]
+    out.push({ label, values: values as Partial<Values<P>>, derived: false, ...(lasts != null ? { lasts } : {}) })
+  }
   const at = (label: string, x: number | null | undefined) => {
     if (x == null || !Number.isFinite(x) || x < min) return
     const load = Math.min(max, Math.floor(x / step) * step)

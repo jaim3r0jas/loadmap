@@ -14,6 +14,7 @@ import {
   store,
   workers,
 } from '@loadmap/core'
+import { backlog } from '@loadmap/core/backlog'
 import { describe, expect, it } from 'vitest'
 import { compile, type Diagnostic, quickFixes } from '../src'
 import { failure, placed } from '../src/expr'
@@ -1394,6 +1395,32 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile how long a preset lasts: the backlog its load leaves in a queue', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 10; default: 1 }
+preset "Peak" { load: 4; lasts: 2h }
+flow jobs "jobs" { rate: 100 * load; route: topic -> workerPool; from: api }
+node api "API"
+cluster kafka "Kafka" {
+  members: 3
+  queue topic { partitions { jobs: 6 } }
+}
+pool workerPool "Workers" {
+  pods: 2
+  perPod: 4
+  capacity: measured(250, "jobs/s")
+  over: "jobs wait"
+}
+api -> kafka -> workerPool
+`)
+    expect(dsl.evaluate().presets.find((x) => x.label === 'Peak')).toMatchObject({ values: { load: 4 }, lasts: 7_200 })
+    // 400 a second against 250 for two hours; at 1× the workers clear 150 a second
+    const [left] = backlog(dsl, { load: 4 }, 7_200)
+    expect(left).toMatchObject({ stage: 'topic' })
+    expect(left!.units).toBeCloseTo(150 * 7_200, 3)
+    expect(left!.empties).toBeCloseTo(7_200, 3)
+  })
+
   it('compile stocks: one that keeps what it gains, one that grows, each flow at its average', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

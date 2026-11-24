@@ -8,6 +8,7 @@ between versions; it is left out here.
 | Package or entry            | What                                                                          | Page                                                  |
 | --------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- |
 | `@loadmap/core`             | The model: `defineModel`, stages, capacities, `check`, `compare`              | [The model in TypeScript](/api/model/)                |
+| `@loadmap/core/backlog`     | `backlog`: what a peak leaves in the queues, and when it clears               | [The model](/api/model/#scenarios-presets-and-growth) |
 | `@loadmap/core/calibrate`   | `fitLinear`: a cost from measurements                                         | [Media, simulation and layout](/api/more/)            |
 | `@loadmap/core/format`      | The number formats the verdict uses                                           | [Media, simulation and layout](/api/more/)            |
 | `@loadmap/core/measure`     | Snapshots of measured data                                                    | [Media, simulation and layout](/api/more/)            |

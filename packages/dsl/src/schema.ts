@@ -578,7 +578,15 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     doc: 'A named set of values, offered as a button.',
     example: 'preset "Black Friday" { load: 40; pods: 6 }',
     args: [{ name: 'label', kind: 'text' }],
-    props: {},
+    props: {
+      lasts: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        since: '1.7',
+        doc: 'How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load.',
+      },
+    },
     children: [],
     open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
   },
