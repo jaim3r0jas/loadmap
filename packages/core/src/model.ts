@@ -1080,6 +1080,34 @@ function context(
   def: ModelDef<any, string, string, string, string>,
   values: LooseValues,
   bound?: Bound,
+  pinned?: string,
+  fixed?: Readonly<Record<string, number>>,
+  slow?: Readonly<Record<string, number>>,
+  averaged?: boolean,
+  trial?: Readonly<Record<string, number>>,
+) {
+  const unsolved = Object.keys(def.flows).filter(
+    (f) => def.flows[f]!.breaker != null && !(trial && Object.hasOwn(trial, f)),
+  )
+  if (!unsolved.length) return contextAt(def, values, bound, pinned, fixed, slow, averaged, trial)
+  // Every breaker admitting its whole flow first: where none fails past where it opens there, that is the answer, so
+  // nearly every evaluation costs what it cost without breakers, where solving each on a trial of its own made two
+  // contexts of every one. Else, or where asking throws, each is solved on trials, and the error comes where it did.
+  const whole = contextAt(def, values, bound, pinned, fixed, slow, averaged, trial, new Set(unsolved))
+  try {
+    const closed = (f: string) => {
+      const b = whole.breakerOf(f)
+      return b == null || !(whole.rate(f) > 0) || whole.failure(f) <= b.opens
+    }
+    if (unsolved.every(closed)) return whole
+  } catch {}
+  return contextAt(def, values, bound, pinned, fixed, slow, averaged, trial)
+}
+
+function contextAt(
+  def: ModelDef<any, string, string, string, string>,
+  values: LooseValues,
+  bound?: Bound,
   /** A component whose capacity stays at its stated value under a bound. */
   pinned?: string,
   /** The attempts of every retrying flow, held while the retries are solved. */
@@ -1090,6 +1118,8 @@ function context(
   averaged?: boolean,
   /** A flow held at a breaker's trial rate: its breaker is not solved again, and it fails nothing fast. */
   trial?: Readonly<Record<string, number>>,
+  /** The breaker flows taken to admit all of their rate: what `context` asks first. */
+  admitsAll?: ReadonlySet<string>,
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
@@ -1215,12 +1245,15 @@ function context(
     })
   /**
    * The share of a flow its breaker admits: 1 while its failures stay at or under `opens`; past that, the α at which
-   * the failures among the admitted are `opens`. The failures only rise with what is admitted, so the root stays
-   * bracketed; a secant step that halves the stale side's value (Illinois) finds it in about ten trials where
-   * bisection took fifty, and each trial is a whole evaluation of the flow's way, on every load the ranking scans.
+   * the failures among the admitted are `opens`. Each trial is a whole evaluation of the flow's way, on every load the
+   * ranking scans past where it opens, so the steps count. One saturated stage fails 1 − C/x, whose root is one step
+   * away from any point: taken while it halves the bracket, it settles the usual case in two or three trials. Past
+   * that, a secant step that halves the stale side's value (Illinois); the failures only rise with what is admitted,
+   * so the root stays bracketed either way.
    */
   const admitted = (f: string): number =>
     memo(`admitted of ${f}`, () => {
+      if (admitsAll?.has(f)) return 1
       const b = breakerOf(f)!
       const lam = rate(f)
       // each trial holds the flow at its trial rate, the other values and the averaged flag as they are here
@@ -1234,10 +1267,14 @@ function context(
       let hi = 1
       let fhi = full
       let side = 0
+      let x = (1 - (full + b.opens)) / (1 - b.opens)
       for (let i = 0; i < 60 && hi - lo > 1e-12; i++) {
-        const secant = (lo * fhi - hi * flo) / (fhi - flo)
-        // a flat stretch can put the secant on a bound: bisect then, so the bracket still shrinks
-        const x = secant > lo && secant < hi ? secant : (lo + hi) / 2
+        if (!(x > lo && x < hi)) {
+          const secant = (lo * fhi - hi * flo) / (fhi - flo)
+          // a flat stretch can put the secant on a bound: bisect then, so the bracket still shrinks
+          x = secant > lo && secant < hi ? secant : (lo + hi) / 2
+        }
+        const width = hi - lo
         const fx = excess(x)
         if (fx > 0) {
           hi = x
@@ -1251,18 +1288,22 @@ function context(
           side = -1
           if (fx === 0) break
         }
+        const step = (x * (1 - (fx + b.opens))) / (1 - b.opens)
+        // a step onto a bound says the root is there: the point just inside settles it
+        x = hi - lo < width / 2 ? (step <= lo ? lo + 1e-12 : step >= hi ? hi - 1e-12 : step) : Number.NaN
       }
       return lo
     })
   /** What a flow's breaker fails fast, units a second: they reach no stage. */
   const failedFast = (f: string) =>
-    breakerOf(f) && !(trial && Object.hasOwn(trial, f)) ? rate(f) * (1 - admitted(f)) : 0
+    breakerOf(f) && !(trial && Object.hasOwn(trial, f)) && !admitsAll?.has(f) ? rate(f) * (1 - admitted(f)) : 0
   ctx.flows = table(flowIds, (f) =>
     memo(
       `flow ${f}`,
       () => {
         if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
         if (trial && Object.hasOwn(trial, f)) return trial[f]!
+        if (admitsAll?.has(f)) return rate(f)
         if (breakerOf(f)) return rate(f) * admitted(f)
         return retryOf(f) ? retries()[f]!.attempts : rateOf(f)
       },
