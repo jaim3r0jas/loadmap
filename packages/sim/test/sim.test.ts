@@ -483,6 +483,41 @@ describe('lost boxes', () => {
     expect([...(ends.get('out') ?? [])]).not.toContain('timedout')
   })
 
+  it('sends a dot that fails at a hop that retries again from there, as often as the model counts', () => {
+    // payments fails 40 %, and its caller sends a call again twice: 1.56 attempts a unit, 6.4 % failing all three
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100, retry: { at: 'pay', times: 2 } } },
+      components: {
+        api: { name: 'API', capacity: measured(1_000, 'u/s'), over: '' },
+        pay: { name: 'Pay', capacity: measured(1_000, 'u/s'), fails: 0.4, over: '' },
+      },
+      stages: { api: pass('api'), pay: pass('pay'), out: sink(), errors: lost({ from: ['pay'], takes: ['failed'] }) },
+      routes: { req: ['api', 'pay', 'out'] },
+    })
+    const ev = m.evaluate()
+    expect(ev.retry.req!.hops!.pay!.attempts).toBeCloseTo(1.56, 12)
+    const sim = createSim(m, ev, { seed: 5, speed: 10, maxDots: 80, dotTarget: 100 })
+    const seen = new Map<number, { first: boolean; outcome?: string; at?: string | null; from?: string | null }>()
+    for (let i = 0; i < 60 * 90; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) {
+        const k = seen.get(d.id) ?? { first: !d.hops, from: d.from.stage }
+        if (d.phase === 'fade') {
+          k.outcome = d.outcome
+          k.at = d.to.stage
+        }
+        seen.set(d.id, k)
+      }
+    }
+    const all = [...seen.values()].filter((k) => k.outcome)
+    const units = all.filter((k) => k.first).length
+    // a retry starts at the hop, from the stage before it: never back at the source
+    expect(new Set(all.filter((k) => !k.first).map((k) => k.from))).toEqual(new Set(['api']))
+    expect(all.length / units).toBeCloseTo(1.56, 1)
+    expect(all.filter((k) => k.at === 'errors').length / units).toBeCloseTo(0.064, 1)
+  })
+
   it('fails the share of its dots a component fails, into the lost box that takes failed', () => {
     const m = defineModel({
       load: p.load({ max: 10 }),

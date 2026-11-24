@@ -21,6 +21,8 @@ expect "Today keeps 1.5×" { underTarget: 1.5 }
 flow lookups "lookups" {
   unit: "lookup"
   rate: 15 * load
+  # your service calls the vendor again when a call fails: only the vendor sees those attempts
+  retry { at: vendor; times: 2 }
   route: service -> responseCache -> vendor
   from: users
   color: accent

@@ -97,6 +97,8 @@ flow orders "orders" {
   rate: orderRate * load
   priority: 1
   retry { times: tries; budget: 0.1 }
+  # a retry at a hop: the API calls the database again, and only the stages from there on see those attempts
+  retry { at: db; times: 1 }
   route: gateway -> limiter -> api -> resultCache -> db
   from: users
   color: accent

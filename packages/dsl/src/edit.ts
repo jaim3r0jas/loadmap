@@ -428,7 +428,13 @@ export function boxPath(source: string, offset: number): string | undefined {
 /** A statement's id, where it has one: its first word after the keyword. */
 const idOf = (d: Decl) => (d.args[0]?.t === 'id' ? d.args[0].name : undefined)
 /** A statement in a path, as `walk()` names it. */
-const segment = (d: Decl) => `${d.keyword.name}${idOf(d) ? `:${idOf(d)}` : ''}`
+const segment = (d: Decl) => `${d.keyword.name}${idOf(d) || hopOf(d) ? `:${idOf(d) ?? hopOf(d)}` : ''}`
+/** A retry at a hop is told from its flow's other retries by its stage: it has no id. */
+function hopOf(d: Decl): string | undefined {
+  if (d.keyword.name !== 'retry') return undefined
+  const at = (d.body ?? []).find((s) => s.kind === 'prop' && s.key.name === 'at')
+  return at?.kind === 'prop' && at.value.t === 'id' ? at.value.name : undefined
+}
 /** The names a statement can be read by, among those the inspector follows; an input by its last word. */
 const NAMES = new Set(['input', 'let', 'param', 'published', 'measure', 'fit', 'metric'])
 const declared = (o: Owner) => {
@@ -781,12 +787,14 @@ function walk(source: string, withs = false) {
     const idArg = arg('id')
     const id = idArg?.t === 'id' ? idArg.name : undefined
     const label = arg('label')
-    const here = `${path}${path ? '/' : ''}${keyword}${id ? `:${id}` : ''}`
+    const hop = d ? hopOf(d) : undefined
+    const here = `${path}${path ? '/' : ''}${keyword}${id || hop ? `:${id ?? hop}` : ''}`
     const o: Owner = {
       path: here,
       keyword,
       ...(id ? { id } : {}),
-      title: label?.t === 'str' ? label.value : (id ?? words(keyword || 'model')),
+      title:
+        label?.t === 'str' ? label.value : (id ?? (hop ? `${words(keyword)} at ${hop}` : words(keyword || 'model'))),
       depth,
       ...(d ? { decl: d } : {}),
       fields: [],

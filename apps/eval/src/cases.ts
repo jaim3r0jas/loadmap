@@ -158,6 +158,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'fails: 1%' }, { kind: 'contains', text: 'failed' }],
   },
   {
+    id: 'retry-at-hop',
+    example: SHOP,
+    request:
+      'The order workers call the database again, up to two more times, when a write fails. Only the database should see those retries.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'at: db' }, { kind: 'contains', text: 'times: 2' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

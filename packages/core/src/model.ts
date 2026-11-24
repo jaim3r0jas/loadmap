@@ -69,7 +69,7 @@ export interface FlowDef<X> {
    * Units turned away on the route are sent again. It reads only the load and the parameters: retries change every
    * number the model computes, so they cannot depend on one.
    */
-  retry?: RetryRule | ((values: LooseValues) => RetryRule | undefined)
+  retry?: RetryRule | readonly RetryRule[] | ((values: LooseValues) => RetryRule | readonly RetryRule[] | undefined)
   /**
    * Seconds a client waits: a unit slower than this fails (and is sent again with `retry`), though the work it set off
    * still runs. It needs a latency, a `service` on its way. It reads only the load and the parameters, as retry does.
@@ -119,6 +119,12 @@ export interface Overload {
  * that were assumed.
  */
 export interface RetryRule {
+  /**
+   * The stage whose caller retries: what fails there or after it is sent again from there, so only the stages from it
+   * on see those attempts. Without one it is the flow's client that retries, from the start. A flow may have one rule
+   * for its client and one for each stage; retries inside retries multiply.
+   */
+  at?: string
   /** Retries after the first attempt: a whole number. */
   times: number
   /** At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. */
@@ -139,6 +145,14 @@ export interface Retry {
   retried: number
   /** The share of units that fail every attempt. */
   failed: number
+  /**
+   * The retries at its hops, by stage: of the units that reach the stage, the attempts each gets (`attempts`, 1 and
+   * up), the share of attempts that fail from there on, the share of those sent again, and the share of the units that
+   * fail every attempt there.
+   */
+  hops?: Readonly<
+    Record<string, { times: number; attempts: number; rejected: number; retried: number; failed: number }>
+  >
 }
 
 /** What a flow loses for good at one set of values: after every retry, and less what its fallback serves. */
@@ -1460,15 +1474,52 @@ function contextAt(
       const o = def.flows[f]!.overload
       return (typeof o === 'function' ? o(ctx as any) : o) ?? {}
     })
-  const retryOf = (f: string) => {
-    const rule = def.flows[f]!.retry
-    const r = typeof rule === 'function' ? rule(values) : rule
-    if (!r) return undefined
-    if (!(Number.isInteger(r.times) && r.times >= 0))
-      throw new Error(`loadmap: flow "${f}" retries a whole number of times, not ${r.times}`)
-    if (r.budget != null && !(r.budget >= 0 && Number.isFinite(r.budget)))
-      throw new Error(`loadmap: flow "${f}" needs a retry budget of 0 or more, not ${r.budget}`)
-    return r.times > 0 && r.budget !== 0 ? r : undefined
+  /**
+   * A flow's retry rules at these values: the one its client keeps (no `at`), and those of the hops, by the stage
+   * each is at. A rule of no retries is none.
+   */
+  const rulesOf = (f: string) =>
+    memo(
+      `retry rules of ${f}`,
+      () => {
+        const rule = def.flows[f]!.retry
+        const r = typeof rule === 'function' ? rule(values) : rule
+        const hops = new Map<string, RetryRule>()
+        const seen = new Set<string>()
+        let top: RetryRule | undefined
+        for (const x of r == null ? [] : Array.isArray(r) ? (r as readonly RetryRule[]) : [r as RetryRule]) {
+          const where = x.at == null ? '' : ` at "${x.at}"`
+          if (!(Number.isInteger(x.times) && x.times >= 0))
+            throw new Error(`loadmap: flow "${f}" retries${where} a whole number of times, not ${x.times}`)
+          if (x.budget != null && !(x.budget >= 0 && Number.isFinite(x.budget)))
+            throw new Error(`loadmap: flow "${f}" needs a retry budget${where} of 0 or more, not ${x.budget}`)
+          if (seen.has(x.at ?? ''))
+            throw new Error(`loadmap: flow "${f}" has two retry rules${where || ' with no stage'}: one for each`)
+          seen.add(x.at ?? '')
+          if (x.at != null && !stageIds.includes(x.at))
+            throw new Error(`loadmap: flow "${f}" retries at unknown stage "${x.at}"`)
+          if (
+            x.at != null &&
+            !waysOf(def as never, f).open &&
+            !waysOf(def as never, f).ways.some((w) => w.includes(x.at!))
+          )
+            throw new Error(`loadmap: flow "${f}" retries at "${x.at}", which is not on its way`)
+          // a rule of no retries is none
+          if (!(x.times > 0 && x.budget !== 0)) continue
+          if (x.at == null) top = x
+          else hops.set(x.at, x)
+        }
+        return { top, hops }
+      },
+      f,
+    )
+  const retryOf = (f: string) => rulesOf(f).top
+  /** The flow is sent again somewhere: by its client, or at a hop. */
+  const retrying = (f: string) => rulesOf(f).top != null || rulesOf(f).hops.size > 0
+  /** The attempts each unit of a flow reaching a stage gets there: 1 without a retry at that hop. */
+  const gain = (f: string, s: string): number => {
+    if (!rulesOf(f).hops.has(s)) return 1
+    return fixed ? (fixed[`${f}@${s}`] ?? 1) : (retries()[f]!.hops?.[s]?.attempts ?? 1)
   }
   const averageOf = (f: string) =>
     memo(`average of ${f}`, () => {
@@ -1492,7 +1543,7 @@ function contextAt(
         throw new Error(
           `loadmap: flow "${f}"'s breaker opens past a share of failures above 0 and below 1, not ${v.opens}`,
         )
-      if (v != null && retryOf(f))
+      if (v != null && retrying(f))
         throw flowError(
           `loadmap: flow "${f}" has a breaker and retries: each would decide what the other sees, so give it one of them`,
           f,
@@ -1714,6 +1765,8 @@ function contextAt(
         const last = route.findLastIndex((t) => t === s || copies(t, f, s) > 0)
         let r = (ctx.flows[f] as number) * share
         for (const [i, t] of route.entries()) {
+          // a retry at this hop sends what fails from here on again: every stage from it sees the attempts
+          r *= gain(f, t)
           if (t === s) total += r
           total += r * copies(t, f, s)
           if (i >= last) break
@@ -1746,16 +1799,44 @@ function contextAt(
    * stage's rejections are counted against what is offered to it, so behind another stage that turns work away it
    * passes at most what it can take (offered × (1 − rejects)), not a share of a share: the bottleneck decides.
    */
-  const failure = (f: string) =>
-    memo(`failures of ${f}`, () => {
+  const failure = (f: string) => failureFrom(f)
+  /**
+   * The same from a stage on, for one attempt of a retry at that hop: the share of the units reaching `from` that fail
+   * there or after it. A stage further on with a retry of its own is a call sent again: it fails only what fails
+   * every one of its attempts. A timeout is the client's: it fails the flow's attempt, not a hop's.
+   */
+  const failureFrom = (f: string, from?: string): number =>
+    memo(`failures of ${f}${from == null ? '' : ` from ${from}`}`, () => {
+      const hops = rulesOf(f).hops
       let failed = 0
       let dropped = 0
+      let through = 0
       for (const { stages: route, share } of paths(f)) {
+        const first = from == null ? 0 : route.indexOf(from)
+        if (first < 0) continue
+        // of one attempt: what is offered to each stage as if those before kept up, and what actually gets there
         let offered = 1
         let actual = 1
         let answered = 0
         let gone = 0
-        for (const [i, s] of route.entries()) {
+        // what actually reaches `from`: its attempt fails a share of that, not of what a full stage before it kept
+        let entering = 1
+        for (let i = 0; i < route.length; i++) {
+          const s = route[i]!
+          if (i === first) {
+            entering = actual
+            answered = 0
+            gone = 0
+          }
+          if (i >= first && (from == null || i > first) && hops.has(s)) {
+            // what one attempt fails there, sent again as its rule says: 1 − (1 − p)(1 + e) fail them all. The retries
+            // are the ones this share calls for, not the ones assumed so far: so a call never falls as the attempts
+            // rise, and the solve climbs from below
+            const inner = failureFrom(f, s)
+            const rule = hops.get(s)!
+            actual *= (1 - inner) * (1 + Math.min(excess(inner, rule.times), rule.budget ?? Number.POSITIVE_INFINITY))
+            break
+          }
           // a fan-out turns away copies, not the unit
           const r = stages[s]!.kind === 'fanout' ? 0 : rejectsFor(s, f)
           if (r > 0) actual = Math.min(actual, offered * (1 - r))
@@ -1772,9 +1853,12 @@ function contextAt(
           }
           offered *= onward(s)
         }
-        failed += share * Math.max(0, 1 - answered - actual - gone)
-        dropped += share * gone
+        if (!(entering > 0)) continue
+        failed += share * entering * Math.max(0, 1 - (answered + actual + gone) / entering)
+        dropped += (share * entering * gone) / entering
+        through += share * entering
       }
+      if (from != null) return through > 0 ? failed / through : 0
       // a unit that got through can still be too slow for its client; a dropped one is lost at its queue, never
       // sent again: it neither failed nor got through
       const late = slow?.[f] ?? timedOut(f)
@@ -1803,6 +1887,9 @@ function contextAt(
         // the share the queue in front of this stage dropped: its reader then turns nothing away
         let fed = 0
         for (const [i, t] of route.entries()) {
+          const again = gain(f, t)
+          r *= again
+          offered *= again
           if (t === s) total += r
           // a fan-out's copies, less the share it turns away (none of what a dropping queue let it read)
           total += r * copies(t, f, s) * (fed > 0 ? 1 : 1 - rejects(t))
@@ -1887,6 +1974,7 @@ function contextAt(
       for (const [i, way] of paths(f).entries()) {
         let r = (ctx.flows[f] as number) * way.share
         for (const [j, s] of way.stages.entries()) {
+          r *= gain(f, s)
           const st = stages[s]!
           if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
             const turned = r * shedFor(s, f)
@@ -1927,8 +2015,27 @@ function contextAt(
     const all = failing.reduce((a, c) => a + c.rate, 0)
     const there = at ? failing.filter((c) => at.has(c.stage)).reduce((a, c) => a + c.rate, 0) : all
     if (fixed) return there
-    const r = retryOf(f) ? retries()[f] : undefined
+    const r = retrying(f) ? retries()[f] : undefined
+    // with a retry at a hop each stage's failures are sent again by the rules around it, not all by the same ones
+    if (r?.hops) return failing.reduce((a, c) => a + (!at || at.has(c.stage) ? c.rate * kept(f, c) : 0), 0)
     return r ? (all > 0 ? (r.rate * r.failed * there) / all : 0) : there
+  }
+  /**
+   * Of the attempts a stage fails, the share that fail for good, for a flow retried at a hop: the product, over the
+   * rules around the stage (its client's, and each hop's before it on the way), of the units that rule fails for good
+   * over the attempts it sees fail. A stage before every hop is under the client's rule alone; a unit too slow is the
+   * client's to send again, never a hop's.
+   */
+  const kept = (f: string, c: { stage: string; loss: Loss }) => {
+    const r = retries()[f]!
+    const ratio = (x: { rejected: number; failed: number }, attempts: number) =>
+      x.rejected > 0 && attempts > 0 ? Math.min(1, x.failed / (x.rejected * attempts)) : 0
+    let k = r.times ? ratio(r, r.rate > 0 ? r.attempts / r.rate : 1) : 1
+    if (c.loss === 'timedOut') return k
+    const way = paths(f).find((w) => w.stages.includes(c.stage))?.stages ?? []
+    for (const [h, x] of Object.entries(r.hops ?? {}))
+      if (way.includes(h) && way.indexOf(h) <= way.indexOf(c.stage)) k *= ratio(x, x.attempts)
+    return k
   }
   /**
    * The units a second a flow's fallback serves: what it fails for good past where it falls back after; what failed
@@ -1964,12 +2071,13 @@ function contextAt(
     memo(`${f} lost for good`, () => {
       const all = causes(f)
       const failing = all.reduce((a, c) => a + (c.loss === 'dropped' ? 0 : c.rate), 0)
-      const k = failing > 0 ? Math.min(1, forGood(f) / failing) : 0
+      const hops = !fixed && retrying(f) && retries()[f]!.hops != null
+      const k = hops ? 0 : failing > 0 ? Math.min(1, forGood(f) / failing) : 0
       const fb = def.flows[f]!.fallback
       const served = pastAfter(f)
       const out: { stage?: string; loss: Loss; rate: number }[] = all.map((c) => ({
         ...c,
-        rate: c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k,
+        rate: c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * (hops ? kept(f, c) : k),
       }))
       // a fallback serves what fails past its `after` and what the breaker fails fast, less what its own stages turn away
       if (fb)
@@ -1987,12 +2095,29 @@ function contextAt(
 
   const retries = (): Record<string, Retry> =>
     memo('retries', () => {
-      const ids = flowIds.filter((f) => retryOf(f))
+      // one unknown for each rule: a flow's client's under the flow's id, a hop's under `flow@stage`
+      const rules = new Map<string, { flow: string; at?: string; rule: RetryRule }>()
+      for (const f of flowIds) {
+        const { top, hops } = rulesOf(f)
+        if (top) rules.set(f, { flow: f, rule: top })
+        for (const [at, rule] of hops) {
+          rules.set(`${f}@${at}`, { flow: f, at, rule })
+        }
+      }
+      const ids = [...rules.keys()]
+      const place = (f: string, s: string) => {
+        const w = paths(f).find((y) => y.stages.includes(s))
+        return w ? w.stages.indexOf(s) : -1
+      }
+      const flowOf = (k: string) => rules.get(k)!.flow
+      const ruleOf = (k: string) => rules.get(k)!.rule
+      // a client's attempts are a rate; a hop's are the attempts each unit reaching it gets
       const lam: Record<string, number> = {}
-      for (const f of ids) lam[f] = rate(f)
+      for (const k of ids) lam[k] = rules.get(k)!.at == null ? rate(k) : 1
+      const sends = (k: string) => rate(flowOf(k)) > 0
       // the retries' share of a flow at most: n, or the budget
       const most = (f: string) => {
-        const r = retryOf(f)!
+        const r = ruleOf(f)
         return Math.min(r.times, r.budget ?? Number.POSITIVE_INFINITY)
       }
       const attempts = (e: Record<string, number>) => {
@@ -2010,8 +2135,8 @@ function contextAt(
         const w: Record<string, number> = {}
         const p: Record<string, number> = {}
         for (const f of ids) {
-          p[f] = sub.failure(f)
-          w[f] = Math.min(excess(p[f], retryOf(f)!.times), most(f))
+          p[f] = sub.failureFrom(flowOf(f), rules.get(f)!.at)
+          w[f] = Math.min(excess(p[f], ruleOf(f).times), most(f))
         }
         return { w, p, sub }
       }
@@ -2019,19 +2144,50 @@ function contextAt(
       // holds. Flows that share a bottleneck settle on that line in one search; the call rises with the attempts when
       // formulas rise with the load, so the steps climb to the least fixed point.
       // read off the definition: a rule worked out from the values may read what the retries decide
-      const falls = ids.some((f) => {
-        const o = def.flows[f]!.overload
+      const falls = ids.some((k) => {
+        const o = def.flows[flowOf(k)]!.overload
         return typeof o === 'function' || o?.drop != null
       })
-      const solve = (from: Record<string, number>, late: Readonly<Record<string, number>>) => {
+      // The clients' rules settle together, as flows behind one bottleneck do. A hop's rule is solved inside them: for
+      // each trial of the rules before it, its own attempts are settled first, from where they stood (never past the
+      // answer, since they only rise with what is outside). Solved side by side, a client's call would be met before
+      // its hop's, and the two would take turns by small steps just past a knee. The levels are the clients, then
+      // each flow's first hop along its route, its second, and so on.
+      const levels: string[][] = []
+      for (const k of ids) {
+        const { flow, at } = rules.get(k)!
+        const depth =
+          at == null
+            ? 0
+            : 1 + [...rulesOf(flow).hops.keys()].sort((x, y) => place(flow, x) - place(flow, y)).indexOf(at)
+        levels[depth] = [...(levels[depth] ?? []), k]
+      }
+      const order = levels.filter((l) => l?.length)
+      type Settled = {
+        e: Record<string, number>
+        failed: Record<string, number>
+        sub: ReturnType<typeof wanted>['sub']
+      }
+      const solve = (from: Record<string, number>, late: Readonly<Record<string, number>>, level = 0): Settled => {
+        const mine = order[level] ?? []
+        // the rules after this level, settled at these attempts
+        const at = (y: Record<string, number>) => {
+          if (level + 1 >= order.length) return { e: y, ...wanted(y, late) }
+          const inner = solve(y, late, level + 1)
+          const w: Record<string, number> = {}
+          for (const f of ids) w[f] = Math.min(excess(inner.failed[f]!, ruleOf(f).times), most(f))
+          return { e: inner.e, w, p: inner.failed, sub: inner.sub }
+        }
         let e = from
         for (let step = 0; step < 100; step++) {
-          const { w, p: failed, sub } = wanted(e, late)
+          const now = at(e)
+          e = now.e
+          const { w, p: failed, sub } = now
           const d: Record<string, number> = {}
-          for (const f of ids) d[f] = Math.max(0, w[f]! - e[f]!)
+          for (const f of mine) d[f] = Math.max(0, w[f]! - e[f]!)
           // after the first search, what is left below 1e-10 is rounding; before it any call counts, since just past
           // the knee a tiny call can still be far from the answer
-          const live = ids.filter((f) => lam[f]! > 0 && d[f]! > (step ? 1e-10 * (1 + e[f]!) : 0))
+          const live = mine.filter((f) => sends(f) && d[f]! > (step ? 1e-10 * (1 + e[f]!) : 0))
           if (!live.length) return { e, failed, sub }
           const along = (t: number) => {
             const y = { ...e }
@@ -2040,7 +2196,7 @@ function contextAt(
           }
           const holds = (t: number) => {
             const y = along(t)
-            const wy = wanted(y, late).w
+            const wy = at(y).w
             return Math.min(...live.map((f) => (wy[f]! - y[f]!) / d[f]!))
           }
           const far = Math.min(...live.map((f) => (most(f) - e[f]!) / d[f]!))
@@ -2053,7 +2209,9 @@ function contextAt(
             e = along(h1 > 0 ? settle(holds, 1, far, h1) : falls ? back(1, h1) : 1)
           }
         }
-        throw new Error(`loadmap: the retries of ${joinAnd(ids.map((f) => `"${f}"`))} do not settle`)
+        throw new Error(
+          `loadmap: the retries of ${joinAnd([...new Set(ids.map(flowOf))].map((f) => `"${f}"`))} do not settle`,
+        )
       }
       // the timed-out share at the attempts they settled at, held again: it rises with them, so plain rounds climb to
       // the least fixed point of both, never past it, but just past a knee by tiny steps. Where what is left shrinks, a
@@ -2061,7 +2219,8 @@ function contextAt(
       // is held only when the share at its middle still reaches the middle. One that overshoots steps back to the plain
       // one. A dip narrower than half a step can be missed: only at a tipping point, where the storm then starts a
       // little early
-      const timed = ids.filter((f) => timeoutOf(f) != null)
+      // a timeout fails the client's attempt: only a flow whose client retries holds its share while they settle
+      const timed = ids.filter((f) => rules.get(f)!.at == null && timeoutOf(f) != null)
       const zero = Object.fromEntries(ids.map((f) => [f, 0]))
       const share = (s: { sub: { timedOut: (f: string) => number } }, late: Record<string, number>) => {
         const next = { ...late }
@@ -2105,7 +2264,7 @@ function contextAt(
           gain = doubled ? gain * 2 : 1
           if (doubled) {
             // the middle of the jump must still be below the answer: its share reaches past it
-            const mid = Object.fromEntries(ids.map((f) => [f, (next[f]! + step[f]!) / 2]))
+            const mid = Object.fromEntries(timed.map((f) => [f, (next[f]! + step[f]!) / 2]))
             const atMid = share(solve(s.e, mid), mid)
             if (timed.some((f) => atMid[f]! < mid[f]! - tol(f))) {
               for (const f of timed) step[f] = next[f]!
@@ -2120,21 +2279,29 @@ function contextAt(
         e = s.e
         const a = attempts(e)
         const out: Record<string, Retry> = {}
-        for (const f of ids) {
-          const l = lam[f]!
+        const one = (f: string) => {
           const p = s.failed[f]!
-          const times = retryOf(f)!.times
+          const times = ruleOf(f).times
           // with a budget only a share q of rejections is sent again: pq solves pq + … + (pq)ⁿ = the excess
           const retried =
             p > 0 && excess(p, times) > e[f]! * (1 + 1e-12) ? root((y) => excess(y, times), e[f]!, p) / p : 1
-          out[f] = {
+          // a flow that sends nothing retries nothing
+          const sent = sends(f)
+          return {
             times,
-            rate: l,
             attempts: a[f]!,
             rejected: p,
-            retried,
-            failed: l > 0 ? 1 - (1 - p) * (1 + e[f]!) : 0,
+            retried: sent ? retried : 1,
+            failed: sent ? 1 - (1 - p) * (1 + e[f]!) : 0,
           }
+        }
+        for (const f of new Set(ids.map(flowOf))) {
+          const l = rate(f)
+          // a flow retried only at its hops: its client sends each unit once, and fails what the hops fail for good
+          const whole = rules.has(f) ? one(f) : { times: 0, attempts: l, rejected: 0, retried: 1, failed: 0 }
+          if (!rules.has(f)) whole.rejected = whole.failed = l > 0 ? s.sub.failure(f) : 0
+          const hops = Object.fromEntries([...rulesOf(f).hops.keys()].map((at) => [at, one(`${f}@${at}`)]))
+          out[f] = { ...whole, rate: l, ...(Object.keys(hops).length ? { hops } : {}) }
         }
         return out
       }
@@ -2752,9 +2919,10 @@ function contextAt(
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
+    failureFrom,
     shed,
     paths,
-    retries: () => (flowIds.some((f) => retryOf(f)) ? retries() : {}),
+    retries: () => (flowIds.some(retrying) ? retries() : {}),
     over: (c: string) => text(def.components[c]!.over) ?? '',
     describe: (c: string) => {
       const opened = counted(c)

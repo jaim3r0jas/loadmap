@@ -711,7 +711,7 @@ export class Engine {
         // a unit lost for good shows it on its way into the lost box too
         color: d.phase === 'fade' || d.counted ? this.outcomeColor(d.outcome) : this.flowColor(d.flow),
         alpha: d.phase === 'fade' ? Math.max(0, 1 - k) : 1,
-        ...(d.attempt ? { ring: RING } : {}),
+        ...(d.attempt || d.hops ? { ring: RING } : {}),
       })
     }
     for (const id of this.#paths.keys()) if (!live.has(id)) this.#paths.delete(id)
