@@ -495,8 +495,9 @@ describe('the built site', () => {
     // The chunks' hashed names compress a few bytes better or worse with each build (6.79 to 6.80 kB with no change
     // to the client): the bound leaves that room. The canvas loads its panels, its story and its zoom in chunks of
     // their own, each one more name here: 6.86 kB. The Ask panel's OpenRouter sign-in and sealed key are chunks of
-    // their own too: 6.91 kB
-    expect(kb).toBeLessThan(6.95)
+    // their own too: 6.91 kB. The backlog of a peak and the scaling curve are entries of their own, out of every first
+    // load, and two more names: 6.96 kB
+    expect(kb).toBeLessThan(7)
     expect(first.some((f) => /snippet|dist-/.test(f))).toBe(false)
   })
 
