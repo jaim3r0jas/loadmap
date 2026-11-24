@@ -1,5 +1,57 @@
 # @loadmap/sim
 
+## 0.46.0
+
+### Minor Changes
+
+- 37f77bd: A circuit breaker: `breaker { opens: 50% }` on a flow (language 1.7; `breaker: { opens }` in TypeScript). Past that
+  share of its attempts failing, its callers fail calls fast. In steady state it admits the share α at which the
+  failures among what it admits are `opens`, p(α·rate) = opens, found by a bracketed root search; below that it
+  stays closed. What it fails fast reaches no stage: it goes to the flow's fallback, if any, and on the board fades at
+  the source (`ev.breakers.<flow>`: `admitted`, `failedFast`). A flow that retries takes no breaker.
+
+  Docs: /language/building-blocks/#lost-units
+- c5a8b15: The dots keep running across an edit that leaves every flow, stage and route as it was (a figure, a name, a box's
+  look): the backlog, the busy workers and every dot stay, and the new figures apply as new values do. `Sim` has
+  `adopt(model, ev)` for it, false for a model that is another structure; such a model still starts its sim over.
+
+  Docs: /api/react/#useloadmap-and-the-controller
+- 00a1e85: A fallback: `fallback { after: api; route: staleQuotes }` on a flow (language 1.7; `fallback: { after, route }` in
+  TypeScript). What the flow fails for good, turned away or too slow after every retry, goes back to `after` and is
+  served along `route`: each fallback stage sees that rate (`ev.fallbacks.<flow>.rate`) and may run out like any other.
+  A lost box on the route counts none of it; one behind a fallback stage counts what that stage turns away. On the board
+  a failed dot fades where it failed and a dot sets out from `after` along its edge to the fallback, which needs that
+  edge (`missing-edge`). The budgets go to 74, 230 and 140 kB.
+
+  Docs: /language/building-blocks/#lost-units
+- 56e90eb: Skew drawn on a sharded store: a store or a pass that a key connection shards over `members` and `parts` is drawn as
+  its members, each holding the parts it keeps (part i on member i mod members), and its dots land on their parts, the
+  hot key's share on part 0, as on a queue. The resolved stage says so (`ResolvedStage.shards`: `members`, `parts`,
+  `skew`). The `<Loadmap>` page's budget goes to 76 kB.
+
+  Docs: /language/building-blocks/#connections
+- a4b725f: Shedding by priority: `pass { shed: priority }` (language 1.7; `pass('gw', { shed: 'priority' })` in TypeScript). Past
+  capacity the pass lets through as much as ever, but the flow with the smaller `priority` number first, so priority 1
+  keeps going while there is room for it. Each flow's share is on the stage (`shedBy`), and the dots, the lost boxes and
+  the retries follow it.
+
+  Docs: /language/building-blocks/#lost-units
+
+### Patch Changes
+
+- Updated dependencies [b547540]
+- Updated dependencies [37f77bd]
+- Updated dependencies [00a1e85]
+- Updated dependencies [f89851d]
+- Updated dependencies [a993b1b]
+- Updated dependencies [9222ee2]
+- Updated dependencies [66323a1]
+- Updated dependencies [56e90eb]
+- Updated dependencies [a4b725f]
+- Updated dependencies [0aef603]
+- Updated dependencies [3f8470d]
+  - @loadmap/core@0.46.0
+
 ## 0.45.0
 
 ### Patch Changes

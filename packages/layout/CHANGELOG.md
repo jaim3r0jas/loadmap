@@ -1,5 +1,55 @@
 # @loadmap/layout
 
+## 0.46.0
+
+### Minor Changes
+
+- 00a1e85: A fallback: `fallback { after: api; route: staleQuotes }` on a flow (language 1.7; `fallback: { after, route }` in
+  TypeScript). What the flow fails for good, turned away or too slow after every retry, goes back to `after` and is
+  served along `route`: each fallback stage sees that rate (`ev.fallbacks.<flow>.rate`) and may run out like any other.
+  A lost box on the route counts none of it; one behind a fallback stage counts what that stage turns away. On the board
+  a failed dot fades where it failed and a dot sets out from `after` along its edge to the fallback, which needs that
+  edge (`missing-edge`). The budgets go to 74, 230 and 140 kB.
+
+  Docs: /language/building-blocks/#lost-units
+- f9b0d92: In the editor, a box or an edge added to the text moves its neighbours and not the whole diagram: what is drawn next
+  is laid out from where the boxes are drawn, and **View → Tidy the diagram** (`tidy()` on the editor's handle) lays it
+  out as a reload draws it. `layout()` and `<Loadmap>` take the drawn scene as `from` for it. A page, a reload, a
+  recording and an export draw the layout from scratch, as before; so does a diagram with subsystems or folded into
+  rows. A scene says the `rows` it was folded into.
+
+  Docs: /api/react/#hold
+- 56e90eb: Skew drawn on a sharded store: a store or a pass that a key connection shards over `members` and `parts` is drawn as
+  its members, each holding the parts it keeps (part i on member i mod members), and its dots land on their parts, the
+  hot key's share on part 0, as on a queue. The resolved stage says so (`ResolvedStage.shards`: `members`, `parts`,
+  `skew`). The `<Loadmap>` page's budget goes to 76 kB.
+
+  Docs: /language/building-blocks/#connections
+
+### Patch Changes
+
+- aaa4f91: A new version of a model keeps more of what is drawn. The story step shown stays when the text is edited (or another
+  `model` is handed to `<Loadmap>`), as the new version writes it: its values, and what it closes, change as the step is
+  edited, and only a story that no longer has the step leaves it; a story that is playing still stops. A version whose
+  boxes and edges take the same room is not laid out again: ELK's result is kept by the frame, not by the compiled view.
+  The editor's handle has `changeFiles(files)`, which changes the definition's files as an edit (one undo step per file),
+  where `setFiles` starts a new definition from its defaults. In the editor, a change that reaches only a file that is
+  not open (a restore, an accepted proposal, a rename) is drawn at once, not with the next key.
+
+  Docs: /api/react/#useloadmap-and-the-controller
+- Updated dependencies [b547540]
+- Updated dependencies [37f77bd]
+- Updated dependencies [00a1e85]
+- Updated dependencies [f89851d]
+- Updated dependencies [a993b1b]
+- Updated dependencies [9222ee2]
+- Updated dependencies [66323a1]
+- Updated dependencies [56e90eb]
+- Updated dependencies [a4b725f]
+- Updated dependencies [0aef603]
+- Updated dependencies [3f8470d]
+  - @loadmap/core@0.46.0
+
 ## 0.45.0
 
 ### Patch Changes

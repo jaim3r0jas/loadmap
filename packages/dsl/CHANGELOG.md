@@ -1,5 +1,107 @@
 # @loadmap/dsl
 
+## 0.46.0
+
+### Minor Changes
+
+- b547540: A batch: `runs { every: 1d; within: 4h }` on a component (language 1.7; `runs: { every, within }` in TypeScript).
+  What reaches it in `every` is worked off `within`, so its demand is the rate a run needs, and it runs out where a run
+  misses its window, at a load multiple. Every a day or more reads each flow at its average. The limits list says how
+  long a run takes of its time (`ev.components.<id>.runs.takes`).
+
+  Docs: /language/building-blocks/#batches
+- 37f77bd: A circuit breaker: `breaker { opens: 50% }` on a flow (language 1.7; `breaker: { opens }` in TypeScript). Past that
+  share of its attempts failing, its callers fail calls fast. In steady state it admits the share α at which the
+  failures among what it admits are `opens`, p(α·rate) = opens, found by a bracketed root search; below that it
+  stays closed. What it fails fast reaches no stage: it goes to the flow's fallback, if any, and on the board fades at
+  the source (`ev.breakers.<flow>`: `admitted`, `failedFast`). A flow that retries takes no breaker.
+
+  Docs: /language/building-blocks/#lost-units
+- 00a1e85: A fallback: `fallback { after: api; route: staleQuotes }` on a flow (language 1.7; `fallback: { after, route }` in
+  TypeScript). What the flow fails for good, turned away or too slow after every retry, goes back to `after` and is
+  served along `route`: each fallback stage sees that rate (`ev.fallbacks.<flow>.rate`) and may run out like any other.
+  A lost box on the route counts none of it; one behind a fallback stage counts what that stage turns away. On the board
+  a failed dot fades where it failed and a dot sets out from `after` along its edge to the fallback, which needs that
+  edge (`missing-edge`). The budgets go to 74, 230 and 140 kB.
+
+  Docs: /language/building-blocks/#lost-units
+- df7d710: Language 1.7 is open: 1.6 shipped in @loadmap/dsl 0.39.0, so what is new to read needs a version of its own. Its first
+  addition is the day: `7d` is seven days in seconds, as `2h` is two hours. A file stamped before 1.7 that writes one
+  gets an error that says "a day (7d) is from loadmap 1.7", with the fix that raises its first line. The VS Code
+  extension's grammar reads `7d` as one number. Every definition in the repository says `loadmap 1.7`, and the corpus
+  holds what 0.45.0 released.
+
+  Docs: /language/formulas/
+- a993b1b: A preset can say how long its moment lasts: `preset "Black Friday" { load: 12; lasts: 2h }` (language 1.7; `peaks` in
+  TypeScript). While its values are shown, the verdict says what that long leaves in each queue whose reader cannot keep
+  up, and how long the reader then needs to clear it at the default load: "After 2 h of Black Friday, 1.4M events wait
+  in the events topic, which at 1× clears in 5 h." `backlog(model, values, seconds)` (from `@loadmap/core/backlog`) gives it, by the sim's own rules (a
+  reader drains at its component's full, priority 1 first, a drop or a merge leaves less), and the sim builds the same.
+
+  Docs: /language/controls/#presets
+- 9222ee2: A quota over a window: `limit { per: day }` (or `hour`, `month`; language 1.7; `limit('plan', { per: 'day' })` in
+  TypeScript). Its capacity is what the window allows, `configured(5_000_000, "requests/day", …)`, and its demand what
+  reaches it in one window, at the peak for an hour and at each flow's average for a day or a month. It runs out at a
+  load multiple like any rate, and past it the limits list says how far into the window it is gone. A quota whose
+  capacity is written per second warns.
+
+  Docs: /language/building-blocks/#rate-limits
+- 66323a1: A scaling curve: `fit apiScale { curve: usl; points n rate { … } }` (language 1.7; `fitScaling` from
+  `@loadmap/core/scaling`) fits the Universal Scalability Law to sizes and the capacity
+  measured at each: contention and coherency, so twice the pods give less than twice the capacity and past a peak less.
+  Call it like a fit, `measured(apiScale(pods), "req/s", …)`. The assumptions list it with its peak, in the page and in
+  `loadmap check`, and a parameter it reads that reaches past the peak warns (`past-peak`). It never applies to a
+  published figure.
+
+  Docs: /language/controls/#fitted-costs
+- a4b725f: Shedding by priority: `pass { shed: priority }` (language 1.7; `pass('gw', { shed: 'priority' })` in TypeScript). Past
+  capacity the pass lets through as much as ever, but the flow with the smaller `priority` number first, so priority 1
+  keeps going while there is room for it. Each flow's share is on the stage (`shedBy`), and the dots, the lost boxes and
+  the retries follow it.
+
+  Docs: /language/building-blocks/#lost-units
+- 0aef603: Stocks: a component that fills over time, not at a load. `fills` is what it gains a second (a disk, a topic's
+  retention, a database's size), read with every flow at its new `average`, its rate over a day against its peak. With
+  `keeps: 7d` it holds what it gains that long and settles at fills × keeps; with `level: measured(120, "GB", …)` it
+  stands there on growth's `asOf` and grows as the load does, so it is ranked at the load multiple whose day it is full,
+  with that date. Without growth such a stock is not ranked, and the verdict says why. `expect { lasts: 365d }` holds a
+  time through the growth. The limits list says what a stock gains a day and how long it has left at that rate
+  (`ev.components.<id>.stock`), and the editor has a starter, "Disk that fills up". All new in language 1.7.
+
+  Docs: /language/building-blocks/#stocks
+- 3f8470d: Failure domains: `domain zone "Availability zone" { count: 3 }`, `across: zone` on a pool, a cluster or a node, and
+  `down: zone` in a scenario, a step, a preset or an expect (language 1.7; `domains` and `across: { domain, members }`
+  in TypeScript). The model gets an Outage control, `down`. With one part out, a box's members in the fullest part are
+  out: its utilization is its own times members ÷ members left, a connection deals its parts over the members left,
+  and the members out are drawn as idle pods are. A published figure is then left without a benchmark, never scaled
+  (`ev.components.<id>.out`: `members`, `left`).
+
+  Docs: /language/building-blocks/#failure-domains
+
+### Patch Changes
+
+- 27c2c2f: `loadmap bundle` and `flatten()` keep the parentheses of a comparison that is compared again: `(mode == "a") == flag`
+  was written `mode == "a" == flag`, a chain, and the flat copy did not compile. A comparison given to an input of a
+  library is one value where the library compares it again (`ok == flag`), no longer a chain. A signed share of a
+  capacity keeps its pair (`100 +- (-5)%`), and a plus before a minus (`+(-a)`) is written `+ -a`, never the `+-` of a
+  capacity; `format()` no longer glues those two signs either, under any stamp. Parentheses that change nothing still
+  go (`(a * b) + c` is `a * b + c`), and a number or a text in parentheses is copied as written.
+- Updated dependencies [b547540]
+- Updated dependencies [37f77bd]
+- Updated dependencies [00a1e85]
+- Updated dependencies [f9b0d92]
+- Updated dependencies [aaa4f91]
+- Updated dependencies [f89851d]
+- Updated dependencies [a993b1b]
+- Updated dependencies [9222ee2]
+- Updated dependencies [66323a1]
+- Updated dependencies [56e90eb]
+- Updated dependencies [a4b725f]
+- Updated dependencies [0aef603]
+- Updated dependencies [3f8470d]
+  - @loadmap/core@0.46.0
+  - @loadmap/layout@0.46.0
+
 ## 0.45.0
 
 ### Minor Changes
