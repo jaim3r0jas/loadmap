@@ -41,6 +41,8 @@ export const search = defineModel({
   presets: { 'Cold cache': { hit: 0.3 } },
   scenarios: { Today: {}, Proposed: { rateLimit: 12_000, maxPods: 16, budget: true } },
   growth: { rate: 0.05, per: 'month', asOf: '2026-11-01' },
+  // the API's pods run in three zones: one out, the pool keeps the pods of the other two
+  domains: { zone: { name: 'Availability zone', count: 3 } },
   expect: [
     { label: 'Today keeps 10×', underTarget: 10 },
     { label: 'Proposed keeps 20×', scenario: 'Proposed', underTarget: 20 },
@@ -91,6 +93,7 @@ export const search = defineModel({
       short: 'the search API',
       demand: ({ at }) => at.api.searches * 0.001,
       capacity: ({ maxPods }) => measured(maxPods * 1, 'cores', '1 core a pod'),
+      across: { domain: 'zone', members: ({ maxPods }) => maxPods },
       // the time a search takes when nothing waits: with these, the searches have a latency
       service: 0.01,
       over: 'the pool is at its most pods, and searches queue',

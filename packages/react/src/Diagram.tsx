@@ -806,7 +806,9 @@ function Node({
   const flows = lm.view.def.flows as Record<string, { color: string }>
   // an autoscaled pool draws every pod it may run; the ones it does not run now are dashed and faint
   const st = n.kind === 'pool' ? lm.ev.stages[n.stages[0] ?? ''] : undefined
-  const running = st?.kind === 'workers' ? st.running : n.members.length
+  // a cluster's members in a part of its domain that is down are drawn as idle pods are
+  const out = n.component ? lm.ev.components[n.component as keyof typeof lm.ev.components]?.out : undefined
+  const running = st?.kind === 'workers' ? st.running : out ? out.left : n.members.length
   // a pod past the pool's size is leaving the drawing: it fades out as it was, running
   const idle = (i: number) => i >= running && i < (st?.kind === 'workers' ? st.pods : n.members.length)
   // behind an exclusive connection, a running worker that reads no partition is dashed too

@@ -1038,6 +1038,41 @@ gives back the same attempts, the least such point, and past the knee there is n
 `ev.latency.orders.timedOut` is the share, the Live panel shows it, and the dots that time out fade where they end. A
 timeout needs a latency: a `service` on the flow's way.
 
+#### Failure domains
+
+A **domain** (from `loadmap 1.7`) is a way the hardware fails in parts: availability zones, racks, replicas. Declare
+it once with how many parts it has, and say which boxes stand `across` it:
+
+```loadmap
+domain zone "Availability zone" { count: 3 }
+
+pool api "API" {
+  pods: 6
+  perPod: 4
+  # two pods in each zone
+  across: zone
+  capacity: measured(6 * 480, "req/s", "load test")
+  over: "requests queue"
+}
+
+scenario zoneOut "One zone out" { down: zone }
+expect "Holds 3× with a zone out" { down: zone; underTarget: 3 }
+```
+
+The model gets an Outage control: none, or one part of a domain out. `down: zone` in a scenario, a step, a preset or
+an expect presses it, on top of their other values. The members of a box across the domain stand in its parts as
+evenly as they go, and the part that goes is the fullest: 6 pods in 3 zones lose 2, 5 lose 2 as well. The members
+left carry the work of all, so the box's utilization is its own times members ÷ members left (6 ÷ 4 here), and a
+connection deals its parts again over the members left. The members are a pool's pods (its autoscaler's maximum), a
+cluster's members, and for a node one in each part. The pods and members that are out are drawn as idle pods are, and
+no dot goes to them; the boxes stay where they are.
+
+A published figure was run with all of its members, so with a part out it is left without a benchmark: the box is not
+ranked, and the verdict says so ("has no published benchmark with one availability zone out"), never a figure scaled
+down. `ev.components.api.out` gives the members and those left; `down` is a parameter like any other in the values
+(`model.evaluate({ down: 'zone' })`), and in TypeScript `domains` on the model and `across: { domain, members }` on a
+component declare the same.
+
 ### A story
 
 `step` lines walk a reader through the model in order: what to look at, and the values to show it at. Each step starts
@@ -1807,7 +1842,7 @@ A loadmap definition.
 | `assume` | string, constant | A line added before the generated assumptions. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
-Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `thresholds`, `view`, `include`, `part`, `library`, `import`, `extends`, `subsystem`.
+Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `domain`, `thresholds`, `view`, `include`, `part`, `library`, `import`, `extends`, `subsystem`.
 
 Holds edges: `a -> b`, `a -> b: label`, `a -> b: label { when: … }`.
 
@@ -1984,6 +2019,7 @@ After the keyword: label.
 | Property | Value | |
 | --- | --- | --- |
 | `lasts` | number in seconds, constant | How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load. From loadmap 1.7. |
+| `down` | domain, constant | A failure domain with one part out (N−1): what the Outage control sets. From loadmap 1.7. |
 
 Its properties are named by parameters (and `load`).
 
@@ -1996,6 +2032,10 @@ scenario proposed "Proposed" { pods: 6; gateways: 2 }
 ```
 
 After the keyword: [id] label.
+
+| Property | Value | |
+| --- | --- | --- |
+| `down` | domain, constant | A failure domain with one part out (N−1): what the Outage control sets. From loadmap 1.7. |
 
 Its properties are named by parameters (not `load`).
 
@@ -2026,6 +2066,7 @@ After the keyword: [label].
 | Property | Value | |
 | --- | --- | --- |
 | `scenario` | scenario, constant | The scenario whose values it checks; the defaults without one. |
+| `down` | domain, constant | A failure domain with one part out (N−1), on top of the scenario: `down: zone`. From loadmap 1.7. |
 | `component` | component, constant | One component; the first limit without one. |
 | `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. |
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
@@ -2052,6 +2093,7 @@ After the keyword: label.
 | `title` | string, constant | The few words the diagram shows while Play shows the step. Default: what the step changes. |
 | `focus` | component, constant | The component to point at: its box is outlined. |
 | `closed` | subsystems, constant | The subsystems drawn closed during the step: `closed: [us]`, `[]` for none. Default: as `view` says. From loadmap 1.5. |
+| `down` | domain, constant | A failure domain with one part out (N−1): what the Outage control sets. From loadmap 1.7. |
 | `seconds` | number, constant | How long Play holds the whole diagram after the step changes it: the time to read it. Default 4. |
 
 Its properties are named by parameters (and `load`).
@@ -2320,6 +2362,20 @@ held { orders: 0.02; sessions: 3600 }
 
 Its properties are named by flows.
 
+### domain
+
+A failure domain: availability zones, racks, replicas, count parts of it. A box stands across it; the model gets an Outage control (none, or one part of a domain out), which a scenario, a step, a preset or an expect sets with down. From loadmap 1.7.
+
+```loadmap
+domain zone "Availability zone" { count: 3 }
+```
+
+After the keyword: id [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `count` (required) | number, constant | How many parts, from 2 up. |
+
 ### tier
 
 A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.
@@ -2349,6 +2405,7 @@ After the keyword: id [label] [sub].
 | --- | --- | --- |
 | `shape` | `box` \| `cylinder` | box (the default) or cylinder. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `across` | domain, constant | The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all. From loadmap 1.7. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
@@ -2382,6 +2439,7 @@ After the keyword: id [label] [sub].
 | `members` (required) | number, formula | How many members. |
 | `memberLabel` | string, formula of `i` | Each member's label, from its index i: `broker ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `across` | domain, constant | The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all. From loadmap 1.7. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
@@ -2419,6 +2477,7 @@ After the keyword: id [label] [sub].
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. From loadmap 1.5. |
 | `podLabel` | string, formula of `i` | Each pod's label, from its index i: `pod ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `across` | domain, constant | The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all. From loadmap 1.7. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |

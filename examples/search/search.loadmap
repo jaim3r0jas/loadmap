@@ -65,6 +65,9 @@ tier edge "Edge"
 tier services "Services"
 tier data "Data"
 
+# the API's pods run in three zones: one out, the pool keeps the pods of the other two
+domain zone "Availability zone" { count: 3 }
+
 node clients "Clients" "web and apps"
 
 node limiter "Rate limiter" `${compact(rateLimit)} req/s` {
@@ -80,6 +83,7 @@ pool api "Search API" `2 to ${maxPods} pods` {
   tier: services
   perPod: 4
   autoscale { min: 2; max: maxPods; target: 0.7 }
+  across: zone
   short: "the search API"
   demand: at.api.searches * 1ms
   capacity: measured(maxPods * 1, "cores", "1 core a pod")

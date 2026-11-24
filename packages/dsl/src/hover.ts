@@ -188,6 +188,8 @@ class Lookup {
             return this.flow(name, out)
           case 'tier':
             return this.tier(name, out)
+          case 'domain':
+            return this.domain(name, out)
           case 'measure':
             return this.measure(name, out)
           case 'scenario':
@@ -254,6 +256,7 @@ class Lookup {
     if (keyword === 'metric') return this.metric(id, out)
     if (keyword === 'flow') return this.flow(id, out)
     if (keyword === 'tier') return this.tier(id, out)
+    if (keyword === 'domain') return this.domain(id, out)
     if (keyword === 'component') return this.component(id, out)
     if (keyword === 'connection') return this.connection(id, out)
     if ((BOXES as readonly string[]).includes(keyword)) return this.box(id, out)
@@ -459,6 +462,21 @@ class Lookup {
       boxes.length
         ? `Named by ${boxes.join(', ')}; a box without a tier stands in the tier of what feeds it.`
         : 'No box names it yet.',
+    ])
+  }
+
+  domain(id: string, out: Out): Hover | null {
+    const d = findDecl(this.body, 'domain', id)
+    if (!d) return null
+    const boxes = this.body.flatMap((s) => {
+      if (s.kind !== 'decl' || !(BOXES as readonly string[]).includes(s.keyword.name)) return []
+      const t = prop(s, 'across')
+      const box = s.args[0]
+      return t?.t === 'id' && t.name === id && box?.t === 'id' ? [box.name] : []
+    })
+    return out(this.line(d), [
+      SCHEMA.domain!.doc,
+      boxes.length ? `Across it: ${boxes.join(', ')}.` : 'No box stands across it yet.',
     ])
   }
 

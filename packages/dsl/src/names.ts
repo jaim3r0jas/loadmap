@@ -3,7 +3,17 @@ import type { Span } from './diagnostics'
 import { type BlockSpec, BOXES, EDGE_PROPS, own, propNamed, SCHEMA, STAGES } from './schema'
 
 /** Where names live: a name is unique in its space, and a reference finds its declaration there. */
-export type Space = 'formula' | 'flow' | 'node' | 'stage' | 'component' | 'tier' | 'scenario' | 'metric' | 'connection'
+export type Space =
+  | 'formula'
+  | 'flow'
+  | 'node'
+  | 'stage'
+  | 'component'
+  | 'tier'
+  | 'domain'
+  | 'scenario'
+  | 'metric'
+  | 'connection'
 
 /**
  * Called for every name the statements write. `node` is the piece of the syntax tree that holds it (an id, a formula
@@ -79,6 +89,7 @@ class Walk {
           case 'component':
           case 'flow':
           case 'tier':
+          case 'domain':
             if (s.value.t === 'id') this.add(prop.value, s.value, s.value.name)
             break
           case 'flows':
@@ -137,7 +148,8 @@ class Walk {
               id.name,
               true,
             )
-          else if (k === 'flow' || k === 'tier' || k === 'component' || k === 'metric') this.add(k, id, id.name, true)
+          else if (k === 'flow' || k === 'tier' || k === 'domain' || k === 'component' || k === 'metric')
+            this.add(k, id, id.name, true)
           else if ((BOXES as readonly string[]).includes(k) || k === 'subsystem') this.add('node', id, id.name, true)
           else if ((STAGES as readonly string[]).includes(k)) this.add('stage', id, id.name, true)
         }

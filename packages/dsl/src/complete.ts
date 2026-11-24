@@ -418,6 +418,8 @@ class Help {
     if (kind === 'measure')
       return cur.in === 'code' ? this.ids('measure').map((label) => ({ label, type: 'variable' })) : []
     if (kind === 'tier') return cur.in === 'code' ? this.ids('tier').map((label) => ({ label, type: 'constant' })) : []
+    if (kind === 'domain')
+      return cur.in === 'code' ? this.ids('domain').map((label) => ({ label, type: 'constant' })) : []
     if (kind === 'scenario')
       return this.ids('scenario').map((label) => ({
         label,

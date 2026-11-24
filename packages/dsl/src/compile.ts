@@ -268,6 +268,7 @@ export interface DslSymbol {
     | 'component'
     | 'scenario'
     | 'tier'
+    | 'domain'
     | 'connection'
   id: string
   /** The id where it is written (or the keyword, for an id taken from its box). */
@@ -538,7 +539,8 @@ function grounded(model: Definition['model'], r: CheckResult): CheckResult {
   const e = r.expectation
   if (e.flow != null || (e.underTarget == null && e.notFull == null)) return r
   const scenario = e.scenario == null ? undefined : model.scenarios.find((s) => s.label === e.scenario)
-  const all = Object.values(model.evaluate(scenario?.values).components)
+  const values = e.down == null ? scenario?.values : { ...scenario?.values, down: e.down }
+  const all = Object.values(model.evaluate(values as never).components)
   const scope = e.component == null ? all : all.filter((x) => x.id === e.component)
   const adrift = scope.filter((x) => x.demand != null && !Number.isFinite(x.demand))
   if (!adrift.length) return r
@@ -597,6 +599,8 @@ export class Compiler {
   names!: Names
   /** Each scenario's id and the label it stands for. */
   private scenarioIds = new Map<string, string>()
+  /** The failure domains declared, by id: what across and down name. */
+  private domainIds = new Map<string, Span>()
   /** Each fan-out and the copies a second it sends: what `out.<stage>` reads. */
   private sent = new Map<string, { run: (ctx: any) => number }>()
   /** What the units of a formula's names come from: each let's formula, each fit's y, each parameter's default. */
@@ -826,6 +830,8 @@ export class Compiler {
     }
     const tierNames = new Map<string, Span>()
     for (const b of byKind('tier')) if (b.args.id) this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
+    for (const b of byKind('domain'))
+      if (b.args.id) this.declare('domain', b.args.id.name, b.args.id, b, this.domainIds)
     if (!namesOnly) this.shadowed(boxes, loose)
     if (namesOnly) return undefined
     // a measure is read like a let, of its fallback's type: a capacity or a number
@@ -1152,6 +1158,54 @@ export class Compiler {
       if (fit) calibration[this.text(f.args.label) ?? f.args.id!.name] = fit
     }
 
+    // a failure domain and the boxes across it: the members of a pool are its pods (its autoscaler's max), of a
+    // cluster its members, and a node runs one in each part
+    const domains: Record<string, { name: string; count: number }> = {}
+    for (const b of byKind('domain')) {
+      if (!b.args.id) continue
+      const count = this.constProp<number>(b, 'count')
+      if (count == null) continue
+      if (!(Number.isInteger(count) && count >= 2))
+        this.report.error(
+          'out-of-range',
+          this.prop(b, 'count')!.value,
+          'a domain has a whole number of parts from 2 up',
+        )
+      else domains[b.args.id.name] = { name: this.text(b.args.label) ?? b.args.id.name, count }
+    }
+    if (Object.keys(domains).length && params.some((x) => x.args.id?.name === 'down'))
+      this.report.error(
+        'duplicate',
+        params.find((x) => x.args.id?.name === 'down')!.args.id!,
+        '"down" is the Outage control the domains give the model',
+        'give the parameter another name',
+      )
+    for (const box of boxes) {
+      const domain = this.named(box.block, 'across', [...this.domainIds.keys()], 'domain')
+      if (!domain || !Object.hasOwn(domains, domain)) continue
+      if (!box.component) {
+        this.report.error(
+          'bad-box',
+          this.prop(box.block, 'across')!.key,
+          'across is for a box with a component: its members carry its capacity',
+        )
+        continue
+      }
+      const st = stageDefs[box.id] as { kind?: string; pods?: unknown; autoscale?: { max: unknown } } | undefined
+      const members =
+        box.block.keyword === 'pool'
+          ? st?.kind === 'workers'
+            ? st.autoscale
+              ? st.autoscale.max
+              : st.pods
+            : undefined
+          : box.block.keyword === 'cluster'
+            ? this.dynProp<number>(box.block, 'members', 'number')
+            : domains[domain]!.count
+      if (members == null) continue
+      ;(componentDefs[box.component.id] as Record<string, unknown>).across = { domain, members }
+    }
+
     this.apart(componentDefs, byKind('subsystem'))
     const model: Record<string, unknown> = {
       load,
@@ -1167,6 +1221,7 @@ export class Compiler {
     if (Object.keys(peaks).length) model.peaks = peaks
     if (Object.keys(scenarios).length) model.scenarios = scenarios
     if (growth) model.growth = growth
+    if (Object.keys(domains).length) model.domains = domains
     if (expects.length) model.expect = expects
     if (story.length) model.story = story
     if (Object.keys(derived).length) model.derived = derived
@@ -3054,8 +3109,9 @@ export class Compiler {
     const out: Record<string, unknown> = {}
     const known = new Map(params.filter((x) => x.args.id).map((x) => [x.args.id!.name, x]))
     for (const [k, props] of b.props) {
-      // a step's own properties; its other lines are values. A parameter named lasts keeps its value, as before 1.7
-      if (own(b.spec.props, k) && !(k === 'lasts' && known.has('lasts'))) continue
+      // a step's own properties; its other lines are values. A parameter named lasts or down keeps its value, as
+      // before 1.7
+      if (own(b.spec.props, k) && !((k === 'lasts' || k === 'down') && known.has(k))) continue
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
       if (k === 'load' && kind === 'scenario') {
@@ -3086,6 +3142,10 @@ export class Compiler {
         this.strict(STRICT_FORMULAS, 'out-of-range', prop.value, `"${k}" goes from ${range.min} to ${range.max}`)
       out[k] = v
     }
+    if (!known.has('down')) {
+      const down = this.named(b, 'down', [...this.domainIds.keys()], 'domain')
+      if (down) out.down = down
+    }
     return out
   }
 
@@ -3102,8 +3162,10 @@ export class Compiler {
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const component = this.named(b, 'component', [...components.keys()], 'component')
     const flow = this.named(b, 'flow', [...flows.keys()], 'flow')
-    if (scenario === null || component === null || flow === null) return undefined
+    const down = this.named(b, 'down', [...this.domainIds.keys()], 'domain')
+    if (scenario === null || component === null || flow === null || down === null) return undefined
     if (scenario != null) e.scenario = scenario
+    if (down != null) e.down = down
     if (component != null) e.component = component
     // a flow's latency: one percentile under a time, at the values or up to underTarget
     const qs = ['p50', 'p95', 'p99'].filter((q) => b.props.has(q))

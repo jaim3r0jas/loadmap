@@ -18,7 +18,7 @@ import { growth as checkGrowth, dateAt, type Growth } from './growth'
 import { beyond, type Latency, latencyOf, PERCENTILES, type WayTime } from './latency'
 import { checkLost, waysOf } from './losses'
 import type { Measurement, Snapshot } from './measure'
-import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, type Values } from './params'
+import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type ParamDef, p, type Values } from './params'
 import {
   type Branch,
   dyn,
@@ -140,6 +140,12 @@ export interface Retry {
   failed: number
 }
 
+/** A failure domain: its name ("Availability zone") and how many parts it has, from 2 up. */
+export interface Domain {
+  name: string
+  count: number
+}
+
 export interface ComponentDef<X> {
   name: string
   /** The name inside a sentence, with its article: "the database". Defaults to the name. */
@@ -180,6 +186,12 @@ export interface ComponentDef<X> {
    */
   runs?: Runs | ((values: LooseValues) => Runs)
   capacity: Capacity | ((ctx: X) => Capacity)
+  /**
+   * Its members stand across a failure domain (`domains`), spread as evenly as they go: with one of its parts down
+   * (the `down` control), the members in the fullest part are out, and those left carry the work. Members are the
+   * pods of a pool, the members of a cluster, or one in each part for a box that runs in every one.
+   */
+  across?: { domain: string; members: number | ((ctx: X) => number) }
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
   /** What happens past 100 %, as a clause: "clients get 429s". */
@@ -205,6 +217,12 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   scenarios?: Readonly<Record<string, Partial<NoInfer<Omit<Values<P>, 'load'>>>>>
   /** How fast the load grows: turns load multiples into dates. */
   growth?: Growth
+  /**
+   * Failure domains by id: availability zones, racks, replicas, `count` parts each. A component stands `across` one;
+   * the model gets a control `down` ("none", or a domain's id: one of its parts out), which a scenario, a preset or an
+   * expectation sets like any other. Declare `down` yourself (a select of "none" and the ids) for its values to type.
+   */
+  domains?: Readonly<Record<string, Domain>>
   flows: { [K in F]: FlowDef<Ctx<P, F, C, D, NoInfer<S>>> }
   components: { [K in C]: ComponentDef<Ctx<P, F, C, D, NoInfer<S>>> }
   derived?: { [K in D]: (ctx: Ctx<P, F, C, D, NoInfer<S>>) => number }
@@ -287,6 +305,8 @@ export interface ComponentResult<C extends string = string> {
   held?: Readonly<Record<string, number>>
   /** Why it has no published figure for this configuration: it is then not ranked, like a switched-off one. */
   missing?: string
+  /** With a part of the domain it stands across down: its members, and those left to carry the work. */
+  out?: Outage
   /** How unevenly a connection lands the work on its members, when unevenly or with members left idle. */
   spread?: Spread
   /** For a stock (`fills`): what it holds and gains at these values. */
@@ -298,6 +318,15 @@ export interface ComponentResult<C extends string = string> {
 }
 
 /** How often a batch runs, and the time each run has: seconds. */
+/** A component with a part of its domain down: "4 of 6 pods left". */
+export interface Outage {
+  domain: string
+  /** The domain's name: "Availability zone". */
+  name: string
+  members: number
+  left: number
+}
+
 export interface Runs {
   every: number
   within: number
@@ -478,7 +507,7 @@ export function defineModel<
   D extends string = never,
 >(written: ModelDef<P, F, C, D, S>): Model<P, F, C, S> {
   // a connection's rule from the catalog gives what it does not write; one that gives accepts is a limit of its own
-  const given = withRules(withNames(written))
+  const given = withDomains(withRules(withNames(written)))
   const def = withCounts(given)
   const params = (def.params ?? {}) as Readonly<Record<string, ParamDef>>
   for (const id of Object.keys(params))
@@ -825,10 +854,15 @@ export function defineModel<
     assignment: (s: string) => WorkersAssignment | undefined,
     hot: (s: string) => Record<string, number> | undefined,
     shedBy: (s: string) => Record<string, number> | undefined,
+    outage: (c: string) => Outage | undefined,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
-      const st = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
+      const resolved = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
+      // the pods of a part that is down run nothing: the drawing shows them idle, and no dot goes to them
+      const o = resolved.kind === 'workers' && resolved.component ? outage(resolved.component) : undefined
+      const st =
+        o && resolved.kind === 'workers' ? { ...resolved, running: Math.min(resolved.running, o.left) } : resolved
       const a = st.kind === 'workers' ? assignment(s) : undefined
       const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
@@ -880,6 +914,7 @@ export function defineModel<
       admitted,
       failedFast,
       rate,
+      outage,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -904,6 +939,8 @@ export function defineModel<
         describe: describe(c),
       }
       if (missing != null) components[c].missing = missing
+      const o = enabled(c) ? outage(c) : undefined
+      if (o) components[c].out = o
       const st = enabled(c) ? stock(c) : undefined
       if (st) components[c].stock = st
       const run = off ? null : runsOf(c)
@@ -949,7 +986,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, outage)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1047,12 +1084,12 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths, shedByOf } = context(def as any, values)
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf, outage } = context(def as any, values)
       let ways: Record<F, readonly FlowPath<S>[]> | undefined
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, outage),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -1170,8 +1207,29 @@ function contextAt(
   const routes = def.routes as Record<string, readonly string[]>
   const capacity = (c: string) =>
     memo(`capacity of ${c}`, () => {
-      const cap = def.components[c]!.capacity
-      return typeof cap === 'function' ? cap(ctx as any) : cap
+      const given = def.components[c]!.capacity
+      const cap = typeof given === 'function' ? given(ctx as any) : given
+      const o = outage(c)
+      // a published figure holds only under its run's conditions, and fewer members are not them: never scaled
+      if (o && cap.provenance === 'published' && cap.missing == null) {
+        const name = o.name.charAt(0).toLowerCase() + o.name.slice(1)
+        return { ...cap, missing: `with one ${name} out` }
+      }
+      return cap
+    })
+  /** With a part of its domain down, its members and those left; undefined while every part is up. */
+  const outage = (c: string): Outage | undefined =>
+    memo(`outage of ${c}`, () => {
+      const a = def.components[c]!.across
+      if (!a || values.down !== a.domain) return undefined
+      const d = def.domains![a.domain]!
+      const members = whole(
+        typeof a.members === 'function' ? a.members(ctx as any) : a.members,
+        `component "${c}"`,
+        'members across its domain',
+      )
+      // as evenly as they go: the fullest part holds members ÷ count, rounded up, and that is the part that goes
+      return { domain: a.domain, name: d.name, members, left: members - Math.ceil(members / d.count) }
     })
   const enabled = (c: string): boolean =>
     memo(`${c} enabled`, () => {
@@ -2083,7 +2141,9 @@ function contextAt(
   /** demand ÷ capacity, before any connection's spread. */
   const plainOf = (c: string): number | null => {
     if (!enabled(c) || capacity(c).missing != null || undated(c)) return null
-    const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
+    const o = outage(c)
+    // the members left carry the work of all: as if the capacity were theirs only
+    const cap = boundOf(capacity(c), c === pinned ? undefined : bound) * (o ? o.left / o.members : 1)
     const d = ctx.demand[c] as number
     return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
   }
@@ -2180,14 +2240,22 @@ function contextAt(
             )
           let shape: Shape
           let pool: { running: number; perPod: number; owner: 'worker' | 'pod' } | undefined
+          // with a part of its domain down, the parts are dealt again over the members left
+          const o = outage(c)
+          const lost = o ? o.members - o.left : 0
           if (st.kind === 'workers') {
             const owner = cn.owner ?? 'worker'
-            const { running } = podsOf(stage, st, ctx, plain(c))
+            const { running: all } = podsOf(stage, st, ctx, plain(c))
+            const running = o ? Math.min(all, o.left) : all
             if (!(running >= 1)) return null
             const perPod = whole(dyn(st.perPod, ctx), `workers "${stage}"`, 'perPod')
             pool = { running: whole(running, `workers "${stage}"`, 'pods'), perPod, owner }
             shape = poolShape(pool.running, perPod, owner, cn.capacityPer ?? owner)
-          } else shape = memberShape(members[0] as number)
+          } else {
+            const left = (members[0] as number) - lost
+            if (!(left >= 1)) return null
+            shape = memberShape(left)
+          }
           // each flow by its share of the demand: for slots, what arrives × how long each unit holds one
           const h = held(c)
           const weight = (f: string, at: readonly string[]) =>
@@ -2393,6 +2461,7 @@ function contextAt(
     admitted,
     failedFast,
     rate,
+    outage,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
@@ -2521,6 +2590,40 @@ function withCounts<T extends ModelDef<any, any, any, any, any>>(def: T): T {
     }
   }
   return { ...def, components }
+}
+
+/**
+ * The `down` control a model's domains give it, unless it declares its own; and the domains and what stands across
+ * them, checked.
+ */
+function withDomains<T extends ModelDef<any, any, any, any, any>>(def: T): T {
+  const domains = (def.domains ?? {}) as Readonly<Record<string, Domain>>
+  const ids = Object.keys(domains)
+  for (const [c, cd] of Object.entries(def.components as Record<string, ComponentDef<any>>))
+    if (cd.across && !Object.hasOwn(domains, cd.across.domain))
+      throw new Error(`loadmap: component "${c}" stands across unknown domain "${cd.across.domain}"`)
+  if (!ids.length) return def
+  for (const [id, d] of Object.entries(domains))
+    if (!(Number.isInteger(d.count) && d.count >= 2))
+      throw new Error(`loadmap: domain "${id}" needs a count of parts as a whole number from 2 up, not ${d.count}`)
+  const own = (def.params as Record<string, ParamDef> | undefined)?.down
+  if (own) {
+    if (
+      own.kind !== 'select' ||
+      !own.options.includes('none') ||
+      own.options.some((o) => o !== 'none' && !ids.includes(o as string))
+    )
+      throw new Error(`loadmap: parameter "down" takes "none" and the ids of the domains: ${ids.join(', ')}`)
+    return def
+  }
+  const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
+  const down = p.select<string>({
+    label: 'Outage',
+    options: ['none', ...ids],
+    default: 'none',
+    format: (v) => (v === 'none' ? 'none' : `one ${lower(domains[v]!.name)} out`),
+  })
+  return { ...def, params: { ...def.params, down } }
 }
 
 /** A count of parts or members: a whole number from 1 up. */

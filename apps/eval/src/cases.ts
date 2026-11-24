@@ -255,6 +255,19 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'breaker { opens: 30% }' }],
   },
   {
+    id: 'zones',
+    example: CHECKOUT,
+    request: 'The workers run in three availability zones: spread the worker pool across them.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'count: 3' }, { kind: 'contains', text: 'across:' }],
+  },
+  {
+    id: 'zone-out',
+    example: SEARCH,
+    request:
+      'The search API runs in three availability zones. Add a scenario with one zone out, and an expect that it still holds 2× then.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'across:' }, { kind: 'contains', text: 'down:' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',

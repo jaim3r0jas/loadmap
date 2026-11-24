@@ -13,6 +13,8 @@ export interface Expectation<C extends string = string> {
   label?: string
   /** The scenario whose values it checks; the defaults without one. */
   scenario?: string
+  /** A failure domain with one part out (the `down` control): N−1, on top of the scenario's values. */
+  down?: string
   /** One component; the first limit without one. */
   component?: C
   /** Every component (or this one) stays under the target utilization up to at least this multiple. */
@@ -79,12 +81,18 @@ export function check<P, C extends string>(
         : named
     const scenario = e.scenario == null ? null : model.scenarios.find((s) => s.label === e.scenario)
     if (e.scenario != null && !scenario) throw new Error(`loadmap: no scenario "${e.scenario}"`)
-    const ev = model.evaluate(scenario?.values as Partial<Values<P>> | undefined)
+    const outage = e.down == null ? undefined : model.params.find((x) => x.id === 'down')?.def
+    if (e.down != null && !(outage?.kind === 'select' && e.down !== 'none' && outage.options.includes(e.down)))
+      throw new Error(`loadmap: no domain "${e.down}" to take a part of out`)
+    const values = e.down == null ? scenario?.values : { ...scenario?.values, down: e.down }
+    const ev = model.evaluate(values as Partial<Values<P>> | undefined)
     const c = e.component == null ? null : ev.components[e.component]
     if (e.component != null && !c) throw new Error(`loadmap: no component "${e.component}"`)
-    const where = scenario ? ` in ${scenario.label}` : ''
+    const down =
+      outage?.kind === 'select' && e.down != null ? ` with ${outage.format?.(e.down) ?? `${e.down} down`}` : ''
+    const where = (scenario ? ` in ${scenario.label}` : '') + down
     if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
-      return latencyCheck(model, e, scenario?.values ?? {}, ev, where, gaps)
+      return latencyCheck(model, e, values ?? {}, ev, where, gaps)
     const range = (k: 'target' | 'full') => (c ? c[`${k}Range`] : ev[k])
     const found = { target: range('target'), full: range('full') }
 
