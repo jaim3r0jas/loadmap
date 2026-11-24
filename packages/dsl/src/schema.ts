@@ -34,6 +34,8 @@ export type ValueKind =
   | 'scenario'
   /** The id of a tier: `tier: data`. */
   | 'tier'
+  /** The id of a failure domain: `across: zone`. */
+  | 'domain'
   /** The id of a measure: `x: requestRate`. */
   | 'measure'
   /** A list of options: `[2, 3, 4]`. */
@@ -267,6 +269,18 @@ const TIER: PropSpec = {
   scope: 'const',
   doc: 'The tier the box stands in; without one, that of the boxes that feed it.',
 }
+const ACROSS: PropSpec = {
+  value: 'domain',
+  scope: 'const',
+  since: '1.7',
+  doc: "The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all.",
+}
+const DOWN: PropSpec = {
+  value: 'domain',
+  scope: 'const',
+  since: '1.7',
+  doc: 'A failure domain with one part out (N−1): what the Outage control sets.',
+}
 const LIKE: PropSpec = {
   value: 'node',
   scope: 'const',
@@ -396,6 +410,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'pool',
       'connection',
       'tier',
+      'domain',
       'thresholds',
       'view',
       'include',
@@ -586,6 +601,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         since: '1.7',
         doc: 'How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load.',
       },
+      down: DOWN,
     },
     children: [],
     open: { names: 'values', spec: { value: 'value', scope: 'const', doc: 'A value of the load or a parameter.' } },
@@ -597,7 +613,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       { name: 'id', kind: 'id', optional: true },
       { name: 'label', kind: 'text' },
     ],
-    props: {},
+    props: { down: DOWN },
     children: [],
     open: { names: 'params', spec: { value: 'value', scope: 'const', doc: 'A value of a parameter.' } },
   },
@@ -630,6 +646,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         doc: 'The scenario whose values it checks; the defaults without one.',
       },
+      down: { ...DOWN, doc: 'A failure domain with one part out (N−1), on top of the scenario: `down: zone`.' },
       component: { value: 'component', scope: 'const', doc: 'One component; the first limit without one.' },
       flow: {
         value: 'flow',
@@ -708,6 +725,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         since: '1.5',
         doc: 'The subsystems drawn closed during the step: `closed: [us]`, `[]` for none. Default: as `view` says.',
       },
+      down: DOWN,
       seconds: {
         value: 'number',
         scope: 'const',
@@ -1066,6 +1084,26 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       spec: { value: 'number', scope: 'ctx', unit: 'seconds', doc: 'Seconds a unit of this flow holds a slot.' },
     },
   },
+  domain: {
+    inspector: 'model',
+    doc: 'A failure domain: availability zones, racks, replicas, count parts of it. A box stands across it; the model gets an Outage control (none, or one part of a domain out), which a scenario, a step, a preset or an expect sets with down.',
+    since: '1.7',
+    example: 'domain zone "Availability zone" { count: 3 }',
+    args: [
+      { name: 'id', kind: 'id' },
+      { name: 'label', kind: 'text', optional: true },
+    ],
+    props: {
+      count: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'const',
+        required: true,
+        doc: 'How many parts, from 2 up.',
+      },
+    },
+    children: [],
+  },
   tier: {
     doc: 'A lane across the flow (edge, app, data) drawn behind its boxes, its name in a header. Tiers run in the order they are declared.',
     example: 'tier data "Data"',
@@ -1095,6 +1133,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       sub: SUB,
       shape: { value: 'enum', scope: 'const', values: ['box', 'cylinder'], doc: 'box (the default) or cylinder.' },
       tier: TIER,
+      across: ACROSS,
       like: LIKE,
       ...COMPONENT_PROPS,
     },
@@ -1123,6 +1162,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       members: { inspector: 'main', value: 'number', scope: 'ctx', doc: 'How many members.', required: true },
       memberLabel: { value: 'string', scope: 'i', doc: "Each member's label, from its index i: `broker ${i}`." },
       tier: TIER,
+      across: ACROSS,
       like: LIKE,
       ...COMPONENT_PROPS,
     },
@@ -1146,6 +1186,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       component: { ...STAGE_COMPONENT, since: '1.5' },
       podLabel: { value: 'string', scope: 'i', doc: "Each pod's label, from its index i: `pod ${i}`." },
       tier: TIER,
+      across: ACROSS,
       like: LIKE,
       ...COMPONENT_PROPS,
     },

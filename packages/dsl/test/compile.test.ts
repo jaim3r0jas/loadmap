@@ -1427,6 +1427,59 @@ shop -> pricing -> out
     expect(errors(twice).map((e) => e.message)).toContain('"breaker" is set twice in this flow')
   })
 
+  it('compile a failure domain, a box across it and down', () => {
+    const src = `loadmap 1.7
+load "Load" { max: 20; default: 1 }
+domain zone "Availability zone" { count: 3 }
+scenario zoneOut "One zone out" { down: zone }
+step "A zone goes." { down: zone; load: 3 }
+expect "Holds 7× with a zone out" { down: zone; component: api; notFull: 7 }
+flow req "requests" { rate: 100 * load; route: gw -> api -> out; from: users }
+node users "Users"
+node gw "Gateway" { pass; across: zone; capacity: measured(3_000, "req/s"); over: "x" }
+pool api "API" { pods: 6; perPod: 2; across: zone; capacity: measured(1_200, "req/s"); over: "x" }
+node out "Out" { sink }
+users -> gw -> api -> out
+`
+    const dsl = model(src)
+    const ts = defineModel({
+      load: p.load({ max: 20, default: 1 }),
+      domains: { zone: { name: 'Availability zone', count: 3 } },
+      scenarios: { 'One zone out': { down: 'zone' } },
+      flows: { req: { label: 'requests', rate: ({ load }) => 100 * load } },
+      components: {
+        gw: { name: 'Gateway', across: { domain: 'zone', members: 3 }, capacity: measured(3_000, 'req/s'), over: 'x' },
+        api: { name: 'API', across: { domain: 'zone', members: 6 }, capacity: measured(1_200, 'req/s'), over: 'x' },
+      },
+      stages: { gw: pass('gw'), api: workers('api', { pods: 6, perPod: 2 }), out: sink() },
+      routes: { req: ['gw', 'api', 'out'] },
+    })
+    same(ts, dsl, [...loads, ...loads.map((v) => ({ ...v, down: 'zone' }))])
+    // a node runs one in each part; a pool its pods
+    const ev = dsl.evaluate({ load: 1, down: 'zone' })
+    expect([ev.components.gw!.out?.left, ev.components.api!.out?.left, ev.stages.api]).toMatchObject([
+      2,
+      4,
+      { running: 4 },
+    ])
+    expect(dsl.scenarios[0]!.values).toMatchObject({ down: 'zone' })
+    expect(dsl.story[0]!.values).toEqual({ down: 'zone', load: 3 })
+    const r = compile(src)
+    expect(r.expectations.map((e) => [e.result.expectation.down, e.result.outcome])).toEqual([['zone', 'pass']])
+
+    const wrong = (from: string, to: string) => errors(src.replace(from, to)).map((e) => e.message)
+    expect(wrong('across: zone; capacity: measured(1_200', 'across: rack; capacity: measured(1_200')).toEqual([
+      'unknown domain "rack"',
+    ])
+    expect(wrong('{ count: 3 }', '{ count: 1 }')).toContain('a domain has a whole number of parts from 2 up')
+    expect(wrong('node users "Users"', 'node users "Users" { across: zone }')).toEqual([
+      'across is for a box with a component: its members carry its capacity',
+    ])
+    expect(wrong('load "Load"', 'param down "Down" { options: [1, 2]; default: 1 }\nload "Load"')).toContain(
+      '"down" is the Outage control the domains give the model',
+    )
+  })
+
   it('compile a pass that sheds by priority', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

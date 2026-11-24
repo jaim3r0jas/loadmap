@@ -38,6 +38,12 @@ expect "Orders answer in a second" { flow: orders; p99: 1 }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }
 step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: eventWorkers }
+# N−1: one availability zone out, what the Outage control the domain adds sets
+step "One zone out: the event workers keep 4 of their 6 pods, and at 4× they are past the 70 % target." {
+  down: zone
+  load: 4
+  focus: eventWorkers
+}
 
 # push packets per event: fewer when only the newest is kept
 let perEvent = newest ? 1 : 2
@@ -126,10 +132,15 @@ tier edge "Edge"
 tier services "Services"
 tier data "Data" { fill: "#e6f2ec"; fillDark: "#1c2b26" }
 
+# a failure domain, three zones: a box across it loses the members in the fullest zone when one is out
+domain zone "Availability zone" { count: 3 }
+
 node users "Users" "web and app"
 
 node gateway "Gateway" {
   tier: edge
+  # one gateway in each zone
+  across: zone
   pass
   short: "the gateway"
   capacity: estimated(30_000, "req/s", "vendor figure")
@@ -217,6 +228,8 @@ node kafkaDropped "Too old" { lost { takes: [dropped] } }
 pool eventWorkers "Event workers" "2 to 6 pods" {
   perPod: 4
   autoscale { min: 2; max: 6; target: 0.7 }
+  # its six pods, two in each zone
+  across: zone
   short: "the event workers"
   plural: true
   demand: flows.events * 2ms

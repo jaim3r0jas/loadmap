@@ -45,6 +45,48 @@ describe('the building blocks in the browser', () => {
     await expect.poll(() => meter(host, 'pods running')).toBe('6 of 12')
   })
 
+  it('draw the pods and members of a zone that is down as idle, and move no box', async () => {
+    await page.viewport(1440, 1000)
+    const { definition } = compile(`loadmap 1.7
+load { max: 10 }
+domain zone "Availability zone" { count: 3 }
+flow req "requests" { rate: 100 * load; route: api -> kafka -> out; from: users }
+node users "Users"
+pool api "API" { pods: 6; perPod: 2; across: zone; capacity: measured(1_200, "req/s"); over: "x" }
+cluster kafka "Kafka" {
+  members: 3
+  across: zone
+  queue topic { partitions { req: 6 } }
+  demand: flows.req
+  capacity: measured(5_000, "msg/s")
+  over: "x"
+}
+node out "Out" { sink }
+users -> api -> kafka -> out
+`)
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapHandle>()
+    root = createRoot(host)
+    root.render(<Loadmap ref={ref} model={definition!.model} view={definition!.view} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    const handle = ref.current!
+    await handle.ready()
+    const idle = (id: string) => host.querySelector(`[data-node="${id}"]`)!.querySelectorAll('[data-idle]').length
+    const boxes = () =>
+      [...host.querySelectorAll('[data-node]')].map((n) => {
+        const r = n.querySelector('rect')!
+        return ['x', 'y', 'width', 'height'].map((k) => r.getAttribute(k)).join(' ')
+      })
+    expect([idle('api'), idle('kafka')]).toEqual([0, 0])
+    const before = boxes()
+    handle.setValues({ down: 'zone' })
+    await handle.ready()
+    // 6 pods in 3 zones lose 2, 3 members lose 1
+    await expect.poll(() => [idle('api'), idle('kafka')], { timeout: 5000 }).toEqual([2, 1])
+    expect(boxes()).toEqual(before)
+  })
+
   it('send a cache hit back along the edge it came in on', async () => {
     const { host, handle } = await mount('cache')
     handle.pause()
