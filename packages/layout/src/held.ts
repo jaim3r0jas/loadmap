@@ -110,6 +110,7 @@ function hold(frame: Frame, graph: Graph, held: Places, kit: Kit): Join | undefi
   const at = new Map(drawn.map((n) => [n.id, held.at.get(n.id)!] as const))
   // a new box beside the first placed box an edge ties it to: after the one that feeds it, before the one it feeds,
   // a row further. Round by round, so a chain of new boxes follows its first
+  const beside = new Map<string, number>()
   for (let placed = true; placed; ) {
     placed = false
     for (const n of frame.nodes) {
@@ -121,15 +122,22 @@ function hold(frame: Frame, graph: Graph, held: Places, kit: Kit): Join | undefi
       const by = size.get(near)!
       const step = e.to === n.id ? 1 : -1
       const along = step * ((down ? by.h + n.h : by.w + n.w) / 2 + 48)
-      const across = (down ? by.w + n.w : by.h + n.h) / 2 + 28
+      // the second new box on the same side of a box stands past the first: two on one spot have no order to keep
+      const side = `${near}${step}`
+      const past = beside.get(side) ?? 0
+      beside.set(side, past + (down ? n.w : n.h) + 28)
+      const across = (down ? by.w + n.w : by.h + n.h) / 2 + 28 + past
       at.set(n.id, down ? [x + across, y + along] : [x + along, y + across])
       placed = true
     }
   }
   // a box nothing ties to the rest stands past them across the flow, not on the first box
-  const far = Math.max(...drawn.map((n) => held.at.get(n.id)![down ? 0 : 1] + (down ? n.w : n.h) / 2))
-  for (const n of frame.nodes)
-    if (!at.has(n.id)) at.set(n.id, down ? [far + 28 + n.w / 2, top + n.h / 2] : [left + n.w / 2, far + 28 + n.h / 2])
+  let far = Math.max(...drawn.map((n) => held.at.get(n.id)![down ? 0 : 1] + (down ? n.w : n.h) / 2))
+  for (const n of frame.nodes) {
+    if (at.has(n.id)) continue
+    at.set(n.id, down ? [far + 28 + n.w / 2, top + n.h / 2] : [left + n.w / 2, far + 28 + n.h / 2])
+    far += 28 + (down ? n.w : n.h)
+  }
 
   // a label is a box of its own in the graph, with its edge in two halves through it: the interactive strategies read
   // a box's place, and know nothing of where a label was (ELK's own label node goes to the first row, and the edge
