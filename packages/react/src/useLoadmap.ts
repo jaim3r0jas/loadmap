@@ -154,8 +154,10 @@ const DUE = { w: 0, h: 0 }
 
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
-  const [stepState, setStepState] = useState<{ model: Model<P>; i: number | null }>({ model, i: null })
-  const step = stepState.model === model && stepState.i != null && stepState.i < model.story.length ? stepState.i : null
+  // held by its place in the story, not by model: a new version of the model (the text edited) still shows the step
+  // while its story has it (worked out where the new model arrives, below)
+  const [stepAt, setStepAt] = useState<number | null>(null)
+  const step = stepAt != null && stepAt < model.story.length ? stepAt : null
   // the subsystems drawn closed: the page's, but those the reader or a story step opened, and with those they closed.
   // Held by id, not by view: a new view (the text edited, a file of it opened) keeps every one as the reader left it,
   // so nothing closes or opens but by its own control; an id the new view lacks closes nothing. What a step says
@@ -215,6 +217,20 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   let values = state.values
   if (state.model !== model) {
     values = init()
+    // the step shown stays while the new version's story has it: the step with its text, else (its text is what was
+    // edited) the one in its place in a story as long. It shows as it is written now, what it closes and its values,
+    // but for the values when the reader had changed one since it was shown: those start as any new version's
+    const was = stepAt == null ? undefined : state.model.story[stepAt]
+    const same = was ? model.story.findIndex((st) => st.text === was.text) : -1
+    const at = same >= 0 ? same : was && model.story.length === state.model.story.length ? stepAt : null
+    const now = at == null ? undefined : model.story[at]
+    if (at !== stepAt) setStepAt(at)
+    if (was && now) {
+      const theirs = Object.entries(was.values).some(([k, v]) => (state.values as Record<string, unknown>)[k] !== v)
+      if (!theirs) values = { ...values, ...now.values }
+      // what the reader opened or closed themselves since is theirs too
+      if (!kept || kept.story) setTurn(now.closed ?? null, true)
+    }
     evaluated.current = null
     setState({ model, values })
   }
@@ -363,7 +379,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     [engine, model],
   )
 
-  // the player's state is its engine's; a new model stops the story (`setModel`)
+  // the player's state is its engine's; a new model stops the story playing (`setModel`), the step shown stays
   const [played, setPlayed] = useState<{ engine: Engine; on: boolean; cue: Cue | null }>({
     engine,
     on: false,
@@ -395,7 +411,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
       if (st) apply(st.values)
       engine.wantFocus = st?.focus ?? null
       engine.storyStep = st ? i : null
-      setStepState({ model, i: st ? i : null })
+      setStepAt(st ? i : null)
       // a step says what it shows closed; without it, and outside the story, the page's own
       setTurn(st?.closed ?? null, true)
     },
