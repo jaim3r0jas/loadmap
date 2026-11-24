@@ -221,6 +221,12 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     scope: 'const',
     doc: 'The stages whose units hold its slots, a -> b; without it, the stages it runs.',
   },
+  through: {
+    value: 'route',
+    scope: 'const',
+    since: '1.8',
+    doc: "A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it.",
+  },
   fills: {
     value: 'number',
     scope: 'ctx',

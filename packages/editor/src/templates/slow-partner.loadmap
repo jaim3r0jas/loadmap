@@ -36,6 +36,16 @@ node api "API" {
   over: "requests queue in the API"
 }
 
+# a request holds one of the API's worker threads while the partner answers: the threads run short as the partner slows
+component threads "API worker threads" {
+  short: "the API's threads"
+  plural: true
+  on: api
+  through: api -> partner
+  capacity: configured(100, "threads", "the server's thread pool")
+  over: "requests wait for a free thread"
+}
+
 node partner "Partner API" {
   pass
   short: "the partner"

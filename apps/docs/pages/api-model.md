@@ -153,6 +153,7 @@ and the crossings are the load multiples where that reaches the target and 100 %
 | `plural`   | `true` makes the verdict say "are past capacity"                                                      |
 | `demand`   | In the capacity's unit. Without one: the units per second reaching the stages that use it             |
 | `held`     | Seconds each unit holds one of its slots, for every flow or per flow: the demand is then slots in use |
+| `through`  | `[from, to]`: a stretch of the way whose time a unit holds its slot for too, on top of `held`         |
 | `on`       | The stages whose units hold its slots; by default the stages that use it                              |
 | `service`  | Seconds a unit takes here when nothing waits: the flows through it get a latency                      |
 | `fills`    | What a stock gains a second, in the capacity's unit, every flow at its `average`; no stage runs it    |

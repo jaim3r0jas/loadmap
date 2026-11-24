@@ -1066,7 +1066,7 @@ export class Compiler {
       if (on.value.t !== 'id') this.report.error('bad-box', on.value, 'on is a list of stages: a -> b')
       const stages = (on.chain ?? (on.value.t === 'id' ? [on.value as Ident] : [])).map((n) => resolveStage(n, 'stage'))
       if (stages.every((s) => s)) componentDefs[id]!.on = stages
-      if (!this.prop(b, 'held') && !b.children.some((c) => c.keyword === 'held'))
+      if (!this.prop(b, 'held') && !this.prop(b, 'through') && !b.children.some((c) => c.keyword === 'held'))
         this.report.error(
           'missing-property',
           on.key,
@@ -1074,6 +1074,19 @@ export class Compiler {
           'held: 0.02',
           { key: 'held' },
         )
+    }
+
+    // the stretch of the way a slot is held through: two stages, the first before the second
+    for (const [id, b] of componentBlocks) {
+      const through = this.prop(b, 'through')
+      if (!through) continue
+      const chain = through.chain ?? (through.value.t === 'id' ? [through.value as Ident] : [])
+      if (chain.length !== 2) {
+        this.report.error('bad-box', through.value, 'through is a stretch of the way: from -> to', 'through: api -> db')
+        continue
+      }
+      const stages = chain.map((n) => resolveStage(n, 'stage'))
+      if (stages.every((s) => s)) componentDefs[id]!.through = stages
     }
 
     const stageDefs: Record<string, StageDef> = {}
@@ -1107,7 +1120,7 @@ export class Compiler {
           'write the stock as a component of its own: component disk "Disk" { fills: … }',
         )
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id) || fills) continue
-      if (c.held != null)
+      if (c.held != null || c.through != null)
         this.report.error(
           'unused-component',
           componentNames.get(id)!,

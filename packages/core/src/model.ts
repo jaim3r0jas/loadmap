@@ -185,6 +185,13 @@ export interface ComponentDef<X> {
   /** The stages whose units hold its slots; by default the stages that use it. */
   on?: readonly string[]
   /**
+   * A stretch of the way, from one stage through another: a unit holds its slot for the time it takes there too (each
+   * stage's time at its utilization, and the delays between them), on top of `held`. A slot held while a slow
+   * dependency answers: the slots run out when the dependency slows, long before the box itself is busy. A flow's
+   * timeout bounds it.
+   */
+  through?: readonly [string, string]
+  /**
    * The seconds a unit takes here when nothing waits: each stage it runs is then a queue (M/M/1) whose time grows as
    * service ÷ (1 − utilization), and the flows through it have a latency.
    */
@@ -640,12 +647,17 @@ export function defineModel<
   const quotaOf = new Map<string, QuotaWindow>()
   for (const c of componentIds) {
     const d = def.components[c]
-    if (d.held != null && d.demand)
+    // held for a time of its own, for the time of a stretch of the way, or both
+    const holds = d.held != null || d.through != null
+    for (const s of d.through ?? [])
+      if (!(stageIds as readonly string[]).includes(s))
+        throw new Error(`loadmap: component "${c}" is held through unknown stage "${s}"`)
+    if (holds && d.demand)
       throw new Error(`loadmap: component "${c}" takes held or demand, not both: held works out its demand`)
     for (const s of d.on ?? [])
       if (!(stageIds as readonly string[]).includes(s))
         throw new Error(`loadmap: component "${c}" is held on unknown stage "${s}"`)
-    if (d.on && d.held == null)
+    if (d.on && !holds)
       throw new Error(`loadmap: component "${c}" names the stages that hold its slots (on): give it held too`)
     const used = stageIds.some((s) => (def.stages[s] as { component?: string }).component === c)
     // a quota counts its window: nothing else may count the same component a second, or in another window
@@ -658,16 +670,16 @@ export function defineModel<
         throw new Error(
           `loadmap: component "${c}" counts a quota's window and something else: give each its own component`,
         )
-      if (d.demand || d.held != null)
+      if (d.demand || holds)
         throw new Error(
           `loadmap: component "${c}" is a quota: it counts what reaches it in its window, so no demand or held`,
         )
       quotaOf.set(c, [...windows][0]!)
     }
-    if (d.held != null && !d.on?.length && !used)
+    if (holds && !d.on?.length && !used)
       throw new Error(`loadmap: component "${c}" is held on no stage: name them with on`)
     if (d.fills != null) {
-      if (d.demand || d.held != null)
+      if (d.demand || holds)
         throw new Error(`loadmap: component "${c}" fills over time: it takes no demand or held, fills is what it gains`)
       if ((d.keeps == null) === (d.level == null))
         throw new Error(
@@ -683,13 +695,13 @@ export function defineModel<
       const st = def.stages[s] as StageDef
       return st.kind === 'pass' && st.shed === 'priority' && st.component === c
     })
-    if (priorityPass && (d.demand || d.held != null))
+    if (priorityPass && (d.demand || holds))
       throw new Error(
         `loadmap: pass "${priorityPass}" sheds by priority, so it counts the units that reach it: "${c}" takes no demand or held, which could weigh one flow's units over another's`,
       )
-    if (d.runs != null && (d.fills != null || d.held != null || quotaOf.has(c)))
+    if (d.runs != null && (d.fills != null || holds || quotaOf.has(c)))
       throw new Error(`loadmap: component "${c}" works in runs: its demand is a rate, so it is no stock, held or quota`)
-    if (!d.demand && d.held == null && d.fills == null && !used)
+    if (!d.demand && !holds && d.fills == null && !used)
       throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
   }
   for (const s of stageIds) {
@@ -1340,8 +1352,8 @@ function contextAt(
   const held = (c: string) =>
     memo(`held of ${c}`, () => {
       const d = def.components[c]!
-      if (d.held == null) return null
-      const h = typeof d.held === 'function' ? d.held(ctx as any) : d.held
+      if (d.held == null && d.through == null) return null
+      const h = typeof d.held === 'function' ? d.held(ctx as any) : (d.held ?? 0)
       if (typeof h !== 'number')
         for (const f of Object.keys(h))
           if (!flowIds.includes(f)) throw new Error(`loadmap: component "${c}" is held by unknown flow "${f}"`)
@@ -1350,7 +1362,7 @@ function contextAt(
         const v = typeof h === 'number' ? h : (h[f] ?? 0)
         if (!Number.isFinite(v) || v < 0)
           throw new Error(`loadmap: component "${c}" is held ${v} s by each unit of "${f}": a time from 0 up`)
-        out[f] = v
+        out[f] = v + (d.through ? stretch(c, f, d.through) : 0)
       }
       const unit = capacity(c).unit
       if (/\/\s*(s|sec|second|min|minute|h|hour)$|\bper (sec|min|hour)|^[rq]p[sm]$/i.test(unit.trim()))
@@ -1359,6 +1371,41 @@ function contextAt(
         )
       return out
     })
+  /**
+   * The mean seconds a unit of a flow takes from stage `a` through stage `b` on its ways (to the end of a way that
+   * leaves before `b`): what a slot held through the stretch is held for. A cache's hits stop there. A stage past full
+   * has no mean: it counts a million service times, so the slots are gone for every purpose and the demand stays a
+   * number. The flow's timeout bounds the whole.
+   */
+  const stretch = (c: string, f: string, [a, b]: readonly [string, string]) => {
+    let time = 0
+    let share = 0
+    for (const p of paths(f)) {
+      const i = p.stages.indexOf(a)
+      if (i < 0) continue
+      const j = p.stages.indexOf(b, i)
+      let t = 0
+      let going = 1
+      for (let k = i; k <= (j < 0 ? p.stages.length - 1 : j); k++) {
+        const s = p.stages[k]!
+        if (k > i) t += going * (delayOn(f, p.stages[k - 1], s) ?? 0)
+        const of = (stages[s] as { component?: string }).component
+        const own = of == null ? null : service(of)
+        if (of === c && own != null)
+          throw new Error(
+            `loadmap: component "${c}" is held through "${s}", which it runs itself: its time there would depend on its own slots`,
+          )
+        for (const r of responses(s, f) ?? [])
+          if (!Number.isNaN(r.time)) t += going * r.share * (Number.isFinite(r.time) ? r.time : (own ?? 0) * 1e6)
+        if (stages[s]!.kind === 'cache') going *= 1 - hit(s)
+      }
+      time += p.share * t
+      share += p.share
+    }
+    const mean = share > 0 ? time / share : 0
+    const limit = timeoutOf(f)
+    return limit == null ? mean : Math.min(mean, limit)
+  }
   const overload = (f: string): Overload =>
     memo(`overload of ${f}`, () => {
       const o = def.flows[f]!.overload
