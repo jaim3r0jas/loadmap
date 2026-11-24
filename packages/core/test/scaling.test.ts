@@ -17,7 +17,16 @@ describe('a scaling curve', () => {
     expect(f.peak).toBeCloseTo(Math.sqrt(0.97 / 0.0005), 6)
     expect(f(16)).toBeCloseTo(usl(16), 6)
     expect(f.r2).toBeCloseTo(1, 9)
-    expect(f).toMatchObject({ curve: 'usl', n: 6, x: 'pods', y: 'rate', source: 'load test', provenance: 'measured' })
+    // a fit is a function: its fields are read one by one
+    const { curve, n, x, y, source, provenance } = f
+    expect({ curve, n, x, y, source, provenance }).toEqual({
+      curve: 'usl',
+      n: 6,
+      x: 'pods',
+      y: 'rate',
+      source: 'load test',
+      provenance: 'measured',
+    })
   })
 
   it('holds at 0 a coefficient no system has, and has no peak without coherency', () => {

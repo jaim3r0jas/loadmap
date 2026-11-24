@@ -1422,7 +1422,7 @@ users -> api
 `
     const dsl = model(src('2, 4, 8'))
     const fit = dsl.def.calibration!['API throughput by pods']!
-    expect(fit).toMatchObject({ curve: 'usl' })
+    expect('curve' in fit && fit.curve).toBe('usl')
     expect(dsl.evaluate({ pods: 8 }).components.api!.capacity!.value).toBeCloseTo(3231.0, -1)
     // 64 pods reach past the curve's peak, about 44
     const far = compile(src('2, 4, 64')).diagnostics
