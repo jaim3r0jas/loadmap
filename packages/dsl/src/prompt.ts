@@ -46,7 +46,7 @@ one is added after the last of its kind. Operations run in order; the definition
 When you are told to write whole files instead, answer with one block per changed file, the whole file:
 
 \`\`\`loadmap shop.loadmap
-loadmap 1.6
+loadmap 1.7
 ...
 \`\`\`
 

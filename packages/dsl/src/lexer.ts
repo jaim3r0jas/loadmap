@@ -29,18 +29,19 @@ const PUNCT = ['===', '!==', '+/-', '+-', '->', '==', '!=', '<=', '>=', '&&', '|
  * formula already counts in; `×` (`x` on a keyboard without it) marks a load multiple and changes nothing. A size
  * (`1.5KB`, `20MB`: decimal, as a network counts) becomes bytes.
  */
-export type Suffix = 'ms' | 's' | 'min' | 'h' | '%' | '×' | 'x' | Size
+export type Suffix = 'ms' | 's' | 'min' | 'h' | 'd' | '%' | '×' | 'x' | Size
 export type Size = 'KB' | 'MB' | 'GB' | 'TB'
 /** The sizes, and how many bytes one of each is. */
 export const SIZES: Readonly<Record<Size, number>> = { KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 }
 export const isSize = (unit: string | undefined): unit is Size => unit !== undefined && Object.hasOwn(SIZES, unit)
-const WORDS: readonly Suffix[] = ['ms', 's', 'min', 'h', 'x', 'KB', 'MB', 'GB', 'TB']
+const WORDS: readonly Suffix[] = ['ms', 's', 'min', 'h', 'd', 'x', 'KB', 'MB', 'GB', 'TB']
 /** Each unit as a power of ten and a whole factor, so `4.1min` is worked out in decimal: the double nearest 246. */
 const SCALE: Record<Suffix, [exp: number, factor: bigint]> = {
   ms: [-3, 1n],
   s: [0, 1n],
   min: [0, 60n],
   h: [0, 3600n],
+  d: [0, 86_400n],
   '%': [-2, 1n],
   '×': [0, 1n],
   x: [0, 1n],

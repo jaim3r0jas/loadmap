@@ -89,9 +89,9 @@ describe('a model in several files', () => {
     // a part alone: its model is not among the files
     expect(errors(compile(base[STORY]!, { path: STORY }))[0]).toMatchObject({ code: 'missing-file' })
     // one namespace, one version
-    const older = run(MODEL, set({ [STORY]: swap(STORY, 'loadmap 1.6', 'loadmap 1.1') }))
+    const older = run(MODEL, set({ [STORY]: swap(STORY, 'loadmap 1.7', 'loadmap 1.1') }))
     expect(errors(older).map((d) => d.message)).toContain(
-      `a part says its model's version: "${MODEL}" says loadmap 1.6`,
+      `a part says its model's version: "${MODEL}" says loadmap 1.7`,
     )
     // what there is one of stays in the model's own file
     const twice = run(MODEL, set({ [STORY]: `${base[STORY]}title: "Mine"\nload "L" { max: 2 }\n` }))

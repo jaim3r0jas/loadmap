@@ -148,7 +148,7 @@ The same model and view can be written as a `.loadmap` definition and edited nex
 then the editor page). `@loadmap/dsl` compiles it to what `<Loadmap>` takes:
 
 ```loadmap
-loadmap 1.6
+loadmap 1.7
 load "Users, × today" { max: 100; default: 10 }
 param pods "Worker pods" { options: [2, 3, 4, 6]; default: 3 }
 

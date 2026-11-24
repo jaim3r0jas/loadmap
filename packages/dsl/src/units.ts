@@ -38,7 +38,7 @@ const RATE_WORDS = 'rps|qps|tps|pps|fps|iops|[kmg]?bps'
 const PER_SECOND = new RegExp(`(\\/\\s*s(ec(ond)?s?)?|\\bper\\s+sec(ond)?|^(${RATE_WORDS}))$`, 'i')
 /** A y that names a time or a rate: `ms`, `p99`, `cpu_seconds`, `rps`, `throughput`. */
 const NOT_A_COUNT = new RegExp(
-  `^(ms|s|secs?|seconds?|min|minutes?|h|hours?|p\\d+|${RATE_WORDS}|latency|time|duration|rate|throughput)$`,
+  `^(ms|s|secs?|seconds?|min|minutes?|h|hours?|d|days?|p\\d+|${RATE_WORDS}|latency|time|duration|rate|throughput)$`,
   'i',
 )
 

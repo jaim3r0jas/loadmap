@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 part of "./shop.loadmap"
 # A part: its statements are the model's, as if written there. The names it uses are declared in shop.loadmap.
 

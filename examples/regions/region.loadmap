@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 library "A region"
 import "./platform.loadmap" { postgres; pipeline }
 # One region: a load balancer, the API, the line that takes orders and the database. Its own orders come in as `main`,

@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 library "Platform building blocks"
 # A library: facts and building blocks that several models share. It is checked on its own, draws nothing, and reads
 # nothing of the model that imports it: what a model decides comes in through an input.

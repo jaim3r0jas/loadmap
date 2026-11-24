@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 part of "./regions.loadmap"
 
 step "An ordinary peak, each region closed into one box: each says how busy the busiest part in it is." {

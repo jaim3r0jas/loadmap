@@ -57,6 +57,8 @@ describe('lex', () => {
     expect(value('4.1min')).toBe(246)
     expect(value('8.3min')).toBe(498)
     expect(value('1.1h')).toBe(3960)
+    expect(value('7d')).toBe(604_800)
+    expect(value('1.5d')).toBe(129_600)
     expect(value('80%')).toBe(0.8)
     expect(value('6%')).toBe(0.06)
     expect(value('7×')).toBe(7)
