@@ -429,14 +429,21 @@ export class Sim {
   #spawnDots(dtReal: number): void {
     const { minDots, maxDots, legSeconds, maxParticles } = this.#o
     for (const f of this.#model.flowIds) {
-      // a retrying flow spawns its new units; the retries come back from the units turned away
-      const rate = this.#ev.retry[f]?.rate ?? this.#ev.flows[f] ?? 0
+      // a retrying flow spawns its new units; the retries come back from the units turned away; a flow with a breaker
+      // all it sends, of which the breaker fails some fast
+      const br = this.#ev.breakers[f]
+      const rate = br?.rate ?? this.#ev.retry[f]?.rate ?? this.#ev.flows[f] ?? 0
       if (rate <= 0) continue
       const perSec = Math.min(maxDots, Math.max(minDots, rate / this.dotScale))
       let acc = (this.#spawn.get(f) ?? 0) + perSec * dtReal
       while (acc >= 1) {
         acc -= 1
         if (this.particles.length >= maxParticles) continue
+        // a closed breaker draws nothing: the recording stays the one without it
+        if (br && br.admitted < 1 && this.#r() >= br.admitted) {
+          this.particles.push(this.#failFast(f))
+          continue
+        }
         const path = this.#pick(f)
         this.particles.push({
           id: this.#nextId++,
@@ -452,6 +459,21 @@ export class Sim {
       }
       this.#spawn.set(f, acc)
     }
+  }
+
+  /**
+   * A call a breaker fails fast: it reaches no stage. With a fallback it is served there, from the stage it falls back
+   * after; else it fades at its source.
+   */
+  #failFast(flow: string): Particle {
+    const fb = this.#ev.fallbacks[flow]
+    const base = { id: this.#nextId++, flow, t: 0 }
+    if (fb) {
+      const from = this.#place(fb.after, flow)
+      const to = this.#place(fb.route[0]!, flow, from)
+      return { ...base, leg: 1, phase: 'move', dur: this.#o.legSeconds, from, to, fallback: true }
+    }
+    return { ...base, leg: 0, phase: 'fade', dur: 0.6, from: { stage: null }, to: { stage: null }, outcome: 'rejected' }
   }
 
   /** A unit turned away, sent again from its source while it has retries left and the budget allows. */

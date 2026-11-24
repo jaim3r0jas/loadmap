@@ -79,6 +79,7 @@ describe('completions', () => {
       'merge',
       'retry',
       'fallback',
+      'breaker',
     ])
     expect(c.options.find((o) => o.label === 'rate')).toMatchObject({ apply: 'rate: ', detail: 'required', boost: 2 })
     // what the block already sets is not offered again, but for the line being written
@@ -89,6 +90,7 @@ describe('completions', () => {
       'merge',
       'retry',
       'fallback',
+      'breaker',
     ])
     expect(at(checkout.replace('rate: 40 * load', 'rat|e: 40 * load')).labels).toContain('rate')
   })

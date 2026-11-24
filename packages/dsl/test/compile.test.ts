@@ -1396,6 +1396,37 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a breaker, and refuse a second one', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 10; default: 1 }
+flow quotes "quotes" {
+  rate: 200 * load
+  route: pricing -> out
+  from: shop
+  breaker { opens: 20% }
+}
+node shop "Shop"
+node pricing "Pricing" { pass; capacity: measured(100, "req/s"); over: "quotes fail" }
+node out "Out" { sink }
+shop -> pricing -> out
+`)
+    const ts = defineModel({
+      load: p.load({ max: 10, default: 1 }),
+      flows: { quotes: { label: 'quotes', rate: ({ load }) => 200 * load, breaker: { opens: 0.2 } } },
+      components: { pricing: { name: 'Pricing', capacity: measured(100, 'req/s'), over: 'quotes fail' } },
+      stages: { pricing: pass('pricing'), out: sink() },
+      routes: { quotes: ['pricing', 'out'] },
+    })
+    same(ts, dsl, loads)
+    expect(dsl.evaluate({ load: 1 }).breakers.quotes!.admitted).toBeCloseTo(0.625, 9)
+    // a second one is a duplicate
+    const twice = def({ flow: '  breaker { opens: 50% }\n  breaker { opens: 10% }' }).replace(
+      'loadmap 1.1',
+      'loadmap 1.7',
+    )
+    expect(errors(twice).map((e) => e.message)).toContain('"breaker" is set twice in this flow')
+  })
+
   it('compile a pass that sheds by priority', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

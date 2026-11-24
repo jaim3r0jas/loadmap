@@ -768,6 +768,15 @@ through as much, but the flow with the smaller `priority` number first: orders (
 (priority 2) are turned away, until there is no room left for the orders either. Each flow's share is on the stage,
 `ev.stages.gateway.shedBy`, and the dots, the losses and the retries follow it.
 
+A circuit breaker (from `loadmap 1.7`) sits in a flow's callers: `breaker { opens: 50% }`. Past that share of its
+attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share α of the flow at
+which the failures among what it admits are `opens`: with a rate λ that fails a share p(λ) of its attempts, p(α·λ) =
+`opens`, and α = 1 while p(λ) is under it. The failures only rise with what is admitted, so α is unique, and it is
+found by bisection. The stage that was failing then runs past capacity only as far as fails `opens` of what it gets;
+the share 1 − α fails fast at the source, or goes to the flow's fallback. A flow that retries takes no breaker: the
+breaker and the retries would each decide what the other sees. `ev.breakers.quotes` gives `admitted` and
+`failedFast`, and on the board the calls it fails fast fade at the source.
+
 A dead-letter queue is a lost box with a stock beside it, which reads what reaches the box: `component dlq { fills:
 at.deadLetters * 1KB; keeps: 14d; … }` ([Stocks](#stocks)). In TypeScript, `fallback: { after: 'api', route:
 ['staleQuotes'] }` on the flow, and `ev.fallbacks.quotes.rate` is what it serves.
@@ -2203,7 +2212,7 @@ After the keyword: id [label].
 | `from` (required) | node, constant | The node its dots start from. |
 | `color` | `accent` \| `alt` \| `ok` \| `warn` \| `drop` \| `muted` | A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes. |
 
-Holds: `drop`, `merge`, `retry`, `fallback`.
+Holds: `drop`, `merge`, `retry`, `fallback`, `breaker`.
 
 ### fallback
 
@@ -2245,6 +2254,18 @@ merge { share: 0.37; reason: "newest kept" }
 | `share` (required) | share, formula | The share superseded, 0 to 1. |
 | `reason` | string, formula | Shown with the meter. |
 | `when` | boolean, formula | The rule applies only while this is true. |
+
+### breaker
+
+A circuit breaker in its callers: past opens, a share of its attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share at which the failures among what it admits are opens; below that it stays closed. What it fails fast goes to the fallback, if any. A flow that retries takes none. From loadmap 1.7.
+
+```loadmap
+breaker { opens: 50% }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `opens` (required) | share, formula of parameters | The share of attempts failing past which it opens, above 0 and below 1. |
 
 ### retry
 

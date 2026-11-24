@@ -953,6 +953,19 @@ export class Compiler {
       if (overload) def.overload = overload
       const retry = this.retry(b)
       if (retry) def.retry = retry
+      const brs = b.children.filter((c) => c.keyword === 'breaker')
+      for (const extra of brs.slice(1))
+        this.report.error('duplicate', extra.at, `"breaker" is set twice in this flow`, 'one breaker per flow')
+      const br = brs[0]
+      if (br) {
+        const opens = this.dynProp<number>(br, 'opens', 'number', (v) => {
+          if (typeof v !== 'number' || !(v > 0 && v < 1))
+            throw new Error(`a breaker opens past a share above 0 and below 100%, not ${String(v)}`)
+        })
+        if (opens !== undefined)
+          def.breaker =
+            typeof opens === 'number' ? { opens } : (v: unknown) => ({ opens: (opens as (v: unknown) => number)(v) })
+      }
       const timeout = this.dynProp<number>(b, 'timeout', 'number', (v) => {
         if (typeof v !== 'number' || !(v > 0)) throw new Error(`a timeout is seconds above 0, not ${String(v)}`)
       })

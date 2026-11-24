@@ -173,6 +173,29 @@ describe('queues', () => {
 })
 
 describe('a new version of the model', () => {
+  it('fail fast at the source the share a breaker does not admit', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { q: { rate: ({ load }) => 200 * load, breaker: { opens: 0.2 } } },
+      components: { pricing: { name: 'Pricing', capacity: measured(100, 'r/s'), over: '' } },
+      stages: { pricing: pass('pricing'), out: sink() },
+      routes: { q: ['pricing', 'out'] },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { seed: 5, speed: 10 })
+    const fast = new Set<number>()
+    const all = new Set<number>()
+    for (let i = 0; i < 900; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) {
+        all.add(d.id)
+        if (d.from.stage == null && d.phase === 'fade' && d.outcome === 'rejected') fast.add(d.id)
+      }
+    }
+    // 1 − 0.625 of what is sent fails fast
+    expect(fast.size / all.size).toBeGreaterThan(0.25)
+    expect(fast.size / all.size).toBeLessThan(0.5)
+  })
+
   it('turn away each flow by its own share at a pass that sheds by priority', () => {
     const m = defineModel({
       load: p.load({ max: 10 }),
