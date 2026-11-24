@@ -78,8 +78,8 @@ step you are writing shows as you write it, at its values and with what it close
 
 A box or an edge you add moves its neighbours, not the whole diagram: the boxes you did not touch stay where they are
 drawn. After a few edits the diagram is larger than it need be, and not the one a reload or a share link draws.
-**View → Tidy the diagram** lays it out as a page does. An export tidies it first. A diagram with subsystems is laid
-out anew on every edit, as before.
+**View → Tidy the diagram** lays it out as a page does. An export tidies it first. A diagram with subsystems, one
+folded into rows, and one an edit turns the other way are laid out anew, as before.
 
 ## Adding from the catalog
 

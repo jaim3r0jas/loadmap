@@ -687,7 +687,9 @@ const DEFAULTS: Required<SimOptions> = {
  * figures (its kind, its component, the flows it holds, where a fan-out or a lost box hands on).
  */
 function waysOf(model: Model, ev: Evaluation): string {
-  const noFigures = (_: string, v: unknown) => (typeof v === 'number' || typeof v === 'boolean' ? undefined : v)
+  // nor its name: a stage called something else is the same stage
+  const noFigures = (k: string, v: unknown) =>
+    k === 'label' || typeof v === 'number' || typeof v === 'boolean' ? undefined : v
   return JSON.stringify([
     model.flowIds.map((f) => [f, (ev.paths[f] ?? []).map((w) => w.stages)]),
     JSON.stringify(ev.stages, noFigures),

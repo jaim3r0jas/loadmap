@@ -362,16 +362,30 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   // a phase is still laid out from its own values and these alone, never from the phase before. A version of the same
   // structure keeps the places the one before had, so an edit of a figure moves nothing
   const holds = useRef<{ view: View; from: Held | undefined } | null>(null)
+  // the rows each scene was folded into: a folded one holds nothing
+  const folds = useRef(new WeakMap<Scene, number>())
   const [, redraw] = useState(0)
   if (!o.hold) holds.current = null
   else if (key && holds.current?.view !== view) {
     const s = engine.scene
     holds.current = {
       view,
-      from: s && s.key !== key ? { direction: s.direction, nodes: s.nodes, edges: s.edges } : holds.current?.from,
+      from:
+        s && s.key !== key
+          ? { direction: s.direction, nodes: s.nodes, edges: s.edges, rows: folds.current.get(s) ?? 1 }
+          : holds.current?.from,
     }
   }
-  const from = holds.current?.view === view ? holds.current.from : undefined
+  // only where a layout holds to it (`heldBy` in the layout): not folded, running the same way, without subsystems
+  const taken = holds.current?.view === view ? holds.current.from : undefined
+  const from =
+    taken &&
+    rows === 1 &&
+    (taken.rows ?? 1) === 1 &&
+    taken.direction === direction &&
+    !Object.keys(view.def.subsystems ?? {}).length
+      ? taken
+      : undefined
   const tidy = useCallback(() => {
     if (!holds.current?.from) return
     holds.current = { ...holds.current, from: undefined }
@@ -387,6 +401,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk(), from }).then(
       (s) => {
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
+        folds.current.set(s, rows)
         if (live) setLaid({ view, scene: s, from })
       },
       (err) => console.error('loadmap: layout failed', err),

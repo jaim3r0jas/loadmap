@@ -106,3 +106,12 @@ export async function expectCompact(view: View, model: Model, direction: Directi
   for (const [label, values] of [...all].reverse())
     expect(await layout(fresh, model.evaluate(values), { direction, rows }), label).toEqual(scenes.get(label))
 }
+
+/** How many boxes of `a` stand elsewhere in `b`, by their middles, past a pixel: what a reader sees move. */
+export function moved(a: Pick<Scene, 'nodes'>, b: Pick<Scene, 'nodes'>): number {
+  const at = new Map(b.nodes.map((n) => [n.id, n]))
+  return a.nodes.filter((n) => {
+    const m = at.get(n.id)
+    return m && (Math.abs(m.x + m.w / 2 - n.x - n.w / 2) > 1 || Math.abs(m.y + m.h / 2 - n.y - n.h / 2) > 1)
+  }).length
+}

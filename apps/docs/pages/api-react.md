@@ -266,8 +266,8 @@ boxes keeps the ones it had.
 
 It is for an editor. The held layout is often larger than the one a page draws from scratch, and it is not what a
 reload shows: `tidy()` (the handle's, or the controller's) lays the diagram out as a page does, and moves the boxes
-there. Call it before a picture or a recording of a diagram that was edited. A diagram with subsystems, or folded
-into rows, is laid out from scratch as ever.
+there with `tidy({ move: true })`. Call it before a picture or a recording of a diagram that was edited. A diagram
+with subsystems, or folded into rows, is laid out from scratch as ever, and so is one an edit turns the other way.
 
 ## The pieces
 

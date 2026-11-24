@@ -15,6 +15,7 @@ import story from '../../../docs/multi-file/shop.story.loadmap?raw'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
 import { watchDots } from '../../../examples/dots'
+import { moved } from '../../../examples/phases'
 import {
   type BarSection,
   type CodeFont,
@@ -291,15 +292,11 @@ describe('the editor', () => {
   })
 
   it('lays an added box out from where the boxes are drawn; Tidy lays the diagram out as a reload does', async () => {
-    const { handle, view } = await mount()
+    // one way and one row, whatever the room: a diagram the room turns or folds is laid out from scratch
+    const { handle, view } = await mount({
+      source: checkout.replace('view {', 'view {\n  direction: right\n  rows: 1'),
+    })
     const lm = () => handle.loadmap()!
-    // how many boxes of `a` stand elsewhere in `b`, by their middles
-    type Drawn = NonNullable<ReturnType<typeof lm>['engine']['scene']>
-    const moved = (a: Drawn, b: Drawn) =>
-      a.nodes.filter((n) => {
-        const m = b.nodes.find((x) => x.id === n.id)
-        return m && (Math.abs(m.x + m.w / 2 - n.x - n.w / 2) > 1 || Math.abs(m.y + m.h / 2 - n.y - n.h / 2) > 1)
-      }).length
     const first = lm().engine.scene!
     view.dispatch({
       changes: { from: view.state.doc.length, insert: '\nnode audit "Audit log"\nworkerPool -> audit\n' },

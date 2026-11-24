@@ -1476,7 +1476,7 @@ export function LoadmapEditor({
     !errors && (
       <>
         {/* after edits the diagram stands where its boxes were: this lays it out as a reload draws it */}
-        <MenuItem sheet={sheet} onSelect={() => void preview.current?.tidy()}>
+        <MenuItem sheet={sheet} onSelect={() => void preview.current?.tidy({ move: true })}>
           Tidy the diagram
         </MenuItem>
         <MenuItem

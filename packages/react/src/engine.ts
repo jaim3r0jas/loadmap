@@ -326,6 +326,13 @@ export class Engine {
     }
   }
 
+  /** Ends a move to a new structure where it goes: a picture taken now is of the scene, not of a frame on the way. */
+  settle(): void {
+    if (!this.#move || !this.scene) return
+    this.#move = null
+    this.#show(this.scene)
+  }
+
   bind(svg: SVGSVGElement | null, canvas: HTMLCanvasElement | null): void {
     this.svg = svg
     this.canvas = canvas

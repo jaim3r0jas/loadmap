@@ -80,9 +80,11 @@ export interface LoadmapHandle {
   show(ids: readonly string[]): void
   /**
    * Lays a held diagram (`hold`) out as a page draws it, and resolves once that is drawn: before a picture or a
-   * recording of an editor's diagram, which is then the one a reload shows.
+   * recording of an editor's diagram, which is then the one a reload shows. The boxes are there at once; with `move`
+   * they move there as to any new structure, and it resolves on the first frame of the way. Nothing for a diagram
+   * that is not held.
    */
-  tidy(): Promise<void>
+  tidy(o?: { move?: boolean }): Promise<void>
   /** The drawn board, for capturing frames: while the structure moves, `scene` is the frame drawn. */
   board(): { svg: SVGSVGElement; canvas: HTMLCanvasElement; scene: Scene } | null
   engine: Engine
@@ -274,10 +276,15 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     },
     values: () => engine.ev.values,
     show: (ids) => engine.viewer?.show(ids),
-    async tidy() {
+    async tidy(o = {}) {
+      if (!lm.held) return
+      // not ready from now on: the tidy scene has the held one's key, and the hook says so only on its next render
+      engine.wantKey = ''
       lm.tidy()
-      // the hook says so on its next render: a frame later the scene asked for is the tidy one
-      await new Promise((r) => requestAnimationFrame(r))
+      await this.ready()
+      if (o.move) return
+      // a picture is of the tidy layout, not of a frame on the way there
+      engine.settle()
       await this.ready()
     },
     setValues: (v) => lm.setValues(v),
