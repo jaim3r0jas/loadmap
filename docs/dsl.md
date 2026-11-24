@@ -763,6 +763,11 @@ flow quotes "quotes" {
 api -> staleQuotes
 ```
 
+Past capacity a `pass` turns away the same share of every flow. `pass { shed: priority }` (from `loadmap 1.7`) lets
+through as much, but the flow with the smaller `priority` number first: orders (priority 1) keep going while reports
+(priority 2) are turned away, until there is no room left for the orders either. Each flow's share is on the stage,
+`ev.stages.gateway.shedBy`, and the dots, the losses and the retries follow it.
+
 A dead-letter queue is a lost box with a stock beside it, which reads what reaches the box: `component dlq { fills:
 at.deadLetters * 1KB; keeps: 14d; … }` ([Stocks](#stocks)). In TypeScript, `fallback: { after: 'api', route:
 ['staleQuotes'] }` on the flow, and `ev.fallbacks.quotes.rate` is what it serves.
@@ -2423,6 +2428,7 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
+| `shed` | `even` \| `priority` | Past capacity, who is turned away: even, the same share of every flow (the default), or priority, the flow with the larger priority number first, so priority 1 keeps going while there is room for it. From loadmap 1.7. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 ### cache
