@@ -191,7 +191,10 @@ const RANGE_POINTS = 9
 
 // per measurer and view: the room each box gets depends on how wide its text measures
 const scenes = new WeakMap<TextMeasure, WeakMap<View, Map<string, Promise<Scene>>>>()
-const frames = new WeakMap<View, Map<string, Promise<Laid>>>()
+// per ELK engine, whatever the view: a frame's key holds all that ELK reads, so a new version of a model (the text
+// edited) whose frame is the same is not laid out again
+const frames = new WeakMap<object, Map<string, Promise<Laid>>>()
+const LOCAL_ELK = {}
 // per measurer and view, per combination of values other than the load (a phase): the contexts labels are sized
 // against, and the phase's compact frame in each direction
 const sampleCache = new WeakMap<TextMeasure, WeakMap<View, Map<string, Sampled>>>()
@@ -273,7 +276,7 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
     // values nothing declared reaches grow the frame: a key of its own, laid out again
     const sub = await subsystemsOf(view)
     const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep), measure, sub)
-    const l = await laidOut(view, frame, o.elk, sub)
+    const l = await laidOut(frame, o.elk, sub)
     // the fold comes with the first diagram that asks for one: never in a page's first load
     const board =
       rows > 1
@@ -286,11 +289,12 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
 /** The rows a layout is folded into: a whole number, one at least. */
 const rowsOf = (o: LayoutOptions) => (o.rows != null && o.rows >= 1 ? Math.floor(o.rows) : 1)
 
-/** A frame laid out by ELK, once per view and frame. */
-function laidOut(view: View, frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid> {
-  const byFrame = frames.get(view) ?? new Map<string, Promise<Laid>>()
-  frames.set(view, byFrame)
-  return kept(byFrame, frame.key, 32, () => run(frame, elk, sub))
+/** A frame laid out by ELK, once per frame: every view with this frame stands in it. */
+function laidOut(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid> {
+  const engine = elk ?? LOCAL_ELK
+  const byFrame = frames.get(engine) ?? new Map<string, Promise<Laid>>()
+  frames.set(engine, byFrame)
+  return kept(byFrame, frame.key, 128, () => run(frame, elk, sub))
 }
 
 type Subsystems = typeof import('./subsystems')
@@ -349,10 +353,14 @@ function sceneKey(prep: Prepared, base: Frame | null, rows: number): string {
   return rows > 1 ? JSON.stringify([key, rows]) : key
 }
 
-/** A promise kept by key, the oldest let go past `limit`; one that fails is let go, so the next call tries again. */
+/** A promise kept by key, the one asked for longest ago let go past `limit`; one that fails is let go, so the next call tries again. */
 function kept<T>(cache: Map<string, Promise<T>>, key: string, limit: number, make: () => Promise<T>): Promise<T> {
   let hit = cache.get(key)
-  if (!hit) {
+  if (hit) {
+    // the one asked for last is let go last: a frame every diagram on the page still stands in stays
+    cache.delete(key)
+    cache.set(key, hit)
+  } else {
     hit = Promise.resolve()
       .then(make)
       .catch((err) => {

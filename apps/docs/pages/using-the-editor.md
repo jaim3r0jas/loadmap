@@ -73,6 +73,9 @@ text rests half a second, the board brings the boxes it changed into view and ma
 whose lines the edit is in, one a changed line names, one that is new or another size, the ends of an edge that came
 or went). Off, the view stays where you left it.
 
+An edit keeps what you were looking at: the view, what you opened and closed, the values and the story step shown. A
+step you are writing shows as you write it, at its values and with what it closes.
+
 ## Adding from the catalog
 
 **New → Add → From the catalog** adds a component with a published figure: pick the component and one of its runs,

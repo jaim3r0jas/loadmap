@@ -356,7 +356,7 @@ export function extent(kit: Kit, view: View, direction: Direction, o: Omit<Layou
     size = (async () => {
       const sub = await kit.subsystemsOf(view)
       const frame = kit.ordered(view, kit.reserve(view, direction, measure), measure, sub)
-      const laid = await kit.laidOut(view, frame, o.elk, sub)
+      const laid = await kit.laidOut(frame, o.elk, sub)
       const { l } = rows > 1 ? foldLanes(laid, frame, view, measure, rows, kit) : kit.lanes(laid, frame, view, measure)
       return { width: l.width, height: l.height }
     })()
