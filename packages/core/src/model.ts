@@ -265,17 +265,6 @@ export interface ComponentResult<C extends string = string> {
   stock?: Stock
 }
 
-/** What a peak leaves in one queue. */
-export interface Backlog<S extends string = string> {
-  stage: S
-  /** Units waiting when the peak ends, each flow's. */
-  flows: Readonly<Record<string, number>>
-  /** Units waiting, every flow's. */
-  units: number
-  /** Seconds its reader then needs to clear them at the default load; Infinity when it never does. */
-  empties: number
-}
-
 /** A stock at one set of values, in its capacity's unit. */
 export interface Stock {
   /** What it holds: for one that grows, on the day the load reaches these values. */
@@ -414,12 +403,6 @@ export interface Model<P = any, F extends string = string, C extends string = st
     bound?: Bound,
     flows?: readonly F[],
   ): Readonly<Partial<Record<F, Latency | null>>>
-  /**
-   * What `lasts` seconds at these values leave in each queue whose reader cannot keep up, and how long the reader then
-   * needs to clear it at the default load (the same design). The sim's own rules: a reader drains at its component's
-   * `full`, shared by every queue that feeds it; drops and merges as the flows say.
-   */
-  backlog(values: Partial<Values<P>>, lasts: number): readonly Backlog<S>[]
   /** The scenario whose values these are, ignoring the load; null when they match none. */
   scenarioOf(values: LooseValues): Scenario<P> | null
   /**
@@ -954,95 +937,7 @@ export function defineModel<
       context(def as any, { ...defaults(), ...partial }, bound).latencies(only) as Record<F, Latency | null>,
     scenarioOf,
     dateAt: when,
-    backlog: (partial, lasts) =>
-      backlogOf(
-        evaluate as unknown as (v: LooseValues) => Evaluation,
-        { ...defaults(), ...partial },
-        defaults().load as number,
-        lasts,
-        thresholds.full,
-        (f) => (def.flows as Record<string, FlowDef<unknown>>)[f]?.priority ?? 1,
-      ) as Backlog<S>[],
   }
-}
-
-/** A stage's drain a second, as the sim takes it: what reaches it at the load where its component runs out. */
-function drainOf(evaluate: (v: LooseValues) => Evaluation, ev: Evaluation, d: string, full: number): number {
-  const c = (ev.stages[d] as { component?: string } | undefined)?.component
-  const r = c == null ? undefined : ev.components[c]
-  if (!r || r.util == null || r.full == null || !Number.isFinite(r.full)) return Number.POSITIVE_INFINITY
-  const sum = (e: Evaluation) => Object.values(e.at[d] ?? {}).reduce((a, x) => a + x, 0)
-  if (r.full > 0) return sum(evaluate({ ...ev.values, load: r.full }))
-  return r.util > 0 ? (sum(ev) * full) / r.util : 0
-}
-
-function backlogOf(
-  evaluate: (v: LooseValues) => Evaluation,
-  values: LooseValues,
-  rest: number,
-  lasts: number,
-  full: number,
-  priority: (f: string) => number,
-): Backlog[] {
-  if (!(lasts > 0 && Number.isFinite(lasts))) throw new Error(`loadmap: a peak lasts a time above 0, not ${lasts}`)
-  const peak = evaluate(values)
-  const after = evaluate({ ...values, load: rest })
-  // each flow's way through each queue, and the stage after it that drains it
-  const entries: { q: string; f: string; d: string }[] = []
-  for (const [q, st] of Object.entries(peak.stages))
-    if (st.kind === 'queue')
-      for (const f of Object.keys(peak.flows)) {
-        const way = (peak.paths[f] ?? []).find((w) => w.stages.includes(q))
-        if (way) entries.push({ q, f, d: way.stages[way.stages.indexOf(q) + 1] ?? '' })
-      }
-  const waiting = new Map<string, Record<string, number>>()
-  const empties = new Map<string, number>()
-  for (const d of new Set(entries.map((e) => e.d))) {
-    const feeding = entries.filter((e) => e.d === d)
-    const pass = (ev: Evaluation) => {
-      const inflow = feeding.map((e) => ev.at[e.q]?.[e.f] ?? 0)
-      const total = inflow.reduce((a, x) => a + x, 0)
-      // a merge clears more than the reader handles: the superseded units leave with the newest
-      const merged = feeding.reduce((a, e, i) => a + inflow[i]! * (ev.overload[e.f]?.merge?.share ?? 0), 0)
-      const k = total > 0 ? 1 / (1 - Math.min(0.95, merged / total)) : 1
-      const drain = d === '' ? Number.POSITIVE_INFINITY : drainOf(evaluate, ev, d, full) * k
-      return { inflow, total, drain }
-    }
-    const p = pass(peak)
-    // the reader serves priority 1 first; within a priority what is over it is shared as the arrivals are
-    const over = new Array<number>(feeding.length).fill(0)
-    let avail = p.drain
-    const prio = (i: number) => priority(feeding[i]!.f)
-    for (const pr of [...new Set(feeding.map((_, i) => prio(i)))].sort((x, y) => x - y)) {
-      const group = feeding.map((_, i) => i).filter((i) => prio(i) === pr)
-      const want = group.reduce((a, i) => a + p.inflow[i]!, 0)
-      if (want > avail) for (const i of group) over[i] = ((want - avail) * p.inflow[i]!) / want
-      avail = Math.max(0, avail - want)
-    }
-    let left = 0
-    feeding.forEach((e, i) => {
-      // a drop rule keeps none older than its limit
-      let n = over[i]! * lasts
-      const drop = peak.overload[e.f]?.drop
-      if (drop) n = Math.min(n, p.inflow[i]! * drop.olderThan)
-      const row = waiting.get(e.q) ?? {}
-      row[e.f] = (row[e.f] ?? 0) + n
-      waiting.set(e.q, row)
-      left += n
-    })
-    const a = pass(after)
-    const clears = a.drain - a.total
-    const time = left === 0 ? 0 : clears > 0 ? left / clears : Number.POSITIVE_INFINITY
-    for (const e of feeding) empties.set(e.q, Math.max(empties.get(e.q) ?? 0, time))
-  }
-  return [...waiting]
-    .map(([stage, flows]) => ({
-      stage,
-      flows,
-      units: Object.values(flows).reduce((a, x) => a + x, 0),
-      empties: empties.get(stage) ?? 0,
-    }))
-    .filter((b) => b.units > 0)
 }
 
 /**

@@ -863,7 +863,7 @@ export class Compiler {
       if (label == null) continue
       const set = this.preset(b, params)
       presets[label] = set
-      const lasts = this.constProp<number>(b, 'lasts')
+      const lasts = params.some((x) => x.args.id?.name === 'lasts') ? undefined : this.constProp<number>(b, 'lasts')
       if (lasts != null) {
         if (lasts > 0 && Number.isFinite(lasts)) peaks[label] = lasts
         else this.report.error('out-of-range', this.prop(b, 'lasts')!.value, 'a peak lasts a time above 0')
@@ -2983,8 +2983,8 @@ export class Compiler {
     const out: Record<string, unknown> = {}
     const known = new Map(params.filter((x) => x.args.id).map((x) => [x.args.id!.name, x]))
     for (const [k, props] of b.props) {
-      // a step's own properties; its other lines are values
-      if (own(b.spec.props, k)) continue
+      // a step's own properties; its other lines are values. A parameter named lasts keeps its value, as before 1.7
+      if (own(b.spec.props, k) && !(k === 'lasts' && known.has('lasts'))) continue
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
       if (k === 'load' && kind === 'scenario') {

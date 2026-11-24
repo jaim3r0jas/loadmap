@@ -1,6 +1,6 @@
-import { type Assumption, type Capacity, type Stock, sourceText } from '@loadmap/core'
+import { type Assumption, backlog, type Capacity, type Stock, sourceText } from '@loadmap/core'
 import { compact, duration, fmt, multiple, multiples, pct, period, secs } from '@loadmap/core/format'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isOn, LoadRange, plusMinus } from './bar'
 import type { LoadmapController } from './useLoadmap'
 
@@ -9,7 +9,7 @@ export { hasDesign, LoadBar, LoadRange, plusMinus } from './bar'
 /** The model's one-sentence answer for the current values, and which capacity to measure when it is unsure. */
 export function Verdict({ lm }: { lm: LoadmapController }) {
   const { measure } = lm.ev
-  const peak = peakText(lm)
+  const peak = usePeak(lm)
   return (
     <>
       <p className="lm-verdict" data-tier={lm.ev.verdict.tier} aria-live="polite">
@@ -46,25 +46,30 @@ export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: b
 
 /**
  * While the values are a preset's that says how long it lasts: what it leaves in the queues. "After 2 h of Black
- * Friday, 6k events wait in the events topic: at 1× it clears in 2 min."
+ * Friday, 1.4M events wait in the events topic, which at 1× clears in 5 h." Worked out once per evaluation.
  */
-function peakText(lm: LoadmapController): string | null {
+function usePeak(lm: LoadmapController): string | null {
   const { ev, model } = lm
-  const p = ev.presets.find(
-    (x) =>
-      x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
-  )
-  if (!p?.lasts) return null
-  const left = model.backlog(ev.values, p.lasts)
-  const head = `After ${period(p.lasts)} of ${p.label}`
-  if (!left.length) return `${head}, no queue falls behind.`
-  const rest = multiple(model.defaults().load as number, model.searchMax)
-  const parts = left.map((b) => {
-    const st = ev.stages[b.stage]
-    const clears = Number.isFinite(b.empties) ? `clears in ${period(b.empties)}` : 'never clears'
-    return `${compact(b.units)} wait in ${st?.label ?? b.stage}, which at ${rest} ${clears}`
-  })
-  return `${head}, ${parts.join('; ')}.`
+  return useMemo(() => {
+    const p = ev.presets.find(
+      (x) =>
+        x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
+    )
+    if (!p?.lasts) return null
+    const left = backlog(model, ev.values, p.lasts)
+    const head = `After ${period(p.lasts)} of ${p.label}`
+    if (!left.length) return `${head}, no queue falls behind.`
+    const rest = multiple(model.defaults().load as number, model.searchMax)
+    const parts = left.map((b) => {
+      // what waits, named by its flow when one flow holds it all
+      const flows = Object.entries(b.flows).filter(([, n]) => n > 0)
+      const one = flows.length === 1 ? flows[0]![0] : undefined
+      const what = one == null ? 'units' : (model.def.flows[one]?.label ?? one)
+      const clears = Number.isFinite(b.empties) ? `clears in ${period(b.empties)}` : 'never clears'
+      return `${compact(b.units)} ${what} wait in ${ev.stages[b.stage]?.label ?? b.stage}, which at ${rest} ${clears}`
+    })
+    return `${head}, ${parts.join('; ')}.`
+  }, [ev, model])
 }
 
 /** "Gains 3.1 GB a day · full in 41 days at this rate"; "Keeps 7 days of 9.3 GB a day". */

@@ -1,4 +1,5 @@
 import {
+  backlog,
   cache,
   configured,
   defineModel,
@@ -175,7 +176,7 @@ describe('a new version of the model', () => {
   it('build the backlog the model says a peak leaves, and clear it in the time it says', () => {
     // at 2×, 300 units a second against 200: priority 1 (a, 200) keeps up, b (100) waits; at 1× 150 against 200
     const m = pipeline({ a: 100, b: 50, cap: 200 })
-    const [said] = m.backlog({ load: 2 }, 60)
+    const [said] = backlog(m, { load: 2 }, 60)
     expect(said).toMatchObject({ stage: 'topic' })
     expect(said!.flows.a).toBeCloseTo(0, 9)
     expect(said!.flows.b).toBeCloseTo(6_000, 6)

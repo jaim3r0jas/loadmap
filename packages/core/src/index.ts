@@ -1,3 +1,4 @@
+export { type Backlog, backlog } from './backlog'
 export type { LinearFit } from './calibrate'
 export {
   type Bound,
@@ -36,7 +37,6 @@ export type {
 } from './measure'
 export {
   type Assumption,
-  type Backlog,
   type ComponentDef,
   type ComponentResult,
   type ComponentState,
