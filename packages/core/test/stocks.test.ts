@@ -98,6 +98,13 @@ describe('a stock', () => {
     expect(short!.message).toMatch(/^expected to last 12 months \([\d.]+×\), but the disk runs out at 1\.07× \(around /)
     const [long] = check(shop({ keeps: DAY }, { lasts: 365 * DAY }))
     expect(long!.outcome).toBe('pass')
+    // given straight to check(), as the model's own are read
+    const [direct] = check(shop({ level: 120, capacity: 500 }), [{ component: 'disk', lasts: 365 * DAY }])
+    expect(direct!.outcome).toBe('fail')
+    // without growth, a stock that grows is not ranked: what rests on it is not known
+    const [undated] = check(shop({ level: 120 }, { growth: null }), [{ component: 'disk', notFull: 2 }])
+    expect(undated!.outcome).toBe('inconclusive')
+    expect(undated!.reasons).toEqual(['the disk: no growth to say when it fills'])
   })
 
   it('refuses what is not one', () => {

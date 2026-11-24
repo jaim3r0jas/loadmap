@@ -634,7 +634,9 @@ describe('expectations', () => {
   it('are checked when the model is defined', () => {
     expect(() => unsure(undefined, [{ scenario: 'Later', underTarget: 1 }])).toThrow(/unknown scenario "Later"/)
     expect(() => unsure(undefined, [{ component: 'db', underTarget: 1 }])).toThrow(/unknown component "db"/)
-    expect(() => unsure(undefined, [{ label: 'empty' }])).toThrow(/expectation "empty" needs underTarget or notFull/)
+    expect(() => unsure(undefined, [{ label: 'empty' }])).toThrow(
+      /expectation "empty" needs underTarget, notFull or lasts/,
+    )
     expect(() => unsure(undefined, [{ underTarget: 0 }])).toThrow(/above 0/)
   })
 

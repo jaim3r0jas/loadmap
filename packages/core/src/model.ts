@@ -2313,15 +2313,11 @@ function root(f: (y: number) => number, goal: number, hi: number): number {
   return (lo + hi) / 2
 }
 
-/**
- * The lowest load multiple at which `util(load)` reaches `th`. A coarse geometric scan finds the first bracket, so a
- * utilization that does not rise steadily with the load is not mis-bisected; bisection then narrows it.
- */
 /** Seconds in a period of growth: a month and a year as the calendar averages them. */
 const PERIOD = { month: 2_629_800, year: 31_557_600 } as const
 
 /** The load multiple the growth reaches `seconds` after asOf. */
-function multipleAfter(g: Growth, seconds: number): number {
+export function multipleAfter(g: Growth, seconds: number): number {
   return (1 + g.rate) ** (seconds / PERIOD[g.per])
 }
 
@@ -2371,6 +2367,10 @@ function grown(
   return (total * PERIOD[g.per]) / Math.log(1 + g.rate)
 }
 
+/**
+ * The lowest load multiple at which `util(load)` reaches `th`. A coarse geometric scan finds the first bracket, so a
+ * utilization that does not rise steadily with the load is not mis-bisected; bisection then narrows it.
+ */
 export function crossing(util: (load: number) => number | null, th: number, max: number): number | null {
   const u0 = util(0)
   if (u0 == null) return null

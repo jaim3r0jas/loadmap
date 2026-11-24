@@ -3080,7 +3080,9 @@ export class Compiler {
         b.at,
         old
           ? 'an expect needs a target or a full multiple'
-          : 'an expect needs underTarget or notFull (a load multiple), or lasts (a time)',
+          : before(this.version, parseVersion(SCHEMA.expect!.props.lasts!.since!)!)
+            ? 'an expect needs underTarget or notFull: a load multiple'
+            : 'an expect needs underTarget or notFull (a load multiple), or lasts (a time)',
         old ? 'expect { target: 8 }' : 'expect { underTarget: 8× }',
       )
       return undefined

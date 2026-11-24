@@ -1,7 +1,7 @@
 import type { CrossingRange } from './capacity'
 import { duration, fmt, multiples, pct, period } from './format'
 import { PERCENTILES } from './latency'
-import { type ComponentResult, crossing, expectationNamed, type Model, reach, sureness } from './model'
+import { type ComponentResult, crossing, expectationNamed, type Model, multipleAfter, reach, sureness } from './model'
 import type { Values } from './params'
 
 /**
@@ -69,7 +69,14 @@ export function check<P, C extends string>(
   // measurements the snapshot has no value for: each counts once, for what reads it
   const gaps = Object.entries(model.def.snapshot?.measurements ?? {}).filter(([, m]) => m.missing != null)
   return expectations.map((written) => {
-    const e = expectationNamed(written)
+    const named = expectationNamed(written)
+    // a time to last is the load growth reaches then, as defineModel reads it for the model's own
+    if (named.lasts != null && named.notFull == null && !model.growth)
+      throw new Error('loadmap: an expectation holds a time (lasts): the model needs growth')
+    const e =
+      named.lasts != null && named.notFull == null && model.growth
+        ? { ...named, notFull: multipleAfter(model.growth, named.lasts) }
+        : named
     const scenario = e.scenario == null ? null : model.scenarios.find((s) => s.label === e.scenario)
     if (e.scenario != null && !scenario) throw new Error(`loadmap: no scenario "${e.scenario}"`)
     const ev = model.evaluate(scenario?.values as Partial<Values<P>> | undefined)
@@ -84,10 +91,11 @@ export function check<P, C extends string>(
     const all = Object.values<ComponentResult<C>>(ev.components)
     const scope = c ? [c] : all
     // a component without a published figure is not ranked: it may only run out sooner, so a failure stays one
-    const unknown = scope.filter((x) => x.missing != null)
-    const none = unknown
-      .map((x) => `${x.short} ${x.plural ? 'have' : 'has'} no published benchmark ${x.missing}${where}`)
-      .join('; ')
+    // and a stock that grows with no growth to date it is not ranked either
+    const unknown = scope.filter((x) => x.missing != null || x.stock?.undated)
+    const why = (x: ComponentResult<C>) =>
+      x.missing != null ? `no published benchmark ${x.missing}` : 'no growth to say when it fills'
+    const none = unknown.map((x) => `${x.short} ${x.plural ? 'have' : 'has'} ${why(x)}${where}`).join('; ')
     // measured data that is missing may move the answer either way: a capacity counts for its component, any other
     // measurement (a rate, a share) for everything
     const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
@@ -95,7 +103,7 @@ export function check<P, C extends string>(
     for (const x of scope) if (x.capacity?.unread) unread.add(`${x.short}: ${x.capacity.unread}`)
     for (const [name, m] of gaps) if (!read.has(name)) unread.add(`${name}: ${m.missing}`)
     const data = [...unread]
-    const benchmarks = unknown.map((x) => `${x.short}: no published benchmark ${x.missing}`)
+    const benchmarks = unknown.map((x) => `${x.short}: ${why(x)}`)
     if (c && unknown.length) return result(e, 'inconclusive', [...benchmarks, ...data], found, none)
     if (c && c.util == null)
       return result(e, data.length ? 'inconclusive' : 'pass', data, found, `${c.short} is switched off${where}`)
