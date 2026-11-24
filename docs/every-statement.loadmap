@@ -276,7 +276,8 @@ gateway -> api
 limiter -> api
 limiter -> tooMany
 api -> resultCache: `${compact(at.db.orders)} misses/s` { when: hit < 1 }
-resultCache -> db
+# a delay is the time the hop takes whatever the load: it adds to the latency of the flows that go it
+resultCache -> db { delay: 2ms }
 kafka -> eventWorkers
 kafka -> kafkaDropped
 eventWorkers -> push

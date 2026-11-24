@@ -41,6 +41,7 @@ export {
   type ComponentState,
   type Ctx,
   crossing,
+  type DelayDef,
   type Domain,
   defineModel,
   type Evaluation,

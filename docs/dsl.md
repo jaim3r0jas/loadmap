@@ -1053,7 +1053,23 @@ if the client gave up, though the work they set off still uses its capacity. Wit
 which load every stage again and make it slower still: a timeout storm. The retries settle where the share too slow
 gives back the same attempts, the least such point, and past the knee there is none below what the retries allow.
 `ev.latency.orders.timedOut` is the share, the Live panel shows it, and the dots that time out fade where they end. A
-timeout needs a latency: a `service` on the flow's way.
+timeout needs a latency: a `service` on the flow's way, or a delay on one of its hops.
+
+A **delay** on an edge (from `loadmap 1.8`) is the time a hop takes whatever the load: a network round trip, a TLS
+handshake, a call to another region.
+
+```loadmap
+users -> lb: "HTTPS" { delay: 80ms }
+api -> payments { delay: farRegion ? 140ms : 2ms }
+```
+
+It adds to the latency of every flow that goes from the one box straight to the other, so it counts toward the
+flow's timeout. On the edge from a flow's `from` box to its first stage it counts for the flows that start there. No
+unit is done before the delays of its way: the queues' times are fitted past them, so one queue behind 80 ms has a p99
+of `80 ms + service × ln 100 ÷ (1 − utilization)`. The edge says it after its label, "HTTPS · 80 ms". A delay reads
+the load and the parameters, as a timeout does; one on an edge no flow goes along warns (`unused-delay`). In code it
+is `delays: [{ from: 'api', to: 'payments', delay: 0.002 }]`, without `from` for the hop into a way's first stage, and
+with `flows` for some flows only.
 
 #### Failure domains
 
@@ -1686,6 +1702,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `bad-demand` | a component whose demand is not a finite number from 0 up at some values |
 | `unused-stage` | a stage no flow passes |
 | `unused-component` | a component no stage uses or holds |
+| `unused-delay` | a delay on an edge no flow goes along |
 | `tier-order` | an edge that runs back against the tiers |
 | `deprecated` | an old spelling: loadmap fmt rewrites it |
 | `removed` | a statement or a property a language version dropped: what to write is in the hint |
@@ -1736,7 +1753,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge | |
 
 ## In code
 
@@ -2737,6 +2754,7 @@ A line between two nodes: `a -> b`, a chain `a -> b -> c`, or with a label `a ->
 | Property | Value | |
 | --- | --- | --- |
 | `when` | boolean, formula | The edge is left out while this is false. |
+| `delay` | number in seconds, formula of parameters | The seconds the hop takes, whatever the load: a network round trip, a call to another region. It adds to the latency of every flow that goes from the one box to the other (from a flow's source box, of the flows that start there), so to their timeout, and the edge's label says it: `users -> lb: "HTTPS" { delay: 80ms }`. From loadmap 1.8. |
 
 ### Functions
 

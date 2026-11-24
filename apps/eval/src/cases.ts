@@ -138,6 +138,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'lost: 0.1%' }, { kind: 'contains', text: 'flow: orders' }],
   },
   {
+    id: 'edge-delay',
+    example: SEARCH,
+    request: "The clients' requests take 60 ms to arrive over the network. Add that delay to the model.",
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'delay: 60ms' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',
