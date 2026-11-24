@@ -166,6 +166,14 @@ component conns "DB connections" {
   over: "requests wait for a connection"
 }
 
+# a batch: a day's orders worked off in a nightly run of four hours
+component rollup "Nightly rollup" {
+  demand: flows.orders
+  batch { every: 1d; within: 4h }
+  capacity: estimated(1_000_000, "orders/s", "last month's runs")
+  over: "the rollup misses its window"
+}
+
 # a stock: what the topic keeps fills its disks over time, not at a load
 component topicDisk "Topic disks" {
   fills: at.topic.events * 1KB * 3

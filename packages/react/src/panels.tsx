@@ -129,6 +129,11 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
               {c.stock && <span className="lm-sub lm-stock">{stockText(c.stock, c.capacity?.unit ?? '')}</span>}
               {c.quota && <span className="lm-sub lm-quota">{quotaText(c.quota)}</span>}
+              {c.batch && (
+                <span className="lm-sub lm-batch">
+                  {`Runs every ${period(c.batch.every)}: a run takes ${period(c.batch.takes)} of its ${period(c.batch.within)}.`}
+                </span>
+              )}
             </div>
             <div
               className="lm-track"

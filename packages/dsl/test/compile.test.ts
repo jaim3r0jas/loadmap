@@ -1395,6 +1395,39 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a batch: a day of arrivals worked off within its run', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 20; default: 1 }
+param hours "Run" { options: [2, 4]; default: 4 }
+flow orders "orders" { rate: 40 * load; average: 50%; route: rollup; from: shop }
+node shop "Shop"
+node rollup "Nightly rollup" {
+  store
+  batch { every: 1d; within: hours * 1h }
+  capacity: measured(250, "orders/s", "last runs")
+  over: "the rollup misses its window"
+}
+shop -> rollup
+`)
+    const ts = defineModel({
+      load: p.load({ max: 20, default: 1 }),
+      params: { hours: p.select({ label: 'Run', options: [2, 4], default: 4 }) },
+      flows: { orders: { label: 'orders', rate: ({ load }) => 40 * load, average: 0.5 } },
+      components: {
+        rollup: {
+          name: 'Nightly rollup',
+          batch: ({ hours }) => ({ every: 86_400, within: (hours as number) * 3_600 }),
+          capacity: measured(250, 'orders/s', 'last runs'),
+          over: 'the rollup misses its window',
+        },
+      },
+      stages: { rollup: store('rollup') },
+      routes: { orders: ['rollup'] },
+    })
+    same(ts, dsl, [...loads, { load: 2, hours: 2 }])
+    expect(dsl.evaluate({ load: 1 }).components.rollup!.demand).toBeCloseTo(120, 9)
+  })
+
   it('compile a quota over a day, counted at each flow’s average', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 20; default: 1 }

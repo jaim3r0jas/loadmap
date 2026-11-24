@@ -3410,6 +3410,22 @@ export class Compiler {
     }
     if (keeps && level)
       this.report.error('bad-box', level.key, 'a stock keeps what it gains or grows from a level: drop one of them')
+    const run = b.children.find((c) => c.keyword === 'batch')
+    if (run) {
+      const time = (v: unknown) => {
+        if (typeof v !== 'number' || !(v > 0 && Number.isFinite(v)))
+          throw new Error(`a batch's time is seconds above 0, not ${String(v)}`)
+      }
+      const every = this.dynProp<number>(run, 'every', 'number', time)
+      const within = this.dynProp<number>(run, 'within', 'number', time)
+      if (every !== undefined && within !== undefined) {
+        const at = (v: unknown) => ({
+          every: typeof every === 'function' ? every(v) : every,
+          within: typeof within === 'function' ? within(v) : within,
+        })
+        o.batch = typeof every === 'number' && typeof within === 'number' ? { every, within } : at
+      }
+    }
     const held = this.held(b, flows)
     if (held !== undefined) {
       o.held = held
