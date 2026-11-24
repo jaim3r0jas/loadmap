@@ -44,6 +44,8 @@ export interface Particle {
   back?: boolean
   /** Which attempt this is: 0 for the first, 1 for the first retry, and so on. */
   attempt?: number
+  /** Set on a unit its flow failed for good, served by its fallback: from the stage it falls back after, on. */
+  fallback?: true
   /** Set on a unit lost for good, heading along the edge into the lost box that counts it, where it fades. */
   counted?: boolean
   /**
@@ -480,7 +482,9 @@ export class Sim {
   }
 
   /** The stages a dot's way goes through; the first way when the shares changed and its way is gone. */
-  #way(flow: string, path: number | undefined): readonly string[] {
+  #way(flow: string, path: number | undefined, fallback?: true): readonly string[] {
+    const fb = fallback ? this.#ev.fallbacks[flow] : undefined
+    if (fb) return [fb.after, ...fb.route]
     const ways = this.#ev.paths[flow] ?? []
     return (ways[path ?? 0] ?? ways[0])?.stages ?? this.#ev.routes[flow] ?? []
   }
@@ -496,10 +500,10 @@ export class Sim {
     }
     const born: Particle[] = []
     const advance = (d: Particle) => {
-      const route = this.#way(d.flow, d.path)
+      const route = this.#way(d.flow, d.path, d.fallback)
       if (d.leg + 1 >= route.length) {
         // too slow for its client: it fails at the end of its way and is sent again, as the model's share says
-        const late = this.#late.get(`${d.flow}/${d.path ?? 0}`)
+        const late = d.fallback ? 0 : this.#late.get(`${d.flow}/${d.path ?? 0}`)
         if (late && this.#r() < late) return reject(d, 'timedout')
         return fade(d, 'delivered', 0.35)
       }
@@ -525,13 +529,36 @@ export class Sim {
       d.from = d.to.stage === at ? d.to : { stage: at }
       d.to = { stage: box }
     }
+    /**
+     * A unit its flow fails for good, with a fallback: it fades where it failed, as a retried attempt does, and the
+     * fallback serves it from the stage it falls back after, along the edge from there.
+     */
+    const fallBack = (d: Particle, outcome: 'rejected' | 'timedout') => {
+      const fb = ev.fallbacks[d.flow]
+      if (!fb || d.fallback || this.particles.length + born.length >= this.#o.maxParticles) return false
+      const from = this.#place(fb.after, d.flow)
+      born.push({
+        id: this.#nextId++,
+        flow: d.flow,
+        leg: 1,
+        phase: 'move',
+        t: 0,
+        dur: this.#o.legSeconds,
+        from,
+        to: this.#place(fb.route[0]!, d.flow, from),
+        fallback: true,
+      })
+      fade(d, outcome, 0.6)
+      return true
+    }
     const reject = (d: Particle, outcome: 'rejected' | 'timedout' = 'rejected', at = d.to.stage) => {
-      const again = this.particles.length + born.length < this.#o.maxParticles ? this.#retry(d) : null
+      // the fallback's own units are no attempts: what it turns away is lost
+      const again = !d.fallback && this.particles.length + born.length < this.#o.maxParticles ? this.#retry(d) : null
       // a unit sent again is no loss: its attempt fades where it was turned away, and the retry starts at the source
       if (again) {
         fade(d, outcome, 0.6)
         born.push(again)
-      } else lose(d, outcome, at)
+      } else if (!fallBack(d, outcome)) lose(d, outcome, at)
     }
     for (const d of this.particles) {
       d.t += dtReal
@@ -647,7 +674,7 @@ export class Sim {
    * reads, the lag on average over the partitions. Without an exclusive connection after the queue, the lag.
    */
   #heat(d: Particle): number {
-    const route = this.#way(d.flow, d.path)
+    const route = this.#way(d.flow, d.path, d.fallback)
     const next = route[d.leg + 1]
     const s = next == null ? undefined : this.#ev.stages[next]
     const a = s?.kind === 'workers' ? s.assignment : undefined

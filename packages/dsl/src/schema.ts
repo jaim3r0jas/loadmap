@@ -954,7 +954,30 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes.',
       },
     },
-    children: ['drop', 'merge', 'retry'],
+    children: ['drop', 'merge', 'retry', 'fallback'],
+  },
+  fallback: {
+    doc: 'Where the flow fails over to: what it fails for good (turned away or too slow, after every retry) goes back to after, a stage on its route, and is served along route instead, a stale cache or a degraded answer. A lost box then counts only what the fallback turns away.',
+    since: '1.7',
+    example: 'fallback { after: api; route: staleQuotes }',
+    args: [],
+    props: {
+      after: {
+        inspector: 'main',
+        value: 'route',
+        scope: 'const',
+        doc: 'The stage on its route its failures go back to: an edge from its box to the fallback carries them.',
+        required: true,
+      },
+      route: {
+        inspector: 'main',
+        value: 'route',
+        scope: 'const',
+        doc: 'The stages that serve them, a -> b; none its route already takes, no queue, split or fan-out.',
+        required: true,
+      },
+    },
+    children: [],
   },
   drop: {
     doc: 'Units older than olderThan simulated seconds are dropped before they are handled.',

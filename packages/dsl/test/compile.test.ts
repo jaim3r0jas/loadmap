@@ -11,6 +11,7 @@ import {
   p,
   pass,
   queue,
+  sink,
   store,
   workers,
 } from '@loadmap/core'
@@ -1395,6 +1396,45 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a fallback: what a flow fails for good, served from the stage it falls back after', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 10; default: 1 }
+flow quotes "quotes" {
+  rate: 200 * load
+  route: api -> pricing -> out
+  from: shop
+  fallback { after: api; route: stale }
+}
+node shop "Shop"
+node api "API" { pass; capacity: measured(10_000, "req/s"); over: "x" }
+node pricing "Pricing" { pass; capacity: measured(100, "req/s"); over: "quotes fail" }
+node stale "Stale quotes" { pass; capacity: measured(5_000, "req/s"); over: "quotes fail" }
+node out "Out" { sink }
+shop -> api -> pricing -> out
+api -> stale
+`)
+    const ts = defineModel({
+      load: p.load({ max: 10, default: 1 }),
+      flows: {
+        quotes: { label: 'quotes', rate: ({ load }) => 200 * load, fallback: { after: 'api', route: ['stale'] } },
+      },
+      components: {
+        api: { name: 'API', capacity: measured(10_000, 'req/s'), over: 'x' },
+        pricing: { name: 'Pricing', capacity: measured(100, 'req/s'), over: 'quotes fail' },
+        stale: { name: 'Stale quotes', capacity: measured(5_000, 'req/s'), over: 'quotes fail' },
+      },
+      stages: { api: pass('api'), pricing: pass('pricing'), stale: pass('stale'), out: sink() },
+      routes: { quotes: ['api', 'pricing', 'out'] },
+    })
+    same(ts, dsl, loads)
+    expect(dsl.evaluate({ load: 1 }).at.stale!.quotes).toBeCloseTo(100, 9)
+    // its hop needs its edge, as a route's does
+    const unjoined = compile(
+      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: a -> b; from: a; fallback { after: a; route: c } }\nnode a "A" { pass; capacity: measured(1, "r/s"); over: "x" }\nnode b "B" { sink }\nnode c "C" { sink }\na -> b\n',
+    )
+    expect(unjoined.diagnostics.map((d) => d.code)).toContain('missing-edge')
+  })
+
   it('compile a scaling curve, and say where a parameter reaches past its peak', () => {
     const src = (pods: string) => `loadmap 1.7
 load "Load" { max: 10; default: 1 }

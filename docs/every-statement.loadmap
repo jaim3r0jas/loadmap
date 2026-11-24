@@ -110,7 +110,14 @@ flow events "events" {
 }
 
 # a constant rate: the same at any load
-flow signups "signups" { unit: "signup"; rate: 20 / 1d; route: gateway -> api -> mailer; from: users }
+flow signups "signups" {
+  unit: "signup"
+  rate: 20 / 1d
+  route: gateway -> api -> mailer
+  from: users
+  # what fails for good waits in an outbox, to be welcomed later
+  fallback { after: api; route: outbox }
+}
 
 # bands across the flow, in the order the flow meets them; a box without a tier stands in the tier of what feeds it
 tier edge "Edge"
@@ -242,6 +249,7 @@ node mailer "Mailer" {
   }
 }
 node email "Email" { sink }
+node outbox "Outbox" { sink }
 node sms "SMS" { sink }
 
 users -> gateway: "HTTPS"
@@ -258,5 +266,6 @@ eventWorkers -> push
 push -> phones
 push -> pushTimedOut
 api -> mailer
+api -> outbox
 mailer -> email
 mailer -> sms

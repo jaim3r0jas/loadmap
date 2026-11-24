@@ -80,6 +80,18 @@ export interface FlowDef<X> {
    * the load and the parameters.
    */
   average?: number | ((values: LooseValues) => number)
+  /**
+   * Where its failures go: what it fails for good (turned away or too slow, after every retry) is served from `after`,
+   * a stage on its route, along `route` instead: a stale cache, a degraded answer. It is lost only if the fallback
+   * fails too.
+   */
+  fallback?: Fallback
+}
+
+/** A flow's fallback: the stage on its route its failures go back to, and the stages that then serve them. */
+export interface Fallback<S extends string = string> {
+  after: S
+  route: readonly S[]
 }
 
 /** Rules for a flow's backlog in a queue. */
@@ -375,6 +387,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   overload: Readonly<Record<F, Overload>>
   /** The retries of each flow that has a retry rule. */
   retry: Readonly<Partial<Record<F, Retry>>>
+  /** Each flow's fallback, when it has one, and the units a second it serves: what the flow fails for good. */
+  fallbacks: Readonly<Partial<Record<F, Fallback<S> & { rate: number }>>>
   /** Each flow's time through, from the service times of its stages; null for a flow none of them has one on. */
   latency: Readonly<Record<F, Latency | null>>
   /** The context model functions saw: for labels and other view callbacks. */
@@ -472,6 +486,29 @@ export function defineModel<
       if (st.kind === 'fanout' && i < route.length - 1)
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
+  }
+  // a fallback leaves the flow's route at a stage on it, and goes where the route does not
+  for (const f of flowIds) {
+    const fb = def.flows[f].fallback
+    if (!fb) continue
+    const route = (def.routes as Record<string, readonly string[]>)[f]!
+    const known = waysOf(def as never, f)
+    const own = new Set<string>([...route, ...known.ways.flat()])
+    if (!route.includes(fb.after))
+      throw flowError(`loadmap: flow "${f}" falls back after "${fb.after}", which is not on its route`, f, 'fallback')
+    if (!fb.route.length) throw flowError(`loadmap: flow "${f}" falls back to no stage`, f, 'fallback')
+    for (const s of fb.route) {
+      const st = (def.stages as Record<string, StageDef>)[s]
+      if (!st) throw flowError(`loadmap: flow "${f}" falls back to unknown stage "${s}"`, f, 'fallback')
+      if (own.has(s))
+        throw flowError(`loadmap: flow "${f}" falls back to "${s}", which its own way already takes`, f, 'fallback')
+      if (st.kind === 'queue' || st.kind === 'split' || st.kind === 'fanout' || st.kind === 'lost')
+        throw flowError(
+          `loadmap: flow "${f}" falls back to ${st.kind} "${s}": a fallback is served by stages that answer it`,
+          f,
+          'fallback',
+        )
+    }
   }
   // a timeout needs a time: a service on the flow's way. A split whose ways are worked out from the values may lead
   // anywhere, so then any service counts
@@ -808,6 +845,7 @@ export function defineModel<
       hot,
       stock,
       runsOf,
+      failedFor,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -931,6 +969,12 @@ export function defineModel<
       at,
       overload,
       retry: retries() as Partial<Record<F, Retry>>,
+      fallbacks: Object.fromEntries(
+        flowIds.flatMap((f) => {
+          const fb = def.flows[f].fallback
+          return fb ? [[f, { after: fb.after, route: fb.route, rate: failedFor(f) }]] : []
+        }),
+      ) as Partial<Record<F, Fallback<S> & { rate: number }>>,
       // the gamma fits cost a bisection each: only for a reader that asks
       get latency() {
         latency ??= latencies() as Record<F, Latency | null>
@@ -1215,6 +1259,14 @@ function context(
   const arriving = (s: string, f: string) =>
     memo(`${f} at ${s}`, () => {
       if (stages[s]!.kind === 'lost') return lostAt(s, f)
+      const fb = def.flows[f]!.fallback
+      const k = fb?.route.indexOf(s) ?? -1
+      if (k >= 0) {
+        // what the flow fails for good, less what the fallback's stages before this one answered or turned away
+        let r = failedFor(f)
+        for (const t of fb!.route.slice(0, k)) r *= (1 - shed(t)) * (stages[t]!.kind === 'cache' ? 1 - hit(t) : 1)
+        return r
+      }
       let total = 0
       // each way the flow goes, for the share of its units that go that way
       for (const { stages: route, share } of paths(f)) {
@@ -1298,6 +1350,8 @@ function context(
   const actual = (s: string, f: string) =>
     memo(`${f} reaching ${s}`, () => {
       if (stages[s]!.kind === 'lost') return lostAt(s, f)
+      // a fallback's stage is reached by what its flow fails for good, less what the fallback's stages before it took
+      if (def.flows[f]!.fallback?.route.includes(s)) return arriving(s, f)
       const ways = paths(f)
       let total = 0
       for (const { stages: route, share } of ways) {
@@ -1398,6 +1452,16 @@ function context(
    * good (the model's failed share; without retries, every failure) are shared out over the rejections and timeouts in
    * proportion; a drop is never sent again.
    */
+  /** The units a second a flow fails for good: after every retry, but inside the retries' solve, where none are known. */
+  const failedFor = (f: string) =>
+    memo(`${f} failed for good`, () => {
+      const failing = causes(f)
+        .filter((c) => c.loss !== 'dropped')
+        .reduce((a, c) => a + c.rate, 0)
+      if (fixed) return failing
+      const r = retryOf(f) ? retries()[f] : undefined
+      return r ? r.rate * r.failed : failing
+    })
   const lostAt = (d: string, f: string) =>
     memo(`${f} lost at ${d}`, () => {
       // the retries decide what is lost for good, and they are solved over every other number: none may read it
@@ -1411,10 +1475,14 @@ function context(
       const failing = all.filter((c) => c.loss !== 'dropped').reduce((a, c) => a + c.rate, 0)
       const r = retryOf(f) ? retries()[f] : undefined
       const final = r ? r.rate * r.failed : failing
-      const k = failing > 0 ? Math.min(1, final / failing) : 0
+      const fb = def.flows[f]!.fallback
+      // with a fallback, what fails for good goes on to it: a lost box counts only what the fallback turns away
+      const k = fb ? 0 : failing > 0 ? Math.min(1, final / failing) : 0
       let total = 0
       for (const c of all)
         if (st.from.includes(c.stage) && wanted.includes(c.loss)) total += c.loss === 'dropped' ? c.rate : c.rate * k
+      if (fb && wanted.includes('rejected'))
+        for (const s of fb.route) if (st.from.includes(s)) total += arriving(s, f) * shed(s)
       return total
     })
 
@@ -2110,6 +2178,7 @@ function context(
     gains,
     stock,
     runsOf,
+    failedFor,
     overload,
     failure,
     shed,

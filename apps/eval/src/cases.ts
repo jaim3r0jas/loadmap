@@ -237,6 +237,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'curve: usl' }, { kind: 'honest' }],
   },
   {
+    id: 'fallback-stale',
+    example: SEARCH,
+    request: 'When a search fails for good, serve it from a stale results cache instead of failing.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'fallback {' }, { kind: 'honest' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',

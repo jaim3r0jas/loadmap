@@ -980,6 +980,17 @@ export class Compiler {
       if (route && route.value.t !== 'id')
         this.report.error('bad-route', route.value, 'a route is a list of stages: a -> b -> c')
       routes[id.name] = stages
+      const fb = b.children.find((c) => c.keyword === 'fallback')
+      if (fb) {
+        const names = (p: Property | undefined) => p?.chain ?? (p?.value.t === 'id' ? [p.value as Ident] : [])
+        const after = names(this.prop(fb, 'after'))
+        const way = names(this.prop(fb, 'route')).flatMap((n) => resolveStage(n, 'stage') ?? [])
+        const at = after.length === 1 ? resolveStage(after[0]!, 'stage') : undefined
+        if (after.length > 1)
+          this.report.error('bad-route', this.prop(fb, 'after')!.value, 'a fallback leaves the route at one stage')
+        for (const s of way) reached.add(s)
+        if (at && way.length) def.fallback = { after: at, route: way }
+      }
 
       const from = this.prop(b, 'from')
       const view: FlowView = { from: '', color: 'accent' }
@@ -1543,6 +1554,8 @@ export class Compiler {
           undefined,
           { stage: queue, reason: 'dropped' },
         )
+      // what a flow with a fallback fails for good is served there, not lost
+      if (b.children.some((c) => c.keyword === 'fallback')) continue
       // a timeout refused has its error instead
       const timeout = this.prop(b, 'timeout')
       const t = (shape.flows[f] as { timeout?: unknown } | undefined)?.timeout
