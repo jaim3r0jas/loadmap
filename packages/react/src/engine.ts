@@ -124,6 +124,9 @@ function fade(el: Element, show: number): void {
  * one structure to the next. React renders the structure once per scene, and once per frame while it moves; the engine
  * updates the moving parts every frame, and export drives it frame by frame instead of the animation loop.
  */
+/** What a sim is made with: a new version that changes one starts its sim over. */
+const SIM_OPTIONS = ['seed', 'speed', 'dotTarget', 'minDots', 'maxDots', 'legSeconds', 'maxParticles'] as const
+
 export class Engine {
   model!: Model
   view!: View
@@ -188,18 +191,22 @@ export class Engine {
 
   /**
    * A new version of the model and view (the text edited): a story stops playing (the step it shows stays, the page
-   * holds it), and what is drawn stays, its dots running, until the new scene moves in from it; the sim starts over on
-   * the new model then, so no dot looks for a box the old scene does not have.
+   * holds it), and what is drawn stays, its dots running, until the new scene moves in from it. A model with other
+   * flows, stages or routes starts its sim over then, so no dot looks for a box the old scene does not have; one with
+   * the same keeps its sim, dots and backlog.
    */
   setModel(model: Model, view: View, ev: Evaluation, o: SimOptions): void {
     this.stopStory({ cut: true })
     this.model = model
     this.view = view
     this.ev = ev
-    this.#o = o
     this.#setHand(null)
-    if (this.frame) this.#stale = true
-    else this.sim = createSim(model, ev, o)
+    const same = SIM_OPTIONS.every((k) => o[k] === this.#o?.[k])
+    this.#o = o
+    if (!this.frame) this.sim = createSim(model, ev, o)
+    // the same flows on the same stages (a figure, a name or a box's look edited): the dots run on, at the new figures
+    else if (!this.#stale && same && this.sim.adopt(model, ev)) return
+    else this.#stale = true
   }
 
   setEvaluation(ev: Evaluation): void {

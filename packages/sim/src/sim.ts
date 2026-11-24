@@ -137,6 +137,19 @@ export class Sim {
   }
 
   /**
+   * A new version of the model (its text edited) taken without starting over, when the dots it would run are on the
+   * ways they are on now: the same flows, the same stages of the same kinds, each flow routed as before. Every dot,
+   * backlog and busy worker stays, and the new figures apply as new values do. False, and nothing changed, for a
+   * model that is another structure: its sim starts from its own.
+   */
+  adopt(model: Model, ev: Evaluation): boolean {
+    if (waysOf(model, ev) !== waysOf(this.#model, this.#ev)) return false
+    this.#model = model
+    this.update(ev)
+    return true
+  }
+
+  /**
    * New values or a new evaluation: rates and capacities change, backlog stays. A new shape (partitions, workers)
    * keeps every dot whose partition or worker still exists, so switching designs does not empty the picture.
    */
@@ -662,6 +675,14 @@ export class Sim {
     }
     return n - 1
   }
+}
+
+/** What decides where dots can be: the flows, each stage's kind, and the stages each flow passes on each of its ways. */
+function waysOf(model: Model, ev: Evaluation): string {
+  return JSON.stringify([
+    model.flowIds.map((f) => [f, (ev.paths[f] ?? []).map((w) => w.stages)]),
+    (Object.values(ev.stages) as ResolvedStage[]).map((st) => [st.id, st.kind]),
+  ])
 }
 
 export function createSim(model: Model, ev: Evaluation, o?: SimOptions): Sim {

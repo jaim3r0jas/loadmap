@@ -252,6 +252,42 @@ describe('a subsystem on the board', () => {
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
   })
 
+  it('keeps the dots running when the text edited leaves every flow and stage: another flow starts them over', async () => {
+    const first = compile(SOURCE).definition!
+    // a figure edited: the same flows through the same stages
+    const edited = compile(SOURCE.replace('demand: flows.orders * 0.01', 'demand: flows.orders * 0.02')).definition!
+    // a flow of its own through the gateway: another structure
+    const more = compile(
+      SOURCE.replace(
+        'node shop "Shop"',
+        'flow pings "pings" { rate: 10 * load; from: shop; route: eu.gw }\n\nnode shop "Shop"',
+      ),
+    ).definition!
+    host = document.createElement('div')
+    host.style.width = '1200px'
+    document.body.appendChild(host)
+    root = createRoot(host)
+    const ref = createRef<LoadmapHandle>()
+    const draw = (d: Definition) => root!.render(<Loadmap ref={ref} model={d.model} view={d.view} transition={0} />)
+    draw(first)
+    await expect.poll(() => ref.current?.engine.scene, { timeout: 5000 }).toBeTruthy()
+    await ref.current!.ready()
+    const engine = ref.current!.engine
+    const sim = engine.sim
+    engine.step(1)
+    const time = sim.time
+    expect(time).toBeGreaterThan(0)
+    draw(edited)
+    await expect.poll(() => engine.model).toBe(edited.model)
+    await ref.current!.ready()
+    expect(engine.sim).toBe(sim)
+    expect(sim.time).toBeGreaterThanOrEqual(time)
+    draw(more)
+    await expect.poll(() => engine.model).toBe(more.model)
+    await ref.current!.ready()
+    expect(engine.sim).not.toBe(sim)
+  })
+
   it('plays a story through a step that closes a subsystem: the story goes on, and so do the dots', async () => {
     const def = compile(
       `${SOURCE}step "The region as one box." { closed: [eu]; seconds: 1 }\nstep "Every box." { closed: []; seconds: 1 }\n`,
