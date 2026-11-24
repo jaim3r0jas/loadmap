@@ -108,7 +108,7 @@ flow events "events" {
 }
 
 # a constant rate: the same at any load
-flow signups "signups" { unit: "signup"; rate: 20 / 86_400; route: gateway -> api -> mailer; from: users }
+flow signups "signups" { unit: "signup"; rate: 20 / 1d; route: gateway -> api -> mailer; from: users }
 
 # bands across the flow, in the order the flow meets them; a box without a tier stands in the tier of what feeds it
 tier edge "Edge"

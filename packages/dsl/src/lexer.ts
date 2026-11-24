@@ -34,6 +34,9 @@ export type Size = 'KB' | 'MB' | 'GB' | 'TB'
 /** The sizes, and how many bytes one of each is. */
 export const SIZES: Readonly<Record<Size, number>> = { KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 }
 export const isSize = (unit: string | undefined): unit is Size => unit !== undefined && Object.hasOwn(SIZES, unit)
+/** The units of a time, each counted in seconds. */
+export const TIMES: readonly Suffix[] = ['ms', 's', 'min', 'h', 'd']
+export const isTime = (unit: string | undefined): boolean => unit !== undefined && TIMES.includes(unit as Suffix)
 const WORDS: readonly Suffix[] = ['ms', 's', 'min', 'h', 'd', 'x', 'KB', 'MB', 'GB', 'TB']
 /** Each unit as a power of ten and a whole factor, so `4.1min` is worked out in decimal: the double nearest 246. */
 const SCALE: Record<Suffix, [exp: number, factor: bigint]> = {
@@ -198,7 +201,7 @@ export function lex(source: string, report: Reporter, from = 0, to = source.leng
           'unknown-unit',
           { from: s, to: i },
           `"${source.slice(w, i)}" is not a unit of a number`,
-          'the units are ms, s, min, h, %, × and the sizes KB, MB, GB, TB',
+          'the units are ms, s, min, h, d, %, × and the sizes KB, MB, GB, TB',
         )
         push({ kind: 'number', text: source.slice(s, i), value: written, from: s, to: i })
         continue

@@ -222,6 +222,8 @@ describe('a model in several files', () => {
         [MODEL]: swap(MODEL, 'with { writes: flows.orders }', `with { writes: flows.orders; wait: ${value} }`),
       }).diagnostics.filter((d) => d.code === 'unit-mismatch')
     expect(unit('pods * 5ms')).toEqual([])
+    // a day is a time, as 20ms is: never "a size"
+    expect(unit('1d').map((d) => d.message)).not.toContainEqual(expect.stringContaining('its default is'))
     // a bare number is any unit: only what says its own is compared
     expect(unit('flows.orders * 2')).toEqual([])
     // said at the input, beside what the line that reads it says of its own

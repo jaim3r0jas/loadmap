@@ -125,7 +125,7 @@ describe('lex', () => {
     expect(report.list).toMatchObject([
       {
         message: '"sec" is not a unit of a number',
-        hint: 'the units are ms, s, min, h, %, × and the sizes KB, MB, GB, TB',
+        hint: 'the units are ms, s, min, h, d, %, × and the sizes KB, MB, GB, TB',
       },
     ])
   })

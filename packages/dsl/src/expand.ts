@@ -1,6 +1,7 @@
 import { childrenOf, type Decl, type Edge, type Expr, type Ident, type Property, type Stmt } from './ast'
 import { didYouMean, type Reporter, type Span } from './diagnostics'
 import { BUILTINS, RESERVED } from './expr'
+import { isTime } from './lexer'
 import { type NameVisitor, walkFormula, walkNames } from './names'
 import { BOXES, COMPONENT_PROPS, own, POOL_LINES, propNamed, SCHEMA, STAGES } from './schema'
 
@@ -378,7 +379,7 @@ export class Expander {
           ? 'a share'
           : u === '×' || u === 'x'
             ? 'a load multiple'
-            : /^(ms|s|min|h)$/.test(u)
+            : isTime(u)
               ? 'a time'
               : 'a size'
     const [du, vu] = [unit(d.unit), unit(v.unit)]
