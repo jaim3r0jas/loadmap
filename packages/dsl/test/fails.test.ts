@@ -55,6 +55,16 @@ describe('a component that fails, in the language', () => {
       'warning: unseen-loss: what "api" fails vanishes: give it a lost box that counts it',
     ])
     expect(d[0]!.data).toEqual({ stage: 'api', reason: 'failed' })
+    // a component that never fails loses nothing, and a fallback serves what fails past where it falls back after
+    expect(errors(bare.replace('fails: bad ? 20% : 2%', 'fails: 0%'))).toEqual([])
+    const served = bare
+      .replace('route: api -> db }', 'route: gate -> api -> db; fallback { after: gate; route: stale } }')
+      .replace(
+        'node users "Users"\n',
+        'node users "Users"\nnode gate "Gate" { pass; capacity: measured(10_000, "req/s"); over: "x" }\nnode stale "Stale" { pass; capacity: measured(10_000, "req/s"); over: "x" }\n',
+      )
+      .replace('users -> api\n', 'users -> gate\ngate -> api\ngate -> stale\n')
+    expect(errors(served)).toEqual([])
   })
 
   it('says what is wrong with it', () => {
@@ -64,6 +74,12 @@ describe('a component that fails, in the language', () => {
     expect(errors(SRC.replace('fails: bad ? 20% : 2%', 'fails: 100%'))).toEqual([
       'error: bad-value: fails is a share from 0, below 100%, not 1',
     ])
+    // of the units a stage works on: a component no stage runs has none
+    expect(
+      errors(
+        `${SRC}component spare "Spare" {\n  demand: flows.orders\n  fails: 1%\n  capacity: measured(1_000, "req/s")\n  over: "x"\n}\n`,
+      ),
+    ).toContain('error: unused-component: "spare" fails a share of the units a stage works on, and no stage runs it')
     expect(errors(SRC.replace('fails: bad ? 20% : 2%', 'fails: flows.orders'))).toContain(
       'error: wrong-scope: this formula reads only parameters; it cannot read flows.orders',
     )

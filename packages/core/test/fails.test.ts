@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { check, defineModel, lost, measured, p, pass, sink } from '../src'
+import { check, defineModel, fanout, lost, measured, p, pass, sink } from '../src'
 
 // 100 orders a second at 1× through the API, which fails a share of them whatever the load, to a database of 500
 const shop = (o: { retry?: number; breaker?: number; fallback?: true; fails?: number } = {}) =>
@@ -88,9 +88,15 @@ describe('a component that fails a share of its units', () => {
   })
 
   it('is a share below 1, of a component a stage runs', () => {
-    expect(() => shop({ fails: 1 }).evaluate().lost.orders).toThrow(
-      'component "api" fails a share of 1: from 0, below 1',
-    )
+    expect(() => shop({ fails: 1 })).toThrow('component "api" fails a share of 1: from 0, below 1')
+    // a fan-out makes copies: it has no unit of its own to fail
+    expect(() =>
+      defineModel({
+        ...shop().def,
+        stages: { ...shop().def.stages, api: fanout({ component: 'api', to: [{ stage: 'out', share: 2 }] }) },
+        routes: { orders: ['gate', 'api'] },
+      } as never),
+    ).toThrow('component "api" fails a share of its units, and the fan-out "api" runs it')
     expect(() =>
       defineModel({
         ...shop().def,

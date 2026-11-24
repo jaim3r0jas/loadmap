@@ -1130,6 +1130,13 @@ export class Compiler {
           `"${id}" fills over time, so no stage runs it`,
           'write the stock as a component of its own: component disk "Disk" { fills: … }',
         )
+      const fails = this.prop(componentBlocks.get(id)!, 'fails')
+      if (fails && !used.has(id))
+        this.report.error(
+          'unused-component',
+          fails.key,
+          `"${id}" fails a share of the units a stage works on, and no stage runs it`,
+        )
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id) || fills) continue
       if (c.held != null || c.through != null)
         this.report.error(
@@ -1659,9 +1666,18 @@ export class Compiler {
           undefined,
           { stage: id, reason: 'rejected' },
         )
-    // what a component that fails loses at each stage it runs
+    // what a component that fails loses at each stage it runs, unless every flow through it has a fallback: that
+    // serves what fails past where it falls back after
+    const unserved = new Set(
+      flows.flatMap((b) => {
+        const f = b.args.id?.name
+        if (!f || (shape.flows[f] as { fallback?: unknown } | undefined)?.fallback) return []
+        const { ways, open } = waysOf(shape, f)
+        return open ? Object.keys(shape.stages) : ways.flat()
+      }),
+    )
     for (const [id, s] of stageOf)
-      if (losses(id).includes('failed') && first(id, 'failed'))
+      if (unserved.has(id) && losses(id).includes('failed') && first(id, 'failed'))
         this.report.warning(
           'unseen-loss',
           s.block.at,

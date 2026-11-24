@@ -671,7 +671,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         unit: 'share',
         since: '1.8',
-        doc: 'What is lost for good (turned away, dropped or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one.',
+        doc: 'What is lost for good (turned away, dropped, failed or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one.',
       },
       p50: {
         value: 'number',

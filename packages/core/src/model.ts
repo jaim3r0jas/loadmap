@@ -727,6 +727,18 @@ export function defineModel<
       throw new Error(`loadmap: component "${c}" works in runs: its demand is a rate, so it is no stock, held or quota`)
     if (d.fails != null && !used)
       throw new Error(`loadmap: component "${c}" fails a share of the units its stages work on, and no stage runs it`)
+    if (typeof d.fails === 'number' && !(d.fails >= 0 && d.fails < 1))
+      throw new Error(`loadmap: component "${c}" fails a share of ${d.fails}: from 0, below 1`)
+    const copier =
+      d.fails == null
+        ? undefined
+        : stageIds.find(
+            (s) => runs.includes(def.stages[s] as StageDef) && (def.stages[s] as StageDef).kind === 'fanout',
+          )
+    if (copier)
+      throw new Error(
+        `loadmap: component "${c}" fails a share of its units, and the fan-out "${copier}" runs it: a fan-out makes copies, so give the failures to the stage before it`,
+      )
     if (!d.demand && !holds && d.fills == null && !used)
       throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
   }

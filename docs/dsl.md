@@ -2154,7 +2154,7 @@ After the keyword: [label].
 | `down` | domain, constant | A failure domain with one part out (N−1), on top of the scenario: `down: zone`. From loadmap 1.7. |
 | `component` | component, constant | One component; the first limit without one. |
 | `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. With lost, the flow whose losses count. |
-| `lost` | share, constant | What is lost for good (turned away, dropped or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one. From loadmap 1.8. |
+| `lost` | share, constant | What is lost for good (turned away, dropped, failed or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one. From loadmap 1.8. |
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
 | `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
 | `p99` | number in seconds, constant | The flow's 99th percentile stays under this many seconds. |
