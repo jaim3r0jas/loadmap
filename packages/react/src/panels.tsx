@@ -120,6 +120,13 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               </span>
               {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
               {c.stock && <span className="lm-sub lm-stock">{stockText(c.stock, c.capacity?.unit ?? '')}</span>}
+              {c.quota && (
+                <span className="lm-sub lm-quota">
+                  {c.quota.goneAfter != null
+                    ? `A quota a ${c.quota.per}: gone after ${period(c.quota.goneAfter)}, the rest refused.`
+                    : `A quota a ${c.quota.per}.`}
+                </span>
+              )}
             </div>
             <div
               className="lm-track"

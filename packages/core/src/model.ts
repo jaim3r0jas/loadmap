@@ -23,6 +23,7 @@ import {
   type Branch,
   dyn,
   hitOf,
+  type LimitStage,
   LOSSES,
   type Loss,
   podsOf,
@@ -32,6 +33,8 @@ import {
   type SplitBranch,
   type StageDef,
   splitOf,
+  WINDOW_SECONDS,
+  type Window,
   type WorkersAssignment,
 } from './stages'
 
@@ -73,7 +76,7 @@ export interface FlowDef<X> {
   timeout?: number | ((values: LooseValues) => number)
   /**
    * Its rate over a day against its peak, `rate`: 0.45 when the day averages 45 % of it. What fills over time (a
-   * component's `fills`) reads it; every limit at a load multiple still reads the peak. 1 unless said. It reads only
+   * component's `fills`) and a quota per day or month read it; every other limit reads the peak. 1 unless said. It reads only
    * the load and the parameters.
    */
   average?: number | ((values: LooseValues) => number)
@@ -263,6 +266,8 @@ export interface ComponentResult<C extends string = string> {
   spread?: Spread
   /** For a stock (`fills`): what it holds and gains at these values. */
   stock?: Stock
+  /** For a quota (a limit `per` a window): the window, and past the quota how long into it the quota is gone. */
+  quota?: { per: Window; goneAfter?: number }
 }
 
 /** A stock at one set of values, in its capacity's unit. */
@@ -794,6 +799,16 @@ export function defineModel<
       if (missing != null) components[c].missing = missing
       const st = enabled(c) ? stock(c) : undefined
       if (st) components[c].stock = st
+      const per = stageIds
+        .map((s) => def.stages[s] as StageDef)
+        .find((s): s is LimitStage => s.kind === 'limit' && s.component === c && s.per != null)?.per
+      if (per)
+        components[c].quota = {
+          per,
+          ...(util != null && util > thresholds.full
+            ? { goneAfter: (WINDOW_SECONDS[per] * thresholds.full) / util }
+            : {}),
+        }
       const sp = off ? null : spread(c)
       if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
       const h = off ? null : held(c)
@@ -1691,7 +1706,13 @@ function context(
       const d = def.components[c]!.demand
       if (d) return d(ctx as any)
       let total = 0
-      for (const s of usedBy(c)) for (const f of flowIds) total += arriving(s, f)
+      for (const s of usedBy(c)) {
+        // a quota counts a window: an hour at the peak, a day or a month at each flow's average
+        const per = (stages[s] as { per?: Window }).per
+        for (const f of flowIds)
+          total +=
+            per == null ? arriving(s, f) : arriving(s, f) * WINDOW_SECONDS[per] * (per === 'hour' ? 1 : averageOf(f))
+      }
       return total
     }),
   )

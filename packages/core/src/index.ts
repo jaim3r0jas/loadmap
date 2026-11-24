@@ -124,6 +124,8 @@ export {
   sink,
   split,
   store,
+  WINDOW_SECONDS,
+  type Window,
   type WorkersAssignment,
   type WorkersStage,
   workers,

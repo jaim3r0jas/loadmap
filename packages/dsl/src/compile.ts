@@ -1666,6 +1666,8 @@ export class Compiler {
   private flowAt = new Map<string, Span>()
   /** The definition has a growth line: an expect's lasts needs one. */
   private hasGrowth = false
+  /** Components a quota (a limit per a window) runs: their demand counts a window, not a second. */
+  private windowed = new Set<string>()
   private flowBlock = new Map<string, Block>()
   /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
   private routeAt = new Map<string, [Ident, string][]>()
@@ -1873,6 +1875,14 @@ export class Compiler {
             capacity.value,
             `a held component's demand is the slots in use, a count; the capacity is ${describe(cap)}`,
             'count the slots: configured(200, "connections", "pool size")',
+          )
+      } else if (this.windowed.has(id)) {
+        if (cap.time === -1)
+          this.report.warning(
+            'unit-mismatch',
+            capacity.value,
+            `a quota's capacity is what its window allows, a count; the capacity is ${describe(cap)}`,
+            'count the window: configured(5_000_000, "requests/day", "the plan")',
           )
       } else if (used.has(id) && cap.time !== -1)
         this.report.warning(
@@ -3473,8 +3483,11 @@ export class Compiler {
     switch (b.keyword) {
       case 'pass':
         return component ? pass(component, base) : needs()
-      case 'limit':
-        return component ? limit(component, base) : needs()
+      case 'limit': {
+        const per = this.constProp<'hour' | 'day' | 'month'>(b, 'per')
+        if (per && component) this.windowed.add(component)
+        return component ? limit(component, { ...base, ...(per ? { per } : {}) }) : needs()
+      }
       case 'cache': {
         const hit = this.dynProp<number>(b, 'hit', 'number')
         return cache({ ...base, hit: hit ?? 0, ...(component ? { component } : {}) })

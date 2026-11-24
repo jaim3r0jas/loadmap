@@ -65,7 +65,18 @@ export interface CacheStage<C extends string = string> extends StageBase {
 export interface LimitStage<C extends string = string> extends StageBase {
   kind: 'limit'
   component: C
+  /**
+   * A quota over a window, not a rate: its component's capacity is what the window allows, and its demand what reaches
+   * it in one window, at the peak for an hour and at each flow's average for a day or a month.
+   */
+  per?: Window
 }
+
+/** The window of a quota. */
+export type Window = 'hour' | 'day' | 'month'
+
+/** Seconds in each window: a month as the calendar averages it. */
+export const WINDOW_SECONDS: Readonly<Record<Window, number>> = { hour: 3_600, day: 86_400, month: 2_629_800 }
 
 /** Where a flow ends: written to its component. */
 export interface StoreStage<C extends string = string> extends StageBase {
@@ -171,7 +182,9 @@ export function cache<const C extends string = never>(
   return { kind: 'cache', ...o }
 }
 
-export function limit<const C extends string>(component: C, o: StageBase = {}): LimitStage<C> {
+export function limit<const C extends string>(component: C, o: StageBase & { per?: Window } = {}): LimitStage<C> {
+  if (o.per != null && !Object.hasOwn(WINDOW_SECONDS, o.per))
+    throw new Error(`loadmap: limit "${component}" is per hour, day or month, not "${o.per}"`)
   return { kind: 'limit', component, ...o }
 }
 
