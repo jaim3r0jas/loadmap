@@ -133,12 +133,11 @@ describe('compile', () => {
         hint: 'loadmap fmt rewrites it',
       }),
     ])
-    // a second one is a duplicate
-    const twice = def({ flow: '  breaker { opens: 50% }\n  breaker { opens: 10% }' }).replace(
-      'loadmap 1.1',
-      'loadmap 1.7',
-    )
-    expect(errors(twice).map((e) => e.message)).toContain('"breaker" is set twice in this flow')
+    const both = compile(def({ top: 'direction: right\nlayout: down' }))
+    expect(both.definition!.options.direction).toBe('RIGHT')
+    expect(both.diagnostics.map((d) => d.message)).toEqual([
+      'layout: down is ignored: direction sets the direction (an error from loadmap 1.5)',
+    ])
   })
 
   it('reads an overloaded word under its old name: a warning from 1.1, the spelling of 1.0', () => {
@@ -1420,11 +1419,12 @@ shop -> pricing -> out
     })
     same(ts, dsl, loads)
     expect(dsl.evaluate({ load: 1 }).breakers.quotes!.admitted).toBeCloseTo(0.625, 9)
-    const both =
-      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: s; from: a; retry { times: 1 }; breaker { opens: 50% } }\nnode a "A"\nnode s "S" { pass; capacity: measured(1, "r/s"); over: "x" }\na -> s\n'
-    expect(errors(both).map((e) => e.message)).toContain(
-      'a flow with a breaker takes no retry: each would decide what the other sees',
+    // a second one is a duplicate
+    const twice = def({ flow: '  breaker { opens: 50% }\n  breaker { opens: 10% }' }).replace(
+      'loadmap 1.1',
+      'loadmap 1.7',
     )
+    expect(errors(twice).map((e) => e.message)).toContain('"breaker" is set twice in this flow')
   })
 
   it('compile a pass that sheds by priority', () => {

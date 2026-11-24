@@ -496,24 +496,6 @@ export function defineModel<
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
   }
-  // a breaker's share is solved with the other flows held; a flow that retries through the same stage would be solved
-  // against the breaker's settled rate, not the trial, and each would decide what the other sees
-  for (const f of flowIds) {
-    if (def.flows[f].breaker == null) continue
-    const mine = new Set(waysOf(def as never, f).ways.flat())
-    for (const g of flowIds) {
-      if (g === f || def.flows[g].retry == null) continue
-      const shared = waysOf(def as never, g)
-        .ways.flat()
-        .find((s) => mine.has(s))
-      if (shared)
-        throw flowError(
-          `loadmap: flow "${f}" has a breaker, and "${g}" retries through "${shared}" too: each would decide what the other sees`,
-          f,
-          'breaker',
-        )
-    }
-  }
   // a fallback leaves the flow's route at a stage on it, and goes where the route does not
   for (const f of flowIds) {
     const fb = def.flows[f].fallback
@@ -1667,7 +1649,8 @@ function context(
       // The share of each flow too slow for its timeout is held while they settle: timing a flow costs the time of
       // every stage on its way, too much for each trial of the attempts.
       const wanted = (e: Record<string, number>, late: Readonly<Record<string, number>>) => {
-        const sub = context(def, values, bound, pinned, attempts(e), late)
+        // a breaker's trial and the averaged flag hold in every trial of the attempts too
+        const sub = context(def, values, bound, pinned, attempts(e), late, averaged, trial)
         const w: Record<string, number> = {}
         const p: Record<string, number> = {}
         for (const f of ids) {
