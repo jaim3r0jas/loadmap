@@ -659,6 +659,20 @@ A rate limiter is a `limit` stage. Its capacity is the limit, `configured(…)`:
 takes no `±`. Above it the share over is turned away ("17 % rejected at the limiter"), and the stages after it see
 only what got through, so the service behind a limit may never run out.
 
+A quota counts a window, not a second (from `loadmap 1.7`): `per` is `hour`, `day` or `month`, the capacity is what
+the window allows, and the demand is what reaches the limit in one window, at the peak for an hour and at each flow's
+`average` ([Stocks](#stocks)) for a day or a month. It runs out at a load multiple like any rate; past it the limits
+list says how far into the window it is gone ("gone after 7 h, the rest refused"), and the share over is turned away,
+spread over the window as the dots show it.
+
+```loadmap
+node partner "Partner API" {
+  limit { per: day }
+  capacity: configured(5_000_000, "requests/day", "the plan's quota")
+  over: "calls are refused until the quota resets"
+}
+```
+
 #### Retries
 
 Retries send a unit turned away on its route (by a `pass`, `limit` or `cache` past capacity) again, up to `times`
@@ -2107,7 +2121,7 @@ After the keyword: id [label].
 | `unit` | string, constant | One unit of the flow, singular: "order". |
 | `rate` (required) | number per second, formula | Units per second. |
 | `priority` | number, constant | 1 is served first. Flows of the same priority share. |
-| `average` | share, formula of parameters | Its rate over a day against its peak: 45% when the day averages 45 % of rate. What a stock fills reads it; every limit at a load still reads the peak. Default 100%. From loadmap 1.7. |
+| `average` | share, formula of parameters | Its rate over a day against its peak: 45% when the day averages 45 % of rate. What a stock fills and a quota per day or month read it; every other limit reads the peak. Default 100%. From loadmap 1.7. |
 | `timeout` | number in seconds, formula of parameters | Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way. |
 | `route` (required) | route, constant | The stages it passes, in order: a -> b -> c. An edge draws each hop. |
 | `from` (required) | node, constant | The node its dots start from. |
@@ -2354,6 +2368,7 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
+| `per` | `hour` \| `day` \| `month` | A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for an hour and at each flow's average for a day or a month. From loadmap 1.7. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 ### store

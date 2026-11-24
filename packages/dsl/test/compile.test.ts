@@ -1395,6 +1395,49 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a quota over a day, counted at each flow’s average', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 20; default: 1 }
+flow calls "calls" { rate: 40 * load; average: 50%; route: plan; from: app }
+node app "App"
+node plan "Partner plan" {
+  limit { per: day }
+  capacity: configured(2_500_000, "calls/day", "the plan")
+  over: "calls are refused until midnight"
+}
+node refused "Refused" { lost }
+app -> plan
+plan -> refused
+`)
+    const ts = defineModel({
+      load: p.load({ max: 20, default: 1 }),
+      flows: { calls: { label: 'calls', rate: ({ load }) => 40 * load, average: 0.5 } },
+      components: {
+        plan: {
+          name: 'Partner plan',
+          capacity: configured(2_500_000, 'calls/day', 'the plan'),
+          over: 'calls are refused until midnight',
+        },
+      },
+      stages: { plan: limit('plan', { per: 'day' }), refused: lost({ label: 'refused', from: ['plan'] }) },
+      routes: { calls: ['plan'] },
+    })
+    same(ts, dsl, [...loads, { load: 5 }])
+    expect(dsl.evaluate({ load: 5 }).components.plan!.quota!.per).toBe('day')
+    // a quota written per second says so
+    const rate = compile(
+      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: q; from: a }\nnode a "A"\nnode q "Q" { limit { per: day }; capacity: configured(10, "calls/s"); over: "x" }\na -> q\n',
+    )
+    expect(rate.diagnostics.map((d) => d.message)).toContain(
+      'a quota\'s capacity is what its window allows, a count; the capacity is in "calls/s"',
+    )
+    // and one that counts another window
+    const hourly = compile(
+      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: q; from: a }\nnode a "A"\nnode q "Q" { limit { per: day }; capacity: configured(10, "calls/hour"); over: "x" }\nnode n "N" { lost }\na -> q\nq -> n\n',
+    )
+    expect(hourly.diagnostics.map((d) => d.message)).toContain('the quota is per day; the capacity counts an hour')
+  })
+
   it('compile how long a preset lasts: the backlog its load leaves in a queue', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

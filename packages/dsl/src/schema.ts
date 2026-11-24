@@ -925,7 +925,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'values',
         unit: 'share',
         since: '1.7',
-        doc: 'Its rate over a day against its peak: 45% when the day averages 45 % of rate. What a stock fills reads it; every limit at a load still reads the peak. Default 100%.',
+        doc: 'Its rate over a day against its peak: 45% when the day averages 45 % of rate. What a stock fills and a quota per day or month read it; every other limit reads the peak. Default 100%.',
       },
       timeout: {
         value: 'number',
@@ -1131,7 +1131,16 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     doc: "A rate limiter: its component's capacity is the limit. Above it the share over is turned away, and the stages after it see only what got through.",
     example: 'limit',
     args: STAGE_LABEL,
-    props: { component: STAGE_COMPONENT },
+    props: {
+      per: {
+        value: 'enum',
+        scope: 'const',
+        values: ['hour', 'day', 'month'],
+        since: '1.7',
+        doc: 'A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for an hour and at each flow\'s average for a day or a month.',
+      },
+      component: STAGE_COMPONENT,
+    },
     children: [],
   },
   store: {

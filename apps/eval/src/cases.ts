@@ -212,6 +212,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'lasts: 2h' }],
   },
   {
+    id: 'quota-day',
+    example: SEARCH,
+    request: 'The search vendor allows 2 million queries a day on our plan. Model that as a daily quota.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'per: day' }, { kind: 'contains', text: '2_000_000' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',
