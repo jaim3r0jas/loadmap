@@ -482,6 +482,16 @@ export class Sim {
   }
 
   /** The stages a dot's way goes through; the first way when the shares changed and its way is gone. */
+  /** Whether a stage is past where a flow falls back after, on one of its ways. */
+  #past(flow: string, stage: string): boolean {
+    const fb = this.#ev.fallbacks[flow]
+    if (!fb) return false
+    return (this.#ev.paths[flow] ?? []).some((p) => {
+      const i = p.stages.indexOf(fb.after)
+      return i >= 0 && p.stages.indexOf(stage, i + 1) > i
+    })
+  }
+
   #way(flow: string, path: number | undefined, fallback?: true): readonly string[] {
     const fb = fallback ? this.#ev.fallbacks[flow] : undefined
     if (fb) return [fb.after, ...fb.route]
@@ -533,9 +543,15 @@ export class Sim {
      * A unit its flow fails for good, with a fallback: it fades where it failed, as a retried attempt does, and the
      * fallback serves it from the stage it falls back after, along the edge from there.
      */
-    const fallBack = (d: Particle, outcome: 'rejected' | 'timedout') => {
+    const fallBack = (d: Particle, outcome: 'rejected' | 'timedout', at: string | null) => {
       const fb = ev.fallbacks[d.flow]
-      if (!fb || d.fallback || this.particles.length + born.length >= this.#o.maxParticles) return false
+      // only what fails past where it falls back after reached it: what failed before is lost as ever
+      if (!fb || d.fallback || at == null || !this.#past(d.flow, at)) return false
+      // the board is full: the dot fades where it failed, as the model counts no loss for it
+      if (this.particles.length + born.length >= this.#o.maxParticles) {
+        fade(d, outcome, 0.6)
+        return true
+      }
       const from = this.#place(fb.after, d.flow)
       born.push({
         id: this.#nextId++,
@@ -558,7 +574,7 @@ export class Sim {
       if (again) {
         fade(d, outcome, 0.6)
         born.push(again)
-      } else if (!fallBack(d, outcome)) lose(d, outcome, at)
+      } else if (!fallBack(d, outcome, at)) lose(d, outcome, at)
     }
     for (const d of this.particles) {
       d.t += dtReal
@@ -569,7 +585,7 @@ export class Sim {
       }
       if (d.phase === 'move' && d.back) {
         // answered by a cache, still too slow: its share of the way answered there
-        const late = this.#late.get(`${d.flow}/${d.path ?? 0}/${d.from.stage ?? ''}`)
+        const late = d.fallback ? 0 : this.#late.get(`${d.flow}/${d.path ?? 0}/${d.from.stage ?? ''}`)
         if (late && this.#r() < late) reject(d, 'timedout', d.from.stage)
         else fade(d, 'answered', 0.35)
         continue

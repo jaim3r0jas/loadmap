@@ -502,6 +502,17 @@ export function defineModel<
       if (!st) throw flowError(`loadmap: flow "${f}" falls back to unknown stage "${s}"`, f, 'fallback')
       if (own.has(s))
         throw flowError(`loadmap: flow "${f}" falls back to "${s}", which its own way already takes`, f, 'fallback')
+      // a fallback that loads what its own failures come from would decide its own load
+      const c = (st as { component?: string }).component
+      const mine = [...own].find(
+        (o) => c != null && (def.stages as Record<string, { component?: string }>)[o]?.component === c,
+      )
+      if (mine)
+        throw flowError(
+          `loadmap: flow "${f}" falls back to "${s}", which runs "${c}" as "${mine}" on its own way does: give the fallback a component of its own`,
+          f,
+          'fallback',
+        )
       if (st.kind === 'queue' || st.kind === 'split' || st.kind === 'fanout' || st.kind === 'lost')
         throw flowError(
           `loadmap: flow "${f}" falls back to ${st.kind} "${s}": a fallback is served by stages that answer it`,
@@ -1447,21 +1458,36 @@ function context(
       }
       return out
     })
+  /** The stages past where a flow falls back after, on any of its ways: only what fails there reached it. */
+  const pastAfter = (f: string) =>
+    memo(`${f} past its fallback's after`, () => {
+      const fb = def.flows[f]!.fallback
+      const out = new Set<string>()
+      if (fb) for (const p of paths(f)) for (const s of p.stages.slice(p.stages.indexOf(fb.after) + 1)) out.add(s)
+      return out
+    })
+  /**
+   * Of what a flow fails, the units a second for good (after every retry; inside the retries' solve, where none are
+   * known, every failure) and the share of them that `at` stages.
+   */
+  const forGood = (f: string, at?: ReadonlySet<string>) => {
+    const failing = causes(f).filter((c) => c.loss !== 'dropped')
+    const all = failing.reduce((a, c) => a + c.rate, 0)
+    const there = at ? failing.filter((c) => at.has(c.stage)).reduce((a, c) => a + c.rate, 0) : all
+    if (fixed) return there
+    const r = retryOf(f) ? retries()[f] : undefined
+    return r ? (all > 0 ? (r.rate * r.failed * there) / all : 0) : there
+  }
+  /**
+   * The units a second a flow's fallback serves: what it fails for good past where it falls back after; what failed
+   * before it never reached it.
+   */
+  const failedFor = (f: string) => memo(`${f} failed for good`, () => forGood(f, pastAfter(f)))
   /**
    * What reaches a lost box of a flow: what its stages lose of what it takes, after every retry. The units a flow fails for
    * good (the model's failed share; without retries, every failure) are shared out over the rejections and timeouts in
-   * proportion; a drop is never sent again.
+   * proportion; a drop is never sent again. With a fallback, what fails past where it falls back after goes on to it.
    */
-  /** The units a second a flow fails for good: after every retry, but inside the retries' solve, where none are known. */
-  const failedFor = (f: string) =>
-    memo(`${f} failed for good`, () => {
-      const failing = causes(f)
-        .filter((c) => c.loss !== 'dropped')
-        .reduce((a, c) => a + c.rate, 0)
-      if (fixed) return failing
-      const r = retryOf(f) ? retries()[f] : undefined
-      return r ? r.rate * r.failed : failing
-    })
   const lostAt = (d: string, f: string) =>
     memo(`${f} lost at ${d}`, () => {
       // the retries decide what is lost for good, and they are solved over every other number: none may read it
@@ -1473,14 +1499,13 @@ function context(
       const wanted = st.takes ?? LOSSES
       const all = causes(f)
       const failing = all.filter((c) => c.loss !== 'dropped').reduce((a, c) => a + c.rate, 0)
-      const r = retryOf(f) ? retries()[f] : undefined
-      const final = r ? r.rate * r.failed : failing
+      const k = failing > 0 ? Math.min(1, forGood(f) / failing) : 0
       const fb = def.flows[f]!.fallback
-      // with a fallback, what fails for good goes on to it: a lost box counts only what the fallback turns away
-      const k = fb ? 0 : failing > 0 ? Math.min(1, final / failing) : 0
+      const served = pastAfter(f)
       let total = 0
       for (const c of all)
-        if (st.from.includes(c.stage) && wanted.includes(c.loss)) total += c.loss === 'dropped' ? c.rate : c.rate * k
+        if (st.from.includes(c.stage) && wanted.includes(c.loss))
+          total += c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k
       if (fb && wanted.includes('rejected'))
         for (const s of fb.route) if (st.from.includes(s)) total += arriving(s, f) * shed(s)
       return total

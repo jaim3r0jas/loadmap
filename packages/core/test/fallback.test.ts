@@ -46,6 +46,44 @@ describe('a fallback', () => {
     expect(full.at.refused.quotes).toBeCloseTo(100 - 60, 6)
   })
 
+  it('serves only what fails past where it falls back after: what failed before never reached it', () => {
+    // a gate of 150 in front of the API turns 50 away; pricing then fails 50 of the 150
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { quotes: { rate: ({ load }) => 200 * load, fallback: { after: 'api', route: ['stale'] } } },
+      components: {
+        gate: { name: 'Gate', capacity: measured(150, 'req/s'), over: 'x' },
+        api: { name: 'API', capacity: measured(10_000, 'req/s'), over: 'x' },
+        pricing: { name: 'Pricing', capacity: measured(100, 'req/s'), over: 'x' },
+        stale: { name: 'Stale', capacity: measured(5_000, 'req/s'), over: 'x' },
+      },
+      stages: {
+        gate: pass('gate'),
+        api: pass('api'),
+        pricing: pass('pricing'),
+        stale: pass('stale'),
+        turned: lost({ from: ['gate'] }),
+        out: sink(),
+      },
+      routes: { quotes: ['gate', 'api', 'pricing', 'out'] },
+    })
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.at.turned.quotes).toBeCloseTo(50, 9)
+    expect(ev.at.stale.quotes).toBeCloseTo(50, 9)
+  })
+
+  it('needs a component of its own: one its own way runs would load itself', () => {
+    expect(() =>
+      defineModel({
+        load: p.load({ max: 4 }),
+        flows: { f: { rate: 1, fallback: { after: 'a', route: ['degraded'] } } },
+        components: { a: { name: 'A', capacity: measured(1, 'r/s'), over: 'x' } },
+        stages: { a: pass('a'), degraded: pass('a'), out: sink() },
+        routes: { f: ['a', 'out'] },
+      }),
+    ).toThrow('give the fallback a component of its own')
+  })
+
   it('leaves the route at a stage on it, for stages the route does not take', () => {
     const bad = (fallback: { after: string; route: string[] }) => () =>
       defineModel({
