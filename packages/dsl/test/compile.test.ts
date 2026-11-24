@@ -1396,6 +1396,36 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a breaker, and refuse one beside retries', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 10; default: 1 }
+flow quotes "quotes" {
+  rate: 200 * load
+  route: pricing -> out
+  from: shop
+  breaker { opens: 20% }
+}
+node shop "Shop"
+node pricing "Pricing" { pass; capacity: measured(100, "req/s"); over: "quotes fail" }
+node out "Out" { sink }
+shop -> pricing -> out
+`)
+    const ts = defineModel({
+      load: p.load({ max: 10, default: 1 }),
+      flows: { quotes: { label: 'quotes', rate: ({ load }) => 200 * load, breaker: { opens: 0.2 } } },
+      components: { pricing: { name: 'Pricing', capacity: measured(100, 'req/s'), over: 'quotes fail' } },
+      stages: { pricing: pass('pricing'), out: sink() },
+      routes: { quotes: ['pricing', 'out'] },
+    })
+    same(ts, dsl, loads)
+    expect(dsl.evaluate({ load: 1 }).breakers.quotes!.admitted).toBeCloseTo(0.625, 9)
+    const both =
+      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: s; from: a; retry { times: 1 }; breaker { opens: 50% } }\nnode a "A"\nnode s "S" { pass; capacity: measured(1, "r/s"); over: "x" }\na -> s\n'
+    expect(errors(both).map((e) => e.message)).toContain(
+      'a flow with a breaker takes no retry: each would decide what the other sees',
+    )
+  })
+
   it('compile a pass that sheds by priority', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

@@ -104,6 +104,8 @@ flow events "events" {
   merge { when: newest; share: 0.5; reason: "newest kept" }
   # a client that waits at most 5 s: slower events fail
   timeout: 5s
+  # past half its attempts failing, its callers fail the rest fast
+  breaker { opens: 50% }
   route: gateway -> topic -> eventWorkers -> push
   from: users
   color: alt

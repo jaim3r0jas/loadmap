@@ -954,7 +954,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes.',
       },
     },
-    children: ['drop', 'merge', 'retry', 'fallback'],
+    children: ['drop', 'merge', 'retry', 'fallback', 'breaker'],
   },
   fallback: {
     doc: 'Where the flow fails over to: what it fails for good (turned away or too slow, after every retry) goes back to after, a stage on its route, and is served along route instead, a stale cache or a degraded answer. A lost box then counts only what the fallback turns away.',
@@ -998,6 +998,23 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       share: { value: 'number', scope: 'ctx', unit: 'share', doc: 'The share superseded, 0 to 1.', required: true },
       reason: { value: 'string', scope: 'ctx', doc: 'Shown with the meter.' },
       when: OVERLOAD_WHEN,
+    },
+    children: [],
+  },
+  breaker: {
+    doc: 'A circuit breaker in its callers: past opens, a share of its attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share at which the failures among what it admits are opens; below that it stays closed. What it fails fast goes to the fallback, if any. A flow that retries takes none.',
+    since: '1.7',
+    example: 'breaker { opens: 50% }',
+    args: [],
+    props: {
+      opens: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'values',
+        unit: 'share',
+        doc: 'The share of attempts failing past which it opens, above 0 and below 1.',
+        required: true,
+      },
     },
     children: [],
   },

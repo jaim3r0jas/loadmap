@@ -249,6 +249,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'shed: priority' }],
   },
   {
+    id: 'breaker',
+    example: SEARCH,
+    request: 'Give the searches a circuit breaker that opens when 30 % of them fail.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'breaker { opens: 30% }' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',

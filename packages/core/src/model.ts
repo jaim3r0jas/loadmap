@@ -86,6 +86,13 @@ export interface FlowDef<X> {
    * fails too.
    */
   fallback?: Fallback
+  /**
+   * A circuit breaker in its callers: past `opens`, a share of its attempts failing, it fails calls fast, so they reach
+   * no stage. In steady state it admits the share α of the flow at which the failures among the admitted calls are
+   * `opens`, p(α·rate) = opens; below that it stays closed. What it fails fast goes to the fallback, if any. It reads
+   * only the load and the parameters; a flow that retries takes none, since the two would depend on each other.
+   */
+  breaker?: { opens: number } | ((values: LooseValues) => { opens: number } | undefined)
 }
 
 /** A flow's fallback: the stage on its route its failures go back to, and the stages that then serve them. */
@@ -387,6 +394,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   overload: Readonly<Record<F, Overload>>
   /** The retries of each flow that has a retry rule. */
   retry: Readonly<Partial<Record<F, Retry>>>
+  /** Each flow's breaker, when it has one: what the flow sends, the share it admits, and what it fails fast a second. */
+  breakers: Readonly<Partial<Record<F, { opens: number; rate: number; admitted: number; failedFast: number }>>>
   /** Each flow's fallback, when it has one, and the units a second it serves: what the flow fails for good. */
   fallbacks: Readonly<Partial<Record<F, Fallback<S> & { rate: number }>>>
   /** Each flow's time through, from the service times of its stages; null for a flow none of them has one on. */
@@ -487,6 +496,13 @@ export function defineModel<
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
   }
+  for (const f of flowIds)
+    if (def.flows[f].breaker != null && def.flows[f].retry != null)
+      throw flowError(
+        `loadmap: flow "${f}" has a breaker and retries: each would decide what the other sees, so give it one of them`,
+        f,
+        'breaker',
+      )
   // a fallback leaves the flow's route at a stage on it, and goes where the route does not
   for (const f of flowIds) {
     const fb = def.flows[f].fallback
@@ -867,6 +883,10 @@ export function defineModel<
       runsOf,
       failedFor,
       shedByOf,
+      breakerOf,
+      admitted,
+      failedFast,
+      rateOf,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -990,6 +1010,12 @@ export function defineModel<
       at,
       overload,
       retry: retries() as Partial<Record<F, Retry>>,
+      breakers: Object.fromEntries(
+        flowIds.flatMap((f) => {
+          const b = breakerOf(f)
+          return b ? [[f, { opens: b.opens, rate: rateOf(f), admitted: admitted(f), failedFast: failedFast(f) }]] : []
+        }),
+      ) as Partial<Record<F, { opens: number; rate: number; admitted: number; failedFast: number }>>,
       fallbacks: Object.fromEntries(
         flowIds.flatMap((f) => {
           const fb = def.flows[f].fallback
@@ -1176,11 +1202,43 @@ function context(
     return averaged ? v * averageOf(f) : v
   }
   const rate = (f: string) => memo(`rate of ${f}`, () => rateOf(f), f)
+  const breakerOf = (f: string) =>
+    memo(`breaker of ${f}`, () => {
+      const b = def.flows[f]!.breaker
+      const v = typeof b === 'function' ? b(values) : b
+      if (v != null && !(v.opens > 0 && v.opens < 1))
+        throw new Error(
+          `loadmap: flow "${f}"'s breaker opens past a share of failures above 0 and below 1, not ${v.opens}`,
+        )
+      return v
+    })
+  /**
+   * The share of a flow its breaker admits: 1 while its failures stay at or under `opens`; past that, the α at which
+   * the failures among the admitted are `opens`, found by bisection (the failures only rise with what is admitted).
+   */
+  const admitted = (f: string): number =>
+    memo(`admitted of ${f}`, () => {
+      const b = breakerOf(f)!
+      const lam = rateOf(f)
+      const p = (x: number) => context(def, values, bound, pinned, { ...fixed, [f]: x }, slow).failure(f)
+      if (!(lam > 0) || p(lam) <= b.opens) return 1
+      let lo = 0
+      let hi = 1
+      for (let i = 0; i < 50; i++) {
+        const mid = (lo + hi) / 2
+        if (p(mid * lam) > b.opens) hi = mid
+        else lo = mid
+      }
+      return lo
+    })
+  /** What a flow's breaker fails fast, units a second: they reach no stage. */
+  const failedFast = (f: string) => (breakerOf(f) ? rateOf(f) * (1 - admitted(f)) : 0)
   ctx.flows = table(flowIds, (f) =>
     memo(
       `flow ${f}`,
       () => {
         if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
+        if (breakerOf(f)) return rateOf(f) * admitted(f)
         return retryOf(f) ? retries()[f]!.attempts : rateOf(f)
       },
       f,
@@ -1537,7 +1595,7 @@ function context(
    * The units a second a flow's fallback serves: what it fails for good past where it falls back after; what failed
    * before it never reached it.
    */
-  const failedFor = (f: string) => memo(`${f} failed for good`, () => forGood(f, pastAfter(f)))
+  const failedFor = (f: string) => memo(`${f} failed for good`, () => forGood(f, pastAfter(f)) + failedFast(f))
   /**
    * What reaches a lost box of a flow: what its stages lose of what it takes, after every retry. The units a flow fails for
    * good (the model's failed share; without retries, every failure) are shared out over the rejections and timeouts in
@@ -2259,6 +2317,10 @@ function context(
     stock,
     runsOf,
     failedFor,
+    breakerOf,
+    admitted,
+    failedFast,
+    rateOf,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
