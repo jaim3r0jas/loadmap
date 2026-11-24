@@ -71,6 +71,9 @@ describe('a delay on a hop', () => {
         delays: delays as never,
       })
     expect(bare([])).toThrow('has a timeout but no latency')
+    // one on a hop the flow does not go is none; one of 0 s at these values still is
+    expect(bare([{ from: 'out', to: 'a', delay: 0.3 }])).toThrow('has a timeout but no latency')
+    expect(bare([{ to: 'a', delay: 0 }])().evaluate().latency.req).toMatchObject({ mean: 0, timedOut: 0 })
     expect(bare([{ to: 'a', delay: 0.3 }])().evaluate().latency.req).toMatchObject({
       mean: 0.3,
       p99: expect.closeTo(0.3, 9),

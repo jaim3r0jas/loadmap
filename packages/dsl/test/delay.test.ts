@@ -50,6 +50,24 @@ describe('a delay on an edge', () => {
     expect(m.evaluate({ load: 1 }).latency.jobs!.mean).toBeCloseTo(w, 12)
   })
 
+  it('counts both ways on an edge that is one flow’s hop and where another starts', () => {
+    const src = SRC.replace(
+      'flow jobs "jobs" { rate: 1; from: cron; route: a }',
+      'flow jobs "jobs" { rate: 1; from: a; route: b }',
+    )
+      .replace('cron -> a\n', '')
+      .replace('node cron "Cron"\n', '')
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    expect(r.definition!.model.def.delays).toEqual([
+      { to: 'a', delay: 0.08, flows: ['req'] },
+      { from: 'a', to: 'b', delay: expect.any(Function) },
+      { to: 'b', delay: expect.any(Function), flows: ['jobs'] },
+    ])
+    // B at 101 of 200: 59.4 ms, and the 2 ms of the edge the jobs start on
+    expect(r.definition!.model.evaluate({ load: 1 }).latency.jobs!.mean).toBeCloseTo(0.03 / (1 - 101 / 200) + 0.002, 12)
+  })
+
   it('is said on the edge, after its label', () => {
     const r = compile(SRC).definition!
     const { def } = r.view as unknown as { def: { edges: { label?: string | ((ctx: unknown) => string) }[] } }
@@ -64,6 +82,17 @@ describe('a delay on an edge', () => {
     expect(errors(SRC.replace('loadmap 1.8', 'loadmap 1.7'))).toEqual([
       'error: language-version: "delay:" is from loadmap 1.8; this definition says loadmap 1.7 | write "loadmap 1.8" on the first line',
     ])
+    // an edge's block holds what its version reads
+    expect(errors(SRC.replace('cron -> a', 'cron -> a { dely: 1 }'))).toEqual([
+      'error: unknown-property: an edge holds only when and delay | did you mean "delay"?',
+    ])
+    expect(
+      errors(
+        SRC.replace('loadmap 1.8', 'loadmap 1.7')
+          .replace(/ \{ delay: [^}]*\}/g, '')
+          .replace('cron -> a', 'cron -> a { wen: 1 }'),
+      ),
+    ).toEqual(['error: unknown-property: an edge holds only when | did you mean "when"?'])
     expect(errors(SRC.replace('delay: 80ms', 'delay: -1s'))).toEqual([
       'error: bad-value: a delay is seconds from 0 up, not -1',
     ])

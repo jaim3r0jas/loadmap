@@ -1294,9 +1294,11 @@ export class Compiler {
       const starting = Object.keys(flowViews).filter((f) => flowViews[f]!.from === from && routes[f]?.[0] === to)
       const hop = (f: string) =>
         waysOf(shape, f).ways.some((w) => w.some((s, i) => s === to && w[i - 1] === from)) || waysOf(shape, f).open
-      if (Object.hasOwn(stageDefs, from) && Object.keys(routes).some(hop)) delays.push({ from, to, delay })
-      else if (starting.length) delays.push({ to, delay, flows: starting })
-      else
+      // an edge can be both: a hop of one flow's route, and where another flow starts
+      const between = Object.hasOwn(stageDefs, from) && Object.keys(routes).some(hop)
+      if (between) delays.push({ from, to, delay })
+      if (starting.length) delays.push({ to, delay, flows: starting })
+      if (!between && !starting.length)
         this.report.warning(
           'unused-delay',
           at,
@@ -3973,8 +3975,10 @@ export class Compiler {
         this.report.error('unknown-name', n, `unknown node "${n.name}"`, didYouMean(n.name, boxes.keys()))
     const props = new Map<string, Property>()
     // what its version's edge holds: `label` too, before 1.5
+    const version = this.versionOf(e.chain[0]!)
     const held = Object.entries(EDGE_PROPS)
-      .filter(([, p]) => !p.until || before(this.versionOf(e.chain[0]!), parseVersion(p.until)!))
+      .filter(([, p]) => !p.until || before(version, parseVersion(p.until)!))
+      .filter(([, p]) => !p.since || !before(version, parseVersion(p.since)!))
       .map(([k]) => k)
     for (const s of e.body ?? []) {
       if (s.kind !== 'prop' || !own(EDGE_PROPS, s.key.name)) {

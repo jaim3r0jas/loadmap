@@ -257,7 +257,7 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
   connections?: Readonly<Record<string, ConnectionDef<NoInfer<S>, NoInfer<F>>>>
   /**
    * The time a hop takes, whatever the load: a network round trip, a call to another region. It adds to the latency
-   * of every flow that goes that hop (so to its timeout, and to what is held `through` it).
+   * of every flow that goes that hop, so it counts toward its timeout.
    */
   delays?: readonly DelayDef<NoInfer<P>, NoInfer<F>, NoInfer<S>>[]
   /** Fits used by the model, listed with the assumptions. */
@@ -623,8 +623,12 @@ export function defineModel<
       return c != null && (def.components as Record<string, ComponentDef<unknown>>)[c]?.service != null
     }
     const any = componentIds.some((c) => def.components[c].service != null)
-    // a delay on a hop of its way is a time too
-    const delayed = (def.delays ?? []).some((d) => (open || way.has(d.to)) && (d.flows?.includes(f) ?? true))
+    // a delay on a hop of its way is a time too: into a way's first stage, or between two next to each other
+    const delayed = (def.delays ?? []).some(
+      (d) =>
+        (d.flows?.includes(f) ?? true) &&
+        (open || known.ways.some((w) => w.some((s, i) => s === d.to && w[i - 1] === d.from))),
+    )
     if (!delayed && (open ? !any : ![...way].some(timedStage)))
       throw flowError(
         `loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`,
@@ -2039,14 +2043,15 @@ function contextAt(
       return u >= 1 ? Number.POSITIVE_INFINITY : time / (1 - u)
     })
   /** The seconds a flow's hop into `to` takes, from `from` or (without one) as its way starts: its delays, added. */
-  const delayOn = (f: string, from: string | undefined, to: string) => {
-    let total = 0
+  const delayOn = (f: string, from: string | undefined, to: string): number | null => {
+    // null without one: a delay of 0 s at these values is still a time, so a timeout on it stands
+    let total: number | null = null
     for (const d of def.delays ?? []) {
       if (d.to !== to || d.from !== from || (d.flows && !d.flows.includes(f))) continue
       const v = typeof d.delay === 'function' ? d.delay(values as Values<any>) : d.delay
       if (!(v >= 0 && Number.isFinite(v)))
-        throw new Error(`loadmap: the delay ${from ?? ''} -> ${to} is ${v} s: a time from 0 up`)
-      total += v
+        throw new Error(`loadmap: the delay ${from == null ? 'into' : `${from} ->`} ${to} is ${v} s: a time from 0 up`)
+      total = (total ?? 0) + v
     }
     return total
   }
@@ -2066,8 +2071,8 @@ function contextAt(
         let parts: WayTime[] = [{ share: p.share, mean: 0, variance: 0 }]
         for (const [j, s] of p.stages.entries()) {
           const wait = delayOn(f, p.stages[j - 1], s)
-          if (wait > 0) {
-            timed = true
+          if (wait != null) timed = true
+          if (wait) {
             parts = parts.map((w) => ({ ...w, mean: w.mean + wait, fixed: (w.fixed ?? 0) + wait }))
           }
           const rs = responses(s, f)
