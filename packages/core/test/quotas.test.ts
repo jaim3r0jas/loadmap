@@ -41,4 +41,22 @@ describe('a quota over a window', () => {
     expect(ev.components.plan.quota).toBeUndefined()
     expect(() => limit('plan', { per: 'week' as never })).toThrow('per hour, day or month')
   })
+
+  it('counts its window alone: no demand of its own, and no other stage on its component', () => {
+    const with_ = (stages: Record<string, unknown>, demand?: () => number) => () =>
+      defineModel({
+        load: p.load({ max: 4 }),
+        flows: { calls: { rate: 1 } },
+        components: {
+          plan: { name: 'Plan', capacity: configured(10, 'calls'), over: 'x', ...(demand ? { demand } : {}) },
+        },
+        stages: stages as never,
+        routes: { calls: Object.keys(stages) } as never,
+      })
+    expect(with_({ plan: limit('plan', { per: 'day' }) }, () => 1)).toThrow('so no demand or held')
+    expect(with_({ plan: limit('plan', { per: 'day' }), gate: pass('plan') })).toThrow("counts a quota's window and")
+    expect(with_({ plan: limit('plan', { per: 'day' }), hourly: limit('plan', { per: 'hour' }) })).toThrow(
+      "counts a quota's window and",
+    )
+  })
 })

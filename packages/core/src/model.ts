@@ -27,14 +27,14 @@ import {
   LOSSES,
   type Loss,
   podsOf,
+  QUOTA_SECONDS,
+  type QuotaWindow,
   type ResolvedStage,
   rejectShare,
   resolveStage,
   type SplitBranch,
   type StageDef,
   splitOf,
-  WINDOW_SECONDS,
-  type Window,
   type WorkersAssignment,
 } from './stages'
 
@@ -267,7 +267,7 @@ export interface ComponentResult<C extends string = string> {
   /** For a stock (`fills`): what it holds and gains at these values. */
   stock?: Stock
   /** For a quota (a limit `per` a window): the window, and past the quota how long into it the quota is gone. */
-  quota?: { per: Window; goneAfter?: number }
+  quota?: { per: QuotaWindow; goneAfter?: number }
 }
 
 /** A stock at one set of values, in its capacity's unit. */
@@ -481,6 +481,8 @@ export function defineModel<
         'timeout',
       )
   }
+  /** Each quota's window, by its component. */
+  const quotaOf = new Map<string, QuotaWindow>()
   for (const c of componentIds) {
     const d = def.components[c]
     if (d.held != null && d.demand)
@@ -491,6 +493,22 @@ export function defineModel<
     if (d.on && d.held == null)
       throw new Error(`loadmap: component "${c}" names the stages that hold its slots (on): give it held too`)
     const used = stageIds.some((s) => (def.stages[s] as { component?: string }).component === c)
+    // a quota counts its window: nothing else may count the same component a second, or in another window
+    const runs = stageIds
+      .map((s) => def.stages[s] as StageDef)
+      .filter((s) => (s as { component?: string }).component === c)
+    const windows = new Set(runs.map((s) => (s.kind === 'limit' ? s.per : undefined)))
+    if (runs.some((s) => s.kind === 'limit' && s.per != null)) {
+      if (windows.size > 1)
+        throw new Error(
+          `loadmap: component "${c}" counts a quota's window and something else: give each its own component`,
+        )
+      if (d.demand || d.held != null)
+        throw new Error(
+          `loadmap: component "${c}" is a quota: it counts what reaches it in its window, so no demand or held`,
+        )
+      quotaOf.set(c, [...windows][0]!)
+    }
     if (d.held != null && !d.on?.length && !used)
       throw new Error(`loadmap: component "${c}" is held on no stage: name them with on`)
     if (d.fills != null) {
@@ -799,16 +817,10 @@ export function defineModel<
       if (missing != null) components[c].missing = missing
       const st = enabled(c) ? stock(c) : undefined
       if (st) components[c].stock = st
-      const per = stageIds
-        .map((s) => def.stages[s] as StageDef)
-        .find((s): s is LimitStage => s.kind === 'limit' && s.component === c && s.per != null)?.per
+      const per = off ? undefined : quotaOf.get(c)
+      // a quota is hard: past all it allows it is gone, whatever the full threshold
       if (per)
-        components[c].quota = {
-          per,
-          ...(util != null && util > thresholds.full
-            ? { goneAfter: (WINDOW_SECONDS[per] * thresholds.full) / util }
-            : {}),
-        }
+        components[c].quota = { per, ...(util != null && util > 1 ? { goneAfter: QUOTA_SECONDS[per] / util } : {}) }
       const sp = off ? null : spread(c)
       if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
       const h = off ? null : held(c)
@@ -1708,10 +1720,13 @@ function context(
       let total = 0
       for (const s of usedBy(c)) {
         // a quota counts a window: an hour at the peak, a day or a month at each flow's average
-        const per = (stages[s] as { per?: Window }).per
+        const per = (stages[s] as { per?: QuotaWindow }).per
         for (const f of flowIds)
           total +=
-            per == null ? arriving(s, f) : arriving(s, f) * WINDOW_SECONDS[per] * (per === 'hour' ? 1 : averageOf(f))
+            per == null
+              ? arriving(s, f)
+              : // in the averaged context the rates are averages already
+                arriving(s, f) * QUOTA_SECONDS[per] * (per === 'hour' || averaged ? 1 : averageOf(f))
       }
       return total
     }),

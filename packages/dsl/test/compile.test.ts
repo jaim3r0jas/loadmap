@@ -1405,7 +1405,9 @@ node plan "Partner plan" {
   capacity: configured(2_500_000, "calls/day", "the plan")
   over: "calls are refused until midnight"
 }
+node refused "Refused" { lost }
 app -> plan
+plan -> refused
 `)
     const ts = defineModel({
       load: p.load({ max: 20, default: 1 }),
@@ -1417,7 +1419,7 @@ app -> plan
           over: 'calls are refused until midnight',
         },
       },
-      stages: { plan: limit('plan', { per: 'day' }) },
+      stages: { plan: limit('plan', { per: 'day' }), refused: lost({ label: 'refused', from: ['plan'] }) },
       routes: { calls: ['plan'] },
     })
     same(ts, dsl, [...loads, { load: 5 }])
@@ -1429,6 +1431,11 @@ app -> plan
     expect(rate.diagnostics.map((d) => d.message)).toContain(
       "a quota's capacity is what its window allows, a count; the capacity is per second",
     )
+    // and one that counts another window
+    const hourly = compile(
+      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: q; from: a }\nnode a "A"\nnode q "Q" { limit { per: day }; capacity: configured(10, "calls/hour"); over: "x" }\nnode n "N" { lost }\na -> q\nq -> n\n',
+    )
+    expect(hourly.diagnostics.map((d) => d.message)).toContain('the quota is per day; the capacity counts an hour')
   })
 
   it('compile how long a preset lasts: the backlog its load leaves in a queue', () => {

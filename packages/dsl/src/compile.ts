@@ -1667,7 +1667,7 @@ export class Compiler {
   /** The definition has a growth line: an expect's lasts needs one. */
   private hasGrowth = false
   /** Components a quota (a limit per a window) runs: their demand counts a window, not a second. */
-  private windowed = new Set<string>()
+  private windowed = new Map<string, string>()
   private flowBlock = new Map<string, Block>()
   /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
   private routeAt = new Map<string, [Ident, string][]>()
@@ -1877,7 +1877,26 @@ export class Compiler {
             'count the slots: configured(200, "connections", "pool size")',
           )
       } else if (this.windowed.has(id)) {
-        if (cap.time === -1)
+        const said = /\/\s*(h|hr|hour|d|day|mo|month|min|minute)s?$/i.exec(cap.word)?.[1]?.toLowerCase()
+        const named =
+          said == null
+            ? undefined
+            : said.startsWith('h')
+              ? 'hour'
+              : said.startsWith('d')
+                ? 'day'
+                : said.startsWith('mo')
+                  ? 'month'
+                  : 'minute'
+        const per = this.windowed.get(id)
+        if (named && named !== per)
+          this.report.warning(
+            'unit-mismatch',
+            capacity.value,
+            `the quota is per ${per}; the capacity counts ${named === 'hour' ? 'an' : 'a'} ${named}`,
+            `give what a ${per} allows: "requests/${per}"`,
+          )
+        else if (cap.time === -1)
           this.report.warning(
             'unit-mismatch',
             capacity.value,
@@ -3485,7 +3504,7 @@ export class Compiler {
         return component ? pass(component, base) : needs()
       case 'limit': {
         const per = this.constProp<'hour' | 'day' | 'month'>(b, 'per')
-        if (per && component) this.windowed.add(component)
+        if (per && component) this.windowed.set(component, per)
         return component ? limit(component, { ...base, ...(per ? { per } : {}) }) : needs()
       }
       case 'cache': {
