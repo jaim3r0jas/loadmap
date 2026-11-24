@@ -120,6 +120,12 @@ export interface LoadmapEditorHandle {
   files(): EditorFiles
   /** Replaces the whole definition with one in several files; its model shows first. */
   setFiles(files: EditorFiles): void
+  /**
+   * Changes the definition's files in place, as an edit: each file whose text differs takes one step of its undo, a
+   * file comes or goes, and the diagram keeps what the reader sees of it (the view, what is open, the values). Files
+   * whose model is another file are a whole new definition, as `setFiles` puts one.
+   */
+  changeFiles(files: EditorFiles): void
   /** The history of the files as plain data, when the editor keeps one (`history`): what a save pushes. */
   history(): HistoryData | null
 }
@@ -1173,6 +1179,11 @@ export function LoadmapEditor({
     format: formatText,
     files: filesNow,
     setFiles: (files) => replace(files.files[files.path] ?? '', files),
+    changeFiles: (files) => {
+      if (files.path !== set.current.entry) return replace(files.files[files.path] ?? '', files)
+      // with the explorer's operations, in their chunk: never in the editor's first load
+      void import('./apply').then((m) => m.applyFiles(fileHost, files.files, 'input.files'))
+    },
     history: () => studio.current?.history?.toData() ?? null,
   }))
 

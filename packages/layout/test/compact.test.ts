@@ -1,5 +1,16 @@
 import { defineModel, measured, p, store, workers } from '@loadmap/core'
-import { collisions, defineView, edge, layout, node, pool, type Scene, structureKey } from '@loadmap/layout'
+import {
+  collisions,
+  defineView,
+  type ElkEngine,
+  edge,
+  layout,
+  localElk,
+  node,
+  pool,
+  type Scene,
+  structureKey,
+} from '@loadmap/layout'
 import { describe, expect, it } from 'vitest'
 import { expectEdgesOnBoxes, laidOut } from '../../../examples/phases'
 
@@ -91,6 +102,36 @@ describe('a compact layout', () => {
       expect(centres(on)).toEqual(centres(await at({ load: 10, audit: true })))
     })
   }
+})
+
+describe('a frame laid out', () => {
+  it('is laid out once, whichever view asks: a new version of the model with the same boxes reuses it', async () => {
+    const real = await localElk()
+    let runs = 0
+    const elk: ElkEngine = {
+      layout: (graph) => {
+        runs++
+        return real.layout(graph)
+      },
+    }
+    // what an edit of a figure or a comment compiles to: another view, every box and edge as before
+    const version = (app: string) =>
+      defineView(m, {
+        nodes: { users: node({ label: 'Users' }), app: pool({ label: app, stage: 'app' }), db: node({ label: 'Db' }) },
+        edges: [edge('users', 'app'), edge('app', 'db')],
+        flows: { requests: { from: 'users', color: 'accent' } },
+      })
+    const ev = m.evaluate({ load: 1 })
+    const first = await layout(version('App'), ev, { elk })
+    expect(runs).toBe(1)
+    const second = await layout(version('App'), ev, { elk })
+    expect(runs).toBe(1)
+    expect(second).toEqual(first)
+    // a wider box is another frame
+    const wider = await layout(version('Application servers'), ev, { elk })
+    expect(runs).toBe(2)
+    expect(wider.key).not.toBe(first.key)
+  })
 })
 
 describe('a compact layout, at the edges of what a model declares', () => {

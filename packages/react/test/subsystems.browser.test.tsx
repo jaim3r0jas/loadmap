@@ -196,21 +196,48 @@ describe('a subsystem on the board', () => {
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual([])
   })
 
-  it('shows what a story step closes only while the step shows: a new view of the model is outside the story', async () => {
-    const text = `${SOURCE}step "The region as one box." { closed: [eu] }\n`
+  it('keeps the story step when the text is edited, as the new version writes it, until its story has none there', async () => {
+    const text = `${SOURCE}step "The region as one box." { load: 20; closed: [eu] }\n`
     const first = compile(text).definition!
+    // an edit that leaves the step as it is, one that rewrites it, and one that takes it out
     const edited = compile(text.replace('requests are refused', 'requests are turned away')).definition!
+    const rewritten = compile(text.replace('load: 20; closed: [eu]', 'load: 30; closed: [eu.line]')).definition!
+    const without = compile(SOURCE).definition!
     host = document.createElement('div')
     host.style.width = '1200px'
     document.body.appendChild(host)
     root = createRoot(host)
     const ref = createRef<LoadmapHandle>()
-    root.render(<Loadmap ref={ref} model={first.model} view={first.view} transition={0} />)
+    const draw = (d: Definition) => root!.render(<Loadmap ref={ref} model={d.model} view={d.view} transition={0} />)
+    draw(first)
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
     ref.current!.setStoryStep(0)
     await expect.poll(() => box('eu'), { timeout: 5000 }).toBeTruthy()
-    // the text edited: the story is left, and with it what its step closed
-    root.render(<Loadmap ref={ref} model={edited.model} view={edited.view} transition={0} />)
+    // the text edited: the step still shows, with what it closes and at its load
+    draw(edited)
+    await expect.poll(() => ref.current!.engine.model).toBe(edited.model)
+    await ref.current!.ready()
+    expect(ref.current!.storyStep()).toBe(0)
+    expect(ref.current!.values().load).toBe(20)
+    expect(box('eu')).toBeTruthy()
+    expect(frames()).toEqual([])
+    // the step itself edited: it shows as it is written now
+    draw(rewritten)
+    await expect.poll(() => ref.current!.engine.model).toBe(rewritten.model)
+    await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu'])
+    await expect.poll(() => box('eu.line'), { timeout: 5000 }).toBeTruthy()
+    expect(ref.current!.storyStep()).toBe(0)
+    expect(ref.current!.values().load).toBe(30)
+    // a value the reader changed since: the step's own is not put over it again. A page starts a new version from its
+    // defaults (an editor hands it the reader's values), and the step still shows
+    ref.current!.setValues({ load: 40 })
+    draw(edited)
+    await expect.poll(() => ref.current!.engine.model).toBe(edited.model)
+    await ref.current!.ready()
+    expect(ref.current!.storyStep()).toBe(0)
+    expect(ref.current!.values().load).toBe(10)
+    // the story without the step: the story is left, and with it what the step closed
+    draw(without)
     await expect.poll(() => ref.current!.storyStep()).toBeNull()
     await expect.poll(() => frames(), { timeout: 5000 }).toEqual(['eu', 'eu.line'])
   })

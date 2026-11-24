@@ -268,6 +268,28 @@ describe('the editor', () => {
     expect(box('orderLine.consumers')).toBeTruthy()
   })
 
+  it('changes the files as an edit with changeFiles: the diagram is not started over and keeps its story step', async () => {
+    const { handle } = await mount({ source: shop, several })
+    const engine = handle.loadmap()!.engine
+    handle.loadmap()!.setStoryStep(0)
+    await expect.poll(() => handle.loadmap()!.storyStep()).toBe(0)
+    await expect.poll(() => handle.loadmap()!.values().load).toBe(1)
+    const was = engine.model
+    // the part with the story, changed behind its tab: a new version of the model in the same diagram
+    const next = story.replace('{ load: 1 }', '{ load: 2 }')
+    handle.changeFiles({ ...several, files: { ...several.files, 'shop.story.loadmap': next } })
+    await expect.poll(() => engine.model, { timeout: 5000 }).not.toBe(was)
+    expect(handle.loadmap()!.engine).toBe(engine)
+    expect(handle.files().files['shop.story.loadmap']).toBe(next)
+    // the step still shows, as it is written now
+    await expect.poll(() => handle.loadmap()!.values().load).toBe(2)
+    expect(handle.loadmap()!.storyStep()).toBe(0)
+    // setFiles puts a new definition: another diagram, from its defaults
+    handle.setFiles(several)
+    await expect.poll(() => handle.loadmap()?.engine !== engine, { timeout: 5000 }).toBe(true)
+    await expect.poll(() => handle.loadmap()?.storyStep() ?? null).toBeNull()
+  })
+
   it('opens files from the explorer as one row of tabs; a tab closed keeps its file', async () => {
     const { host, handle, view, edit } = await mount({ source: shop, several })
     const row = () => host.querySelector('.lme-ftabs')!.getBoundingClientRect()

@@ -149,9 +149,15 @@ const hash = await editor.current?.shareHash()
 | `format()`        | Lays the text out the one way; `false` when it has a syntax error                               |
 | `files()`         | `EditorFiles`: every file by its path, and the path of its model; one entry for one file        |
 | `setFiles(files)` | Replaces the whole definition with one in several files; its model shows first                  |
+| `changeFiles(f)`  | Changes the files as an edit: one undo step a file, and the diagram keeps its view              |
 | `history()`       | `HistoryData` of the versions with `history`, else `null`                                       |
 
 `loadmap()` is what export and recording drive: [React and the page](/api/react/#the-handle) has its methods.
+
+`setSource` and `setFiles` put a new definition in the editor: the diagram starts over, fitted, from the model's
+defaults. `changeFiles` is for another version of the one that is there (a file taken back to what a commit holds):
+like any edit it keeps the view, what the reader opened and closed, the values, the selection and the story step shown.
+Files whose model is another path are a new definition, as with `setFiles`.
 
 ## As a page of its own
 

@@ -187,9 +187,9 @@ export class Engine {
   }
 
   /**
-   * A new version of the model and view (the text edited): a story stops, and what is drawn stays, its dots running,
-   * until the new scene moves in from it; the sim starts over on the new model then, so no dot looks for a box the
-   * old scene does not have.
+   * A new version of the model and view (the text edited): a story stops playing (the step it shows stays, the page
+   * holds it), and what is drawn stays, its dots running, until the new scene moves in from it; the sim starts over on
+   * the new model then, so no dot looks for a box the old scene does not have.
    */
   setModel(model: Model, view: View, ev: Evaluation, o: SimOptions): void {
     this.stopStory({ cut: true })
