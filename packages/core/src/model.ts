@@ -1479,29 +1479,40 @@ function contextAt(
    * each is at. A rule of no retries is none.
    */
   const rulesOf = (f: string) =>
-    memo(`retry rules of ${f}`, () => {
-      const rule = def.flows[f]!.retry
-      const r = typeof rule === 'function' ? rule(values) : rule
-      const hops = new Map<string, RetryRule>()
-      let top: RetryRule | undefined
-      for (const x of r == null ? [] : Array.isArray(r) ? (r as readonly RetryRule[]) : [r as RetryRule]) {
-        const where = x.at == null ? '' : ` at "${x.at}"`
-        if (!(Number.isInteger(x.times) && x.times >= 0))
-          throw new Error(`loadmap: flow "${f}" retries${where} a whole number of times, not ${x.times}`)
-        if (x.budget != null && !(x.budget >= 0 && Number.isFinite(x.budget)))
-          throw new Error(`loadmap: flow "${f}" needs a retry budget${where} of 0 or more, not ${x.budget}`)
-        if (x.at == null ? top : hops.has(x.at))
-          throw new Error(`loadmap: flow "${f}" has two retry rules${where || ' with no stage'}: one for each`)
-        if (x.at != null && !stageIds.includes(x.at))
-          throw new Error(`loadmap: flow "${f}" retries at unknown stage "${x.at}"`)
-        const on = x.times > 0 && x.budget !== 0
-        if (x.at == null) top = on ? x : (top ?? { times: 0 })
-        else if (on) hops.set(x.at, x)
-        else hops.set(x.at, { times: 0 })
-      }
-      for (const [s, x] of hops) if (!x.times) hops.delete(s)
-      return { top: top?.times ? top : undefined, hops }
-    })
+    memo(
+      `retry rules of ${f}`,
+      () => {
+        const rule = def.flows[f]!.retry
+        const r = typeof rule === 'function' ? rule(values) : rule
+        const hops = new Map<string, RetryRule>()
+        const seen = new Set<string>()
+        let top: RetryRule | undefined
+        for (const x of r == null ? [] : Array.isArray(r) ? (r as readonly RetryRule[]) : [r as RetryRule]) {
+          const where = x.at == null ? '' : ` at "${x.at}"`
+          if (!(Number.isInteger(x.times) && x.times >= 0))
+            throw new Error(`loadmap: flow "${f}" retries${where} a whole number of times, not ${x.times}`)
+          if (x.budget != null && !(x.budget >= 0 && Number.isFinite(x.budget)))
+            throw new Error(`loadmap: flow "${f}" needs a retry budget${where} of 0 or more, not ${x.budget}`)
+          if (seen.has(x.at ?? ''))
+            throw new Error(`loadmap: flow "${f}" has two retry rules${where || ' with no stage'}: one for each`)
+          seen.add(x.at ?? '')
+          if (x.at != null && !stageIds.includes(x.at))
+            throw new Error(`loadmap: flow "${f}" retries at unknown stage "${x.at}"`)
+          if (
+            x.at != null &&
+            !waysOf(def as never, f).open &&
+            !waysOf(def as never, f).ways.some((w) => w.includes(x.at!))
+          )
+            throw new Error(`loadmap: flow "${f}" retries at "${x.at}", which is not on its way`)
+          // a rule of no retries is none
+          if (!(x.times > 0 && x.budget !== 0)) continue
+          if (x.at == null) top = x
+          else hops.set(x.at, x)
+        }
+        return { top, hops }
+      },
+      f,
+    )
   const retryOf = (f: string) => rulesOf(f).top
   /** The flow is sent again somewhere: by its client, or at a hop. */
   const retrying = (f: string) => rulesOf(f).top != null || rulesOf(f).hops.size > 0
@@ -1803,14 +1814,21 @@ function contextAt(
       for (const { stages: route, share } of paths(f)) {
         const first = from == null ? 0 : route.indexOf(from)
         if (first < 0) continue
-        through += share
+        // of one attempt: what is offered to each stage as if those before kept up, and what actually gets there
         let offered = 1
         let actual = 1
         let answered = 0
         let gone = 0
-        for (let i = first; i < route.length; i++) {
+        // what actually reaches `from`: its attempt fails a share of that, not of what a full stage before it kept
+        let entering = 1
+        for (let i = 0; i < route.length; i++) {
           const s = route[i]!
-          if ((from == null || i > first) && hops.has(s)) {
+          if (i === first) {
+            entering = actual
+            answered = 0
+            gone = 0
+          }
+          if (i >= first && (from == null || i > first) && hops.has(s)) {
             // what one attempt fails there, sent again as its rule says: 1 − (1 − p)(1 + e) fail them all. The retries
             // are the ones this share calls for, not the ones assumed so far: so a call never falls as the attempts
             // rise, and the solve climbs from below
@@ -1835,8 +1853,10 @@ function contextAt(
           }
           offered *= onward(s)
         }
-        failed += share * Math.max(0, 1 - answered - actual - gone)
-        dropped += share * gone
+        if (!(entering > 0)) continue
+        failed += share * entering * Math.max(0, 1 - (answered + actual + gone) / entering)
+        dropped += (share * entering * gone) / entering
+        through += share * entering
       }
       if (from != null) return through > 0 ? failed / through : 0
       // a unit that got through can still be too slow for its client; a dropped one is lost at its queue, never
@@ -1996,7 +2016,26 @@ function contextAt(
     const there = at ? failing.filter((c) => at.has(c.stage)).reduce((a, c) => a + c.rate, 0) : all
     if (fixed) return there
     const r = retrying(f) ? retries()[f] : undefined
+    // with a retry at a hop each stage's failures are sent again by the rules around it, not all by the same ones
+    if (r?.hops) return failing.reduce((a, c) => a + (!at || at.has(c.stage) ? c.rate * kept(f, c) : 0), 0)
     return r ? (all > 0 ? (r.rate * r.failed * there) / all : 0) : there
+  }
+  /**
+   * Of the attempts a stage fails, the share that fail for good, for a flow retried at a hop: the product, over the
+   * rules around the stage (its client's, and each hop's before it on the way), of the units that rule fails for good
+   * over the attempts it sees fail. A stage before every hop is under the client's rule alone; a unit too slow is the
+   * client's to send again, never a hop's.
+   */
+  const kept = (f: string, c: { stage: string; loss: Loss }) => {
+    const r = retries()[f]!
+    const ratio = (x: { rejected: number; failed: number }, attempts: number) =>
+      x.rejected > 0 && attempts > 0 ? Math.min(1, x.failed / (x.rejected * attempts)) : 0
+    let k = r.times ? ratio(r, r.rate > 0 ? r.attempts / r.rate : 1) : 1
+    if (c.loss === 'timedOut') return k
+    const way = paths(f).find((w) => w.stages.includes(c.stage))?.stages ?? []
+    for (const [h, x] of Object.entries(r.hops ?? {}))
+      if (way.includes(h) && way.indexOf(h) <= way.indexOf(c.stage)) k *= ratio(x, x.attempts)
+    return k
   }
   /**
    * The units a second a flow's fallback serves: what it fails for good past where it falls back after; what failed
@@ -2032,12 +2071,13 @@ function contextAt(
     memo(`${f} lost for good`, () => {
       const all = causes(f)
       const failing = all.reduce((a, c) => a + (c.loss === 'dropped' ? 0 : c.rate), 0)
-      const k = failing > 0 ? Math.min(1, forGood(f) / failing) : 0
+      const hops = !fixed && retrying(f) && retries()[f]!.hops != null
+      const k = hops ? 0 : failing > 0 ? Math.min(1, forGood(f) / failing) : 0
       const fb = def.flows[f]!.fallback
       const served = pastAfter(f)
       const out: { stage?: string; loss: Loss; rate: number }[] = all.map((c) => ({
         ...c,
-        rate: c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k,
+        rate: c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * (hops ? kept(f, c) : k),
       }))
       // a fallback serves what fails past its `after` and what the breaker fails fast, less what its own stages turn away
       if (fb)
@@ -2061,8 +2101,6 @@ function contextAt(
         const { top, hops } = rulesOf(f)
         if (top) rules.set(f, { flow: f, rule: top })
         for (const [at, rule] of hops) {
-          if (!paths(f).some((w) => w.stages.includes(at)))
-            throw flowError(`loadmap: flow "${f}" retries at "${at}", which is not on its way`, f, 'retry')
           rules.set(`${f}@${at}`, { flow: f, at, rule })
         }
       }

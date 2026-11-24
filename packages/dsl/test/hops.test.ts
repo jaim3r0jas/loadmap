@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compile, format } from '../src'
+import { edit, inspect } from '../src/internal'
 
 const SRC = `loadmap 1.8
 load { max: 10 }
@@ -64,6 +65,24 @@ describe('a retry at a hop, in the language', () => {
   it('leaves a flow’s one rule the one rule it was', () => {
     const one = compile(SRC.replace('  retry { at: payments; times: hopTries }\n', ''))
     expect(one.definition!.model.def.flows.orders!.retry).toEqual({ times: 1 })
+  })
+
+  it('is told from the flow’s other retries in the inspector: each rule has its own fields', () => {
+    const src = SRC.replace('times: hopTries', 'times: 2')
+    const retries = inspect(src, 'model')!.sections.filter((o) => o.keyword === 'retry')
+    expect(retries.map((o) => [o.path, o.title, o.fields.map((f) => f.key)])).toEqual([
+      ['flow:orders/retry', 'Retry', ['flow:orders/retry/times']],
+      ['flow:orders/retry:payments', 'Retry at payments', ['flow:orders/retry:payments/times']],
+    ])
+    const lines = (key: string, value: number) => {
+      const r = edit(src, key, value)
+      return 'source' in r ? r.source.split('\n').filter((l) => l.includes('retry {')) : r
+    }
+    expect(lines('flow:orders/retry/times', 3)).toEqual(['  retry { times: 3 }', '  retry { at: payments; times: 2 }'])
+    expect(lines('flow:orders/retry:payments/times', 1)).toEqual([
+      '  retry { times: 1 }',
+      '  retry { at: payments; times: 1 }',
+    ])
   })
 
   it('says what is wrong with it', () => {

@@ -755,8 +755,11 @@ for each stage. Retries inside retries multiply, which is how a small failure be
 retrying once and payments twice, a bank that fails half its calls is called 1.97 times an order where one rule
 alone would call it 1.5 times, and three rules of three attempts each can send 27. The failures shrink the same way:
 an attempt at payments fails only when all of its bank calls do. A hop's rule takes a `budget` as the client's does
-(of the units that reach its stage). A timeout is the client's: a hop's retry does not answer it. `ev.retry.orders.hops`
-gives each hop's attempts a unit, the Live panel shows them, and a dot sent again at a hop starts there.
+(of the units that reach its stage). A timeout is the client's: a hop's retry does not answer it, and the time its
+extra calls take is not in the flow's latency. `flows.orders` stays what the client sends, so a demand after the hop
+that should feel its retries reads `at.bank.orders`, not `flows.orders`. A hop's failing share is of what actually
+reaches it: behind a stage that is full, it sees less and retries less. `ev.retry.orders.hops` gives each hop's
+attempts a unit, the Live panel shows them, and a dot sent again at a hop starts there.
 
 #### Lost units
 

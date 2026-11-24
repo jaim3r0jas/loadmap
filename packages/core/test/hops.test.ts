@@ -120,6 +120,34 @@ describe('a retry at a hop', () => {
     }
   })
 
+  it('shares what fails for good out by the rules around each stage', () => {
+    // the API in front turns 10 away, which no rule sends again; the bank fails half, and payments calls four times
+    const base = shop({ at: 'pay', times: 3 }, { bankFails: 0.5 })
+    const m = defineModel({
+      ...base.def,
+      components: { ...base.def.components, api: { name: 'API', capacity: measured(90, 'req/s'), over: 'x' } },
+    } as never)
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.lost.orders!.causes).toEqual([
+      { stage: 'api', loss: 'rejected', rate: expect.closeTo(10, 9) },
+      { stage: 'bank', loss: 'failed', rate: expect.closeTo(90 * 0.5 ** 4, 9) },
+    ])
+    expect(ev.lost.orders!.share).toBeCloseTo(0.1 + 0.9 * 0.5 ** 4, 12)
+    expect(ev.retry.orders!.failed).toBeCloseTo(0.1 + 0.9 * 0.5 ** 4, 12)
+  })
+
+  it('counts a hop’s failures of what actually reaches it: behind a full stage it retries nothing it need not', () => {
+    // the API lets 50 of 100 through, and payments takes 60: nothing fails at payments, with or without its retries
+    const base = shop({ at: 'pay', times: 2 }, { pay: 60 })
+    const m = defineModel({
+      ...base.def,
+      components: { ...base.def.components, api: { name: 'API', capacity: measured(50, 'req/s'), over: 'x' } },
+    } as never)
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.retry.orders!.hops!.pay).toMatchObject({ attempts: 1, rejected: 0, failed: 0 })
+    expect(ev.lost.orders!.share).toBeCloseTo(0.5, 12)
+  })
+
   it('takes a budget of the units that reach its stage', () => {
     const ev = shop({ at: 'pay', times: 3, budget: 0.1 }, { pay: 50 }).evaluate({ load: 1 })
     expect(ev.at.pay.orders).toBeCloseTo(110, 9)

@@ -289,8 +289,16 @@ export function Meters({ lm }: { lm: LoadmapController }) {
         label: `${flowLabel(f)} attempts at ${ev.stages[s]?.label ?? s}`,
         state: h.attempts > 1.05 ? 'warn' : 'ok',
       })
-    // its client retries nothing: the hops' meters say it all
-    if (!r.times) continue
+    // its client retries nothing: what the hops' retries still leave failing
+    if (!r.times) {
+      items.push({
+        key: `${f}/failed`,
+        value: pct(r.failed),
+        label: `${flowLabel(f)} failing after the retries at its hops`,
+        state: r.failed > 0.005 ? 'over' : 'ok',
+      })
+      continue
+    }
     const per = r.attempts / r.rate
     items.push({
       key: `${f}/attempts`,
