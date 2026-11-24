@@ -113,7 +113,7 @@ A flow is what moves through the routes: requests, orders, events. Each has its 
 | `unit`     | One unit, singular: `'order'`                                                                                    |
 | `priority` | 1 is served first; flows of the same priority share capacity                                                     |
 | `overload` | What its backlog in a queue does: `{ drop?: { olderThan, reason? }, merge?: { share, reason? } }`, or a function |
-| `retry`    | `{ times, budget? }`: what is turned away is sent again; a function of the load and the parameters only          |
+| `retry`    | `{ times, budget?, at? }`, or a list of them: what fails is sent again; of the load and the parameters only      |
 | `timeout`  | Seconds a client waits: a slower unit fails (and retries with `retry`); needs a `service` on its way             |
 | `average`  | Its rate over a day against its peak, 0 to 1: what a [stock](#components) reads. Default 1                       |
 
@@ -478,7 +478,7 @@ its longest chain. `layout()` turns a view into a scene: [The layout](/api/more/
 | `routes`      | Each flow's route                                                                                          |
 | `paths`       | Each flow's ways through, `{ stages, share }`: its route once per branch of every split on it              |
 | `overload`    | Each flow's overload rules at these values                                                                 |
-| `retry`       | Each retrying flow's `{ times, rate, attempts, rejected, retried, failed }`                                |
+| `retry`       | Each retrying flow's `{ times, rate, attempts, rejected, retried, failed }`, and its `hops` by stage       |
 | `latency`     | Each flow's time through, or null where no stage on it has a `service`                                     |
 | `lost`        | What each flow loses for good: `{ rate, share, causes }`, after every retry and its fallback               |
 | `ctx`         | The context model functions saw: for labels and other view callbacks                                       |

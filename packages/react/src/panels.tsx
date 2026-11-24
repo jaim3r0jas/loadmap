@@ -281,6 +281,16 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   for (const f of model.flowIds) {
     const r = ev.retry[f]
     if (!r || !(r.rate > 0)) continue
+    // a retry at a hop: the attempts each unit that reaches the stage gets there
+    for (const [s, h] of Object.entries(r.hops ?? {}))
+      items.push({
+        key: `${f}/attempts/${s}`,
+        value: `${fmt(h.attempts)}×`,
+        label: `${flowLabel(f)} attempts at ${ev.stages[s]?.label ?? s}`,
+        state: h.attempts > 1.05 ? 'warn' : 'ok',
+      })
+    // its client retries nothing: the hops' meters say it all
+    if (!r.times) continue
     const per = r.attempts / r.rate
     items.push({
       key: `${f}/attempts`,

@@ -1061,6 +1061,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     example: 'retry { times: 3; budget: 0.1 }',
     args: [],
     props: {
+      at: {
+        value: 'route',
+        scope: 'const',
+        since: '1.8',
+        doc: "The stage whose caller retries: what fails there or after it is sent again from there, so only the stages from it on see those attempts. Without it the flow's client retries, from the start. A flow takes one retry without at and one for each stage, and retries inside retries multiply: `retry { at: payments; times: 2 }`.",
+      },
       times: {
         inspector: 'main',
         value: 'number',

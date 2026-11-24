@@ -957,7 +957,7 @@ export class Compiler {
       if (priority != null) def.priority = priority
       const overload = this.overload(b)
       if (overload) def.overload = overload
-      const retry = this.retry(b)
+      const retry = this.retry(b, resolveStage)
       if (retry) def.retry = retry
       const brs = b.children.filter((c) => c.keyword === 'breaker')
       for (const extra of brs.slice(1))
@@ -3577,23 +3577,60 @@ export class Compiler {
     return fixed ? at(undefined) : at
   }
 
-  /** A flow's retry rule: it reads only the load and the parameters, since retries change every other number. */
-  private retry(b: Block): RetryRule | ((values: any) => RetryRule | undefined) | undefined {
-    const r = b.children.filter((c) => c.keyword === 'retry')
-    if (!r.length) return undefined
-    if (r.length > 1) this.report.error('duplicate', r[1]!.at, '"retry" is set twice in this flow')
-    const rule = r[0]!
-    const times = this.dynProp<number>(rule, 'times', 'number')
-    const budget = this.dynProp<number>(rule, 'budget', 'number')
-    const w = this.prop(rule, 'when')
-    const when = w && placed(w.value, this.condition('when', w.value, 'values').run)
-    const at = (v: any): RetryRule | undefined => {
-      if (when && !when(v)) return undefined
-      const out: RetryRule = { times: (typeof times === 'function' ? times(v) : times) ?? 0 }
-      if (budget !== undefined) out.budget = typeof budget === 'function' ? budget(v) : budget
-      return out
+  /**
+   * A flow's retry rules: its client's (no `at`) and one for each hop that retries. They read only the load and the
+   * parameters, since retries change every other number. One rule of the client alone stays the one rule it was.
+   */
+  private retry(
+    b: Block,
+    stage: (n: Ident, what: string) => string | undefined,
+  ): RetryRule | RetryRule[] | ((values: any) => RetryRule | RetryRule[] | undefined) | undefined {
+    const blocks = b.children.filter((c) => c.keyword === 'retry')
+    if (!blocks.length) return undefined
+    const seen = new Set<string>()
+    const rules: { fixed: boolean; at: (v: any) => RetryRule | undefined }[] = []
+    for (const rule of blocks) {
+      const where = this.prop(rule, 'at')
+      let hop: string | undefined
+      if (where) {
+        if (where.value.t !== 'id' || (where.chain?.length ?? 1) !== 1) {
+          this.report.error('bad-route', where.value, 'a retry is at one stage of the route', 'at: payments')
+          continue
+        }
+        hop = stage(where.value as Ident, 'stage')
+        if (!hop) continue
+      }
+      if (seen.has(hop ?? '')) {
+        this.report.error(
+          'duplicate',
+          rule.at,
+          hop ? `"retry" is set twice at "${hop}" in this flow` : '"retry" is set twice in this flow',
+          hop ? undefined : 'a second retry is at a stage: retry { at: payments; times: 2 }',
+        )
+        continue
+      }
+      seen.add(hop ?? '')
+      const times = this.dynProp<number>(rule, 'times', 'number')
+      const budget = this.dynProp<number>(rule, 'budget', 'number')
+      const w = this.prop(rule, 'when')
+      const when = w && placed(w.value, this.condition('when', w.value, 'values').run)
+      rules.push({
+        fixed: !when && typeof times !== 'function' && typeof budget !== 'function',
+        at: (v: any): RetryRule | undefined => {
+          if (when && !when(v)) return undefined
+          const out: RetryRule = { times: (typeof times === 'function' ? times(v) : times) ?? 0 }
+          if (hop) out.at = hop
+          if (budget !== undefined) out.budget = typeof budget === 'function' ? budget(v) : budget
+          return out
+        },
+      })
     }
-    return !when && typeof times !== 'function' && typeof budget !== 'function' ? at(undefined) : at
+    if (!rules.length) return undefined
+    const fixed = rules.every((r) => r.fixed)
+    // the one rule of the client, as it always compiled
+    if (rules.length === 1 && seen.has('')) return fixed ? rules[0]!.at(undefined) : rules[0]!.at
+    const all = (v: any) => rules.flatMap((r) => r.at(v) ?? [])
+    return fixed ? all(undefined) : all
   }
 
   private component(b: Block, flows: Map<string, Span>, box?: Block) {

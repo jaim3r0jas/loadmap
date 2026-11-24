@@ -44,6 +44,8 @@ export interface Particle {
   back?: boolean
   /** Which attempt this is: 0 for the first, 1 for the first retry, and so on. */
   attempt?: number
+  /** The retries it has had at each hop that retries, by stage: a retry at a hop starts again there. */
+  hops?: Readonly<Record<string, number>>
   /** Set on a unit its flow failed for good, served by its fallback: from the stage it falls back after, on. */
   fallback?: true
   /** Set on a unit lost for good, heading along the edge into the lost box that counts it, where it fades. */
@@ -477,6 +479,38 @@ export class Sim {
     return { ...base, leg: 0, phase: 'fade', dur: 0.6, from: { stage: null }, to: { stage: null }, outcome: 'rejected' }
   }
 
+  /**
+   * A unit that failed at a stage, sent again from the nearest hop before it that retries and has a retry left: the
+   * hop's own attempts start there, and those of the hops after it start afresh.
+   */
+  #retryAt(d: Particle, at: string | null): Particle | null {
+    const hops = this.#ev.retry[d.flow]?.hops
+    if (!hops || at == null) return null
+    const way = this.#way(d.flow, d.path)
+    for (let j = way.indexOf(at); j >= 0; j--) {
+      const s = way[j]!
+      const rule = hops[s]
+      const had = d.hops?.[s] ?? 0
+      if (!rule || had >= rule.times || this.#r() >= rule.retried) continue
+      const kept = Object.fromEntries(Object.entries(d.hops ?? {}).filter(([h]) => way.indexOf(h) < j))
+      const from = j > 0 ? this.#place(way[j - 1]!, d.flow) : { stage: null }
+      return {
+        id: this.#nextId++,
+        flow: d.flow,
+        leg: j,
+        ...(d.path != null && { path: d.path }),
+        phase: 'move',
+        t: 0,
+        dur: this.#o.legSeconds,
+        from,
+        to: this.#place(s, d.flow, from),
+        ...(d.attempt != null && { attempt: d.attempt }),
+        hops: { ...kept, [s]: had + 1 },
+      }
+    }
+    return null
+  }
+
   /** A unit turned away, sent again from its source while it has retries left and the budget allows. */
   #retry(d: Particle): Particle | null {
     const r = this.#ev.retry[d.flow]
@@ -601,7 +635,9 @@ export class Sim {
     }
     const reject = (d: Particle, outcome: 'rejected' | 'timedout' | 'failed' = 'rejected', at = d.to.stage) => {
       // the fallback's own units are no attempts: what it turns away is lost
-      const again = !d.fallback && this.particles.length + born.length < this.#o.maxParticles ? this.#retry(d) : null
+      // a hop's caller sends it again first; a timeout is the client's, so only the client's retry answers it
+      const room = !d.fallback && this.particles.length + born.length < this.#o.maxParticles
+      const again = room ? ((outcome === 'timedout' ? null : this.#retryAt(d, at)) ?? this.#retry(d)) : null
       // a unit sent again is no loss: its attempt fades where it was turned away, and the retry starts at the source
       if (again) {
         fade(d, outcome, 0.6)

@@ -736,6 +736,28 @@ tries) but multiply what everything in front sees: with 3 retries a gateway of 2
 1,000 runs out at 1,067 req/s instead of 2,000. `flows.requests` is the attempts; the meters show the attempts per
 request and the share failing after every retry, and the retries are drawn as rings.
 
+That rule is the flow's client: it sends the unit again from the start, so every stage sees its attempts. A service
+in the middle retries too, and `at` (from `loadmap 1.8`) says where:
+
+```loadmap
+flow orders "orders" {
+  rate: 400 * load
+  retry { times: 1 }
+  retry { at: payments; times: 2 }
+  route: gateway -> api -> payments -> bank
+  from: users
+}
+```
+
+A retry `at: payments` is the caller of payments calling again: what fails at payments or after it is sent again from
+there, so only payments and the bank see those attempts, not the gateway. A flow takes one rule without `at` and one
+for each stage. Retries inside retries multiply, which is how a small failure becomes a storm: with the client
+retrying once and payments twice, a bank that fails half its calls is called 1.97 times an order where one rule
+alone would call it 1.5 times, and three rules of three attempts each can send 27. The failures shrink the same way:
+an attempt at payments fails only when all of its bank calls do. A hop's rule takes a `budget` as the client's does
+(of the units that reach its stage). A timeout is the client's: a hop's retry does not answer it. `ev.retry.orders.hops`
+gives each hop's attempts a unit, the Live panel shows them, and a dot sent again at a hop starts there.
+
 #### Lost units
 
 A lost box is where what other boxes lose goes, counted. A unit a stage turns away (a limiter above its limit, a
@@ -1798,7 +1820,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed` | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow | |
 
 ## In code
 
@@ -2405,6 +2427,7 @@ retry { times: 3; budget: 0.1 }
 
 | Property | Value | |
 | --- | --- | --- |
+| `at` | route, constant | The stage whose caller retries: what fails there or after it is sent again from there, so only the stages from it on see those attempts. Without it the flow's client retries, from the start. A flow takes one retry without at and one for each stage, and retries inside retries multiply: `retry { at: payments; times: 2 }`. From loadmap 1.8. |
 | `times` (required) | number, formula of parameters | Retries after the first attempt: a whole number. Reads only the parameters. |
 | `budget` | share, formula of parameters | At most this share of the flow is added as retries: 0.1 adds at most 10 %. Without one, every retry is sent. |
 | `when` | boolean, formula of parameters | The rule applies only while this is true; it reads only parameters. |
