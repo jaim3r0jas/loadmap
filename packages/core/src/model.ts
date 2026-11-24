@@ -1215,22 +1215,42 @@ function context(
     })
   /**
    * The share of a flow its breaker admits: 1 while its failures stay at or under `opens`; past that, the α at which
-   * the failures among the admitted are `opens`, found by bisection (the failures only rise with what is admitted).
+   * the failures among the admitted are `opens`. The failures only rise with what is admitted, so the root stays
+   * bracketed; a secant step that halves the stale side's value (Illinois) finds it in about ten trials where
+   * bisection took fifty, and each trial is a whole evaluation of the flow's way, on every load the ranking scans.
    */
   const admitted = (f: string): number =>
     memo(`admitted of ${f}`, () => {
       const b = breakerOf(f)!
       const lam = rate(f)
       // each trial holds the flow at its trial rate, the other values and the averaged flag as they are here
-      const p = (x: number) =>
-        context(def, values, bound, pinned, fixed, slow, averaged, { ...trial, [f]: x }).failure(f)
-      if (!(lam > 0) || p(lam) <= b.opens) return 1
+      const excess = (x: number) =>
+        context(def, values, bound, pinned, fixed, slow, averaged, { ...trial, [f]: x * lam }).failure(f) - b.opens
+      const full = lam > 0 ? excess(1) : 0
+      if (!(full > 0)) return 1
+      // nothing admitted fails nothing: below where it opens
       let lo = 0
+      let flo = -b.opens
       let hi = 1
-      for (let i = 0; i < 50; i++) {
-        const mid = (lo + hi) / 2
-        if (p(mid * lam) > b.opens) hi = mid
-        else lo = mid
+      let fhi = full
+      let side = 0
+      for (let i = 0; i < 60 && hi - lo > 1e-12; i++) {
+        const secant = (lo * fhi - hi * flo) / (fhi - flo)
+        // a flat stretch can put the secant on a bound: bisect then, so the bracket still shrinks
+        const x = secant > lo && secant < hi ? secant : (lo + hi) / 2
+        const fx = excess(x)
+        if (fx > 0) {
+          hi = x
+          fhi = fx
+          if (side > 0) flo /= 2
+          side = 1
+        } else {
+          lo = x
+          flo = fx
+          if (side < 0) fhi /= 2
+          side = -1
+          if (fx === 0) break
+        }
       }
       return lo
     })
