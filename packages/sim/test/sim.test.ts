@@ -171,6 +171,73 @@ describe('queues', () => {
   })
 })
 
+describe('a new version of the model', () => {
+  it('is adopted with its dots and backlog when its flows, stages and routes are the same, at its own figures', () => {
+    // over capacity: a backlog grows
+    const sim = run(pipeline({ a: 100, b: 0, cap: 50 }), 60)
+    const was = { dots: sim.particles.length, time: sim.time, backlog: sim.queue('topic', 'a').backlog }
+    expect(was.dots).toBeGreaterThan(0)
+    expect(was.backlog).toBeGreaterThan(0)
+    // the pool's capacity edited: nothing starts over, and the backlog drains from where it stood
+    const more = pipeline({ a: 100, b: 0, cap: 5000 })
+    expect(sim.adopt(more, more.evaluate({ load: 1 }))).toBe(true)
+    expect(sim.particles.length).toBe(was.dots)
+    expect(sim.time).toBe(was.time)
+    expect(sim.queue('topic', 'a').backlog).toBe(was.backlog)
+    for (let i = 0; i < 600; i++) sim.step(1 / 60)
+    expect(sim.queue('topic', 'a').backlog).toBeLessThan(was.backlog)
+  })
+
+  it('is not adopted when a fan-out hands on to another stage, though every flow passes the same stages', () => {
+    const fan = (to: 'left' | 'right') =>
+      defineModel({
+        load: p.load({ max: 10 }),
+        flows: { a: { rate: ({ load }) => 100 * load } },
+        components: {
+          pool: { name: 'Pool', demand: ({ flows }) => flows.a, capacity: measured(500, 'u/s'), over: '' },
+        },
+        stages: {
+          out: fanout({ to: [{ stage: to, share: 1 }] }),
+          left: sink(),
+          right: sink(),
+          pool: workers('pool', { pods: 2, perPod: 2 }),
+        },
+        routes: { a: ['pool', 'out'] },
+      })
+    const first = fan('left')
+    const sim = createSim(first, first.evaluate({ load: 1 }))
+    const again = fan('left')
+    expect(sim.adopt(again, again.evaluate({ load: 1 }))).toBe(true)
+    const other = fan('right')
+    expect(sim.adopt(other, other.evaluate({ load: 1 }))).toBe(false)
+  })
+
+  it('is not adopted when a flow goes another way: its sim starts from its own', () => {
+    const sim = run(pipeline({ a: 100, b: 0, cap: 50 }), 60)
+    const was = { dots: sim.particles.length, backlog: sim.queue('topic', 'a').backlog }
+    const other = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load }, b: { rate: () => 0 } },
+      components: { pool: { name: 'Pool', demand: ({ flows }) => flows.a, capacity: measured(50, 'u/s'), over: '' } },
+      stages: {
+        gate: pass('pool'),
+        topic: queue({ partitions: { a: 4, b: 4 } }),
+        pool: workers('pool', { pods: 3, perPod: 4 }),
+      },
+      // a no longer passes the gate
+      routes: { a: ['topic', 'pool'], b: ['gate', 'topic', 'pool'] },
+    })
+    expect(sim.adopt(other, other.evaluate({ load: 1 }))).toBe(false)
+    expect(sim.particles.length).toBe(was.dots)
+    expect(sim.queue('topic', 'a').backlog).toBe(was.backlog)
+    // nor with other options: the same model at another speed is another sim
+    const same = pipeline({ a: 100, b: 0, cap: 50 })
+    expect(sim.adopt(same, same.evaluate({ load: 1 }), { seed: 1, speed: 5 })).toBe(false)
+    expect(sim.adopt(same, same.evaluate({ load: 1 }), { seed: 2, speed: 10 })).toBe(false)
+    expect(sim.adopt(same, same.evaluate({ load: 1 }), { seed: 1, speed: 10 })).toBe(true)
+  })
+})
+
 describe('worker fill', () => {
   const podSums = (fill: 'round-robin' | 'in-order') => {
     const f = fillOrder(3, 8, fill, 7)

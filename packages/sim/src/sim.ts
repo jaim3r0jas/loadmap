@@ -118,22 +118,30 @@ export class Sim {
   #nextId = 1
 
   constructor(model: Model, ev: Evaluation, o: SimOptions = {}) {
-    this.#o = {
-      seed: 1,
-      speed: 10,
-      dotTarget: 28,
-      minDots: 1,
-      maxDots: 40,
-      legSeconds: 0.45,
-      maxParticles: 800,
-      ...o,
-    }
+    this.#o = { ...DEFAULTS, ...o }
     this.speed = this.#o.speed
     this.#r = rng(this.#o.seed)
     this.#model = model
     this.update(ev)
     // start the workers at their steady-state share instead of ramping up from idle
     for (const s of Object.values(ev.stages)) if (s.kind === 'workers') this.#busy.set(s.id, this.#steadyBusy(s.id))
+  }
+
+  /**
+   * A new version of the model (its text edited) taken without starting over, when the dots it would run are on the
+   * ways they are on now: the same flows, each routed as before, through the same stages, each of its kind and with
+   * what it hands on to (a fan-out's branches, what a lost box takes). Every dot, backlog and busy worker stays, and
+   * the new figures apply as new values do: a backlog that built up under the old ones drains at the new. False, and
+   * nothing changed, for a model that is another structure or for other options (a sim started over with another
+   * seed too): its sim starts from its own.
+   */
+  adopt(model: Model, ev: Evaluation, o: SimOptions = {}): boolean {
+    for (const k of Object.keys(DEFAULTS) as (keyof SimOptions)[])
+      if ((o[k] ?? DEFAULTS[k]) !== (this.#o[k] ?? DEFAULTS[k])) return false
+    if (waysOf(model, ev) !== waysOf(this.#model, this.#ev)) return false
+    this.#model = model
+    this.update(ev)
+    return true
   }
 
   /**
@@ -662,6 +670,28 @@ export class Sim {
     }
     return n - 1
   }
+}
+
+const DEFAULTS: Required<SimOptions> = {
+  seed: 1,
+  speed: 10,
+  dotTarget: 28,
+  minDots: 1,
+  maxDots: 40,
+  legSeconds: 0.45,
+  maxParticles: 800,
+}
+
+/**
+ * What decides where dots can be: the stages each flow passes on each of its ways, and every stage without its
+ * figures (its kind, its component, the flows it holds, where a fan-out or a lost box hands on).
+ */
+function waysOf(model: Model, ev: Evaluation): string {
+  const noFigures = (_: string, v: unknown) => (typeof v === 'number' || typeof v === 'boolean' ? undefined : v)
+  return JSON.stringify([
+    model.flowIds.map((f) => [f, (ev.paths[f] ?? []).map((w) => w.stages)]),
+    JSON.stringify(ev.stages, noFigures),
+  ])
 }
 
 export function createSim(model: Model, ev: Evaluation, o?: SimOptions): Sim {
