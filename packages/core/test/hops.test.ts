@@ -164,7 +164,7 @@ describe('a retry at a hop', () => {
     ).toThrow('has two retry rules at "pay"')
     expect(() => shop({ at: 'nope', times: 1 }).evaluate()).toThrow('retries at unknown stage "nope"')
     expect(() => shop({ at: 'gone', times: 1 }).evaluate()).toThrow('retries at "gone", which is not on its way')
-    expect(() => shop({ at: 'pay', times: 1 }, { breaker: 0.5 }).evaluate()).toThrow('a breaker and retries')
+    expect(() => shop({ at: 'pay', times: 1 }, { breaker: 0.5 }).evaluate()).toThrow('a breaker and a retry at a hop')
     // a rule of no retries is none
     expect(shop({ at: 'pay', times: 0 }, { pay: 50 }).evaluate().retry.orders).toBeUndefined()
   })

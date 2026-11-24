@@ -836,9 +836,16 @@ attempts failing, it fails calls fast, so they reach no stage. In steady state i
 which the failures among what it admits are `opens`: with a rate λ that fails a share p(λ) of its attempts, p(α·λ) =
 `opens`, and α = 1 while p(λ) is under it. The failures only rise with what is admitted, so α is unique, and it is
 found by bisection. The stage that was failing then runs past capacity only as far as fails `opens` of what it gets;
-the share 1 − α fails fast at the source, or goes to the flow's fallback. A flow that retries takes no breaker: the
-breaker and the retries would each decide what the other sees. `ev.breakers.quotes` gives `admitted` and
+the share 1 − α fails fast at the source, or goes to the flow's fallback. `ev.breakers.quotes` gives `admitted` and
 `failedFast`, and on the board the calls it fails fast fade at the source.
+
+A flow's `retry` and its breaker work together. Each attempt
+goes through the breaker, and one it fails fast is a failed attempt, sent again like any other. The rate the breaker
+admits is the one at which the failures behind it are `opens`, whatever is sent: more attempts only lower the share
+it admits. So the retries still settle from below, as many units fail for good as without the breaker, and the stages
+behind it are spared the storm. 200 quotes a second against a pricing service of 100, two retries: the client sends
+485 attempts a second, and pricing sees the 125 the breaker admits, not the 485. A breaker is in the flow's callers,
+so it goes with the client's retry, not with one `at` a hop.
 
 A dead-letter queue is a lost box with a stock beside it, which reads what reaches the box: `component dlq { fills:
 at.deadLetters * 1KB; keeps: 14d; … }` ([Stocks](#stocks)). In TypeScript, `fallback: { after: 'api', route:

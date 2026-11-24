@@ -165,6 +165,16 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'at: db' }, { kind: 'contains', text: 'times: 2' }],
   },
   {
+    id: 'breaker-with-retries',
+    example: SEARCH,
+    request: 'Put a circuit breaker on the searches that opens past 30 % of calls failing. Keep their retries.',
+    asserts: [
+      { kind: 'change' },
+      { kind: 'contains', text: 'breaker { opens: 30% }' },
+      { kind: 'contains', text: 'retry {' },
+    ],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',
