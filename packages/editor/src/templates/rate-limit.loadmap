@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # A rate limiter in front of a service that cannot take every request: above the limit clients get 429s, and what
 # gets through never exceeds what the service and its database can take.
 title: "Rate limiter"

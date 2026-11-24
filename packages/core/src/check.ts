@@ -1,7 +1,16 @@
 import type { CrossingRange } from './capacity'
 import { duration, fmt, multiples, pct, period } from './format'
 import { PERCENTILES } from './latency'
-import { type ComponentResult, crossing, expectationNamed, type Model, multipleAfter, reach, sureness } from './model'
+import {
+  type ComponentResult,
+  crossing,
+  expectationNamed,
+  type Lost,
+  type Model,
+  multipleAfter,
+  reach,
+  sureness,
+} from './model'
 import type { Values } from './params'
 
 /**
@@ -38,6 +47,11 @@ export interface Expectation<C extends string = string> {
   p50?: number
   p95?: number
   p99?: number
+  /**
+   * What is lost for good, as a share of what a flow sends: it stays at or under this up to `underTarget`, or at the
+   * scenario's values without one. One flow with `flow`, every flow without.
+   */
+  lost?: number
   /** A warning is reported but never fails a check run (`loadmap check`); default fail. */
   severity?: 'warn' | 'fail'
 }
@@ -91,6 +105,7 @@ export function check<P, C extends string>(
     const down =
       outage?.kind === 'select' && e.down != null ? ` with ${outage.format?.(e.down) ?? `${e.down} down`}` : ''
     const where = (scenario ? ` in ${scenario.label}` : '') + down
+    if (e.lost != null) return lostCheck(model, e, values ?? {}, ev, where, gaps)
     if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
       return latencyCheck(model, e, values ?? {}, ev, where, gaps)
     const range = (k: 'target' | 'full') => (c ? c[`${k}Range`] : ev[k])
@@ -231,6 +246,93 @@ function latencyCheck<P, C extends string>(
     range.low >= e.underTarget
       ? `${name} stays under ${duration(under)} ${Number.isFinite(range.low) ? 'up to ' : ''}${found}${where}`
       : `expected at least ${fmt(e.underTarget)}×, but ${name} passes ${duration(under)} at ${found}${where}`
+  const edge =
+    range.low < e.underTarget && range.high >= e.underTarget
+      ? [`holds at ${fmt(e.underTarget)}× only at the high edge of a ±`]
+      : []
+  return result(e, outcome, reasons(outcome, edge), { target: range, full: null }, message)
+}
+
+const share = (x: number) => pct(x, true)
+const LOSS_WORDS = { rejected: 'turned away', dropped: 'dropped', timedOut: 'too slow' } as const
+
+/** What a flow (or the flow that loses most) loses for good against a share: at the values, or up to `underTarget`. */
+function lostCheck<P, C extends string>(
+  model: Model<P, string, C>,
+  e: Expectation<C>,
+  values: object,
+  ev: ReturnType<Model<P, string, C>['evaluate']>,
+  where: string,
+  gaps: readonly [string, { missing?: string }][],
+): CheckResult<C> {
+  if (e.component != null || e.notFull != null || PERCENTILES.some((q) => e[q] != null))
+    throw new Error('loadmap: an expectation on what is lost takes no component, no notFull and no latency')
+  const under = e.lost!
+  const flows = e.flow == null ? model.flowIds : [e.flow]
+  if (!flows.every((f) => model.flowIds.includes(f))) throw new Error(`loadmap: no flow "${e.flow}"`)
+  // the flow that loses the largest share speaks for all of them
+  const worst = (bound: 'low' | 'high', l: number) => {
+    const all = model.lost({ ...values, load: l } as Partial<Values<P>>, bound, flows)
+    const f = flows.reduce((a, x) => (all[x]!.share > all[a]!.share ? x : a), flows[0]!)
+    return { f, ...all[f]! }
+  }
+  const at = (bound: 'low' | 'high', l: number) => worst(bound, l).share
+  // a share is held to a millionth of a percent: the sums behind it are not exact
+  const past = (x: number) => x > under + 1e-8
+  const name = (f: string) => model.def.flows[f]?.label ?? f
+  // any measured data that is missing may move what a flow loses: a capacity once, for its component
+  const all = Object.values<ComponentResult<C>>(ev.components)
+  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
+  const data = [
+    ...all.filter((x) => x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
+    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
+  ]
+  const verdict = (low: boolean, high: boolean): Outcome =>
+    !high && !data.length ? 'fail' : data.length || !low ? 'inconclusive' : 'pass'
+  const reasons = (outcome: Outcome, edge: string[]) => (outcome === 'fail' ? [] : [...data, ...edge])
+  const most = share(under)
+  const every = e.flow == null
+  // a share just past the limit reads as the limit at two digits: then with four
+  const more = (x: number) => (share(x) === most ? `${Number((x * 100).toPrecision(4))} %` : share(x))
+  // a flow's label is often a plural ("orders"): the share is the subject, so the verb fits either
+  const kept = (who: string) => (under > 0 ? `at most ${most} of ${who}` : every ? 'nothing' : `nothing of ${who}`)
+  if (e.underTarget == null) {
+    const load = ev.values.load
+    // the wording says what the pessimistic edge shows, its cause too
+    const { f, share: low, causes } = worst('low', load)
+    const high = at('high', load)
+    const outcome = verdict(!past(low), !past(high))
+    const cause = causes.reduce<Lost['causes'][number] | undefined>(
+      (a, c) => (a && a.rate >= c.rate ? a : c),
+      undefined,
+    )
+    const stage = cause?.stage == null ? undefined : (ev.stages[cause.stage] as { component?: C } | undefined)
+    const place = stage?.component ? ev.components[stage.component]?.short : cause?.stage
+    const by = !cause
+      ? ''
+      : cause.stage == null
+        ? ', most of it failed fast by its breaker'
+        : `, most of it ${LOSS_WORDS[cause.loss]} at ${place}`
+    const message = !past(low)
+      ? low > 1e-8
+        ? `${share(low)} of ${name(f)} is lost at ${fmt(load)}×${where}, within ${most}`
+        : `nothing${every ? '' : ` of ${name(f)}`} is lost at ${fmt(load)}×${where}`
+      : `expected ${kept(every ? 'every flow' : name(f))} lost, but ${more(low)}${every ? ` of ${name(f)}` : ''} is lost at ${fmt(load)}×${where}${by}`
+    const edge = past(low) && !past(high) ? ['holds only at the high edge of a ±'] : []
+    return result(e, outcome, reasons(outcome, edge), { target: null, full: null }, message)
+  }
+  const max = model.searchMax
+  const cross = (bound: 'low' | 'high') =>
+    crossing((l) => (past(at(bound, l)) ? 1 : 0), 1, max) ?? Number.POSITIVE_INFINITY
+  const range = { low: cross('low'), high: cross('high') }
+  const outcome = verdict(range.low >= e.underTarget, range.high >= e.underTarget)
+  const found = Number.isFinite(range.low) ? multiples(range, max) : `past ${fmt(max)}×`
+  // the flow that loses first, just past where the first one does
+  const first = name(Number.isFinite(range.low) ? worst('low', Math.min(max, range.low * 1.001)).f : flows[0]!)
+  const message =
+    range.low >= e.underTarget
+      ? `${kept(every ? 'every flow' : first)} is lost ${Number.isFinite(range.low) ? 'up to ' : ''}${found}${where}`
+      : `expected at least ${fmt(e.underTarget)}×, but ${under > 0 ? `more than ${most}` : 'some'} of ${first} is lost from ${found}${where}`
   const edge =
     range.low < e.underTarget && range.high >= e.underTarget
       ? [`holds at ${fmt(e.underTarget)}× only at the high edge of a ±`]

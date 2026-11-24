@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```loadmap
-loadmap 1.7
+loadmap 1.8
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -46,7 +46,7 @@ which is text alone.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.7`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.8`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -400,6 +400,21 @@ expectation a warning whatever it finds: it is reported, and never fails the run
 ```loadmap
 expect "Black Friday keeps 3×" { scenario: Proposed; underTarget: 3; severity: warn }
 ```
+
+An expectation can also hold what is **lost** (from `loadmap 1.8`): the share of what a flow sends that is gone for
+good, turned away, dropped by a queue or too slow for its timeout, after every retry and after what its fallback
+serves. That is what a user sees, where a utilization is what a machine sees:
+
+```loadmap
+expect "Orders lose under 0.1 % up to 5×" { flow: orders; lost: 0.1%; underTarget: 5× }
+expect "Nothing is lost with a zone out" { down: zone; lost: 0% }
+```
+
+With `underTarget` it holds up to that load multiple; without one it is checked at the scenario's values, as a flow's
+latency is. Without a `flow` it holds for each flow, and the one that loses most is named. A failure says where:
+"expected at most 0.1 % of orders lost, but 14 % is lost at 1×, most of it turned away at the payment provider". In
+code it is `ev.lost.orders` (its rate, its share and each stage's part) and `model.lost(values)`. The Live panel shows
+the share of each flow an expectation holds, red past what is promised at the values shown.
 
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
 line in the pull request, and a table of the expectations goes into the job summary.
@@ -1247,7 +1262,7 @@ straight under `loadmap`, before any other statement:
 
 ```loadmap
 # shop.loadmap
-loadmap 1.7
+loadmap 1.8
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
@@ -1690,7 +1705,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.7`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.8`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1721,6 +1736,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good | |
 
 ## In code
 
@@ -1970,7 +1986,7 @@ view { direction: right; speed: 10; fullScreen: [verdict, controls] }
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```loadmap
-loadmap 1.7
+loadmap 1.8
 ```
 
 After the keyword: version.
@@ -2075,7 +2091,8 @@ After the keyword: [label].
 | `scenario` | scenario, constant | The scenario whose values it checks; the defaults without one. |
 | `down` | domain, constant | A failure domain with one part out (N−1), on top of the scenario: `down: zone`. From loadmap 1.7. |
 | `component` | component, constant | One component; the first limit without one. |
-| `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. |
+| `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. With lost, the flow whose losses count. |
+| `lost` | share, constant | What is lost for good (turned away, dropped or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one. From loadmap 1.8. |
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
 | `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
 | `p99` | number in seconds, constant | The flow's 99th percentile stays under this many seconds. |

@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 include "./alerts.data.loadmap"
 include "./alerts.story.loadmap"
 import "./platform.loadmap" { podPool }

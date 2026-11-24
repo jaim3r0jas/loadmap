@@ -47,6 +47,7 @@ export {
   type Fallback,
   type FlowDef,
   type FlowPath,
+  type Lost,
   type MeasureHint,
   type Model,
   type ModelDef,

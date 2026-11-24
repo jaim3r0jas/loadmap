@@ -132,6 +132,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'underTarget: 12' }],
   },
   {
+    id: 'expect-lost',
+    example: CHECKOUT,
+    request: 'Add an expectation that orders lose at most 0.1 % of what they send, up to 5× today.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'lost: 0.1%' }, { kind: 'contains', text: 'flow: orders' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

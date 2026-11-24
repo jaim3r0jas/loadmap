@@ -290,7 +290,7 @@ describe('the models', () => {
   it('writes the selection and the files into the context', () => {
     const c = contextText(shop, { selection: { box: 'db' } })
     expect(c).toContain('The box db: the request is about it first.')
-    expect(c).toContain('```loadmap\nloadmap 1.7')
+    expect(c).toContain('```loadmap\nloadmap 1.8')
   })
 
   it('stops when the reader cancels, and says when an answer was cut off', async () => {

@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # Orders are written to a database whose volume fills a little every day. The database keeps up at every load the
 # slider reaches; the volume runs out first, on a date, as the orders grow. The logs keep a few days and settle.
 title: "Disk that fills up"

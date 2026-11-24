@@ -213,7 +213,7 @@ describe('edit', () => {
       '+  capacity: configured(20_000 * gateways, "req/s", "vendor benchmark, not load-tested")',
     )
     // a file stamped before 1.6 writes it "±", as "+-" is a plus and a minus there
-    const old = checkout.replace('loadmap 1.7', 'loadmap 1.5').replaceAll(' +- ', ' ± ')
+    const old = checkout.replace('loadmap 1.8', 'loadmap 1.5').replaceAll(' +- ', ' ± ')
     expect(diff(old, 'pool:workerPool/capacity.within', 10)[1]).toBe(
       '+  capacity: measured(pods * 2 ± 10%, "cores", "pod CPU limit")',
     )

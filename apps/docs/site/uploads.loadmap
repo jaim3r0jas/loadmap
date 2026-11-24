@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # A small definition to start from. Change a number, a label or a route; the diagram follows.
 title: "Photo uploads"
 view { direction: right }

@@ -264,12 +264,12 @@ describe('loadmap lsp', () => {
 
 describe('loadmap lsp, refactorings', () => {
   const shop = readFileSync(new URL('../../../examples/shop-live/shop.loadmap', import.meta.url), 'utf8')
-  const story = 'loadmap 1.7\npart of "./shop.loadmap"\n'
+  const story = 'loadmap 1.8\npart of "./shop.loadmap"\n'
 
   /** A project on disk, the model open in a client that can make, move and remove files. */
   async function project() {
     const dir = await mkdtemp(join(tmpdir(), 'loadmap-lsp-'))
-    const model = shop.replace('loadmap 1.7\n', 'loadmap 1.7\ninclude "./shop.story.loadmap"\n')
+    const model = shop.replace('loadmap 1.8\n', 'loadmap 1.8\ninclude "./shop.story.loadmap"\n')
     await writeFile(join(dir, 'shop.loadmap'), model)
     await writeFile(join(dir, 'shop.story.loadmap'), story)
     const c = client()

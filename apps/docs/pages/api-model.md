@@ -360,6 +360,7 @@ a page and its recordings say the same date on any day. `model.dateAt(multiple)`
 | `notFull`     | Nothing (or this component) runs out before this multiple                                             |
 | `lasts`       | Nothing (or this component) runs out for this many seconds from `growth.asOf`; needs growth           |
 | `flow`        | With `p50`, `p95` or `p99` (seconds): the flow's latency stays under it, up to `underTarget` if given |
+| `lost`        | A share: `flow` (or each flow) loses at most this for good, up to `underTarget` if given              |
 | `severity`    | `'warn'` is reported but never fails a check run; default `'fail'`                                    |
 
 ```ts
@@ -367,6 +368,7 @@ expect: [
   { label: 'Today keeps 10×', underTarget: 10 },
   { label: 'Proposed keeps 20×', scenario: 'Proposed', underTarget: 20 },
   { label: 'Searches answer in 150 ms to 10×', flow: 'searches', p99: 0.15, underTarget: 10 },
+  { label: 'Searches lose under 0.1 % to 5×', flow: 'searches', lost: 0.001, underTarget: 5 },
 ],
 ```
 
@@ -441,6 +443,7 @@ its longest chain. `layout()` turns a view into a scene: [The layout](/api/more/
 | `defaults()`                                                   | Every value at its default, the load included                                                            |
 | `utilization(values?, bound?)`                                 | Each component's utilization, without the crossings; `bound` reads every capacity at `'low'` or `'high'` |
 | `latency(values?, bound?, flows?)`                             | Each flow's latency, as `evaluate` gives it                                                              |
+| `lost(values?, bound?, flows?)`                                | What each flow loses for good, as `evaluate` gives it                                                    |
 | `stagesAt(values?)`                                            | `values`, `ctx`, `stages` and `paths` alone: cheap to call for many values                               |
 | `scenarioOf(values)`                                           | The scenario these values are (the load aside), or null                                                  |
 | `dateAt(multiple)`                                             | When the load reaches it, from `growth`; null without growth, and at 1× or below                         |
@@ -474,6 +477,7 @@ its longest chain. `layout()` turns a view into a scene: [The layout](/api/more/
 | `overload`    | Each flow's overload rules at these values                                                                 |
 | `retry`       | Each retrying flow's `{ times, rate, attempts, rejected, retried, failed }`                                |
 | `latency`     | Each flow's time through, or null where no stage on it has a `service`                                     |
+| `lost`        | What each flow loses for good: `{ rate, share, causes }`, after every retry and its fallback               |
 | `ctx`         | The context model functions saw: for labels and other view callbacks                                       |
 
 A component's result (`ev.components.db`):
@@ -507,6 +511,11 @@ worker's share of the work.
 A flow's `latency` is `{ mean, p50, p95, p99 }` in seconds (`Infinity` once a stage on a way is past full), with
 `unknown` (components on its way whose time is not known), and with a timeout `timedOut` (the share slower than it)
 and `ways` (the same per path).
+
+A flow's `lost` is what it loses for good: `rate` in units a second, `share` of what it sends before retries, and
+`causes`, each stage's part as `{ stage, loss, rate }` with `loss` one of `'rejected'`, `'dropped'` and `'timedOut'`.
+What a breaker fails fast has no `stage`. With a fallback, what it serves is not lost, and what its own stages turn
+away is.
 
 ## Checks, comparisons and headroom
 

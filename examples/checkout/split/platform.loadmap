@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 library "Checkout platform"
 # What the team's models share: its worker pod and its database, each written once.
 

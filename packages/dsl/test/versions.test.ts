@@ -34,13 +34,14 @@ describe('the version line', () => {
   })
 
   it('reads every version up to its own, and says "update" for a later one', () => {
-    expect(LANGUAGE_VERSION).toBe('1.7')
-    for (const v of ['1', '1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7']) expect(found(def(v)), v).toEqual([])
-    for (const v of ['1.8', '1.10', '2'])
+    expect(LANGUAGE_VERSION).toBe('1.8')
+    for (const v of ['1', '1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8'])
+      expect(found(def(v)), v).toEqual([])
+    for (const v of ['1.9', '1.10', '2'])
       expect(compile(def(v)).diagnostics).toMatchObject([
         {
           code: 'language-version',
-          message: `this definition is written in language version ${v}; this loadmap reads version 1.7`,
+          message: `this definition is written in language version ${v}; this loadmap reads version 1.8`,
           hint: 'update @loadmap/dsl',
         },
       ])
@@ -53,10 +54,10 @@ describe('the version line', () => {
   })
 
   it('says only "update" for a later version, not every statement it does not know', () => {
-    expect(found(def('1.8', 'widget w "W"\nnode x { pass; newProp: 1 }'))).toEqual([
+    expect(found(def('1.9', 'widget w "W"\nnode x { pass; newProp: 1 }'))).toEqual([
       {
         severity: 'error',
-        message: 'this definition is written in language version 1.8; this loadmap reads version 1.7',
+        message: 'this definition is written in language version 1.9; this loadmap reads version 1.8',
       },
     ])
   })

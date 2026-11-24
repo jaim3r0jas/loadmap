@@ -1,0 +1,68 @@
+loadmap 1.7
+# Orders are written to a database whose volume fills a little every day. The database keeps up at every load the
+# slider reaches; the volume runs out first, on a date, as the orders grow. The logs keep a few days and settle.
+title: "Disk that fills up"
+view { speed: 10 }
+assume: "1× is today's busiest hour; a day averages 40 % of it."
+
+load "Orders, × today" { max: 5; default: 1 }
+
+param volume "Volume size" { options: [500, 1_000, 2_000]; default: 1_000; format: `${value} GB` }
+param days "Log retention" { options: [7, 30]; default: 7; format: `${value} days` }
+
+scenario "Today" {}
+scenario "Bigger volume" { volume: 2_000 }
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+
+expect "The volume lasts half a year" { component: orderData; lasts: 180d }
+
+flow orders "orders" {
+  unit: "order"
+  rate: 50 * load
+  average: 40%
+  route: api -> db
+  from: shop
+  color: accent
+}
+
+node shop "Shop" "web and mobile"
+
+node api "API" {
+  pass
+  short: "the API"
+  capacity: measured(2_000, "req/s", "load test")
+  over: "orders fail with 503s"
+}
+
+node db "Database" "primary" {
+  shape: cylinder
+  store
+  short: "the database"
+  capacity: estimated(1_500 +- 30%, "writes/s", "load test of a replica")
+  over: "writes queue"
+}
+
+# a stock that grows: where it stands today, and what each order adds
+node orderData "Orders volume" `${volume} GB` {
+  shape: cylinder
+  short: "the orders volume"
+  fills: at.db.orders * 2KB
+  level: measured(180, "GB", "df on 2026-11-01")
+  capacity: configured(volume, "GB", "volume size")
+  over: "writes fail: the volume is full"
+}
+
+# a stock that keeps what it gains for a while, and settles there
+node logs "Log volume" `${days} days` {
+  shape: cylinder
+  short: "the log volume"
+  fills: at.api.orders * 1KB
+  keeps: days * 1d
+  capacity: configured(200, "GB", "log volume")
+  over: "the oldest logs are cut early"
+}
+
+shop -> api
+api -> db
+db -> orderData: "2 KB an order"
+api -> logs: "1 KB a request"

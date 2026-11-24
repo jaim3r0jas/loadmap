@@ -34,7 +34,7 @@ describe('completions', () => {
     ])
     expect(at(`${checkout}\nphones -> db {\n  |\n}\n`).labels).toEqual(['when'])
     // a file of 1.4 is offered what 1.4 writes: the direction at the top, a pool's workers in their block
-    const v14 = checkout.replace('loadmap 1.7', 'loadmap 1.4')
+    const v14 = checkout.replace('loadmap 1.8', 'loadmap 1.4')
     expect(at(v14.replace('\ntitle:', '\n|\ntitle:')).labels).toContain('direction')
     const snippet = (src: string) =>
       at(src.replace('\ntitle:', '\npo|\ntitle:')).c.options.find((o) => o.label === 'pool')?.snippet
@@ -207,9 +207,9 @@ describe('completions that know where they are', () => {
     ])
     expect(at(inDb('capacity: measured(pods * (1 + 2) |)')).labels).toEqual(['+- 30%'])
     // a file stamped before 1.6 writes it "±": "+-" is a plus and a minus there
-    expect(at(inDb('capacity: estimated(3000 |)').replace('loadmap 1.7', 'loadmap 1.5')).labels).toEqual(['± 30%'])
+    expect(at(inDb('capacity: estimated(3000 |)').replace('loadmap 1.8', 'loadmap 1.5')).labels).toEqual(['± 30%'])
     // there a glued "+-" in the value was meant as one: not offered twice
-    expect(at(inDb('capacity: estimated(3000 +- 30% |)').replace('loadmap 1.7', 'loadmap 1.5')).labels).toEqual([])
+    expect(at(inDb('capacity: estimated(3000 +- 30% |)').replace('loadmap 1.8', 'loadmap 1.5')).labels).toEqual([])
     expect(at(inDb('capacity: configured(3000 |)')).labels).toEqual([])
     expect(at(inDb('capacity: estimated(3000 +- 30% |)')).labels).toEqual([])
     expect(at(inDb('capacity: estimated(3000 ± 30% |)')).labels).toEqual([])

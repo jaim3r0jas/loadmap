@@ -295,19 +295,31 @@ export function Meters({ lm }: { lm: LoadmapController }) {
       state: r.failed > 0.005 ? 'over' : 'ok',
     })
   }
+  // what is promised for these values: the scenario shown, up to its underTarget (or at the values without one)
+  const scenario = model.scenarioOf(lm.values)?.label
+  const down = (lm.values as { down?: unknown }).down ?? 'none'
+  const promised = (e: (typeof model.expectations)[number]) =>
+    (e.scenario == null || e.scenario === scenario) &&
+    (e.down ?? 'none') === down &&
+    (e.underTarget == null || lm.values.load <= e.underTarget)
+  // what a flow loses for good, where an expectation holds it at any values: against the strictest promised here
+  for (const f of model.flowIds) {
+    const held = model.expectations.filter((e) => e.lost != null && (e.flow ?? f) === f)
+    if (!held.length) continue
+    const goals = held.filter(promised).map((e) => e.lost!)
+    const lost = ev.lost[f]?.share ?? 0
+    items.push({
+      key: `${f}/lost`,
+      value: pct(lost, true),
+      label: `${flowLabel(f)} lost`,
+      state: goals.length ? (lost > Math.min(...goals) + 1e-8 ? 'over' : 'ok') : lost > 1e-8 ? 'warn' : 'ok',
+    })
+  }
   // from the service times: a flow whose way has one
   for (const f of model.flowIds) {
     const l = ev.latency[f]
     if (!l) continue
-    // a p99 promised for these values: the scenario shown, up to its underTarget (or at the values without one)
-    const scenario = model.scenarioOf(lm.values)?.label
-    const goal = model.expectations.find(
-      (e) =>
-        e.flow === f &&
-        e.p99 != null &&
-        (e.scenario == null || e.scenario === scenario) &&
-        (e.underTarget == null || lm.values.load <= e.underTarget),
-    )?.p99
+    const goal = model.expectations.find((e) => e.flow === f && e.p99 != null && promised(e))?.p99
     items.push({
       key: `${f}/p99`,
       value: duration(l.p99),

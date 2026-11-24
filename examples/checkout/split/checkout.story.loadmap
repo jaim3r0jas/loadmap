@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 part of "./checkout.loadmap"
 
 # the walk a design review takes: the page steps through it or plays it, as `loadmap record --story` does

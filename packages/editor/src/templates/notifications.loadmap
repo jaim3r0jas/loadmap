@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # One event becomes several messages: a sender pool turns events into push notifications, emails and texts, and each
 # provider has a quota of its own. The quota that runs out first is usually not the one with the most traffic.
 title: "Notification fan-out"

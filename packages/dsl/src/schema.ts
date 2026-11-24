@@ -522,7 +522,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
   },
   loadmap: {
     doc: 'The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.',
-    example: 'loadmap 1.7',
+    example: 'loadmap 1.8',
     args: [{ name: 'version', kind: 'number' }],
     props: {},
     children: [],
@@ -651,7 +651,14 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       flow: {
         value: 'flow',
         scope: 'const',
-        doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values.",
+        doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. With lost, the flow whose losses count.",
+      },
+      lost: {
+        value: 'number',
+        scope: 'const',
+        unit: 'share',
+        since: '1.8',
+        doc: 'What is lost for good (turned away, dropped or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one.',
       },
       p50: {
         value: 'number',

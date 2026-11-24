@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # Every statement of the language at least once, in one model: the complete example of the docs' llms-full.txt. A
 # made-up shop: orders go through a gateway, a rate limiter, an API and a cache to the database; events go through a
 # topic to an autoscaled pool and a push broker. docs.test.ts fails when a statement of the schema is missing here.
@@ -35,6 +35,8 @@ expect "Today keeps 2×" { underTarget: 2; severity: warn }
 expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; component: gateway; notFull: 10 }
 # a flow's latency, from the service times on its way: here the database's
 expect "Orders answer in a second" { flow: orders; p99: 1 }
+# what a flow loses for good, as a share of what it sends: of one flow, or of each without one
+expect "Orders lose nothing today" { flow: orders; lost: 0% }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }
 step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: eventWorkers }

@@ -8,7 +8,7 @@ import { before, parseVersion, stampVersion, type Version } from './stamp'
  * The language version this package reads, the newest: what a new definition starts with. A minor version stays open
  * until the release that ships it; from then on it never changes (docs/dsl.md, "Versions").
  */
-export const LANGUAGE_VERSION = '1.7'
+export const LANGUAGE_VERSION = '1.8'
 
 export { before, parseVersion, type Version, versionText } from './stamp'
 

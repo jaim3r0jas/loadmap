@@ -97,7 +97,7 @@ it('docs/every-statement.loadmap and docs/multi-file hold every statement and to
   const r = compile(src)
   expect(r.diagnostics).toEqual([])
   // its promises hold, as `loadmap check` would say
-  expect(r.expectations.map((e) => e.result.ok)).toEqual([true, true, true])
+  expect(r.expectations.map((e) => e.result.ok)).toEqual([true, true, true, true])
   const seen = new Set<string>()
   const walk = (body: Stmt[]) => {
     for (const s of body) {
