@@ -10,6 +10,7 @@ import {
   type Tolerance,
 } from '@loadmap/core'
 import { duration, fmt, multiples, pct } from '@loadmap/core/format'
+import { curveText } from '@loadmap/core/scaling'
 import type { CompileResult, Diagnostic } from '@loadmap/dsl'
 import { Reporter } from '@loadmap/dsl/internal'
 
@@ -167,7 +168,9 @@ function assumptionText(a: Assumption): string {
   if (a.kind === 'connection') return `${a.name}: ${a.text}`
   if (a.kind === 'fit') {
     const f = a.fit
-    return `${a.name}: ${f.y} = ${fmt(f.a)} + ${fmt(f.b)} × ${f.x}, fitted over ${f.n} points${f.source ? ` (${f.source})` : ''}`
+    const of = `fitted over ${f.n} points${f.source ? ` (${f.source})` : ''}`
+    if ('curve' in f) return `${a.name}: ${curveText(f)}, ${of}`
+    return `${a.name}: ${f.y} = ${fmt(f.a)} + ${fmt(f.b)} × ${f.x}, ${of}`
   }
   const m = a.measurement
   return m.missing != null

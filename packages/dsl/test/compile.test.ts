@@ -1395,6 +1395,41 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a scaling curve, and say where a parameter reaches past its peak', () => {
+    const src = (pods: string) => `loadmap 1.7
+load "Load" { max: 10; default: 1 }
+param pods "Pods" { options: [${pods}]; default: 4 }
+fit apiScale "API throughput by pods" {
+  curve: usl
+  source: "load test"
+  points n rate {
+    1 500
+    2 969.9
+    4 1_824.8
+    8 3_231
+    16 5_095.5
+  }
+}
+flow req "requests" { rate: 1_000 * load; route: api; from: users }
+node users "Users"
+pool api "API" {
+  pods: pods
+  perPod: 4
+  capacity: measured(apiScale(pods), "req/s", "load test, fitted")
+  over: "requests queue"
+}
+users -> api
+`
+    const dsl = model(src('2, 4, 8'))
+    const fit = dsl.def.calibration!['API throughput by pods']!
+    expect('curve' in fit && fit.curve).toBe('usl')
+    expect(dsl.evaluate({ pods: 8 }).components.api!.capacity!.value).toBeCloseTo(3231.0, -1)
+    // 64 pods reach past the curve's peak, about 44
+    const far = compile(src('2, 4, 64')).diagnostics
+    expect(far.map((d) => [d.code, d.severity])).toEqual([['past-peak', 'warning']])
+    expect(far[0]!.message).toMatch(/^"pods" reaches 64, past the 4\d(\.\d)? where apiScale gives the most/)
+  })
+
   it('compile a batch: a day of arrivals worked off within its run', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 20; default: 1 }

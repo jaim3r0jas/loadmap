@@ -59,7 +59,7 @@ describe('metric and measure', () => {
     const ev = r.definition!.model.evaluate()
     expect(ev.components.api!.capacity).toMatchObject({ value: 1000, provenance: 'estimated' })
     expect(ev.flows.req).toBe(40)
-    expect(r.definition!.model.def.calibration!['Worker CPU per request']!.b).toBeCloseTo(0.001)
+    expect((r.definition!.model.def.calibration!['Worker CPU per request'] as { b: number }).b).toBeCloseTo(0.001)
     expect(ev.assumptions.some((a) => a.kind === 'measurement')).toBe(false)
     expect(r.measures).toEqual([
       {

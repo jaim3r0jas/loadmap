@@ -1,4 +1,4 @@
-import { type Capacity, configured, estimated, type LinearFit, measured } from '@loadmap/core'
+import { type Capacity, configured, estimated, type Fit, measured } from '@loadmap/core'
 import { compact, fmt, pct, secs } from '@loadmap/core/format'
 import { flowOf } from '@loadmap/core/internal'
 import { comparedAgain, type Expr, parenthesized } from './ast'
@@ -28,7 +28,7 @@ export interface Names {
   flows: ReadonlySet<string>
   stages: ReadonlySet<string>
   components: ReadonlySet<string>
-  fits: ReadonlyMap<string, LinearFit | null>
+  fits: ReadonlyMap<string, Fit | null>
   functions: HostFunctions
   /** The options of each select parameter: a literal compared with one must be one of them. */
   options?: ReadonlyMap<string, readonly (number | string)[]>

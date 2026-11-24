@@ -10,6 +10,7 @@ export default defineConfig({
     'src/format.ts',
     'src/internal.ts',
     'src/measure.ts',
+    'src/scaling.ts',
   ],
   dts: true,
   platform: 'neutral',

@@ -1,6 +1,7 @@
 import { type Assumption, type Capacity, type Stock, sourceText } from '@loadmap/core'
 import { backlog } from '@loadmap/core/backlog'
 import { compact, duration, fmt, multiple, multiples, pct, period, secs } from '@loadmap/core/format'
+import { curveText } from '@loadmap/core/scaling'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isOn, LoadRange, plusMinus } from './bar'
 import type { LoadmapController } from './useLoadmap'
@@ -469,9 +470,10 @@ function describe(a: Assumption): ReactNode {
     })
   }
   const f = a.fit
+  const shape = 'curve' in f ? curveText(f) : `${f.y} = ${sig(f.a)} + ${sig(f.b)} × ${f.x}`
   return (
     <>
-      <b>{a.name}:</b> {f.y} = {sig(f.a)} + {sig(f.b)} × {f.x}, r² {f.r2.toFixed(3)} over {f.n} points,{' '}
+      <b>{a.name}:</b> {shape}, r² {f.r2.toFixed(3)} over {f.n} points,{' '}
       <span className="lm-prov" data-kind="measured">
         measured
       </span>

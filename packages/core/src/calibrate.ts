@@ -55,4 +55,31 @@ export function fitLinear<T extends Record<string, unknown>>(
   return Object.assign(fit, { a, b, r2, n, x: o.x, y: o.y, source: o.source, provenance: 'measured' as const })
 }
 
+/**
+ * Throughput against size, the Universal Scalability Law: C(N) = λN ÷ (1 + σ(N − 1) + κN(N − 1)). σ is contention
+ * (work that queues for one lock or leader), κ coherency (each member talking to every other): twice the pods give less
+ * than twice the capacity, and past `peak` less. Callable: `fit(n)` is the capacity at size n.
+ */
+export interface ScalingFit {
+  (n: number): number
+  curve: 'usl'
+  /** Capacity of one member. */
+  lambda: number
+  sigma: number
+  kappa: number
+  /** The size of the most capacity: √((1 − σ) ÷ κ); Infinity without coherency. */
+  peak: number
+  r2: number
+  n: number
+  x: string
+  y: string
+  source?: string
+  provenance: 'measured'
+  origin?: { x: Origin; y: Origin }
+  unread?: string
+}
+
+/** A fit a model reads: linear, or a scaling curve. */
+export type Fit = LinearFit | ScalingFit
+
 const sum = (v: readonly number[]) => v.reduce((s, x) => s + x, 0)
