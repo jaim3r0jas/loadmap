@@ -254,7 +254,7 @@ function latencyCheck<P, C extends string>(
 }
 
 const share = (x: number) => pct(x, true)
-const LOSS_WORDS = { rejected: 'turned away', dropped: 'dropped', timedOut: 'too slow' } as const
+const LOSS_WORDS = { rejected: 'turned away', dropped: 'dropped', timedOut: 'too slow', failed: 'failed' } as const
 
 /** What a flow (or the flow that loses most) loses for good against a share: at the values, or up to `underTarget`. */
 function lostCheck<P, C extends string>(

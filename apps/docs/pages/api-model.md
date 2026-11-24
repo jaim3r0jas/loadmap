@@ -154,6 +154,7 @@ and the crossings are the load multiples where that reaches the target and 100 %
 | `demand`   | In the capacity's unit. Without one: the units per second reaching the stages that use it             |
 | `held`     | Seconds each unit holds one of its slots, for every flow or per flow: the demand is then slots in use |
 | `through`  | `[from, to]`: a stretch of the way whose time a unit holds its slot for too, on top of `held`         |
+| `fails`    | The share of the units its stages work on that fail there, whatever the load: lost as `failed`        |
 | `on`       | The stages whose units hold its slots; by default the stages that use it                              |
 | `service`  | Seconds a unit takes here when nothing waits: the flows through it get a latency                      |
 | `fills`    | What a stock gains a second, in the capacity's unit, every flow at its `average`; no stage runs it    |
@@ -275,7 +276,7 @@ shards: split({ to: [{ stages: ['db'], share: 0.5 }, { stages: ['db2'], share: 0
 ```
 
 **lost** is on no route: `from` names the stages it takes from, `takes` which losses (`'rejected'`, `'dropped'`,
-`'timedOut'`; all three without one). What reaches it is what is lost after every retry:
+`'timedOut'`, `'failed'`; all of them without one). What reaches it is what is lost after every retry:
 `lost({ from: ['limiter'], takes: ['rejected'] })`. Its box says how many per second.
 
 [Building blocks](/language/building-blocks/) has what each one does to the numbers, with the language beside it.
@@ -515,7 +516,7 @@ A flow's `latency` is `{ mean, p50, p95, p99 }` in seconds (`Infinity` once a st
 and `ways` (the same per path).
 
 A flow's `lost` is what it loses for good: `rate` in units a second, `share` of what it sends before retries, and
-`causes`, each stage's part as `{ stage, loss, rate }` with `loss` one of `'rejected'`, `'dropped'` and `'timedOut'`.
+`causes`, each stage's part as `{ stage, loss, rate }` with `loss` one of `'rejected'`, `'dropped'`, `'timedOut'` and `'failed'`.
 What a breaker fails fast has no `stage`. With a fallback, what it serves is not lost, and what its own stages turn
 away is.
 

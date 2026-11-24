@@ -351,7 +351,8 @@ export class Engine {
   }
 
   outcomeColor(outcome: Particle['outcome']): string {
-    if (outcome === 'dropped' || outcome === 'rejected' || outcome === 'timedout') return this.colors.drop || '#b7392e'
+    if (outcome === 'dropped' || outcome === 'rejected' || outcome === 'timedout' || outcome === 'failed')
+      return this.colors.drop || '#b7392e'
     if (outcome === 'superseded' || outcome === 'unread') return this.colors.muted || '#5d6d7c'
     return this.colors.ok || '#2a7f5a'
   }

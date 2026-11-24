@@ -1109,7 +1109,7 @@ export class Compiler {
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
         this.report.warning('unused-stage', s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
-    const shape = { stages: stageDefs, routes, flows: flowDefs as never }
+    const shape = { stages: stageDefs, routes, flows: flowDefs as never, components: componentDefs }
     // what each stage can lose, worked out once, over ways walked once: the lost boxes and the warnings both read it
     const known = new Map<string, readonly Loss[]>()
     const walked = lossesIn(shape)
@@ -1129,6 +1129,13 @@ export class Compiler {
           fills.key,
           `"${id}" fills over time, so no stage runs it`,
           'write the stock as a component of its own: component disk "Disk" { fills: … }',
+        )
+      const fails = this.prop(componentBlocks.get(id)!, 'fails')
+      if (fails && !used.has(id))
+        this.report.error(
+          'unused-component',
+          fails.key,
+          `"${id}" fails a share of the units a stage works on, and no stage runs it`,
         )
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id) || fills) continue
       if (c.held != null || c.through != null)
@@ -1658,6 +1665,25 @@ export class Compiler {
           `what "${id}" turns away vanishes: give it a lost box that counts it`,
           undefined,
           { stage: id, reason: 'rejected' },
+        )
+    // what a component that fails loses at each stage it runs, unless every flow through it has a fallback: that
+    // serves what fails past where it falls back after
+    const unserved = new Set(
+      flows.flatMap((b) => {
+        const f = b.args.id?.name
+        if (!f || (shape.flows[f] as { fallback?: unknown } | undefined)?.fallback) return []
+        const { ways, open } = waysOf(shape, f)
+        return open ? Object.keys(shape.stages) : ways.flat()
+      }),
+    )
+    for (const [id, s] of stageOf)
+      if (unserved.has(id) && losses(id).includes('failed') && first(id, 'failed'))
+        this.report.warning(
+          'unseen-loss',
+          s.block.at,
+          `what "${id}" fails vanishes: give it a lost box that counts it`,
+          undefined,
+          { stage: id, reason: 'failed' },
         )
     for (const b of flows) {
       const f = b.args.id?.name
@@ -3610,6 +3636,11 @@ export class Compiler {
       // the model takes demand and fills as functions only: a constant (demand: 0) becomes one
       o[k] = (k === 'demand' || k === 'fills') && v !== undefined && typeof v !== 'function' ? () => v : v
     }
+    const fails = this.dynProp<number>(b, 'fails', 'number', (v) => {
+      if (typeof v !== 'number' || !(v >= 0 && v < 1))
+        throw new Error(`fails is a share from 0, below 100%, not ${String(v)}`)
+    })
+    if (fails !== undefined) o.fails = fails
     if (typeof o.demand === 'function') o.demand = this.inCapacityUnit(b, o.demand as (ctx: unknown) => number)
     if (typeof o.fills === 'function') o.fills = this.inCapacityUnit(b, o.fills as (ctx: unknown) => number, 'fills')
     const keeps = this.prop(b, 'keeps')

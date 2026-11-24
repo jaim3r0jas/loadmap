@@ -143,13 +143,14 @@ const FIXERS: Partial<Record<Code, (c: FixContext) => QuickFix[]>> = {
   'unseen-loss': ({ source, data, doc }) => {
     const { stage, reason } = data
     const box = stage && boxOf(doc().body, stage)
-    if (!box || (reason !== 'rejected' && reason !== 'dropped' && reason !== 'timedOut')) return []
+    if (!box || (reason !== 'rejected' && reason !== 'dropped' && reason !== 'timedOut' && reason !== 'failed'))
+      return []
     const name = (box.args[0] as { name: string }).name
     const taken = new Set([...doc().ids('node'), ...doc().ids('stage'), ...doc().ids('component')])
-    const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedOut: 'TimedOut' }[reason]}`
+    const base = `${name}${{ rejected: 'Rejected', dropped: 'Dropped', timedOut: 'TimedOut', failed: 'Failed' }[reason]}`
     let id = base
     for (let i = 2; taken.has(id); i++) id = `${base}${i}`
-    const label = { rejected: 'Turned away', dropped: 'Too old', timedOut: 'Timed out' }[reason]
+    const label = { rejected: 'Turned away', dropped: 'Too old', timedOut: 'Timed out', failed: 'Failed' }[reason]
     const nl = source.indexOf('\n', box.to)
     const lineEnd = nl < 0 ? source.length : nl
     return [

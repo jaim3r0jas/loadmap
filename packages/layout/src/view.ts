@@ -161,7 +161,7 @@ function checked<F extends string, S extends string, N extends string, T extends
   return { model, def: withLostCounts(model, def) }
 }
 
-const LOST: Record<Loss, string> = { rejected: 'rejected', dropped: 'dropped', timedOut: 'timed out' }
+const LOST: Record<Loss, string> = { rejected: 'rejected', dropped: 'dropped', timedOut: 'timed out', failed: 'failed' }
 
 /** A lost box says what reaches it, per second, on its second line, unless the view gives it one of its own. */
 function withLostCounts<D extends ViewDef<any, any, any, any>>(model: Model, def: D): D {
