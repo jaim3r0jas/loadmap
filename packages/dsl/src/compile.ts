@@ -857,11 +857,17 @@ export class Compiler {
     const paramDefs: Record<string, unknown> = {}
     for (const b of params) if (b.args.id) paramDefs[b.args.id.name] = this.param(b)
     const presets: Record<string, Record<string, unknown>> = {}
+    const peaks: Record<string, number> = {}
     for (const b of byKind('preset')) {
       const label = this.text(b.args.label)
       if (label == null) continue
       const set = this.preset(b, params)
       presets[label] = set
+      const lasts = this.constProp<number>(b, 'lasts')
+      if (lasts != null) {
+        if (lasts > 0 && Number.isFinite(lasts)) peaks[label] = lasts
+        else this.report.error('out-of-range', this.prop(b, 'lasts')!.value, 'a peak lasts a time above 0')
+      }
       const l = this.prop(b, 'load')
       if (l && load && typeof set.load === 'number' && !(set.load >= load.min && set.load <= load.max))
         this.strict(STRICT_FORMULAS, 'out-of-range', l.value, `the load goes from ${load.min} to ${load.max}`)
@@ -1121,6 +1127,7 @@ export class Compiler {
     const title = this.constProp<string>(root, 'title')
     if (title != null) model.title = title
     if (Object.keys(presets).length) model.presets = presets
+    if (Object.keys(peaks).length) model.peaks = peaks
     if (Object.keys(scenarios).length) model.scenarios = scenarios
     if (growth) model.growth = growth
     if (expects.length) model.expect = expects

@@ -26,7 +26,7 @@ param tries "Retries per order" { options: [0, 2]; default: 0 }
 param newest "Keep only the newest event" { default: true }
 param hit "Cache hit ratio" { options: [0.5, 0.8]; default: 0.8 }
 
-preset "Sale day" { load: 20; pods: 8 }
+preset "Sale day" { load: 20; pods: 8; lasts: 2h }
 
 scenario "Bigger API" { pods: 8 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }

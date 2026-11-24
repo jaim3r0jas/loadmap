@@ -64,6 +64,7 @@ component and stage ids) and fails the typecheck.
 | `connections` | How a stage reaches the next one, and through which part of it: [Connections](#connections)            |
 | `derived`     | Named formulas every model function can read as `derived.<name>`                                       |
 | `presets`     | Named sets of values, the load included: buttons on the page                                           |
+| `peaks`       | How long a preset's moment lasts, in seconds, by its label: `model.backlog()` says what it leaves      |
 | `scenarios`   | Named designs to compare: the defaults plus these values, never the load. The first is the baseline    |
 | `growth`      | How fast the load grows: `{ rate: 0.06, per: 'month', asOf: '2026-11-01' }` turns multiples into dates |
 | `expect`      | What must keep holding: [Expectations](#expectations)                                                  |
@@ -335,6 +336,12 @@ the defaults plus its values, never the load; the first is the baseline. The pag
 `presets` are buttons that set values, the load included: `{ 'Black Friday': { load: 40, pods: 6 } }`. The evaluation's
 `presets` adds "Today · 1×" before them and, after them, the load where the target and "runs out" are reached on the
 pessimistic edge (`derived: true`).
+
+`peaks` says how long a preset's moment lasts, by its label: `{ 'Black Friday': 7_200 }`. The preset then has its
+`lasts`, and `model.backlog(values, seconds)` gives what that long at those values leaves in each queue whose reader
+cannot keep up (`units`, and each flow's), with the seconds its reader then needs to clear it at the default load
+(`empties`). It follows the sim's rules: a reader drains at its component's `full`, serves priority 1 first, and a drop
+or a merge leaves less.
 
 `growth` is `{ rate, per: 'month' | 'year', asOf }`, compounded: 1× is the load on `asOf` (`'2026-11-01'` or
 `'2026-11'`), and every period it is `1 + rate` times the last. Dates come from `asOf` alone, never from the clock, so

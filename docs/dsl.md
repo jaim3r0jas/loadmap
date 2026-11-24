@@ -175,6 +175,12 @@ looking at. Under the load slider its load is a mark.
 preset "Black Friday" { load: 12; pods: 8; hitRatio: 0.6 }
 ```
 
+A moment has a length: `lasts: 2h` (from `loadmap 1.7`). While the preset's values are shown, the verdict says what
+that long at its load leaves in each queue whose reader cannot keep up, and how long the reader then needs to clear it
+at the default load: "After 2 h of Black Friday, 1.4M events wait in the events topic, which at 1× clears in 5 h." The
+sim builds the same backlog: a reader drains at its component's `full`, priority 1 first, and a `drop` or a `merge`
+leaves less.
+
 A scenario ([Scenarios and growth](#scenarios-and-growth)) is another thing: a design to set beside another, and
 picking one keeps the load where it is.
 
@@ -1876,6 +1882,10 @@ preset "Black Friday" { load: 40; pods: 6 }
 ```
 
 After the keyword: label.
+
+| Property | Value | |
+| --- | --- | --- |
+| `lasts` | number in seconds, constant | How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load. From loadmap 1.7. |
 
 Its properties are named by parameters (and `load`).
 

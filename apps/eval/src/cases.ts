@@ -206,6 +206,12 @@ export const CASES: Case[] = [
     ],
   },
   {
+    id: 'peak-lasts',
+    example: CHECKOUT,
+    request: 'Black Friday lasts two hours. Say so on its preset.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'lasts: 2h' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',

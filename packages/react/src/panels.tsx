@@ -9,11 +9,13 @@ export { hasDesign, LoadBar, LoadRange, plusMinus } from './bar'
 /** The model's one-sentence answer for the current values, and which capacity to measure when it is unsure. */
 export function Verdict({ lm }: { lm: LoadmapController }) {
   const { measure } = lm.ev
+  const peak = peakText(lm)
   return (
     <>
       <p className="lm-verdict" data-tier={lm.ev.verdict.tier} aria-live="polite">
         {lm.ev.verdict.text}
       </p>
+      {peak && <p className="lm-peak">{peak}</p>}
       {measure && (
         <p className="lm-measure" data-component={measure.component}>
           {measure.text}
@@ -40,6 +42,29 @@ export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: b
       {short && kind === 'range' ? '±' : [word, short ? '' : pm].filter(Boolean).join(' ')}
     </span>
   )
+}
+
+/**
+ * While the values are a preset's that says how long it lasts: what it leaves in the queues. "After 2 h of Black
+ * Friday, 6k events wait in the events topic: at 1× it clears in 2 min."
+ */
+function peakText(lm: LoadmapController): string | null {
+  const { ev, model } = lm
+  const p = ev.presets.find(
+    (x) =>
+      x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
+  )
+  if (!p?.lasts) return null
+  const left = model.backlog(ev.values, p.lasts)
+  const head = `After ${period(p.lasts)} of ${p.label}`
+  if (!left.length) return `${head}, no queue falls behind.`
+  const rest = multiple(model.defaults().load as number, model.searchMax)
+  const parts = left.map((b) => {
+    const st = ev.stages[b.stage]
+    const clears = Number.isFinite(b.empties) ? `clears in ${period(b.empties)}` : 'never clears'
+    return `${compact(b.units)} wait in ${st?.label ?? b.stage}, which at ${rest} ${clears}`
+  })
+  return `${head}, ${parts.join('; ')}.`
 }
 
 /** "Gains 3.1 GB a day · full in 41 days at this rate"; "Keeps 7 days of 9.3 GB a day". */
