@@ -19,9 +19,10 @@ export type Expr = Span &
     /**
      * `glued`: a `%` written straight after a number (`30%+1`) in a file stamped before 1.5, where a share was likely
      * meant. `triple`: where it was written `===` or `!==`, the old spelling of `==` and `!=`. `plusMinus`: a `+`
-     * and a `-` written as one `+-` (`a +- b`) in a file stamped before 1.6, where it became `±`.
+     * and a `-` written as one `+-` (`a +- b`) in a file stamped before 1.6, where it became `±`. `paren`: written in
+     * parentheses, or the formula an input was given, which stands for one name: one value either way.
      */
-    | { t: 'bin'; op: BinOp; left: Expr; right: Expr; glued?: true; triple?: Span; plusMinus?: Span }
+    | { t: 'bin'; op: BinOp; left: Expr; right: Expr; glued?: true; triple?: Span; plusMinus?: Span; paren?: true }
     | { t: 'cond'; test: Expr; then: Expr; else: Expr }
     | { t: 'array'; items: Expr[] }
     /**
@@ -35,10 +36,21 @@ export type Expr = Span &
 export type BinOp = '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '*' | '/' | '%'
 
 /**
- * An operator written in parentheses: the parser keeps no node for them, only the wider span. The one place they say
- * more than the tree does is a comparison of a comparison (`(a == b) == c`), which without them is a chain.
+ * An operator that is one value where it stands: written in parentheses, or given for an input. The one place that
+ * says more than the tree does is a comparison of a comparison (`(a == b) == c`), which without it is a chain.
  */
-export const parenthesized = (e: Extract<Expr, { t: 'bin' }>): boolean => e.from < e.left.from
+export const parenthesized = (e: Extract<Expr, { t: 'bin' }>): boolean => e.paren === true
+
+const LEVELS: readonly ReadonlySet<string>[] = [new Set(['==', '!=']), new Set(['<', '<=', '>', '>='])]
+
+/**
+ * The comparison a comparison has on its left when both are of one level (`a == b` in `a == b != c`): a chain unless
+ * it is `parenthesized`. Comparisons of two levels read by precedence (`a < b == c`).
+ */
+export function comparedAgain(e: Extract<Expr, { t: 'bin' }>): Extract<Expr, { t: 'bin' }> | undefined {
+  const level = LEVELS.find((l) => l.has(e.op))
+  return level && e.left.t === 'bin' && level.has(e.left.op) ? e.left : undefined
+}
 
 /** `key: value`. A value is a formula, or a chain of names (`a -> b -> c`) for a route. */
 export interface Property extends Span {

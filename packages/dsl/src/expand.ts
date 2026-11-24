@@ -419,6 +419,9 @@ export class Expander {
     for (const [node, value] of swaps) {
       for (const k of Object.keys(node)) delete (node as unknown as Record<string, unknown>)[k]
       Object.assign(node, clone(value))
+      // what an input was given stands for one name: `ok == flag` with a comparison for `ok` is no chain
+      const swapped = node as unknown as Record<string, unknown>
+      if (swapped.t === 'bin') swapped.paren = true
     }
     chains(out)
     return out

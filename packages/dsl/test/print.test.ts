@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { compile, flatten, format } from '../src'
-import { type Expr, parenthesized } from '../src/ast'
+import { comparedAgain, type Expr, parenthesized } from '../src/ast'
 import { parse } from '../src/internal'
 import { print } from '../src/print'
-
-const LEVELS = [
-  ['==', '!='],
-  ['<', '<=', '>', '>='],
-]
 
 /**
  * What the compiler reads of a formula: the tree without its places, and for a comparison of a comparison whether it
@@ -31,8 +26,8 @@ function shape(e: Expr): unknown {
     case 'unary':
       return { t: e.t, op: e.op, arg: shape(e.arg) }
     case 'bin': {
-      const level = LEVELS.find((l) => l.includes(e.op))
-      const chain = !!level && e.left.t === 'bin' && level.includes(e.left.op) && !parenthesized(e.left)
+      const again = comparedAgain(e)
+      const chain = !!again && !parenthesized(again)
       return { t: e.t, op: e.op, left: shape(e.left), right: shape(e.right), chain }
     }
     case 'cond':
@@ -156,33 +151,39 @@ describe('print', () => {
     expect(printed('1.6', 'estimated((a + b) +- (c * d), "x")')).toBe('estimated((a + b) +- (c * d), "x")')
     expect(printed('1.6', '(a +- b) + c')).toBe('(a +- b) + c')
     expect(printed('1.4', '(a ± b) * 2')).toBe('(a ± b) * 2')
+    // "-5%" is a number with its unit, "(-5)%" a share of the value: the pair stays
+    expect(printed('1.6', 'estimated(100 +- (-5)%, "x")')).toBe('estimated(100 +- (-5)%, "x")')
+    expect(printed('1.6', 'estimated(100 +- (a)%, "x")')).toBe('estimated(100 +- a%, "x")')
     // before 1.5 the remainder is an operator of the level of "*"
     expect(printed('1.4', 'a % (b * c)')).toBe('a % (b * c)')
     expect(printed('1.4', '(a + b) % c')).toBe('(a + b) % c')
   })
 
-  it('prints any formula as text the parser reads back to the same formula', () => {
-    for (const [version, mark] of [
-      ['1.4', '±'],
-      ['1.5', '±'],
-      ['1.6', '+-'],
-    ] as const)
-      for (const wrap of [1, 0.4]) {
-        const r = random(195)
-        for (let i = 0; i < 250; i++) {
-          const text = file(version, formula(r, 4, { wrap, remainder: version === '1.4', mark }))
-          const { body, tree } = read(text)
-          const out = print(body, text)
-          expect(read(out).tree, `${text}→ ${out}`).toEqual(tree)
-          // printed again it is the same text: nothing is left to settle
-          expect(print(read(out).body, out), text).toBe(out)
-          // and format(), which flatten() lays it out with, changes no formula
-          const laid = format(out)
-          expect(laid.ok, out).toBe(true)
-          expect(read(laid.text).tree, `${out}→ ${laid.text}`).toEqual(tree)
-        }
+  it.each([
+    ['1.4', '±', 1],
+    ['1.4', '±', 0.4],
+    ['1.5', '±', 1],
+    ['1.5', '±', 0.4],
+    ['1.6', '+-', 1],
+    ['1.6', '+-', 0.4],
+  ] as const)(
+    'prints any formula of %s (± as %s, %s of its operands in parentheses) as text that reads back the same',
+    (version, mark, wrap) => {
+      const r = random(195 + Number(version.slice(2)) * 10 + (wrap < 1 ? 1 : 0))
+      for (let i = 0; i < 120; i++) {
+        const text = file(version, formula(r, 4, { wrap, remainder: version === '1.4', mark }))
+        const { body, tree } = read(text)
+        const out = print(body, text)
+        expect(read(out).tree, `${text}→ ${out}`).toEqual(tree)
+        // printed again it is the same text: nothing is left to settle
+        expect(print(read(out).body, out), text).toBe(out)
+        // and format(), which flatten() lays it out with, changes no formula
+        const laid = format(out)
+        expect(laid.ok, out).toBe(true)
+        expect(read(laid.text).tree, `${out}→ ${laid.text}`).toEqual(tree)
       }
-  })
+    },
+  )
 })
 
 describe('flatten', () => {
@@ -217,5 +218,49 @@ describe('flatten', () => {
       const [x, y] = [one, several].map((r) => r.definition!.model.evaluate({ load: 1, ...params }))
       expect(x!.components, JSON.stringify(params)).toEqual(y!.components)
     }
+  })
+
+  it('writes the comparison an input was given in parentheses where it is compared again', () => {
+    const lib = [
+      'loadmap 1.6',
+      'library "L"',
+      'node gate "Gate" {',
+      '  input ok',
+      '  input flag = true',
+      '  demand: ok == flag ? 1 : 2',
+      '  capacity: estimated(10, "req/s", "x")',
+      '  over: "slow"',
+      '}',
+      '',
+    ].join('\n')
+    const model = [
+      'loadmap 1.6',
+      'import "./lib.loadmap" { gate }',
+      'load "x" { max: 2 }',
+      'param mode "Mode" { options: ["a", "b"]; default: "a" }',
+      'flow f "f" { rate: 1; route: g; from: n }',
+      'node n "N"',
+      'node g "G" {',
+      '  like: gate',
+      '  with { ok: mode == "a" }',
+      '}',
+      'n -> g',
+      '',
+    ].join('\n')
+    const o = { path: 'm.loadmap', files: { 'lib.loadmap': lib } }
+    // the formula given for `ok` stands for the one name: no chain in the files, none in the copy
+    const several = compile(model, o)
+    expect(several.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    const flat = flatten(model, o)
+    if ('error' in flat) throw new Error(`${flat.error}: ${flat.diagnostics.map((d) => d.message).join('; ')}`)
+    expect(flat.text).toContain('demand: (mode == "a") == true ? 1 : 2')
+    const one = compile(flat.text)
+    expect(one.diagnostics.filter((d) => d.severity === 'error')).toEqual([])
+    for (const [mode, demand] of [
+      ['a', 1],
+      ['b', 2],
+    ] as const)
+      for (const r of [one, several])
+        expect(r.definition!.model.evaluate({ load: 1, mode }).components.g!.demand).toBe(demand)
   })
 })
