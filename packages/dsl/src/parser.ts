@@ -549,7 +549,7 @@ class Parser {
         if (t.text === '(') {
           const e = this.expr()
           const close = this.expect(')', '")"')
-          return { ...e, from: t.from, to: close.to }
+          return { ...e, from: t.from, to: close.to, ...(e.t === 'bin' && { paren: true as const }) }
         }
         if (t.text === '[') {
           const items: Expr[] = []
