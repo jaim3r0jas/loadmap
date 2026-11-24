@@ -7,6 +7,7 @@ export {
   type ElkEngine,
   type ElkGraph,
   type Fading,
+  type Held,
   type LayoutOptions,
   labelsAt,
   layout,

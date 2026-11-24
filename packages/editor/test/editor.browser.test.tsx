@@ -290,6 +290,43 @@ describe('the editor', () => {
     await expect.poll(() => handle.loadmap()?.storyStep() ?? null).toBeNull()
   })
 
+  it('lays an added box out from where the boxes are drawn; Tidy lays the diagram out as a reload does', async () => {
+    const { handle, view } = await mount()
+    const lm = () => handle.loadmap()!
+    // how many boxes of `a` stand elsewhere in `b`, by their middles
+    type Drawn = NonNullable<ReturnType<typeof lm>['engine']['scene']>
+    const moved = (a: Drawn, b: Drawn) =>
+      a.nodes.filter((n) => {
+        const m = b.nodes.find((x) => x.id === n.id)
+        return m && (Math.abs(m.x + m.w / 2 - n.x - n.w / 2) > 1 || Math.abs(m.y + m.h / 2 - n.y - n.h / 2) > 1)
+      }).length
+    const first = lm().engine.scene!
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: '\nnode audit "Audit log"\nworkerPool -> audit\n' },
+    })
+    await expect.poll(() => lm().engine.scene?.nodes.some((n) => n.id === 'audit'), { timeout: 5000 }).toBe(true)
+    const held = lm().engine.scene!
+    // the boxes the edit did not touch stay: at most the one beside the new box gives way
+    expect(moved(first, held)).toBeLessThanOrEqual(1)
+    // an edit of a figure after it lays nothing out again
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '\nlet spare = 1\n' } })
+    const was = lm().engine.model
+    await expect.poll(() => lm().engine.model, { timeout: 5000 }).not.toBe(was)
+    await lm().ready()
+    expect(moved(held, lm().engine.scene!)).toBe(0)
+    // tidied: the same structure, laid out from scratch, where most boxes stand elsewhere
+    await lm().tidy()
+    const tidy = lm().engine.scene!
+    expect(tidy.key).toBe(held.key)
+    expect(moved(first, tidy)).toBeGreaterThanOrEqual(3)
+    // and it stays tidy through the next edit of a figure
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '\nlet other = 2\n' } })
+    const then = lm().engine.model
+    await expect.poll(() => lm().engine.model, { timeout: 5000 }).not.toBe(then)
+    await lm().ready()
+    expect(moved(tidy, lm().engine.scene!)).toBe(0)
+  })
+
   it('opens files from the explorer as one row of tabs; a tab closed keeps its file', async () => {
     const { host, handle, view, edit } = await mount({ source: shop, several })
     const row = () => host.querySelector('.lme-ftabs')!.getBoundingClientRect()

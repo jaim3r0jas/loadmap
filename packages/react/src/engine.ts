@@ -119,6 +119,10 @@ function fade(el: Element, show: number): void {
   else set(el, 'opacity', show.toFixed(3))
 }
 
+/** The same boxes, some in another place: two layouts of one structure. */
+const elsewhere = (a: Scene, b: Scene) =>
+  a !== b && a.nodes.some((n, i) => n.x !== b.nodes[i]?.x || n.y !== b.nodes[i]?.y)
+
 /**
  * Everything that moves, without React: the sim, the dots on the canvas, the worker fills in the SVG, and the move from
  * one structure to the next. React renders the structure once per scene, and once per frame while it moves; the engine
@@ -275,7 +279,8 @@ export class Engine {
       Number.isFinite(seconds) &&
       (!this.paused || this.#driven) &&
       from.direction === scene.direction &&
-      from.key !== scene.key
+      // another structure, or the same one in other places (a held layout tidied)
+      (from.key !== scene.key || elsewhere(from, scene))
     this.#move = move ? { at: morph(from, scene), t: 0, seconds } : null
     this.#show(move ? this.#move!.at(0) : scene)
   }

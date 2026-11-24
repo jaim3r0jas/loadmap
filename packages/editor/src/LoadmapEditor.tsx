@@ -1475,6 +1475,10 @@ export function LoadmapEditor({
   const lookItems = (sheet?: boolean) =>
     !errors && (
       <>
+        {/* after edits the diagram stands where its boxes were: this lays it out as a reload draws it */}
+        <MenuItem sheet={sheet} onSelect={() => void preview.current?.tidy()}>
+          Tidy the diagram
+        </MenuItem>
         <MenuItem
           sheet={sheet}
           toggle
@@ -1940,6 +1944,7 @@ export function LoadmapEditor({
                 chrome="all"
                 fill
                 zoom
+                hold
                 title={false}
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
@@ -1970,6 +1975,7 @@ export function LoadmapEditor({
                 theme={look}
                 {...pageOptions(def.options)}
                 zoom
+                hold
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
                 selected={selected}

@@ -78,6 +78,11 @@ export interface LoadmapHandle {
    * or the story plays.
    */
   show(ids: readonly string[]): void
+  /**
+   * Lays a held diagram (`hold`) out as a page draws it, and resolves once that is drawn: before a picture or a
+   * recording of an editor's diagram, which is then the one a reload shows.
+   */
+  tidy(): Promise<void>
   /** The drawn board, for capturing frames: while the structure moves, `scene` is the frame drawn. */
   board(): { svg: SVGSVGElement; canvas: HTMLCanvasElement; scene: Scene } | null
   engine: Engine
@@ -269,6 +274,12 @@ export function handleOf(lm: LoadmapController): LoadmapHandle {
     },
     values: () => engine.ev.values,
     show: (ids) => engine.viewer?.show(ids),
+    async tidy() {
+      lm.tidy()
+      // the hook says so on its next render: a frame later the scene asked for is the tidy one
+      await new Promise((r) => requestAnimationFrame(r))
+      await this.ready()
+    },
     setValues: (v) => lm.setValues(v),
     setStoryStep: (i) => lm.setStep(i),
     storyStep: () => engine.storyStep,

@@ -18,21 +18,27 @@ export function useRecorder(name: string, get: () => LoadmapHandle | null | unde
       for (const f of off) f()
     }
   }, [name, get])
+  // an editor's diagram stands where its boxes were after edits: a picture or a recording is of the layout a reload
+  // draws, so it is tidied first (nothing for a page's diagram)
+  const tidied = async () => {
+    await get()?.tidy()
+    return get()
+  }
   const png = async () => {
-    const h = get()
+    const h = await tidied()
     if (h) download(await exportPng(h), `${name}.png`)
   }
   const poster = async () => {
-    const h = get()
+    const h = await tidied()
     if (h) download(await recordPoster(h), `${name}-poster.png`)
   }
   const svg = async () => {
-    const h = get()
+    const h = await tidied()
     if (h) download(new Blob([await exportSvg(h, { caption: true })], { type: 'image/svg+xml' }), `${name}.svg`)
   }
   // the story when there is one; otherwise the load rises, then the second scenario takes over: a captioned 6 s
   const record = async (format: 'webm' | 'gif') => {
-    const h = get()
+    const h = await tidied()
     if (!h) return
     if (h.engine.model.story.length)
       return download(await recordVideo(h, { story: true, format, caption: true }), `${name}.${format}`)

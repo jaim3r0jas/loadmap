@@ -55,6 +55,7 @@ What it shows:
 | `compare`     | `boolean`                                  | `true`       | The scenarios side by side in Headroom, when the model declares two or more                                  |
 | `initial`     | `Partial<Values<P>>`                       | the defaults | Values to start from instead of the model's defaults                                                         |
 | `closed`      | `readonly string[]`                        | none         | The subsystems drawn closed at first, by their ids in the view                                               |
+| `hold`        | `boolean`                                  | `false`      | An editor's way: a new `model` with other boxes is laid out from where they are drawn ([below](#hold))       |
 | `onNodeClick` | `(id: string) => void`                     | none         | A click, or Enter, on a box, by its id: every box is a button then                                           |
 | `selected`    | `string \| null`                           | none         | The box drawn as selected, by its id                                                                         |
 | `children`    | `ReactNode`                                | none         | A `Canvas.Panel` each: a tab before the loadmap's own. Anything else is drawn over the canvas                |
@@ -197,6 +198,7 @@ drives from outside.
 | `step(dtReal)`        | Advances the dots (and a move to a new structure) by `dtReal` real seconds and draws: the deterministic way to animate        |
 | `reset(seed?)`        | Empties the queues and the dots and starts over with this seed (default: the first one)                                       |
 | `show(ids)`           | On a board that zooms, brings these boxes into view, flying there                                                             |
+| `tidy()`              | `Promise<void>`: lays a held diagram (`hold`) out as a page draws it, done once that is drawn                                 |
 | `board()`             | `{ svg, canvas, scene }` of the drawn board, for capturing frames; `null` before it is drawn                                  |
 | `engine`              | The engine that runs the board (`Engine`): low level, for export                                                              |
 
@@ -239,6 +241,7 @@ the page's flow. A canvas always pans and zooms, so `<Loadmap>` and `<Canvas>` d
 | `storyPlaying`, `setStoryPlaying(on)`    | The story plays; play from the step after the one shown, or pause                                                                     |
 | `cue`                                    | What the board says about the step played (`Cue`: `step`, `title`, `detail`, `after`, `top`, `seconds`); `null` when it does not play |
 | `closed`, `setClosed(ids)`               | The subsystems drawn closed; draws these closed and every other one open                                                              |
+| `held`, `tidy()`                         | Whether the diagram is laid out from where its boxes were drawn (`hold`); lays it out as a page draws it                              |
 | `fullScreen`, `toggleFullScreen()`       | The root is full screen (the browser's, the overlay, or `fill`); in or out                                                            |
 | `fullScreenMode`, `setFullScreenMode(m)` | What stands around the diagram in full screen: `'panels'` (`chrome="all"`) or `'focus'` (`chrome="least"`)                            |
 | `fill`, `zoom`                           | The options as given                                                                                                                  |
@@ -252,6 +255,19 @@ its own defaults; the engine stays, and what is drawn moves to the new structure
 new model's story has it (the step with its text, or the one in its place in a story as long), as it is written now:
 its values and what it closes. The dots run on, with their backlog, when the new model has the same flows, stages and
 routes; another structure starts them over. Give `<Loadmap>` a `key` for a model that is another document.
+
+### Hold
+
+With `hold`, a new `model` whose boxes or edges changed is laid out from where the boxes are drawn: ELK keeps each
+box's layer, its order and its place, and puts a new box beside the one an edge ties it to. What the edit did not touch
+stays where it was (on the examples one box moves, where a layout from scratch moves three to five). The places are
+taken once, when the new model arrives, and hold for every scenario and step of that model; a model with the same
+boxes keeps the ones it had.
+
+It is for an editor. The held layout is often larger than the one a page draws from scratch, and it is not what a
+reload shows: `tidy()` (the handle's, or the controller's) lays the diagram out as a page does, and moves the boxes
+there. Call it before a picture or a recording of a diagram that was edited. A diagram with subsystems, or folded
+into rows, is laid out from scratch as ever.
 
 ## The pieces
 
