@@ -3183,7 +3183,9 @@ export class Compiler {
         if (p) this.report.error('bad-expect', p.key, `an expect on what is lost takes no ${p.key.name}`)
       }
       const v = this.constProp<number>(b, 'lost')
-      if (!(v != null && v >= 0 && v < 1)) {
+      // not a constant: said where it was read
+      if (v == null) return undefined
+      if (!(v >= 0 && v < 1)) {
         this.report.error(
           'out-of-range',
           this.prop(b, 'lost')!.value,

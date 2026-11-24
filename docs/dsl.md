@@ -414,7 +414,7 @@ With `underTarget` it holds up to that load multiple; without one it is checked 
 latency is. Without a `flow` it holds for each flow, and the one that loses most is named. A failure says where:
 "expected at most 0.1 % of orders lost, but 14 % is lost at 1×, most of it turned away at the payment provider". In
 code it is `ev.lost.orders` (its rate, its share and each stage's part) and `model.lost(values)`. The Live panel shows
-the share of each flow an expectation holds.
+the share of each flow an expectation holds, red past what is promised at the values shown.
 
 Under GitHub Actions (or with `--format github`) each problem is also written as an annotation, so it shows on its
 line in the pull request, and a table of the expectations goes into the job summary.

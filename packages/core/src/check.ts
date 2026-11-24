@@ -273,33 +273,36 @@ function lostCheck<P, C extends string>(
   // the flow that loses the largest share speaks for all of them
   const worst = (bound: 'low' | 'high', l: number) => {
     const all = model.lost({ ...values, load: l } as Partial<Values<P>>, bound, flows)
-    return flows.reduce((a, f) => (all[f]!.share > all[a]!.share ? f : a), flows[0]!)
+    const f = flows.reduce((a, x) => (all[x]!.share > all[a]!.share ? x : a), flows[0]!)
+    return { f, ...all[f]! }
   }
-  const at = (bound: 'low' | 'high', l: number) =>
-    model.lost({ ...values, load: l } as Partial<Values<P>>, bound, flows)[worst(bound, l)]!.share
+  const at = (bound: 'low' | 'high', l: number) => worst(bound, l).share
   // a share is held to a millionth of a percent: the sums behind it are not exact
   const past = (x: number) => x > under + 1e-8
   const name = (f: string) => model.def.flows[f]?.label ?? f
-  // any measured data that is missing may move what a flow loses
+  // any measured data that is missing may move what a flow loses: a capacity once, for its component
+  const all = Object.values<ComponentResult<C>>(ev.components)
+  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
   const data = [
-    ...Object.values<ComponentResult<C>>(ev.components)
-      .filter((x) => x.capacity?.unread)
-      .map((x) => `${x.short}: ${x.capacity!.unread}`),
-    ...gaps.map(([n, m]) => `${n}: ${m.missing}`),
-  ].filter((x, i, all) => all.indexOf(x) === i)
+    ...all.filter((x) => x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
+    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
+  ]
   const verdict = (low: boolean, high: boolean): Outcome =>
     !high && !data.length ? 'fail' : data.length || !low ? 'inconclusive' : 'pass'
   const reasons = (outcome: Outcome, edge: string[]) => (outcome === 'fail' ? [] : [...data, ...edge])
   const most = share(under)
   const every = e.flow == null
+  // a share just past the limit reads as the limit at two digits: then with four
+  const more = (x: number) => (share(x) === most ? `${Number((x * 100).toPrecision(4))} %` : share(x))
   // a flow's label is often a plural ("orders"): the share is the subject, so the verb fits either
   const kept = (who: string) => (under > 0 ? `at most ${most} of ${who}` : every ? 'nothing' : `nothing of ${who}`)
   if (e.underTarget == null) {
     const load = ev.values.load
-    const [low, high] = [at('low', load), at('high', load)]
+    // the wording says what the pessimistic edge shows, its cause too
+    const { f, share: low, causes } = worst('low', load)
+    const high = at('high', load)
     const outcome = verdict(!past(low), !past(high))
-    const f = worst('low', load)
-    const cause = ev.lost[f]?.causes.reduce<Lost['causes'][number] | undefined>(
+    const cause = causes.reduce<Lost['causes'][number] | undefined>(
       (a, c) => (a && a.rate >= c.rate ? a : c),
       undefined,
     )
@@ -311,10 +314,10 @@ function lostCheck<P, C extends string>(
         ? ', most of it failed fast by its breaker'
         : `, most of it ${LOSS_WORDS[cause.loss]} at ${place}`
     const message = !past(low)
-      ? low > 0
+      ? low > 1e-8
         ? `${share(low)} of ${name(f)} is lost at ${fmt(load)}×${where}, within ${most}`
         : `nothing${every ? '' : ` of ${name(f)}`} is lost at ${fmt(load)}×${where}`
-      : `expected ${kept(every ? 'every flow' : name(f))} lost, but ${share(low)}${every ? ` of ${name(f)}` : ''} is lost at ${fmt(load)}×${where}${by}`
+      : `expected ${kept(every ? 'every flow' : name(f))} lost, but ${more(low)}${every ? ` of ${name(f)}` : ''} is lost at ${fmt(load)}×${where}${by}`
     const edge = past(low) && !past(high) ? ['holds only at the high edge of a ±'] : []
     return result(e, outcome, reasons(outcome, edge), { target: null, full: null }, message)
   }
@@ -325,7 +328,7 @@ function lostCheck<P, C extends string>(
   const outcome = verdict(range.low >= e.underTarget, range.high >= e.underTarget)
   const found = Number.isFinite(range.low) ? multiples(range, max) : `past ${fmt(max)}×`
   // the flow that loses first, just past where the first one does
-  const first = name(Number.isFinite(range.low) ? worst('low', Math.min(max, range.low * 1.001)) : flows[0]!)
+  const first = name(Number.isFinite(range.low) ? worst('low', Math.min(max, range.low * 1.001)).f : flows[0]!)
   const message =
     range.low >= e.underTarget
       ? `${kept(every ? 'every flow' : first)} is lost ${Number.isFinite(range.low) ? 'up to ' : ''}${found}${where}`

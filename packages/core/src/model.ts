@@ -1805,21 +1805,17 @@ function contextAt(
         )
       const st = stages[d] as Extract<StageDef, { kind: 'lost' }>
       const wanted = st.takes ?? LOSSES
-      const all = causes(f)
-      const failing = all.filter((c) => c.loss !== 'dropped').reduce((a, c) => a + c.rate, 0)
-      const k = failing > 0 ? Math.min(1, forGood(f) / failing) : 0
-      const fb = def.flows[f]!.fallback
-      const served = pastAfter(f)
+      // its part of what the flow loses for good: what its stages lose, of the losses it takes
       let total = 0
-      for (const c of all)
-        if (st.from.includes(c.stage) && wanted.includes(c.loss))
-          total += c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k
-      if (fb && wanted.includes('rejected'))
-        for (const s of fb.route) if (st.from.includes(s)) total += arriving(s, f) * shedFor(s, f)
+      for (const c of lostOf(f).causes)
+        if (c.stage != null && st.from.includes(c.stage) && wanted.includes(c.loss)) total += c.rate
       return total
     })
 
-  /** What a flow loses for good: every lost box together would take this, and what its breaker fails fast. */
+  /**
+   * What a flow loses for good, by stage and loss: the lost boxes read their part of it, so they add up to it, with what
+   * its breaker fails fast (at no stage).
+   */
   const lostOf = (f: string): Lost =>
     memo(`${f} lost for good`, () => {
       const all = causes(f)

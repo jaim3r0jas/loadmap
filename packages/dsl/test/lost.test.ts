@@ -58,6 +58,7 @@ describe('what is lost, in an expect', () => {
     expect(errors(line('flow: quotes; lost: 10%; p99: 1'))).toEqual(['error: an expect on what is lost takes no p99'])
     expect(errors(line('lost: 10%; notFull: 3'))).toEqual(['error: an expect on what is lost takes no notFull'])
     expect(errors(line('flow: quote; lost: 10%'))).toEqual(['error: unknown flow "quote" | did you mean "quotes"?'])
+    // the unit is checked on its own pass, so a load multiple is told twice: out of range, and not a share
     expect(errors(line('lost: 3×'))).toContain(
       'error: lost is a share, and this is a load multiple | write a share: 0.8 or 80%; a load multiple goes in expect { underTarget: … }',
     )
