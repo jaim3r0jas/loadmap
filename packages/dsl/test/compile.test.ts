@@ -1394,6 +1394,71 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile stocks: one that keeps what it gains, one that grows, each flow at its average', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 10; default: 1 }
+param days "Retention" { options: [7, 14]; default: 7 }
+flow orders "orders" { rate: 100 * load; average: 45%; route: db; from: shop }
+node shop "Shop"
+node db "DB" {
+  store
+  capacity: measured(3_000, "writes/s")
+  over: "writes queue"
+}
+shop -> db
+component disk "Disk" {
+  fills: at.db.orders * 2KB
+  level: measured(120, "GB", "df")
+  capacity: configured(5_000, "GB", "volume size")
+  over: "writes fail"
+}
+component topic "Topic" {
+  fills: at.db.orders * 1KB * 3
+  keeps: days * 1d
+  capacity: configured(1_500, "GB", "3 volumes")
+  over: "the brokers stop taking writes"
+}
+growth { rate: 0.05; per: month; asOf: "2026-11-01" }
+expect "A year of disk" { component: disk; lasts: 365d }
+`)
+    const ts = defineModel({
+      load: p.load({ max: 10, default: 1 }),
+      params: { days: p.select({ label: 'Retention', options: [7, 14], default: 7 }) },
+      flows: { orders: { label: 'orders', rate: ({ load }) => 100 * load, average: 0.45 } },
+      components: {
+        db: { name: 'DB', capacity: measured(3_000, 'writes/s'), over: 'writes queue' },
+        disk: {
+          name: 'Disk',
+          fills: ({ at }) => (at.db.orders * 2_000) / 1e9,
+          level: measured(120, 'GB', 'df'),
+          capacity: configured(5_000, 'GB', 'volume size'),
+          over: 'writes fail',
+        },
+        topic: {
+          name: 'Topic',
+          fills: ({ at }) => (at.db.orders * 1_000 * 3) / 1e9,
+          keeps: ({ days }) => (days as number) * 86_400,
+          capacity: configured(1_500, 'GB', '3 volumes'),
+          over: 'the brokers stop taking writes',
+        },
+      },
+      stages: { db: store('db') },
+      routes: { orders: ['db'] },
+      growth: { rate: 0.05, per: 'month', asOf: '2026-11-01' },
+    })
+    same(ts, dsl, [...loads, { load: 2, days: 14 }])
+    // 45 orders a second at 1× × 3 KB kept 7 days: 81.6 GB of 1,500
+    expect(dsl.evaluate({ load: 1 }).components.topic!.demand).toBeCloseTo(45 * 3e-6 * 7 * 86_400, 6)
+    expect(dsl.expectations).toMatchObject([{ component: 'disk', lasts: 365 * 86_400 }])
+    // new in 1.7: an older stamp says so, with the fix that raises it
+    const old = compile(
+      `loadmap 1.6\nload { max: 2 }\nflow f { rate: 1; average: 50%; route: s; from: a }\nnode a "A"\nnode s "S" { sink }\na -> s\n`,
+    )
+    expect(old.diagnostics.map((d) => d.message)).toContain(
+      '"average:" is from loadmap 1.7; this definition says loadmap 1.6',
+    )
+  })
+
   it('compile a cache, whose hits are gone from the stages after it', () => {
     const dsl = model(`loadmap 1.1
 load "Load" { max: 10; default: 1 }

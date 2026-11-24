@@ -113,6 +113,7 @@ A flow is what moves through the routes: requests, orders, events. Each has its 
 | `overload` | What its backlog in a queue does: `{ drop?: { olderThan, reason? }, merge?: { share, reason? } }`, or a function |
 | `retry`    | `{ times, budget? }`: what is turned away is sent again; a function of the load and the parameters only          |
 | `timeout`  | Seconds a client waits: a slower unit fails (and retries with `retry`); needs a `service` on its way             |
+| `average`  | Its rate over a day against its peak, 0 to 1: what a [stock](#components) reads. Default 1                       |
 
 `drop` drops units older than `olderThan` simulated seconds before they are handled. `merge` is keep-newest-per-key as a
 share: under backlog, that share of what is handled leaves the queue without using capacity. Without a rule a backlog
@@ -152,13 +153,19 @@ and the crossings are the load multiples where that reaches the target and 100 %
 | `held`     | Seconds each unit holds one of its slots, for every flow or per flow: the demand is then slots in use |
 | `on`       | The stages whose units hold its slots; by default the stages that use it                              |
 | `service`  | Seconds a unit takes here when nothing waits: the flows through it get a latency                      |
+| `fills`    | What a stock gains a second, in the capacity's unit, every flow at its `average`; no stage runs it    |
+| `keeps`    | Seconds a stock keeps what it gains: it settles at fills × keeps                                      |
+| `level`    | A capacity: where a stock that grows stands on `growth.asOf`; it grows from there as the load does    |
 | `when`     | Leaves the component out (no utilization) while it returns false                                      |
 | `describe` | One line under the name in the limits list; may be a function                                         |
 
 `held` counts slots rather than a rate (a connection, a session, a request in flight): by Little's law, the demand is
 the units per second reaching `on` times the seconds held, and the capacity counts slots.
 `ev.components.<id>.held` gives each flow's time. `service` makes each stage the component runs a queue (M/M/1),
-whose time grows as service ÷ (1 − utilization):
+whose time grows as service ÷ (1 − utilization). `fills` makes a stock (a disk, a retention): with `keeps` its level
+is fills × keeps, with `level` it is that level plus what it gained up to the day the load reaches the multiple, so it
+needs `growth` to be ranked; `ev.components.<id>.stock` gives its `level`, `gains` and, for one that grows, `room`, the
+seconds left at what it gains now:
 
 ```ts
 components: {
@@ -344,6 +351,7 @@ a page and its recordings say the same date on any day. `model.dateAt(multiple)`
 | `component`   | One component; the first limit without one                                                            |
 | `underTarget` | Every component (or this one) stays under the target utilization up to at least this multiple         |
 | `notFull`     | Nothing (or this component) runs out before this multiple                                             |
+| `lasts`       | Nothing (or this component) runs out for this many seconds from `growth.asOf`; needs growth           |
 | `flow`        | With `p50`, `p95` or `p99` (seconds): the flow's latency stays under it, up to `underTarget` if given |
 | `severity`    | `'warn'` is reported but never fails a check run; default `'fail'`                                    |
 

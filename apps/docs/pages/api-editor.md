@@ -37,7 +37,7 @@ editor a new `key`, or call `setSource` on its handle.
 | `files`       | A definition in several files: `{ path, files }` (see below)                                                              |
 | `onFiles`     | `(files) => void`: every change of any file, a file added or removed                                                      |
 | `onSave`      | `(files) => void \| Promise<void>`: ⌘S or Ctrl+S in the editor saves every file                                           |
-| `templates`   | The starters in New: `Template[]`, or `false` to leave them out; default the twelve in `TEMPLATES`                        |
+| `templates`   | The starters in New: `Template[]`, or `false` to leave them out; default the thirteen in `TEMPLATES`                      |
 | `catalog`     | **Add → From the catalog** in New; default true, `false` leaves it out                                                    |
 | `newItems`    | `BarSection[]`: more sections in the New menu, after the templates                                                        |
 | `exportItems` | `BarSection[]`: more sections in the Export menu, after the download                                                      |

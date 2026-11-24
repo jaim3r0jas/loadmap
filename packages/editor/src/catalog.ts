@@ -44,4 +44,9 @@ export const CATALOG: readonly TemplateEntry[] = [
     title: 'Slow partner API',
     summary: 'A partner that slows as it fills, a client timeout, and retries.',
   },
+  {
+    id: 'disk',
+    title: 'Disk that fills up',
+    summary: 'A volume that fills a little every day, and the day it is full.',
+  },
 ]

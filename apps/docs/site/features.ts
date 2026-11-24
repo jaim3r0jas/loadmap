@@ -20,6 +20,7 @@ export function features(model: Model, view: View): string[] {
     ['timeout', model.flowIds.some((f) => model.def.flows[f]?.timeout != null)],
     ['fan-out', kinds.has('fanout')],
     ['split', kinds.has('split')],
+    ['stock', model.componentIds.some((c) => model.def.components[c]?.fills != null)],
     ['priority', priorities.size > 1],
     ['drop', overload.some((o) => o.drop)],
     ['merge', overload.some((o) => o.merge)],

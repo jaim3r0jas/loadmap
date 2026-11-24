@@ -219,6 +219,26 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     scope: 'const',
     doc: 'The stages whose units hold its slots, a -> b; without it, the stages it runs.',
   },
+  fills: {
+    value: 'number',
+    scope: 'ctx',
+    unit: 'per second',
+    since: '1.7',
+    doc: "What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage.",
+  },
+  keeps: {
+    value: 'number',
+    scope: 'values',
+    unit: 'seconds',
+    since: '1.7',
+    doc: 'The seconds a stock keeps what it gains, a retention: it settles at fills × keeps.',
+  },
+  level: {
+    value: 'capacity',
+    scope: 'values',
+    since: '1.7',
+    doc: 'Where a stock that grows stands on growth\'s asOf, in its capacity\'s unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it.',
+  },
   capacity: {
     inspector: 'main',
     value: 'capacity',
@@ -642,6 +662,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         was: 'full',
         doc: 'Nothing (or this component) runs out before this load multiple.',
       },
+      lasts: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        since: '1.7',
+        doc: "Nothing (or this component) runs out for this long from growth's asOf: 365d. The growth turns it into a load multiple, so it needs one.",
+      },
       severity: {
         value: 'enum',
         scope: 'const',
@@ -885,6 +912,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         required: true,
       },
       priority: { value: 'number', scope: 'const', doc: '1 is served first. Flows of the same priority share.' },
+      average: {
+        value: 'number',
+        scope: 'values',
+        unit: 'share',
+        since: '1.7',
+        doc: 'Its rate over a day against its peak: 45% when the day averages 45 % of rate. What a stock fills reads it; every limit at a load still reads the peak. Default 100%.',
+      },
       timeout: {
         value: 'number',
         scope: 'values',

@@ -182,6 +182,30 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'declares', id: 'db3' }, { kind: 'contains', text: 'like: db' }],
   },
   {
+    id: 'stock-retention',
+    example: CHECKOUT,
+    request: 'Kafka keeps 7 days of events on three 500 GB disks; each event is 1 KB, written three times. Add that.',
+    asserts: [
+      { kind: 'change' },
+      { kind: 'contains', text: 'fills:' },
+      { kind: 'contains', text: 'keeps: 7d' },
+      { kind: 'honest' },
+    ],
+  },
+  {
+    id: 'stock-grows',
+    example: SHOP,
+    box: 'db',
+    request:
+      'The database volume is 500 GB and holds 120 GB today; each order adds 2 KB. When is it full? A day averages half the peak.',
+    asserts: [
+      { kind: 'change' },
+      { kind: 'contains', text: 'level: measured(120' },
+      { kind: 'contains', text: 'average:' },
+      { kind: 'honest' },
+    ],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',

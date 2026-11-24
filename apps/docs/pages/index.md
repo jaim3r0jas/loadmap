@@ -81,7 +81,7 @@ shop.loadmap: 1 expectation holds
 <li><a href="examples/regions/"><b>Two regions</b><span>Each region a subsystem, in several files: what happens to one when the other is lost.</span></a></li>
 </ul>
 
-Each is laid out to read in a minute, with a story to play; [All examples](/examples/) has twelve starters to make
+Each is laid out to read in a minute, with a story to play; [All examples](/examples/) has thirteen starters to make
 your own.
 
 ## Start

@@ -1,5 +1,5 @@
-import { type Assumption, type Capacity, sourceText } from '@loadmap/core'
-import { compact, duration, fmt, multiple, multiples, pct, secs } from '@loadmap/core/format'
+import { type Assumption, type Capacity, type Stock, sourceText } from '@loadmap/core'
+import { compact, duration, fmt, multiple, multiples, pct, period, secs } from '@loadmap/core/format'
 import { type ReactNode, useEffect, useState } from 'react'
 import { isOn, LoadRange, plusMinus } from './bar'
 import type { LoadmapController } from './useLoadmap'
@@ -42,6 +42,13 @@ export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: b
   )
 }
 
+/** "Gains 3.1 GB a day · full in 41 days at this rate"; "Keeps 7 days of 9.3 GB a day". */
+function stockText(s: Stock, unit: string): string {
+  const day = `${fmt(s.gains * 86_400)} ${unit} a day`
+  if (s.keeps != null) return `Keeps ${period(s.keeps)} of ${day}.`
+  return s.room === 0 ? `Full: it gains ${day}.` : `Gains ${day} · full in ${period(s.room ?? Infinity)} at this rate.`
+}
+
 /** Each component's utilization in the order they reach the target, with where they cross it and 100 %. */
 export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: LoadmapController; title?: ReactNode }) {
   const { ev, model } = lm
@@ -81,6 +88,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                   : (c.describe ?? (c.capacity ? `${fmt(c.capacity.value)} ${c.capacity.unit}` : 'switched off'))}
               </span>
               {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
+              {c.stock && <span className="lm-sub lm-stock">{stockText(c.stock, c.capacity?.unit ?? '')}</span>}
             </div>
             <div
               className="lm-track"
@@ -99,7 +107,9 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               {c.util == null ? '—' : `${pct(c.util)} · ${num(c.demand ?? 0)} ${c.capacity?.unit ?? ''}`}
               <small>
                 {c.util == null
-                  ? 'switched off'
+                  ? c.stock?.undated
+                    ? 'not ranked: no growth dates it'
+                    : 'switched off'
                   : `${pct(model.thresholds.target)} at ${span(c.targetRange, c.target)} · full at ${span(c.fullRange, c.full)}`}
               </small>
             </div>

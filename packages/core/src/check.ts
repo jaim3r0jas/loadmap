@@ -1,7 +1,7 @@
 import type { CrossingRange } from './capacity'
-import { duration, fmt, multiples, pct } from './format'
+import { duration, fmt, multiples, pct, period } from './format'
 import { PERCENTILES } from './latency'
-import { type ComponentResult, crossing, expectationNamed, type Model, sureness } from './model'
+import { type ComponentResult, crossing, expectationNamed, type Model, multipleAfter, reach, sureness } from './model'
 import type { Values } from './params'
 
 /**
@@ -19,6 +19,11 @@ export interface Expectation<C extends string = string> {
   underTarget?: number
   /** Nothing runs out (or this component does not) before this multiple. */
   notFull?: number
+  /**
+   * Nothing runs out (or this component does not) for this many seconds from `growth.asOf`: the load the growth
+   * reaches then is its `notFull`. It needs growth.
+   */
+  lasts?: number
   /** @deprecated `underTarget`: a target is a utilization everywhere else. */
   target?: number
   /** @deprecated `notFull`. */
@@ -64,7 +69,14 @@ export function check<P, C extends string>(
   // measurements the snapshot has no value for: each counts once, for what reads it
   const gaps = Object.entries(model.def.snapshot?.measurements ?? {}).filter(([, m]) => m.missing != null)
   return expectations.map((written) => {
-    const e = expectationNamed(written)
+    const named = expectationNamed(written)
+    // a time to last is the load growth reaches then, as defineModel reads it for the model's own
+    if (named.lasts != null && named.notFull == null && !model.growth)
+      throw new Error('loadmap: an expectation holds a time (lasts): the model needs growth')
+    const e =
+      named.lasts != null && named.notFull == null && model.growth
+        ? { ...named, notFull: multipleAfter(model.growth, named.lasts) }
+        : named
     const scenario = e.scenario == null ? null : model.scenarios.find((s) => s.label === e.scenario)
     if (e.scenario != null && !scenario) throw new Error(`loadmap: no scenario "${e.scenario}"`)
     const ev = model.evaluate(scenario?.values as Partial<Values<P>> | undefined)
@@ -79,10 +91,11 @@ export function check<P, C extends string>(
     const all = Object.values<ComponentResult<C>>(ev.components)
     const scope = c ? [c] : all
     // a component without a published figure is not ranked: it may only run out sooner, so a failure stays one
-    const unknown = scope.filter((x) => x.missing != null)
-    const none = unknown
-      .map((x) => `${x.short} ${x.plural ? 'have' : 'has'} no published benchmark ${x.missing}${where}`)
-      .join('; ')
+    // and a stock that grows with no growth to date it is not ranked either
+    const unknown = scope.filter((x) => x.missing != null || x.stock?.undated)
+    const why = (x: ComponentResult<C>) =>
+      x.missing != null ? `no published benchmark ${x.missing}` : 'no growth to say when it fills'
+    const none = unknown.map((x) => `${x.short} ${x.plural ? 'have' : 'has'} ${why(x)}${where}`).join('; ')
     // measured data that is missing may move the answer either way: a capacity counts for its component, any other
     // measurement (a rate, a share) for everything
     const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
@@ -90,11 +103,11 @@ export function check<P, C extends string>(
     for (const x of scope) if (x.capacity?.unread) unread.add(`${x.short}: ${x.capacity.unread}`)
     for (const [name, m] of gaps) if (!read.has(name)) unread.add(`${name}: ${m.missing}`)
     const data = [...unread]
-    const benchmarks = unknown.map((x) => `${x.short}: no published benchmark ${x.missing}`)
+    const benchmarks = unknown.map((x) => `${x.short}: ${why(x)}`)
     if (c && unknown.length) return result(e, 'inconclusive', [...benchmarks, ...data], found, none)
     if (c && c.util == null)
       return result(e, data.length ? 'inconclusive' : 'pass', data, found, `${c.short} is switched off${where}`)
-    const claims: { at: 'pass' | 'edge' | 'fail'; text: string; min: number }[] = []
+    const claims: { at: 'pass' | 'edge' | 'fail'; text: string; min: number; wants?: string }[] = []
     const r = (x: CrossingRange | null) => (x ? multiples(x, model.searchMax) : 'never')
     const target = `the ${pct(model.thresholds.target)} target`
     // holds at the low edge, only at the high edge of a ±, or at neither
@@ -115,17 +128,20 @@ export function check<P, C extends string>(
     }
     if (e.notFull != null) {
       const by = c ?? ev.firstFull
+      // a time to last is a load through growth: the date says it again
+      const dated = e.lasts != null ? reach(found.full, model.searchMax, model.dateAt) : r(found.full)
       claims.push({
         at: at(found.full, e.notFull),
         min: e.notFull,
         text: by
-          ? `${by.short} ${by.plural ? 'run' : 'runs'} out at ${r(found.full)}${where}${sureness(by.capacity)}`
+          ? `${by.short} ${by.plural ? 'run' : 'runs'} out at ${dated}${where}${sureness(by.capacity)}`
           : `nothing runs out${where}`,
+        ...(e.lasts != null ? { wants: `to last ${period(e.lasts)} (${fmt(e.notFull)}×)` } : {}),
       })
     }
     const failed = claims.filter((x) => x.at !== 'pass')
     const message = failed.length
-      ? failed.map((x) => `expected at least ${fmt(x.min)}×, but ${x.text}`).join('; ')
+      ? failed.map((x) => `expected ${x.wants ?? `at least ${fmt(x.min)}×`}, but ${x.text}`).join('; ')
       : claims.map((x) => x.text).join('; ')
     const edges = claims
       .filter((x) => x.at === 'edge')

@@ -97,6 +97,8 @@ flow orders "orders" {
 flow events "events" {
   unit: "event"
   rate: 400 * load
+  # over a day, 60 % of its peak: what a stock reads
+  average: 60%
   priority: 2
   drop { olderThan: 60; reason: "too old" }
   merge { when: newest; share: 0.5; reason: "newest kept" }
@@ -162,6 +164,14 @@ component conns "DB connections" {
   held { orders: 0.05 }
   capacity: configured(200, "connections", "pool size")
   over: "requests wait for a connection"
+}
+
+# a stock: what the topic keeps fills its disks over time, not at a load
+component topicDisk "Topic disks" {
+  fills: at.topic.events * 1KB * 3
+  keeps: 7d
+  capacity: configured(50, "TB", "3 × 16 TB volumes")
+  over: "the brokers stop taking writes"
 }
 
 node db "Database" "primary" {

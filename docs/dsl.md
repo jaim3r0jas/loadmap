@@ -600,7 +600,8 @@ yet (the wait for a slot) is read and listed, and nothing uses it.
 
 The shapes real systems take have statements of their own, so a model says what they do instead of working it out in
 formulas: a cache, an autoscaled pool, a rate limiter, retries, a box where units are lost, queues, a fan-out, a split,
-slots held for a while, connections, latency and timeouts. The first four have a template to start from.
+slots held for a while, stocks that fill over time, connections, latency and timeouts. The first four have a template
+to start from.
 
 #### What reaches a stage
 
@@ -796,6 +797,42 @@ At 40 orders a second, 0.8 connections are in use; the pool reaches half at 62.5
 different times take a block, `held { orders: 20ms; sessions: 1h }`, and a flow it does not name holds none. A
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
+
+#### Stocks
+
+A stock fills over time, not at a load: a disk, a topic's retention, a database's size, a bucket. `fills` is what it
+gains each second, in its capacity's unit (a size is brought to it, as a demand's is), and its capacity is what it
+holds. It runs no stage: write it as a component of its own, or a box with no stage. Two kinds:
+
+```loadmap
+component topicDisk "Topic disks" {
+  fills: at.topic.orders * 1KB * 3
+  keeps: 7d
+  capacity: configured(1_500, "GB", "3 × 500 GB volumes")
+  over: "the brokers stop taking writes"
+}
+
+component dbDisk "Orders DB disk" {
+  fills: at.db.orders * 2KB
+  level: measured(120, "GB", "df on 2026-11-01")
+  capacity: configured(500, "GB", "volume size")
+  over: "writes fail: the volume is full"
+}
+```
+
+With `keeps` it holds what it gains that long, a retention, and settles at `fills × keeps`: it runs out at a load
+multiple like any other component. With `level` it stands there on growth's `asOf` and grows as the load does, so its
+level at a load multiple is the one on the day the load reaches it: what it stood at, plus what it gained each day on
+the way. It is ranked with the rest, and the date beside its multiple is the day the volume is full. Without
+`growth`, nothing says when a load is reached: it is not ranked, and the verdict says so. A `±` on its level reads it
+high on the pessimistic edge. The limits list says what it gains a day and, for one that grows, how long it has left
+at that rate.
+
+A rate is the peak the load multiplies; a day is not all peak. `average` on a flow is its rate over a day against its
+peak, `average: 45%`, and a stock reads every flow at its average. Every other component still reads the peak.
+`expect` takes the time a stock must last, `lasts: 365d`: nothing (or its `component`) runs out before the load the
+growth reaches that long after `asOf`. In TypeScript, `fills`, `keeps` and `level` sit on the component, `average` on
+the flow, `lasts` on the expectation, and `ev.components.dbDisk.stock` gives its `level`, `gains` and `room`.
 
 #### Connections
 
@@ -1888,6 +1925,7 @@ After the keyword: [label].
 | `p99` | number in seconds, constant | The flow's 99th percentile stays under this many seconds. |
 | `underTarget` | load multiple, constant | Every component (or this one) stays under the target utilization up to at least this load multiple. From loadmap 1.1; `target` before. |
 | `notFull` | load multiple, constant | Nothing (or this component) runs out before this load multiple. From loadmap 1.1; `full` before. |
+| `lasts` | number in seconds, constant | Nothing (or this component) runs out for this long from growth's asOf: 365d. The growth turns it into a load multiple, so it needs one. From loadmap 1.7. |
 | `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
 
 ### step
@@ -2059,6 +2097,7 @@ After the keyword: id [label].
 | `unit` | string, constant | One unit of the flow, singular: "order". |
 | `rate` (required) | number per second, formula | Units per second. |
 | `priority` | number, constant | 1 is served first. Flows of the same priority share. |
+| `average` | share, formula of parameters | Its rate over a day against its peak: 45% when the day averages 45 % of rate. What a stock fills reads it; every limit at a load still reads the peak. Default 100%. From loadmap 1.7. |
 | `timeout` | number in seconds, formula of parameters | Seconds a client waits: a unit slower than this fails, and is sent again with retry, though its work still runs. It needs a service time on its way. |
 | `route` (required) | route, constant | The stages it passes, in order: a -> b -> c. An edge draws each hop. |
 | `from` (required) | node, constant | The node its dots start from. |
@@ -2127,6 +2166,9 @@ After the keyword: [id] [label].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
+| `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
+| `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
@@ -2181,6 +2223,9 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
+| `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
+| `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
@@ -2211,6 +2256,9 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
+| `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
+| `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
@@ -2245,6 +2293,9 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
+| `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
+| `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
 | `capacity` | capacity, formula | What it can handle: measured(value, unit, source) or estimated(value, unit, source), `value +- 30%` (±) saying how sure it is; configured(value, unit, source) for a limit someone set. |
 | `when` | boolean, formula | The component is switched off (no utilization) while this is false. |
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |

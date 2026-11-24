@@ -2,6 +2,7 @@ import type { TemplateEntry } from './catalog'
 import autoscale from './templates/autoscale.loadmap?raw'
 import batchImport from './templates/batch-import.loadmap?raw'
 import cache from './templates/cache.loadmap?raw'
+import disk from './templates/disk.loadmap?raw'
 import notifications from './templates/notifications.loadmap?raw'
 import queueWorkers from './templates/queue-workers.loadmap?raw'
 import rateLimit from './templates/rate-limit.loadmap?raw'
@@ -88,5 +89,11 @@ export const TEMPLATES: readonly Template[] = [
     title: 'Slow partner API',
     summary: 'A partner that slows as it fills, a client timeout, and retries.',
     source: slowPartner,
+  },
+  {
+    id: 'disk',
+    title: 'Disk that fills up',
+    summary: 'A volume that fills a little every day, and the day it is full.',
+    source: disk,
   },
 ]

@@ -41,6 +41,7 @@ describe('the features a model shows', () => {
     expect(template('notifications')).toContain('fan-out')
     expect(template('shards')).toContain('split')
     expect(template('slow-partner')).toEqual(expect.arrayContaining(['retries', 'timeout']))
+    expect(template('disk')).toEqual(expect.arrayContaining(['stock', 'growth']))
   })
 
   it('names nothing a model does not use, and a lone scenario as none, as the board shows no comparison', () => {
