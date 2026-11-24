@@ -230,6 +230,13 @@ export const CASES: Case[] = [
     ],
   },
   {
+    id: 'scaling-curve',
+    example: CHECKOUT,
+    request:
+      'A load test of the workers gave 480 orders/s on 1 pod, 900 on 2, 1600 on 4 and 2400 on 8. Their capacity should follow that curve, not grow in a straight line.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'curve: usl' }, { kind: 'honest' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',

@@ -1,4 +1,4 @@
-export type { LinearFit } from './calibrate'
+export type { Fit, LinearFit, ScalingFit } from './calibrate'
 export {
   type Bound,
   boundOf,

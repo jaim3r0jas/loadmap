@@ -184,7 +184,7 @@ async function look(a: ReturnType<typeof parse>, o: PullCommandOptions, log: (s:
     const model = compile(source, { ...here.options, snapshot: fromSnapshot(s) }).definition?.model
     if (!model) return null
     const fits: Record<string, number> = {}
-    for (const [name, f] of Object.entries(model.def.calibration ?? {})) if (f.origin) fits[name] = f.b
+    for (const [name, f] of Object.entries(model.def.calibration ?? {})) if (f.origin && 'b' in f) fits[name] = f.b
     let headroom: number | null = null
     try {
       const target = model.evaluate().target?.low

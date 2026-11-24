@@ -218,6 +218,32 @@ pool consumers "Consumers" {
 }
 ```
 
+A capacity that does not grow in step with its size takes a scaling curve (from `loadmap 1.7`): `curve: usl` fits
+the Universal Scalability Law, C(N) = λN ÷ (1 + σ(N − 1) + κN(N − 1)), to points of a size and the capacity measured
+at it. σ is contention, work that waits for one lock or leader; κ is coherency, each member talking to every other.
+Twice the pods give less than twice the capacity, and past a peak, √((1 − σ) ÷ κ), less. The assumptions list the
+curve with its peak, and a parameter a curve reads that reaches past the peak warns (`past-peak`). It fits its points
+only, and never a published figure, which stays as its run measured it.
+
+```loadmap
+fit apiScale "API throughput by pods" {
+  curve: usl
+  source: "load test, 2026-10"
+  points n rate {
+    1 500
+    2 969.9
+    4 1_824.8
+    8 3_231
+    16 5_095.5
+  }
+}
+
+# capacity: measured(apiScale(pods), "req/s", "load test, fitted")
+```
+
+In TypeScript, `fitScaling(points, { x, y, source })` (from `@loadmap/core/calibrate`) returns it, callable like a
+linear fit, with its `lambda`, `sigma`, `kappa` and `peak`.
+
 #### Target and full
 
 Thresholds say where the target and "runs out" are, as a share of a component's capacity: by default a component
@@ -1556,6 +1582,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `bad-expect` | an expectation without a target, or with one that does not fit |
 | `bad-step` | a story step that sets what it cannot |
 | `bad-fit` | a fit whose points or measures do not fit |
+| `past-peak` | a size a scaling curve reads that reaches past its peak, where more gives less |
 | `missing-file` | a file a definition names is not among the files it was given, or its path is not one |
 | `import-loop` | libraries that import each other in a loop |
 | `bad-file` | a file used as what it is not: a part that is not of this model, a model imported as a library |
@@ -2016,6 +2043,7 @@ After the keyword: id [label].
 | --- | --- | --- |
 | `source` | string, constant | Where the points came from. |
 | `through` | `origin` | origin: a cost with no idle part (a = 0). |
+| `curve` | `linear` \| `usl` | linear (the default), or usl: a capacity against a size (pods, nodes) by the Universal Scalability Law, where twice the pods give less than twice the capacity and past a peak less. Its points are sizes and capacities; it fits its points only. From loadmap 1.7. |
 | `x` | measure, constant | A measure whose series is x: with `y`, a snapshot fits the two, and the points are what it falls back to. |
 | `y` | measure, constant | A measure whose series is y (the cost), with `x`. |
 

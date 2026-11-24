@@ -469,9 +469,13 @@ function describe(a: Assumption): ReactNode {
     })
   }
   const f = a.fit
+  const shape =
+    'curve' in f
+      ? `${f.y} by ${f.x}, a scaling curve: contention ${sig(f.sigma)}, coherency ${sig(f.kappa)}${Number.isFinite(f.peak) ? `, most at ${sig(f.peak)} ${f.x} and less past it` : ''}`
+      : `${f.y} = ${sig(f.a)} + ${sig(f.b)} × ${f.x}`
   return (
     <>
-      <b>{a.name}:</b> {f.y} = {sig(f.a)} + {sig(f.b)} × {f.x}, r² {f.r2.toFixed(3)} over {f.n} points,{' '}
+      <b>{a.name}:</b> {shape}, r² {f.r2.toFixed(3)} over {f.n} points,{' '}
       <span className="lm-prov" data-kind="measured">
         measured
       </span>

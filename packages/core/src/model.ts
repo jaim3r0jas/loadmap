@@ -1,5 +1,5 @@
 import { blame, flowError } from './blame'
-import type { LinearFit } from './calibrate'
+import type { Fit } from './calibrate'
 import { type Bound, boundOf, type Capacity, type CrossingRange } from './capacity'
 import type { Expectation } from './check'
 import {
@@ -197,7 +197,7 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
    */
   connections?: Readonly<Record<string, ConnectionDef<NoInfer<S>, NoInfer<F>>>>
   /** Fits used by the model, listed with the assumptions. */
-  calibration?: Readonly<Record<string, LinearFit>>
+  calibration?: Readonly<Record<string, Fit>>
   /**
    * The measured data the model reads (through `fromSnapshot`), as `parseSnapshot` returns it: each measurement is
    * listed with the assumptions, with its origin, or with why the definition's own value is used instead.
@@ -337,7 +337,7 @@ export interface FlowPath<S extends string = string> {
 
 export type Assumption =
   | { kind: 'capacity'; component: string; name: string; capacity: Capacity }
-  | { kind: 'fit'; name: string; fit: LinearFit }
+  | { kind: 'fit'; name: string; fit: Fit }
   /** A measurement of the snapshot; a missing one says why, and the definition's own value is used. */
   | { kind: 'measurement'; name: string; measurement: Measurement }
   /** A connection: its rule, in a sentence. */

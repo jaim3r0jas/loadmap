@@ -49,6 +49,7 @@ export const CODES = {
   'bad-expect': 'an expectation without a target, or with one that does not fit',
   'bad-step': 'a story step that sets what it cannot',
   'bad-fit': 'a fit whose points or measures do not fit',
+  'past-peak': 'a size a scaling curve reads that reaches past its peak, where more gives less',
   'missing-file': 'a file a definition names is not among the files it was given, or its path is not one',
   'import-loop': 'libraries that import each other in a loop',
   'bad-file': 'a file used as what it is not: a part that is not of this model, a model imported as a library',

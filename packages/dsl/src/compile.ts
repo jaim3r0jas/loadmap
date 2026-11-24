@@ -6,8 +6,8 @@ import {
   check,
   defineModel,
   type Evaluation,
+  type Fit,
   fanout,
-  type LinearFit,
   type Loss,
   limit,
   lost,
@@ -20,6 +20,7 @@ import {
   published,
   queue,
   type RetryRule,
+  type ScalingFit,
   type SnapshotReader,
   type SplitBranch,
   type StageDef,
@@ -29,7 +30,8 @@ import {
   store,
   workers,
 } from '@loadmap/core'
-import { fitLinear } from '@loadmap/core/calibrate'
+import { fitLinear, fitScaling } from '@loadmap/core/calibrate'
+import { fmt } from '@loadmap/core/format'
 import { flowOf, lossesIn, propOf, waysOf } from '@loadmap/core/internal'
 import {
   type AnyNodeDef,
@@ -44,6 +46,7 @@ import {
 } from '@loadmap/layout'
 import { defineViewUnjoined, type Hop, hopsOf, unjoined } from '@loadmap/layout/internal'
 import {
+  childrenOf,
   type Decl,
   type Document,
   type Edge,
@@ -598,7 +601,7 @@ export class Compiler {
   /** What the units of a formula's names come from: each let's formula, each fit's y, each parameter's default. */
   private unitNames: UnitNames = { let: () => undefined, fit: () => undefined }
   readonly measures: MeasureQuery[] = []
-  private fits = new Map<string, LinearFit | null>()
+  private fits = new Map<string, Fit | null>()
   private lets = new Map<string, Type>()
   private measureIds = new Set<string>()
   /** The subsystems that hold a box: what `closed` may name. */
@@ -1083,6 +1086,7 @@ export class Compiler {
         )
     }
     this.units(root, componentBlocks, used)
+    this.pastPeak(root)
     this.inputs()
 
     const connections: Record<string, Record<string, unknown>> = {}
@@ -1111,7 +1115,7 @@ export class Compiler {
       connections[id.name] = def
     }
 
-    const calibration: Record<string, LinearFit> = {}
+    const calibration: Record<string, Fit> = {}
     for (const f of fits) {
       const fit = f.args.id && this.fits.get(f.args.id.name)
       if (fit) calibration[this.text(f.args.label) ?? f.args.id!.name] = fit
@@ -3239,6 +3243,22 @@ export class Compiler {
     }
     const source = this.constProp<string>(b, 'source')
     const through = this.constProp<'origin'>(b, 'through')
+    if (this.constProp<string>(b, 'curve') === 'usl') {
+      if (through)
+        this.report.error('bad-fit', this.prop(b, 'through')!.key, 'a scaling curve has no idle part to drop')
+      if (this.prop(b, 'x') || this.prop(b, 'y'))
+        this.report.error(
+          'bad-fit',
+          (this.prop(b, 'x') ?? this.prop(b, 'y'))!.key,
+          'a scaling curve fits its points only',
+        )
+      try {
+        this.fits.set(id.name, fitScaling(points, { x: x.name, y: y.name, ...(source != null ? { source } : {}) }))
+      } catch (err) {
+        this.report.error('bad-fit', block.at, (err as Error).message.replace(/^loadmap: /, ''))
+      }
+      return
+    }
     try {
       const o: Parameters<typeof fitLinear>[1] = { x: x.name, y: y.name }
       if (source != null) o.source = source
@@ -3251,6 +3271,42 @@ export class Compiler {
     } catch (err) {
       this.report.error('bad-fit', block.at, (err as Error).message.replace(/^loadmap: /, ''))
     }
+  }
+
+  /**
+   * A scaling curve called with a parameter that reaches past its peak, `apiScale(pods)` with 64 pods where 44 give the
+   * most: past there more pods give less, which the reader should see said rather than find.
+   */
+  private pastPeak(root: Block) {
+    const curves = new Map<string, ScalingFit>()
+    for (const [id, f] of this.fits) if (f && 'curve' in f && Number.isFinite(f.peak)) curves.set(id, f)
+    if (!curves.size) return
+    const top = new Map<string, number>()
+    for (const [id, r] of this.sliders) top.set(id, r.max)
+    for (const p of root.children.filter((c) => c.keyword === 'param')) {
+      const list = optionLiterals(p)?.filter((v): v is number => typeof v === 'number')
+      if (p.args.id && list?.length) top.set(p.args.id.name, Math.max(...list))
+    }
+    const seen = (e: Expr) => {
+      if (e.t === 'call' && curves.has(e.callee.name)) {
+        const arg = e.args[0]
+        const most = arg?.t === 'id' ? top.get(arg.name) : undefined
+        const f = curves.get(e.callee.name)!
+        if (arg?.t === 'id' && most != null && most > f.peak)
+          this.report.warning(
+            'past-peak',
+            arg,
+            `"${arg.name}" reaches ${fmt(most)}, past the ${fmt(f.peak)} where ${e.callee.name} gives the most: past it more gives less`,
+            `keep ${arg.name} at or under ${Math.floor(f.peak)}, or measure past it`,
+          )
+      }
+      for (const c of childrenOf(e, true)) seen(c)
+    }
+    const walk = (b: Block) => {
+      for (const props of b.props.values()) for (const p of props) seen(p.value)
+      for (const c of b.children) walk(c)
+    }
+    walk(root)
   }
 
   /** The measures a fit reads its series from, when it names both: its points are then the fallback. */

@@ -737,6 +737,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     props: {
       source: { value: 'string', scope: 'const', doc: 'Where the points came from.' },
       through: { value: 'enum', scope: 'const', values: ['origin'], doc: 'origin: a cost with no idle part (a = 0).' },
+      curve: {
+        value: 'enum',
+        scope: 'const',
+        values: ['linear', 'usl'],
+        since: '1.7',
+        doc: 'linear (the default), or usl: a capacity against a size (pods, nodes) by the Universal Scalability Law, where twice the pods give less than twice the capacity and past a peak less. Its points are sizes and capacities; it fits its points only.',
+      },
       x: {
         value: 'measure',
         scope: 'const',

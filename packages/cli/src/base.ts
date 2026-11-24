@@ -167,7 +167,10 @@ function assumptionText(a: Assumption): string {
   if (a.kind === 'connection') return `${a.name}: ${a.text}`
   if (a.kind === 'fit') {
     const f = a.fit
-    return `${a.name}: ${f.y} = ${fmt(f.a)} + ${fmt(f.b)} × ${f.x}, fitted over ${f.n} points${f.source ? ` (${f.source})` : ''}`
+    const of = `fitted over ${f.n} points${f.source ? ` (${f.source})` : ''}`
+    if ('curve' in f)
+      return `${a.name}: ${f.y} by ${f.x}, a scaling curve with contention ${fmt(f.sigma)} and coherency ${fmt(f.kappa)}${Number.isFinite(f.peak) ? `, most at ${fmt(f.peak)} ${f.x}` : ''}, ${of}`
+    return `${a.name}: ${f.y} = ${fmt(f.a)} + ${fmt(f.b)} × ${f.x}, ${of}`
   }
   const m = a.measurement
   return m.missing != null
