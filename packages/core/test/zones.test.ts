@@ -42,7 +42,7 @@ describe('a failure domain', () => {
     const all = m.evaluate({ load: 1 })
     const ev = m.evaluate({ load: 1, down: 'zone' })
     // 6 pods in 3 zones lose 2: 4 left, so 6 ÷ 4 = 1.5 times the utilization
-    expect(ev.components.api.out).toEqual({ domain: 'zone', name: 'Availability zone', members: 6, left: 4 })
+    expect(ev.components.api.out).toEqual({ domain: 'zone', name: 'Availability zone', count: 3, members: 6, left: 4 })
     expect(ev.components.api.util).toBeCloseTo(all.components.api.util! * 1.5, 12)
     expect(ev.components.api.full).toBeCloseTo((all.components.api.full! * 4) / 6, 6)
     // 5 in 3 zones stand 2, 2 and 1: the zone that goes is a fullest one
