@@ -36,7 +36,6 @@ export type {
 } from './measure'
 export {
   type Assumption,
-  type Batch,
   type ComponentDef,
   type ComponentResult,
   type ComponentState,
@@ -53,6 +52,7 @@ export {
   type Preset,
   type Retry,
   type RetryRule,
+  type Runs,
   reach,
   type Scenario,
   type Stock,

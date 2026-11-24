@@ -1403,7 +1403,7 @@ flow orders "orders" { rate: 40 * load; average: 50%; route: rollup; from: shop 
 node shop "Shop"
 node rollup "Nightly rollup" {
   store
-  batch { every: 1d; within: hours * 1h }
+  runs { every: 1d; within: hours * 1h }
   capacity: measured(250, "orders/s", "last runs")
   over: "the rollup misses its window"
 }
@@ -1416,7 +1416,7 @@ shop -> rollup
       components: {
         rollup: {
           name: 'Nightly rollup',
-          batch: ({ hours }) => ({ every: 86_400, within: (hours as number) * 3_600 }),
+          runs: ({ hours }) => ({ every: 86_400, within: (hours as number) * 3_600 }),
           capacity: measured(250, 'orders/s', 'last runs'),
           over: 'the rollup misses its window',
         },
@@ -1426,6 +1426,13 @@ shop -> rollup
     })
     same(ts, dsl, [...loads, { load: 2, hours: 2 }])
     expect(dsl.evaluate({ load: 1 }).components.rollup!.demand).toBeCloseTo(120, 9)
+    // a run longer than the time between two runs is refused at its line
+    const long = compile(
+      'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: r; from: a }\nnode a "A"\nnode r "R" { store; runs { every: 1h; within: 2h }; capacity: measured(10, "u/s"); over: "x" }\na -> r\n',
+    )
+    expect(long.diagnostics.map((d) => d.message)).toContain(
+      'a run takes at most the time between two runs: within is at most every',
+    )
   })
 
   it('compile a quota over a day, counted at each flow’s average', () => {

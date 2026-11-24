@@ -224,7 +224,7 @@ export const CASES: Case[] = [
       'A nightly job exports the day’s orders and must finish within 3 hours; it handled 400 orders a second last run.',
     asserts: [
       { kind: 'change' },
-      { kind: 'contains', text: 'batch {' },
+      { kind: 'contains', text: 'runs {' },
       { kind: 'contains', text: 'within: 3h' },
       { kind: 'honest' },
     ],

@@ -155,11 +155,11 @@ export interface ComponentDef<X> {
   /** Where a stock that grows stands on `growth.asOf`, in its capacity's unit: read off a disk, a bucket, a table. */
   level?: Capacity | ((values: LooseValues) => Capacity)
   /**
-   * A batch: what reaches it in `every` seconds is worked off in `within`, so its demand is the rate a run needs. A
+   * Runs, a batch: what reaches it in `every` seconds is worked off in `within`, so its demand is the rate a run needs. A
    * nightly job that must finish in 4 hours is `{ every: 86_400, within: 14_400 }`. Every a day or more reads each
    * flow at its `average`.
    */
-  batch?: Batch | ((values: LooseValues) => Batch)
+  runs?: Runs | ((values: LooseValues) => Runs)
   capacity: Capacity | ((ctx: X) => Capacity)
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
@@ -272,14 +272,14 @@ export interface ComponentResult<C extends string = string> {
   spread?: Spread
   /** For a stock (`fills`): what it holds and gains at these values. */
   stock?: Stock
-  /** For a batch: how often it runs, the time a run has, and the time a run takes at these values. */
-  batch?: Batch & { takes: number }
+  /** For a component that works in runs: how often, the time a run has, and the time a run takes at these values. */
+  runs?: Runs & { takes: number }
   /** For a quota (a limit `per` a window): the window, and past the quota how long into it the quota is gone. */
   quota?: { per: QuotaWindow; goneAfter?: number }
 }
 
 /** How often a batch runs, and the time each run has: seconds. */
-export interface Batch {
+export interface Runs {
   every: number
   within: number
 }
@@ -538,6 +538,8 @@ export function defineModel<
         )
     } else if (d.keeps != null || d.level != null)
       throw new Error(`loadmap: component "${c}" has ${d.keeps != null ? 'keeps' : 'level'}: give it fills too`)
+    if (d.runs != null && (d.fills != null || d.held != null || quotaOf.has(c)))
+      throw new Error(`loadmap: component "${c}" works in runs: its demand is a rate, so it is no stock, held or quota`)
     if (!d.demand && d.held == null && d.fills == null && !used)
       throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
   }
@@ -805,6 +807,7 @@ export function defineModel<
       assignment,
       hot,
       stock,
+      runsOf,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -831,11 +834,9 @@ export function defineModel<
       if (missing != null) components[c].missing = missing
       const st = enabled(c) ? stock(c) : undefined
       if (st) components[c].stock = st
-      const b = def.components[c].batch
-      if (b != null && !off) {
-        const v = typeof b === 'function' ? b(values) : b
-        components[c].batch = { every: v.every, within: v.within, takes: v.within * util }
-      }
+      const run = off ? null : runsOf(c)
+      // a run takes its window at full: what is past it misses the window, whatever the threshold
+      if (run) components[c].runs = { ...run, takes: (run.within * util!) / thresholds.full }
       const per = off ? undefined : quotaOf.get(c)
       // a quota is hard: past all it allows it is gone, whatever the full threshold
       if (per)
@@ -1710,10 +1711,10 @@ function context(
     if (averaged || !def.growth) return levelOf(c)
     return levelOf(c) + grown(def, values, bound, pinned, c)
   }
-  /** A batch's every and within, checked. */
-  const batchOf = (c: string) =>
-    memo(`batch of ${c}`, () => {
-      const b = def.components[c]!.batch
+  /** A component's runs, every and within, checked. */
+  const runsOf = (c: string) =>
+    memo(`runs of ${c}`, () => {
+      const b = def.components[c]!.runs
       if (b == null) return null
       const v = typeof b === 'function' ? b(values) : b
       if (!(v.every > 0 && Number.isFinite(v.every) && v.within > 0 && v.within <= v.every))
@@ -1725,15 +1726,16 @@ function context(
   ctx.demand = table(componentIds, (c) =>
     memo(`demand of ${c}`, () => {
       const raw = rawDemand(c)
-      const b = batchOf(c)
+      const b = runsOf(c)
       if (!b) return raw
       // what a run must work off: every's worth of arrivals in within; a day or more at each flow's average
       if (averaged || b.every < 86_400) return (raw * b.every) / b.within
       return memo('averaged', () => context(def, values, bound, pinned, undefined, undefined, true).ctx).demand[c]
     }),
   )
-  const rawDemand = (c: string): number =>
-    memo(`raw demand of ${c}`, () => {
+  /** A component's demand before its runs scale it to the rate a run needs. */
+  const rawDemand = (c: string): number => {
+    {
       if (def.components[c]!.fills) return stockLevel(c)
       const opened = counted(c)
       if (opened) return opened.reduce((a, o) => a + o.members * o.open, 0)
@@ -1770,7 +1772,8 @@ function context(
                 arriving(s, f) * QUOTA_SECONDS[per] * (per === 'hour' || averaged ? 1 : averageOf(f))
       }
       return total
-    })
+    }
+  }
   const connections = (def.connections ?? {}) as Readonly<Record<string, ConnectionDef>>
   /**
    * For the limit a connection's accepts makes: what each connection into its stage opens, the members of its pool at
@@ -2106,6 +2109,7 @@ function context(
     enabled,
     gains,
     stock,
+    runsOf,
     overload,
     failure,
     shed,

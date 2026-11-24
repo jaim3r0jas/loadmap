@@ -81,6 +81,15 @@ function quotaText(q: { per: 'hour' | 'day' | 'month'; goneAfter?: number }): st
   return `${name} quota: gone after ${fmt(q.goneAfter / step)} ${word}, the rest refused.`
 }
 
+/** "Runs every day: a run takes 1.9 h of its 4 h." Past its window: "a run needs 5 h of its 4 h: it misses it." */
+function runsText(r: { every: number; within: number; takes: number }): string {
+  const every = { 3600: 'hour', 86400: 'day', 604800: 'week' }[r.every] ?? period(r.every)
+  if (!Number.isFinite(r.takes)) return `Runs every ${every}: a run never ends.`
+  if (r.takes > r.within)
+    return `Runs every ${every}: a run needs ${period(r.takes)} of its ${period(r.within)}, so it misses it.`
+  return `Runs every ${every}: a run takes ${period(r.takes)} of its ${period(r.within)}.`
+}
+
 /** "Gains 3.1 GB a day · full in 41 days at this rate"; "Keeps 7 days of 9.3 GB a day". */
 function stockText(s: Stock, unit: string): string {
   const day = `${fmt(s.gains * 86_400)} ${unit} a day`
@@ -129,11 +138,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
               {c.stock && <span className="lm-sub lm-stock">{stockText(c.stock, c.capacity?.unit ?? '')}</span>}
               {c.quota && <span className="lm-sub lm-quota">{quotaText(c.quota)}</span>}
-              {c.batch && (
-                <span className="lm-sub lm-batch">
-                  {`Runs every ${period(c.batch.every)}: a run takes ${period(c.batch.takes)} of its ${period(c.batch.within)}.`}
-                </span>
-              )}
+              {c.runs && <span className="lm-sub lm-runs">{runsText(c.runs)}</span>}
             </div>
             <div
               className="lm-track"

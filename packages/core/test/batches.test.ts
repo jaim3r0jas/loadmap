@@ -11,7 +11,7 @@ const shop = (batch: { every: number; within: number }, demand?: true) =>
       rollup: {
         name: 'Nightly rollup',
         demand: demand ? ({ flows }) => flows.orders * 2 : undefined,
-        batch,
+        runs: batch,
         capacity: measured(250, 'orders/s', 'last runs'),
         over: 'the rollup misses its window',
       },
@@ -26,7 +26,7 @@ describe('a batch', () => {
     // 20 a second over a day, in 4 hours: 120 a second of 250
     expect(ev.components.rollup.demand).toBeCloseTo(120, 9)
     expect(ev.components.rollup.full).toBeCloseTo(250 / 120, 6)
-    expect(ev.components.rollup.batch).toEqual({ every: 86_400, within: 14_400, takes: 14_400 * (120 / 250) })
+    expect(ev.components.rollup.runs).toEqual({ every: 86_400, within: 14_400, takes: 14_400 * (120 / 250) })
     // its stage still sees the peak: the bars of the other components do not move
     expect(ev.at.rollup.orders).toBeCloseTo(40, 9)
   })
@@ -38,6 +38,28 @@ describe('a batch', () => {
       240,
       9,
     )
+  })
+
+  it('runs only on a rate: no stock, held or quota', () => {
+    expect(() =>
+      defineModel({
+        load: p.load({ max: 4 }),
+        flows: { orders: { rate: 1 } },
+        components: {
+          db: { name: 'DB', capacity: measured(10, 'w/s'), over: 'x' },
+          disk: {
+            name: 'Disk',
+            fills: () => 1,
+            keeps: 60,
+            runs: { every: 86_400, within: 3_600 },
+            capacity: measured(10, 'GB'),
+            over: 'x',
+          },
+        },
+        stages: { db: store('db') },
+        routes: { orders: ['db'] },
+      }),
+    ).toThrow('so it is no stock, held or quota')
   })
 
   it('refuses a run longer than its period', () => {
