@@ -380,7 +380,8 @@ function gap(a: Token, b: Token, m: Marks): string {
   const B = b.kind === 'punct' ? b.text : ''
   if (A === '{' && B === '}') return ''
   if (A === '(' || A === '[' || A === '.') return ''
-  if ((A === '-' || A === '+' || A === '!') && m.unary.has(a.from)) return ''
+  // but a plus before a minus: glued, the two are the ± of a capacity from 1.6
+  if ((A === '-' || A === '+' || A === '!') && m.unary.has(a.from)) return A === '+' && B === '-' ? ' ' : ''
   if (B === ')' || B === ']' || B === ',' || B === ';' || B === '.') return ''
   if (B === '%' && m.percent.has(b.from)) return ''
   if (B === ':' && !m.ternary.has(b.from)) return ''

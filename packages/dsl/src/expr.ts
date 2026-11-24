@@ -1,7 +1,7 @@
 import { type Capacity, configured, estimated, type LinearFit, measured } from '@loadmap/core'
 import { compact, fmt, pct, secs } from '@loadmap/core/format'
 import { flowOf } from '@loadmap/core/internal'
-import type { Expr } from './ast'
+import { type Expr, parenthesized } from './ast'
 import { type Code, didYouMean, type Reporter, type Span } from './diagnostics'
 import { own, type Scope } from './schema'
 
@@ -655,9 +655,6 @@ class Compiler {
 }
 
 const ARITHMETIC = new Set(['+', '-', '*', '/', '%'])
-
-/** An operator written in parentheses: the parser keeps no node for them, only the wider span. */
-const parenthesized = (e: Extract<Expr, { t: 'bin' }>) => e.from < e.left.from
 
 /** A formula's text as the operand of a comparison in a fix: `a || b` becomes `(a || b)`, so the fix means it. */
 function operand(e: Expr, source: string): string {

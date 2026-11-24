@@ -1,4 +1,4 @@
-import type { Expr, Stmt } from './ast'
+import { type Expr, parenthesized, type Stmt } from './ast'
 import { ONE_SPELLING } from './schema'
 import { before, CURRENT, parseVersion, plusMinusMark, stampOf } from './versions'
 
@@ -7,6 +7,11 @@ import { before, CURRENT, parseVersion, plusMinusMark, stampOf } from './version
  * one. A number and a text are copied from where they are written (their unit, their quotes); every name is written
  * from the statement, so a name the linker gave is the one that shows. Comments are not statements and are not kept;
  * `format()` lays the result out.
+ *
+ * Parentheses are written where the formula would read otherwise without them, and nowhere else: `(a + b) * c` and
+ * `a - (b - c)` keep theirs, `(a * b) + c` and `(a < b) == c` lose them. A comparison of a comparison of its own
+ * level keeps them as written (`(a == b) == c`): there they are the difference from a chain, which the tree alone
+ * does not show. A number or a text in parentheses is copied with them.
  */
 export function print(stmts: readonly Stmt[], source: string): string {
   // an id the linker made for a library's own value (`cost@lib/x.loadmap`) is no id a text can write: each gets one
@@ -54,6 +59,7 @@ export function print(stmts: readonly Stmt[], source: string): string {
     '/': 6,
     '%': 6,
   }
+  const [EQUALITY, RELATIONAL] = [PREC['=='], PREC['<']]
   const quasi = (s: string) => s.replace(/[`\\]/g, '\\$&').replace(/\$\{/g, '\\${')
   const expr = (e: Expr, min = 0): string => {
     switch (e.t) {
@@ -70,13 +76,23 @@ export function print(stmts: readonly Stmt[], source: string): string {
         return `${e.object.name}.${name(e.prop.name)}${e.flow ? `.${name(e.flow.name)}` : ''}`
       case 'call':
         return `${name(e.callee.name)}(${e.args.map((a) => expr(a)).join(', ')})`
-      case 'unary':
-        return `${e.op}${expr(e.arg, 7)}`
+      case 'unary': {
+        const arg = expr(e.arg, 7)
+        // a plus glued to a minus is the ± of a capacity from 1.6
+        return `${e.op}${e.op === '+' && arg.startsWith('-') ? ' ' : ''}${arg}`
+      }
       case 'bin': {
         if (e.op === '%' && modulo) return `mod(${expr(e.left)}, ${expr(e.right)})`
         const p = PREC[e.op] ?? 0
+        // comparisons don't chain: the answer of one compared again says so with its parentheses, and only with them
+        const answer =
+          (p === EQUALITY || p === RELATIONAL) &&
+          e.left.t === 'bin' &&
+          PREC[e.left.op] === p &&
+          parenthesized(e.left)
+        const left = answer ? `(${expr(e.left)})` : expr(e.left, p)
         // a "%" between two values has spaces around it: glued to a number it would be a share
-        const text = `${expr(e.left, p)} ${e.op} ${expr(e.right, p + 1)}`
+        const text = `${left} ${e.op} ${expr(e.right, p + 1)}`
         return p < min ? `(${text})` : text
       }
       case 'cond': {
@@ -85,8 +101,11 @@ export function print(stmts: readonly Stmt[], source: string): string {
       }
       case 'array':
         return `[${e.items.map((x) => expr(x)).join(', ')}]`
-      case 'pm':
-        return `${expr(e.value, 7)} ${plusMinus} ${expr(e.within, 7)}${e.percent ? '%' : ''}`
+      case 'pm': {
+        // a ± takes all that stands before it and one value after it: inside anything else it needs its own pair
+        const text = `${expr(e.value, 7)} ${plusMinus} ${expr(e.within, 7)}${e.percent ? '%' : ''}`
+        return min > 0 ? `(${text})` : text
+      }
       case 'error':
         return source.slice(e.from, e.to)
     }

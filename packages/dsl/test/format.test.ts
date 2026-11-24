@@ -147,6 +147,8 @@ describe('format', () => {
     expect(fmt('loadmap 1.5\nx: a +- b\nc: estimated(1 ± 30%, "x")\n')).toBe(
       'loadmap 1.5\nx: a + -b\nc: estimated(1 ± 30%, "x")\n',
     )
+    // a plus before a minus, both of them signs, stays two signs: glued they would be the ± of 1.6
+    expect(fmt('loadmap 1.6\nx: + -a\ny: +  - a\nz: - +a\n')).toBe('loadmap 1.6\nx: + -a\ny: + -a\nz: -+a\n')
     // from 1.5 a unit is part of its number, a "%" one too, and the remainder is mod(a, b)
     expect(fmt('loadmap 1.5\nz: a %b\nd: 30%+1\ne: (a % b) % c\nf: (a * (b)) % (c)\ng: (a) * (b) % c\n')).toBe(
       'loadmap 1.5\nz: mod(a, b)\nd: 30% + 1\ne: mod(mod(a, b), c)\nf: mod(a * (b), c)\ng: mod((a) * (b), c)\n',

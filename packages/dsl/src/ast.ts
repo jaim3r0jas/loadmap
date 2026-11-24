@@ -34,6 +34,12 @@ export type Expr = Span &
 
 export type BinOp = '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '*' | '/' | '%'
 
+/**
+ * An operator written in parentheses: the parser keeps no node for them, only the wider span. The one place they say
+ * more than the tree does is a comparison of a comparison (`(a == b) == c`), which without them is a chain.
+ */
+export const parenthesized = (e: Extract<Expr, { t: 'bin' }>): boolean => e.from < e.left.from
+
 /** `key: value`. A value is a formula, or a chain of names (`a -> b -> c`) for a route. */
 export interface Property extends Span {
   kind: 'prop'
