@@ -496,13 +496,24 @@ export function defineModel<
         throw new Error(`loadmap: fan-out "${s}" must be the last stage of the route of "${f}"`)
     })
   }
-  for (const f of flowIds)
-    if (def.flows[f].breaker != null && def.flows[f].retry != null)
-      throw flowError(
-        `loadmap: flow "${f}" has a breaker and retries: each would decide what the other sees, so give it one of them`,
-        f,
-        'breaker',
-      )
+  // a breaker's share is solved with the other flows held; a flow that retries through the same stage would be solved
+  // against the breaker's settled rate, not the trial, and each would decide what the other sees
+  for (const f of flowIds) {
+    if (def.flows[f].breaker == null) continue
+    const mine = new Set(waysOf(def as never, f).ways.flat())
+    for (const g of flowIds) {
+      if (g === f || def.flows[g].retry == null) continue
+      const shared = waysOf(def as never, g)
+        .ways.flat()
+        .find((s) => mine.has(s))
+      if (shared)
+        throw flowError(
+          `loadmap: flow "${f}" has a breaker, and "${g}" retries through "${shared}" too: each would decide what the other sees`,
+          f,
+          'breaker',
+        )
+    }
+  }
   // a fallback leaves the flow's route at a stage on it, and goes where the route does not
   for (const f of flowIds) {
     const fb = def.flows[f].fallback
@@ -886,7 +897,7 @@ export function defineModel<
       breakerOf,
       admitted,
       failedFast,
-      rateOf,
+      rate,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -1013,7 +1024,7 @@ export function defineModel<
       breakers: Object.fromEntries(
         flowIds.flatMap((f) => {
           const b = breakerOf(f)
-          return b ? [[f, { opens: b.opens, rate: rateOf(f), admitted: admitted(f), failedFast: failedFast(f) }]] : []
+          return b ? [[f, { opens: b.opens, rate: rate(f), admitted: admitted(f), failedFast: failedFast(f) }]] : []
         }),
       ) as Partial<Record<F, { opens: number; rate: number; admitted: number; failedFast: number }>>,
       fallbacks: Object.fromEntries(
@@ -1095,6 +1106,8 @@ function context(
   slow?: Readonly<Record<string, number>>,
   /** Every flow at its average, not its peak: what a stock gains. */
   averaged?: boolean,
+  /** A flow held at a breaker's trial rate: its breaker is not solved again, and it fails nothing fast. */
+  trial?: Readonly<Record<string, number>>,
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
@@ -1210,6 +1223,12 @@ function context(
         throw new Error(
           `loadmap: flow "${f}"'s breaker opens past a share of failures above 0 and below 1, not ${v.opens}`,
         )
+      if (v != null && retryOf(f))
+        throw flowError(
+          `loadmap: flow "${f}" has a breaker and retries: each would decide what the other sees, so give it one of them`,
+          f,
+          'breaker',
+        )
       return v
     })
   /**
@@ -1219,8 +1238,10 @@ function context(
   const admitted = (f: string): number =>
     memo(`admitted of ${f}`, () => {
       const b = breakerOf(f)!
-      const lam = rateOf(f)
-      const p = (x: number) => context(def, values, bound, pinned, { ...fixed, [f]: x }, slow).failure(f)
+      const lam = rate(f)
+      // each trial holds the flow at its trial rate, the other values and the averaged flag as they are here
+      const p = (x: number) =>
+        context(def, values, bound, pinned, fixed, slow, averaged, { ...trial, [f]: x }).failure(f)
       if (!(lam > 0) || p(lam) <= b.opens) return 1
       let lo = 0
       let hi = 1
@@ -1232,13 +1253,15 @@ function context(
       return lo
     })
   /** What a flow's breaker fails fast, units a second: they reach no stage. */
-  const failedFast = (f: string) => (breakerOf(f) ? rateOf(f) * (1 - admitted(f)) : 0)
+  const failedFast = (f: string) =>
+    breakerOf(f) && !(trial && Object.hasOwn(trial, f)) ? rate(f) * (1 - admitted(f)) : 0
   ctx.flows = table(flowIds, (f) =>
     memo(
       `flow ${f}`,
       () => {
         if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
-        if (breakerOf(f)) return rateOf(f) * admitted(f)
+        if (trial && Object.hasOwn(trial, f)) return trial[f]!
+        if (breakerOf(f)) return rate(f) * admitted(f)
         return retryOf(f) ? retries()[f]!.attempts : rateOf(f)
       },
       f,
@@ -2320,7 +2343,7 @@ function context(
     breakerOf,
     admitted,
     failedFast,
-    rateOf,
+    rate,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,

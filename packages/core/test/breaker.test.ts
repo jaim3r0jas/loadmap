@@ -60,6 +60,8 @@ describe('a breaker', () => {
         routes: { f: ['a', 'out'] },
       }).evaluate()
     expect(bad({ breaker: { opens: 0.5 }, retry: { times: 1 } })).toThrow('a breaker and retries')
+    // a retry rule switched off at these values is none
+    expect(bad({ breaker: { opens: 0.5 }, retry: () => undefined })).not.toThrow()
     expect(bad({ breaker: { opens: 1.5 } })).toThrow('above 0 and below 1')
   })
 })

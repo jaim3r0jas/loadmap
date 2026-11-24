@@ -439,7 +439,8 @@ export class Sim {
       while (acc >= 1) {
         acc -= 1
         if (this.particles.length >= maxParticles) continue
-        if (br && this.#r() >= br.admitted) {
+        // a closed breaker draws nothing: the recording stays the one without it
+        if (br && br.admitted < 1 && this.#r() >= br.admitted) {
           this.particles.push(this.#failFast(f))
           continue
         }

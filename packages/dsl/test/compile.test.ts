@@ -133,11 +133,12 @@ describe('compile', () => {
         hint: 'loadmap fmt rewrites it',
       }),
     ])
-    const both = compile(def({ top: 'direction: right\nlayout: down' }))
-    expect(both.definition!.options.direction).toBe('RIGHT')
-    expect(both.diagnostics.map((d) => d.message)).toEqual([
-      'layout: down is ignored: direction sets the direction (an error from loadmap 1.5)',
-    ])
+    // a second one is a duplicate
+    const twice = def({ flow: '  breaker { opens: 50% }\n  breaker { opens: 10% }' }).replace(
+      'loadmap 1.1',
+      'loadmap 1.7',
+    )
+    expect(errors(twice).map((e) => e.message)).toContain('"breaker" is set twice in this flow')
   })
 
   it('reads an overloaded word under its old name: a warning from 1.1, the spelling of 1.0', () => {
@@ -1396,7 +1397,7 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
-  it('compile a breaker, and refuse one beside retries', () => {
+  it('compile a breaker, and refuse a second one', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }
 flow quotes "quotes" {
