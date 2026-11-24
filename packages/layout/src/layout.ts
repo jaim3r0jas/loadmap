@@ -72,6 +72,8 @@ export interface Scene {
    */
   key: string
   direction: Direction
+  /** The rows it was folded into, when it was asked to fold. */
+  rows?: number
   width: number
   height: number
   nodes: SceneNode[]
@@ -140,10 +142,8 @@ export interface LayoutOptions {
 }
 
 /** What a layout holds on to of a scene: the way it runs and where each box is. */
-export type Held = Pick<Scene, 'direction'> & {
+export type Held = Pick<Scene, 'direction' | 'rows'> & {
   nodes: readonly (Box & { id: string })[]
-  /** The rows the scene was folded into, when it was: a folded scene holds nothing. */
-  rows?: number
   /** The edges with their labels: a label is a place of its own in its layer, and its edge passes through it. */
   edges?: readonly Pick<SceneEdge, 'from' | 'to' | 'label'>[]
 }
@@ -289,15 +289,15 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   scenes.set(measure, byView)
   const cache = byView.get(view) ?? new Map<string, Promise<Scene>>()
   byView.set(view, cache)
-  // what holds a layout to a drawn scene comes with the first one an editor asks for: never in a page's first load
-  if (o.from) return import('./held').then((m) => scene(m.heldBy(view, o.from, direction, rows)))
-  return scene(null)
+  // what holds a layout to a drawn scene comes with the first one an editor asks for: never in a page's first load.
+  // The same structure held to other places is another scene, under the same key
+  if (!o.from) return kept(cache, key, 32, lay)
+  return import('./held').then((m) => {
+    const held = m.heldBy(view, o.from, direction, rows)
+    return held ? kept(cache, `${key}\n${held.key}`, 32, () => lay(held)) : kept(cache, key, 32, lay)
+  })
 
-  function scene(held: Places | null): Promise<Scene> {
-    // the same structure held to other places is another scene, under the same key
-    return kept(cache, held ? `${key}\n${held.key}` : key, 32, () => lay(held))
-  }
-  async function lay(held: Places | null): Promise<Scene> {
+  async function lay(held?: Places): Promise<Scene> {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
     const sub = await subsystemsOf(view)
     const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep), measure, sub)
@@ -307,7 +307,8 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
       rows > 1
         ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, foldKit)
         : lanes(l, frame, view, measure)
-    return place(prep, board, key, sub?.framesOf(board.l, view, frame) ?? [])
+    const laid = place(prep, board, key, sub?.framesOf(board.l, view, frame) ?? [])
+    return rows > 1 ? { ...laid, rows } : laid
   }
 }
 
@@ -315,12 +316,12 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
 const rowsOf = (o: LayoutOptions) => (o.rows != null && o.rows >= 1 ? Math.floor(o.rows) : 1)
 
 /** A frame laid out by ELK, once per frame: every view with this frame stands in it. */
-function laidOut(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Places | null): Promise<Laid> {
+function laidOut(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Places): Promise<Laid> {
   const engine = elk ?? LOCAL_ELK
   const byFrame = frames.get(engine) ?? new Map<string, Promise<Laid>>()
   frames.set(engine, byFrame)
   const key = held ? `${frame.key}\n${held.key}` : frame.key
-  return kept(byFrame, key, 128, () => run(frame, elk, sub, held ?? undefined))
+  return kept(byFrame, key, 128, () => run(frame, elk, sub, held))
 }
 
 type Subsystems = typeof import('./subsystems')
@@ -792,8 +793,6 @@ function widestOver(contexts: LooseValues[], widths: Sampled['widths'], measure:
 async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Places): Promise<Laid> {
   const [out, into] = frame.direction === 'DOWN' ? ['SOUTH', 'NORTH'] : ['EAST', 'WEST']
   const port = (id: string, side: string) => ({ id, width: 0, height: 0, layoutOptions: { 'elk.port.side': side } })
-  // held to a drawn scene (held.ts): the strategies that read each box's place, and each label a box of its own
-  const plan = held?.plan(frame, { labelH: LABEL_H, into, out, port, layerOf }) ?? null
   // what the board and every subsystem's frame are laid out with
   const layered = {
     'elk.algorithm': 'layered',
@@ -808,7 +807,6 @@ async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Place
     'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
     'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
     'elk.layered.edgeLabels.sideSelection': 'ALWAYS_UP',
-    ...plan?.options,
   }
   // every edge leaves on the side the flow runs to and arrives on the other, its ends gathered at the middle; a
   // partition holds on the board itself (a frame takes its boxes'), a first or last layer inside a frame too
@@ -816,7 +814,6 @@ async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Place
     id: n.id,
     width: n.w,
     height: n.h,
-    ...plan?.at(n),
     layoutOptions: {
       'elk.portConstraints': 'FIXED_SIDE',
       'elk.portAlignment.default': 'CENTER',
@@ -838,29 +835,28 @@ async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Place
       ...(frame.tiers?.length ? { 'elk.partitioning.activate': 'true' } : {}),
       ...(nested ? sub.NESTED : {}),
     },
-    children: nested
-      ? (sub.nest(frame, box, layered, layerOf) as ElkNode[])
-      : [...frame.nodes.map((n) => box(n, true)), ...((plan?.labelBoxes ?? []) as unknown as ElkNode[])],
-    edges: frame.edges.flatMap((e): ElkExtendedEdge[] => plan?.halves(e) ?? [plain(e)]),
+    children: nested ? (sub.nest(frame, box, layered, layerOf) as ElkNode[]) : frame.nodes.map((n) => box(n, true)),
+    edges: frame.edges.map(
+      (e): ElkExtendedEdge => ({
+        id: e.id,
+        sources: [`${e.id}:out`],
+        targets: [`${e.id}:in`],
+        labels: e.labelW
+          ? [
+              {
+                id: `${e.id}:label`,
+                text: e.id,
+                width: e.labelW,
+                height: LABEL_H,
+                layoutOptions: { 'elk.edgeLabels.placement': 'CENTER' },
+              },
+            ]
+          : [],
+      }),
+    ),
   }
-  function plain(e: Frame['edges'][number]): ElkExtendedEdge {
-    return {
-      id: e.id,
-      sources: [`${e.id}:out`],
-      targets: [`${e.id}:in`],
-      labels: e.labelW
-        ? [
-            {
-              id: `${e.id}:label`,
-              text: e.id,
-              width: e.labelW,
-              height: LABEL_H,
-              layoutOptions: { 'elk.edgeLabels.placement': 'CENTER' },
-            },
-          ]
-        : [],
-    }
-  }
+  // held to a drawn scene (held.ts): the graph is told each box's place, and gives its labels back afterwards
+  const join = held?.hold(frame, graph as never, { labelH: LABEL_H, into, out, port, layerOf })
   const done = (await (elk ?? (await localElk())).layout(graph as ElkGraph)) as ElkNode
 
   const slots = new Map<string, Box>()
@@ -885,7 +881,7 @@ async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Place
       label: l ? { x: l.x ?? 0, y: l.y ?? 0, w: l.width ?? 0, h: l.height ?? 0 } : undefined,
     })
   }
-  plan?.join(routes, slots)
+  join?.(routes, slots)
   return { width: Math.ceil(done.width ?? 0), height: Math.ceil(done.height ?? 0), slots, routes }
 }
 

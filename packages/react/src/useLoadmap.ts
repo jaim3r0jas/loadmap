@@ -60,12 +60,11 @@ export interface LoadmapOptions<P> extends SimOptions {
    */
   zoom?: boolean
   /**
-   * An editor's way with a new version of the model (the text edited): when its boxes or edges changed, it is laid
-   * out from where the boxes are drawn, so what the edit did not touch stays in its place, and `tidy()` lays it out
-   * as a page draws it. The held layout is not a page's (it is often larger): a reload, a recording and an export
-   * draw the tidy one. Without effect on a diagram with subsystems or folded into rows. Default off.
+   * A scene the layout holds to (`layout()`'s `from`): an editor gives the one that was drawn before an edit, so the
+   * boxes the edit did not touch stay in their places, and takes it away again to lay the diagram out as a page draws
+   * it. Keep it the same object while it holds. Default none.
    */
-  hold?: boolean
+  from?: Held
   /**
    * The subsystems drawn closed at first, each as one box that stands for everything inside it, by the ids the view
    * gives them. The reader opens one with a click on it and closes one with a click on its name; a story step says
@@ -89,10 +88,6 @@ export type Chrome = 'all' | 'least'
 export interface LoadmapController<P = any> {
   model: Model<P>
   view: View
-  /** The diagram is laid out from where its boxes were drawn (`hold`), not as a page draws it. */
-  held: boolean
-  /** Lays the diagram out as a page draws it; nothing when it is so already. */
-  tidy: () => void
   values: Values<P>
   setValues: (v: Partial<Values<P>>) => void
   /** The scenario the values match, load aside; null for values of the reader's own. */
@@ -357,42 +352,11 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     () => (measure ? structureKey(view, ev, { direction, rows, measure }) : ''),
     [view, ev, direction, rows, measure],
   )
-  // an editor's diagram holds its boxes where they are drawn when a new version of the model is another structure
-  // (`hold`). The places are taken once, when the version arrives, and are its own from then on whatever phase shows:
-  // a phase is still laid out from its own values and these alone, never from the phase before. A version of the same
-  // structure keeps the places the one before had, so an edit of a figure moves nothing
-  const holds = useRef<{ view: View; from: Held | undefined } | null>(null)
-  // the rows each scene was folded into: a folded one holds nothing
-  const folds = useRef(new WeakMap<Scene, number>())
-  const [, redraw] = useState(0)
-  if (!o.hold) holds.current = null
-  else if (key && holds.current?.view !== view) {
-    const s = engine.scene
-    holds.current = {
-      view,
-      from:
-        s && s.key !== key
-          ? { direction: s.direction, nodes: s.nodes, edges: s.edges, rows: folds.current.get(s) ?? 1 }
-          : holds.current?.from,
-    }
-  }
-  // only where a layout holds to it (`heldBy` in the layout): not folded, running the same way, without subsystems
-  const taken = holds.current?.view === view ? holds.current.from : undefined
-  const from =
-    taken &&
-    rows === 1 &&
-    (taken.rows ?? 1) === 1 &&
-    taken.direction === direction &&
-    !Object.keys(view.def.subsystems ?? {}).length
-      ? taken
-      : undefined
-  const tidy = useCallback(() => {
-    if (!holds.current?.from) return
-    holds.current = { ...holds.current, from: undefined }
-    redraw((n) => n + 1)
-  }, [])
+  // held to a scene an editor gives, in one row only: a folded diagram holds nothing
+  const from = rows === 1 ? o.from : undefined
   const scene = laid?.view === view && laid.from === from ? laid.scene : null
-  // the same structure laid out another way (tidied) is not ready until it is drawn: its key says nothing of it
+  // the same structure laid out another way (held, or no longer) is not ready until it is drawn: its key says nothing
+  // of it
   const relaid = laid?.view === view && laid.from !== from
   if (fresh) engine.wantKey = pending || relaid ? '' : key
   useEffect(() => {
@@ -401,7 +365,6 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk(), from }).then(
       (s) => {
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
-        folds.current.set(s, rows)
         if (live) setLaid({ view, scene: s, from })
       },
       (err) => console.error('loadmap: layout failed', err),
@@ -570,8 +533,6 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   return {
     model,
     view,
-    held: !!from,
-    tidy,
     values,
     setValues,
     scenario,

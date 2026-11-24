@@ -3,7 +3,12 @@ import type { LoadmapHandle } from '@loadmap/react'
 import { useEffect } from 'react'
 
 /** Records the shown board: buttons on the page, and `expose` for `loadmap record`. */
-export function useRecorder(name: string, get: () => LoadmapHandle | null | undefined) {
+export function useRecorder(
+  name: string,
+  get: () => LoadmapHandle | null | undefined,
+  /** What makes the diagram the one a reload draws, before a picture: the editor's Tidy. */
+  before?: () => Promise<void> | undefined,
+) {
   useEffect(() => {
     // a stand-in that always reaches the current board: the editor's changes with every version
     const live = new Proxy({} as LoadmapHandle, {
@@ -19,9 +24,9 @@ export function useRecorder(name: string, get: () => LoadmapHandle | null | unde
     }
   }, [name, get])
   // an editor's diagram stands where its boxes were after edits: a picture or a recording is of the layout a reload
-  // draws, so it is tidied first (nothing for a page's diagram)
+  // draws, so it is tidied first
   const tidied = async () => {
-    await get()?.tidy()
+    await before?.()
     return get()
   }
   const png = async () => {

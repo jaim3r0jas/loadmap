@@ -312,7 +312,7 @@ describe('the editor', () => {
     await lm().ready()
     expect(moved(held, lm().engine.scene!)).toBe(0)
     // tidied: the same structure, laid out from scratch, where most boxes stand elsewhere
-    await lm().tidy()
+    await handle.tidy()
     const tidy = lm().engine.scene!
     expect(tidy.key).toBe(held.key)
     expect(moved(first, tidy)).toBeGreaterThanOrEqual(3)

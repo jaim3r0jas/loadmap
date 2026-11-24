@@ -12,8 +12,19 @@ export interface Places {
   at: Map<string, [number, number]>
   /** Each drawn edge label's middle, under its edge's ends (`edgeKey`): an edge's number changes when one is written above it. */
   labels: Map<string, [number, number]>
-  /** How ELK is told of them for this frame; null when the frame has none of the boxes, and is laid out as ever. */
-  plan(frame: Frame, kit: Kit): Plan | null
+  /**
+   * Tells a frame's graph of them (`run` in layout.ts built it as ever): the strategies, each box's place, and each
+   * label as a box of its own. What it gives back puts the labels in ELK's answer; nothing, and the graph as it was,
+   * for a frame with none of the boxes.
+   */
+  hold(frame: Frame, graph: Graph, kit: Kit): Join | undefined
+}
+
+type Join = (routes: Laid['routes'], slots: Map<string, Box>) => void
+interface Graph {
+  layoutOptions: Record<string, string>
+  children: GraphNode[]
+  edges: GraphEdge[]
 }
 
 /** What the graph builder (`run` in layout.ts) lends: its ports, its sides and its sizes. */
@@ -28,18 +39,6 @@ export interface Kit {
 type Edge = Frame['edges'][number]
 type GraphNode = Record<string, unknown>
 type GraphEdge = { id: string; sources: string[]; targets: string[] }
-
-/** A frame's graph held to its places: the strategies, each box's place, and the labels as boxes of their own. */
-export interface Plan {
-  options: Record<string, string>
-  /** A box's corner, for the boxes that have a place. */
-  at(n: Frame['nodes'][number]): { x: number; y: number } | undefined
-  labelBoxes: GraphNode[]
-  /** An edge with a label, in two halves through its label's box; null for an edge without one. */
-  halves(e: Edge): GraphEdge[] | null
-  /** After ELK: an edge in two halves is one edge again, its label in its box. */
-  join(routes: Laid['routes'], slots: Map<string, Box>): void
-}
 
 /**
  * ELK's interactive strategies, all four: it reads each box's layer, its order in the layer and its place from where
@@ -94,16 +93,16 @@ export function heldBy(view: View, from: Held | undefined, direction: Direction,
     key: JSON.stringify([[...at], [...labels]]),
     at,
     labels,
-    plan: (frame, kit) => planOf(frame, places, kit),
+    hold: (frame, graph, kit) => hold(frame, graph, places, kit),
   }
   return places
 }
 
-function planOf(frame: Frame, held: Places, kit: Kit): Plan | null {
+function hold(frame: Frame, graph: Graph, held: Places, kit: Kit): Join | undefined {
   const down = frame.direction === 'DOWN'
   const size = new Map(frame.nodes.map((n) => [n.id, n]))
   const drawn = frame.nodes.filter((n) => held.at.has(n.id))
-  if (!drawn.length) return null
+  if (!drawn.length) return undefined
   // from the board's corner: ELK keeps the places and adds its own margins, which the drawn ones already had, so
   // without this every held layout would stand that much further in and the board grow with each edit
   const left = Math.min(...drawn.map((n) => held.at.get(n.id)![0] - n.w / 2))
@@ -165,32 +164,32 @@ function planOf(frame: Frame, held: Places, kit: Kit): Plan | null {
       ports: [kit.port(`${e.id}:label:in`, kit.into), kit.port(`${e.id}:label:out`, kit.out)],
     }
   })
-  return {
-    options: HELD,
-    at: (n) => {
-      const p = at.get(n.id)
-      return p && { x: p[0] - left - n.w / 2, y: p[1] - top - n.h / 2 }
-    },
-    labelBoxes,
-    halves: (e) =>
-      e.labelW
-        ? [
-            { id: `${e.id}:a`, sources: [`${e.id}:out`], targets: [`${e.id}:label:in`] },
-            { id: `${e.id}:b`, sources: [`${e.id}:label:out`], targets: [`${e.id}:in`] },
-          ]
-        : null,
-    join: (routes, slots) => {
-      for (const e of labelled) {
-        const [a, b, box] = [routes.get(`${e.id}:a`), routes.get(`${e.id}:b`), slots.get(`${e.id}:label`)]
-        routes.delete(`${e.id}:a`)
-        routes.delete(`${e.id}:b`)
-        slots.delete(`${e.id}:label`)
-        if (!a || !b || !box) continue
-        const label: Box = down
-          ? { x: box.x + box.w / 2 + LABEL_GAP, y: box.y, w: e.labelW!, h: kit.labelH }
-          : { x: box.x, y: box.y, w: e.labelW!, h: kit.labelH }
-        routes.set(e.id, { points: [...a.points, ...b.points], label })
-      }
-    },
+  Object.assign(graph.layoutOptions, HELD)
+  for (const c of graph.children) {
+    const [p, n] = [at.get(c.id as string), size.get(c.id as string)]
+    if (p && n) Object.assign(c, { x: p[0] - left - n.w / 2, y: p[1] - top - n.h / 2 })
+  }
+  graph.children.push(...labelBoxes)
+  graph.edges = graph.edges.flatMap((e) =>
+    labelled.some((l) => l.id === e.id)
+      ? [
+          { id: `${e.id}:a`, sources: [`${e.id}:out`], targets: [`${e.id}:label:in`] },
+          { id: `${e.id}:b`, sources: [`${e.id}:label:out`], targets: [`${e.id}:in`] },
+        ]
+      : [e],
+  )
+  // after ELK: an edge in two halves is one edge again, its label in its box
+  return (routes, slots) => {
+    for (const e of labelled) {
+      const [a, b, box] = [routes.get(`${e.id}:a`), routes.get(`${e.id}:b`), slots.get(`${e.id}:label`)]
+      routes.delete(`${e.id}:a`)
+      routes.delete(`${e.id}:b`)
+      slots.delete(`${e.id}:label`)
+      if (!a || !b || !box) continue
+      const label: Box = down
+        ? { x: box.x + box.w / 2 + LABEL_GAP, y: box.y, w: e.labelW!, h: kit.labelH }
+        : { x: box.x, y: box.y, w: e.labelW!, h: kit.labelH }
+      routes.set(e.id, { points: [...a.points, ...b.points], label })
+    }
   }
 }

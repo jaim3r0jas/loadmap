@@ -69,6 +69,7 @@ import {
 } from '@loadmap/dsl/internal'
 import { Canvas, Loadmap, type LoadmapHandle, type Theme, useCanvasPanels, usePageTheme } from '@loadmap/react'
 import {
+  type ComponentProps,
   type CSSProperties,
   type ReactNode,
   type Ref,
@@ -83,6 +84,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { flushSync } from 'react-dom'
 import type { ConversationStore, EditorData, ModelSettings } from './AskPanel'
 import type { CatalogApi } from './CatalogPicker'
 import type { TemplateEntry } from './catalog'
@@ -127,6 +129,11 @@ export interface LoadmapEditorHandle {
    * what applies it loads on first use.
    */
   changeFiles(files: EditorFiles): Promise<void>
+  /**
+   * Lays the diagram out as a reload draws it, done once that is drawn: after edits it stands where its boxes were
+   * (View → Tidy the diagram). Before a picture or a recording of it.
+   */
+  tidy(): Promise<void>
   /** The history of the files as plain data, when the editor keeps one (`history`): what a save pushes. */
   history(): HistoryData | null
 }
@@ -145,6 +152,9 @@ function relint(v: EditorView) {
   v.dispatch({})
   forceLinting(v)
 }
+
+/** The scene a diagram is held to (`from` of `<Loadmap>`). */
+type HeldScene = ComponentProps<typeof Loadmap>['from']
 
 /** The path a text has when nothing says another: a definition in one file. */
 const ONE = 'input.loadmap'
@@ -941,6 +951,7 @@ export function LoadmapEditor({
     setOpen((o) => o.filter((p) => p !== path))
   }
 
+  const held = useRef<{ doc: number; shape: string; from: HeldScene }>({ doc: -1, shape: '', from: undefined })
   // how many whole new texts came: what was asked of the one before no longer applies
   const wholes = useRef(0)
   /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
@@ -1207,6 +1218,7 @@ export function LoadmapEditor({
       apply.applyFiles(fileHost, files.files, 'input.files')
     },
     history: () => studio.current?.history?.toData() ?? null,
+    tidy,
   }))
 
   const shareLink = async () => {
@@ -1377,6 +1389,24 @@ export function LoadmapEditor({
   const staleNote = stale && <p className="lme-stale">Showing the last version without errors.</p>
   // an older version or a proposal drawn instead of the files
   const drawn = shownVersion?.def ?? def
+  // the diagram holds its boxes where they are drawn when what is drawn next has other boxes or edges (an edit, a
+  // proposal, an older version): the scene is taken once, then, and stays for every version with the same ones, so an
+  // edit of a figure moves nothing. A whole new text starts tidy, and so does the diagram after Tidy
+  const shape = drawn
+    ? JSON.stringify([Object.keys(drawn.view.def.nodes), drawn.view.def.edges.map((e) => [e.from, e.to])])
+    : held.current.shape
+  if (held.current.doc !== state.doc) held.current = { doc: state.doc, shape, from: undefined }
+  else if (shape !== held.current.shape)
+    held.current = { doc: state.doc, shape, from: preview.current?.engine.scene ?? held.current.from }
+  const [, retidy] = useState(0)
+  /** The diagram laid out as a reload draws it, done once that is drawn. */
+  const tidy = async () => {
+    if (!held.current.from) return
+    held.current = { ...held.current, from: undefined }
+    // drawn before this returns: the diagram is not ready from here on, until the tidy layout is drawn
+    flushSync(() => retidy((n) => n + 1))
+    await preview.current?.ready()
+  }
   const title = def?.model.title ?? 'Untitled'
   const hasTemplates = templates == null || (templates !== false && templates.length > 0)
   const embedOn = !!embedLink && !!def
@@ -1476,7 +1506,7 @@ export function LoadmapEditor({
     !errors && (
       <>
         {/* after edits the diagram stands where its boxes were: this lays it out as a reload draws it */}
-        <MenuItem sheet={sheet} onSelect={() => void preview.current?.tidy({ move: true })}>
+        <MenuItem sheet={sheet} onSelect={() => void tidy()}>
           Tidy the diagram
         </MenuItem>
         <MenuItem
@@ -1944,7 +1974,7 @@ export function LoadmapEditor({
                 chrome="all"
                 fill
                 zoom
-                hold
+                from={held.current.from}
                 title={false}
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
@@ -1975,7 +2005,7 @@ export function LoadmapEditor({
                 theme={look}
                 {...pageOptions(def.options)}
                 zoom
-                hold
+                from={held.current.from}
                 initial={sharedValues(def.model, shown.current)}
                 onNodeClick={clickNode}
                 selected={selected}
