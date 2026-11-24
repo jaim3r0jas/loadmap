@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { check, defineModel, measured, p, pass, published, sink, store, workers } from '../src'
+import { check, defineModel, headroom, measured, p, pass, published, sink, store, workers } from '../src'
 import { kafka } from '../src/catalog'
+import { outages } from '../src/outages'
 
 const figure = published(kafka, { brokers: 3, replication: 3, acks: 'all', messageSize: '1 KB', producers: 4 })
 
@@ -108,6 +109,49 @@ describe('a failure domain', () => {
     expect(holds!.outcome).toBe('pass')
     expect(fails!.outcome).toBe('fail')
     expect(() => check(m, [{ down: 'region', notFull: 2 }])).toThrow('no domain "region"')
+  })
+
+  it('answers N−1 with every part up: where the target is reached with one part out, and what limits it then', () => {
+    const m = shop()
+    const [n1] = outages(m, { load: 1 })
+    // the API reaches the 50 % target at 4× with 4 pods of 6; Search, 3 members of 5, at 3×
+    expect(n1).toMatchObject({ domain: 'zone', with: 'with one availability zone out', firstLimit: 'search' })
+    expect(n1!.target!.low).toBeCloseTo(3, 6)
+    expect(n1!.components.api!.low).toBeCloseTo(4, 6)
+    expect(n1!.components.db!.low).toBeCloseTo(10, 6)
+    expect(n1!.text).toBe(
+      'With one availability zone out, the 50 % target holds up to 3×, limited by Search, which keeps 3 of 5.',
+    )
+    // with a part already out, the verdict is that answer
+    expect(outages(m, { load: 1, down: 'zone' })).toEqual([])
+  })
+
+  it('draws N−1 in the headroom chart: the shown line with one part out', () => {
+    const h = headroom(shop(), { load: 1 }, { samples: 8 })
+    expect(h.lines.map((l) => [l.label, l.selected, l.outage])).toEqual([
+      [null, true, undefined],
+      ['With one availability zone out', false, { domain: 'zone', of: null }],
+    ])
+    expect(h.lines[1]!.target).toBeCloseTo(3, 6)
+    expect(headroom(shop(), { load: 1, down: 'zone' }, { samples: 8 }).lines).toHaveLength(1)
+  })
+
+  it('says when nothing reaches the target with a part out, and asks only for the parts its control offers', () => {
+    const quiet = defineModel({
+      load: p.load({ max: 2 }),
+      searchMax: 50,
+      domains: { zone: { name: 'Zone', count: 3 }, rack: { name: 'Rack', count: 2 } },
+      params: { down: p.select({ label: 'Out', options: ['none', 'zone'], default: 'none' }) },
+      flows: { a: { rate: 1 } },
+      components: {
+        c: { name: 'C', across: { domain: 'zone', members: 3 }, capacity: measured(1_000, 'x'), over: 'x' },
+      },
+      stages: { c: pass('c') },
+      routes: { a: ['c'] },
+    })
+    expect(outages(quiet).map((o) => [o.domain, o.text])).toEqual([
+      ['zone', 'With zone down, no component reaches the 50 % target up to 50×.'],
+    ])
   })
 
   it('is checked', () => {

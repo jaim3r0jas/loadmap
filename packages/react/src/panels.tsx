@@ -1,12 +1,34 @@
 import { type Assumption, type Capacity, type Stock, sourceText } from '@loadmap/core'
 import { backlog } from '@loadmap/core/backlog'
 import { compact, duration, fmt, multiple, multiples, pct, period, secs } from '@loadmap/core/format'
+import { type NMinusOne, outages } from '@loadmap/core/outages'
 import { curveText } from '@loadmap/core/scaling'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isOn, LoadRange, plusMinus } from './bar'
 import type { LoadmapController } from './useLoadmap'
 
 export { hasDesign, LoadBar, LoadRange, plusMinus } from './bar'
+
+const n1 = new WeakMap<object, Map<string, readonly NMinusOne[]>>()
+/**
+ * N−1 for what the page shows, once for the verdict and the limits: each is a whole evaluation, and its crossings do
+ * not move with the load, so a drag of the slider reuses them.
+ */
+function nMinusOne(lm: LoadmapController): readonly NMinusOne[] {
+  const { load: _, ...rest } = lm.ev.values as Record<string, unknown>
+  const key = JSON.stringify(rest)
+  let byValues = n1.get(lm.model)
+  if (!byValues) {
+    byValues = new Map()
+    n1.set(lm.model, byValues)
+  }
+  const known = byValues.get(key)
+  if (known) return known
+  const o = outages(lm.model, lm.ev.values)
+  if (byValues.size > 16) byValues.delete(byValues.keys().next().value!)
+  byValues.set(key, o)
+  return o
+}
 
 /** The model's one-sentence answer for the current values, and which capacity to measure when it is unsure. */
 export function Verdict({ lm }: { lm: LoadmapController }) {
@@ -18,6 +40,11 @@ export function Verdict({ lm }: { lm: LoadmapController }) {
         {lm.ev.verdict.text}
       </p>
       {peak && <p className="lm-peak">{peak}</p>}
+      {nMinusOne(lm).map((o) => (
+        <p className="lm-outage" key={o.domain} data-domain={o.domain}>
+          {o.text}
+        </p>
+      ))}
       {measure && (
         <p className="lm-measure" data-component={measure.component}>
           {measure.text}
@@ -105,6 +132,14 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
   const at = (u: number) => `${(u / top) * 100}%`
   const span = (r: { low: number; high: number } | null, x: number | null) =>
     r ? multiples(r, model.searchMax, true) : multiple(x, model.searchMax)
+  // N−1: where it reaches the target with one part of a domain out, when that is sooner
+  const outageSuffix = (c: (typeof ev.ranked)[number]) =>
+    nMinusOne(lm).flatMap((o) => {
+      const r = o.components[c.id]
+      return r && r.low < (c.targetRange?.low ?? Number.POSITIVE_INFINITY)
+        ? [` · ${o.with}: ${pct(model.thresholds.target)} at ${span(r, null)}`]
+        : []
+    })
   return (
     <>
       <h3>{title}</h3>
@@ -161,7 +196,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                   ? c.stock?.undated
                     ? 'not ranked: no growth dates it'
                     : 'switched off'
-                  : `${pct(model.thresholds.target)} at ${span(c.targetRange, c.target)} · full at ${span(c.fullRange, c.full)}`}
+                  : `${pct(model.thresholds.target)} at ${span(c.targetRange, c.target)} · full at ${span(c.fullRange, c.full)}${outageSuffix(c).join('')}`}
               </small>
             </div>
           </div>

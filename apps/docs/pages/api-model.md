@@ -516,6 +516,7 @@ and `ways` (the same per path).
 | `assertHolds(model, expectations?)`              | Throws one error listing every expectation that does not pass: for a test            |
 | `compare(model, load?)`                          | The scenarios side by side at a load (default: the load's default): `Comparison`     |
 | `headroom(model, values?, { samples? })`         | Utilization over the load multiple, per scenario: what the headroom chart draws      |
+| `outages(model, values?)`                        | N−1 from `@loadmap/core/outages`: with one part of each domain out, the first limit  |
 | `compareDefinitions(base, head, { tolerance? })` | What a change of the model does to its limits (`loadmap check --base`)               |
 
 ```ts

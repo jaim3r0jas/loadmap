@@ -46,6 +46,8 @@ export const search = defineModel({
   expect: [
     { label: 'Today keeps 10×', underTarget: 10 },
     { label: 'Proposed keeps 20×', scenario: 'Proposed', underTarget: 20 },
+    // N−1: the pods of two zones carry today's searches to 8×
+    { label: 'A zone out, today keeps 8×', down: 'zone', underTarget: 8 },
     // from the service times: 99 searches in 100 answer within 150 ms, up to ten times today
     { label: 'Searches answer in 150 ms to 10×', flow: 'searches', p99: 0.15, underTarget: 10 },
   ],

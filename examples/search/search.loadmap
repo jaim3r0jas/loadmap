@@ -31,6 +31,8 @@ growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 10×" { underTarget: 10 }
 expect "Proposed keeps 20×" { scenario: Proposed; underTarget: 20 }
+# N−1: the pods of two zones carry today's searches to 8×
+expect "A zone out, today keeps 8×" { down: zone; underTarget: 8 }
 expect "Searches answer in 150 ms to 10×" { flow: searches; p99: 0.15; underTarget: 10 }
 
 step "An ordinary peak: the API runs a few pods, and the cache answers nine searches in ten." {

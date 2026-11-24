@@ -494,6 +494,11 @@ export interface Model<P = any, F extends string = string, C extends string = st
    * below: a crossing already reached has no date ahead.
    */
   dateAt(multiple: number | null): Date | null
+  /**
+   * N−1 is asked with every part up: these values with one part out of each domain the `down` control offers, and how
+   * to say it ("with one availability zone out"). Empty with a part already out, or without domains.
+   */
+  outageValues(values?: Partial<Values<P>>): { domain: string; with: string; values: Values<P> }[]
 }
 
 const RESERVED = ['load', 'flows', 'at', 'demand', 'util', 'derived']
@@ -1115,6 +1120,15 @@ export function defineModel<
       context(def as any, { ...defaults(), ...partial }, bound).latencies(only) as Record<F, Latency | null>,
     scenarioOf,
     dateAt: when,
+    outageValues: (partial = {}) => {
+      const shown = { ...defaults(), ...partial } as Values<P> & { down?: unknown }
+      const down = params.down
+      const domains = def.domains
+      if (!domains || down?.kind !== 'select' || shown.down !== 'none') return []
+      return down.options
+        .filter((d): d is string => d !== 'none' && Object.hasOwn(domains, d))
+        .map((d) => ({ domain: d, with: `with ${down.format?.(d) ?? `${d} down`}`, values: { ...shown, down: d } }))
+    },
   }
 }
 

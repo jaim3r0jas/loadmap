@@ -1,5 +1,5 @@
 import type { CrossingRange } from './capacity'
-import { joinAnd, pct } from './format'
+import { capital, joinAnd, pct } from './format'
 import { type ComponentResult, type Model, reach, type Scenario, type VerdictResult } from './model'
 import type { LooseValues, Values } from './params'
 
@@ -135,6 +135,8 @@ export interface HeadroomLine<C extends string = string> {
   label: string | null
   /** Whether these are the values the page shows. */
   selected: boolean
+  /** N−1: the shown values with one part of this domain out, a line of the shown one's (its label, `of`). */
+  outage?: { domain: string; of: string | null }
   /** The highest utilization of any component at each load: the line that crosses where the first limit does. */
   envelope: Series
   /** Exactly where the envelope reaches the target and 100 %: the first crossings, not read off the line. */
@@ -170,12 +172,16 @@ export function headroom<P, C extends string>(
   o: { samples?: number } = {},
 ): Headroom<C> {
   const shown = { ...model.defaults(), ...values } as Values<P>
-  const sets: { label: string | null; values: LooseValues }[] = model.scenarios.map((s: Scenario<P>) => ({
-    label: s.label,
-    values: { ...s.values, load: shown.load },
-  }))
+  const sets: { label: string | null; values: LooseValues; outage?: { domain: string; of: string | null } }[] =
+    model.scenarios.map((s: Scenario<P>) => ({
+      label: s.label,
+      values: { ...s.values, load: shown.load },
+    }))
   const match = model.scenarioOf(shown)
   if (!match) sets.unshift({ label: null, values: shown })
+  // N−1 with every part up: the shown values with one part of each domain out
+  for (const o of model.outageValues(shown))
+    sets.push({ label: capital(o.with), values: o.values, outage: { domain: o.domain, of: match?.label ?? null } })
   const evs = sets.map((s) => ({ ...s, ev: model.evaluate(s.values as Partial<Values<P>>) }))
 
   const from = Math.max(0.1, Math.min(1, model.load.min))
@@ -187,7 +193,7 @@ export function headroom<P, C extends string>(
   const n = Math.max(2, o.samples ?? 120)
   const xs = Array.from({ length: n }, (_, i) => from * (to / from) ** (i / (n - 1)))
 
-  const lines = evs.map(({ label, values: v, ev }): HeadroomLine<C> => {
+  const lines = evs.map(({ label, values: v, ev, outage }): HeadroomLine<C> => {
     const at = xs.map((x) => model.utilization({ ...v, load: x } as Partial<Values<P>>))
     const top = (u: Readonly<Record<C, number | null>>) => {
       const live = Object.values(u).filter((x): x is number => x != null)
@@ -213,7 +219,8 @@ export function headroom<P, C extends string>(
     }
     return {
       label,
-      selected: label == null || label === match?.label,
+      selected: !outage && (label == null || label === match?.label),
+      ...(outage && { outage }),
       envelope,
       target: first('target'),
       full: first('full'),
