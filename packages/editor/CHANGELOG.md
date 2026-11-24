@@ -1,5 +1,57 @@
 # @loadmap/editor
 
+## 0.46.0
+
+### Minor Changes
+
+- f9b0d92: In the editor, a box or an edge added to the text moves its neighbours and not the whole diagram: what is drawn next
+  is laid out from where the boxes are drawn, and **View → Tidy the diagram** (`tidy()` on the editor's handle) lays it
+  out as a reload draws it. `layout()` and `<Loadmap>` take the drawn scene as `from` for it. A page, a reload, a
+  recording and an export draw the layout from scratch, as before; so does a diagram with subsystems or folded into
+  rows. A scene says the `rows` it was folded into.
+
+  Docs: /api/react/#hold
+- aaa4f91: A new version of a model keeps more of what is drawn. The story step shown stays when the text is edited (or another
+  `model` is handed to `<Loadmap>`), as the new version writes it: its values, and what it closes, change as the step is
+  edited, and only a story that no longer has the step leaves it; a story that is playing still stops. A version whose
+  boxes and edges take the same room is not laid out again: ELK's result is kept by the frame, not by the compiled view.
+  The editor's handle has `changeFiles(files)`, which changes the definition's files as an edit (one undo step per file),
+  where `setFiles` starts a new definition from its defaults. In the editor, a change that reaches only a file that is
+  not open (a restore, an accepted proposal, a rename) is drawn at once, not with the next key.
+
+  Docs: /api/react/#useloadmap-and-the-controller
+- 0aef603: Stocks: a component that fills over time, not at a load. `fills` is what it gains a second (a disk, a topic's
+  retention, a database's size), read with every flow at its new `average`, its rate over a day against its peak. With
+  `keeps: 7d` it holds what it gains that long and settles at fills × keeps; with `level: measured(120, "GB", …)` it
+  stands there on growth's `asOf` and grows as the load does, so it is ranked at the load multiple whose day it is full,
+  with that date. Without growth such a stock is not ranked, and the verdict says why. `expect { lasts: 365d }` holds a
+  time through the growth. The limits list says what a stock gains a day and how long it has left at that rate
+  (`ev.components.<id>.stock`), and the editor has a starter, "Disk that fills up". All new in language 1.7.
+
+  Docs: /language/building-blocks/#stocks
+
+### Patch Changes
+
+- Updated dependencies [b547540]
+- Updated dependencies [37f77bd]
+- Updated dependencies [27c2c2f]
+- Updated dependencies [c5a8b15]
+- Updated dependencies [00a1e85]
+- Updated dependencies [f9b0d92]
+- Updated dependencies [aaa4f91]
+- Updated dependencies [f89851d]
+- Updated dependencies [df7d710]
+- Updated dependencies [a993b1b]
+- Updated dependencies [9222ee2]
+- Updated dependencies [66323a1]
+- Updated dependencies [56e90eb]
+- Updated dependencies [a4b725f]
+- Updated dependencies [0aef603]
+- Updated dependencies [3f8470d]
+  - @loadmap/core@0.46.0
+  - @loadmap/dsl@0.46.0
+  - @loadmap/react@0.46.0
+
 ## 0.45.0
 
 ### Minor Changes
