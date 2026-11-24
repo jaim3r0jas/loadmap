@@ -1,6 +1,7 @@
 import { dyn, type Evaluation, type LooseValues, type ResolvedStage } from '@loadmap/core'
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
 import { type Arrangement, directionOf, endsFlow, type Room } from './direction'
+import type { Places } from './held'
 import { estimateText, type TextMeasure } from './text'
 import type { AnyNodeDef, EdgeDef, Label, View } from './view'
 
@@ -71,6 +72,8 @@ export interface Scene {
    */
   key: string
   direction: Direction
+  /** The rows it was folded into, when it was asked to fold. */
+  rows?: number
   width: number
   height: number
   nodes: SceneNode[]
@@ -129,6 +132,20 @@ export interface LayoutOptions {
    * where it has fewer layers. An edge from one row to the next goes round the end of its row. Default 1: one row.
    */
   rows?: number
+  /**
+   * The scene that is drawn, for a layout that keeps each of its boxes where it stands as far as it can: what an
+   * editor gives after an edit, so a new box or edge moves its neighbours and not the whole diagram. The result is not
+   * the layout a page draws from scratch (it is often larger), so a recording, an export and a page never give one.
+   * Without effect on a view with subsystems, folded into rows, or running the other way: those lay out as ever.
+   */
+  from?: Held
+}
+
+/** What a layout holds on to of a scene: the way it runs and where each box is. */
+export type Held = Pick<Scene, 'direction' | 'rows'> & {
+  nodes: readonly (Box & { id: string })[]
+  /** The edges with their labels: a label is a place of its own in its layer, and its edge passes through it. */
+  edges?: readonly Pick<SceneEdge, 'from' | 'to' | 'label'>[]
 }
 
 /**
@@ -272,29 +289,39 @@ export function layout(view: View, ev: Evaluation, o: LayoutOptions = {}): Promi
   scenes.set(measure, byView)
   const cache = byView.get(view) ?? new Map<string, Promise<Scene>>()
   byView.set(view, cache)
-  return kept(cache, key, 32, async () => {
+  // what holds a layout to a drawn scene comes with the first one an editor asks for: never in a page's first load.
+  // The same structure held to other places is another scene, under the same key
+  if (!o.from) return kept(cache, key, 32, lay)
+  return import('./held').then((m) => {
+    const held = m.heldBy(view, o.from, direction, rows)
+    return held ? kept(cache, `${key}\n${held.key}`, 32, () => lay(held)) : kept(cache, key, 32, lay)
+  })
+
+  async function lay(held?: Places): Promise<Scene> {
     // values nothing declared reaches grow the frame: a key of its own, laid out again
     const sub = await subsystemsOf(view)
     const frame = ordered(view, widen(base ?? reserve(view, direction, measure), prep), measure, sub)
-    const l = await laidOut(frame, o.elk, sub)
+    const l = await laidOut(frame, o.elk, sub, held)
     // the fold comes with the first diagram that asks for one: never in a page's first load
     const board =
       rows > 1
         ? (await import('./fold')).foldLanes(l, frame, view, measure, rows, foldKit)
         : lanes(l, frame, view, measure)
-    return place(prep, board, key, sub?.framesOf(board.l, view, frame) ?? [])
-  })
+    const laid = place(prep, board, key, sub?.framesOf(board.l, view, frame) ?? [])
+    return rows > 1 ? { ...laid, rows } : laid
+  }
 }
 
 /** The rows a layout is folded into: a whole number, one at least. */
 const rowsOf = (o: LayoutOptions) => (o.rows != null && o.rows >= 1 ? Math.floor(o.rows) : 1)
 
 /** A frame laid out by ELK, once per frame: every view with this frame stands in it. */
-function laidOut(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid> {
+function laidOut(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Places): Promise<Laid> {
   const engine = elk ?? LOCAL_ELK
   const byFrame = frames.get(engine) ?? new Map<string, Promise<Laid>>()
   frames.set(engine, byFrame)
-  return kept(byFrame, frame.key, 128, () => run(frame, elk, sub))
+  const key = held ? `${frame.key}\n${held.key}` : frame.key
+  return kept(byFrame, key, 128, () => run(frame, elk, sub, held))
 }
 
 type Subsystems = typeof import('./subsystems')
@@ -763,7 +790,7 @@ function widestOver(contexts: LooseValues[], widths: Sampled['widths'], measure:
   }
 }
 
-async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid> {
+async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems, held?: Places): Promise<Laid> {
   const [out, into] = frame.direction === 'DOWN' ? ['SOUTH', 'NORTH'] : ['EAST', 'WEST']
   const port = (id: string, side: string) => ({ id, width: 0, height: 0, layoutOptions: { 'elk.port.side': side } })
   // what the board and every subsystem's frame are laid out with
@@ -828,6 +855,8 @@ async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Lai
       }),
     ),
   }
+  // held to a drawn scene (held.ts): the graph is told each box's place, and gives its labels back afterwards
+  const join = held?.hold(frame, graph as never, { labelH: LABEL_H, into, out, port, layerOf })
   const done = (await (elk ?? (await localElk())).layout(graph as ElkGraph)) as ElkNode
 
   const slots = new Map<string, Box>()
@@ -852,6 +881,7 @@ async function run(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Lai
       label: l ? { x: l.x ?? 0, y: l.y ?? 0, w: l.width ?? 0, h: l.height ?? 0 } : undefined,
     })
   }
+  join?.(routes, slots)
   return { width: Math.ceil(done.width ?? 0), height: Math.ceil(done.height ?? 0), slots, routes }
 }
 

@@ -15,6 +15,7 @@ import story from '../../../docs/multi-file/shop.story.loadmap?raw'
 import alerts from '../../../examples/alerts/alerts.loadmap?raw'
 import checkout from '../../../examples/checkout/checkout.loadmap?raw'
 import { watchDots } from '../../../examples/dots'
+import { moved } from '../../../examples/phases'
 import {
   type BarSection,
   type CodeFont,
@@ -288,6 +289,39 @@ describe('the editor', () => {
     handle.setFiles(several)
     await expect.poll(() => handle.loadmap()?.engine !== engine, { timeout: 5000 }).toBe(true)
     await expect.poll(() => handle.loadmap()?.storyStep() ?? null).toBeNull()
+  })
+
+  it('lays an added box out from where the boxes are drawn; Tidy lays the diagram out as a reload does', async () => {
+    // one way and one row, whatever the room: a diagram the room turns or folds is laid out from scratch
+    const { handle, view } = await mount({
+      source: checkout.replace('view {', 'view {\n  direction: right\n  rows: 1'),
+    })
+    const lm = () => handle.loadmap()!
+    const first = lm().engine.scene!
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: '\nnode audit "Audit log"\nworkerPool -> audit\n' },
+    })
+    await expect.poll(() => lm().engine.scene?.nodes.some((n) => n.id === 'audit'), { timeout: 5000 }).toBe(true)
+    const held = lm().engine.scene!
+    // the boxes the edit did not touch stay: at most the one beside the new box gives way
+    expect(moved(first, held)).toBeLessThanOrEqual(1)
+    // an edit of a figure after it lays nothing out again
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '\nlet spare = 1\n' } })
+    const was = lm().engine.model
+    await expect.poll(() => lm().engine.model, { timeout: 5000 }).not.toBe(was)
+    await lm().ready()
+    expect(moved(held, lm().engine.scene!)).toBe(0)
+    // tidied: the same structure, laid out from scratch, where most boxes stand elsewhere
+    await handle.tidy()
+    const tidy = lm().engine.scene!
+    expect(tidy.key).toBe(held.key)
+    expect(moved(first, tidy)).toBeGreaterThanOrEqual(3)
+    // and it stays tidy through the next edit of a figure
+    view.dispatch({ changes: { from: view.state.doc.length, insert: '\nlet other = 2\n' } })
+    const then = lm().engine.model
+    await expect.poll(() => lm().engine.model, { timeout: 5000 }).not.toBe(then)
+    await lm().ready()
+    expect(moved(tidy, lm().engine.scene!)).toBe(0)
   })
 
   it('opens files from the explorer as one row of tabs; a tab closed keeps its file', async () => {

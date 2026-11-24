@@ -3,6 +3,7 @@ import {
   type Direction,
   directionOf,
   type ElkEngine,
+  type Held,
   labelsAt,
   layout,
   type Scene,
@@ -58,6 +59,12 @@ export interface LoadmapOptions<P> extends SimOptions {
    * page of its own zooms with the wheel alone. Pictures and recordings show the whole diagram whatever the view.
    */
   zoom?: boolean
+  /**
+   * A scene the layout holds to (`layout()`'s `from`): an editor gives the one that was drawn before an edit, so the
+   * boxes the edit did not touch stay in their places, and takes it away again to lay the diagram out as a page draws
+   * it. Keep it the same object while it holds. Default none.
+   */
+  from?: Held
   /**
    * The subsystems drawn closed at first, each as one box that stands for everything inside it, by the ids the view
    * gives them. The reader opens one with a click on it and closes one with a click on its name; a story step says
@@ -262,8 +269,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   // only the width is state: a view of another shape lays out its own way on the render it arrives in
   const [narrow, setNarrow] = useState(false)
   const [measure, setMeasure] = useState<TextMeasure | null>(null)
-  const [laid, setLaid] = useState<{ view: View; scene: Scene } | null>(null)
-  const scene = laid?.view === view ? laid.scene : null
+  const [laid, setLaid] = useState<{ view: View; scene: Scene; from: Held | undefined } | null>(null)
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   engine.reducedMotion = reducedMotion
   const narrowBelow = o.narrowBelow ?? 640
@@ -346,21 +352,27 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     () => (measure ? structureKey(view, ev, { direction, rows, measure }) : ''),
     [view, ev, direction, rows, measure],
   )
-  if (fresh) engine.wantKey = pending ? '' : key
+  // held to a scene an editor gives, in one row only: a folded diagram holds nothing
+  const from = rows === 1 ? o.from : undefined
+  const scene = laid?.view === view && laid.from === from ? laid.scene : null
+  // the same structure laid out another way (held, or no longer) is not ready until it is drawn: its key says nothing
+  // of it
+  const relaid = laid?.view === view && laid.from !== from
+  if (fresh) engine.wantKey = pending || relaid ? '' : key
   useEffect(() => {
     if (!measure || !key || waits) return
     let live = true
-    layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk() }).then(
+    layout(view, engine.ev, { direction, rows, measure, elk: elk ?? pageElk(), from }).then(
       (s) => {
         // the engine takes the scene when the diagram has drawn it, so dots never run ahead of the SVG
-        if (live) setLaid({ view, scene: s })
+        if (live) setLaid({ view, scene: s, from })
       },
       (err) => console.error('loadmap: layout failed', err),
     )
     return () => {
       live = false
     }
-  }, [key, view, engine, direction, rows, measure, elk, waits])
+  }, [key, view, engine, direction, rows, measure, elk, waits, from])
 
   const labels = useMemo(() => labelsAt(view, ev), [view, ev])
   const valuesRef = useRef(values)

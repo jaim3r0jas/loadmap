@@ -302,7 +302,7 @@ function Editor({ root }: { root: URL }) {
     [],
   )
   const [get] = useState(() => () => editor.current?.loadmap())
-  const { png, poster, record } = useRecorder('editor', get)
+  const { png, poster, record } = useRecorder('editor', get, () => editor.current?.tidy())
   const [help, setHelp] = useHelp()
   const [close] = useState(() => closeTo(root))
   // what this tab opened from GitHub, as the reader left it: it opens again on a reload, unless the address asks for
