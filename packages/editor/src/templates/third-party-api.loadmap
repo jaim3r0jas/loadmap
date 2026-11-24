@@ -45,12 +45,16 @@ node vendor "Vendor API" `${quota} req/s plan` {
   limit
   short: "the vendor API"
   # no demand line: the lookups the cache does not answer
+  # whatever the load, one call in a hundred gets a 500
+  fails: 1%
   capacity: configured(quota, "req/s", "the plan's rate limit")
   over: "calls get 429s and lookups fail"
 }
 node vendorRejected "Turned away" { lost { takes: [rejected] } }
+node vendorErrors "Vendor errors" { lost { takes: [failed] } }
 
 users -> service
 service -> responseCache
 responseCache -> vendor: `${compact(at.vendor.lookups)} calls/s`
 vendor -> vendorRejected
+vendor -> vendorErrors

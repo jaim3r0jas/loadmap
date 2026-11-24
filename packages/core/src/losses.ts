@@ -6,6 +6,7 @@ interface Shape {
   stages: Readonly<Record<string, StageDef>>
   routes: Readonly<Record<string, readonly string[]>>
   flows: Readonly<Record<string, { overload?: unknown; timeout?: unknown }>>
+  components?: Readonly<Record<string, { fails?: unknown }>>
 }
 
 /**
@@ -46,7 +47,7 @@ export function waysOf(def: Shape, f: string): { ways: string[][]; open: boolean
 /**
  * The losses each stage can have, so a lost box may take them: a pass, limit, cache or split turns units away past
  * capacity; a queue drops what is too old for a flow with a drop rule; the last stage of a way times out what is too
- * slow for a flow with a timeout. A rule worked out from the values counts as there. The ways are walked once, for
+ * slow for a flow with a timeout; a stage whose component `fails` fails a share of them. A rule worked out from the values counts as there. The ways are walked once, for
  * every stage asked after.
  */
 export function lossesIn(def: Shape): (stage: string) => Loss[] {
@@ -80,6 +81,9 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
           break
         }
       }
+    // a stage whose component fails a share of its units, whatever the load
+    const of = (st as { component?: string }).component
+    if (passes && of != null && def.components?.[of]?.fails != null) out.push('failed')
     for (const f of flows) {
       if (def.flows[f]!.timeout == null) continue
       const { ways, open } = known.get(f)!

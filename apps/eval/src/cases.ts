@@ -151,6 +151,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'through:' }, { kind: 'contains', text: '"connections"' }],
   },
   {
+    id: 'component-fails',
+    example: SEARCH,
+    request:
+      'The search index answers an error for 1 % of the queries it gets, whatever the load. Model that, and count them.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'fails: 1%' }, { kind: 'contains', text: 'failed' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

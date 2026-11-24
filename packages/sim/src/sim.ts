@@ -52,7 +52,7 @@ export interface Particle {
    * superseded: merged into a newer unit of its key; unread: a fan-out that made no copy; answered: a cache hit back
    * where it came from.
    */
-  outcome?: 'delivered' | 'dropped' | 'rejected' | 'superseded' | 'unread' | 'answered' | 'timedout'
+  outcome?: 'delivered' | 'dropped' | 'rejected' | 'superseded' | 'unread' | 'answered' | 'timedout' | 'failed'
 }
 
 export interface QueueState {
@@ -558,7 +558,7 @@ export class Sim {
     }
 
     /** A unit lost for good: into the lost box that takes what its stage loses so, else it fades where it is. */
-    const lose = (d: Particle, outcome: 'rejected' | 'dropped' | 'timedout', at: string | null) => {
+    const lose = (d: Particle, outcome: 'rejected' | 'dropped' | 'timedout' | 'failed', at: string | null) => {
       const box = at == null ? undefined : this.#lost.get(`${at}/${outcome}`)
       if (!box) return fade(d, outcome, 0.6)
       d.outcome = outcome
@@ -575,7 +575,7 @@ export class Sim {
      * A unit its flow fails for good, with a fallback: it fades where it failed, as a retried attempt does, and the
      * fallback serves it from the stage it falls back after, along the edge from there.
      */
-    const fallBack = (d: Particle, outcome: 'rejected' | 'timedout', at: string | null) => {
+    const fallBack = (d: Particle, outcome: 'rejected' | 'timedout' | 'failed', at: string | null) => {
       const fb = ev.fallbacks[d.flow]
       // only what fails past where it falls back after reached it: what failed before is lost as ever
       if (!fb || d.fallback || at == null || !this.#past(d.flow, at)) return false
@@ -599,7 +599,7 @@ export class Sim {
       fade(d, outcome, 0.6)
       return true
     }
-    const reject = (d: Particle, outcome: 'rejected' | 'timedout' = 'rejected', at = d.to.stage) => {
+    const reject = (d: Particle, outcome: 'rejected' | 'timedout' | 'failed' = 'rejected', at = d.to.stage) => {
       // the fallback's own units are no attempts: what it turns away is lost
       const again = !d.fallback && this.particles.length + born.length < this.#o.maxParticles ? this.#retry(d) : null
       // a unit sent again is no loss: its attempt fades where it was turned away, and the retry starts at the source
@@ -659,6 +659,8 @@ export class Sim {
         const turnsAway =
           stage.kind === 'pass' || stage.kind === 'limit' || stage.kind === 'cache' || stage.kind === 'split'
         if (turnsAway && this.#r() < this.#shedOf(stage.id, d.flow)) reject(d)
+        // what the stage works on and fails: the same share the model counts as failed there
+        else if (stage.fails && this.#r() < stage.fails) reject(d, 'failed')
         else if (stage.kind === 'cache' && this.#r() < stage.hit) {
           // answered here: back along the edge it came in on
           const to = d.from

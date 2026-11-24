@@ -216,6 +216,13 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     unit: 'seconds',
     doc: 'The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99).',
   },
+  fails: {
+    value: 'number',
+    scope: 'values',
+    unit: 'share',
+    since: '1.8',
+    doc: 'The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`.',
+  },
   on: {
     value: 'route',
     scope: 'const',
@@ -1277,8 +1284,8 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       takes: {
         value: 'names',
         scope: 'const',
-        values: ['rejected', 'dropped', 'timedOut'],
-        doc: 'Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedOut (too slow for the client). Default all three.',
+        values: ['rejected', 'dropped', 'timedOut', 'failed'],
+        doc: 'Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedOut (too slow for the client), failed (failed by a component that `fails`, from loadmap 1.8). Default all of them.',
       },
     },
     children: [],

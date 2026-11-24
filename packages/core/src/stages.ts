@@ -94,15 +94,18 @@ export interface SinkStage extends StageBase {
   kind: 'sink'
 }
 
-/** Why a unit leaves without reaching the end of its way: turned away, dropped as too old, or too slow for its client. */
-export type Loss = 'rejected' | 'dropped' | 'timedOut'
+/**
+ * Why a unit leaves without reaching the end of its way: turned away, dropped as too old, too slow for its client, or
+ * failed by the stage that worked on it (an error that is not about capacity).
+ */
+export type Loss = 'rejected' | 'dropped' | 'timedOut' | 'failed'
 
-export const LOSSES: readonly Loss[] = ['rejected', 'dropped', 'timedOut']
+export const LOSSES: readonly Loss[] = ['rejected', 'dropped', 'timedOut', 'failed']
 
 /**
  * Where what other stages lose goes: what a pass, limit, cache or split turns away, what a queue drops as too old, what
  * is too slow for its client at the end of its way. It is on no route: `from` names the stages it takes from, and
- * `takes` which losses (all three without one). What reaches it (`at`) is what is lost there after every retry.
+ * `takes` which losses (all of them without one). What reaches it (`at`) is what is lost there after every retry.
  */
 export interface LostStage extends StageBase {
   kind: 'lost'
@@ -232,7 +235,13 @@ export interface Shards {
 }
 
 /** A stage with its numbers worked out for one set of values. */
-export type ResolvedStage = { id: string; label: string; shards?: Shards } & (
+export type ResolvedStage = {
+  id: string
+  label: string
+  shards?: Shards
+  /** The share of the units it works on that its component fails, when it fails any. */
+  fails?: number
+} & (
   | {
       kind: 'pass' | 'limit'
       component: string

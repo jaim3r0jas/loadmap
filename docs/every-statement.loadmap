@@ -237,9 +237,12 @@ pool eventWorkers "Event workers" "2 to 6 pods" {
   short: "the event workers"
   plural: true
   demand: flows.events * 2ms
+  # a failure that is not about capacity: one event in two hundred fails here whatever the load
+  fails: 0.5%
   capacity: measured(6 * 1, "cores", "1 core a pod, at most 6")
   over: "events wait in the topic"
 }
+node eventsFailed "Failed" { lost { takes: [failed] } }
 
 # a consumer group: each partition read by one worker, the pod's CPU shared by its workers
 connection group {
@@ -283,6 +286,7 @@ resultCache -> db { delay: 2ms }
 kafka -> eventWorkers
 kafka -> kafkaDropped
 eventWorkers -> push
+eventWorkers -> eventsFailed
 push -> phones
 push -> pushTimedOut
 api -> mailer

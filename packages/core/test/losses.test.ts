@@ -44,7 +44,7 @@ describe('a lost box', () => {
     expect(ev.stages.tooMany).toMatchObject({
       kind: 'lost',
       from: ['limiter'],
-      takes: ['rejected', 'dropped', 'timedOut'],
+      takes: ['rejected', 'dropped', 'timedOut', 'failed'],
     })
     // nothing is lost below capacity
     expect(shop().evaluate({ load: 0.5 }).ctx.at.failed.req).toBe(0)

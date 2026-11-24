@@ -197,6 +197,13 @@ export interface ComponentDef<X> {
    */
   service?: number | ((ctx: X) => number)
   /**
+   * The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a
+   * deploy gone wrong. They are lost as `failed` (a lost box may take them), are sent again when the flow retries,
+   * count for its breaker, and go to its fallback; what comes after the stage is reached by the rest. It may read the
+   * load and the parameters.
+   */
+  fails?: number | ((values: any) => number)
+  /**
    * What it gains each second, in its capacity's unit: a stock, such as a disk, a topic's retention or a database's
    * size, which fills over time rather than at a load. It is read with every flow at its `average`. With `keeps` it
    * holds what it gains that long and settles at fills × keeps; with `level` it stands there on `growth.asOf` and
@@ -718,6 +725,8 @@ export function defineModel<
       )
     if (d.runs != null && (d.fills != null || holds || quotaOf.has(c)))
       throw new Error(`loadmap: component "${c}" works in runs: its demand is a rate, so it is no stock, held or quota`)
+    if (d.fails != null && !used)
+      throw new Error(`loadmap: component "${c}" fails a share of the units its stages work on, and no stage runs it`)
     if (!d.demand && !holds && d.fills == null && !used)
       throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
   }
@@ -953,6 +962,7 @@ export function defineModel<
     shedBy: (s: string) => Record<string, number> | undefined,
     poolOut: (st: StageDef) => StageDef,
     shardsOf: (s: string) => Shards | undefined,
+    failsAt: (s: string) => number,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
@@ -969,6 +979,8 @@ export function defineModel<
               : st
       const sh = shardsOf(s)
       if (sh) stages[s] = { ...stages[s], shards: sh } as ResolvedStage
+      const broken = failsAt(s)
+      if (broken > 0) stages[s] = { ...stages[s], fails: broken } as ResolvedStage
     }
     for (const st of Object.values(stages) as ResolvedStage[])
       if (st.kind === 'fanout')
@@ -1014,6 +1026,7 @@ export function defineModel<
       outage,
       poolOut,
       shardsOf,
+      failsAt,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -1086,7 +1099,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1188,12 +1201,15 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf } = context(def as any, values)
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf, failsAt } = context(
+        def as any,
+        values,
+      )
       let ways: Record<F, readonly FlowPath<S>[]> | undefined
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -1637,11 +1653,22 @@ function contextAt(
       return 0
     })
   }
+  /** The share of the units a stage works on that its component fails: 0 without `fails`, or switched off. */
+  const failsAt = (s: string): number => {
+    const c = (stages[s] as { component?: string }).component
+    const x = c == null ? undefined : def.components[c]!.fails
+    if (x == null) return 0
+    return memo(`fails of ${c}`, () => {
+      const v = typeof x === 'function' ? x(values) : x
+      if (!(v >= 0 && v < 1)) throw new Error(`loadmap: component "${c}" fails a share of ${v}: from 0, below 1`)
+      return enabled(c!) ? v : 0
+    })
+  }
   const hit = (s: string) => memo(`hit at ${s}`, () => hitOf(s, stages[s] as Extract<StageDef, { kind: 'cache' }>, ctx))
   /** The share of a flow's units that go on past a stage: cache hits stay, and what a limiter turns away. */
   const onward = (s: string) => {
     const st = stages[s]!
-    return st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1
+    return (st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1) * (1 - failsAt(s))
   }
   /** Copies per unit of a flow that a fan-out at t sends to s: 0 unless t is a fan-out with a branch there. */
   const copies = (t: string, f: string, s: string) => {
@@ -1663,7 +1690,8 @@ function contextAt(
       if (k >= 0) {
         // what the flow fails for good, less what the fallback's stages before this one answered or turned away
         let r = failedFor(f)
-        for (const t of fb!.route.slice(0, k)) r *= (1 - shedFor(t, f)) * (stages[t]!.kind === 'cache' ? 1 - hit(t) : 1)
+        for (const t of fb!.route.slice(0, k))
+          r *= (1 - shedFor(t, f)) * (1 - failsAt(t)) * (stages[t]!.kind === 'cache' ? 1 - hit(t) : 1)
         return r
       }
       let total = 0
@@ -1719,6 +1747,8 @@ function contextAt(
           // a fan-out turns away copies, not the unit
           const r = stages[s]!.kind === 'fanout' ? 0 : rejectsFor(s, f)
           if (r > 0) actual = Math.min(actual, offered * (1 - r))
+          // what the stage works on and fails is gone as a rejection is
+          actual *= 1 - failsAt(s)
           const d = drops(f, s, route[i + 1])
           if (d > 0) {
             gone += actual * d
@@ -1767,6 +1797,7 @@ function contextAt(
           if (i >= last) break
           const cut = rejectsFor(t, f)
           if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
+          r *= 1 - failsAt(t)
           fed = drops(f, t, route[i + 1])
           r *= 1 - fed
           if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
@@ -1850,6 +1881,9 @@ function contextAt(
             add(s, 'rejected', turned)
             r -= turned
           }
+          const broke = r * failsAt(s)
+          add(s, 'failed', broke)
+          r -= broke
           const dropped = r * drops(f, s, way.stages[j + 1])
           add(s, 'dropped', dropped)
           r -= dropped
@@ -1926,7 +1960,12 @@ function contextAt(
         rate: c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k,
       }))
       // a fallback serves what fails past its `after` and what the breaker fails fast, less what its own stages turn away
-      if (fb) for (const s of fb.route) out.push({ stage: s, loss: 'rejected', rate: arriving(s, f) * shedFor(s, f) })
+      if (fb)
+        for (const s of fb.route) {
+          const turned = arriving(s, f) * shedFor(s, f)
+          out.push({ stage: s, loss: 'rejected', rate: turned })
+          out.push({ stage: s, loss: 'failed', rate: (arriving(s, f) - turned) * failsAt(s) })
+        }
       else out.push({ loss: 'rejected', rate: failedFast(f) })
       const causesLeft = out.filter((c) => c.rate > 0)
       const total = causesLeft.reduce((a, c) => a + c.rate, 0)
@@ -2697,6 +2736,7 @@ function contextAt(
     outage,
     poolOut,
     shardsOf,
+    failsAt,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,

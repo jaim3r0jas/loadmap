@@ -742,7 +742,7 @@ A lost box is where what other boxes lose goes, counted. A unit a stage turns aw
 pass, cache or split past capacity), one a queue drops as too old, or one too slow for its client at the end of its
 way leaves the diagram there; with a lost box, its dot goes along the edge into it and fades inside. An edge from a box
 into a lost box sends what that box loses there, and `takes` keeps only some losses (`rejected`, `dropped`,
-`timedOut`; all three without one):
+`timedOut`, `failed`; all of them without one):
 
 ```loadmap
 node tooMany "Turned away" { lost { takes: [rejected] } }
@@ -758,6 +758,29 @@ second line ("120 rejected/s") unless it has one of its own; a lost box is on no
 A loss the definition plans and no lost box counts is a warning: what a limiter turns away, what a `drop` rule drops,
 what a `timeout` fails. The editor's quick fix adds the lost box after the box and the edge into it. A pass, cache or
 split past capacity warns nothing: any of them could, and the bars and their `over` line already say so.
+
+Not every failure is about capacity. `fails` on a component (from `loadmap 1.8`) is the share of the units its stages
+work on that fail there whatever the load: a bug, a dependency that errors, a deploy gone wrong.
+
+```loadmap
+param badDeploy "A bad deploy" { default: false }
+
+node payments "Payments" {
+  pass
+  fails: badDeploy ? 20% : 0.5%
+  capacity: measured(400, "req/s", "load test")
+  over: "payments queue"
+}
+node paymentErrors "Payment errors" { lost { takes: [failed] } }
+payments -> paymentErrors
+```
+
+A failed unit is lost as `failed`, and its dot goes to the lost box that takes it. It behaves as a rejection does
+everywhere else: the flow's `retry` sends it again (2 % failing with two retries leaves 0.0008 %), it counts toward
+the share that opens a `breaker`, a `fallback` serves it, and an `expect { lost: … }` holds it. The stages after the
+one that failed it are reached by the rest. It reads the load and the parameters, so a scenario can be the bad
+deploy. A component that fails with no lost box for it is the same warning as any other unseen loss. In TypeScript,
+`fails: 0.005` on the component, and `ev.stages.payments.fails` is the share at the values.
 
 A flow's failures can go on instead (from `loadmap 1.7`): `fallback` says where. What the flow fails for good, turned
 away or too slow after every retry, goes back to `after`, a stage on its route, and is served along `route` from
@@ -1775,7 +1798,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed` | |
 
 ## In code
 
@@ -2404,6 +2427,7 @@ After the keyword: [id] [label].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
@@ -2477,6 +2501,7 @@ After the keyword: id [label] [sub].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
@@ -2512,6 +2537,7 @@ After the keyword: id [label] [sub].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
@@ -2551,6 +2577,7 @@ After the keyword: id [label] [sub].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
@@ -2644,7 +2671,7 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `takes` | a list of `rejected`, `dropped`, `timedOut` | Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedOut (too slow for the client). Default all three. |
+| `takes` | a list of `rejected`, `dropped`, `timedOut`, `failed` | Which losses it takes: rejected (turned away past capacity or a limit), dropped (too old in a queue), timedOut (too slow for the client), failed (failed by a component that `fails`, from loadmap 1.8). Default all of them. |
 
 ### queue
 

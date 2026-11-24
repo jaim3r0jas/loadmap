@@ -482,6 +482,32 @@ describe('lost boxes', () => {
     expect(ends.get('late')).toEqual(new Set(['timedout']))
     expect([...(ends.get('out') ?? [])]).not.toContain('timedout')
   })
+
+  it('fails the share of its dots a component fails, into the lost box that takes failed', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { req: { rate: 100 } },
+      components: { api: { name: 'API', capacity: measured(1_000, 'u/s'), fails: 0.2, over: '' } },
+      stages: { api: pass('api'), out: sink(), errors: lost({ from: ['api'], takes: ['failed'] }) },
+      routes: { req: ['api', 'out'] },
+    })
+    const sim = createSim(m, m.evaluate(), { seed: 5, speed: 10, maxDots: 60, dotTarget: 100 })
+    const ends = new Map<string, Set<string | undefined>>()
+    const done = new Map<number, string | undefined>()
+    for (let i = 0; i < 60 * 60; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.phase === 'fade') {
+          ends.set(d.to.stage ?? '', (ends.get(d.to.stage ?? '') ?? new Set()).add(d.outcome))
+          done.set(d.id, d.outcome)
+        }
+    }
+    expect(ends.get('errors')).toEqual(new Set(['failed']))
+    expect(ends.get('out')).toEqual(new Set(['delivered']))
+    // the share the model counts as failed there: a fifth
+    const all = [...done.values()]
+    expect(all.filter((o) => o === 'failed').length / all.length).toBeCloseTo(0.2, 1)
+  })
 })
 
 describe('review fixes', () => {
