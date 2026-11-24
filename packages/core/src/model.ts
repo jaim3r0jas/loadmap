@@ -2346,22 +2346,35 @@ function contextAt(
           }
           return { ...base, factor: s.factor, text }
         })
-  /** The share of each flow on partition 0 of a queue a key connection with a skew reaches; undefined without one. */
-  /** A key connection with members into a stage that is no queue or pool: its parts on those members. */
+  /**
+   * A store or a pass that key connections with members reach: every flow's parts on those members, dealt over the
+   * members left with a part of its domain down, as its spread deals them.
+   */
   const shardsOf = (stage: string): Shards | undefined =>
     memo(`shards of ${stage}`, () => {
       const st = stages[stage]
-      if (!st || st.kind === 'queue' || st.kind === 'workers') return undefined
+      if (st?.kind !== 'store' && st?.kind !== 'pass') return undefined
+      let members: number | undefined
+      const parts: Record<string, number> = {}
       for (const [k, cn] of Object.entries(connections)) {
-        if (cn.assign !== 'key' || cn.to !== stage || cn.members == null) continue
-        const parts: Record<string, number> = {}
-        for (const f of covered(k)) parts[f] = keyParts(k, f)
-        if (!Object.keys(parts).length) return undefined
-        const skew = hot(stage)
-        return { members: whole(dyn(cn.members, ctx), `connection "${k}"`, 'members'), parts, ...(skew && { skew }) }
+        if (cn.assign !== 'key' || cn.to !== stage) continue
+        const flows = covered(k)
+        if (!flows.length) continue
+        for (const f of flows) parts[f] = keyParts(k, f)
+        // the connections into a stage see the same members: spread() refuses them otherwise
+        members ??= whole(dyn(cn.members!, ctx), `connection "${k}"`, 'members')
       }
-      return undefined
+      if (members == null) return undefined
+      const o = outage(st.component)
+      const left = o ? membersLeft(members, o.count) : members
+      if (!(left >= 1)) return undefined
+      const skew = hot(stage)
+      return { members: left, parts, ...(skew && { skew }) }
     })
+  /**
+   * The share of each flow on partition 0 of a queue, or on part 0 of a sharded store, a key connection with a skew
+   * reaches; undefined without one.
+   */
   const hot = (stage: string): Record<string, number> | undefined =>
     memo(`hot partitions of ${stage}`, () => {
       let out: Record<string, number> | undefined

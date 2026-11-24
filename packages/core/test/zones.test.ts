@@ -154,6 +154,28 @@ describe('a failure domain', () => {
     ])
   })
 
+  it('shards a store over the members left, with the parts of every key connection into it', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      domains: { zone: { name: 'Zone', count: 3 } },
+      flows: { a: { rate: ({ load }) => 100 * load }, b: { rate: ({ load }) => 50 * load } },
+      components: {
+        g1: { name: 'G1', capacity: measured(10_000, 'u/s'), over: 'x' },
+        g2: { name: 'G2', capacity: measured(10_000, 'u/s'), over: 'x' },
+        db: { name: 'DB', across: { domain: 'zone', members: 3 }, capacity: measured(10_000, 'u/s'), over: 'x' },
+      },
+      stages: { g1: pass('g1'), g2: pass('g2'), db: store('db') },
+      routes: { a: ['g1', 'db'], b: ['g2', 'db'] },
+      connections: {
+        ka: { from: 'g1', to: 'db', assign: 'key', members: 3, parts: 6, skew: measured(0.5, 'share') },
+        kb: { from: 'g2', to: 'db', assign: 'key', members: 3, parts: 4 },
+      },
+    })
+    expect(m.evaluate({ load: 1 }).stages.db!.shards).toEqual({ members: 3, parts: { a: 6, b: 4 }, skew: { a: 0.5 } })
+    // one zone out: the parts are dealt over the two members left, as the spread deals them
+    expect(m.evaluate({ load: 1, down: 'zone' }).stages.db!.shards).toMatchObject({ members: 2 })
+  })
+
   it('is checked', () => {
     const def = (o: object) => () =>
       defineModel({
