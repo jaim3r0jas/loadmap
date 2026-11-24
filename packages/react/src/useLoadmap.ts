@@ -155,7 +155,7 @@ const DUE = { w: 0, h: 0 }
 /** The state behind a loadmap: values, the model's evaluation, the layout and the engine. */
 export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P> = {}): LoadmapController<P> {
   // held by its place in the story, not by model: a new version of the model (the text edited) still shows the step
-  // while its story has one there
+  // while its story has it (worked out where the new model arrives, below)
   const [stepAt, setStepAt] = useState<number | null>(null)
   const step = stepAt != null && stepAt < model.story.length ? stepAt : null
   // the subsystems drawn closed: the page's, but those the reader or a story step opened, and with those they closed.
@@ -217,16 +217,20 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   let values = state.values
   if (state.model !== model) {
     values = init()
-    // the step shown stays, at its values as the new version writes them (a step being written shows as it is
-    // edited), unless the reader had changed a value since it was shown: then theirs stay
+    // the step shown stays while the new version's story has it: the step with its text, else (its text is what was
+    // edited) the one in its place in a story as long. It shows as it is written now, what it closes and its values,
+    // but for the values when the reader had changed one since it was shown: those start as any new version's
     const was = stepAt == null ? undefined : state.model.story[stepAt]
-    const now = step == null ? undefined : model.story[step]
-    const theirs =
-      was && Object.entries(was.values).some(([k, v]) => (state.values as Record<string, unknown>)[k] !== v)
-    if (now && was && !theirs) {
-      values = { ...values, ...now.values }
-      if (kept?.story) setTurn(now.closed ?? null, true)
-    } else if (stepAt != null && !now) setStepAt(null)
+    const same = was ? model.story.findIndex((st) => st.text === was.text) : -1
+    const at = same >= 0 ? same : was && model.story.length === state.model.story.length ? stepAt : null
+    const now = at == null ? undefined : model.story[at]
+    if (at !== stepAt) setStepAt(at)
+    if (was && now) {
+      const theirs = Object.entries(was.values).some(([k, v]) => (state.values as Record<string, unknown>)[k] !== v)
+      if (!theirs) values = { ...values, ...now.values }
+      // what the reader opened or closed themselves since is theirs too
+      if (!kept || kept.story) setTurn(now.closed ?? null, true)
+    }
     evaluated.current = null
     setState({ model, values })
   }

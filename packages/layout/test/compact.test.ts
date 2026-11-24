@@ -117,7 +117,11 @@ describe('a frame laid out', () => {
     // what an edit of a figure or a comment compiles to: another view, every box and edge as before
     const version = (app: string) =>
       defineView(m, {
-        nodes: { users: node({ label: 'Users' }), app: pool({ label: app, stage: 'app' }), db: node({ label: 'Db' }) },
+        nodes: {
+          users: node({ label: 'Users' }),
+          app: pool({ label: app, stage: 'app' }),
+          db: node({ label: 'Db', stage: 'db' }),
+        },
         edges: [edge('users', 'app'), edge('app', 'db')],
         flows: { requests: { from: 'users', color: 'accent' } },
       })

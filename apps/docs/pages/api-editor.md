@@ -149,7 +149,7 @@ const hash = await editor.current?.shareHash()
 | `format()`        | Lays the text out the one way; `false` when it has a syntax error                               |
 | `files()`         | `EditorFiles`: every file by its path, and the path of its model; one entry for one file        |
 | `setFiles(files)` | Replaces the whole definition with one in several files; its model shows first                  |
-| `changeFiles(f)`  | Changes the files as an edit: one undo step a file, and the diagram keeps its view              |
+| `changeFiles(f)`  | `Promise<void>`: changes the files as an edit, one undo step a file; the diagram keeps its view |
 | `history()`       | `HistoryData` of the versions with `history`, else `null`                                       |
 
 `loadmap()` is what export and recording drive: [React and the page](/api/react/#the-handle) has its methods.

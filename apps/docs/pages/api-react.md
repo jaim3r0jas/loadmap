@@ -248,7 +248,9 @@ the page's flow. A canvas always pans and zooms, so `<Loadmap>` and `<Canvas>` d
 | `rootRef`, `root`                        | Attach `rootRef` to the element with the `.lm` class: its width picks the direction, its tokens the colours                           |
 
 A value the reader changes, a scenario or a step they pick stops the story. A new `model` (an edited text) starts from
-its own defaults; the engine stays, and what is drawn moves to the new structure.
+its own defaults; the engine stays, and what is drawn moves to the new structure. The story step shown stays while the
+new model's story has it (the step with its text, or the one in its place in a story as long), as it is written now:
+its values and what it closes. Give `<Loadmap>` a `key` for a model that is another document.
 
 ## The pieces
 

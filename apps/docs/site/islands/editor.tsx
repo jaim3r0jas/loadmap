@@ -356,7 +356,7 @@ function Editor({ root }: { root: URL }) {
     const model = Object.hasOwn(files, t.path) ? t.path : t.origin.model
     keep({ ...t, path: model, files })
     // an edit, not a new definition: the diagram keeps its view, what is open and the values
-    editor.current?.changeFiles({ path: model, files })
+    void editor.current?.changeFiles({ path: model, files })
   }
   // saved: the files are now what the new commit holds, on the branch this tab made
   // ⌘S waits for the dialog: the editor says "Saved" only once GitHub has the commit, "Not saved" when it closes first

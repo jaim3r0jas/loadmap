@@ -437,11 +437,15 @@ export function loadmapLanguage(
         if (fromA === 0 && toA === tr.startState.doc.length && toA > 0) good = undefined
       })
   })
+  const filesKey = () => {
+    const a = around()
+    return a ? `${a.path}#${a.version}` : ''
+  }
   const result = (source: string) => {
     // a result from before the catalog loaded is not this text's
     const catalog = !!loadedCatalog()
     const a = around()
-    const files = a ? `${a.path}#${a.version}` : ''
+    const files = filesKey()
     if (last?.source !== source || last.catalog !== catalog || last.files !== files)
       last = { source, catalog, files, result: compile(source, a ? { ...o, path: a.path, files: a.files } : o) }
     good = last.result.definition ?? good
@@ -491,7 +495,9 @@ export function loadmapLanguage(
   return [
     loadmapStream,
     syntaxHighlighting(loadmapHighlight),
-    linter(lint, { delay: o.delay ?? 150 }),
+    // the other files changed under the open text (a rename, a restore, an accepted proposal): its problems and the
+    // preview are of the old ones until it is linted again, and no change of its own text asks for that
+    linter(lint, { delay: o.delay ?? 150, needsRefresh: () => (last?.files ?? '') !== filesKey() }),
     lintGutter(),
     autocompletion({ override: [completeWith(around)], activateOnTyping: true, positionInfo }),
     closeBrackets(),

@@ -221,6 +221,16 @@ describe('a subsystem on the board', () => {
     expect(ref.current!.values().load).toBe(20)
     expect(box('eu')).toBeTruthy()
     expect(frames()).toEqual([])
+    // a step written above it: the step is found by its text, one place on
+    const inserted = compile(text.replace('step "', 'step "An ordinary hour." { load: 5 }\nstep "')).definition!
+    draw(inserted)
+    await expect.poll(() => ref.current!.engine.model).toBe(inserted.model)
+    await expect.poll(() => ref.current!.storyStep()).toBe(1)
+    expect(ref.current!.values().load).toBe(20)
+    expect(box('eu')).toBeTruthy()
+    draw(edited)
+    await expect.poll(() => ref.current!.engine.model).toBe(edited.model)
+    await expect.poll(() => ref.current!.storyStep()).toBe(0)
     // the step itself edited: it shows as it is written now
     draw(rewritten)
     await expect.poll(() => ref.current!.engine.model).toBe(rewritten.model)

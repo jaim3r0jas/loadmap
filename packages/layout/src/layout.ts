@@ -294,7 +294,7 @@ function laidOut(frame: Frame, elk?: ElkEngine, sub?: Subsystems): Promise<Laid>
   const engine = elk ?? LOCAL_ELK
   const byFrame = frames.get(engine) ?? new Map<string, Promise<Laid>>()
   frames.set(engine, byFrame)
-  return kept(byFrame, frame.key, 64, () => run(frame, elk, sub))
+  return kept(byFrame, frame.key, 128, () => run(frame, elk, sub))
 }
 
 type Subsystems = typeof import('./subsystems')
@@ -353,10 +353,14 @@ function sceneKey(prep: Prepared, base: Frame | null, rows: number): string {
   return rows > 1 ? JSON.stringify([key, rows]) : key
 }
 
-/** A promise kept by key, the oldest let go past `limit`; one that fails is let go, so the next call tries again. */
+/** A promise kept by key, the one asked for longest ago let go past `limit`; one that fails is let go, so the next call tries again. */
 function kept<T>(cache: Map<string, Promise<T>>, key: string, limit: number, make: () => Promise<T>): Promise<T> {
   let hit = cache.get(key)
-  if (!hit) {
+  if (hit) {
+    // the one asked for last is let go last: a frame every diagram on the page still stands in stays
+    cache.delete(key)
+    cache.set(key, hit)
+  } else {
     hit = Promise.resolve()
       .then(make)
       .catch((err) => {

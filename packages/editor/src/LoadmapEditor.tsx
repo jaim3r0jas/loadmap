@@ -123,9 +123,10 @@ export interface LoadmapEditorHandle {
   /**
    * Changes the definition's files in place, as an edit: each file whose text differs takes one step of its undo, a
    * file comes or goes, and the diagram keeps what the reader sees of it (the view, what is open, the values). Files
-   * whose model is another file are a whole new definition, as `setFiles` puts one.
+   * whose model is another file are a whole new definition, as `setFiles` puts one. Done when the promise settles:
+   * what applies it loads on first use.
    */
-  changeFiles(files: EditorFiles): void
+  changeFiles(files: EditorFiles): Promise<void>
   /** The history of the files as plain data, when the editor keeps one (`history`): what a save pushes. */
   history(): HistoryData | null
 }
@@ -134,6 +135,15 @@ export interface LoadmapEditorHandle {
 export interface EditorFiles {
   path: string
   files: Readonly<Record<string, string>>
+}
+
+/**
+ * Lints now, after a change the open text has no part in (another file's text): `forceLinting` alone only hurries a
+ * lint that is already due, so an update first lets the linter see that the files changed.
+ */
+function relint(v: EditorView) {
+  v.dispatch({})
+  forceLinting(v)
 }
 
 /** The path a text has when nothing says another: a definition in one file. */
@@ -838,7 +848,7 @@ export function LoadmapEditor({
     // with a change to the open text, the page hears of all the files once, after it: never half a rename
     if (alone) {
       latest.current.onFiles?.(filesNow())
-      if (view.current) forceLinting(view.current)
+      if (view.current) relint(view.current)
     }
   }
   /**
@@ -888,7 +898,7 @@ export function LoadmapEditor({
     ])
     setActive(f.active)
     setOpen((o) => o.filter((p) => p === f.active || p === f.entry || Object.hasOwn(f.others, p)))
-    if (view.current) forceLinting(view.current)
+    if (view.current) relint(view.current)
     latest.current.onFiles?.(filesNow())
   }
   // what the explorer's operations reach of the editor (reshape.ts applies them, in the explorer's chunk)
@@ -931,10 +941,13 @@ export function LoadmapEditor({
     setOpen((o) => o.filter((p) => p !== path))
   }
 
+  // how many whole new texts came: what was asked of the one before no longer applies
+  const wholes = useRef(0)
   /** A whole new text, from its own defaults. One transaction: undo brings the old text back. */
   const replace = (source: string, files?: EditorFiles, quiet = false) => {
     const v = view.current
     if (!v) return
+    wholes.current++
     // the reader's unkept edits first, then the new definition: each a version (the history keeps their order)
     if (!quiet) keepVersion('you', 'Edited')
     showDef(null)
@@ -1179,10 +1192,19 @@ export function LoadmapEditor({
     format: formatText,
     files: filesNow,
     setFiles: (files) => replace(files.files[files.path] ?? '', files),
-    changeFiles: (files) => {
-      if (files.path !== set.current.entry) return replace(files.files[files.path] ?? '', files)
+    changeFiles: async (files) => {
+      const whole = () => replace(files.files[files.path] ?? '', files)
+      if (files.path !== set.current.entry || !Object.hasOwn(files.files, files.path)) return whole()
+      const at = wholes.current
       // with the explorer's operations, in their chunk: never in the editor's first load
-      void import('./apply').then((m) => m.applyFiles(fileHost, files.files, 'input.files'))
+      const apply = await import('./apply').catch(() => null)
+      // a whole new text came meanwhile: these files were another definition's
+      if (at !== wholes.current) return
+      // offline, or a new version of the site took the chunk away: the files still arrive, as a new definition
+      if (!apply) return whole()
+      // the reader's unkept edits first, as before any text put over them
+      keepVersion('you', 'Edited')
+      apply.applyFiles(fileHost, files.files, 'input.files')
     },
     history: () => studio.current?.history?.toData() ?? null,
   }))
