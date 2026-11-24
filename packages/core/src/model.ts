@@ -141,6 +141,16 @@ export interface Retry {
   failed: number
 }
 
+/** What a flow loses for good at one set of values: after every retry, and less what its fallback serves. */
+export interface Lost {
+  /** Units a second. */
+  rate: number
+  /** Of what the flow sends, before retries. */
+  share: number
+  /** Where and how: each stage's part, by loss. What a breaker fails fast has no stage. */
+  causes: readonly { stage?: string; loss: Loss; rate: number }[]
+}
+
 /** A failure domain: its name ("Availability zone") and how many parts it has, from 2 up. */
 export interface Domain {
   name: string
@@ -443,6 +453,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   fallbacks: Readonly<Partial<Record<F, Fallback<S> & { rate: number }>>>
   /** Each flow's time through, from the service times of its stages; null for a flow none of them has one on. */
   latency: Readonly<Record<F, Latency | null>>
+  /** What each flow loses for good: turned away, dropped or too slow, after every retry and its fallback. */
+  lost: Readonly<Record<F, Lost>>
   /** The context model functions saw: for labels and other view callbacks. */
   ctx: LooseValues
 }
@@ -488,6 +500,8 @@ export interface Model<P = any, F extends string = string, C extends string = st
     bound?: Bound,
     flows?: readonly F[],
   ): Readonly<Partial<Record<F, Latency | null>>>
+  /** What each flow loses for good at these values, as `evaluate` gives it; with a bound and flows as `latency`. */
+  lost(values?: Partial<Values<P>>, bound?: Bound, flows?: readonly F[]): Readonly<Partial<Record<F, Lost>>>
   /** The scenario whose values these are, ignoring the load; null when they match none. */
   scenarioOf(values: LooseValues): Scenario<P> | null
   /**
@@ -730,16 +744,21 @@ export function defineModel<
     if (e.flow != null && !(flowIds as readonly string[]).includes(e.flow))
       throw new Error(`loadmap: ${name} names unknown flow "${e.flow}"`)
     const qs = PERCENTILES.filter((q) => e[q] != null)
-    if ((e.flow != null || qs.length) && (e.flow == null || qs.length !== 1))
+    if (e.lost != null) {
+      if (!(e.lost >= 0 && e.lost < 1))
+        throw new Error(`loadmap: ${name} has a lost of ${e.lost}: a share from 0, below 1`)
+      if (e.component != null || e.notFull != null || qs.length)
+        throw new Error(`loadmap: ${name} holds what is lost: no component, no notFull and no latency`)
+    } else if ((e.flow != null || qs.length) && (e.flow == null || qs.length !== 1))
       throw new Error(`loadmap: ${name} holds a latency: a flow and one of p50, p95 or p99`)
-    if (e.flow != null && (e.component != null || e.notFull != null))
+    if (e.lost == null && e.flow != null && (e.component != null || e.notFull != null))
       throw new Error(`loadmap: ${name} holds the latency of "${e.flow}": no component and no notFull`)
     for (const q of qs) {
       const x = e[q]!
       if (!(x > 0 && Number.isFinite(x))) throw new Error(`loadmap: ${name} has a ${q} of ${x}: a time above 0`)
     }
-    // a flow's latency is checked at the values without underTarget
-    if (e.underTarget == null && e.notFull == null && e.flow == null)
+    // a flow's latency, and what is lost, are checked at the values without underTarget
+    if (e.underTarget == null && e.notFull == null && e.flow == null && e.lost == null)
       throw new Error(`loadmap: ${name} needs underTarget, notFull or lasts`)
     for (const k of ['underTarget', 'notFull'] as const) {
       const x = e[k]
@@ -919,6 +938,7 @@ export function defineModel<
       held,
       holders,
       latencies,
+      losts,
       plain,
       spread,
       connectionText,
@@ -938,6 +958,7 @@ export function defineModel<
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
+    let lost: Record<F, Lost> | undefined
 
     const components = {} as Record<C, ComponentResult<C>>
     for (const c of componentIds) {
@@ -1077,6 +1098,10 @@ export function defineModel<
         latency ??= latencies() as Record<F, Latency | null>
         return latency
       },
+      get lost() {
+        lost ??= losts() as Record<F, Lost>
+        return lost
+      },
       ctx,
     }
   }
@@ -1123,6 +1148,8 @@ export function defineModel<
     },
     latency: (partial, bound, only) =>
       context(def as any, { ...defaults(), ...partial }, bound).latencies(only) as Record<F, Latency | null>,
+    lost: (partial, bound, only) =>
+      context(def as any, { ...defaults(), ...partial }, bound).losts(only) as Record<F, Lost>,
     scenarioOf,
     dateAt: when,
     outageValues: (partial = {}) => {
@@ -1790,6 +1817,27 @@ function contextAt(
       if (fb && wanted.includes('rejected'))
         for (const s of fb.route) if (st.from.includes(s)) total += arriving(s, f) * shedFor(s, f)
       return total
+    })
+
+  /** What a flow loses for good: every lost box together would take this, and what its breaker fails fast. */
+  const lostOf = (f: string): Lost =>
+    memo(`${f} lost for good`, () => {
+      const all = causes(f)
+      const failing = all.reduce((a, c) => a + (c.loss === 'dropped' ? 0 : c.rate), 0)
+      const k = failing > 0 ? Math.min(1, forGood(f) / failing) : 0
+      const fb = def.flows[f]!.fallback
+      const served = pastAfter(f)
+      const out: { stage?: string; loss: Loss; rate: number }[] = all.map((c) => ({
+        ...c,
+        rate: c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k,
+      }))
+      // a fallback serves what fails past its `after` and what the breaker fails fast, less what its own stages turn away
+      if (fb) for (const s of fb.route) out.push({ stage: s, loss: 'rejected', rate: arriving(s, f) * shedFor(s, f) })
+      else out.push({ loss: 'rejected', rate: failedFast(f) })
+      const causesLeft = out.filter((c) => c.rate > 0)
+      const total = causesLeft.reduce((a, c) => a + c.rate, 0)
+      const sent = rate(f)
+      return { rate: total, share: sent > 0 ? Math.min(1, total / sent) : 0, causes: causesLeft }
     })
 
   const retries = (): Record<string, Retry> =>
@@ -2551,6 +2599,12 @@ function contextAt(
     connectionText,
     assignment,
     hot,
+    losts: (only: readonly string[] = flowIds) => {
+      // each flow's on first read: a timeout's share costs the gamma fits
+      const out = {}
+      for (const f of only) Object.defineProperty(out, f, { enumerable: true, get: () => lostOf(f) })
+      return out as Record<string, Lost>
+    },
     latencies: (only: readonly string[] = flowIds) => {
       const timed = componentIds.some((c) => def.components[c]!.service != null)
       // each flow's on first read: the quantiles cost a bisection each

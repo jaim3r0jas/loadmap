@@ -83,7 +83,7 @@ A part or a variant is read through its model: compile its text with `path` and 
 A diagnostic, a symbol or an expectation in another file carries its `file`, with its offsets, line and column in that
 file.
 
-`LANGUAGE_VERSION` is the language version this build reads, as text (`'1.7'`).
+`LANGUAGE_VERSION` is the language version this build reads, as text (`'1.8'`).
 
 ## Diagnostics
 

@@ -164,7 +164,7 @@ describe('hover and signature help in the editor', () => {
       .toContain('Values from the last version without errors.')
     expect(tip('.lm-hover')).toContain('2,000 a second')
     // another text in its place (a template): the old values are not its own
-    const other = cache.replace('2_000 * load', '9_000 * load').replace('loadmap 1.7', 'loadmap 1.1\nrate oops')
+    const other = cache.replace('2_000 * load', '9_000 * load').replace('loadmap 1.8', 'loadmap 1.1\nrate oops')
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: other } })
     v.contentDOM.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
     await expect.poll(() => document.querySelector('.lm-hover')).toBeNull()

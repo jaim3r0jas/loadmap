@@ -164,5 +164,9 @@ users -> gate -> db
     expect(r.length).toBeGreaterThan(0)
     await expect.poll(() => meter(host, 'attempts per request')).toMatch(/^[23]\.\d×$/)
     await expect.poll(() => meter(host, 'failing after 3 retries')).toBe('25 %')
+    // the share its expectation on losses holds, up to that expectation's 3× and not past it
+    expect(meter(host, 'requests lost')).toBeUndefined()
+    handle.setValues({ load: 2 })
+    await expect.poll(() => meter(host, 'requests lost')).toBe('0 %')
   })
 })

@@ -811,7 +811,7 @@ describe('the editor', () => {
       const ch = view.defaultCharacterWidth
       expect(Math.abs(sign.getBoundingClientRect().width - 2 * ch)).toBeLessThan(1)
       view.dispatch({ effects: EditorView.scrollIntoView(0) })
-      await expect.poll(() => host.querySelector('.cm-line')?.textContent).toBe('loadmap 1.7')
+      await expect.poll(() => host.querySelector('.cm-line')?.textContent).toBe('loadmap 1.8')
       expect([...host.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes('Checkout +- pipeline'))).toBe(
         true,
       )
@@ -846,7 +846,7 @@ describe('the editor', () => {
       document.body.replaceChildren()
 
       // before 1.6 a "+-" is a plus and a minus: drawn as written
-      const old = source.replace('loadmap 1.7', 'loadmap 1.5').replace('4_000 +- 30%', '4_000 ± 30%')
+      const old = source.replace('loadmap 1.8', 'loadmap 1.5').replace('4_000 +- 30%', '4_000 ± 30%')
       ;({ host, view } = await mount({
         source: old.replace('gateways +- 30%', 'gateways ± 30%') + '\nlet sum = 3 +- 1\n',
       }))

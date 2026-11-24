@@ -1176,11 +1176,11 @@ describe('the checker', () => {
 
   it('needs the version line, and refuses a newer language', () => {
     expect(errors(def().replace('loadmap 1.1\n', ''))).toMatchObject([
-      { message: 'a definition starts with "loadmap 1.7"', hint: 'add "loadmap 1.7" as the first line' },
+      { message: 'a definition starts with "loadmap 1.8"', hint: 'add "loadmap 1.8" as the first line' },
     ])
     expect(errors(def().replace('loadmap 1.1', 'loadmap 2'))).toMatchObject([
       {
-        message: 'this definition is written in language version 2; this loadmap reads version 1.7',
+        message: 'this definition is written in language version 2; this loadmap reads version 1.8',
         hint: 'update @loadmap/dsl',
       },
     ])

@@ -58,9 +58,9 @@ export function months(low: Date | null, high: Date | null): string {
   return monthOf(low) === monthOf(high) ? ` (${around(low)})` : ` (between ${monthOf(low)} and ${monthOf(high)})`
 }
 
-/** A percentage of a 0–1 share: 50 %. */
-export function pct(share: number): string {
-  return `${Math.round(share * 100)} %`
+/** A percentage of a 0–1 share: 50 %. Fine, a small share keeps two digits: 0.1 % / 0.02 % / 14 %. */
+export function pct(share: number, fine = false): string {
+  return `${fine ? Number((share * 100).toPrecision(2)) : Math.round(share * 100)} %`
 }
 
 /** A duration in seconds for a meter: 0 s / 42 s / 3 min / > 1 h / stalled. */

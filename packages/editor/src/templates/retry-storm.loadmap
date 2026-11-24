@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # Clients retry what a busy service turns away. Below capacity that costs nothing; past it every failed attempt comes
 # back, and the gateway in front sees several times the traffic. A retry budget keeps it in bounds.
 title: "Retry storm"
@@ -21,6 +21,7 @@ growth { rate: 0.05; per: month; asOf: "2026-11-01" }
 
 expect "Today keeps 1.5×" { underTarget: 1.5 }
 expect "The gateway lasts to 3×" { component: gateway; notFull: 3 }
+expect "Requests lose under 1 % up to 3×" { lost: 1%; underTarget: 3× }
 
 flow requests "requests" {
   unit: "request"

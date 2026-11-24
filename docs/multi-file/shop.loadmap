@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 # One model in several files. This file is the system; its story is a part beside it (shop.story.loadmap), and the

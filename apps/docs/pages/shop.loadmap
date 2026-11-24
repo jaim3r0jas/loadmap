@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # The home page's "How it works": its first step shows the flow, the database and the expectation; its second the
 # verdict at the defaults, its third what loadmap check says (apps/docs/test/site.test.ts holds them to this file).
 title: "Shop"

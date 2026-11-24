@@ -537,7 +537,7 @@ function checkCapacity(v: unknown): void {
  */
 function grounded(model: Definition['model'], r: CheckResult): CheckResult {
   const e = r.expectation
-  if (e.flow != null || (e.underTarget == null && e.notFull == null)) return r
+  if (e.flow != null || e.lost != null || (e.underTarget == null && e.notFull == null)) return r
   const scenario = e.scenario == null ? undefined : model.scenarios.find((s) => s.label === e.scenario)
   const values = e.down == null ? scenario?.values : { ...scenario?.values, down: e.down }
   const all = Object.values(model.evaluate(values as never).components)
@@ -3176,7 +3176,25 @@ export class Compiler {
     if (component != null) e.component = component
     // a flow's latency: one percentile under a time, at the values or up to underTarget
     const qs = ['p50', 'p95', 'p99'].filter((q) => b.props.has(q))
-    if (flow != null || qs.length) {
+    // what is lost: a share, of one flow or of every flow, at the values or up to underTarget
+    if (b.props.has('lost')) {
+      for (const k of ['component', 'notFull', 'lasts', ...qs]) {
+        const p = this.prop(b, k)
+        if (p) this.report.error('bad-expect', p.key, `an expect on what is lost takes no ${p.key.name}`)
+      }
+      const v = this.constProp<number>(b, 'lost')
+      if (!(v != null && v >= 0 && v < 1)) {
+        this.report.error(
+          'out-of-range',
+          this.prop(b, 'lost')!.value,
+          'lost is a share from 0, below 100%',
+          'lost: 0.1%',
+        )
+        return undefined
+      }
+      if (flow != null) e.flow = flow
+      e.lost = v
+    } else if (flow != null || qs.length) {
       if (flow == null) {
         this.report.error(
           'bad-expect',
@@ -3227,7 +3245,7 @@ export class Compiler {
     }
     const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
     if (severity) e.severity = severity
-    if (e.flow != null) return e
+    if (e.flow != null || e.lost != null) return e
     if (!b.props.has('underTarget') && !b.props.has('notFull') && !b.props.has('lasts')) {
       // in the words of the definition's version: before 1.1 there are only the old names, and no ×
       const old = before(this.version, parseVersion(SCHEMA.expect!.props.underTarget!.since!)!)

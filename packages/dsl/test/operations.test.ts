@@ -164,8 +164,8 @@ describe('operations across files', () => {
       { op: 'move', target: 'orderWorkers', to: 'workers.loadmap' },
     ])
     expect(r.added).toEqual(['workers.loadmap'])
-    expect(text(r, 'workers.loadmap')).toMatch(/^loadmap 1\.7\npart of "\.\/shop\.loadmap"\n\npool orderWorkers /)
-    expect(text(r)).toMatch(/^loadmap 1\.7\ninclude "\.\/workers\.loadmap"\n/)
+    expect(text(r, 'workers.loadmap')).toMatch(/^loadmap 1\.8\npart of "\.\/shop\.loadmap"\n\npool orderWorkers /)
+    expect(text(r)).toMatch(/^loadmap 1\.8\ninclude "\.\/workers\.loadmap"\n/)
     expect(text(r)).not.toContain('pool orderWorkers')
     expect(compiles(r)).toEqual([])
   })

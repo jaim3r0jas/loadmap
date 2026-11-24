@@ -1,4 +1,4 @@
-loadmap 1.7
+loadmap 1.8
 # A store split into shards by key: each shard takes its share of the writes, so the hottest shard runs out first,
 # long before the shards together would. Rebalancing the keys and bigger shards each buy headroom: the scenarios
 # side by side say how much.
