@@ -630,7 +630,7 @@ export function defineModel<
     const stated = context(def as any, values)
     // a stock's level may be as unsure as a capacity: it moves its crossings too
     const levelWithin = (c: string) => {
-      const l = def.components[c]!.level
+      const l = def.components[c as C]!.level
       return (typeof l === 'function' ? l(values) : l)?.within ?? 0
     }
     const uncertain = componentIds.filter((c) => (stated.capacity(c).within ?? 0) > 0 || levelWithin(c) > 0)
