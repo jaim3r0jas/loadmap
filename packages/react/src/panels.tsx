@@ -300,7 +300,8 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   const down = (lm.values as { down?: unknown }).down ?? 'none'
   const promised = (e: (typeof model.expectations)[number]) =>
     (e.scenario == null || e.scenario === scenario) &&
-    (e.down ?? 'none') === down &&
+    // a scenario may set the outage itself: only an expectation's own `down` asks for it
+    (e.down == null || e.down === down) &&
     (e.underTarget == null || lm.values.load <= e.underTarget)
   // what a flow loses for good, where an expectation holds it at any values: against the strictest promised here
   for (const f of model.flowIds) {

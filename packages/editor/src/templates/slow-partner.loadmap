@@ -47,5 +47,5 @@ node partner "Partner API" {
 node failed "Failed" { lost { takes: [rejected, timedOut] } }
 
 clients -> api
-api -> partner
+api -> partner: "HTTPS" { delay: 30ms }
 partner -> failed

@@ -31,7 +31,7 @@ import {
   workers,
 } from '@loadmap/core'
 import { fitLinear } from '@loadmap/core/calibrate'
-import { fmt } from '@loadmap/core/format'
+import { duration, fmt } from '@loadmap/core/format'
 import { flowOf, lossesIn, propOf, waysOf } from '@loadmap/core/internal'
 import { bestSize, fitScaling } from '@loadmap/core/scaling'
 import {
@@ -1284,6 +1284,29 @@ export class Compiler {
       if (b.args.id) subsystems[b.args.id.name] = { label: this.text(b.args.label) ?? b.args.id.name }
     const edges: EdgeDef[] = []
     for (const e of root.edges) edges.push(...this.edges(e, boxById))
+    // a delay is the model's: of the hop between two stages, or into a stage for the flows that start at the box
+    const delays: Record<string, unknown>[] = []
+    for (const { from, to, delay, at } of this.delays) {
+      if (!Object.hasOwn(stageDefs, to)) {
+        this.report.error('bad-edge', at, `a delay is the time into a stage, and "${to}" does nothing with a flow`)
+        continue
+      }
+      const starting = Object.keys(flowViews).filter((f) => flowViews[f]!.from === from && routes[f]?.[0] === to)
+      const hop = (f: string) =>
+        waysOf(shape, f).ways.some((w) => w.some((s, i) => s === to && w[i - 1] === from)) || waysOf(shape, f).open
+      // an edge can be both: a hop of one flow's route, and where another flow starts
+      const between = Object.hasOwn(stageDefs, from) && Object.keys(routes).some(hop)
+      if (between) delays.push({ from, to, delay })
+      if (starting.length) delays.push({ to, delay, flows: starting })
+      if (!between && !starting.length)
+        this.report.warning(
+          'unused-delay',
+          at,
+          `no flow goes from "${from}" straight to "${to}": the delay counts for none`,
+          'a delay goes on a hop of a route, or on the edge from a flow\'s "from" box to its first stage',
+        )
+    }
+    if (delays.length) model.delays = delays
     // the flow runs through the tiers in their order: an edge back is drawn against it
     const tierOf = (id: string) => {
       const t = nodes[id]?.tier
@@ -1780,6 +1803,8 @@ export class Compiler {
   private wayAt: { split: string; flow: string; stages: string[]; at: Span }[] = []
   private branchAt = new Map<string, Span>()
   private whenAt = new WeakMap<EdgeDef, Span>()
+  /** The edges that hold a delay, as written: the model takes them once the stages and flows are known. */
+  private delays: { from: string; to: string; delay: number | ((v: unknown) => number); at: Span }[] = []
   private connectionAt = new Map<string, Span>()
 
   /** A connection's definition for core; undefined when its hop names no two stages. */
@@ -3950,8 +3975,10 @@ export class Compiler {
         this.report.error('unknown-name', n, `unknown node "${n.name}"`, didYouMean(n.name, boxes.keys()))
     const props = new Map<string, Property>()
     // what its version's edge holds: `label` too, before 1.5
+    const version = this.versionOf(e.chain[0]!)
     const held = Object.entries(EDGE_PROPS)
-      .filter(([, p]) => !p.until || before(this.versionOf(e.chain[0]!), parseVersion(p.until)!))
+      .filter(([, p]) => !p.until || before(version, parseVersion(p.until)!))
+      .filter(([, p]) => !p.since || !before(version, parseVersion(p.since)!))
       .map(([k]) => k)
     for (const s of e.body ?? []) {
       if (s.kind !== 'prop' || !own(EDGE_PROPS, s.key.name)) {
@@ -3974,8 +4001,31 @@ export class Compiler {
     if (e.value && props.has('label')) this.report.error('duplicate', props.get('label')!.key, 'the label is set twice')
     if (labelExpr && e.chain.length > 2)
       this.report.error('bad-edge', labelExpr, 'a label goes on a single edge: a -> b: "…"')
-    const label = this.label(labelExpr)
+    const written = this.label(labelExpr)
     const when = props.get('when')
+    const wait = props.get('delay')
+    if (wait && e.chain.length > 2)
+      this.report.error('bad-edge', wait.key, 'a delay goes on a single edge: a -> b { … }')
+    const delay =
+      wait && e.chain.length === 2
+        ? this.dyn<number>(wait.value, 'number', 'values', (v) => {
+            if (typeof v !== 'number' || !(v >= 0 && Number.isFinite(v)))
+              throw new Error(`a delay is seconds from 0 up, not ${String(v)}`)
+          })
+        : undefined
+    if (delay !== undefined) this.delays.push({ from: e.chain[0]!.name, to: e.chain[1]!.name, delay, at: wait!.key })
+    // the edge says its delay after its label: "HTTPS · 80 ms"
+    const said = (l: string | undefined, s: number) => (l ? `${l} · ${duration(s)}` : duration(s))
+    const label =
+      delay === undefined
+        ? written
+        : typeof delay === 'number' && typeof written !== 'function'
+          ? said(written, delay)
+          : (ctx: any) =>
+              said(
+                typeof written === 'function' ? written(ctx) : written,
+                typeof delay === 'number' ? delay : delay(ctx),
+              )
     const out: EdgeDef[] = []
     for (let i = 0; i + 1 < e.chain.length; i++) {
       const d: EdgeDef = { from: e.chain[i]!.name, to: e.chain[i + 1]!.name }

@@ -62,6 +62,7 @@ component and stage ids) and fails the typecheck.
 | `stages`      | What the dots do on a route, by id: [Stages](#stages). Required                                        |
 | `routes`      | Each flow's stages, in order: `{ orders: ['gateway', 'topic', 'workerPool', 'db'] }`. Required         |
 | `connections` | How a stage reaches the next one, and through which part of it: [Connections](#connections)            |
+| `delays`      | The time a hop takes whatever the load, `{ from?, to, delay, flows? }`: it adds to the latency         |
 | `derived`     | Named formulas every model function can read as `derived.<name>`                                       |
 | `presets`     | Named sets of values, the load included: buttons on the page                                           |
 | `peaks`       | How long a preset's moment lasts, in seconds, by its label: `backlog()` says what it leaves      |

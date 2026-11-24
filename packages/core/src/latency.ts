@@ -1,7 +1,8 @@
 /**
  * How long a unit takes: each stage with a service time is one queue (M/M/1), so its time is exponential with a mean of
  * service ÷ (1 − utilization). A way through is the sum of its stages, fitted to a gamma distribution by its mean and
- * variance; the ways of a flow mix by their shares. An estimate of the shape, not a measurement.
+ * variance, after the delays of its hops, which every unit takes; the ways of a flow mix by their shares. An estimate
+ * of the shape, not a measurement.
  */
 
 /** The percentiles a latency has, and an expectation may hold. */
@@ -29,6 +30,8 @@ export interface WayTime {
   share: number
   mean: number
   variance: number
+  /** The part of the mean every unit takes whatever the load: the delays of its hops. The rest is fitted past it. */
+  fixed?: number
 }
 
 /** ln Γ(x), by Lanczos's approximation (g = 7, nine terms). */
@@ -83,8 +86,11 @@ export function gammaP(a: number, x: number): number {
 /** The share of a way's units done within t seconds. */
 function done(w: WayTime, t: number): number {
   if (!Number.isFinite(w.mean)) return 0
-  if (w.variance <= 0 || w.mean <= 0) return t >= w.mean ? 1 : 0
-  return gammaP((w.mean * w.mean) / w.variance, (t * w.mean) / w.variance)
+  // no unit is done before the delays of its way: the queues' time is fitted past them
+  const fixed = w.fixed ?? 0
+  const mean = w.mean - fixed
+  if (w.variance <= 0 || mean <= 0) return t >= w.mean ? 1 : 0
+  return t <= fixed ? 0 : gammaP((mean * mean) / w.variance, ((t - fixed) * mean) / w.variance)
 }
 
 /** The share of the units not done within t seconds, over every way. */

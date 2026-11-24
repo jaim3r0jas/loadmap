@@ -151,6 +151,17 @@ export interface Lost {
   causes: readonly { stage?: string; loss: Loss; rate: number }[]
 }
 
+/** A delay on a hop between two stages next to each other on a way, or into the first stage of a way. */
+export interface DelayDef<P = any, F extends string = string, S extends string = string> {
+  /** The stage the hop leaves; without one, the hop into `to` where a way starts there. */
+  from?: S
+  to: S
+  /** Seconds, from 0 up; it may read the load and the parameters. */
+  delay: number | ((values: Values<P>) => number)
+  /** Only these flows take it; every flow that goes the hop without. */
+  flows?: readonly F[]
+}
+
 /** A failure domain: its name ("Availability zone") and how many parts it has, from 2 up. */
 export interface Domain {
   name: string
@@ -244,6 +255,11 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
    * partition with one worker. The component of `to` then runs out when its busiest member does.
    */
   connections?: Readonly<Record<string, ConnectionDef<NoInfer<S>, NoInfer<F>>>>
+  /**
+   * The time a hop takes, whatever the load: a network round trip, a call to another region. It adds to the latency
+   * of every flow that goes that hop, so it counts toward its timeout.
+   */
+  delays?: readonly DelayDef<NoInfer<P>, NoInfer<F>, NoInfer<S>>[]
   /** Fits used by the model, listed with the assumptions. */
   calibration?: Readonly<Record<string, Fit>>
   /**
@@ -607,7 +623,13 @@ export function defineModel<
       return c != null && (def.components as Record<string, ComponentDef<unknown>>)[c]?.service != null
     }
     const any = componentIds.some((c) => def.components[c].service != null)
-    if (open ? !any : ![...way].some(timedStage))
+    // a delay on a hop of its way is a time too: into a way's first stage, or between two next to each other
+    const delayed = (def.delays ?? []).some(
+      (d) =>
+        (d.flows?.includes(f) ?? true) &&
+        (open || known.ways.some((w) => w.some((s, i) => s === d.to && w[i - 1] === d.from))),
+    )
+    if (!delayed && (open ? !any : ![...way].some(timedStage)))
       throw flowError(
         `loadmap: flow "${f}" has a timeout but no latency: no stage on its way has a service`,
         f,
@@ -722,6 +744,14 @@ export function defineModel<
   for (const [label, s] of Object.entries(def.peaks ?? {})) {
     if (!Object.hasOwn(def.presets ?? {}, label)) throw new Error(`loadmap: a peak names unknown preset "${label}"`)
     if (!(s > 0 && Number.isFinite(s))) throw new Error(`loadmap: preset "${label}" lasts ${s} s: a time above 0`)
+  }
+  for (const d of def.delays ?? []) {
+    const hop = `the delay ${d.from == null ? 'into' : `${d.from} ->`} ${d.to}`
+    for (const s of [d.from, d.to])
+      if (s != null && !(stageIds as readonly string[]).includes(s))
+        throw new Error(`loadmap: ${hop} names unknown stage "${s}"`)
+    for (const f of d.flows ?? [])
+      if (!(flowIds as readonly string[]).includes(f)) throw new Error(`loadmap: ${hop} names unknown flow "${f}"`)
   }
   const scenarioOf = (values: LooseValues) =>
     scenarios.find((s) => Object.entries(s.values).every(([k, v]) => values[k] === v)) ?? null
@@ -2012,7 +2042,23 @@ function contextAt(
       if (u == null) return enabled(c!) && capacity(c!).missing != null ? Number.NaN : 0
       return u >= 1 ? Number.POSITIVE_INFINITY : time / (1 - u)
     })
-  /** A flow's ways through, timed: the stages of each way add up; a cache's hits leave the way there. */
+  /** The seconds a flow's hop into `to` takes, from `from` or (without one) as its way starts: its delays, added. */
+  const delayOn = (f: string, from: string | undefined, to: string): number | null => {
+    // null without one: a delay of 0 s at these values is still a time, so a timeout on it stands
+    let total: number | null = null
+    for (const d of def.delays ?? []) {
+      if (d.to !== to || d.from !== from || (d.flows && !d.flows.includes(f))) continue
+      const v = typeof d.delay === 'function' ? d.delay(values as Values<any>) : d.delay
+      if (!(v >= 0 && Number.isFinite(v)))
+        throw new Error(`loadmap: the delay ${from == null ? 'into' : `${from} ->`} ${to} is ${v} s: a time from 0 up`)
+      total = (total ?? 0) + v
+    }
+    return total
+  }
+  /**
+   * A flow's ways through, timed: the stages and the hops' delays of each way add up; a cache's hits leave the way
+   * there.
+   */
   const timesOf = (f: string) =>
     memo(`times of ${f}`, () => {
       const ways: WayTime[] = []
@@ -2023,14 +2069,24 @@ function contextAt(
       for (const [i, p] of paths(f).entries()) {
         // one part of the way, or one per group of members a connection's spread sets apart
         let parts: WayTime[] = [{ share: p.share, mean: 0, variance: 0 }]
-        for (const s of p.stages) {
+        for (const [j, s] of p.stages.entries()) {
+          const wait = delayOn(f, p.stages[j - 1], s)
+          if (wait != null) timed = true
+          if (wait) {
+            parts = parts.map((w) => ({ ...w, mean: w.mean + wait, fixed: (w.fixed ?? 0) + wait }))
+          }
           const rs = responses(s, f)
           if (rs) timed = true
           if (rs?.length === 1 && Number.isNaN(rs[0]!.time))
             unknown.add(def.components[(stages[s] as { component: string }).component]!.name)
           else if (rs)
             parts = parts.flatMap((w) =>
-              rs.map((g) => ({ share: w.share * g.share, mean: w.mean + g.time, variance: w.variance + g.time ** 2 })),
+              rs.map((g) => ({
+                ...w,
+                share: w.share * g.share,
+                mean: w.mean + g.time,
+                variance: w.variance + g.time ** 2,
+              })),
             )
           if (stages[s]!.kind === 'cache') {
             for (const w of parts) {
@@ -2602,7 +2658,7 @@ function contextAt(
       return out as Record<string, Lost>
     },
     latencies: (only: readonly string[] = flowIds) => {
-      const timed = componentIds.some((c) => def.components[c]!.service != null)
+      const timed = componentIds.some((c) => def.components[c]!.service != null) || !!def.delays?.length
       // each flow's on first read: the quantiles cost a bisection each
       const out = {}
       for (const f of only) Object.defineProperty(out, f, { enumerable: true, get: () => (timed ? latency(f) : null) })

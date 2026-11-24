@@ -1452,6 +1452,13 @@ export const EDGE_PROPS: Readonly<Record<string, PropSpec>> = {
     instead: 'write it after the edge: a -> b: "label" { when: … }',
   },
   when: { value: 'boolean', scope: 'ctx', doc: 'The edge is left out while this is false.' },
+  delay: {
+    value: 'number',
+    scope: 'values',
+    unit: 'seconds',
+    since: '1.8',
+    doc: 'The seconds the hop takes, whatever the load: a network round trip, a call to another region. It adds to the latency of every flow that goes from the one box to the other (from a flow\'s source box, of the flows that start there), so to their timeout, and the edge\'s label says it: `users -> lb: "HTTPS" { delay: 80ms }`.',
+  },
 }
 
 export const BOXES = ['node', 'cluster', 'pool'] as const

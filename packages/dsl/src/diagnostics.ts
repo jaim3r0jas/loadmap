@@ -59,6 +59,7 @@ export const CODES = {
   'bad-demand': 'a component whose demand is not a finite number from 0 up at some values',
   'unused-stage': 'a stage no flow passes',
   'unused-component': 'a component no stage uses or holds',
+  'unused-delay': 'a delay on an edge no flow goes along',
   'tier-order': 'an edge that runs back against the tiers',
   deprecated: 'an old spelling: loadmap fmt rewrites it',
   removed: 'a statement or a property a language version dropped: what to write is in the hint',

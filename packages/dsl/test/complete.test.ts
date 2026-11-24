@@ -32,7 +32,9 @@ describe('completions', () => {
       'rows',
       'closed',
     ])
-    expect(at(`${checkout}\nphones -> db {\n  |\n}\n`).labels).toEqual(['when'])
+    expect(at(`${checkout}\nphones -> db {\n  |\n}\n`).labels).toEqual(['when', 'delay'])
+    // a file stamped before 1.8 is not offered the delay
+    expect(at(`${checkout.replace('loadmap 1.8', 'loadmap 1.7')}\nphones -> db {\n  |\n}\n`).labels).toEqual(['when'])
     // a file of 1.4 is offered what 1.4 writes: the direction at the top, a pool's workers in their block
     const v14 = checkout.replace('loadmap 1.8', 'loadmap 1.4')
     expect(at(v14.replace('\ntitle:', '\n|\ntitle:')).labels).toContain('direction')
