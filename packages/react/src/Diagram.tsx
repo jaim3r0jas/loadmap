@@ -806,11 +806,18 @@ function Node({
   const flows = lm.view.def.flows as Record<string, { color: string }>
   // an autoscaled pool draws every pod it may run; the ones it does not run now are dashed and faint
   const st = n.kind === 'pool' ? lm.ev.stages[n.stages[0] ?? ''] : undefined
-  // a cluster's members in a part of its domain that is down are drawn as idle pods are
-  const out = n.component ? lm.ev.components[n.component as keyof typeof lm.ev.components]?.out : undefined
-  const running = st?.kind === 'workers' ? st.running : out ? out.left : n.members.length
+  // the members in a part of its domain that is down are drawn as idle pods are: a pool with one out is smaller
+  const first = n.stages[0] == null ? undefined : lm.ev.stages[n.stages[0]]
+  const comp = n.component ?? (first && 'component' in first ? first.component : undefined)
+  const out = comp == null ? undefined : lm.ev.components[comp as keyof typeof lm.ev.components]?.out
+  const running =
+    st?.kind === 'workers'
+      ? st.running
+      : out
+        ? n.members.length - Math.ceil(n.members.length / out.count)
+        : n.members.length
   // a pod past the pool's size is leaving the drawing: it fades out as it was, running
-  const idle = (i: number) => i >= running && i < (st?.kind === 'workers' ? st.pods : n.members.length)
+  const idle = (i: number) => i >= running && i < (st?.kind === 'workers' && !out ? st.pods : n.members.length)
   // behind an exclusive connection, a running worker that reads no partition is dashed too
   const a = st?.kind === 'workers' ? st.assignment : undefined
   const unassigned = (i: number) => a != null && i < a.weights.length && a.weights[i] === 0

@@ -1191,18 +1191,25 @@ export class Compiler {
         )
         continue
       }
-      const st = stageDefs[box.id] as { kind?: string; pods?: unknown; autoscale?: { max: unknown } } | undefined
-      const members =
-        box.block.keyword === 'pool'
-          ? st?.kind === 'workers'
-            ? st.autoscale
-              ? st.autoscale.max
-              : st.pods
-            : undefined
-          : box.block.keyword === 'cluster'
-            ? this.dynProp<number>(box.block, 'members', 'number')
-            : domains[domain]!.count
-      if (members == null) continue
+      // a box whose stage is a pool counts its pods, whatever its keyword
+      const pool = box.stages
+        .map((x) => stageDefs[x.id] as { kind?: string; pods?: unknown; autoscale?: { max: unknown } } | undefined)
+        .find((x) => x?.kind === 'workers')
+      const members = pool
+        ? pool.autoscale
+          ? pool.autoscale.max
+          : pool.pods
+        : box.block.keyword === 'cluster'
+          ? this.dynProp<number>(box.block, 'members', 'number')
+          : domains[domain]!.count
+      if (members == null) {
+        this.report.error(
+          'bad-box',
+          this.prop(box.block, 'across')!.key,
+          'across needs the members of the box: its pods',
+        )
+        continue
+      }
       ;(componentDefs[box.component.id] as Record<string, unknown>).across = { domain, members }
     }
 

@@ -53,9 +53,41 @@ describe('a failure domain', () => {
     expect(ev.components.db.out).toBeUndefined()
   })
 
-  it('runs no pod in the part that is down', () => {
+  it('makes a pool with a part down a smaller pool: no pod runs in the part that is down', () => {
     const ev = shop().evaluate({ load: 1, down: 'zone' })
-    expect(ev.stages.api).toMatchObject({ kind: 'workers', pods: 6, running: 4 })
+    expect(ev.stages.api).toMatchObject({ kind: 'workers', pods: 4, running: 4 })
+  })
+
+  it('runs as many pods of an autoscaled pool as the same work needs, of the pods left', () => {
+    const m = defineModel({
+      load: p.load({ max: 20 }),
+      domains: { zone: { name: 'Availability zone', count: 3 } },
+      flows: { req: { rate: ({ load }) => 100 * load } },
+      components: {
+        api: { name: 'API', across: { domain: 'zone', members: 6 }, capacity: measured(1200, 'req/s'), over: 'x' },
+      },
+      stages: { api: workers('api', { perPod: 2, autoscale: { min: 2, max: 6, target: 0.7 } }), out: sink() },
+      routes: { req: ['api', 'out'] },
+    })
+    // 500 a second is 2.5 pods' worth at 200 each: at 70 %, 4 pods, one zone out or not
+    for (const down of ['none', 'zone']) expect(m.evaluate({ load: 5, down }).stages.api).toMatchObject({ running: 4 })
+    expect(m.evaluate({ load: 5, down: 'zone' }).stages.api).toMatchObject({ pods: 4 })
+    // past what the pods left can run, it runs them all
+    expect(m.evaluate({ load: 8, down: 'zone' }).stages.api).toMatchObject({ pods: 4, running: 4 })
+    expect(m.evaluate({ load: 8 }).stages.api).toMatchObject({ pods: 6, running: 6 })
+  })
+
+  it('says a name that starts with an acronym as it is', () => {
+    const m = defineModel({
+      load: p.load({ max: 2 }),
+      domains: { region: { name: 'AWS region', count: 2 } },
+      flows: { a: { rate: 1 } },
+      components: { c: { name: 'C', capacity: measured(1, 'x'), over: 'x' } },
+      stages: { c: pass('c') },
+      routes: { a: ['c'] },
+    })
+    const down = m.params.find((x) => x.id === 'down')!.def
+    expect(down.kind === 'select' && down.format?.('region')).toBe('one AWS region out')
   })
 
   it('leaves a published figure without a benchmark: its run had every member', () => {

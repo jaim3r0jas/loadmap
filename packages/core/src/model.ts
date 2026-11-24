@@ -317,16 +317,29 @@ export interface ComponentResult<C extends string = string> {
   quota?: { per: QuotaWindow; goneAfter?: number }
 }
 
-/** How often a batch runs, and the time each run has: seconds. */
 /** A component with a part of its domain down: "4 of 6 pods left". */
 export interface Outage {
   domain: string
   /** The domain's name: "Availability zone". */
   name: string
+  /** How many parts the domain has. */
+  count: number
   members: number
   left: number
 }
 
+/** Of n members spread as evenly as they go over a domain's count parts, those left with the fullest part out. */
+function membersLeft(n: number, count: number): number {
+  return n - Math.ceil(n / count)
+}
+
+/** "one availability zone out": a domain's name inside a sentence, but for a name that starts with an acronym. */
+function outText(name: string): string {
+  const word = /^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1)
+  return `one ${word} out`
+}
+
+/** How often a batch runs, and the time each run has: seconds. */
 export interface Runs {
   every: number
   within: number
@@ -854,15 +867,11 @@ export function defineModel<
     assignment: (s: string) => WorkersAssignment | undefined,
     hot: (s: string) => Record<string, number> | undefined,
     shedBy: (s: string) => Record<string, number> | undefined,
-    outage: (c: string) => Outage | undefined,
+    poolOut: (st: StageDef) => StageDef,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
-      const resolved = resolveStage(s, def.stages[s] as StageDef, ctx, flowIds, thresholds.full, plain)
-      // the pods of a part that is down run nothing: the drawing shows them idle, and no dot goes to them
-      const o = resolved.kind === 'workers' && resolved.component ? outage(resolved.component) : undefined
-      const st =
-        o && resolved.kind === 'workers' ? { ...resolved, running: Math.min(resolved.running, o.left) } : resolved
+      const st = resolveStage(s, poolOut(def.stages[s] as StageDef), ctx, flowIds, thresholds.full, plain)
       const a = st.kind === 'workers' ? assignment(s) : undefined
       const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
@@ -915,6 +924,7 @@ export function defineModel<
       failedFast,
       rate,
       outage,
+      poolOut,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -986,7 +996,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, outage)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1084,12 +1094,12 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths, shedByOf, outage } = context(def as any, values)
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut } = context(def as any, values)
       let ways: Record<F, readonly FlowPath<S>[]> | undefined
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, outage),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -1211,10 +1221,8 @@ function contextAt(
       const cap = typeof given === 'function' ? given(ctx as any) : given
       const o = outage(c)
       // a published figure holds only under its run's conditions, and fewer members are not them: never scaled
-      if (o && cap.provenance === 'published' && cap.missing == null) {
-        const name = o.name.charAt(0).toLowerCase() + o.name.slice(1)
-        return { ...cap, missing: `with one ${name} out` }
-      }
+      if (o && cap.provenance === 'published' && cap.missing == null)
+        return { ...cap, missing: `with ${outText(o.name)}` }
       return cap
     })
   /** With a part of its domain down, its members and those left; undefined while every part is up. */
@@ -1228,9 +1236,21 @@ function contextAt(
         `component "${c}"`,
         'members across its domain',
       )
-      // as evenly as they go: the fullest part holds members ÷ count, rounded up, and that is the part that goes
-      return { domain: a.domain, name: d.name, members, left: members - Math.ceil(members / d.count) }
+      return { domain: a.domain, name: d.name, count: d.count, members, left: membersLeft(members, d.count) }
     })
+  /**
+   * A pool with a part of its domain down is a smaller pool: its pods, or its autoscaler's most, less those in the
+   * fullest part. Its running pods, the autoscaler, a connection's workers and the dots all read it, so the pods out
+   * run nothing and the busy share of those left is the utilization the members left give.
+   */
+  const poolOut = (st: StageDef): StageDef => {
+    const o = st.kind === 'workers' ? outage(st.component) : undefined
+    if (!o || st.kind !== 'workers') return st
+    const a = st.autoscale
+    if (!a) return { ...st, pods: membersLeft(dyn(st.pods ?? 0, ctx), o.count) }
+    const max = membersLeft(dyn(a.max, ctx), o.count)
+    return { ...st, autoscale: { ...a, max, min: Math.min(dyn(a.min, ctx), max) } }
+  }
   const enabled = (c: string): boolean =>
     memo(`${c} enabled`, () => {
       // a limit a connection's accepts makes is off with the component of the stage it counts against
@@ -2124,7 +2144,7 @@ function contextAt(
       for (const [k, cn] of Object.entries(connections)) {
         const o = opener(stages, cn)
         if (cn.open == null || o?.target !== target) continue
-        const st = stages[o.pool] as Extract<StageDef, { kind: 'workers' }>
+        const st = poolOut(stages[o.pool]!) as Extract<StageDef, { kind: 'workers' }>
         const { running } = podsOf(o.pool, st, ctx, plain(st.component))
         const owner = cn.owner ?? 'worker'
         out.push({ id: k, members: owner === 'pod' ? running : running * dyn(st.perPod, ctx), open: openOf(k), owner })
@@ -2242,17 +2262,15 @@ function contextAt(
           let pool: { running: number; perPod: number; owner: 'worker' | 'pod' } | undefined
           // with a part of its domain down, the parts are dealt again over the members left
           const o = outage(c)
-          const lost = o ? o.members - o.left : 0
           if (st.kind === 'workers') {
             const owner = cn.owner ?? 'worker'
-            const { running: all } = podsOf(stage, st, ctx, plain(c))
-            const running = o ? Math.min(all, o.left) : all
+            const { running } = podsOf(stage, poolOut(st) as typeof st, ctx, plain(c))
             if (!(running >= 1)) return null
             const perPod = whole(dyn(st.perPod, ctx), `workers "${stage}"`, 'perPod')
             pool = { running: whole(running, `workers "${stage}"`, 'pods'), perPod, owner }
             shape = poolShape(pool.running, perPod, owner, cn.capacityPer ?? owner)
           } else {
-            const left = (members[0] as number) - lost
+            const left = o ? membersLeft(members[0] as number, o.count) : (members[0] as number)
             if (!(left >= 1)) return null
             shape = memberShape(left)
           }
@@ -2462,6 +2480,7 @@ function contextAt(
     failedFast,
     rate,
     outage,
+    poolOut,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
@@ -2616,12 +2635,11 @@ function withDomains<T extends ModelDef<any, any, any, any, any>>(def: T): T {
       throw new Error(`loadmap: parameter "down" takes "none" and the ids of the domains: ${ids.join(', ')}`)
     return def
   }
-  const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
   const down = p.select<string>({
     label: 'Outage',
     options: ['none', ...ids],
     default: 'none',
-    format: (v) => (v === 'none' ? 'none' : `one ${lower(domains[v]!.name)} out`),
+    format: (v) => (v === 'none' ? 'none' : outText(domains[v]!.name)),
   })
   return { ...def, params: { ...def.params, down } }
 }
