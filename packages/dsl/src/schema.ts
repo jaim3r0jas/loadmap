@@ -1138,7 +1138,16 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     doc: 'Flows pass through; past capacity the share above 100 % is rejected.',
     example: 'pass "the gateway"',
     args: STAGE_LABEL,
-    props: { component: STAGE_COMPONENT },
+    props: {
+      shed: {
+        value: 'enum',
+        scope: 'const',
+        values: ['even', 'priority'],
+        since: '1.7',
+        doc: 'Past capacity, who is turned away: even, the same share of every flow (the default), or priority, the flow with the larger priority number first, so priority 1 keeps going while there is room for it.',
+      },
+      component: STAGE_COMPONENT,
+    },
     children: [],
   },
   cache: {

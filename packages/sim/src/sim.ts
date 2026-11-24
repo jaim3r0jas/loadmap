@@ -112,6 +112,8 @@ export class Sim {
   #busy = new Map<string, number>()
   #fills = new Map<string, Fill>() // `${stage}/${running pods}` → fill order over the running pods
   #shed = new Map<string, number>()
+  /** A pass that sheds by priority: each flow's share it turns away. */
+  #shedBy = new Map<string, Readonly<Record<string, number>>>()
   #lost = new Map<string, string>() // `${stage}/${outcome}` → the lost box that takes what the stage loses so
   #late = new Map<string, number>() // `${flow}/${path}` or `${flow}/${path}/${cache}` → the share of those too slow
   #inflow = new Map<string, number>() // `${stage}/${flow}` → units per second reaching that stage
@@ -182,6 +184,8 @@ export class Sim {
     // what each stage turns away of what actually reaches it, worked out by the model (the bottleneck decides)
     this.#shed.clear()
     for (const s of stages) this.#shed.set(s.id, 'shed' in s ? s.shed : 0)
+    this.#shedBy.clear()
+    for (const s of stages) if ('shedBy' in s && s.shedBy) this.#shedBy.set(s.id, s.shedBy)
     // the latency is worked out only for a flow with a timeout, per way: no other recording reads it
     this.#lost.clear()
     for (const s of stages)
@@ -205,7 +209,7 @@ export class Sim {
           this.#inflow.set(key, ways.length > 1 ? (this.#inflow.get(key) ?? 0) + rate : rate)
           const s = ev.stages[st] as ResolvedStage
           // a fan-out turns away copies, not arrivals
-          if (s.kind !== 'fanout') rate *= 1 - (this.#shed.get(st) ?? 0)
+          if (s.kind !== 'fanout') rate *= 1 - this.#shedOf(st, f)
           // a queue that drops lets on what its reader drains: the model's share, so what is behind it agrees
           const reader = (ev.stages[way.stages[i + 1] ?? ''] as ResolvedStage | undefined)?.component
           const u = reader == null ? null : ev.components[reader]?.util
@@ -269,6 +273,11 @@ export class Sim {
    */
   shed(stage: string): number {
     return this.#shed.get(stage) ?? 0
+  }
+
+  /** The share a stage turns away of a flow: its own, or the flow's where it sheds by priority. */
+  #shedOf(stage: string, flow: string): number {
+    return this.#shedBy.get(stage)?.[flow] ?? this.#shed.get(stage) ?? 0
   }
 
   /** How busy worker `i` of a workers stage is, 0–1; 0 in a pod an autoscaler has not started. */
@@ -599,7 +608,8 @@ export class Sim {
       if (d.phase === 'move' && d.branch) {
         // a fan-out copy ends where it lands
         const refused =
-          this.#r() < this.shed(d.from.stage ?? '') || (stage.kind === 'pass' && this.#r() < this.shed(stage.id))
+          this.#r() < this.shed(d.from.stage ?? '') ||
+          (stage.kind === 'pass' && this.#r() < this.#shedOf(stage.id, d.flow))
         fade(d, refused ? 'rejected' : 'delivered', 0.35)
       } else if (d.phase === 'move' && stage.kind === 'fanout') {
         let made = 0
@@ -625,7 +635,7 @@ export class Sim {
       } else if (d.phase === 'move') {
         const turnsAway =
           stage.kind === 'pass' || stage.kind === 'limit' || stage.kind === 'cache' || stage.kind === 'split'
-        if (turnsAway && this.#r() < this.shed(stage.id)) reject(d)
+        if (turnsAway && this.#r() < this.#shedOf(stage.id, d.flow)) reject(d)
         else if (stage.kind === 'cache' && this.#r() < stage.hit) {
           // answered here: back along the edge it came in on
           const to = d.from

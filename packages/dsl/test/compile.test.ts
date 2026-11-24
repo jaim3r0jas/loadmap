@@ -1396,6 +1396,33 @@ function same(ts: Model, dsl: Model, values: readonly Record<string, unknown>[])
 const loads = [0.5, 1, 2, 3, 6].map((load) => ({ load }))
 
 describe('building blocks', () => {
+  it('compile a pass that sheds by priority', () => {
+    const dsl = model(`loadmap 1.7
+load "Load" { max: 10; default: 1 }
+flow orders "orders" { rate: 200 * load; priority: 1; route: gw -> out; from: users }
+flow reports "reports" { rate: 200 * load; priority: 2; route: gw -> out; from: users }
+node users "Users"
+node gw "Gateway" { pass { shed: priority }; capacity: measured(300, "req/s"); over: "requests fail" }
+node out "Out" { sink }
+users -> gw -> out
+`)
+    const ts = defineModel({
+      load: p.load({ max: 10, default: 1 }),
+      flows: {
+        orders: { label: 'orders', rate: ({ load }) => 200 * load, priority: 1 },
+        reports: { label: 'reports', rate: ({ load }) => 200 * load, priority: 2 },
+      },
+      components: { gw: { name: 'Gateway', capacity: measured(300, 'req/s'), over: 'requests fail' } },
+      stages: { gw: pass('gw', { shed: 'priority' }), out: sink() },
+      routes: { orders: ['gw', 'out'], reports: ['gw', 'out'] },
+    })
+    same(ts, dsl, loads)
+    expect((dsl.evaluate({ load: 1 }).stages.gw as { shedBy?: Record<string, number> }).shedBy).toEqual({
+      orders: 0,
+      reports: 0.5,
+    })
+  })
+
   it('compile a fallback: what a flow fails for good, served from the stage it falls back after', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

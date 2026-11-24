@@ -12,6 +12,11 @@ interface StageBase {
 export interface PassStage<C extends string = string> extends StageBase {
   kind: 'pass'
   component: C
+  /**
+   * Past capacity, who is turned away: `even`, the same share of every flow (the default), or `priority`, the flow
+   * with the larger `priority` number first, so priority 1 keeps going while there is room for it.
+   */
+  shed?: 'even' | 'priority'
 }
 
 /** Flows wait here; the next stage on each flow's route drains it at that stage's capacity. */
@@ -151,7 +156,10 @@ export type StageDef<C extends string = string> =
   | SplitStage<C>
   | LostStage
 
-export function pass<const C extends string>(component: C, o: StageBase = {}): PassStage<C> {
+export function pass<const C extends string>(
+  component: C,
+  o: StageBase & { shed?: 'even' | 'priority' } = {},
+): PassStage<C> {
   return { kind: 'pass', component, ...o }
 }
 
@@ -222,6 +230,8 @@ export type ResolvedStage = { id: string; label: string } & (
       rejects: number
       /** The share of what actually reaches it that it turns away: less than `rejects` behind a stage that cut first. */
       shed: number
+      /** A pass that sheds by priority: each flow's share of what reaches it that it turns away. */
+      shedBy?: Readonly<Record<string, number>>
     }
   | { kind: 'store'; component: string }
   | { kind: 'sink'; component?: undefined }

@@ -586,6 +586,14 @@ export function defineModel<
         )
     } else if (d.keeps != null || d.level != null)
       throw new Error(`loadmap: component "${c}" has ${d.keeps != null ? 'keeps' : 'level'}: give it fills too`)
+    const priorityPass = stageIds.find((s) => {
+      const st = def.stages[s] as StageDef
+      return st.kind === 'pass' && st.shed === 'priority' && st.component === c
+    })
+    if (priorityPass && (d.demand || d.held != null))
+      throw new Error(
+        `loadmap: pass "${priorityPass}" sheds by priority, so it counts the units that reach it: "${c}" takes no demand or held, which could weigh one flow's units over another's`,
+      )
     if (d.runs != null && (d.fills != null || d.held != null || quotaOf.has(c)))
       throw new Error(`loadmap: component "${c}" works in runs: its demand is a rate, so it is no stock, held or quota`)
     if (!d.demand && d.held == null && d.fills == null && !used)
@@ -807,6 +815,7 @@ export function defineModel<
     plain: (c: string) => number | null,
     assignment: (s: string) => WorkersAssignment | undefined,
     hot: (s: string) => Record<string, number> | undefined,
+    shedBy: (s: string) => Record<string, number> | undefined,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
@@ -815,7 +824,7 @@ export function defineModel<
       const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
         st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'
-          ? { ...st, shed: shed(s) }
+          ? withShedBy({ ...st, shed: shed(s) }, shedBy(s))
           : a
             ? ({ ...st, assignment: a } as ResolvedStage)
             : skew
@@ -857,6 +866,7 @@ export function defineModel<
       stock,
       runsOf,
       failedFor,
+      shedByOf,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -926,7 +936,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1018,12 +1028,12 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths } = context(def as any, values)
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf } = context(def as any, values)
       let ways: Record<F, readonly FlowPath<S>[]> | undefined
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -1249,6 +1259,33 @@ function context(
         return 0
       return rejectShare(ctx.util[st.component] as number | null, full)
     })
+  /** A pass that turns away by priority: the flow with the larger number first. */
+  const byPriority = (s: string) => {
+    const st = stages[s]!
+    return st.kind === 'pass' && st.shed === 'priority'
+  }
+  /**
+   * The share of a flow's offered units a stage turns away. A pass that sheds by priority lets through what it always
+   * would, (1 − rejects) of all that is offered, but priority 1 first: a flow is turned away only once those before it
+   * have what they ask.
+   */
+  const rejectsFor = (s: string, f: string): number => {
+    if (!byPriority(s)) return rejects(s)
+    return memo(`rejects of ${f} at ${s}`, () => {
+      const r = rejects(s)
+      if (!r) return 0
+      const offered = new Map(flowIds.map((g) => [g, arriving(s, g)]))
+      let room = [...offered.values()].reduce((a, x) => a + x, 0) * (1 - r)
+      const prio = (g: string) => (def.flows[g]!.priority as number | undefined) ?? 1
+      for (const p of [...new Set(flowIds.map(prio))].sort((a, b) => a - b)) {
+        const group = flowIds.filter((g) => prio(g) === p)
+        const want = group.reduce((a, g) => a + offered.get(g)!, 0)
+        if (group.includes(f)) return want > room ? 1 - (want > 0 ? room / want : 1) : 0
+        room = Math.max(0, room - want)
+      }
+      return 0
+    })
+  }
   const hit = (s: string) => memo(`hit at ${s}`, () => hitOf(s, stages[s] as Extract<StageDef, { kind: 'cache' }>, ctx))
   /** The share of a flow's units that go on past a stage: cache hits stay, and what a limiter turns away. */
   const onward = (s: string) => {
@@ -1275,7 +1312,7 @@ function context(
       if (k >= 0) {
         // what the flow fails for good, less what the fallback's stages before this one answered or turned away
         let r = failedFor(f)
-        for (const t of fb!.route.slice(0, k)) r *= (1 - shed(t)) * (stages[t]!.kind === 'cache' ? 1 - hit(t) : 1)
+        for (const t of fb!.route.slice(0, k)) r *= (1 - shedFor(t, f)) * (stages[t]!.kind === 'cache' ? 1 - hit(t) : 1)
         return r
       }
       let total = 0
@@ -1329,7 +1366,7 @@ function context(
         let gone = 0
         for (const [i, s] of route.entries()) {
           // a fan-out turns away copies, not the unit
-          const r = stages[s]!.kind === 'fanout' ? 0 : rejects(s)
+          const r = stages[s]!.kind === 'fanout' ? 0 : rejectsFor(s, f)
           if (r > 0) actual = Math.min(actual, offered * (1 - r))
           const d = drops(f, s, route[i + 1])
           if (d > 0) {
@@ -1377,7 +1414,7 @@ function context(
           // a fan-out's copies, less the share it turns away (none of what a dropping queue let it read)
           total += r * copies(t, f, s) * (fed > 0 ? 1 : 1 - rejects(t))
           if (i >= last) break
-          const cut = rejects(t)
+          const cut = rejectsFor(t, f)
           if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
           fed = drops(f, t, route[i + 1])
           r *= 1 - fed
@@ -1392,14 +1429,32 @@ function context(
     memo(`shed at ${s}`, () => {
       const r = rejects(s)
       if (!r) return 0
-      let offered = 0
       let reaching = 0
+      if (byPriority(s)) {
+        // the share of all that reaches it: each flow's, weighed by what reaches it of that flow
+        let turned = 0
+        for (const f of flowIds) {
+          reaching += actual(s, f)
+          turned += actual(s, f) * shedFor(s, f)
+        }
+        return reaching > 0 ? turned / reaching : 0
+      }
+      let offered = 0
       for (const f of flowIds) {
         offered += arriving(s, f)
         reaching += actual(s, f)
       }
       return reaching > 0 ? Math.max(0, 1 - (offered * (1 - r)) / reaching) : 0
     })
+  /** Of what actually reaches a stage of a flow, the share it turns away: the stage's own unless it sheds by priority. */
+  const shedFor = (s: string, f: string): number => {
+    if (!byPriority(s)) return shed(s)
+    return memo(`shed of ${f} at ${s}`, () => {
+      const r = rejectsFor(s, f)
+      const reaching = actual(s, f)
+      return r > 0 && reaching > 0 ? Math.max(0, 1 - (arriving(s, f) * (1 - r)) / reaching) : 0
+    })
+  }
 
   /**
    * What each stage loses of a flow, per second, by loss, before any retry: what it turns away of what reaches it,
@@ -1440,7 +1495,7 @@ function context(
         for (const [j, s] of way.stages.entries()) {
           const st = stages[s]!
           if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
-            const turned = r * shed(s)
+            const turned = r * shedFor(s, f)
             add(s, 'rejected', turned)
             r -= turned
           }
@@ -1507,7 +1562,7 @@ function context(
         if (st.from.includes(c.stage) && wanted.includes(c.loss))
           total += c.loss === 'dropped' ? c.rate : fb && served.has(c.stage) ? 0 : c.rate * k
       if (fb && wanted.includes('rejected'))
-        for (const s of fb.route) if (st.from.includes(s)) total += arriving(s, f) * shed(s)
+        for (const s of fb.route) if (st.from.includes(s)) total += arriving(s, f) * shedFor(s, f)
       return total
     })
 
@@ -2204,6 +2259,7 @@ function context(
     stock,
     runsOf,
     failedFor,
+    shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
     shed,
@@ -2555,6 +2611,11 @@ function grown(
   const end = grid.at[k]! + ((grid.at[k + 1]! - grid.at[k]!) * part) / STEP
   const total = grid.sum[k]! + (part * (grid.at[k]! + end)) / 2
   return (total * PERIOD[g.per]) / Math.log(1 + g.rate)
+}
+
+/** A pass or limit with each flow's own shed, where it sheds by priority. */
+function withShedBy<T extends object>(st: T, by: Record<string, number> | undefined): T {
+  return by ? { ...st, shedBy: by } : st
 }
 
 /**

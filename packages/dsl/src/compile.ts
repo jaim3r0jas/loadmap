@@ -3608,8 +3608,10 @@ export class Compiler {
       return undefined
     }
     switch (b.keyword) {
-      case 'pass':
-        return component ? pass(component, base) : needs()
+      case 'pass': {
+        const shed = this.constProp<'even' | 'priority'>(b, 'shed')
+        return component ? pass(component, { ...base, ...(shed ? { shed } : {}) }) : needs()
+      }
       case 'limit': {
         const per = this.constProp<'hour' | 'day' | 'month'>(b, 'per')
         if (per && component) this.windowed.set(component, per)

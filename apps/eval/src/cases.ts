@@ -243,6 +243,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'fallback {' }, { kind: 'honest' }],
   },
   {
+    id: 'shed-priority',
+    example: ALERTS,
+    request: 'When the gateway is past capacity, it should turn away the low-priority traffic first.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'shed: priority' }],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',
