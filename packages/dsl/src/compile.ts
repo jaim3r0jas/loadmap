@@ -30,9 +30,10 @@ import {
   store,
   workers,
 } from '@loadmap/core'
-import { fitLinear, fitScaling } from '@loadmap/core/calibrate'
+import { fitLinear } from '@loadmap/core/calibrate'
 import { fmt } from '@loadmap/core/format'
 import { flowOf, lossesIn, propOf, waysOf } from '@loadmap/core/internal'
+import { bestSize, fitScaling } from '@loadmap/core/scaling'
 import {
   type AnyNodeDef,
   type Direction,
@@ -3246,6 +3247,8 @@ export class Compiler {
     if (this.constProp<string>(b, 'curve') === 'usl') {
       if (through)
         this.report.error('bad-fit', this.prop(b, 'through')!.key, 'a scaling curve has no idle part to drop')
+      // the measures named are checked as any fit's are, then refused: a curve fits its points only
+      this.fitSeries(b)
       if (this.prop(b, 'x') || this.prop(b, 'y'))
         this.report.error(
           'bad-fit',
@@ -3290,14 +3293,17 @@ export class Compiler {
     const seen = (e: Expr) => {
       if (e.t === 'call' && curves.has(e.callee.name)) {
         const arg = e.args[0]
-        const most = arg?.t === 'id' ? top.get(arg.name) : undefined
         const f = curves.get(e.callee.name)!
-        if (arg?.t === 'id' && most != null && most > f.peak)
+        const best = bestSize(f)
+        // a parameter at its largest, or a size written out
+        const most = arg?.t === 'id' ? top.get(arg.name) : arg?.t === 'num' ? arg.value : undefined
+        const word = arg?.t === 'id' ? `"${arg.name}" reaches` : 'the size is'
+        if (arg && most != null && most > best)
           this.report.warning(
             'past-peak',
             arg,
-            `"${arg.name}" reaches ${fmt(most)}, past the ${fmt(f.peak)} where ${e.callee.name} gives the most: past it more gives less`,
-            `keep ${arg.name} at or under ${Math.floor(f.peak)}, or measure past it`,
+            `${word} ${fmt(most)}, past the ${best} where ${e.callee.name} gives the most: past it more gives less`,
+            `keep the size at or under ${best}, or measure past it`,
           )
       }
       for (const c of childrenOf(e, true)) seen(c)

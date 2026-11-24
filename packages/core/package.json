@@ -26,6 +26,7 @@
     "./drift": "./src/drift.ts",
     "./format": "./src/format.ts",
     "./measure": "./src/measure.ts",
+    "./scaling": "./src/scaling.ts",
     "./internal": "./src/internal.ts"
   },
   "publishConfig": {
@@ -57,6 +58,10 @@
       "./measure": {
         "types": "./dist/measure.d.ts",
         "import": "./dist/measure.js"
+      },
+      "./scaling": {
+        "types": "./dist/scaling.d.ts",
+        "import": "./dist/scaling.js"
       },
       "./internal": {
         "types": "./dist/internal.d.ts",

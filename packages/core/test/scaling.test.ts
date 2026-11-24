@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fitScaling } from '../src/calibrate'
+import { fitScaling } from '../src/scaling'
 
 // a pool whose one pod handles 500 a second, with 3 % contention and 0.05 % coherency
 const usl = (n: number) => (500 * n) / (1 + 0.03 * (n - 1) + 0.0005 * n * (n - 1))

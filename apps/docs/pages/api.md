@@ -10,6 +10,7 @@ between versions; it is left out here.
 | `@loadmap/core`             | The model: `defineModel`, stages, capacities, `check`, `compare`              | [The model in TypeScript](/api/model/)                |
 | `@loadmap/core/backlog`     | `backlog`: what a peak leaves in the queues, and when it clears               | [The model](/api/model/#scenarios-presets-and-growth) |
 | `@loadmap/core/calibrate`   | `fitLinear`: a cost from measurements                                         | [Media, simulation and layout](/api/more/)            |
+| `@loadmap/core/scaling`     | `fitScaling`: a capacity against a size, and its peak                         | [The language](/language/controls/#fitted-costs)      |
 | `@loadmap/core/format`      | The number formats the verdict uses                                           | [Media, simulation and layout](/api/more/)            |
 | `@loadmap/core/measure`     | Snapshots of measured data                                                    | [Media, simulation and layout](/api/more/)            |
 | `@loadmap/core/drift`       | The tests behind `loadmap drift`                                              | [Media, simulation and layout](/api/more/)            |

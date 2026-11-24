@@ -241,7 +241,7 @@ fit apiScale "API throughput by pods" {
 # capacity: measured(apiScale(pods), "req/s", "load test, fitted")
 ```
 
-In TypeScript, `fitScaling(points, { x, y, source })` (from `@loadmap/core/calibrate`) returns it, callable like a
+In TypeScript, `fitScaling(points, { x, y, source })` (from `@loadmap/core/scaling`) returns it, callable like a
 linear fit, with its `lambda`, `sigma`, `kappa` and `peak`.
 
 #### Target and full

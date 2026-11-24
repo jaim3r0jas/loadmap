@@ -1,6 +1,6 @@
 // One install: the model and view API come with the React binding
 export * from '@loadmap/core'
-export { fitLinear, fitScaling } from '@loadmap/core/calibrate'
+export { fitLinear } from '@loadmap/core/calibrate'
 export { compact, fmt, multiple, pct, secs } from '@loadmap/core/format'
 export { fromSnapshot, MEASURES, originText, parseSnapshot, summarize } from '@loadmap/core/measure'
 export {
