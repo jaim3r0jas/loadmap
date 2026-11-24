@@ -1094,14 +1094,19 @@ function context(
   // nearly every evaluation costs what it cost without breakers, where solving each on a trial of its own made two
   // contexts of every one. Else, or where asking throws, each is solved on trials, and the error comes where it did.
   const whole = contextAt(def, values, bound, pinned, fixed, slow, averaged, trial, new Set(unsolved))
+  const failures: Record<string, number> = {}
   try {
     const closed = (f: string) => {
       const b = whole.breakerOf(f)
-      return b == null || !(whole.rate(f) > 0) || whole.failure(f) <= b.opens
+      if (b == null || !(whole.rate(f) > 0)) return true
+      failures[f] = whole.failure(f)
+      return failures[f] <= b.opens
     }
     if (unsolved.every(closed)) return whole
   } catch {}
-  return contextAt(def, values, bound, pinned, fixed, slow, averaged, trial)
+  // one breaker alone: what it failed here is its trial at the whole flow, so its solve starts from it
+  const known = unsolved.length === 1 ? failures : undefined
+  return contextAt(def, values, bound, pinned, fixed, slow, averaged, trial, undefined, known)
 }
 
 function contextAt(
@@ -1120,6 +1125,8 @@ function contextAt(
   trial?: Readonly<Record<string, number>>,
   /** The breaker flows taken to admit all of their rate: what `context` asks first. */
   admitsAll?: ReadonlySet<string>,
+  /** What a breaker flow fails admitted whole, found by `context` already. */
+  failsWhole?: Readonly<Record<string, number>>,
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
@@ -1247,9 +1254,8 @@ function contextAt(
    * The share of a flow its breaker admits: 1 while its failures stay at or under `opens`; past that, the α at which
    * the failures among the admitted are `opens`. Each trial is a whole evaluation of the flow's way, on every load the
    * ranking scans past where it opens, so the steps count. One saturated stage fails 1 − C/x, whose root is one step
-   * away from any point: taken while it halves the bracket, it settles the usual case in two or three trials. Past
-   * that, a secant step that halves the stale side's value (Illinois); the failures only rise with what is admitted,
-   * so the root stays bracketed either way.
+   * away from any point: it settles the usual case in two or three trials. A step that does not halve the bracket is
+   * followed by a secant, two by a bisection, so the bracket halves at least every third trial whatever the curve.
    */
   const admitted = (f: string): number =>
     memo(`admitted of ${f}`, () => {
@@ -1259,19 +1265,21 @@ function contextAt(
       // each trial holds the flow at its trial rate, the other values and the averaged flag as they are here
       const excess = (x: number) =>
         context(def, values, bound, pinned, fixed, slow, averaged, { ...trial, [f]: x * lam }).failure(f) - b.opens
-      const full = lam > 0 ? excess(1) : 0
+      if (!(lam > 0)) return 1
+      const full = failsWhole && Object.hasOwn(failsWhole, f) ? failsWhole[f]! - b.opens : excess(1)
       if (!(full > 0)) return 1
-      // nothing admitted fails nothing: below where it opens
+      // the secant's other end: nothing admitted fails nothing. Where something fails anyway (a latency past the
+      // timeout at any rate) the root is 0, and the bisections reach it.
       let lo = 0
       let flo = -b.opens
       let hi = 1
       let fhi = full
-      let side = 0
+      let missed = 0
       let x = (1 - (full + b.opens)) / (1 - b.opens)
-      for (let i = 0; i < 60 && hi - lo > 1e-12; i++) {
-        if (!(x > lo && x < hi)) {
+      for (let i = 0; i < 120 && hi - lo > 1e-12; i++) {
+        if (missed > 1) x = (lo + hi) / 2
+        else if (missed === 1 || !(x > lo && x < hi)) {
           const secant = (lo * fhi - hi * flo) / (fhi - flo)
-          // a flat stretch can put the secant on a bound: bisect then, so the bracket still shrinks
           x = secant > lo && secant < hi ? secant : (lo + hi) / 2
         }
         const width = hi - lo
@@ -1279,18 +1287,15 @@ function contextAt(
         if (fx > 0) {
           hi = x
           fhi = fx
-          if (side > 0) flo /= 2
-          side = 1
         } else {
           lo = x
           flo = fx
-          if (side < 0) fhi /= 2
-          side = -1
           if (fx === 0) break
         }
+        missed = hi - lo <= width / 2 ? 0 : missed + 1
         const step = (x * (1 - (fx + b.opens))) / (1 - b.opens)
         // a step onto a bound says the root is there: the point just inside settles it
-        x = hi - lo < width / 2 ? (step <= lo ? lo + 1e-12 : step >= hi ? hi - 1e-12 : step) : Number.NaN
+        x = step <= lo ? lo + 1e-12 : step >= hi ? hi - 1e-12 : step
       }
       return lo
     })
