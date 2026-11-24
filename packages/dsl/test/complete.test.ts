@@ -88,6 +88,7 @@ describe('completions', () => {
       'drop',
       'merge',
       'retry',
+      'fallback',
     ])
     expect(at(checkout.replace('rate: 40 * load', 'rat|e: 40 * load')).labels).toContain('rate')
   })

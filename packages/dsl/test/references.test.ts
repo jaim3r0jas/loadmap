@@ -102,7 +102,8 @@ describe('rename', () => {
   })
 
   it('renames every declared name of the examples there and back, compiling each way', () => {
-    // checkout and every-statement hold every statement: enough, and each rename compiles twice (a minute on CI)
+    // checkout and every-statement hold every statement: enough, and each rename compiles twice (a minute on CI, and
+    // more since every-statement gained a stock, runs, a batch and a fallback: past 90 s on a busy runner)
     for (const src of [checkout, every]) {
       const { doc } = parse(src, new Reporter(src))
       const names = new Set<string>()
@@ -130,5 +131,5 @@ describe('rename', () => {
         expect(back.source).toBe(src)
       }
     }
-  }, 90_000)
+  }, 180_000)
 })
