@@ -1429,7 +1429,7 @@ plan -> refused
       'loadmap 1.7\nload { max: 2 }\nflow f { rate: 1; route: q; from: a }\nnode a "A"\nnode q "Q" { limit { per: day }; capacity: configured(10, "calls/s"); over: "x" }\na -> q\n',
     )
     expect(rate.diagnostics.map((d) => d.message)).toContain(
-      "a quota's capacity is what its window allows, a count; the capacity is per second",
+      'a quota\'s capacity is what its window allows, a count; the capacity is in "calls/s"',
     )
     // and one that counts another window
     const hourly = compile(
