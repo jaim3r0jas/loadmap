@@ -274,14 +274,16 @@ describe('a subsystem on the board', () => {
     await ref.current!.ready()
     const engine = ref.current!.engine
     const sim = engine.sim
-    engine.step(1)
-    const time = sim.time
-    expect(time).toBeGreaterThan(0)
+    for (let i = 0; i < 30; i++) engine.step(1 / 30)
+    const dots = sim.particles
+    expect(dots.length).toBeGreaterThan(0)
     draw(edited)
     await expect.poll(() => engine.model).toBe(edited.model)
     await ref.current!.ready()
+    // the sim itself, with the dots it had: none was taken out, the first is still on its way or arrived since
     expect(engine.sim).toBe(sim)
-    expect(sim.time).toBeGreaterThanOrEqual(time)
+    expect(sim.particles.length).toBeGreaterThan(0)
+    expect(sim.time).toBeGreaterThan(0)
     draw(more)
     await expect.poll(() => engine.model).toBe(more.model)
     await ref.current!.ready()

@@ -148,7 +148,7 @@ sim.queue('topic', 'orders').lag // seconds the oldest order waiting at the topi
 | `legSeconds`   | Real seconds a dot takes from one stage to the next                           | 0.45    |
 | `maxParticles` | Dots alive at once, at most                                                   | 800     |
 
-Its members (`step`, `update`, `queue`, `busy` and the dots) are what the board draws from; they may change
+Its members (`step`, `update`, `adopt`, `queue`, `busy` and the dots) are what the board draws from; they may change
 between versions, so a page reads the board through `<Loadmap>` and its handle.
 
 `rng(seed)` is its only source of randomness, a small seeded generator (mulberry32) that returns a function giving

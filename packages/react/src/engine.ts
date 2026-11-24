@@ -124,9 +124,6 @@ function fade(el: Element, show: number): void {
  * one structure to the next. React renders the structure once per scene, and once per frame while it moves; the engine
  * updates the moving parts every frame, and export drives it frame by frame instead of the animation loop.
  */
-/** What a sim is made with: a new version that changes one starts its sim over. */
-const SIM_OPTIONS = ['seed', 'speed', 'dotTarget', 'minDots', 'maxDots', 'legSeconds', 'maxParticles'] as const
-
 export class Engine {
   model!: Model
   view!: View
@@ -201,11 +198,10 @@ export class Engine {
     this.view = view
     this.ev = ev
     this.#setHand(null)
-    const same = SIM_OPTIONS.every((k) => o[k] === this.#o?.[k])
     this.#o = o
     if (!this.frame) this.sim = createSim(model, ev, o)
     // the same flows on the same stages (a figure, a name or a box's look edited): the dots run on, at the new figures
-    else if (!this.#stale && same && this.sim.adopt(model, ev)) return
+    else if (!this.#stale && this.sim.adopt(model, ev, o)) return
     else this.#stale = true
   }
 
