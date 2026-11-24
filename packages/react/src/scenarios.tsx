@@ -5,6 +5,7 @@ import {
   type Headroom,
   type HeadroomLine,
   headroom,
+  type Model,
   type Series,
 } from '@loadmap/core'
 import { fmt, multiple, multiples, pct } from '@loadmap/core/format'
@@ -25,6 +26,8 @@ import type { LoadmapController } from './useLoadmap'
 export { Scenarios, scenarioColor, useSize, when, whenRange } from './bar'
 
 const lineName = (l: HeadroomLine) => l.label ?? 'These values'
+/** A line's colour: an N−1 line has the colour of the line it is the outage of, and is dashed. */
+const lineColor = (model: Model, l: HeadroomLine) => scenarioColor(model, l.outage ? l.outage.of : l.label)
 
 /** The comparison at the shown load: crossings do not depend on it, the verdicts do. */
 export function useComparison(lm: LoadmapController): Comparison {
@@ -281,7 +284,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
         <div className="lm-legend">
           {h.lines.map((l) => (
             <span key={lineName(l)}>
-              <b className="lm-key" style={{ background: scenarioColor(model, l.label) }} />
+              <b className="lm-key" style={{ background: lineColor(model, l) }} />
               {lineName(l)}
             </span>
           ))}
@@ -355,7 +358,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
                     key={lineName(l)}
                     data-band={lineName(l)}
                     d={area(l.band)}
-                    fill={scenarioColor(model, l.label)}
+                    fill={lineColor(model, l)}
                     fillOpacity={l.selected ? 0.2 : 0.08}
                   />
                 ) : null,
@@ -379,7 +382,8 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
                   data-line={lineName(l)}
                   d={path(l.envelope)}
                   fill="none"
-                  stroke={scenarioColor(model, l.label)}
+                  stroke={lineColor(model, l)}
+                  strokeDasharray={l.outage ? '6 4' : undefined}
                   strokeWidth="2"
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -407,7 +411,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
                   data-scenario={lineName(l)}
                   data-low={r.low}
                   data-high={r.high}
-                  stroke={scenarioColor(model, l.label)}
+                  stroke={lineColor(model, l)}
                   strokeWidth={l.selected ? 3 : 2}
                   strokeOpacity={l.selected ? 1 : 0.6}
                 >
@@ -434,7 +438,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
                     cx={lx(x)}
                     cy={ly(u)}
                     r="4"
-                    fill={scenarioColor(model, l.label)}
+                    fill={lineColor(model, l)}
                     stroke="var(--lm-surface)"
                     strokeWidth="2"
                   />
@@ -470,7 +474,7 @@ export function HeadroomChart({ lm, title = 'Headroom' }: { lm: LoadmapControlle
             </b>
             {h.lines.map((l) => (
               <span key={lineName(l)}>
-                <b className="lm-key" style={{ background: scenarioColor(model, l.label) }} />
+                <b className="lm-key" style={{ background: lineColor(model, l) }} />
                 <strong>{l.envelope[hover]![1] == null ? 'off' : pct(l.envelope[hover]![1]!)}</strong> {lineName(l)}
               </span>
             ))}

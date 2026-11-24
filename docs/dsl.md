@@ -1073,6 +1073,11 @@ down. `ev.components.api.out` gives the members and those left; `down` is a para
 (`model.evaluate({ down: 'zone' })`), and in TypeScript `domains` on the model and `across: { domain, members }` on a
 component declare the same.
 
+With every part up, the page also answers N−1. Under the verdict: "With one availability zone out, the 50 % target
+holds up to 8.3×, limited by the search API, which keeps 5 of 8." Each row of the limits gives its own figure with
+one part out when that comes sooner, and the headroom chart draws the shown line with one part out, dashed in the
+same colour. Each answer is a ranking of its own, worked out only when the page shows it: `outages(model, values)` from `@loadmap/core/outages`.
+
 ### A story
 
 `step` lines walk a reader through the model in order: what to look at, and the values to show it at. Each step starts

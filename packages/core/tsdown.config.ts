@@ -10,6 +10,7 @@ export default defineConfig({
     'src/format.ts',
     'src/internal.ts',
     'src/measure.ts',
+    'src/outages.ts',
     'src/scaling.ts',
   ],
   dts: true,

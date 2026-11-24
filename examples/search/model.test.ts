@@ -46,6 +46,7 @@ describe('search model', () => {
     expect(check(search).map((x) => [x.expectation.label, x.ok])).toEqual([
       ['Today keeps 10×', true],
       ['Proposed keeps 20×', true],
+      ['A zone out, today keeps 8×', true],
       ['Searches answer in 150 ms to 10×', true],
     ])
   })
