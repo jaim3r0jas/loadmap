@@ -1,4 +1,5 @@
-import { type Assumption, backlog, type Capacity, type Stock, sourceText } from '@loadmap/core'
+import { type Assumption, type Capacity, type Stock, sourceText } from '@loadmap/core'
+import { backlog } from '@loadmap/core/backlog'
 import { compact, duration, fmt, multiple, multiples, pct, period, secs } from '@loadmap/core/format'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isOn, LoadRange, plusMinus } from './bar'

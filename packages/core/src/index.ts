@@ -1,4 +1,3 @@
-export { type Backlog, backlog } from './backlog'
 export type { LinearFit } from './calibrate'
 export {
   type Bound,

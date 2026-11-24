@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import {
-  backlog,
   cache,
   configured,
   defineModel,
@@ -15,6 +14,7 @@ import {
   store,
   workers,
 } from '@loadmap/core'
+import { backlog } from '@loadmap/core/backlog'
 import { describe, expect, it } from 'vitest'
 import { compile, type Diagnostic, quickFixes } from '../src'
 import { failure, placed } from '../src/expr'

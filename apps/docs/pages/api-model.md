@@ -338,7 +338,7 @@ the defaults plus its values, never the load; the first is the baseline. The pag
 pessimistic edge (`derived: true`).
 
 `peaks` says how long a preset's moment lasts, by its label: `{ 'Black Friday': 7_200 }`. The preset then has its
-`lasts`, and `backlog(model, values, seconds)` gives what that long at those values leaves in each queue whose reader
+`lasts`, and `backlog(model, values, seconds)` (from `@loadmap/core/backlog`) gives what that long at those values leaves in each queue whose reader
 cannot keep up (`units`, and each flow's), with the seconds its reader then needs to clear it at the default load
 (`empties`). It follows the sim's rules: a reader drains at its component's `full`, serves priority 1 first, and a drop
 or a merge leaves less.

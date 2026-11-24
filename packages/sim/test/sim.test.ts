@@ -1,5 +1,4 @@
 import {
-  backlog,
   cache,
   configured,
   defineModel,
@@ -15,6 +14,7 @@ import {
   store,
   workers,
 } from '@loadmap/core'
+import { backlog } from '@loadmap/core/backlog'
 import { describe, expect, it } from 'vitest'
 import { busyOf, createSim, fillOrder } from '../src'
 

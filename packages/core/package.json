@@ -20,6 +20,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./backlog": "./src/backlog.ts",
     "./calibrate": "./src/calibrate.ts",
     "./catalog": "./src/catalog.ts",
     "./drift": "./src/drift.ts",
@@ -32,6 +33,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./backlog": {
+        "types": "./dist/backlog.d.ts",
+        "import": "./dist/backlog.js"
       },
       "./calibrate": {
         "types": "./dist/calibrate.d.ts",
