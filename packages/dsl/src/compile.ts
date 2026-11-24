@@ -1049,7 +1049,16 @@ export class Compiler {
     this.unseenLosses(flows, stageOf, counted, shape, losses, componentDefs)
     const used = new Set(Object.values(stageDefs).map((d) => (d as { component?: string }).component))
     for (const [id, c] of Object.entries(componentDefs)) {
-      if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id)) continue
+      const fills = c.fills != null ? this.prop(componentBlocks.get(id)!, 'fills') : undefined
+      // a stock fills over time: a stage that ran it would turn units away at a level, not at a rate
+      if (fills && used.has(id))
+        this.report.error(
+          'bad-box',
+          fills.key,
+          `"${id}" fills over time, so no stage runs it`,
+          'write the stock as a component of its own: component disk "Disk" { fills: … }',
+        )
+      if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id) || fills) continue
       if (c.held != null)
         this.report.error(
           'unused-component',

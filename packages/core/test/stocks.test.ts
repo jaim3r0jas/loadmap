@@ -95,7 +95,7 @@ describe('a stock', () => {
     const [short] = check(shop({ level: 120, capacity: 500 }, { lasts: 365 * DAY }))
     expect(short!.outcome).toBe('fail')
     expect(short!.expectation.notFull).toBeCloseTo(1.05 ** ((365 * DAY) / MONTH), 9)
-    expect(short!.message).toMatch(/^expected to last 12 months \([\d.]+×\), but the disk runs out at 1\.07× \(around /)
+    expect(short!.message).toBe('expected to last 12 months (1.8×), but the disk runs out at 1× (around December 2026)')
     const [long] = check(shop({ keeps: DAY }, { lasts: 365 * DAY }))
     expect(long!.outcome).toBe('pass')
     // given straight to check(), as the model's own are read

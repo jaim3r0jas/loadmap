@@ -628,7 +628,12 @@ export function defineModel<
     const hit = crossingCache.get(key)
     if (hit) return hit
     const stated = context(def as any, values)
-    const uncertain = componentIds.filter((c) => (stated.capacity(c).within ?? 0) > 0)
+    // a stock's level may be as unsure as a capacity: it moves its crossings too
+    const levelWithin = (c: string) => {
+      const l = def.components[c]!.level
+      return (typeof l === 'function' ? l(values) : l)?.within ?? 0
+    }
+    const uncertain = componentIds.filter((c) => (stated.capacity(c).within ?? 0) > 0 || levelWithin(c) > 0)
     const components: Crossings['components'] = {}
     // the scans of every component visit the same loads: one context per load and bound serves them all, and with
     // retries it holds the solve
