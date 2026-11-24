@@ -130,10 +130,28 @@ describe('a failure domain', () => {
     const h = headroom(shop(), { load: 1 }, { samples: 8 })
     expect(h.lines.map((l) => [l.label, l.selected, l.outage])).toEqual([
       [null, true, undefined],
-      ['One availability zone out', false, { domain: 'zone', of: null }],
+      ['With one availability zone out', false, { domain: 'zone', of: null }],
     ])
     expect(h.lines[1]!.target).toBeCloseTo(3, 6)
     expect(headroom(shop(), { load: 1, down: 'zone' }, { samples: 8 }).lines).toHaveLength(1)
+  })
+
+  it('says when nothing reaches the target with a part out, and asks only for the parts its control offers', () => {
+    const quiet = defineModel({
+      load: p.load({ max: 2 }),
+      searchMax: 50,
+      domains: { zone: { name: 'Zone', count: 3 }, rack: { name: 'Rack', count: 2 } },
+      params: { down: p.select({ label: 'Out', options: ['none', 'zone'], default: 'none' }) },
+      flows: { a: { rate: 1 } },
+      components: {
+        c: { name: 'C', across: { domain: 'zone', members: 3 }, capacity: measured(1_000, 'x'), over: 'x' },
+      },
+      stages: { c: pass('c') },
+      routes: { a: ['c'] },
+    })
+    expect(outages(quiet).map((o) => [o.domain, o.text])).toEqual([
+      ['zone', 'With zone down, no component reaches the 50 % target up to 50×.'],
+    ])
   })
 
   it('is checked', () => {

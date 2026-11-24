@@ -180,16 +180,8 @@ export function headroom<P, C extends string>(
   const match = model.scenarioOf(shown)
   if (!match) sets.unshift({ label: null, values: shown })
   // N−1 with every part up: the shown values with one part of each domain out
-  const down = model.params.find((x) => x.id === 'down')?.def
-  const outages: { label: string; values: LooseValues; outage: { domain: string; of: string | null } }[] = []
-  if (model.def.domains && down?.kind === 'select' && (shown as LooseValues).down === 'none')
-    for (const d of Object.keys(model.def.domains))
-      outages.push({
-        label: capital(down.format?.(d) ?? d),
-        values: { ...shown, down: d },
-        outage: { domain: d, of: match?.label ?? null },
-      })
-  sets.push(...outages)
+  for (const o of model.outageValues(shown))
+    sets.push({ label: capital(o.with), values: o.values, outage: { domain: o.domain, of: match?.label ?? null } })
   const evs = sets.map((s) => ({ ...s, ev: model.evaluate(s.values as Partial<Values<P>>) }))
 
   const from = Math.max(0.1, Math.min(1, model.load.min))

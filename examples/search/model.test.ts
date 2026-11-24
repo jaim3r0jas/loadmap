@@ -59,7 +59,7 @@ describe('search model', () => {
     expect(l.p95).toBeLessThan(l.p99)
     expect(l.p99).toBeGreaterThan(0.05)
     expect(l.p99).toBeLessThan(0.1)
-    const [, , p99] = check(search)
+    const [, , , p99] = check(search)
     // the p99 reaches 150 ms past the promise, on the low edge of the shards' ±
     expect(p99!.target!.low).toBeGreaterThan(10)
     expect(p99!.message).toMatch(/^the p99 of searches stays under 150 ms up to between \d/)

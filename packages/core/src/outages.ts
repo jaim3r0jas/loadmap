@@ -1,6 +1,7 @@
 import type { CrossingRange } from './capacity'
-import { capital, pct } from './format'
-import { type Model, reach } from './model'
+// types only from the model: a value would split the packed core in two
+import { capital, fmt, months, multiples, pct } from './format'
+import type { Model } from './model'
 import type { LooseValues } from './params'
 
 /** A failure domain with one part out: "With one availability zone out, the 70 % target holds up to 6×, …". */
@@ -21,18 +22,18 @@ export interface NMinusOne<C extends string = string> {
  * control). Each is a whole evaluation of its own: an entry of its own, for the panels that show it.
  */
 export function outages<C extends string>(model: Model<any, string, C>, values: LooseValues = {}): NMinusOne<C>[] {
-  const shown: LooseValues = { ...model.defaults(), ...values }
-  const down = model.params.find((x) => x.id === 'down')?.def
-  if (!model.def.domains || down?.kind !== 'select' || shown.down !== 'none') return []
-  return Object.keys(model.def.domains).map((d) => {
-    const ev = model.evaluate({ ...shown, down: d } as never)
-    const out = `with ${down.format?.(d) ?? `${d} down`}`
+  return model.outageValues(values).map(({ domain: d, with: out, values: v }) => {
+    const ev = model.evaluate(v as never)
     const first = ev.firstLimit
     let text = `${capital(out)}, every component is switched off.`
-    if (first) {
+    // never within the search: no limit to name
+    if (first && !(ev.target && Number.isFinite(ev.target.low)))
+      text = `${capital(out)}, no component reaches the ${pct(model.thresholds.target)} target up to ${fmt(model.searchMax)}×.`
+    else if (first) {
       const o = first.out
       const keeps = o ? `, which ${first.plural ? 'keep' : 'keeps'} ${o.left} of ${o.members}` : ''
-      const upTo = reach(ev.target, model.searchMax, (x) => model.dateAt(x))
+      const r = ev.target!
+      const upTo = `${multiples(r, model.searchMax)}${months(model.dateAt(r.low), model.dateAt(r.high))}`
       text = `${capital(out)}, the ${pct(model.thresholds.target)} target holds up to ${upTo}, limited by ${first.short}${keeps}.`
     }
     const components = Object.fromEntries(

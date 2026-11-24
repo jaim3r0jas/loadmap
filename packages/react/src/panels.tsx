@@ -9,13 +9,24 @@ import type { LoadmapController } from './useLoadmap'
 
 export { hasDesign, LoadBar, LoadRange, plusMinus } from './bar'
 
-const n1 = new WeakMap<object, readonly NMinusOne[]>()
-/** N−1 for what the page shows, once for the verdict and the limits: each is a whole evaluation. */
+const n1 = new WeakMap<object, Map<string, readonly NMinusOne[]>>()
+/**
+ * N−1 for what the page shows, once for the verdict and the limits: each is a whole evaluation, and its crossings do
+ * not move with the load, so a drag of the slider reuses them.
+ */
 function nMinusOne(lm: LoadmapController): readonly NMinusOne[] {
-  const known = n1.get(lm.ev)
+  const { load: _, ...rest } = lm.ev.values as Record<string, unknown>
+  const key = JSON.stringify(rest)
+  let byValues = n1.get(lm.model)
+  if (!byValues) {
+    byValues = new Map()
+    n1.set(lm.model, byValues)
+  }
+  const known = byValues.get(key)
   if (known) return known
   const o = outages(lm.model, lm.ev.values)
-  n1.set(lm.ev, o)
+  if (byValues.size > 16) byValues.delete(byValues.keys().next().value!)
+  byValues.set(key, o)
   return o
 }
 
@@ -122,10 +133,12 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
   const span = (r: { low: number; high: number } | null, x: number | null) =>
     r ? multiples(r, model.searchMax, true) : multiple(x, model.searchMax)
   // N−1: where it reaches the target with one part of a domain out, when that is sooner
-  const outages = (c: (typeof ev.ranked)[number]) =>
+  const outageSuffix = (c: (typeof ev.ranked)[number]) =>
     nMinusOne(lm).flatMap((o) => {
       const r = o.components[c.id]
-      return r && r.low < (c.targetRange?.low ?? Number.POSITIVE_INFINITY) ? [` · ${o.with}: ${span(r, null)}`] : []
+      return r && r.low < (c.targetRange?.low ?? Number.POSITIVE_INFINITY)
+        ? [` · ${o.with}: ${pct(model.thresholds.target)} at ${span(r, null)}`]
+        : []
     })
   return (
     <>
@@ -183,7 +196,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
                   ? c.stock?.undated
                     ? 'not ranked: no growth dates it'
                     : 'switched off'
-                  : `${pct(model.thresholds.target)} at ${span(c.targetRange, c.target)} · full at ${span(c.fullRange, c.full)}${outages(c).join('')}`}
+                  : `${pct(model.thresholds.target)} at ${span(c.targetRange, c.target)} · full at ${span(c.fullRange, c.full)}${outageSuffix(c).join('')}`}
               </small>
             </div>
           </div>
