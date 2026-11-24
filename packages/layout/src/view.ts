@@ -196,7 +196,7 @@ export interface Hop {
   /** Whether an edge joins them in the flow's direction, only the other way, or not at all. */
   edge: 'yes' | 'reversed' | 'none'
   /** What makes the hop: the start, the route (with a split's ways), a fan-out's copies, a lost box's losses. */
-  via: 'start' | 'route' | 'fanout' | 'lost'
+  via: 'start' | 'route' | 'fanout' | 'lost' | 'fallback'
   /** Whether any unit takes it at these values: a split's way of share 0 or a branch of 0 copies takes none. */
   used: boolean
 }
@@ -272,8 +272,11 @@ export function hopsOf<F extends string, S extends string>(
       if (last?.kind === 'fanout')
         for (const b of last.to[f] ?? []) add(f, last.id, b.stage, 'fanout', used && b.share > 0)
     }
-    // what a stage on its ways loses goes to the lost box that takes it: a hop of its own
-    const on = new Set<string>((paths[f] ?? []).flatMap((p) => p.stages))
+    // what it fails for good goes back to the stage it falls back after, and on along the fallback's stages
+    const fb = model.def.flows[f]?.fallback
+    for (const [i, s] of (fb?.route ?? []).entries()) add(f, i ? fb!.route[i - 1]! : fb!.after, s, 'fallback', true)
+    // what a stage on its ways (or its fallback's) loses goes to the lost box that takes it: a hop of its own
+    const on = new Set<string>([...(paths[f] ?? []).flatMap((p) => p.stages), ...(fb?.route ?? [])])
     for (const d of Object.values(stages) as ResolvedStage[])
       if (d.kind === 'lost') for (const s of d.from) if (on.has(s)) add(f, s, d.id, 'lost', true)
   }

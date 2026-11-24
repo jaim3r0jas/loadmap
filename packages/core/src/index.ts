@@ -43,6 +43,7 @@ export {
   crossing,
   defineModel,
   type Evaluation,
+  type Fallback,
   type FlowDef,
   type FlowPath,
   type MeasureHint,

@@ -744,6 +744,29 @@ A loss the definition plans and no lost box counts is a warning: what a limiter 
 what a `timeout` fails. The editor's quick fix adds the lost box after the box and the edge into it. A pass, cache or
 split past capacity warns nothing: any of them could, and the bars and their `over` line already say so.
 
+A flow's failures can go on instead (from `loadmap 1.7`): `fallback` says where. What the flow fails for good, turned
+away or too slow after every retry, goes back to `after`, a stage on its route, and is served along `route` from
+there: a stale cache, a degraded answer, an outbox. Each fallback stage sees that rate and may run out like any other;
+a lost box on the route then counts none of it, and a lost box behind a fallback stage counts what that stage turns
+away. On the board a failed dot fades where it failed, as a retried one does, and a dot sets out from `after` along
+its edge to the fallback, which needs that edge.
+
+```loadmap
+flow quotes "quotes" {
+  rate: 200 * load
+  timeout: 800ms
+  retry { times: 1 }
+  route: api -> pricing
+  from: shop
+  fallback { after: api; route: staleQuotes }
+}
+api -> staleQuotes
+```
+
+A dead-letter queue is a lost box with a stock beside it, which reads what reaches the box: `component dlq { fills:
+at.deadLetters * 1KB; keeps: 14d; … }` ([Stocks](#stocks)). In TypeScript, `fallback: { after: 'api', route:
+['staleQuotes'] }` on the flow, and `ev.fallbacks.quotes.rate` is what it serves.
+
 A `merge` loses nothing: the newer unit of the key carries it. On the board a merged dot shrinks into a ripple of its
 flow's colour where it waited, so a queue that keeps only the newest shows it.
 
@@ -2175,7 +2198,20 @@ After the keyword: id [label].
 | `from` (required) | node, constant | The node its dots start from. |
 | `color` | `accent` \| `alt` \| `ok` \| `warn` \| `drop` \| `muted` | A theme colour (accent, alt, ok, warn, drop, muted) or a CSS colour in quotes. |
 
-Holds: `drop`, `merge`, `retry`.
+Holds: `drop`, `merge`, `retry`, `fallback`.
+
+### fallback
+
+Where the flow fails over to: what it fails for good (turned away or too slow, after every retry) goes back to after, a stage on its route, and is served along route instead, a stale cache or a degraded answer. A lost box then counts only what the fallback turns away. From loadmap 1.7.
+
+```loadmap
+fallback { after: api; route: staleQuotes }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `after` (required) | route, constant | The stage on its route its failures go back to: an edge from its box to the fallback carries them. |
+| `route` (required) | route, constant | The stages that serve them, a -> b; none its route already takes, no queue, split or fan-out. |
 
 ### drop
 

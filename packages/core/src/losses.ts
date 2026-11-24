@@ -57,7 +57,11 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
     if (!st) return []
     const out: Loss[] = []
     // a stage reached only as a fan-out's copy is on no way: what it turns away is a copy, not a unit
-    const on = (f: string) => known.get(f)!.open || known.get(f)!.ways.some((w) => w.includes(stage))
+    // and a fallback's stages are reached by what their flow fails for good
+    const on = (f: string) =>
+      known.get(f)!.open ||
+      known.get(f)!.ways.some((w) => w.includes(stage)) ||
+      ((def.flows[f] as { fallback?: { route: readonly string[] } }).fallback?.route.includes(stage) ?? false)
     const passes = flows.some(on)
     if (passes && (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split'))
       out.push('rejected')

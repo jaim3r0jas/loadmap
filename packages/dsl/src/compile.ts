@@ -980,6 +980,23 @@ export class Compiler {
       if (route && route.value.t !== 'id')
         this.report.error('bad-route', route.value, 'a route is a list of stages: a -> b -> c')
       routes[id.name] = stages
+      const fbs = b.children.filter((c) => c.keyword === 'fallback')
+      for (const extra of fbs.slice(1))
+        this.report.error('duplicate', extra.at, `"fallback" is set twice in this flow`, 'one fallback per flow')
+      const fb = fbs[0]
+      if (fb) {
+        this.fallbackAt.set(id.name, fb.at)
+        const names = (p: Property | undefined) => p?.chain ?? (p?.value.t === 'id' ? [p.value as Ident] : [])
+        const after = names(this.prop(fb, 'after'))
+        const way = names(this.prop(fb, 'route')).flatMap((n) => resolveStage(n, 'stage') ?? [])
+        const at = after.length === 1 ? resolveStage(after[0]!, 'stage') : undefined
+        if (after.length > 1)
+          this.report.error('bad-route', this.prop(fb, 'after')!.value, 'a fallback leaves the route at one stage')
+        for (const s of way) reached.add(s)
+        if (at && way.length) def.fallback = { after: at, route: way }
+        else if (this.prop(fb, 'after') && this.prop(fb, 'route'))
+          this.report.error('bad-route', fb.at, 'a fallback names a stage of its route, then the stages that serve it')
+      }
 
       const from = this.prop(b, 'from')
       const view: FlowView = { from: '', color: 'accent' }
@@ -1543,6 +1560,8 @@ export class Compiler {
           undefined,
           { stage: queue, reason: 'dropped' },
         )
+      // what a flow with a fallback fails for good is served there, not lost
+      if ((shape.flows[f] as { fallback?: unknown } | undefined)?.fallback) continue
       // a timeout refused has its error instead
       const timeout = this.prop(b, 'timeout')
       const t = (shape.flows[f] as { timeout?: unknown } | undefined)?.timeout
@@ -1598,6 +1617,7 @@ export class Compiler {
     const flow = this.flowAt.get(h.flow) ?? { from: 0, to: 0 }
     if (a == null) return this.fromAt.get(h.flow) ?? flow
     if (h.via === 'fanout') return this.branchAt.get(`${h.flow}\u0000${b}`) ?? flow
+    if (h.via === 'fallback') return this.fallbackAt.get(h.flow) ?? flow
     const chain = this.routeAt.get(h.flow) ?? []
     const i = chain.findIndex(([, s], j) => j > 0 && s === b && chain[j - 1]![1] === a)
     if (i > 0) return { from: chain[i - 1]![0].from, to: chain[i]![0].to }
@@ -1671,6 +1691,8 @@ export class Compiler {
   /** Each slider's range, which a preset, a scenario or a step stays in. */
   private sliders = new Map<string, { min: number; max: number }>()
   private flowAt = new Map<string, Span>()
+  /** Each flow's fallback block: where a hop it makes is reported. */
+  private fallbackAt = new Map<string, Span>()
   /** The definition has a growth line: an expect's lasts needs one. */
   private hasGrowth = false
   /** Components a quota (a limit per a window) runs: their demand counts a window, not a second. */

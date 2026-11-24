@@ -173,6 +173,32 @@ describe('queues', () => {
 })
 
 describe('a new version of the model', () => {
+  it('send what a flow fails for good on to its fallback, from the stage it falls back after', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { q: { rate: ({ load }) => 200 * load, fallback: { after: 'api', route: ['stale'] } } },
+      components: {
+        api: { name: 'API', capacity: measured(10_000, 'r/s'), over: '' },
+        pricing: { name: 'Pricing', capacity: measured(100, 'r/s'), over: '' },
+        stale: { name: 'Stale', capacity: measured(5_000, 'r/s'), over: '' },
+      },
+      stages: { api: pass('api'), pricing: pass('pricing'), stale: pass('stale'), out: sink() },
+      routes: { q: ['api', 'pricing', 'out'] },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { seed: 2, speed: 10 })
+    const seen = new Set<number>()
+    for (let i = 0; i < 600; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.fallback) {
+          expect(d.from.stage === 'api' || d.from.stage === 'stale').toBe(true)
+          seen.add(d.id)
+        }
+    }
+    // half of what the source releases fails at pricing and comes back by the fallback
+    expect(seen.size).toBeGreaterThan(0)
+  })
+
   it('build the backlog the model says a peak leaves, and clear it in the time it says', () => {
     // at 2×, 300 units a second against 200: priority 1 (a, 200) keeps up, b (100) waits; at 1× 150 against 200
     const m = pipeline({ a: 100, b: 50, cap: 200 })
