@@ -1066,7 +1066,7 @@ export class Compiler {
       if (on.value.t !== 'id') this.report.error('bad-box', on.value, 'on is a list of stages: a -> b')
       const stages = (on.chain ?? (on.value.t === 'id' ? [on.value as Ident] : [])).map((n) => resolveStage(n, 'stage'))
       if (stages.every((s) => s)) componentDefs[id]!.on = stages
-      if (!this.prop(b, 'held') && !b.children.some((c) => c.keyword === 'held'))
+      if (!this.prop(b, 'held') && !this.prop(b, 'through') && !b.children.some((c) => c.keyword === 'held'))
         this.report.error(
           'missing-property',
           on.key,
@@ -1082,6 +1082,30 @@ export class Compiler {
         const def = this.stage(s.block, box, componentNames, resolveStage, flowNames, reached, s.id)
         if (def) stageDefs[s.id] = def
       }
+    // the stretch of the way a slot is held through: two stages, from the one that holds it
+    for (const [id, b] of componentBlocks) {
+      const through = this.prop(b, 'through')
+      if (!through) continue
+      const chain = through.chain ?? (through.value.t === 'id' ? [through.value as Ident] : [])
+      if (chain.length !== 2) {
+        this.report.error('bad-box', through.value, 'through is a stretch of the way: from -> to', 'through: api -> db')
+        continue
+      }
+      const stages = chain.map((n) => resolveStage(n, 'stage'))
+      if (!stages.every((s) => s)) continue
+      componentDefs[id]!.through = stages
+      // its slots are held on the stretch's first stage: said there, or the one stage that runs it
+      const on =
+        (componentDefs[id]!.on as string[] | undefined) ??
+        Object.keys(stageDefs).filter((s) => (stageDefs[s] as { component?: string }).component === id)
+      if (on.length !== 1 || on[0] !== stages[0])
+        this.report.error(
+          'bad-box',
+          through.value,
+          `a slot held through ${stages[0]} -> ${stages[1]} is held on "${stages[0]}"`,
+          `on: ${stages[0]}`,
+        )
+    }
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
         this.report.warning('unused-stage', s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
@@ -1107,7 +1131,7 @@ export class Compiler {
           'write the stock as a component of its own: component disk "Disk" { fills: … }',
         )
       if (this.prop(componentBlocks.get(id)!, 'on') || used.has(id) || this.plainBoxes.has(id) || fills) continue
-      if (c.held != null)
+      if (c.held != null || c.through != null)
         this.report.error(
           'unused-component',
           componentNames.get(id)!,
@@ -1997,7 +2021,7 @@ export class Compiler {
             `a stock's capacity is what it holds, a count; the capacity is ${describe(cap)}`,
             'say what it holds: configured(500, "GB", "volume size")',
           )
-      } else if (this.prop(b, 'held') || b.children.some((c) => c.keyword === 'held')) {
+      } else if (this.prop(b, 'held') || this.prop(b, 'through') || b.children.some((c) => c.keyword === 'held')) {
         if (cap.time !== 0)
           this.report.warning(
             'unit-mismatch',
@@ -3646,8 +3670,8 @@ export class Compiler {
       }
     }
     const held = this.held(b, flows)
-    if (held !== undefined) {
-      o.held = held
+    if (held !== undefined) o.held = held
+    if (held !== undefined || this.prop(b, 'through')) {
       const demand = this.prop(b, 'demand')
       if (demand)
         this.report.error('bad-box', demand.key, 'a component that is held works out its demand: drop one of them')

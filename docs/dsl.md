@@ -896,6 +896,28 @@ different times take a block, `held { orders: 20ms; sessions: 1h }`, and a flow 
 slower query raises `held`, so a formula such as `held: queryMs / 1_000` moves the limit with it. In TypeScript,
 `held` and `on` sit on the component, and `ev.components.conns.held` gives each flow's time.
 
+A slot is often held while something else answers: a worker thread during a call to a partner, a connection during a
+query. `through` (from `loadmap 1.8`) names that stretch of the way, from one stage through another:
+
+```loadmap
+component threads "API worker threads" {
+  on: api
+  through: api -> payments
+  capacity: configured(200, "threads", "the server's thread pool")
+  over: "requests wait for a free thread"
+}
+```
+
+A unit then holds its slot for the time it takes from `api` through `payments`: each stage's time at its utilization
+(its `service`), and the delays of the edges between them, on top of `held` if there is one. So the threads run out
+when payments slows down, well before the API itself is busy: payments at 80 % answers five times slower than idle, and
+holds five times the threads. The stretch starts at the stage that holds the slot (`on`, or the one stage the
+component runs). A flow's `timeout` bounds the time a unit holds its slot: the client gives up, and the slot is free
+again. A cache's hits and what a limiter turns away leave the stretch there. With a `held { … }` block, only the
+flows it names hold a slot. A stage past full has no mean time: it counts as a million service times, which no pool
+holds. The component may not run a timed stage of the stretch itself: its time there would depend on its own slots.
+In TypeScript it is `through: ['api', 'payments']`.
+
 #### Stocks
 
 A stock fills over time, not at a load: a disk, a topic's retention, a database's size, a bucket. `fills` is what it
@@ -1753,7 +1775,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component | |
 
 ## In code
 
@@ -2383,6 +2405,7 @@ After the keyword: [id] [label].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
 | `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
 | `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
@@ -2455,6 +2478,7 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
 | `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
 | `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
@@ -2489,6 +2513,7 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
 | `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
 | `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |
@@ -2527,6 +2552,7 @@ After the keyword: id [label] [sub].
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
+| `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
 | `fills` | number per second, formula | What it gains each second, in its capacity's unit (a size is brought to it): a stock, a disk or a retention, which fills over time, not at a load. Read with every flow at its average. It takes keeps or level, and runs no stage. From loadmap 1.7. |
 | `keeps` | number in seconds, formula of parameters | The seconds a stock keeps what it gains, a retention: it settles at fills × keeps. From loadmap 1.7. |
 | `level` | capacity, formula of parameters | Where a stock that grows stands on growth's asOf, in its capacity's unit: measured(120, "GB", "df"). It grows from there as the load does, so at a load multiple it is the level on the day the load reaches it. From loadmap 1.7. |

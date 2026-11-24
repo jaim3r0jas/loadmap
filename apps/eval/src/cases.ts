@@ -144,6 +144,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'delay: 60ms' }],
   },
   {
+    id: 'held-through',
+    example: SHOP,
+    request:
+      'Each order holds one of 50 database connections from the moment it reaches the web servers until the database has answered. Add that pool.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'through:' }, { kind: 'contains', text: '"connections"' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',
