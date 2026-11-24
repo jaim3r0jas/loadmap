@@ -173,6 +173,33 @@ describe('queues', () => {
 })
 
 describe('a new version of the model', () => {
+  it('turn away each flow by its own share at a pass that sheds by priority', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: {
+        a: { rate: ({ load }) => 200 * load, priority: 1 },
+        b: { rate: ({ load }) => 200 * load, priority: 2 },
+      },
+      components: { gw: { name: 'Gateway', capacity: measured(300, 'r/s'), over: '' } },
+      stages: { gw: pass('gw', { shed: 'priority' }), out: sink() },
+      routes: { a: ['gw', 'out'], b: ['gw', 'out'] },
+    })
+    const sim = createSim(m, m.evaluate({ load: 1 }), { seed: 4, speed: 10 })
+    const turned = { a: new Set<number>(), b: new Set<number>(), all: { a: new Set<number>(), b: new Set<number>() } }
+    for (let i = 0; i < 900; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) {
+        const f = d.flow as 'a' | 'b'
+        turned.all[f].add(d.id)
+        if (d.outcome === 'rejected') turned[f].add(d.id)
+      }
+    }
+    // a gets every unit through; b about half of its own
+    expect(turned.a.size).toBe(0)
+    expect(turned.b.size / turned.all.b.size).toBeGreaterThan(0.3)
+    expect(turned.b.size / turned.all.b.size).toBeLessThan(0.7)
+  })
+
   it('send what a flow fails for good on to its fallback, from the stage it falls back after', () => {
     const m = defineModel({
       load: p.load({ max: 10 }),

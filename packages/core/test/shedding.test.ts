@@ -30,6 +30,20 @@ describe('a pass that sheds by priority', () => {
     expect(far.shedBy.reports).toBeCloseTo(1, 9)
   })
 
+  it('counts the units that reach it: a demand that weighs flows apart is refused', () => {
+    expect(() =>
+      defineModel({
+        load: p.load({ max: 4 }),
+        flows: { a: { rate: 1, priority: 1 }, b: { rate: 1, priority: 2 } },
+        components: {
+          gw: { name: 'GW', demand: ({ flows }) => 5 * flows.a + flows.b, capacity: measured(3, 'r/s'), over: 'x' },
+        },
+        stages: { gw: pass('gw', { shed: 'priority' }), out: sink() },
+        routes: { a: ['gw', 'out'], b: ['gw', 'out'] },
+      }),
+    ).toThrow('sheds by priority, so it counts the units that reach it')
+  })
+
   it('without it turns away the same share of every flow, as before', () => {
     const ev = gateway().evaluate({ load: 1 })
     const gw = ev.stages.gw as { shed: number; shedBy?: unknown }
