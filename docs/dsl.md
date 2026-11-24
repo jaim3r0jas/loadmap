@@ -986,6 +986,8 @@ The stage a connection reaches can be uneven too. `assign: key` sends each unit 
 partition i of each flow on member i mod `members` of that stage (a cluster's queue takes the cluster's members):
 12 partitions on 5 brokers put 3 on the busiest, which runs out at 80 % of the cluster's capacity. `skew` is the share
 of a flow on its hottest key, measured or estimated, and on the board that share of the dots lands on partition 0.
+A store or a pass that a key shards (`members` and `parts` on the connection) is drawn as its members, each holding
+the parts it keeps, and its dots land on their parts the same way: the hot key's on part 0.
 `assign: leader` sends every unit to one member: a Raft leader, a primary. Both apply to a capacity you measured or
 estimated for the whole stage; a published figure keeps its number, since its run spread the work its own way, and
 the limits list says what the key would have done:

@@ -1,4 +1,4 @@
-import { dyn, type Evaluation, type LooseValues, type ResolvedStage } from '@loadmap/core'
+import { dyn, type Evaluation, type LooseValues, type ResolvedStage, type Shards } from '@loadmap/core'
 import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api'
 import { type Arrangement, directionOf, endsFlow, type Room } from './direction'
 import type { Places } from './held'
@@ -450,12 +450,17 @@ function shapes(view: View, ev: Drawn, direction: Direction, measure: TextMeasur
     const resolved = own.map((st) => (ev.stages as Record<string, ResolvedStage>)[st]!)
     const stage = resolved[0]
     const queues = resolved.filter((r) => r.kind === 'queue')
+    // a sharded stage may be any of the node's own
+    const sharded = resolved.find((r) => r.shards)
+    const lid = def.kind === 'node' && def.shape === 'cylinder' ? 8 : 0
     const inner =
       def.kind === 'cluster' && queues.length
         ? clusterInner(def, queues, ev.ctx, direction, titleW, subW, measure, view)
         : def.kind === 'pool' && stage?.kind === 'workers'
           ? poolInner(def, stage, direction, titleW, subW)
-          : boxInner(titleW, subW, def.sub != null, def.kind === 'node' && def.shape === 'cylinder' ? 8 : 0)
+          : def.kind === 'node' && sharded?.shards
+            ? shardsInner(sharded.id, sharded.shards, def.sub != null, lid, direction, titleW, subW, measure, view)
+            : boxInner(titleW, subW, def.sub != null, lid)
     return { id, def, inner }
   })
   const edges = visibleEdges(view, ev.ctx).map(({ e, id }) => ({
@@ -1181,8 +1186,7 @@ function clusterInner(
   view: View,
 ): Inner {
   const m = Math.max(1, dyn(def.members, ctx))
-  const hd = header(titleW, subW, def.sub != null)
-  const flowName = (f: string) => (view.def.flows as Record<string, { label?: string }>)[f]?.label ?? f
+  const flowName = (f: string) => flowLabel(view, f)
   // one group of cells per stage and flow; with several stages the stage names the group (a topic name)
   const flows = stages.flatMap((st) => {
     const parts = Object.entries(st.partitions).filter(([, n]) => n > 0)
@@ -1193,6 +1197,36 @@ function clusterInner(
       text: stages.length > 1 ? (parts.length > 1 ? `${st.label} · ${flowName(f)}` : st.label) : flowName(f),
     }))
   })
+  return membersInner(
+    m,
+    flows,
+    (k) => def.memberLabel?.(k) ?? `member ${k}`,
+    def.sub != null,
+    direction,
+    titleW,
+    subW,
+    measure,
+  )
+}
+
+/**
+ * Members side by side (down) or stacked, each holding its cells of every group: cell i of a group on member i mod m.
+ * A cluster's partitions, and the parts a key connection shards a store over.
+ */
+function membersInner(
+  m: number,
+  flows: readonly { stage: string; f: string; n: number; text: string }[],
+  label: (k: number) => string,
+  hasSub: boolean,
+  direction: Direction,
+  titleW: number,
+  subW: number,
+  measure: TextMeasure,
+  /** Room over the header: a cylinder's lid. */
+  top = 0,
+): Inner {
+  const head = header(titleW, subW, hasSub)
+  const hd = { ...head, h: head.h + top }
   const gridW = CELL_COLS * (CELL + CELL_GAP) - CELL_GAP
   const memberW =
     Math.max(gridW, ...flows.map((g) => measure(g.text, T_SMALL.size)), measure('member 00', T_SMALL.size)) + 2 * GAP
@@ -1216,7 +1250,7 @@ function clusterInner(
       y: by,
       w: memberW,
       h: mh,
-      label: def.memberLabel?.(k) ?? `member ${k}`,
+      label: label(k),
       spot: { x: bx + GAP, y: by + 11, ...T_SMALL },
     })
     let cy = by + 14
@@ -1239,13 +1273,34 @@ function clusterInner(
   return {
     w,
     h,
-    title: { x: w / 2, y: 17, ...T_TITLE },
-    sub: def.sub != null ? { x: w / 2, y: 32, ...T_SUB } : undefined,
+    title: { x: w / 2, y: 17 + top, ...T_TITLE },
+    sub: hasSub ? { x: w / 2, y: 32 + top, ...T_SUB } : undefined,
     members,
     groups,
     cells,
     slots: [],
   }
+}
+
+/** The name a flow goes by on the board. */
+const flowLabel = (view: View, f: string) => (view.def.flows as Record<string, { label?: string }>)[f]?.label ?? f
+
+/** A node a key connection shards: its members, each holding the parts of each flow it keeps. */
+function shardsInner(
+  stage: string,
+  shards: Shards,
+  hasSub: boolean,
+  top: number,
+  direction: Direction,
+  titleW: number,
+  subW: number,
+  measure: TextMeasure,
+  view: View,
+): Inner {
+  const flows = Object.entries(shards.parts)
+    .filter(([, n]) => n > 0)
+    .map(([f, n]) => ({ stage, f, n, text: flowLabel(view, f) }))
+  return membersInner(shards.members, flows, (k) => `member ${k}`, hasSub, direction, titleW, subW, measure, top)
 }
 
 function poolInner(

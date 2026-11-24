@@ -137,6 +137,41 @@ describe('queues', () => {
     expect((seen.get(0) ?? 0) / total).toBeLessThan(0.6)
   })
 
+  it("put a hot key's share on part 0 of a store sharded by key, and every unit on a part", () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { a: { rate: ({ load }) => 100 * load } },
+      components: {
+        gate: { name: 'Gate', capacity: measured(10_000, 'u/s'), over: '' },
+        db: { name: 'Database', capacity: measured(10_000, 'u/s'), over: '' },
+      },
+      stages: { gate: pass('gate'), db: store('db') },
+      routes: { a: ['gate', 'db'] },
+      connections: {
+        shard: { from: 'gate', to: 'db', assign: 'key', members: 3, parts: 6, skew: measured(0.5, 'share') },
+      },
+    })
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.stages.db!.shards).toEqual({ members: 3, parts: { a: 6 }, skew: { a: 0.5 } })
+    const sim = createSim(m, ev, { seed: 5, speed: 10 })
+    const seen = new Map<number, number>()
+    const counted = new Set<number>()
+    for (let i = 0; i < 1200; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.to.stage === 'db' && !counted.has(d.id)) {
+          counted.add(d.id)
+          seen.set(d.to.cell ?? -1, (seen.get(d.to.cell ?? -1) ?? 0) + 1)
+        }
+    }
+    const total = [...seen.values()].reduce((a, n) => a + n, 0)
+    expect(total).toBeGreaterThan(200)
+    expect([...seen.keys()].every((c) => c >= 0 && c < 6)).toBe(true)
+    // half on part 0, a tenth on each of the other five
+    expect((seen.get(0) ?? 0) / total).toBeGreaterThan(0.4)
+    expect((seen.get(0) ?? 0) / total).toBeLessThan(0.6)
+  })
+
   it('grow over capacity: the oldest unit ages at (λ − μ) / λ', () => {
     // λ = 200, μ = 100: after 120 s, 12,000 units wait and the oldest arrived at 60 s
     const sim = run(pipeline({ a: 0, b: 200, cap: 100 }), 120)

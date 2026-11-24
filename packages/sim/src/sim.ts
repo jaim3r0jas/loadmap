@@ -173,6 +173,7 @@ export class Sim {
         if (at.cell == null) return true
         if (st.kind === 'queue') return at.cell < (st.partitions[flow] ?? 0)
         if (st.kind === 'workers') return at.cell < st.pods * st.perPod
+        if (st.shards) return at.cell < (st.shards.parts[flow] ?? 0)
         return false
       }
       this.particles = this.particles.filter((d) => fits(d.from, d.flow) && fits(d.to, d.flow))
@@ -692,10 +693,7 @@ export class Sim {
     const s = this.#ev.stages[stage]
     if (s?.kind === 'queue') {
       const n = s.partitions[flow] ?? 0
-      // a hot key's share lands on partition 0, the rest evenly on the others
-      const hot = s.skew?.[flow]
-      if (hot != null && n > 1) return { stage, cell: this.#r() < hot ? 0 : 1 + Math.floor(this.#r() * (n - 1)) }
-      return n > 0 ? { stage, cell: Math.floor(this.#r() * n) } : { stage }
+      return n > 0 ? { stage, cell: this.#part(n, s.skew?.[flow]) } : { stage }
     }
     if (s?.kind === 'workers') {
       // a unit from a partition goes to the worker that reads it (a pod's: any of its workers)
@@ -705,7 +703,15 @@ export class Sim {
       // only among the running pods: the ones an autoscaler has not started take no work
       return { stage, cell: this.#pickWorker(s.id, s.running * s.perPod) }
     }
-    return { stage }
+    // a store sharded by key, as a queue's partitions
+    const n = s?.shards?.parts[flow] ?? 0
+    return n > 0 ? { stage, cell: this.#part(n, s!.shards!.skew?.[flow]) } : { stage }
+  }
+
+  /** One of n parts a key hashes to: a hot key's share lands on part 0, the rest evenly on the others. */
+  #part(n: number, hot: number | undefined): number {
+    if (hot != null && n > 1) return this.#r() < hot ? 0 : 1 + Math.floor(this.#r() * (n - 1))
+    return Math.floor(this.#r() * n)
   }
 
   /** The worker that reads the partition a unit comes from, behind an exclusive connection; null otherwise. */

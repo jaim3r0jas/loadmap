@@ -122,6 +122,7 @@ export {
   type QuotaWindow,
   queue,
   type ResolvedStage,
+  type Shards,
   type SinkStage,
   type SplitBranch,
   type SplitStage,

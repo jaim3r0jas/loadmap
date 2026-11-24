@@ -87,6 +87,53 @@ users -> api -> kafka -> out
     expect(boxes()).toEqual(before)
   })
 
+  it("draw a store sharded by key as its members and parts, a hot key's dots on part 0", async () => {
+    await page.viewport(1440, 1000)
+    const { definition } = compile(`loadmap 1.7
+load { max: 10 }
+flow writes "writes" { rate: 100 * load; route: gate -> db; from: users }
+node users "Users"
+node gate "Gateway" { pass; capacity: measured(10_000, "req/s"); over: "x" }
+node db "Database" { store; capacity: measured(5_000, "writes/s"); over: "x" }
+connection shard {
+  hop: gate -> db
+  assign: key
+  members: 3
+  parts: 6
+  skew: measured(0.5, "share")
+}
+users -> gate -> db
+`)
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapHandle>()
+    root = createRoot(host)
+    root.render(<Loadmap ref={ref} model={definition!.model} view={definition!.view} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    const handle = ref.current!
+    await handle.ready()
+    const db = host.querySelector('[data-node="db"]')!
+    // three members, each with its label, holding six parts between them
+    expect([...db.querySelectorAll('text')].map((t) => t.textContent)).toEqual(
+      expect.arrayContaining(['member 0', 'member 1', 'member 2']),
+    )
+    expect(db.querySelectorAll('rect[rx="1.5"]')).toHaveLength(6)
+    handle.pause()
+    const seen = new Map<number, number>()
+    const counted = new Set<number>()
+    for (let i = 0; i < 600; i++) {
+      handle.step(1 / 30)
+      for (const d of handle.engine.sim.particles)
+        if (d.to.stage === 'db' && d.to.cell != null && !counted.has(d.id)) {
+          counted.add(d.id)
+          seen.set(d.to.cell, (seen.get(d.to.cell) ?? 0) + 1)
+        }
+    }
+    const total = [...seen.values()].reduce((a, n) => a + n, 0)
+    expect(total).toBeGreaterThan(50)
+    expect((seen.get(0) ?? 0) / total).toBeGreaterThan(0.3)
+  })
+
   it('send a cache hit back along the edge it came in on', async () => {
     const { host, handle } = await mount('cache')
     handle.pause()
