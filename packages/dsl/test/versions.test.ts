@@ -34,13 +34,13 @@ describe('the version line', () => {
   })
 
   it('reads every version up to its own, and says "update" for a later one', () => {
-    expect(LANGUAGE_VERSION).toBe('1.6')
-    for (const v of ['1', '1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6']) expect(found(def(v)), v).toEqual([])
-    for (const v of ['1.7', '1.10', '2'])
+    expect(LANGUAGE_VERSION).toBe('1.7')
+    for (const v of ['1', '1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7']) expect(found(def(v)), v).toEqual([])
+    for (const v of ['1.8', '1.10', '2'])
       expect(compile(def(v)).diagnostics).toMatchObject([
         {
           code: 'language-version',
-          message: `this definition is written in language version ${v}; this loadmap reads version 1.6`,
+          message: `this definition is written in language version ${v}; this loadmap reads version 1.7`,
           hint: 'update @loadmap/dsl',
         },
       ])
@@ -53,10 +53,10 @@ describe('the version line', () => {
   })
 
   it('says only "update" for a later version, not every statement it does not know', () => {
-    expect(found(def('1.7', 'widget w "W"\nnode x { pass; newProp: 1 }'))).toEqual([
+    expect(found(def('1.8', 'widget w "W"\nnode x { pass; newProp: 1 }'))).toEqual([
       {
         severity: 'error',
-        message: 'this definition is written in language version 1.7; this loadmap reads version 1.6',
+        message: 'this definition is written in language version 1.8; this loadmap reads version 1.7',
       },
     ])
   })
@@ -84,6 +84,14 @@ describe('what a version added', () => {
       expect(fix).toMatchObject({ title: 'Write "loadmap 1.1"', changes: [{ insert: '1.1' }] })
       expect(found(def('1.1', extra))).not.toContainEqual(expect.objectContaining({ severity: 'error' }))
     }
+    // the day is 1.7's: a file stamped before it says so, rather than "a word after a number"
+    expect(found(def('1.6', 'preset "Week" { load: 7d / 1d }'))).toContainEqual({
+      severity: 'error',
+      message: 'a day (7d) is from loadmap 1.7; this definition says loadmap 1.6',
+    })
+    expect(found(def('1.7', 'preset "Week" { load: 7d / 1d }'))).not.toContainEqual(
+      expect.objectContaining({ severity: 'error' }),
+    )
     const as = def('1').replace('demand: flows.req', 'demand: flows.req * 0.01 as "cores"')
     expect(found(as)).toContainEqual({
       severity: 'error',

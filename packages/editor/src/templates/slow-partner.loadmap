@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 # A service that calls a partner's API on every request. The partner slows down as it fills: past the client's
 # timeout a request fails and is sent again, which adds load just when the partner is slowest.
 title: "Slow partner API"

@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 include "./checkout.data.loadmap"
 include "./checkout.story.loadmap"
 import "./platform.loadmap" { podPool; postgres }

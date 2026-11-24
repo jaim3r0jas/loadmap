@@ -89,9 +89,9 @@ describe('a model in several files', () => {
     // a part alone: its model is not among the files
     expect(errors(compile(base[STORY]!, { path: STORY }))[0]).toMatchObject({ code: 'missing-file' })
     // one namespace, one version
-    const older = run(MODEL, set({ [STORY]: swap(STORY, 'loadmap 1.6', 'loadmap 1.1') }))
+    const older = run(MODEL, set({ [STORY]: swap(STORY, 'loadmap 1.7', 'loadmap 1.1') }))
     expect(errors(older).map((d) => d.message)).toContain(
-      `a part says its model's version: "${MODEL}" says loadmap 1.6`,
+      `a part says its model's version: "${MODEL}" says loadmap 1.7`,
     )
     // what there is one of stays in the model's own file
     const twice = run(MODEL, set({ [STORY]: `${base[STORY]}title: "Mine"\nload "L" { max: 2 }\n` }))
@@ -222,6 +222,8 @@ describe('a model in several files', () => {
         [MODEL]: swap(MODEL, 'with { writes: flows.orders }', `with { writes: flows.orders; wait: ${value} }`),
       }).diagnostics.filter((d) => d.code === 'unit-mismatch')
     expect(unit('pods * 5ms')).toEqual([])
+    // a day is a time, as 20ms is: never "a size"
+    expect(unit('1d').map((d) => d.message)).not.toContainEqual(expect.stringContaining('its default is'))
     // a bare number is any unit: only what says its own is compared
     expect(unit('flows.orders * 2')).toEqual([])
     // said at the input, beside what the line that reads it says of its own

@@ -8,7 +8,7 @@ import { before, parseVersion, stampVersion, type Version } from './stamp'
  * The language version this package reads, the newest: what a new definition starts with. A minor version stays open
  * until the release that ships it; from then on it never changes (docs/dsl.md, "Versions").
  */
-export const LANGUAGE_VERSION = '1.6'
+export const LANGUAGE_VERSION = '1.7'
 
 export { before, parseVersion, type Version, versionText } from './stamp'
 
@@ -46,6 +46,7 @@ const SYNTAX = {
   sizes: { since: '1.2', what: 'a size (1.5KB, 20MB)' },
   autoDirection: { since: '1.4', what: 'direction: auto' },
   poolScale: { since: '1.5', what: 'autoscale on the pool' },
+  day: { since: '1.7', what: 'a day (7d)' },
 } as const
 
 /** A use of something a version added: where, what, and the version. */
@@ -73,6 +74,7 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
   const expr = (e: Expr) => {
     if (e.t === 'num' && isSize(e.unit)) add('sizes', SYNTAX.sizes.since, SYNTAX.sizes.what, e)
     else if (e.t === 'num' && e.unit) add('units', SYNTAX.units.since, SYNTAX.units.what, e)
+    if (e.t === 'num' && e.unit === 'd') add('day', SYNTAX.day.since, SYNTAX.day.what, e)
     if (e.t === 'str' && e.continued) add('continued', SYNTAX.continued.since, SYNTAX.continued.what, e)
     if (e.t === 'member' && e.object.name === 'out') add('out', SYNTAX.out.since, SYNTAX.out.what, e.object)
     if (e.t === 'call' && e.callee.name === 'mod' && !ownMod) add('mod', SYNTAX.mod.since, SYNTAX.mod.what, e.callee)

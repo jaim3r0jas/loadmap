@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 # Alerts and positions, made up: the same model and view as model.ts and view.ts.
 title: "Alerts and live positions"
 view { speed: 10; transition: 1; fullScreen: [verdict, live, limits, controls, headroom]; fullScreenMode: panels }

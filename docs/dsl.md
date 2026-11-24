@@ -6,7 +6,7 @@ of the diagram with what each one does and what can run out. `@loadmap/dsl` read
 (`@loadmap/editor`, and the docs site's editor) shows it live as you type.
 
 ```loadmap
-loadmap 1.6
+loadmap 1.7
 title: "Photo uploads"
 
 load "Uploads, × today" { max: 50; default: 5 }
@@ -46,7 +46,7 @@ which is text alone.
 
 ## How it reads
 
-- **The first line is the version:** `loadmap 1.6`. A file keeps reading as it did under the version it names, and
+- **The first line is the version:** `loadmap 1.7`. A file keeps reading as it did under the version it names, and
   one written for a newer version says so instead of half working ([Versions](#versions)).
 - **A statement with an id starts with its keyword:** `param pods "Worker pods" { … }`. The words after the keyword
   are its id and its label (and for a box, the line under it). An id names one thing: a box, its stage and its
@@ -234,8 +234,9 @@ Every value is a formula: a small subset of TypeScript expressions, so a lambda 
 as it is.
 
 - **Literals:** numbers (`20_000`), `"texts"` (or `'texts'`), `true`, `false`, and templates (`` `${pods} pods` ``).
-- **Units:** a number may carry its unit straight after it, with no space. `ms`, `s`, `min` and `h` count in seconds,
-  as every time in the language does (`held: 20ms` is `held: 0.02`); `%` makes a share (`hit: 80%` is `hit: 0.8`);
+- **Units:** a number may carry its unit straight after it, with no space. `ms`, `s`, `min`, `h` and `d` (a day,
+  from `loadmap 1.7`) count in seconds, as every time in the language does (`held: 20ms` is `held: 0.02`, `7d` is
+  604,800); `%` makes a share (`hit: 80%` is `hit: 0.8`);
   `×` (or `x`) marks a load multiple and leaves the number as it is. So `demand: flows.events * 2ms` reads as what it
   is, events a second times the CPU seconds each takes. The two are checked where a property says which it takes:
   `underTarget: 70%` (a load multiple goes there) and `thresholds { target: 7× }` (a share) are errors from
@@ -1064,7 +1065,7 @@ straight under `loadmap`, before any other statement:
 
 ```loadmap
 # shop.loadmap
-loadmap 1.6
+loadmap 1.7
 include "./shop.story.loadmap"
 import "./platform.loadmap" { postgres; pipeline }
 
@@ -1506,7 +1507,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 
 ## Versions
 
-The first line names the language version a definition is written in: `loadmap 1.6`, a major and a minor (`loadmap 1`
+The first line names the language version a definition is written in: `loadmap 1.7`, a major and a minor (`loadmap 1`
 is 1.0, and `1.10` comes after `1.9`). A loadmap reads every version up to its own; one older than the file says
 "update @loadmap/dsl" instead of half working.
 
@@ -1536,6 +1537,7 @@ with no warning first; none is planned.
 | 1.4 | `direction: auto` and `rows`, the rows a long diagram is folded into | |
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
+| 1.7 | `d`, a day (`7d`) | |
 
 ## In code
 
@@ -1785,7 +1787,7 @@ view { direction: right; speed: 10; fullScreen: [verdict, controls] }
 The first line: the version of the language this definition is written in. `loadmap 1` is 1.0.
 
 ```loadmap
-loadmap 1.6
+loadmap 1.7
 ```
 
 After the keyword: version.

@@ -1,4 +1,4 @@
-loadmap 1.6
+loadmap 1.7
 library "Platform building blocks"
 # What every region runs: the primary database and the line that takes orders. A region says how big each one is.
 
