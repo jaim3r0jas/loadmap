@@ -54,6 +54,7 @@ export {
   type RetryRule,
   reach,
   type Scenario,
+  type Stock,
   type StoryStep,
   type StoryStepDef,
   sureness,

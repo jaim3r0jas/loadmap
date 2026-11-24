@@ -71,6 +71,12 @@ export interface FlowDef<X> {
    * still runs. It needs a latency, a `service` on its way. It reads only the load and the parameters, as retry does.
    */
   timeout?: number | ((values: LooseValues) => number)
+  /**
+   * Its rate over a day against its peak, `rate`: 0.45 when the day averages 45 % of it. What fills over time (a
+   * component's `fills`) reads it; every limit at a load multiple still reads the peak. 1 unless said. It reads only
+   * the load and the parameters.
+   */
+  average?: number | ((values: LooseValues) => number)
 }
 
 /** Rules for a flow's backlog in a queue. */
@@ -133,6 +139,18 @@ export interface ComponentDef<X> {
    * service ÷ (1 − utilization), and the flows through it have a latency.
    */
   service?: number | ((ctx: X) => number)
+  /**
+   * What it gains each second, in its capacity's unit: a stock, such as a disk, a topic's retention or a database's
+   * size, which fills over time rather than at a load. It is read with every flow at its `average`. With `keeps` it
+   * holds what it gains that long and settles at fills × keeps; with `level` it stands there on `growth.asOf` and
+   * grows as the load does, so its level at a load multiple is the one on the day the load reaches it. No stage runs a
+   * stock.
+   */
+  fills?: (ctx: X) => number
+  /** The seconds a stock keeps what it gains: a retention. */
+  keeps?: number | ((values: LooseValues) => number)
+  /** Where a stock that grows stands on `growth.asOf`, in its capacity's unit: read off a disk, a bucket, a table. */
+  level?: Capacity | ((values: LooseValues) => Capacity)
   capacity: Capacity | ((ctx: X) => Capacity)
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
@@ -238,6 +256,22 @@ export interface ComponentResult<C extends string = string> {
   missing?: string
   /** How unevenly a connection lands the work on its members, when unevenly or with members left idle. */
   spread?: Spread
+  /** For a stock (`fills`): what it holds and gains at these values. */
+  stock?: Stock
+}
+
+/** A stock at one set of values, in its capacity's unit. */
+export interface Stock {
+  /** What it holds: for one that grows, on the day the load reaches these values. */
+  level: number
+  /** What it gains a second, every flow at its average. */
+  gains: number
+  /** The seconds it keeps what it gains; absent for one that grows. */
+  keeps?: number
+  /** For one that grows: the seconds until it is full if it went on gaining `gains`; 0 when it is full already. */
+  room?: number
+  /** One that grows with no growth to date its level: it is not ranked. */
+  undated?: true
 }
 
 export interface VerdictResult {
@@ -447,7 +481,20 @@ export function defineModel<
     const used = stageIds.some((s) => (def.stages[s] as { component?: string }).component === c)
     if (d.held != null && !d.on?.length && !used)
       throw new Error(`loadmap: component "${c}" is held on no stage: name them with on`)
-    if (!d.demand && d.held == null && !used)
+    if (d.fills != null) {
+      if (d.demand || d.held != null)
+        throw new Error(`loadmap: component "${c}" fills over time: it takes no demand or held, fills is what it gains`)
+      if ((d.keeps == null) === (d.level == null))
+        throw new Error(
+          `loadmap: component "${c}" fills over time: give it keeps (it settles at fills × keeps) or level (it grows from there), one of them`,
+        )
+      if (used)
+        throw new Error(
+          `loadmap: component "${c}" fills over time, so no stage runs it: give the stage a component of its own`,
+        )
+    } else if (d.keeps != null || d.level != null)
+      throw new Error(`loadmap: component "${c}" has ${d.keeps != null ? 'keeps' : 'level'}: give it fills too`)
+    if (!d.demand && d.held == null && d.fills == null && !used)
       throw new Error(`loadmap: component "${c}" needs a demand: no stage uses it`)
   }
   for (const s of stageIds) {
@@ -503,8 +550,16 @@ export function defineModel<
     scenarios.find((s) => Object.entries(s.values).every(([k, v]) => values[k] === v)) ?? null
 
   const expectations = (def.expect ?? []).map((written) => {
-    const e = expectationNamed(written)
+    let e = expectationNamed(written)
     const name = e.label ? `expectation "${e.label}"` : 'an expectation'
+    if (e.lasts != null) {
+      if (!growth) throw new Error(`loadmap: ${name} holds a time (lasts): give the model growth, so a time is a load`)
+      if (e.notFull != null) throw new Error(`loadmap: ${name} gives lasts and notFull, one of them`)
+      if (!(e.lasts > 0 && Number.isFinite(e.lasts)))
+        throw new Error(`loadmap: ${name} needs lasts above 0 seconds, not ${e.lasts}`)
+      // nothing runs out before the load the growth reaches that long after asOf
+      e = { ...e, notFull: multipleAfter(growth, e.lasts) }
+    }
     if (e.scenario != null && !scenarios.some((s) => s.label === e.scenario))
       throw new Error(`loadmap: ${name} names unknown scenario "${e.scenario}"`)
     if (e.component != null && !componentIds.includes(e.component))
@@ -522,7 +577,7 @@ export function defineModel<
     }
     // a flow's latency is checked at the values without underTarget
     if (e.underTarget == null && e.notFull == null && e.flow == null)
-      throw new Error(`loadmap: ${name} needs underTarget or notFull: a load multiple`)
+      throw new Error(`loadmap: ${name} needs underTarget, notFull or lasts`)
     for (const k of ['underTarget', 'notFull'] as const) {
       const x = e[k]
       if (x != null && !(x > 0 && Number.isFinite(x))) throw new Error(`loadmap: ${name} needs ${k} above 0, not ${x}`)
@@ -696,6 +751,7 @@ export function defineModel<
       connectionText,
       assignment,
       hot,
+      stock,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -720,6 +776,8 @@ export function defineModel<
         describe: describe(c),
       }
       if (missing != null) components[c].missing = missing
+      const st = enabled(c) ? stock(c) : undefined
+      if (st) components[c].stock = st
       const sp = off ? null : spread(c)
       if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
       const h = off ? null : held(c)
@@ -770,6 +828,12 @@ export function defineModel<
     for (const c of componentIds) {
       const cap = components[c].capacity ?? capacity(c)
       assumptions.push({ kind: 'capacity', component: c, name: def.components[c].name, capacity: cap })
+      const l = def.components[c].level
+      if (l != null) {
+        const level = typeof l === 'function' ? l(values) : l
+        const name = `${def.components[c].name}, its level${growth ? ` on ${growth.asOf}` : ''}`
+        assumptions.push({ kind: 'capacity', component: c, name, capacity: level })
+      }
     }
     for (const name of Object.keys(def.connections ?? {}))
       assumptions.push({ kind: 'connection', name, text: connectionText(name) })
@@ -875,6 +939,8 @@ function context(
   fixed?: Readonly<Record<string, number>>,
   /** The share of each retrying flow too slow for its timeout, held while the retries are solved. */
   slow?: Readonly<Record<string, number>>,
+  /** Every flow at its average, not its peak: what a stock gains. */
+  averaged?: boolean,
 ) {
   const cache = new Map<string, unknown>()
   const stack: string[] = []
@@ -968,9 +1034,18 @@ function context(
       throw new Error(`loadmap: flow "${f}" needs a retry budget of 0 or more, not ${r.budget}`)
     return r.times > 0 && r.budget !== 0 ? r : undefined
   }
+  const averageOf = (f: string) =>
+    memo(`average of ${f}`, () => {
+      const a = def.flows[f]!.average
+      const v = typeof a === 'function' ? a(values) : (a ?? 1)
+      if (!(v > 0 && v <= 1))
+        throw new Error(`loadmap: flow "${f}" averages ${v} of its peak: a share above 0, up to 1`)
+      return v
+    })
   const rateOf = (f: string) => {
     const r = def.flows[f]!.rate
-    return typeof r === 'function' ? r(ctx as any) : r
+    const v = typeof r === 'function' ? r(ctx as any) : r
+    return averaged ? v * averageOf(f) : v
   }
   const rate = (f: string) => memo(`rate of ${f}`, () => rateOf(f), f)
   ctx.flows = table(flowIds, (f) =>
@@ -1540,8 +1615,42 @@ function context(
     const on = def.components[c]!.on
     return on?.length ? on : usedBy(c)
   }
+  /** What a stock gains a second, every flow at its average. */
+  const gains = (c: string): number =>
+    memo(`gains of ${c}`, () => {
+      const at = averaged
+        ? ctx
+        : memo('averaged', () => context(def, values, bound, pinned, undefined, undefined, true).ctx)
+      const v = def.components[c]!.fills!(at as any)
+      if (!(v >= 0 && Number.isFinite(v))) throw new Error(`loadmap: component "${c}" fills ${v} a second: 0 or more`)
+      return v
+    })
+  const keepsOf = (c: string) => {
+    const k = def.components[c]!.keeps!
+    const v = typeof k === 'function' ? k(values) : k
+    if (!(v >= 0 && Number.isFinite(v))) throw new Error(`loadmap: component "${c}" keeps ${v} s: a time from 0 up`)
+    return v
+  }
+  /** Where a stock that grows stands on asOf, at the bound: high when the capacities are low, the pessimistic edge. */
+  const levelOf = (c: string) =>
+    memo(`level of ${c}`, () => {
+      const l = def.components[c]!.level!
+      const lv = typeof l === 'function' ? l(values) : l
+      if (!(lv.value >= 0 && Number.isFinite(lv.value)))
+        throw new Error(`loadmap: component "${c}" stands at ${lv.value}: a level from 0 up`)
+      const w = c === pinned ? 0 : (lv.within ?? 0)
+      return bound === 'low' ? lv.value * (1 + w) : bound === 'high' ? lv.value * (1 - w) : lv.value
+    })
+  /** A stock that grows with no growth to say when: its level has no load, so it is not ranked. */
+  const undated = (c: string) => def.components[c]!.level != null && !def.growth
+  const stockLevel = (c: string): number => {
+    if (def.components[c]!.keeps != null) return gains(c) * keepsOf(c)
+    if (averaged || !def.growth) return levelOf(c)
+    return levelOf(c) + grown(def, values, bound, pinned, c)
+  }
   ctx.demand = table(componentIds, (c) =>
     memo(`demand of ${c}`, () => {
+      if (def.components[c]!.fills) return stockLevel(c)
       const opened = counted(c)
       if (opened) return opened.reduce((a, o) => a + o.members * o.open, 0)
       const h = held(c)
@@ -1600,7 +1709,7 @@ function context(
   )
   /** demand ÷ capacity, before any connection's spread. */
   const plainOf = (c: string): number | null => {
-    if (!enabled(c) || capacity(c).missing != null) return null
+    if (!enabled(c) || capacity(c).missing != null || undated(c)) return null
     const cap = boundOf(capacity(c), c === pinned ? undefined : bound)
     const d = ctx.demand[c] as number
     return cap > 0 ? d / cap : d > 0 ? Number.POSITIVE_INFINITY : 0
@@ -1888,10 +1997,23 @@ function context(
     memo(`derived ${k}`, () => (def.derived as Record<string, (c: any) => number>)[k]!(ctx)),
   )
   const text = (v: string | ((c: any) => string) | undefined) => (typeof v === 'function' ? v(ctx) : v)
+  /** A stock at these values; undefined for any other component. */
+  const stock = (c: string): Stock | undefined => {
+    const d = def.components[c]!
+    if (!d.fills) return undefined
+    const level = stockLevel(c)
+    if (d.keeps != null) return { level, gains: gains(c), keeps: keepsOf(c) }
+    const cap = capacity(c).value
+    const g = gains(c)
+    const room = level >= cap ? 0 : g > 0 ? (cap - level) / g : Number.POSITIVE_INFINITY
+    return { level, gains: g, room, ...(undated(c) ? { undated: true as const } : {}) }
+  }
   return {
     ctx: Object.freeze(ctx),
     capacity,
     enabled,
+    gains,
+    stock,
     overload,
     failure,
     shed,
@@ -2195,6 +2317,60 @@ function root(f: (y: number) => number, goal: number, hi: number): number {
  * The lowest load multiple at which `util(load)` reaches `th`. A coarse geometric scan finds the first bracket, so a
  * utilization that does not rise steadily with the load is not mis-bisected; bisection then narrows it.
  */
+/** Seconds in a period of growth: a month and a year as the calendar averages them. */
+const PERIOD = { month: 2_629_800, year: 31_557_600 } as const
+
+/** The load multiple the growth reaches `seconds` after asOf. */
+function multipleAfter(g: Growth, seconds: number): number {
+  return (1 + g.rate) ** (seconds / PERIOD[g.per])
+}
+
+/** The step, in ln(load), of the grid a stock's gains are added up on. */
+const STEP = Math.LN2 / 8
+/** For each definition, by stock and values: what it has gained up to each point of the grid, and its gains there. */
+const grids = new WeakMap<object, Map<string, { sum: number[]; at: number[] }>>()
+
+/**
+ * What a stock that grows has gained from asOf to the day the load reaches `values.load`: its gains (at each flow's
+ * average) added up over the time the growth takes. The load is 1× on asOf and grows as `(1 + rate)` a period, so a
+ * load x is reached `ln x ÷ ln(1 + rate)` periods on, and the sum runs over ln x, the trapezoid on a fixed grid.
+ */
+function grown(
+  def: ModelDef<any, string, string, string, string>,
+  values: LooseValues,
+  bound: Bound | undefined,
+  pinned: string | undefined,
+  c: string,
+): number {
+  const g = def.growth!
+  const load = values.load as number
+  if (!(load > 1)) return 0
+  const { load: _, ...rest } = values
+  const key = `${c}|${bound}|${pinned}|${JSON.stringify(rest)}`
+  const byDef = grids.get(def) ?? new Map<string, { sum: number[]; at: number[] }>()
+  grids.set(def, byDef)
+  let grid = byDef.get(key)
+  if (!grid) {
+    if (byDef.size > 256) byDef.delete(byDef.keys().next().value!)
+    const at0 = context(def, { ...values, load: 1 }, bound, pinned, undefined, undefined, true).gains(c)
+    grid = { sum: [0], at: [at0] }
+    byDef.set(key, grid)
+  }
+  const gainsAt = (u: number) =>
+    context(def, { ...values, load: Math.exp(u) }, bound, pinned, undefined, undefined, true).gains(c)
+  const u = Math.log(load)
+  const k = Math.floor(u / STEP)
+  while (grid.at.length <= k + 1) {
+    const i = grid.at.length
+    grid.at.push(gainsAt(i * STEP))
+    grid.sum.push(grid.sum[i - 1]! + (STEP * (grid.at[i - 1]! + grid.at[i]!)) / 2)
+  }
+  const part = u - k * STEP
+  const end = grid.at[k]! + ((grid.at[k + 1]! - grid.at[k]!) * part) / STEP
+  const total = grid.sum[k]! + (part * (grid.at[k]! + end)) / 2
+  return (total * PERIOD[g.per]) / Math.log(1 + g.rate)
+}
+
 export function crossing(util: (load: number) => number | null, th: number, max: number): number | null {
   const u0 = util(0)
   if (u0 == null) return null
@@ -2245,10 +2421,11 @@ export function sureness(c: Capacity | null): string {
 /** " The brokers have no published benchmark for 6 brokers, so they are not ranked." */
 function unranked(all: readonly ComponentResult[]): string {
   return all
-    .filter((c) => c.missing != null)
-    .map(
-      (c) =>
-        ` ${capital(c.short)} ${c.plural ? 'have' : 'has'} no published benchmark ${c.missing}, so ${c.plural ? 'they are' : 'it is'} not ranked.`,
+    .filter((c) => c.missing != null || c.stock?.undated)
+    .map((c) =>
+      c.missing != null
+        ? ` ${capital(c.short)} ${c.plural ? 'have' : 'has'} no published benchmark ${c.missing}, so ${c.plural ? 'they are' : 'it is'} not ranked.`
+        : ` ${capital(c.short)} ${c.plural ? 'fill' : 'fills'} over time, and without growth no load says when, so ${c.plural ? 'they are' : 'it is'} not ranked.`,
     )
     .join('')
 }

@@ -13,6 +13,16 @@ export function duration(s: number): string {
   return `${fmt(s / 60)} min`
 }
 
+/** A time a stock takes: 9 h / 41 days / 14 months / 3.5 years; "never" without an end. */
+export function period(s: number): string {
+  if (!Number.isFinite(s)) return 'never'
+  if (s < 3600) return secs(s)
+  if (s < 172_800) return `${Math.round(s / 3600)} h`
+  if (s < 7_776_000) return `${Math.round(s / 86_400)} days`
+  if (s < 63_115_200) return `${Math.round(s / 2_629_800)} months`
+  return `${fmt(s / 31_557_600)} years`
+}
+
 /** A compact number: 980 / 1.2k / 34k / 1.5M. */
 export function compact(n: number): string {
   if (!Number.isFinite(n)) return n > 0 ? '∞' : '—'

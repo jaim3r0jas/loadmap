@@ -1,7 +1,7 @@
 import type { CrossingRange } from './capacity'
-import { duration, fmt, multiples, pct } from './format'
+import { duration, fmt, multiples, pct, period } from './format'
 import { PERCENTILES } from './latency'
-import { type ComponentResult, crossing, expectationNamed, type Model, sureness } from './model'
+import { type ComponentResult, crossing, expectationNamed, type Model, reach, sureness } from './model'
 import type { Values } from './params'
 
 /**
@@ -19,6 +19,11 @@ export interface Expectation<C extends string = string> {
   underTarget?: number
   /** Nothing runs out (or this component does not) before this multiple. */
   notFull?: number
+  /**
+   * Nothing runs out (or this component does not) for this many seconds from `growth.asOf`: the load the growth
+   * reaches then is its `notFull`. It needs growth.
+   */
+  lasts?: number
   /** @deprecated `underTarget`: a target is a utilization everywhere else. */
   target?: number
   /** @deprecated `notFull`. */
@@ -94,7 +99,7 @@ export function check<P, C extends string>(
     if (c && unknown.length) return result(e, 'inconclusive', [...benchmarks, ...data], found, none)
     if (c && c.util == null)
       return result(e, data.length ? 'inconclusive' : 'pass', data, found, `${c.short} is switched off${where}`)
-    const claims: { at: 'pass' | 'edge' | 'fail'; text: string; min: number }[] = []
+    const claims: { at: 'pass' | 'edge' | 'fail'; text: string; min: number; wants?: string }[] = []
     const r = (x: CrossingRange | null) => (x ? multiples(x, model.searchMax) : 'never')
     const target = `the ${pct(model.thresholds.target)} target`
     // holds at the low edge, only at the high edge of a ±, or at neither
@@ -115,17 +120,20 @@ export function check<P, C extends string>(
     }
     if (e.notFull != null) {
       const by = c ?? ev.firstFull
+      // a time to last is a load through growth: the date says it again
+      const dated = e.lasts != null ? reach(found.full, model.searchMax, model.dateAt) : r(found.full)
       claims.push({
         at: at(found.full, e.notFull),
         min: e.notFull,
         text: by
-          ? `${by.short} ${by.plural ? 'run' : 'runs'} out at ${r(found.full)}${where}${sureness(by.capacity)}`
+          ? `${by.short} ${by.plural ? 'run' : 'runs'} out at ${dated}${where}${sureness(by.capacity)}`
           : `nothing runs out${where}`,
+        ...(e.lasts != null ? { wants: `to last ${period(e.lasts)} (${fmt(e.notFull)}×)` } : {}),
       })
     }
     const failed = claims.filter((x) => x.at !== 'pass')
     const message = failed.length
-      ? failed.map((x) => `expected at least ${fmt(x.min)}×, but ${x.text}`).join('; ')
+      ? failed.map((x) => `expected ${x.wants ?? `at least ${fmt(x.min)}×`}, but ${x.text}`).join('; ')
       : claims.map((x) => x.text).join('; ')
     const edges = claims
       .filter((x) => x.at === 'edge')

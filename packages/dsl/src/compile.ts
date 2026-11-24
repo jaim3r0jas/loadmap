@@ -875,6 +875,7 @@ export class Compiler {
       else scenarios[label] = this.preset(b, params, 'scenario')
     }
     const expects: Record<string, unknown>[] = []
+    this.hasGrowth = byKind('growth').length > 0
     for (const b of byKind('expect')) {
       const e = this.expectation(b, scenarios, limits, flowNames)
       if (!e) continue
@@ -946,6 +947,11 @@ export class Compiler {
         if (typeof v !== 'number' || !(v > 0)) throw new Error(`a timeout is seconds above 0, not ${String(v)}`)
       })
       if (timeout !== undefined) def.timeout = timeout
+      const average = this.dynProp<number>(b, 'average', 'number', (v) => {
+        if (typeof v !== 'number' || !(v > 0 && v <= 1))
+          throw new Error(`an average is a share of the peak above 0, up to 100%, not ${String(v)}`)
+      })
+      if (average !== undefined) def.average = average
       flowDefs[id.name] = def
 
       const route = this.prop(b, 'route')
@@ -1642,6 +1648,8 @@ export class Compiler {
   /** Each slider's range, which a preset, a scenario or a step stays in. */
   private sliders = new Map<string, { min: number; max: number }>()
   private flowAt = new Map<string, Span>()
+  /** The definition has a growth line: an expect's lasts needs one. */
+  private hasGrowth = false
   private flowBlock = new Map<string, Block>()
   /** Each flow's route as written, with the stage each name resolved to: where a hop's error goes. */
   private routeAt = new Map<string, [Ident, string][]>()
@@ -1733,8 +1741,12 @@ export class Compiler {
    * ("MB/s"), so the demand is brought to that. Nothing is guessed: the size is a suffix in the text and the unit the
    * capacity's own, so a size against a capacity that names none is an error, not a warning.
    */
-  private inCapacityUnit(b: Block, demand: (ctx: unknown) => number): (ctx: unknown) => number {
-    const prop = this.prop(b, 'demand')
+  private inCapacityUnit(
+    b: Block,
+    demand: (ctx: unknown) => number,
+    key: 'demand' | 'fills' = 'demand',
+  ): (ctx: unknown) => number {
+    const prop = this.prop(b, key)
     const size = prop && sizePower(prop.value, this.unitNames)
     if (!prop || !size) return demand
     if (size.mixed) {
@@ -1762,10 +1774,10 @@ export class Compiler {
         'unit-mismatch',
         prop.value,
         size.power !== 1
-          ? 'the demand multiplies sizes together: it counts no bytes'
+          ? `the ${key} multiplies sizes together: it counts no bytes`
           : unit?.t === 'str'
-            ? `the demand is a size, in bytes; the capacity is in "${unit.value}"`
-            : 'the demand is a size, in bytes; its capacity names no unit to bring it to',
+            ? `the ${key} is a size, in bytes; the capacity is in "${unit.value}"`
+            : `the ${key} is a size, in bytes; its capacity names no unit to bring it to`,
         'give the capacity a size, "MB/s" or "GB", or divide by the size of one unit: … / 1KB',
       )
       return demand
@@ -1830,6 +1842,14 @@ export class Compiler {
           `the demand is ${describe(d)}, the capacity ${describe(cap)}`,
           hint,
         )
+      } else if (this.prop(b, 'fills')) {
+        if (cap.time !== 0)
+          this.report.warning(
+            'unit-mismatch',
+            capacity.value,
+            `a stock's capacity is what it holds, a count; the capacity is ${describe(cap)}`,
+            'say what it holds: configured(500, "GB", "volume size")',
+          )
       } else if (this.prop(b, 'held') || b.children.some((c) => c.keyword === 'held')) {
         if (cap.time !== 0)
           this.report.warning(
@@ -3034,21 +3054,38 @@ export class Compiler {
         this.report.error('out-of-range', p.value, `${p.key.name} is a load multiple above 0`)
       else e[k] = v
     }
+    const lasts = this.constProp<number>(b, 'lasts')
+    if (lasts != null) {
+      const p = this.prop(b, 'lasts')!
+      if (!(lasts > 0 && Number.isFinite(lasts))) this.report.error('out-of-range', p.value, 'lasts is a time above 0')
+      else if (this.prop(b, 'notFull'))
+        this.report.error('bad-expect', p.key, 'lasts and notFull say one thing: give one of them')
+      else if (!this.hasGrowth)
+        this.report.error(
+          'bad-expect',
+          p.key,
+          'lasts is a time: the model needs growth to turn it into a load',
+          'growth { rate: 0.05; per: month; asOf: "2026-11-01" }',
+        )
+      else e.lasts = lasts
+    }
     const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
     if (severity) e.severity = severity
     if (e.flow != null) return e
-    if (!b.props.has('underTarget') && !b.props.has('notFull')) {
+    if (!b.props.has('underTarget') && !b.props.has('notFull') && !b.props.has('lasts')) {
       // in the words of the definition's version: before 1.1 there are only the old names, and no ×
       const old = before(this.version, parseVersion(SCHEMA.expect!.props.underTarget!.since!)!)
       this.report.error(
         'bad-expect',
         b.at,
-        old ? 'an expect needs a target or a full multiple' : 'an expect needs underTarget or notFull: a load multiple',
+        old
+          ? 'an expect needs a target or a full multiple'
+          : 'an expect needs underTarget or notFull (a load multiple), or lasts (a time)',
         old ? 'expect { target: 8 }' : 'expect { underTarget: 8× }',
       )
       return undefined
     }
-    return e.underTarget != null || e.notFull != null ? e : undefined
+    return e.underTarget != null || e.notFull != null || e.lasts != null ? e : undefined
   }
 
   /** A property naming a scenario or a component: undefined when absent, null when wrong (reported). */
@@ -3268,6 +3305,7 @@ export class Compiler {
       ['over', 'string'],
       ['describe', 'string'],
       ['service', 'number'],
+      ['fills', 'number'],
     ] as const) {
       const prop = this.prop(b, k)
       if (!prop) continue
@@ -3285,10 +3323,46 @@ export class Compiler {
               }
             : undefined
       const v = this.dyn(prop.value, want, 'ctx', check)
-      // the model takes demand as a function only: a constant (demand: 0) becomes one
-      o[k] = k === 'demand' && v !== undefined && typeof v !== 'function' ? () => v : v
+      // the model takes demand and fills as functions only: a constant (demand: 0) becomes one
+      o[k] = (k === 'demand' || k === 'fills') && v !== undefined && typeof v !== 'function' ? () => v : v
     }
     if (typeof o.demand === 'function') o.demand = this.inCapacityUnit(b, o.demand as (ctx: unknown) => number)
+    if (typeof o.fills === 'function') o.fills = this.inCapacityUnit(b, o.fills as (ctx: unknown) => number, 'fills')
+    const keeps = this.prop(b, 'keeps')
+    if (keeps)
+      o.keeps = this.dyn(keeps.value, 'number', 'values', (v) => {
+        if (typeof v !== 'number' || !(v >= 0 && Number.isFinite(v)))
+          throw new Error(`a stock keeps seconds from 0 up, not ${String(v)}`)
+      })
+    const level = this.prop(b, 'level')
+    if (level) {
+      o.level = this.dyn(level.value, 'capacity', 'values', checkCapacity)
+      const said = capacityCall(level.value, this.unitNames)?.args[1]
+      const cap = this.prop(b, 'capacity')
+      const unit = cap && capacityCall(cap.value, this.unitNames)?.args[1]
+      if (said?.t === 'str' && unit?.t === 'str' && said.value.trim() !== unit.value.trim())
+        this.report.error(
+          'unit-mismatch',
+          said,
+          `the level is in "${said.value}", the capacity in "${unit.value}"`,
+          'give both one unit',
+        )
+    }
+    for (const k of ['keeps', 'level'] as const) {
+      const p = this.prop(b, k)
+      if (p && !this.prop(b, 'fills'))
+        this.report.error(
+          'missing-property',
+          p.key,
+          `${k} is a stock's: give it fills too`,
+          COMPONENT_PROPS.fills!.doc,
+          {
+            key: 'fills',
+          },
+        )
+    }
+    if (keeps && level)
+      this.report.error('bad-box', level.key, 'a stock keeps what it gains or grows from a level: drop one of them')
     const held = this.held(b, flows)
     if (held !== undefined) {
       o.held = held

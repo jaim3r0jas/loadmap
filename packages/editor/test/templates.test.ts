@@ -5,9 +5,9 @@ import { CATALOG } from '../src/catalog'
 import { TEMPLATES } from '../src/templates'
 
 describe('templates', () => {
-  it('are twelve, with unique ids and the title their source declares', () => {
-    expect(TEMPLATES).toHaveLength(12)
-    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(12)
+  it('are thirteen, with unique ids and the title their source declares', () => {
+    expect(TEMPLATES).toHaveLength(13)
+    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(13)
     for (const t of TEMPLATES) expect(t.source).toContain(`title: "${t.title}"`)
   })
 
