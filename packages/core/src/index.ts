@@ -52,6 +52,7 @@ export {
   type Preset,
   type Retry,
   type RetryRule,
+  type Runs,
   reach,
   type Scenario,
   type Stock,

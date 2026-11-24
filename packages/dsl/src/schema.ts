@@ -1006,7 +1006,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       { name: 'label', kind: 'text', optional: true },
     ],
     props: COMPONENT_PROPS,
-    children: ['held'],
+    children: ['held', 'runs'],
   },
   held: {
     doc: "How long a unit of each flow holds one of the component's slots, in seconds; a flow it does not name holds none.",
@@ -1062,6 +1062,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       'limit',
       'component',
       'held',
+      'runs',
       'input',
       'with',
     ],
@@ -1078,7 +1079,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['queue', 'component', 'held', 'input', 'with'],
+    children: ['queue', 'component', 'held', 'runs', 'input', 'with'],
   },
   pool: {
     doc: 'A pool of workers, pods × workers per pod, drawn as pods holding a grid of workers. Flows are worked off here; a route names the pool.',
@@ -1101,7 +1102,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       like: LIKE,
       ...COMPONENT_PROPS,
     },
-    children: ['autoscale', 'workers', 'component', 'held', 'input', 'with'],
+    children: ['autoscale', 'workers', 'component', 'held', 'runs', 'input', 'with'],
   },
   pass: {
     doc: 'Flows pass through; past capacity the share above 100 % is rejected.',
@@ -1195,6 +1196,31 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: ['autoscale'],
     until: '1.5',
     instead: 'write its lines on the pool: pool workerPool { pods: 3; perPod: 8 }',
+  },
+  runs: {
+    doc: "A component that works in runs, a batch: what reaches it in every is worked off within the run's time, so its demand is the rate a run needs and it runs out where a run misses its window. Every a day or more reads each flow at its average.",
+    since: '1.7',
+    example: 'runs { every: 1d; within: 4h }',
+    args: [],
+    props: {
+      every: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'values',
+        unit: 'seconds',
+        doc: 'How often it runs: 1d for a nightly job.',
+        required: true,
+      },
+      within: {
+        inspector: 'main',
+        value: 'number',
+        scope: 'values',
+        unit: 'seconds',
+        doc: 'The time a run has: 4h. At most every.',
+        required: true,
+      },
+    },
+    children: [],
   },
   autoscale: {
     doc: "Pods are added and removed to hold each running pod near target, between min and max. The component's capacity is the pool at max pods: it runs out when the pool cannot grow further.",

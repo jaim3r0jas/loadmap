@@ -854,6 +854,26 @@ peak, `average: 45%`, and a stock reads every flow at its average. Every other c
 growth reaches that long after `asOf`. In TypeScript, `fills`, `keeps` and `level` sit on the component, `average` on
 the flow, `lasts` on the expectation, and `ev.components.dbDisk.stock` gives its `level`, `gains` and `room`.
 
+#### Batches
+
+A batch works in runs: a nightly rollup, an export, a billing job. `runs` on a component (from `loadmap 1.7`) says how
+often it runs and the time a run has; what reaches it in `every` is worked off `within`, so its demand is the rate a
+run needs, and it runs out where a run misses its window, at a load multiple like any other limit. With `every` a day
+or more it reads each flow at its `average` ([Stocks](#stocks)). The limits list says how long a run takes of its
+time.
+
+```loadmap
+component rollup "Nightly rollup" {
+  demand: flows.orders
+  runs { every: 1d; within: 4h }
+  capacity: measured(250, "orders/s", "last month's runs")
+  over: "the rollup misses its window"
+}
+```
+
+In TypeScript, `runs: { every: 86_400, within: 14_400 }` on the component, and `ev.components.rollup.runs` gives
+`takes`, the seconds a run takes at these values.
+
 #### Connections
 
 A connection says how a stage reaches the next one on a route, and through which part of it. In a Kafka consumer
@@ -2198,7 +2218,7 @@ After the keyword: [id] [label].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `held`.
+Holds: `held`, `runs`.
 
 ### held
 
@@ -2255,7 +2275,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `split`, `cache`, `limit`, `component`, `held`, `input`, `with`.
+Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `split`, `cache`, `limit`, `component`, `held`, `runs`, `input`, `with`.
 
 ### cluster
 
@@ -2288,7 +2308,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `queue`, `component`, `held`, `input`, `with`.
+Holds: `queue`, `component`, `held`, `runs`, `input`, `with`.
 
 ### pool
 
@@ -2325,7 +2345,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `autoscale`, `component`, `held`, `input`, `with`.
+Holds: `autoscale`, `component`, `held`, `runs`, `input`, `with`.
 
 ### pass
 
@@ -2434,6 +2454,19 @@ partitions { orders: 12; events: 24 }
 ```
 
 Its properties are named by flows.
+
+### runs
+
+A component that works in runs, a batch: what reaches it in every is worked off within the run's time, so its demand is the rate a run needs and it runs out where a run misses its window. Every a day or more reads each flow at its average. From loadmap 1.7.
+
+```loadmap
+runs { every: 1d; within: 4h }
+```
+
+| Property | Value | |
+| --- | --- | --- |
+| `every` (required) | number in seconds, formula of parameters | How often it runs: 1d for a nightly job. |
+| `within` (required) | number in seconds, formula of parameters | The time a run has: 4h. At most every. |
 
 ### autoscale
 

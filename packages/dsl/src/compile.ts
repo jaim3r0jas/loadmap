@@ -999,12 +999,14 @@ export class Compiler {
     const componentDefs: Record<string, Record<string, unknown>> = {}
     const componentBlocks = this.componentBlocks
     for (const box of boxes) {
-      const stray = box.component?.own ? undefined : box.block.children.find((c) => c.keyword === 'held')
+      const stray = box.component?.own
+        ? undefined
+        : box.block.children.find((c) => c.keyword === 'held' || c.keyword === 'runs')
       if (stray)
         this.report.error(
           'misplaced',
           stray.at,
-          'held belongs to a component',
+          `${stray.keyword} belongs to a component`,
           box.component ? `move it into component ${box.component.id}` : 'give the box capacity and over lines',
         )
       if (box.component) {
@@ -3410,6 +3412,28 @@ export class Compiler {
     }
     if (keeps && level)
       this.report.error('bad-box', level.key, 'a stock keeps what it gains or grows from a level: drop one of them')
+    const run = b.children.find((c) => c.keyword === 'runs')
+    if (run) {
+      const time = (v: unknown) => {
+        if (typeof v !== 'number' || !(v > 0 && Number.isFinite(v)))
+          throw new Error(`a run's time is seconds above 0, not ${String(v)}`)
+      }
+      const every = this.dynProp<number>(run, 'every', 'number', time)
+      const within = this.dynProp<number>(run, 'within', 'number', time)
+      if (typeof every === 'number' && typeof within === 'number' && within > every)
+        this.report.error(
+          'out-of-range',
+          this.prop(run, 'within')!.value,
+          'a run takes at most the time between two runs: within is at most every',
+        )
+      else if (every !== undefined && within !== undefined) {
+        const at = (v: unknown) => ({
+          every: typeof every === 'function' ? every(v) : every,
+          within: typeof within === 'function' ? within(v) : within,
+        })
+        o.runs = typeof every === 'number' && typeof within === 'number' ? { every, within } : at
+      }
+    }
     const held = this.held(b, flows)
     if (held !== undefined) {
       o.held = held

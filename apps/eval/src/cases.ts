@@ -218,6 +218,18 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'per: day' }, { kind: 'contains', text: '2_000_000' }],
   },
   {
+    id: 'batch-nightly',
+    example: CHECKOUT,
+    request:
+      'A nightly job exports the day’s orders and must finish within 3 hours; it handled 400 orders a second last run.',
+    asserts: [
+      { kind: 'change' },
+      { kind: 'contains', text: 'runs {' },
+      { kind: 'contains', text: 'within: 3h' },
+      { kind: 'honest' },
+    ],
+  },
+  {
     id: 'tier',
     example: SHOP,
     request: 'Group the boxes into tiers: edge (web), services (orderWorkers), data (db).',
