@@ -71,6 +71,21 @@ describe('a gather, in the language', () => {
     expect(six.latency.reads!.mean).toBeLessThan(ev.latency.reads!.mean)
   })
 
+  it('hedges its calls: what it calls sees the second ones, and the wait is shorter', () => {
+    const plain = compile(SRC).definition!.model.evaluate({ load: 1 })
+    const src = SRC.replace('    needs: quorum\n', '    needs: quorum\n    hedge: 95%\n')
+    expect(format(src).text).toBe(src)
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    const ev = r.definition!.model.evaluate({ load: 1 })
+    expect(ev.stages.scatter).toMatchObject({ hedge: 0.95 })
+    expect(ev.at.shards!.reads).toBeCloseTo(840, 9)
+    expect(ev.latency.reads!.p99).toBeLessThan(plain.latency.reads!.p99)
+    expect(errors(src.replace('hedge: 95%', 'hedge: 100%'))).toEqual([
+      'error: model: gather "scatter" hedges at a share of 1: a percentile above 0 and below 1',
+    ])
+  })
+
   it('needs an edge to what it calls, and a lost box for what it fails', () => {
     expect(errors(SRC.replace('scatter -> shards\n', ''))).toEqual([
       'error: missing-edge: "reads" goes from "scatter" to "shards", and no edge joins them | draw scatter -> shards',

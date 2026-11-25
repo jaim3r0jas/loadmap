@@ -1825,7 +1825,9 @@ function contextAt(
       const b = copiedTo(s, f)[0]
       // one list of calls for every flow is for the flows that come this way
       if (!b || !paths(f).some((p) => p.stages.includes(s))) return undefined
-      const calls = b.share
+      const hedge = st.hedge == null ? undefined : (dyn(st.hedge, ctx) as number)
+      // the calls a unit makes: the branch's copies less the second calls its hedge adds
+      const calls = Math.round(b.share / (hedge == null ? 1 : 2 - hedge))
       const needs = st.needs == null ? calls : (dyn(st.needs, ctx) as number)
       // this gather's own branch: another fan-out or gather may call the same stage
       const { lost, latency, delay } = branch(f, b.stages.at(-1)!, s)
@@ -1841,9 +1843,40 @@ function contextAt(
       const w = latency ? latency.mean - delay : 0
       let mean = 0
       let variance = 0
-      for (let i = calls - needs + 1; i <= calls; i++) {
-        mean += w / i
-        variance += (w / i) ** 2
+      if (hedge == null || !(w > 0) || !Number.isFinite(w))
+        for (let i = calls - needs + 1; i <= calls; i++) {
+          mean += w / i
+          variance += (w / i) ** 2
+        }
+      else {
+        // A hedged call: unanswered at its own percentile h, it is sent again, and the first answer counts. Past h
+        // (and the second call's own delay) both must still be out. The needs-th of the calls has no closed form
+        // then: its mean and its spread are summed over its survival, the time past the delay in units of w.
+        const h = -Math.log(1 - hedge)
+        const back = delay / w
+        const out = (t: number) => Math.exp(-t) * (t > h + back ? Math.exp(-(t - h - back)) : 1)
+        const late = (t: number) => {
+          const o = out(t)
+          let total = 0
+          let ways = 1
+          for (let j = 0; j < needs; j++) {
+            total += ways * (1 - o) ** j * o ** (calls - j)
+            ways = (ways * (calls - j)) / (j + 1)
+          }
+          return total
+        }
+        const end = h + back + 40
+        const steps = 4000
+        const dt = end / steps
+        let second = 0
+        for (let i = 0; i <= steps; i++) {
+          const t = i * dt
+          const edge = i === 0 || i === steps ? 0.5 : 1
+          mean += edge * late(t) * dt
+          second += edge * 2 * t * late(t) * dt
+        }
+        variance = Math.max(0, second - mean * mean) * w * w
+        mean *= w
       }
       return {
         calls,
@@ -1886,7 +1919,9 @@ function contextAt(
         | readonly Branch[]
         | Readonly<Record<string, readonly Branch[]>>
       const list = (Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? [])) as Branch[]
-      return list.map((x) => ({ stages: chainOf(x), share: x.share }))
+      // a hedged gather sends the calls not answered by its percentile again: what it calls sees those too
+      const hedge = st.kind === 'gather' && st.hedge != null ? (dyn(st.hedge, ctx) as number) : undefined
+      return list.map((x) => ({ stages: chainOf(x), share: x.share * (hedge == null ? 1 : 2 - hedge) }))
     })
   }
   const copies = (t: string, f: string, s: string) => {

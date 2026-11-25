@@ -234,7 +234,7 @@ values (`partitions`, `pods`, `perPod`, `hit`, `to`) take a function of the cont
 | `store(component, { label? })`                                          | Where a flow ends: written to its component                            |
 | `sink({ label? })`                                                      | Where a flow ends without a component: a receiver, a viewer, an app    |
 | `fanout({ to, component?, label? })`                                    | Each unit copied to several sinks or stores, each with its share       |
-| `gather({ to, needs?, label? })`                                        | Each unit makes several calls at once and goes on when `needs` answer  |
+| `gather({ to, needs?, hedge?, label? })`                                | Each unit makes several calls at once and goes on when `needs` answer  |
 | `split({ to, component?, label? })`                                     | Each unit goes one of several ways, by share                           |
 | `lost({ from, takes?, label? })`                                        | Where what other stages lose ends, counted                             |
 

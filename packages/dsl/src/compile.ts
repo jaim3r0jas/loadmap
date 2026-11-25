@@ -4020,7 +4020,13 @@ export class Compiler {
         const fixed = branches.every(([, , v]) => typeof v === 'number')
         if (b.keyword === 'gather') {
           const needs = this.dynProp<number>(b, 'needs', 'number')
-          return gather({ ...base, to: fixed ? build(undefined) : build, ...(needs !== undefined ? { needs } : {}) })
+          const hedge = this.dynProp<number>(b, 'hedge', 'number')
+          return gather({
+            ...base,
+            to: fixed ? build(undefined) : build,
+            ...(needs !== undefined ? { needs } : {}),
+            ...(hedge !== undefined ? { hedge } : {}),
+          })
         }
         return fanout({ ...base, to: fixed ? build(undefined) : build, ...(component ? { component } : {}) })
       }
