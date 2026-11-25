@@ -94,6 +94,17 @@ describe('a domain with its parts by name', () => {
     expect(errors(src)).toEqual([])
   })
 
+  it('asks no lost box of a queue in the part: one with no size turns away only while its part is down', () => {
+    const src = SRC.replace(
+      '  pool api "API" {\n    pods: 10\n',
+      '  cluster buffer "Buffer" {\n    members: 1\n    queue inbox { partitions { euOrders: 1; usOrders: 1 } }\n  }\n  pool api "API" {\n    pods: 10\n',
+    )
+      .replace('  route: api\n}\nsubsystem us', '  buffer -> api\n  route: inbox -> api\n}\nsubsystem us')
+      .replace('euOrders -> eu.api: 100%', 'euOrders -> eu.inbox -> eu.api: 100%')
+      .replace('usOrders -> eu.api: 0%', 'usOrders -> eu.inbox -> eu.api: 0%')
+    expect(errors(src)).toEqual([])
+  })
+
   it('reads a part as the label of the subsystem of its id', () => {
     expect(outages(compile(SRC).definition!.model).map((o) => o.text)).toEqual([
       'With the EU out, the 50 % target holds up to 2×, limited by API in US.',

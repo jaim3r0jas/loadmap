@@ -1769,7 +1769,8 @@ export class Compiler {
     // and a queue with a size: what finds it full is turned away there
     for (const [id, s] of stageOf)
       if (
-        (s.block.keyword === 'limit' || s.block.keyword === 'queue') &&
+        // (one with no size turns away only what reaches it while its part is down: no lost box is asked for that)
+        (s.block.keyword === 'limit' || (s.block.keyword === 'queue' && s.block.props.has('holds'))) &&
         losses(id).includes('rejected') &&
         first(id, 'rejected')
       )
