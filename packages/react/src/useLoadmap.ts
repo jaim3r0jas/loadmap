@@ -461,8 +461,8 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     },
     [model, engine, setValues, apply, stop, reducedMotion],
   )
-  // a new model or engine, or the page gone: the moment playing stops with it
-  useEffect(() => () => engine.stopMoment(), [engine, model])
+  // a new engine, or the page gone: the moment playing stops with it (a new model stops it in the engine)
+  useEffect(() => () => engine.stopMoment(), [engine])
 
   const scenario = useMemo(() => model.scenarioOf(values), [model, values])
   const setScenario = useCallback(
