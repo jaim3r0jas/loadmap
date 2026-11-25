@@ -90,13 +90,24 @@ export interface LimitStage<C extends string = string> extends StageBase {
    * it in one window, at the peak for an hour and at each flow's average for a day or a month.
    */
   per?: QuotaWindow
+  /**
+   * A rate limit's bucket, in units: past the limit it lets the excess through until the bucket is spent, burst ÷ what
+   * arrives above the limit a second, then cuts to the limit. No steady figure changes: the bucket is what a moment
+   * spends. Not on a quota, which counts a window already.
+   */
+  burst?: Dyn<number>
 }
 
 /** The window of a quota. */
-export type QuotaWindow = 'hour' | 'day' | 'month'
+export type QuotaWindow = 'minute' | 'hour' | 'day' | 'month'
 
 /** Seconds in each window: a month as the calendar averages it. */
-export const QUOTA_SECONDS: Readonly<Record<QuotaWindow, number>> = { hour: 3_600, day: 86_400, month: 2_629_800 }
+export const QUOTA_SECONDS: Readonly<Record<QuotaWindow, number>> = {
+  minute: 60,
+  hour: 3_600,
+  day: 86_400,
+  month: 2_629_800,
+}
 
 /** Where a flow ends: written to its component. */
 export interface StoreStage<C extends string = string> extends StageBase {
@@ -248,7 +259,14 @@ export function cache<const C extends string = never>(
   return { kind: 'cache', ...o }
 }
 
-export function limit<const C extends string>(component: C, o: StageBase & { per?: QuotaWindow } = {}): LimitStage<C> {
+export function limit<const C extends string>(
+  component: C,
+  o: StageBase & { per?: QuotaWindow; burst?: Dyn<number> } = {},
+): LimitStage<C> {
+  if (o.per != null && o.burst != null)
+    throw new Error(
+      `loadmap: a limit of "${component}" is a quota per ${o.per} or takes a burst: a quota counts a window`,
+    )
   if (o.per != null && !Object.hasOwn(QUOTA_SECONDS, o.per))
     throw new Error(`loadmap: limit "${component}" is per hour, day or month, not "${o.per}"`)
   return { kind: 'limit', component, ...o }

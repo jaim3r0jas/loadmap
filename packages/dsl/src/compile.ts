@@ -4065,9 +4065,23 @@ export class Compiler {
         return component ? pass(component, { ...base, ...(shed ? { shed } : {}) }) : needs()
       }
       case 'limit': {
-        const per = this.constProp<'hour' | 'day' | 'month'>(b, 'per')
+        const per = this.constProp<'minute' | 'hour' | 'day' | 'month'>(b, 'per')
         if (per && component) this.windowed.set(component, per)
-        return component ? limit(component, { ...base, ...(per ? { per } : {}) }) : needs()
+        const burst = this.dynProp<number>(b, 'burst', 'number', (v) => {
+          if (typeof v !== 'number' || !(v >= 0) || !Number.isFinite(v))
+            throw new Error(`a burst is a number of units from 0, not ${String(v)}`)
+        })
+        if (burst != null && per) {
+          this.report.error(
+            'bad-value',
+            this.prop(b, 'burst')!.key,
+            `a quota per ${per} counts its window already: a burst is for a rate limit`,
+          )
+          return component ? limit(component, { ...base, per }) : needs()
+        }
+        return component
+          ? limit(component, { ...base, ...(per ? { per } : {}), ...(burst != null ? { burst } : {}) })
+          : needs()
       }
       case 'cache': {
         const hit = this.dynProp<number>(b, 'hit', 'number')

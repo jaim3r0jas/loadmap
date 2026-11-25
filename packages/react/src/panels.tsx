@@ -105,11 +105,28 @@ function usePeak(lm: LoadmapController): string | null {
   }, [ev, model])
 }
 
+/**
+ * "A burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut to 100 req/s." Below the limit the bucket is
+ * only said: nothing spends it.
+ */
+export function burstText(
+  b: { size: number; lasts?: number },
+  load: number,
+  cap: { value: number; unit: string } | null | undefined,
+): string {
+  const head = `A burst of ${compact(b.size)} passes`
+  if (b.lasts == null || !cap) return `${head} over the limit.`
+  return `${head}: at ${fmt(load)}× all gets through for ${duration(b.lasts)}, then it is cut to ${fmt(cap.value)} ${cap.unit}.`
+}
+
 /** "A daily quota: gone after 15.2 h, the rest refused." In the window's own steps, so a day just over says 23.5 h. */
-function quotaText(q: { per: 'hour' | 'day' | 'month'; goneAfter?: number }): string {
-  const name = { hour: 'An hourly', day: 'A daily', month: 'A monthly' }[q.per]
+function quotaText(q: { per: 'minute' | 'hour' | 'day' | 'month'; goneAfter?: number }): string {
+  const name = { minute: 'A per-minute', hour: 'An hourly', day: 'A daily', month: 'A monthly' }[q.per]
   if (q.goneAfter == null) return `${name} quota.`
-  const [step, word] = { hour: [60, 'min'], day: [3_600, 'h'], month: [86_400, 'days'] }[q.per] as [number, string]
+  const [step, word] = { minute: [1, 's'], hour: [60, 'min'], day: [3_600, 'h'], month: [86_400, 'days'] }[q.per] as [
+    number,
+    string,
+  ]
   return `${name} quota: gone after ${fmt(q.goneAfter / step)} ${word}, the rest refused.`
 }
 
@@ -178,6 +195,7 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
               {c.stock && <span className="lm-sub lm-stock">{stockText(c.stock, c.capacity?.unit ?? '')}</span>}
               {c.quota && <span className="lm-sub lm-quota">{quotaText(c.quota)}</span>}
+              {c.burst && <span className="lm-sub lm-burst">{burstText(c.burst, lm.ev.values.load, c.capacity)}</span>}
               {c.runs && <span className="lm-sub lm-runs">{runsText(c.runs)}</span>}
             </div>
             <div

@@ -22,6 +22,7 @@ import { type AnyParamDef, isEnabled, type LoadParam, type LooseValues, type Par
 import {
   type Branch,
   chainOf,
+  type Dyn,
   dyn,
   hitOf,
   type LimitStage,
@@ -399,6 +400,11 @@ export interface ComponentResult<C extends string = string> {
   runs?: Runs & { takes: number }
   /** For a quota (a limit `per` a window): the window, and past the quota how long into it the quota is gone. */
   quota?: { per: QuotaWindow; goneAfter?: number }
+  /**
+   * For a rate limit with a bucket: its size in units, and past the limit how many seconds the bucket lets everything
+   * through before the limit cuts in (size ÷ what arrives above the limit a second).
+   */
+  burst?: { size: number; lasts?: number }
 }
 
 /** A component with a part of its domain down: "4 of 6 pods left". */
@@ -720,6 +726,8 @@ export function defineModel<
   }
   /** Each quota's window, by its component. */
   const quotaOf = new Map<string, QuotaWindow>()
+  /** Each rate limit's bucket, by its component: one limit stage gives it. */
+  const burstOf = new Map<string, Dyn<number>>()
   for (const c of componentIds) {
     const d = def.components[c]
     // held for a time of its own, for the time of a stretch of the way, or both
@@ -768,6 +776,10 @@ export function defineModel<
         )
       quotaOf.set(c, [...windows][0]!)
     }
+    const buckets = runs.flatMap((s) => (s.kind === 'limit' && s.burst != null ? [s.burst] : []))
+    if (buckets.length > 1)
+      throw new Error(`loadmap: component "${c}" has a burst on ${buckets.length} limits: give it on one`)
+    if (buckets.length) burstOf.set(c, buckets[0]!)
     if (holds && !d.on?.length && !used)
       throw new Error(`loadmap: component "${c}" is held on no stage: name them with on`)
     if (d.fills != null) {
@@ -1210,6 +1222,15 @@ export function defineModel<
       // a quota is hard: past all it allows it is gone, whatever the full threshold
       if (per)
         components[c].quota = { per, ...(util != null && util > 1 ? { goneAfter: QUOTA_SECONDS[per] / util } : {}) }
+      const bucket = off ? undefined : burstOf.get(c)
+      if (bucket != null) {
+        const size = dyn(bucket, ctx as LooseValues)
+        if (!(size >= 0 && Number.isFinite(size)))
+          throw new Error(`loadmap: the burst of "${c}" is ${size} units: a number from 0`)
+        // what arrives above the limit a second: the bucket lasts its size over that
+        const excess = util != null && util > 1 ? (components[c].demand ?? 0) * (1 - 1 / util) : 0
+        components[c].burst = { size, ...(excess > 0 ? { lasts: size / excess } : {}) }
+      }
       const sp = off ? null : spread(c)
       if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
       const h = off ? null : held(c)
