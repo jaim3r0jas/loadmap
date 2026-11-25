@@ -891,6 +891,31 @@ they are lost as `dropped`, which a lost box can count. A `merge` says that unde
 handled is superseded by a newer unit of the same key, so the queue keeps only the newest: nothing is lost. Each takes
 a `reason` for its meter and a `when` that switches it on and off.
 
+A queue holds whatever comes unless it has a size (from `loadmap 1.8`): `holds: 10_000` is a bounded queue, a buffer,
+a mailbox. Once its reader is past full it fills, and what the reader cannot take finds it full and is turned away:
+`rejected` at the queue, which a retry sends again and a lost box counts. `full: block` says the stage before it
+waits to hand the unit over instead, so the unit is turned away there.
+
+```loadmap
+cluster buffer "Buffer" {
+  members: 1
+  queue inbox "inbox" {
+    holds: 10_000
+    partitions { jobs: 1 }
+  }
+}
+node refused "Refused" { lost { takes: [rejected] } }
+
+buffer -> refused
+```
+
+A reader at 1.5 times what it can take leaves a third of the jobs at the door, and retries cannot help: they only
+raise what arrives. With a drop rule the queue takes in what it can read through within the rule's limit, `holds` ÷
+`olderThan` a second: what arrives above that finds it full, and what it took in and its reader cannot take gets too
+old. So a small queue only turns away, a large one only drops, and one between does both. For a moment that `lasts`, the verdict says when the queue is full: "inbox
+is full after 2 min with 10k jobs, and at 1× clears in 2 min". In TypeScript, `queue({ partitions, holds: 10_000,
+whenFull: 'block' })`.
+
 #### Fan-out and sinks
 
 A fan-out copies each unit to several stages, one line per branch: the flow, the stage, and the copies of each
@@ -2799,6 +2824,8 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
+| `holds` | number, formula | How many units it holds: a bounded queue, a buffer, a mailbox. Once its reader is past full it fills, and what the reader cannot take is turned away (rejected, so a retry sends it again and a lost box counts it). Without it the queue holds whatever comes. With a drop rule the queue takes in holds ÷ olderThan a second: what arrives above that finds it full, and what it took in and its reader cannot take gets too old. From loadmap 1.8. |
+| `full` | `reject` \| `block` | Where a unit that finds the queue full is turned away: reject, at the queue (the default), or block, at the stage before it, which waits to hand it over and cannot. Needs holds. From loadmap 1.8. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 Holds: `partitions`.

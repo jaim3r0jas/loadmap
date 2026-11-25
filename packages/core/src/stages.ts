@@ -25,6 +25,16 @@ export interface QueueStage<C extends string = string> extends StageBase {
   component?: C
   /** Partitions per flow. Drawn as cells; partition i sits on member i mod n of the node that shows it. */
   partitions: Dyn<Readonly<Record<string, number>>>
+  /**
+   * How many units it holds: a bounded queue, a buffer, a mailbox. Once its reader cannot keep up it fills, and what
+   * arrives then finds it full. Without one it holds whatever comes.
+   */
+  holds?: Dyn<number>
+  /**
+   * What happens to a unit that finds it full: `reject` turns it away at the queue (the default), `block` makes the
+   * stage before it wait, so the unit is turned away there.
+   */
+  whenFull?: 'reject' | 'block'
 }
 
 /** A pool of workers: pods × workers per pod. Busy workers fill evenly across pods. */
@@ -202,7 +212,12 @@ export function pass<const C extends string>(
 }
 
 export function queue<const C extends string = never>(
-  o: { partitions: QueueStage['partitions']; component?: C } & StageBase,
+  o: {
+    partitions: QueueStage['partitions']
+    component?: C
+    holds?: QueueStage['holds']
+    whenFull?: QueueStage['whenFull']
+  } & StageBase,
 ): QueueStage<C> {
   return { kind: 'queue', ...o }
 }
@@ -302,6 +317,10 @@ export type ResolvedStage = {
       partitions: Readonly<Record<string, number>>
       /** With a key connection that gives skew: the share of each flow on partition 0, the hottest. */
       skew?: Readonly<Record<string, number>>
+      /** The units it holds, when it has a size. */
+      holds?: number
+      /** With a size: where a unit that finds it full is turned away, at the queue or at the stage before it. */
+      whenFull?: 'reject' | 'block'
     }
   | {
       kind: 'workers'
@@ -399,8 +418,19 @@ export function resolveStage(
   const util = (c: string | undefined) => (c ? (ctx.util as Record<string, number | null>)[c] : null)
   const rejects = rejectShare(util(s.kind === 'sink' || s.kind === 'lost' ? undefined : s.component), full)
   switch (s.kind) {
-    case 'queue':
-      return { id, label, kind: 'queue', component: s.component, partitions: dyn(s.partitions, ctx) }
+    case 'queue': {
+      const holds = s.holds == null ? undefined : dyn(s.holds, ctx)
+      if (holds != null && !(holds > 0 && Number.isFinite(holds)))
+        throw new Error(`loadmap: queue "${id}" holds ${holds} units: a number above 0`)
+      return {
+        id,
+        label,
+        kind: 'queue',
+        component: s.component,
+        partitions: dyn(s.partitions, ctx),
+        ...(holds != null ? { holds, whenFull: s.whenFull ?? 'reject' } : {}),
+      }
+    }
     case 'workers': {
       const perPod = dyn(s.perPod, ctx)
       const base = {

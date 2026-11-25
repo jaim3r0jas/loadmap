@@ -95,7 +95,11 @@ function usePeak(lm: LoadmapController): string | null {
       const one = flows.length === 1 ? flows[0]![0] : undefined
       const what = one == null ? 'units' : (model.def.flows[one]?.label ?? one)
       const clears = Number.isFinite(b.empties) ? `clears in ${period(b.empties)}` : 'never clears'
-      return `${compact(b.units)} ${what} wait in ${ev.stages[b.stage]?.label ?? b.stage}, which at ${rest} ${clears}`
+      const name = ev.stages[b.stage]?.label ?? b.stage
+      // a queue with a size: when the peak fills it, and what it then holds
+      if (b.full)
+        return `${name} is full after ${period(b.full.after)} with ${compact(b.units)} ${what}, and at ${rest} ${clears}`
+      return `${compact(b.units)} ${what} wait in ${name}, which at ${rest} ${clears}`
     })
     return `${head}, ${parts.join('; ')}.`
   }, [ev, model])
@@ -237,6 +241,13 @@ export function Meters({ lm }: { lm: LoadmapController }) {
             value: compact(q.merged),
             label: `${flowLabel(f)} superseded /s (${rules.merge.reason ?? 'newest kept'})`,
             state: q.merged > 0.5 ? 'warn' : 'ok',
+          })
+        if (s.holds != null)
+          items.push({
+            key: `${s.id}/${f}/full`,
+            value: compact(q.refused),
+            label: `${flowLabel(f)} turned away /s (${s.label} holds ${compact(s.holds)})`,
+            state: q.refused > 0.5 ? 'over' : 'ok',
           })
         if (rules.drop)
           items.push({
