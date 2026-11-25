@@ -1,6 +1,7 @@
 import { compare } from '@loadmap/core'
 import { describe, expect, it } from 'vitest'
 import { compile, format } from '../src'
+import { completions } from '../src/completion'
 
 const SRC = `loadmap 1.8
 load { max: 20 }
@@ -81,6 +82,27 @@ describe('a cost in the language', () => {
     ])
     expect(errors(SRC.replace('demand: flows.requests', 'demand: flows.requests * running'))).toEqual([
       'error: unknown-name: unknown name "running"',
+    ])
+  })
+})
+
+describe('running in the language', () => {
+  it('is offered first in a cost', () => {
+    const at = SRC.indexOf('cost: running * 140') + 6
+    expect(completions(SRC.slice(0, at) + SRC.slice(at + 7), at).options[0]!.label).toBe('running')
+  })
+
+  it('is reserved from loadmap 1.8: a parameter of that name is an error, a warning before', () => {
+    const named = SRC.replace('param maxPods', 'param running "Hours" { options: [1, 2]; default: 1 }\nparam maxPods')
+    expect(errors(named)).toEqual(['error: reserved-name: "running" is a reserved name; pick another'])
+    expect(errors(named.replace('loadmap 1.8', 'loadmap 1.7')).filter((x) => x.includes('"running"'))).toEqual([
+      'warning: reserved-name: "running" is a reserved name; pick another (an error from loadmap 1.8)',
+    ])
+  })
+
+  it("wants a budget's load above 0", () => {
+    expect(errors(SRC.replace('{ cost: 2_000; underTarget: 3 }', '{ cost: 2_000; underTarget: 0 }'))).toEqual([
+      'error: out-of-range: underTarget is a load multiple above 0',
     ])
   })
 })

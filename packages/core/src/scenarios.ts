@@ -37,6 +37,8 @@ export interface ScenarioRow<P = any, C extends string = string> {
   components: readonly ComponentChange<C>[]
   /** What the components with a cost cost a month in this scenario, at the compared load; undefined when none has one. */
   cost?: number
+  /** That cost less the first scenario's: what this design costs more (or less) a month. */
+  costChange?: number
 }
 
 export interface Comparison<P = any, C extends string = string> {
@@ -82,6 +84,9 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
       }),
     }
   })
+  // each scenario's cost against the first: the table and the sentence read the same figure
+  const first = rows[0]?.cost
+  if (first != null) for (const r of rows) if (r.cost != null) r.costChange = r.cost - first
   if (rows.length < 2) return { rows, best: null, text: '' }
 
   const th = pct(model.thresholds.target)
@@ -115,8 +120,7 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
     ? `${by ? ',' : ''} and runs out at ${at(top.fullRange)}`
     : ''
   // what the headroom costs against the baseline, when both have a cost and it differs
-  const first = rows[0]!
-  const delta = top !== first && top.cost != null && first.cost != null ? top.cost - first.cost : 0
+  const delta = top.costChange ?? 0
   const unit = model.def.currency ? ` ${model.def.currency}` : ''
   const price =
     Math.abs(delta) >= 0.5 ? `, for ${fmt(Math.abs(delta))}${unit} a month ${delta > 0 ? 'more' : 'less'}` : ''

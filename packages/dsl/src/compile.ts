@@ -539,7 +539,7 @@ function checkCapacity(v: unknown): void {
  */
 function grounded(model: Definition['model'], r: CheckResult): CheckResult {
   const e = r.expectation
-  if (e.flow != null || e.lost != null || (e.underTarget == null && e.notFull == null)) return r
+  if (e.flow != null || e.lost != null || e.cost != null || (e.underTarget == null && e.notFull == null)) return r
   const scenario = e.scenario == null ? undefined : model.scenarios.find((s) => s.label === e.scenario)
   // a domain with its parts by name is no value of the control: check() held each part, and so each is read here
   const parts = Object.keys(
@@ -3540,7 +3540,9 @@ export class Compiler {
       }
       e.cost = v
       const under = this.constProp<number>(b, 'underTarget')
-      if (under != null) e.underTarget = under
+      if (under != null && !(under > 0 && Number.isFinite(under)))
+        this.report.error('out-of-range', this.prop(b, 'underTarget')!.value, 'underTarget is a load multiple above 0')
+      else if (under != null) e.underTarget = under
       const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
       if (severity) e.severity = severity
       return e

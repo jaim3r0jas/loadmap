@@ -64,10 +64,9 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
   // what each scenario costs a month, and the change from the first, where a box has a cost
   const costs = c.rows.some((r) => r.cost != null)
   const unit = model.def.currency ? ` ${model.def.currency}` : ''
-  const first = c.rows[0]!.cost
   const money = (r: (typeof c.rows)[number]) => {
     if (r.cost == null) return '—'
-    const d = r === c.rows[0] || first == null ? 0 : r.cost - first
+    const d = r.costChange ?? 0
     return `${fmt(r.cost)}${unit}${Math.abs(d) >= 0.5 ? ` (${d > 0 ? '+' : '−'}${fmt(Math.abs(d))})` : ''}`
   }
   return (

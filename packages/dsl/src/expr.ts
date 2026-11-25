@@ -161,7 +161,7 @@ export const RESERVED = new Set<string>([
  * Functions and tables a version added (`mod(a, b)`, `out.<stage>`): a definition stamped before may still give the
  * name to a parameter, a let or a fit, so taking it is refused only from that version on.
  */
-export const BUILTIN_SINCE: Readonly<Record<string, string>> = { mod: '1.2', out: '1.2' }
+export const BUILTIN_SINCE: Readonly<Record<string, string>> = { mod: '1.2', out: '1.2', running: '1.8' }
 
 const WORD: Record<Type, string> = {
   number: 'a number',

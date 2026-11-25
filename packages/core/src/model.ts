@@ -280,7 +280,8 @@ export interface ComponentDef<X> {
   describe?: string | ((ctx: X) => string)
   /**
    * What it costs a month, in the model's `currency`: a formula of the values, where `running` is the pods its pools
-   * run at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. A component
+   * run at this load (an autoscaled pool costs what it runs), its members across a domain (those left with a part
+   * down), or 1. It is given beside the values: a parameter named `running` is not seen here. A component
    * switched off costs nothing. `ev.cost` sums them; `compare()` puts the total in each scenario's row.
    */
   cost?: (ctx: X & { running: number }) => number
@@ -1237,6 +1238,16 @@ export function defineModel<
 
   // the components with a monthly cost, and what they cost at a set of values
   const costed = componentIds.filter((c) => def.components[c].cost != null)
+  // the pools each costed component runs: fixed with the definition
+  const poolsOf = new Map(
+    costed.map((c) => [
+      c,
+      stageIds.filter((s) => {
+        const st = def.stages[s] as StageDef
+        return st.kind === 'workers' && st.component === c
+      }),
+    ]),
+  )
   const costOf = (
     ctx: LooseValues,
     stages: Readonly<Record<string, ResolvedStage>>,
@@ -1252,10 +1263,16 @@ export function defineModel<
         continue
       }
       // what it runs at this load: its pools' pods, the members left across a domain, or one
-      const pools = Object.values(stages).filter((s) => s.kind === 'workers' && s.component === c)
+      const pools = poolsOf.get(c)!
+      const across = def.components[c].across
+      const members =
+        across == null ? 1 : typeof across.members === 'function' ? across.members(ctx as any) : across.members
       const running = pools.length
-        ? pools.reduce((a, s) => a + (s.kind === 'workers' ? s.running : 0), 0)
-        : (r.out?.left ?? 1)
+        ? pools.reduce((a, s) => {
+            const st = stages[s]
+            return a + (st?.kind === 'workers' ? st.running : 0)
+          }, 0)
+        : (r.out?.left ?? members)
       const v = def.components[c].cost!({ ...ctx, running } as never)
       if (!(v >= 0 && Number.isFinite(v)))
         throw new Error(`loadmap: component "${c}" costs ${v} a month: a number from 0`)

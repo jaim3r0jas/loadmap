@@ -85,3 +85,65 @@ describe('what a design costs', () => {
     expect(() => shop({ expect: [{ cost: 10, flow: 'requests' }] })).toThrow('holds a cost: no flow')
   })
 })
+
+describe('a cost at the edges', () => {
+  it('counts every member across a domain, and those left with a part down', () => {
+    const db = defineModel({
+      load: p.load({ max: 10 }),
+      domains: { zone: { name: 'Zone', count: 3 } },
+      flows: { w: { rate: ({ load }) => 100 * load } },
+      components: {
+        db: {
+          name: 'DB',
+          capacity: measured(1000, 'req/s'),
+          across: { domain: 'zone', members: 3 },
+          cost: ({ running }) => running * 500,
+          over: 'x',
+        },
+      },
+      stages: { db: pass('db') },
+      routes: { w: ['db'] },
+    })
+    expect(db.evaluate({ load: 1 }).cost!.total).toBe(1500)
+    expect(db.evaluate({ load: 1, down: 'zone' } as never).cost!.total).toBe(1000)
+  })
+
+  it('holds a budget on the pessimistic edge: a capacity at its low bound runs more pods', () => {
+    const pool = (within: number, e: object) =>
+      defineModel({
+        load: p.load({ max: 20 }),
+        currency: '€',
+        flows: { r: { rate: ({ load }) => 100 * load } },
+        components: {
+          api: {
+            name: 'API',
+            demand: ({ flows }) => flows.r,
+            capacity: measured(1200, 'req/s', within ? { within } : undefined),
+            cost: ({ running }) => running * 140,
+            over: 'x',
+          },
+        },
+        stages: { api: workers('api', { perPod: 4, autoscale: { min: 2, max: 12, target: 0.7 } }) },
+        routes: { r: ['api'] },
+        expect: [e] as never,
+      })
+    // at 3× five pods run at the stated capacity, seven at 30 % less
+    expect(check(pool(0, { cost: 700, underTarget: 3 }))[0]).toMatchObject({ outcome: 'pass', cost: 700 })
+    expect(check(pool(0.3, { cost: 1000, underTarget: 3 }))[0]).toMatchObject({
+      outcome: 'pass',
+      message: 'it costs 980 € a month at 3×, within 1,000 €',
+    })
+    expect(check(pool(0.3, { cost: 700, underTarget: 3 }))[0]).toMatchObject({
+      outcome: 'inconclusive',
+      reasons: ['holds only at the high edge of a ±'],
+    })
+    expect(check(pool(0.3, { cost: 400, underTarget: 3 }))[0]!.outcome).toBe('fail')
+  })
+
+  it('gives each row its change from the first', () => {
+    expect(compare(shop({ currency: '€' }), 5).rows.map((r) => [r.cost, r.costChange])).toEqual([
+      [1440, 0],
+      [1720, 280],
+    ])
+  })
+})
