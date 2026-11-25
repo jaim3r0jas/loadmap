@@ -568,6 +568,7 @@ export interface Model<P = any, F extends string = string, C extends string = st
 }
 
 const RESERVED = ['load', 'flows', 'at', 'demand', 'util', 'derived']
+const NONE: readonly never[] = []
 
 /** An expectation under its current names: `target` and `full` were its names for `underTarget` and `notFull`. */
 export function expectationNamed<C extends string>(e: Expectation<C>): Expectation<C> {
@@ -1015,22 +1016,32 @@ export function defineModel<
       const broken = failsAt(s)
       if (broken > 0) stages[s] = { ...stages[s], fails: broken } as ResolvedStage
     }
-    for (const st of Object.values(stages) as ResolvedStage[])
-      if (st.kind === 'fanout')
-        for (const b of Object.values(st.to).flat()) {
-          // one stage: where the copy ends. A chain goes on through a queue and its workers too, never through a split,
-          // another fan-out or back onto a route
-          for (const s of b.stages) {
-            const to = (stages as Record<string, ResolvedStage>)[s]
-            const no = !to || to.kind === 'fanout' || to.kind === 'split' || to.kind === 'lost'
-            if (no || (b.stages.length === 1 && (to.kind === 'queue' || to.kind === 'workers')))
-              throw new Error(
-                b.stages.length === 1
-                  ? `loadmap: fan-out "${st.id}" branches to "${s}", which is not a sink, store or pass stage`
-                  : `loadmap: fan-out "${st.id}" branches through "${s}", which is ${to ? `a ${to.kind === 'fanout' ? 'fan-out' : to.kind}` : 'no stage'}: a branch goes through queues, pools, pass, cache, limit, store and sink stages`,
-              )
-          }
+    for (const st of Object.values(stages) as ResolvedStage[]) {
+      if (st.kind !== 'fanout') continue
+      // a branch that goes on never comes back: a stage of the flow's own route would count the copies with the units
+      for (const [f, list] of Object.entries(st.to))
+        for (const b of list)
+          if (b.stages.length > 1)
+            for (const s of b.stages)
+              if ((def.routes as Record<string, readonly string[]>)[f]?.includes(s))
+                throw new Error(
+                  `loadmap: fan-out "${st.id}" branches "${f}" back through "${s}", a stage of its own route: a branch never comes back`,
+                )
+      for (const b of Object.values(st.to).flat())
+        for (const s of b.stages) {
+          const to = (stages as Record<string, ResolvedStage>)[s]
+          // one stage is where the copy ends, refused as it always was and no more. A chain goes on through a queue
+          // and its workers too, and through nothing that ends, splits or copies again
+          const one = b.stages.length === 1
+          const no = !to || to.kind === 'fanout' || to.kind === 'split' || (!one && to.kind === 'lost')
+          if (no || (one && (to.kind === 'queue' || to.kind === 'workers')))
+            throw new Error(
+              one
+                ? `loadmap: fan-out "${st.id}" branches to "${s}", which is not a sink, store or pass stage`
+                : `loadmap: fan-out "${st.id}" branches through "${s}", which is ${to ? `a ${to.kind === 'fanout' ? 'fan-out' : to.kind}` : 'no stage'}: a branch goes through queues, pools, pass, cache, limit, store and sink stages`,
+            )
         }
+    }
     return stages
   }
 
@@ -1048,6 +1059,7 @@ export function defineModel<
       paths,
       held,
       holders,
+      passes,
       latencies,
       losts,
       plain,
@@ -1109,9 +1121,7 @@ export function defineModel<
       const h = off ? null : held(c)
       if (h) {
         const on = holders(c)
-        components[c].held = Object.fromEntries(
-          Object.entries(h).filter(([f]) => paths(f).some((p) => p.stages.some((s) => on.includes(s)))),
-        )
+        components[c].held = Object.fromEntries(Object.entries(h).filter(([f]) => on.some((s) => passes(f, s))))
       }
     }
 
@@ -1773,20 +1783,26 @@ function contextAt(
     return (st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1) * (1 - failsAt(s))
   }
   /** Copies per unit of a flow that a fan-out at t sends to s: 0 unless t is a fan-out with a branch there. */
-  const copies = (t: string, f: string, s: string) => {
+  /** A fan-out's branches for a flow, each as the stages its copies go through and its copies: none for any other stage. */
+  const copiedTo = (t: string, f: string): readonly { stages: readonly string[]; share: number }[] => {
     const st = stages[t]!
-    if (st.kind !== 'fanout') return 0
-    const to = memo(`branches of ${t}`, () => dyn(st.to, ctx)) as
-      | readonly Branch[]
-      | Readonly<Record<string, readonly Branch[]>>
+    if (st.kind !== 'fanout') return NONE
+    return memo(`branches of ${t} for ${f}`, () => {
+      const to = memo(`branches of ${t}`, () => dyn(st.to, ctx)) as
+        | readonly Branch[]
+        | Readonly<Record<string, readonly Branch[]>>
+      const list = (Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? [])) as Branch[]
+      return list.map((x) => ({ stages: chainOf(x), share: x.share }))
+    })
+  }
+  const copies = (t: string, f: string, s: string) => {
     let n = 0
-    for (const b of (Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? [])) as Branch[]) {
+    for (const b of copiedTo(t, f)) {
       // a branch that goes on: a copy reaches a stage further along it unless one before answered it or turned it away
-      const chain = chainOf(b)
-      const at = chain.indexOf(s)
+      const at = b.stages.indexOf(s)
       if (at < 0) continue
       let share = b.share
-      for (const before of chain.slice(0, at)) share *= onward(before)
+      for (let k = 0; k < at; k++) share *= onward(b.stages[k]!)
       n += share
     }
     return n
@@ -2660,17 +2676,14 @@ function contextAt(
           (i === p.stages.length - 1 && along(s, f).some((c) => c.some((x, k) => x === from && c[k + 1] === to))),
       ),
     )
-  /** A fan-out's branches for a flow, each as the stages its copies go through: none for any other stage. */
-  const along = (t: string, f: string): readonly (readonly string[])[] => {
-    const st = stages[t]!
-    if (st.kind !== 'fanout') return []
-    const to = memo(`branches of ${t}`, () => dyn(st.to, ctx)) as
-      | readonly Branch[]
-      | Readonly<Record<string, readonly Branch[]>>
-    return ((Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? [])) as Branch[])
-      .filter((b) => b.share > 0)
-      .map(chainOf)
-  }
+  /** The stages of each of a fan-out's branches that has copies, for a flow. */
+  const along = (t: string, f: string): readonly (readonly string[])[] =>
+    copiedTo(t, f)
+      .filter((x) => x.share > 0)
+      .map((x) => x.stages)
+  /** A flow's units or a fan-out's copies of them reach the stage: it is on one of its ways, or on a branch of one. */
+  const passes = (f: string, s: string) =>
+    paths(f).some((p) => p.stages.includes(s) || along(p.stages.at(-1) ?? '', f).some((c) => c.includes(s)))
   /** A fan-out's copy goes straight to this stage: it is the first of a branch with copies. */
   const first = (t: string, f: string, s: string) => along(t, f).some((c) => c[0] === s)
   /**
@@ -3029,6 +3042,7 @@ function contextAt(
     },
     held,
     holders,
+    passes,
     timedOut,
     plain,
     spread,
@@ -3280,8 +3294,15 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
     const r = routes[f] ?? []
     if (r.some((s, i) => s === from && r[i + 1] === to)) return true
     if (r.some((s) => stages[s]?.kind === 'split')) return true
-    // a fan-out's copies, and where they go on to: its branches are worked out from the values
-    return stages[r.at(-1) ?? '']?.kind === 'fanout'
+    // a fan-out's copies, and where they go on to: from it to a branch's first stage, or along a branch. Branches
+    // worked out from the values may go anywhere
+    const last = stages[r.at(-1) ?? '']
+    if (last?.kind !== 'fanout') return false
+    if (from === r.at(-1) || typeof last.to === 'function') return true
+    const list = (
+      Array.isArray(last.to) ? last.to : ((last.to as Record<string, readonly Branch[]>)[f] ?? [])
+    ) as Branch[]
+    return list.some((b) => chainOf(b).some((s, i, c) => s === from && c[i + 1] === to))
   }
   const may = (cn: ConnectionDef) => flowIds.filter((f) => mayGo(f, cn.from, cn.to))
   // a connection that only counts what it holds open needs no flow on its hop: a pool keeps connections it may not use

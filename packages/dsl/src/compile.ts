@@ -3918,17 +3918,20 @@ export class Compiler {
           if (!flows.has(f.name))
             this.report.error('unknown-name', f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
           const stages = through.map((n) => resolve(n, 'stage'))
+          let fits = true
           for (const [k, stage] of stages.entries()) {
             if (!stage) continue
             reached.add(stage)
             this.branchAt.set(`${f.name}\u0000${stage}`, e)
             const kind = this.kinds.get(stage)
-            if (through.length > 1 && (kind === 'fanout' || kind === 'split' || kind === 'lost'))
+            if (through.length > 1 && (kind === 'fanout' || kind === 'split' || kind === 'lost')) {
+              fits = false
               this.report.error(
                 'bad-route',
                 through[k]!,
                 `a branch goes on through queues, pools and stages that end it, not through the ${kind === 'fanout' ? 'fan-out' : kind} "${stage}"`,
               )
+            }
           }
           const said = through.map((n) => n.name).join(' -> ')
           if (e.colon) {
@@ -3942,7 +3945,7 @@ export class Compiler {
           }
           if (!e.value) this.report.error('bad-route', e, 'how many copies per unit?', `${f.name} -> ${said}: 1`)
           if (e.body) this.report.error('bad-route', e.bodySpan ?? e, 'a branch has no block')
-          if (stages.every((x) => x) && e.value && flows.has(f.name))
+          if (fits && stages.every((x) => x) && e.value && flows.has(f.name))
             branches.push([f.name, stages as string[], this.dyn<number>(e.value, 'number')])
         }
         const build = (ctx: any) => {

@@ -79,5 +79,9 @@ describe('a fan-out branch that goes on', () => {
       'fan-out "bus" branches to "mailQueue", which is not a sink, store or pass stage',
     )
     expect(() => shop({ to: [] }).evaluate()).toThrow('fan-out "bus" has a branch with no stage')
+    // a branch never comes back onto the flow's own route
+    expect(() => shop({ to: ['mailQueue', 'bus'] }).evaluate()).toThrow(
+      'fan-out "bus" branches "orders" back through "bus", a stage of its own route',
+    )
   })
 })

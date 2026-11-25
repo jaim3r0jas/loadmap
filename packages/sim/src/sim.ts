@@ -121,6 +121,7 @@ export class Sim {
   #lost = new Map<string, string>() // `${stage}/${outcome}` → the lost box that takes what the stage loses so
   #late = new Map<string, number>() // `${flow}/${path}` or `${flow}/${path}/${cache}` → the share of those too slow
   #inflow = new Map<string, number>() // `${stage}/${flow}` → units per second reaching that stage
+  #branch = new Map<string, readonly string[]>() // `${queue}/${flow}` → the fan-out branch the queue is on
   #capacity = new Map<string, number>() // stage → units per second it can drain
   #spawn = new Map<string, number>()
   #nextId = 1
@@ -204,6 +205,7 @@ export class Sim {
         for (const w of ev.latency[f]?.ways ?? [])
           this.#late.set(`${f}/${w.path}${w.answeredAt ? `/${w.answeredAt}` : ''}`, w.timedOut)
     this.#inflow.clear()
+    this.#branch.clear()
     for (const f of this.#model.flowIds) {
       const ways = ev.paths[f] ?? []
       for (const way of ways) {
@@ -220,6 +222,8 @@ export class Sim {
           const u = reader == null ? null : ev.components[reader]?.util
           if (s.kind === 'queue' && ev.overload[f]?.drop && u != null && u > full) rate *= full / u
           if (s.kind === 'cache') rate *= 1 - s.hit
+          // what the stage works on and fails goes no further
+          rate *= 1 - (s.fails ?? 0)
           // a branch that goes on: what reaches each of its stages, so a queue on it fills as one on a route does
           if (s.kind === 'fanout')
             for (const b of s.to[f] ?? []) {
@@ -227,8 +231,10 @@ export class Sim {
               let copies = rate * (1 - s.shed) * b.share
               for (const t of b.stages) {
                 this.#inflow.set(`${t}/${f}`, (this.#inflow.get(`${t}/${f}`) ?? 0) + copies)
+                // the queue's reader on this branch: the next stage of it
+                if (ev.stages[t]?.kind === 'queue') this.#branch.set(`${t}/${f}`, b.stages)
                 const on = ev.stages[t] as ResolvedStage
-                copies *= 1 - this.#shedOf(t, f)
+                copies *= (1 - this.#shedOf(t, f)) * (1 - (on.fails ?? 0))
                 if (on.kind === 'cache') copies *= 1 - on.hit
               }
             }
@@ -372,12 +378,9 @@ export class Sim {
       this.#queues.set(q.id, qs)
       for (const f of this.#model.flowIds) {
         // the stage after a queue is the same on every way through it: the ways part only at a split
+        // on a way, or on a fan-out's branch that goes on: its reader is the next stage there
         const route =
-          (ev.paths[f] ?? []).find((p) => p.stages.includes(q.id))?.stages ??
-          // or on a fan-out's branch that goes on: its reader is the next stage of the branch
-          (Object.values(ev.stages) as ResolvedStage[])
-            .flatMap((t) => (t.kind === 'fanout' ? (t.to[f] ?? []) : []))
-            .find((x) => x.stages.length > 1 && x.stages.includes(q.id))?.stages
+          (ev.paths[f] ?? []).find((p) => p.stages.includes(q.id))?.stages ?? this.#branch.get(`${q.id}/${f}`)
         if (!route) continue
         const fq = qs.get(f) ?? { cohorts: [], s: emptyQueue() }
         qs.set(f, fq)
@@ -673,8 +676,9 @@ export class Sim {
       return true
     }
     const reject = (d: Particle, outcome: 'rejected' | 'timedout' | 'failed' = 'rejected', at = d.to.stage) => {
-      // a copy is no unit: nobody sends it again, and no fallback serves it
-      if (d.chain) return lose(d, outcome, at)
+      // a copy is no unit: nobody sends it again, no fallback serves it, and no lost box counts it. It fades where it
+      // is, as a copy to a one-stage branch does
+      if (d.chain) return fade(d, outcome, 0.6)
       // the fallback's own units are no attempts: what it turns away is lost
       // a hop's caller sends it again first; a timeout is the client's, so only the client's retry answers it
       const room = !d.fallback && this.particles.length + born.length < this.#o.maxParticles
@@ -823,7 +827,7 @@ export class Sim {
    * reads, the lag on average over the partitions. Without an exclusive connection after the queue, the lag.
    */
   #heat(d: Particle): number {
-    const route = this.#way(d.flow, d.path, d.fallback)
+    const route = d.chain ?? this.#way(d.flow, d.path, d.fallback)
     const next = route[d.leg + 1]
     const s = next == null ? undefined : this.#ev.stages[next]
     const a = s?.kind === 'workers' ? s.assignment : undefined
