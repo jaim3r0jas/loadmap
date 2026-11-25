@@ -19,6 +19,7 @@ import {
   parseAsOf,
   pass,
   published,
+  type QuotaWindow,
   queue,
   type RetryRule,
   type ScalingFit,
@@ -4065,11 +4066,11 @@ export class Compiler {
         return component ? pass(component, { ...base, ...(shed ? { shed } : {}) }) : needs()
       }
       case 'limit': {
-        const per = this.constProp<'minute' | 'hour' | 'day' | 'month'>(b, 'per')
+        const per = this.constProp<QuotaWindow>(b, 'per')
         if (per && component) this.windowed.set(component, per)
         const burst = this.dynProp<number>(b, 'burst', 'number', (v) => {
-          if (typeof v !== 'number' || !(v >= 0) || !Number.isFinite(v))
-            throw new Error(`a burst is a number of units from 0, not ${String(v)}`)
+          if (typeof v !== 'number' || !(v > 0) || !Number.isFinite(v))
+            throw new Error(`a burst is a number of units above 0, not ${String(v)}`)
         })
         if (burst != null && per) {
           this.report.error(

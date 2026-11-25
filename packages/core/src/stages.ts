@@ -268,7 +268,7 @@ export function limit<const C extends string>(
       `loadmap: a limit of "${component}" is a quota per ${o.per} or takes a burst: a quota counts a window`,
     )
   if (o.per != null && !Object.hasOwn(QUOTA_SECONDS, o.per))
-    throw new Error(`loadmap: limit "${component}" is per hour, day or month, not "${o.per}"`)
+    throw new Error(`loadmap: limit "${component}" is per ${Object.keys(QUOTA_SECONDS).join(', ')}, not "${o.per}"`)
   return { kind: 'limit', component, ...o }
 }
 

@@ -111,7 +111,9 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
         if (!(parent === 'preset' && s.key.name === 'lasts' && paramLasts))
           add(`property ${parent} ${s.key.name}`, spec?.since, `"${s.key.name}:"`, s.key)
         if (s.as) add('as', SYNTAX.as.since, SYNTAX.as.what, s.as)
-        if (parent === 'limit' && s.key.name === 'per' && s.value.t === 'id' && s.value.name === 'minute')
+        // the window is a word, bare or quoted
+        const word = s.value.t === 'id' ? s.value.name : s.value.t === 'str' ? s.value.value : undefined
+        if (parent === 'limit' && s.key.name === 'per' && word === 'minute')
           add('perMinute', SYNTAX.perMinute.since, SYNTAX.perMinute.what, s.value)
         if (parent === '' && s.key.name === 'direction' && s.value.t === 'id' && s.value.name === 'auto')
           add('autoDirection', SYNTAX.autoDirection.since, SYNTAX.autoDirection.what, s.value)

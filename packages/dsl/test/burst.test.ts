@@ -35,9 +35,10 @@ describe('a limit with a bucket', () => {
     expect(format(SRC).text).toBe(SRC)
     expect(errors(SRC)).toEqual([])
     const m = compile(SRC).definition!.model
-    expect(m.evaluate({ load: 1 } as never).components.limiter!.burst).toEqual({ size: 500 })
+    expect(m.evaluate({ load: 1 } as never).components.limiter!.burst).toEqual({ size: 500, passes: 50 })
     expect(m.evaluate({ load: 6 } as never).components.limiter!.burst).toEqual({
       size: 500,
+      passes: expect.closeTo(100, 9),
       lasts: expect.closeTo(2.5, 9),
     })
   })
@@ -50,7 +51,7 @@ describe('a limit with a bucket', () => {
       'error: bad-value: a quota per minute counts its window already: a burst is for a rate limit',
     )
     expect(errors(SRC.replace('burst: 500', 'burst: -5'))).toEqual([
-      'error: bad-value: a burst is a number of units from 0, not -5',
+      'error: bad-value: a burst is a number of units above 0, not -5',
     ])
   })
 })
@@ -60,8 +61,12 @@ describe('a quota per minute', () => {
     expect(errors(perMinute)).toEqual([])
     const ev = compile(perMinute).definition!.model.evaluate({ load: 3 } as never)
     expect(ev.components.limiter!.quota).toEqual({ per: 'minute', goneAfter: expect.closeTo(40, 9) })
-    expect(errors(perMinute.replace('loadmap 1.8', 'loadmap 1.7'))).toEqual([
-      'error: language-version: a quota per minute is from loadmap 1.8; this definition says loadmap 1.7 | write "loadmap 1.8" on the first line',
+    const old =
+      'error: language-version: a quota per minute is from loadmap 1.8; this definition says loadmap 1.7 | write "loadmap 1.8" on the first line'
+    expect(errors(perMinute.replace('loadmap 1.8', 'loadmap 1.7'))).toEqual([old])
+    // written quoted, too
+    expect(errors(perMinute.replace('loadmap 1.8', 'loadmap 1.7').replace('per: minute', 'per: "minute"'))).toEqual([
+      old,
     ])
   })
 

@@ -401,10 +401,10 @@ export interface ComponentResult<C extends string = string> {
   /** For a quota (a limit `per` a window): the window, and past the quota how long into it the quota is gone. */
   quota?: { per: QuotaWindow; goneAfter?: number }
   /**
-   * For a rate limit with a bucket: its size in units, and past the limit how many seconds the bucket lets everything
-   * through before the limit cuts in (size ÷ what arrives above the limit a second).
+   * For a rate limit with a bucket: its size in units, what the limit lets through a second, and past the limit how
+   * many seconds the bucket lets everything through before the limit cuts in (size ÷ what arrives above it a second).
    */
-  burst?: { size: number; lasts?: number }
+  burst?: { size: number; passes: number; lasts?: number }
 }
 
 /** A component with a part of its domain down: "4 of 6 pods left". */
@@ -417,6 +417,9 @@ export interface Outage {
   members: number
   left: number
 }
+
+/** The windows a quota reads at the peak: short enough that the busiest one is what counts. */
+const PEAK_WINDOWS: ReadonlySet<QuotaWindow> = new Set(['minute', 'hour'])
 
 /** How many parts a domain has: its count, or its named parts. */
 function partCount(d: Domain): number {
@@ -777,9 +780,16 @@ export function defineModel<
       quotaOf.set(c, [...windows][0]!)
     }
     const buckets = runs.flatMap((s) => (s.kind === 'limit' && s.burst != null ? [s.burst] : []))
-    if (buckets.length > 1)
-      throw new Error(`loadmap: component "${c}" has a burst on ${buckets.length} limits: give it on one`)
-    if (buckets.length) burstOf.set(c, buckets[0]!)
+    if (buckets.length) {
+      // the bucket spends what reaches the limit above it: the component counts that limit's units and nothing else
+      if (runs.length > 1)
+        throw new Error(`loadmap: component "${c}" has a burst on a limit: it counts that limit alone, no other stage`)
+      if (d.demand || holds)
+        throw new Error(
+          `loadmap: component "${c}" has a burst on a limit: it counts what reaches the limit, so no demand or held`,
+        )
+      burstOf.set(c, buckets[0]!)
+    }
     if (holds && !d.on?.length && !used)
       throw new Error(`loadmap: component "${c}" is held on no stage: name them with on`)
     if (d.fills != null) {
@@ -1225,11 +1235,14 @@ export function defineModel<
       const bucket = off ? undefined : burstOf.get(c)
       if (bucket != null) {
         const size = dyn(bucket, ctx as LooseValues)
-        if (!(size >= 0 && Number.isFinite(size)))
-          throw new Error(`loadmap: the burst of "${c}" is ${size} units: a number from 0`)
-        // what arrives above the limit a second: the bucket lasts its size over that
-        const excess = util != null && util > 1 ? (components[c].demand ?? 0) * (1 - 1 / util) : 0
-        components[c].burst = { size, ...(excess > 0 ? { lasts: size / excess } : {}) }
+        if (!(size > 0 && Number.isFinite(size)))
+          throw new Error(`loadmap: the burst of "${c}" is ${size} units: a number above 0`)
+        // what the limit lets through, and what arrives above that a second: as the stage turns away, from full on
+        // and with an outage's members left. The bucket lasts its size over the excess
+        const demand = components[c].demand ?? 0
+        const passes = demand * (1 - rejectShare(util, thresholds.full))
+        const excess = demand - passes
+        components[c].burst = { size, passes, ...(excess > 0 ? { lasts: size / excess } : {}) }
       }
       const sp = off ? null : spread(c)
       if (sp?.text) components[c].spread = { factor: sp.factor, text: sp.text }
@@ -2983,7 +2996,7 @@ function contextAt(
             per == null
               ? arriving(s, f)
               : // in the averaged context the rates are averages already
-                arriving(s, f) * QUOTA_SECONDS[per] * (per === 'hour' || averaged ? 1 : averageOf(f))
+                arriving(s, f) * QUOTA_SECONDS[per] * (PEAK_WINDOWS.has(per) || averaged ? 1 : averageOf(f))
       }
       return total
     }
