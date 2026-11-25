@@ -397,6 +397,28 @@ thing on any day.
 A share link carries the scenarios in the text and the shown one in its values (`&gateways=2&pods=6`), so it opens
 with that scenario's button pressed.
 
+A box can say what it costs a month (from `loadmap 1.8`): `cost: running * 140`, where `running` is the pods its pool
+runs at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. `currency: "€"` at
+the top says what it is counted in. A box switched off costs nothing. The scenarios table then has a "Cost a month"
+column with each scenario's change from the first, the comparison says what the headroom costs ("Proposed buys more
+headroom: …, for 2,300 € a month more"), and `expect { cost: 5_000; underTarget: 3× }` holds a budget at that load.
+In TypeScript, `currency` on the model, `cost: ({ running }) => running * 140` on a component, and `ev.cost`.
+
+```loadmap
+currency: "€"
+
+pool api "API" {
+  perPod: 4
+  autoscale { min: 2; max: 12; target: 0.7 }
+  demand: flows.requests
+  capacity: measured(1_200, "req/s", "100 a pod")
+  cost: running * 140
+  over: "requests queue"
+}
+
+expect "Under 2,000 € a month at 3×" { cost: 2_000; underTarget: 3× }
+```
+
 ### How sure, and what must hold
 
 A capacity says how sure it is with a `+-` (±) in its value, as a share (`30%`) or in its unit (`+- 1`). `±` and
@@ -2041,7 +2063,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up; `cold` on a preset and `warms` on a cache | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up; `cold` on a preset and `warms` on a cache; `cost` on a box, `currency`, and `cost` in an `expect` | |
 
 ## In code
 
@@ -2168,6 +2190,7 @@ A loadmap definition.
 | --- | --- | --- |
 | `title` | string, constant | The heading above the diagram. |
 | `assume` | string, constant | A line added before the generated assumptions. |
+| `currency` | string, constant | What a cost is counted in, as a reader writes it after the number: "€", "USD". From loadmap 1.8. |
 | `searchMax` | number, constant | The highest load multiple the limits search. Default 2000. |
 
 Holds: `load`, `param`, `preset`, `scenario`, `growth`, `expect`, `step`, `let`, `fit`, `published`, `metric`, `measure`, `flow`, `component`, `node`, `cluster`, `pool`, `connection`, `tier`, `domain`, `thresholds`, `view`, `include`, `part`, `library`, `import`, `extends`, `subsystem`.
@@ -2401,6 +2424,7 @@ After the keyword: [label].
 | `component` | component, constant | One component; the first limit without one. |
 | `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. With lost, the flow whose losses count. |
 | `to` | route, constant | With flow, and lost or a percentile: a stage on one of the flow's fan-out branches. The expect then holds that branch up to the stage, the copies it loses or the time they take from the fan-out, not the flow itself: `flow: orders; to: mailers; lost: 1%`. From loadmap 1.8. |
+| `cost` | number, constant | A budget: what the boxes with a cost cost a month stays at or under this, at the scenario's values, or at underTarget with one (an autoscaled pool costs what it runs at that load): `cost: 5_000`. From loadmap 1.8. |
 | `lost` | share, constant | What is lost for good (turned away, dropped, failed or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one. From loadmap 1.8. |
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
 | `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
@@ -2679,6 +2703,7 @@ After the keyword: [id] [label].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `cost` | number, formula of `running` | What it costs a month, in the model's currency: running * 140. Inside it, running is the pods its pool runs at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. A box switched off costs nothing. The scenarios table adds a cost a month to each row, and expect { cost: 5_000 } holds a budget. From loadmap 1.8. |
 | `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
@@ -2755,6 +2780,7 @@ After the keyword: id [label] [sub].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `cost` | number, formula of `running` | What it costs a month, in the model's currency: running * 140. Inside it, running is the pods its pool runs at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. A box switched off costs nothing. The scenarios table adds a cost a month to each row, and expect { cost: 5_000 } holds a budget. From loadmap 1.8. |
 | `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
@@ -2792,6 +2818,7 @@ After the keyword: id [label] [sub].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `cost` | number, formula of `running` | What it costs a month, in the model's currency: running * 140. Inside it, running is the pods its pool runs at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. A box switched off costs nothing. The scenarios table adds a cost a month to each row, and expect { cost: 5_000 } holds a budget. From loadmap 1.8. |
 | `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |
@@ -2833,6 +2860,7 @@ After the keyword: id [label] [sub].
 | `demand` | number, formula | What the component must handle, in its capacity's unit. Without one: the units per second reaching its stages. |
 | `held` | number in seconds, formula | The seconds each unit holds one of its slots (a connection, a session); per flow in a held { … } block. Its demand is then the slots in use: what reaches its stages × held, and its capacity counts slots. |
 | `service` | number in seconds, formula | The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99). |
+| `cost` | number, formula of `running` | What it costs a month, in the model's currency: running * 140. Inside it, running is the pods its pool runs at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. A box switched off costs nothing. The scenarios table adds a cost a month to each row, and expect { cost: 5_000 } holds a budget. From loadmap 1.8. |
 | `fails` | share, formula of parameters | The share of the units its stages work on that fail there, whatever the load: a bug, a dependency that errors, a bad deploy. They are lost as failed (a lost box takes them), are sent again when the flow retries, count for its breaker, and go to its fallback; the stages after it are reached by the rest. `fails: 2%`. From loadmap 1.8. |
 | `on` | route, constant | The stages whose units hold its slots, a -> b; without it, the stages it runs. |
 | `through` | route, constant | A stretch of the way, from one stage through another: `through: api -> payments`. A unit holds its slot for the time it takes there too, on top of held: each stage's time at its utilization, and the delays between them. So the slots run out when a dependency slows, before the box itself is busy. A flow's timeout bounds it. From loadmap 1.8. |

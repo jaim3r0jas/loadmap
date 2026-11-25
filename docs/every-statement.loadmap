@@ -15,6 +15,8 @@ view {
 }
 searchMax: 120
 assume: "1× is today's busiest hour; the numbers are made up."
+# what a cost is counted in
+currency: "€"
 
 thresholds { target: 0.7; full: 1 }
 
@@ -40,6 +42,8 @@ expect "Orders answer in a second" { flow: orders; p99: 1 }
 expect "Orders lose nothing today" { flow: orders; lost: 0% }
 # a fan-out branch has figures of its own: to names a stage on it, and the expect holds the branch up to there
 expect "Every audited event is archived" { flow: events; to: archive; lost: 0% }
+# a budget: what the boxes with a cost cost a month at 2×
+expect "The API stays under 2,000 € a month" { cost: 2_000; underTarget: 2× }
 # what a moment leaves in a queue: how old its oldest unit is when the preset ends, and how soon it is empty again
 expect "The topic is read again an hour after a sale day" { preset: "Sale day"; queue: topic; lag: 2min; clears: 1h }
 
@@ -175,6 +179,8 @@ pool api "API" `${pods} pods` {
   short: "the API"
   demand: apiCores(at.api.orders + flows.signups)
   capacity: measured(pods * 1, "cores", "pod CPU limit")
+  # what it costs a month: 140 € a pod it runs
+  cost: running * 140
   over: "orders queue in the API"
   describe: `${pods} pods, 1 core each`
 }

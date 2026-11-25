@@ -10,6 +10,7 @@ const SCOPE: Record<PropSpec['scope'], string> = {
   i: 'formula of `i`',
   value: 'formula of `value`',
   const: 'constant',
+  cost: 'formula of `running`',
 }
 
 /** The statement reference of docs/dsl.md, written from the schema table, so the two cannot drift apart. */

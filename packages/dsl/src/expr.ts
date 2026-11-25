@@ -197,7 +197,7 @@ class Compiler {
   ) {}
 
   canRead(e: Span, what: string): boolean {
-    const allowed = this.scope === 'ctx' || (this.scope === 'values' && what === 'a parameter')
+    const allowed = this.scope === 'ctx' || this.scope === 'cost' || (this.scope === 'values' && what === 'a parameter')
     if (allowed) return true
     const here =
       this.scope === 'const'
@@ -292,6 +292,9 @@ class Compiler {
   }
 
   name(e: Span, name: string): Formula {
+    // in a cost: the pods or members the component runs. Anywhere else a parameter of that name, if there is one
+    if (name === 'running' && this.scope === 'cost')
+      return { type: 'number', constant: false, run: (c) => (c as { running: number }).running }
     if (name === 'i' || name === 'value') {
       if (this.scope !== name) {
         this.report.error(

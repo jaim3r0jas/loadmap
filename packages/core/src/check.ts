@@ -69,6 +69,11 @@ export interface Expectation<C extends string = string> {
   lag?: number
   /** After the moment, at the default load, the queues are empty again within this many seconds. */
   clears?: number
+  /**
+   * A budget: what the components with a cost cost a month stays at or under this, at the scenario's values, or at
+   * `underTarget` with one (an autoscaled pool costs what it runs at that load).
+   */
+  cost?: number
   /** A warning is reported but never fails a check run (`loadmap check`); default fail. */
   severity?: 'warn' | 'fail'
 }
@@ -143,6 +148,7 @@ export function check<P, C extends string>(
     const down =
       outage?.kind === 'select' && e.down != null ? ` with ${outage.format?.(e.down) ?? `${e.down} down`}` : ''
     const where = (scenario ? ` in ${scenario.label}` : '') + down
+    if (e.cost != null) return costCheck(model, e, values ?? {}, where)
     if (moment) return momentCheck(model, e, values ?? {}, where, gaps)
     if (e.lost != null) return lostCheck(model, e, values ?? {}, ev, where, gaps)
     if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
@@ -480,6 +486,31 @@ function momentCheck<P, C extends string>(
   const outcome: Outcome =
     claims.some((x) => x.at === 'fail') && !data.length ? 'fail' : data.length || edges.length ? 'inconclusive' : 'pass'
   return result(e, outcome, outcome === 'fail' ? [] : [...data, ...edges], { target: null, full: null }, message)
+}
+
+/** A budget: what the components with a cost cost a month, at the values or at `underTarget`. */
+function costCheck<P, C extends string>(
+  model: Model<P, string, C>,
+  e: Expectation<C>,
+  values: object,
+  where: string,
+): CheckResult<C> {
+  const load = e.underTarget ?? (values as { load?: number }).load ?? (model.defaults() as { load: number }).load
+  const ev = model.evaluate({ ...values, load } as Partial<Values<P>>)
+  if (!ev.cost) throw new Error('loadmap: an expectation on cost needs a component with a cost')
+  const unit = ev.cost.currency ? ` ${ev.cost.currency}` : ''
+  const money = (x: number) => `${fmt(x)}${unit}`
+  const at = `at ${fmt(load)}×${where}`
+  const within = ev.cost.total <= e.cost! + 1e-9
+  return result(
+    e,
+    within ? 'pass' : 'fail',
+    [],
+    { target: null, full: null },
+    within
+      ? `it costs ${money(ev.cost.total)} a month ${at}, within ${money(e.cost!)}`
+      : `expected at most ${money(e.cost!)} a month, but it costs ${money(ev.cost.total)} ${at}`,
+  )
 }
 
 /** The measured data that is missing and may move an answer: a capacity once, for its component, then every other. */

@@ -11,7 +11,8 @@ export function own<T>(o: Readonly<Record<string, T>>, k: string): T | undefined
 }
 
 /** What a formula may read: everything, only the parameters, a local (`i`, `value`) or nothing (a constant). */
-export type Scope = 'ctx' | 'values' | 'i' | 'value' | 'const'
+/** What a formula may read: `cost` is the context and `running`, the pods or members a component runs. */
+export type Scope = 'ctx' | 'values' | 'i' | 'value' | 'const' | 'cost'
 
 export type ValueKind =
   | 'number'
@@ -220,6 +221,12 @@ export const COMPONENT_PROPS: Readonly<Record<string, PropSpec>> = {
     unit: 'seconds',
     doc: 'The seconds a unit takes here when nothing waits. Each stage it runs is then a queue whose time grows as service ÷ (1 − utilization), and the flows through it have a latency (p50, p95, p99).',
   },
+  cost: {
+    value: 'number',
+    scope: 'cost',
+    since: '1.8',
+    doc: "What it costs a month, in the model's currency: running * 140. Inside it, running is the pods its pool runs at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1. A box switched off costs nothing. The scenarios table adds a cost a month to each row, and expect { cost: 5_000 } holds a budget.",
+  },
   fails: {
     value: 'number',
     scope: 'values',
@@ -404,6 +411,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       fullScreen: { ...VIEW_PROPS.fullScreen!, movedTo: 'view' },
       fullScreenMode: { ...VIEW_PROPS.fullScreenMode!, movedTo: 'view' },
       assume: { value: 'string', scope: 'const', repeat: true, doc: 'A line added before the generated assumptions.' },
+      currency: {
+        value: 'string',
+        scope: 'const',
+        since: '1.8',
+        doc: 'What a cost is counted in, as a reader writes it after the number: "€", "USD".',
+      },
       searchMax: {
         value: 'number',
         scope: 'const',
@@ -695,6 +708,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         since: '1.8',
         doc: "With flow, and lost or a percentile: a stage on one of the flow's fan-out branches. The expect then holds that branch up to the stage, the copies it loses or the time they take from the fan-out, not the flow itself: `flow: orders; to: mailers; lost: 1%`.",
+      },
+      cost: {
+        value: 'number',
+        scope: 'const',
+        since: '1.8',
+        doc: "A budget: what the boxes with a cost cost a month stays at or under this, at the scenario's values, or at underTarget with one (an autoscaled pool costs what it runs at that load): `cost: 5_000`.",
       },
       lost: {
         value: 'number',

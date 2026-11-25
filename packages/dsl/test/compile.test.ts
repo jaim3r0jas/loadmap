@@ -1718,6 +1718,39 @@ users -> api
     expect(dsl.evaluate({ load: 8 } as never).stages.api).toEqual(ts.evaluate({ load: 8 }).stages.api)
   })
 
+  it('compile a cost and its currency, as TypeScript writes them', () => {
+    const dsl = model(`loadmap 1.8
+load "Load" { max: 20; default: 1 }
+currency: "€"
+flow requests "requests" { rate: 100 * load; route: api; from: users }
+node users "Users"
+pool api "API" {
+  perPod: 4
+  autoscale { min: 2; max: 6; target: 0.7 }
+  capacity: measured(600, "req/s")
+  cost: running * 140
+  over: "requests queue"
+}
+users -> api
+`)
+    const ts = defineModel({
+      load: p.load({ label: 'Load', max: 20, default: 1 }),
+      currency: '€',
+      flows: { requests: { label: 'requests', rate: ({ load }) => 100 * load } },
+      components: {
+        api: {
+          name: 'API',
+          capacity: measured(600, 'req/s'),
+          cost: ({ running }) => running * 140,
+          over: 'requests queue',
+        },
+      },
+      stages: { api: workers('api', { perPod: 4, autoscale: { min: 2, max: 6, target: 0.7 } }) },
+      routes: { requests: ['api'] },
+    })
+    for (const load of [1, 3]) expect(dsl.evaluate({ load } as never).cost).toEqual(ts.evaluate({ load }).cost)
+  })
+
   it('compile stocks: one that keeps what it gains, one that grows, each flow at its average', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }
