@@ -450,15 +450,16 @@ export function resolveStage(
           )
       }
       const hedge = s.hedge == null ? undefined : dyn(s.hedge, ctx)
-      if (hedge != null && !(hedge > 0 && hedge < 1))
-        throw new Error(`loadmap: gather "${id}" hedges at a share of ${hedge}: a percentile above 0 and below 1`)
+      // 1 is no hedge: a call is never still out past all of its time, so a control can switch it off
+      if (hedge != null && !(hedge > 0 && hedge <= 1))
+        throw new Error(`loadmap: gather "${id}" hedges at a share of ${hedge}: a percentile above 0, up to 1`)
       return {
         id,
         label,
         kind: 'gather',
         to: perFlow,
         ...(needs != null ? { needs } : {}),
-        ...(hedge != null ? { hedge } : {}),
+        ...(hedge != null && hedge < 1 ? { hedge } : {}),
         failing: {},
       }
     }

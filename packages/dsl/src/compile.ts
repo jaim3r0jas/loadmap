@@ -4020,7 +4020,10 @@ export class Compiler {
         const fixed = branches.every(([, , v]) => typeof v === 'number')
         if (b.keyword === 'gather') {
           const needs = this.dynProp<number>(b, 'needs', 'number')
-          const hedge = this.dynProp<number>(b, 'hedge', 'number')
+          const hedge = this.dynProp<number>(b, 'hedge', 'number', (v) => {
+            if (typeof v !== 'number' || !(v > 0 && v <= 1))
+              throw new Error(`a hedge is a percentile above 0, up to 100%, not ${String(v)}`)
+          })
           return gather({
             ...base,
             to: fixed ? build(undefined) : build,

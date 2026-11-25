@@ -725,7 +725,7 @@ export class Sim {
         for (const b of stage.to[d.flow] ?? []) {
           // a hedged gather sends the share of its calls past its percentile a second time
           const share = stage.kind === 'gather' && stage.hedge != null ? b.share * (2 - stage.hedge) : b.share
-          const copies = Math.floor(share) + (share % 1 > 0 && this.#r() < share % 1 ? 1 : 0)
+          const copies = Math.floor(share) + (this.#r() < share % 1 ? 1 : 0)
           for (let i = 0; i < copies; i++, made++)
             if (this.particles.length + born.length < this.#o.maxParticles)
               born.push(

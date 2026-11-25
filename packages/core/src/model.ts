@@ -1825,9 +1825,10 @@ function contextAt(
       const b = copiedTo(s, f)[0]
       // one list of calls for every flow is for the flows that come this way
       if (!b || !paths(f).some((p) => p.stages.includes(s))) return undefined
-      const hedge = st.hedge == null ? undefined : (dyn(st.hedge, ctx) as number)
-      // the calls a unit makes: the branch's copies less the second calls its hedge adds
-      const calls = Math.round(b.share / (hedge == null ? 1 : 2 - hedge))
+      // a hedge at 1 never fires: none
+      const at = st.hedge == null ? 1 : (dyn(st.hedge, ctx) as number)
+      const hedge = at < 1 ? at : undefined
+      const calls = b.calls
       const needs = st.needs == null ? calls : (dyn(st.needs, ctx) as number)
       // this gather's own branch: another fan-out or gather may call the same stage
       const { lost, latency, delay } = branch(f, b.stages.at(-1)!, s)
@@ -1853,28 +1854,40 @@ function contextAt(
         // (and the second call's own delay) both must still be out. The needs-th of the calls has no closed form
         // then: its mean and its spread are summed over its survival, the time past the delay in units of w.
         const h = -Math.log(1 - hedge)
-        const back = delay / w
-        const out = (t: number) => Math.exp(-t) * (t > h + back ? Math.exp(-(t - h - back)) : 1)
+        const kink = h + delay / w
+        const out = (t: number) => Math.exp(-t) * (t > kink ? Math.exp(-(t - kink)) : 1)
+        // fewer than needs of the calls are in by t: each term from the one before, no power but the first
         const late = (t: number) => {
           const o = out(t)
+          if (!(o > 0)) return 0
+          if (o >= 1) return 1
+          let term = o ** calls
           let total = 0
-          let ways = 1
           for (let j = 0; j < needs; j++) {
-            total += ways * (1 - o) ** j * o ** (calls - j)
-            ways = (ways * (calls - j)) / (j + 1)
+            total += term
+            term *= ((calls - j) / (j + 1)) * ((1 - o) / o)
           }
-          return total
+          return Math.min(1, total)
         }
-        const end = h + back + 40
-        const steps = 4000
-        const dt = end / steps
+        // the needs-th answer is out while more than calls − needs are: it fades at that rate, twice it past the kink.
+        // Each stretch is summed as far as it matters, in steps small against its own rate
+        const rate = calls - needs + 1
         let second = 0
-        for (let i = 0; i <= steps; i++) {
-          const t = i * dt
-          const edge = i === 0 || i === steps ? 0.5 : 1
-          mean += edge * late(t) * dt
-          second += edge * 2 * t * late(t) * dt
+        const sum = (from: number, to: number) => {
+          const steps = 2000
+          const dt = (to - from) / steps
+          if (!(dt > 0)) return
+          for (let i = 0; i <= steps; i++) {
+            const t = from + i * dt
+            const edge = i === 0 || i === steps ? 0.5 : 1
+            const l = late(t)
+            mean += edge * l * dt
+            second += edge * 2 * t * l * dt
+          }
         }
+        const first = Math.min(kink, 40 / rate)
+        sum(0, first)
+        if (first === kink) sum(kink, kink + 40 / (2 * rate))
         variance = Math.max(0, second - mean * mean) * w * w
         mean *= w
       }
@@ -1911,7 +1924,7 @@ function contextAt(
   }
   /** Copies per unit of a flow that a fan-out at t sends to s: 0 unless t is a fan-out with a branch there. */
   /** A fan-out's branches for a flow, each as the stages its copies go through and its copies: none for any other stage. */
-  const copiedTo = (t: string, f: string): readonly { stages: readonly string[]; share: number }[] => {
+  const copiedTo = (t: string, f: string): readonly { stages: readonly string[]; share: number; calls: number }[] => {
     const st = stages[t]!
     if (st.kind !== 'fanout' && st.kind !== 'gather') return NONE
     return memo(`branches of ${t} for ${f}`, () => {
@@ -1920,8 +1933,9 @@ function contextAt(
         | Readonly<Record<string, readonly Branch[]>>
       const list = (Array.isArray(to) ? to : ((to as Record<string, readonly Branch[]>)[f] ?? [])) as Branch[]
       // a hedged gather sends the calls not answered by its percentile again: what it calls sees those too
-      const hedge = st.kind === 'gather' && st.hedge != null ? (dyn(st.hedge, ctx) as number) : undefined
-      return list.map((x) => ({ stages: chainOf(x), share: x.share * (hedge == null ? 1 : 2 - hedge) }))
+      // `share` is what the stages are loaded with, `calls` what a unit asks for
+      const hedge = st.kind === 'gather' && st.hedge != null ? (dyn(st.hedge, ctx) as number) : 1
+      return list.map((x) => ({ stages: chainOf(x), share: x.share * (2 - hedge), calls: x.share }))
     })
   }
   const copies = (t: string, f: string, s: string) => {

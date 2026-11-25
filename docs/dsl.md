@@ -985,7 +985,8 @@ by the p95 of its own time, and the first of the two answers counts. It trades a
 called sees 5 % more calls, and a read that waits for 8 calls of 10 ms each has its p99 fall from 64 ms to 51 ms. The lower the
 percentile, the more is sent twice (`hedge: 50%` is half as many calls again). The second call takes the edge's delay
 too, so a hedge helps little where most of a call's time is the network. A hedge is about slowness: a call that
-fails is not sent again by it. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`, and
+fails is not sent again by it, and the second calls are counted for the calls that are slow, not for those that are
+lost. `hedge: 100%` is no hedge, so a control can switch it off. In TypeScript it is `hedge: 0.95` beside `needs`. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`, and
 `ev.stages.scatter.failing.reads` is the share of reads that fail there.
 
 #### Splits
@@ -2892,7 +2893,7 @@ After the keyword: [id] [label].
 | Property | Value | |
 | --- | --- | --- |
 | `needs` | number, formula of parameters | How many of the calls must answer for the unit to go on: a whole number up to the calls. All of them without it. A quorum is needs: 2 of 3 calls; a read that asks two replicas and takes the first is needs: 1 of 2. |
-| `hedge` | share, formula of parameters | A hedge: a call not answered by this percentile of its own time is sent a second time, and the first of the two answers counts: `hedge: 95%`. It cuts the wait for a slow call; what is called sees the second calls too, 5 % more at 95%. |
+| `hedge` | share, formula of parameters | A hedge: a call not answered by this percentile of its own time is sent a second time, and the first of the two answers counts: `hedge: 95%`. It cuts the wait for a slow call; what is called sees the second calls too, 5 % more at 95 %. 100% is no hedge. |
 
 Holds branches: `flow -> stage: calls per unit`.
 

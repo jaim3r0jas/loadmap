@@ -1404,7 +1404,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         value: 'number',
         scope: 'values',
         unit: 'share',
-        doc: 'A hedge: a call not answered by this percentile of its own time is sent a second time, and the first of the two answers counts: `hedge: 95%`. It cuts the wait for a slow call; what is called sees the second calls too, 5 % more at 95%.',
+        doc: 'A hedge: a call not answered by this percentile of its own time is sent a second time, and the first of the two answers counts: `hedge: 95%`. It cuts the wait for a slow call; what is called sees the second calls too, 5 % more at 95 %. 100% is no hedge.',
       },
     },
     children: [],

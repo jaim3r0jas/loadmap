@@ -81,8 +81,10 @@ describe('a gather, in the language', () => {
     expect(ev.stages.scatter).toMatchObject({ hedge: 0.95 })
     expect(ev.at.shards!.reads).toBeCloseTo(840, 9)
     expect(ev.latency.reads!.p99).toBeLessThan(plain.latency.reads!.p99)
-    expect(errors(src.replace('hedge: 95%', 'hedge: 100%'))).toEqual([
-      'error: model: gather "scatter" hedges at a share of 1: a percentile above 0 and below 1',
+    // 100 % is no hedge, so a control can switch it off; past it is no percentile
+    expect(errors(src.replace('hedge: 95%', 'hedge: 100%'))).toEqual([])
+    expect(errors(src.replace('hedge: 95%', 'hedge: 150%'))).toEqual([
+      'error: bad-value: a hedge is a percentile above 0, up to 100%, not 1.5',
     ])
   })
 
