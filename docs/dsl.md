@@ -190,6 +190,10 @@ fixed number of steps over the ramp and the moment's length, with no clock and n
 never scaled, so a pool still starting pods has none then. In TypeScript, `ramps` beside `peaks`, `ready` in the
 `autoscale`, and `moment(model, values, preset)` from `@loadmap/core/moments`.
 
+Pressing the preset's mark on the load bar plays the way up on the board, at the sim's speed: the load climbs over
+the ramp, the pods the autoscaler wants are drawn dashed until they are ready, a cold cache lets more dots through
+until it warms, and then the preset holds. Any change of the reader's stops it where it is.
+
 A moment can start with caches cold: `cold: [appCache]` on the preset, and `warms: 5min` on each cache, the time it
 takes from no hits to its `hit`. The walk spends a limit's `burst` too ([Rate limits](#rate-limits)), and fills a queue
 with a size before it refuses anything ([Queues](#queues)): "6× at once: nothing is lost for 2.5 s, until the burst of

@@ -85,6 +85,9 @@ export type FullScreenMode = 'panels' | 'focus'
 /** What stands around the diagram in full screen: everything, or the least. */
 export type Chrome = 'all' | 'least'
 
+/** The key a moment's step is set under in the values: the model reads it, the URL leaves it out. */
+const MOMENT = Symbol.for('loadmap.moment')
+
 export interface LoadmapController<P = any> {
   model: Model<P>
   view: View
@@ -94,6 +97,11 @@ export interface LoadmapController<P = any> {
   scenario: Scenario<P> | null
   /** Takes a scenario's values; the load stays. */
   setScenario: (label: string) => void
+  /**
+   * Takes a preset's values; one with a way up (a ramp, cold caches, pods that take time) plays it first, at the
+   * sim's speed: the load climbs, pods fill in as they are ready, caches warm. Any other change stops it.
+   */
+  playMoment: (label: string) => void
   /** The story step shown, by index; null outside the story. */
   step: number | null
   /** The reader changed a value since the step was shown: its outline is gone. */
@@ -380,13 +388,15 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   // the story player's own changes: the reader's stop it
   const apply = useCallback(
     (v: Partial<Values<P>>) => {
-      const next = { ...valuesRef.current, ...v }
-      valuesRef.current = next
+      const next = { ...valuesRef.current, ...v } as Record<string | symbol, unknown>
+      // a moment's step is for that step alone: values set without one leave it
+      if (!Object.hasOwn(v, MOMENT)) delete next[MOMENT]
+      valuesRef.current = next as Values<P>
       // the engine takes the new numbers now, so a frame stepped before React renders already uses them
-      const nextEv = model.evaluate(next)
-      evaluated.current = { values: next, ev: nextEv }
+      const nextEv = model.evaluate(next as Partial<Values<P>>)
+      evaluated.current = { values: next as Values<P>, ev: nextEv }
       engine.setEvaluation(nextEv)
-      setState({ model, values: next })
+      setState({ model, values: next as Values<P> })
     },
     [engine, model],
   )
@@ -400,12 +410,36 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const playing = played.engine === engine && played.on
   const cue = played.engine === engine ? played.cue : null
   const stop = useCallback(() => engine.stopStory(), [engine])
+  // a moment being played: the reader's own change stops it
+  const moment = useRef<{ live: boolean } | null>(null)
   const setValues = useCallback(
     (v: Partial<Values<P>>) => {
       stop()
+      if (moment.current) moment.current.live = false
       apply(v)
     },
     [stop, apply],
+  )
+  const playMoment = useCallback(
+    (label: string) => {
+      // a derived preset (today, where the target is reached) is pressed as any is: only a declared one has a way up
+      const shown = evaluated.current?.ev ?? model.evaluate(valuesRef.current)
+      const set = shown.presets.find((p) => p.label === label)?.values as Partial<Values<P>> | undefined
+      if (!set) return
+      setValues(set)
+      // a way up worth playing: a ramp, cold caches, or pods that take time to start
+      const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, label)
+      const late = Object.values(shown.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
+      if (!(named(model.def.peaks) && (named(model.def.ramps) || named(model.def.colds) || late))) return
+      const run = { live: true }
+      moment.current = run
+      // the walk and its playing load only now: no first load carries them
+      import('./playMoment')
+        .then(({ playMoment: play }) => play(model, { ...valuesRef.current }, label, engine.sim.speed, run, set, apply))
+        // a moment that cannot be walked leaves the preset as pressed
+        .catch(() => {})
+    },
+    [model, engine, setValues, apply],
   )
 
   const scenario = useMemo(() => model.scenarioOf(values), [model, values])
@@ -537,6 +571,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     setValues,
     scenario,
     setScenario,
+    playMoment,
     step,
     stepChanged,
     setStep,

@@ -59,3 +59,50 @@ describe('a preset with a way up', () => {
     await expect.poll(() => host!.querySelector('.lm-moment'), { timeout: 5000 }).toBeNull()
   })
 })
+
+describe('pressing a preset with a way up', () => {
+  it('plays it on the board: the load climbs, late pods fill in, then the preset holds', async () => {
+    const def = compile(SOURCE).definition!
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapHandle>()
+    root = createRoot(host)
+    // fast: the way up, the ramp and two ready times, is 210 s of the sim's time
+    root.render(<Loadmap ref={ref} model={def.model} view={def.view} speed={100} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    const mark = host.querySelector<HTMLButtonElement>('.lm-marks [aria-label="Flash sale"]')!
+    mark.click()
+    // on the way: a load between the default and the preset's, and pods the autoscaler wants drawn as not running
+    const loads: number[] = []
+    let idle = 0
+    await expect
+      .poll(
+        () => {
+          loads.push(ref.current!.values().load as number)
+          idle = Math.max(idle, host!.querySelectorAll('[data-node="api"] [data-idle]').length)
+          return loads.some((l) => l > 1 && l < 8) && idle > 0
+        },
+        { timeout: 5000, interval: 16 },
+      )
+      .toBe(true)
+    // then it holds at the preset, every pod it wants running
+    await expect.poll(() => ref.current!.values().load, { timeout: 10_000 }).toBe(8)
+    await expect.poll(() => host!.querySelector('.lm-moment')?.textContent ?? null, { timeout: 5000 }).not.toBeNull()
+  })
+
+  it('stops when the reader changes a value', async () => {
+    const def = compile(SOURCE).definition!
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    const ref = createRef<LoadmapHandle>()
+    root = createRoot(host)
+    root.render(<Loadmap ref={ref} model={def.model} view={def.view} speed={10} />)
+    await expect.poll(() => ref.current).toBeTruthy()
+    await ref.current!.ready()
+    host.querySelector<HTMLButtonElement>('.lm-marks [aria-label="Flash sale"]')!.click()
+    ref.current!.setValues({ load: 2 })
+    await new Promise((r) => setTimeout(r, 500))
+    expect(ref.current!.values().load).toBe(2)
+  })
+})

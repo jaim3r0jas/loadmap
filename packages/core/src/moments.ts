@@ -20,6 +20,11 @@ export interface MomentStep {
   bucket: Readonly<Record<string, number>>
   /** Each queue with a size: the units waiting in it. */
   queued: Readonly<Record<string, number>>
+  /**
+   * What the model was given for this step beside the load, under its private key: a board plays a moment by
+   * evaluating each step's load with it.
+   */
+  set?: Readonly<Record<symbol, unknown>>
   /** The components past full. */
   over: readonly string[]
 }
@@ -244,12 +249,20 @@ export function moment<P>(
     for (const q of queues) if (queued[q.stage]! < q.holds) room[q.stage] = true
     const stepOf = (capacity: Record<string, number> | undefined): StepValues | undefined => {
       const hit = Object.values(warm).some((x) => x < 1) ? warm : undefined
+      // the pods ready, where some the autoscaler wants are not: for the board
+      const pods = capacity && pools.some((q) => capacity[q.component] != null) ? counts : undefined
       const has = capacity || hit || Object.keys(room).length
       return has
-        ? { ...(capacity ? { capacity } : {}), ...(hit ? { hit } : {}), ...(Object.keys(room).length ? { room } : {}) }
+        ? {
+            ...(capacity ? { capacity } : {}),
+            ...(pods ? { pods } : {}),
+            ...(hit ? { hit } : {}),
+            ...(Object.keys(room).length ? { room } : {}),
+          }
         : undefined
     }
-    let ev = at(load, stepOf(shares))
+    let used = stepOf(shares)
+    let ev = at(load, used)
     // a limit with units left in its bucket lets the excess through as far as they reach
     const bump: Record<string, number> = { ...shares }
     for (const b of buckets) {
@@ -269,7 +282,10 @@ export function moment<P>(
         tokens[b.component] = Math.min(b.size, tokens[b.component]! + d * (full / c.util - 1) * dt)
       }
     }
-    if (Object.keys(bump).length && JSON.stringify(bump) !== JSON.stringify(shares ?? {})) ev = at(load, stepOf(bump))
+    if (Object.keys(bump).length && JSON.stringify(bump) !== JSON.stringify(shares ?? {})) {
+      used = stepOf(bump)
+      ev = at(load, used)
+    }
     // a published figure is never scaled: while its pool starts pods it has none, and what is lost there is not known
     for (const c of Object.keys(shares ?? {}))
       if (ev.components[c]?.capacity?.missing === 'with pods still starting') unknown.add(c)
@@ -305,7 +321,18 @@ export function moment<P>(
     const over = Object.values(ev.components)
       .filter((c) => c.util != null && c.util > full)
       .map((c) => c.id)
-    out.push({ t, dt, load, lost: step, ready: counts, warm, bucket: { ...tokens }, queued: { ...queued }, over })
+    out.push({
+      t,
+      dt,
+      load,
+      lost: step,
+      ready: counts,
+      warm,
+      bucket: { ...tokens },
+      queued: { ...queued },
+      over,
+      ...(used ? { set: { [MOMENT]: used } } : {}),
+    })
   }
   for (const f of flows) lost[f]!.share = sent[f]! > 0 ? Math.min(1, lost[f]!.units / sent[f]!) : 0
 

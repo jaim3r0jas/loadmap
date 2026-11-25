@@ -147,7 +147,7 @@ export function LoadRange({ lm }: { lm: LoadmapController }) {
               title={m.preset.label}
               aria-label={m.preset.label}
               aria-pressed={isOn(lm, m.preset)}
-              onClick={() => lm.setValues(m.preset.values)}
+              onClick={() => lm.playMoment(m.preset.label)}
             >
               <span>{m.text}</span>
             </button>
