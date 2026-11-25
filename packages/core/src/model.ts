@@ -860,6 +860,9 @@ export function defineModel<
   const expectations = (def.expect ?? []).map((written) => {
     let e = expectationNamed(written)
     const name = e.label ? `expectation "${e.label}"` : 'an expectation'
+    const moment = e.preset != null || e.queue != null || e.lag != null || e.clears != null
+    // the preset says how long its moment lasts: an expectation's own lasts is a time for growth
+    if (moment && e.lasts != null) throw new Error(`loadmap: ${name} holds a moment: no lasts (the preset has it)`)
     if (e.lasts != null) {
       if (!growth) throw new Error(`loadmap: ${name} holds a time (lasts): give the model growth, so a time is a load`)
       if (e.notFull != null) throw new Error(`loadmap: ${name} gives lasts and notFull, one of them`)
@@ -881,13 +884,16 @@ export function defineModel<
     }
     const qs = PERCENTILES.filter((q) => e[q] != null)
     // what a preset's moment leaves in the queues: a lag when it ends, a time to clear after it
-    if (e.preset != null || e.queue != null || e.lag != null || e.clears != null) {
+    if (moment) {
       if (e.lag == null && e.clears == null) throw new Error(`loadmap: ${name} holds a moment: give its lag or clears`)
-      if (e.preset == null || def.peaks?.[e.preset] == null)
+      if (e.preset == null || !Object.hasOwn(def.peaks ?? {}, e.preset))
         throw new Error(
           `loadmap: ${name} holds a moment: name a preset that lasts${e.preset == null ? '' : `, not "${e.preset}"`}`,
         )
-      if (e.queue != null && (def.stages as Record<string, StageDef>)[e.queue]?.kind !== 'queue')
+      if (
+        e.queue != null &&
+        (!Object.hasOwn(def.stages, e.queue) || (def.stages as Record<string, StageDef>)[e.queue]?.kind !== 'queue')
+      )
         throw new Error(`loadmap: ${name} names unknown queue "${e.queue}"`)
       const more = (['component', 'flow', 'to', 'lost', 'underTarget', 'notFull', 'lasts'] as const).find(
         (k) => e[k] != null,

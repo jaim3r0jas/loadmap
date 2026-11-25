@@ -104,10 +104,11 @@ export function check<P, C extends string>(
   return expectations.map((written) => {
     const named = expectationNamed(written)
     // a time to last is the load growth reaches then, as defineModel reads it for the model's own
-    if (named.lasts != null && named.notFull == null && !model.growth)
+    const moment = named.preset != null || named.queue != null || named.lag != null || named.clears != null
+    if (!moment && named.lasts != null && named.notFull == null && !model.growth)
       throw new Error('loadmap: an expectation holds a time (lasts): the model needs growth')
     const e =
-      named.lasts != null && named.notFull == null && model.growth
+      !moment && named.lasts != null && named.notFull == null && model.growth
         ? { ...named, notFull: multipleAfter(model.growth, named.lasts) }
         : named
     const scenario = e.scenario == null ? null : model.scenarios.find((s) => s.label === e.scenario)
@@ -122,8 +123,7 @@ export function check<P, C extends string>(
     const down =
       outage?.kind === 'select' && e.down != null ? ` with ${outage.format?.(e.down) ?? `${e.down} down`}` : ''
     const where = (scenario ? ` in ${scenario.label}` : '') + down
-    if (e.preset != null || e.queue != null || e.lag != null || e.clears != null)
-      return momentCheck(model, e, values ?? {}, where, gaps)
+    if (moment) return momentCheck(model, e, values ?? {}, where, gaps)
     if (e.lost != null) return lostCheck(model, e, values ?? {}, ev, where, gaps)
     if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
       return latencyCheck(model, e, values ?? {}, ev, where, gaps)
@@ -317,12 +317,7 @@ function lostCheck<P, C extends string>(
   // a branch is named by where it goes: "orders to mailers"
   const name = (f: string) => `${model.def.flows[f]?.label ?? f}${e.to == null ? '' : ` to ${e.to}`}`
   // any measured data that is missing may move what a flow loses: a capacity once, for its component
-  const all = Object.values<ComponentResult<C>>(ev.components)
-  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
-  const data = [
-    ...all.filter((x) => x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
-    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
-  ]
+  const data = unread(ev, gaps)
   const verdict = (low: boolean, high: boolean): Outcome =>
     !high && !data.length ? 'fail' : data.length || !low ? 'inconclusive' : 'pass'
   const reasons = (outcome: Outcome, edge: string[]) => (outcome === 'fail' ? [] : [...data, ...edge])
@@ -389,11 +384,15 @@ function momentCheck<P, C extends string>(
     throw new Error(
       'loadmap: an expectation on a moment takes a preset, lag or clears (or both) and a queue, nothing else',
     )
-  const lasts = e.preset == null ? undefined : model.def.peaks?.[e.preset]
+  const own = <T>(o: Readonly<Record<string, T>> | undefined, k: string) =>
+    o && Object.hasOwn(o, k) ? o[k] : undefined
+  const lasts = e.preset == null ? undefined : own(model.def.peaks, e.preset)
   if (e.preset == null) throw new Error('loadmap: an expectation on a lag or a time to clear names its preset')
   if (lasts == null) throw new Error(`loadmap: no preset "${e.preset}" that lasts: lag and clears need a moment`)
   if (e.queue != null && model.def.stages[e.queue]?.kind !== 'queue') throw new Error(`loadmap: no queue "${e.queue}"`)
-  const at = { ...values, ...model.def.presets?.[e.preset] } as Partial<Values<P>>
+  const at = { ...values, ...own(model.def.presets as Record<string, object> | undefined, e.preset) } as Partial<
+    Values<P>
+  >
   const ev = model.evaluate(at)
   const label = (s: string) => ev.stages[s]?.label ?? s
   // the queue that is worst off speaks for all of them
@@ -404,23 +403,37 @@ function momentCheck<P, C extends string>(
     return { lag: worst('lag'), clears: worst('empties') }
   }
   const low = found('low')
-  const high = found('high')
-  const all = Object.values<ComponentResult<C>>(ev.components)
-  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
+  // the high edge is read only where the low one misses
+  let other: ReturnType<typeof found> | undefined
+  const high = () => {
+    other ??= found('high')
+    return other
+  }
+  // a reader with no published benchmark is not ranked: the model lets it drain anything, so nothing here is known
   const data = [
-    ...all.filter((x) => x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
-    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
+    ...Object.values<ComponentResult<C>>(ev.components)
+      .filter((x) => x.missing != null)
+      .map((x) => `${x.short}: no published benchmark ${x.missing}`),
+    ...unread(ev, gaps),
   ]
   const moment = `after ${period(lasts)} of ${e.preset}${where}`
   const rest = multiple(model.defaults().load as number, model.searchMax)
   const claims: { at: 'pass' | 'edge' | 'fail'; text: string; wants: string }[] = []
-  const held = (l: number, h: number, max: number) => (l <= max ? 'pass' : h <= max ? 'edge' : 'fail')
+  // a time is held to a millionth: the drain behind it comes from a crossing that is searched for
+  const within = (x: number, max: number) => x <= max * (1 + 1e-6)
+  const held = (l: number, h: () => number, max: number) =>
+    within(l, max) ? 'pass' : within(h(), max) ? 'edge' : 'fail'
+  // a time just past the limit reads as the limit: then in seconds, with more digits
+  const clash = (x: number, max: number) => !within(x, max) && Number.isFinite(x) && period(x) === period(max)
+  const exact = (x: number) => `${Number(x.toPrecision(6))} s`
+  const took = (x: number, max: number) => (clash(x, max) ? exact(x) : period(x))
+  const limit = (x: number, max: number) => (clash(x, max) ? exact(max) : period(max))
   if (e.lag != null)
     claims.push({
-      at: held(low.lag?.lag ?? 0, high.lag?.lag ?? 0, e.lag),
-      wants: `a lag of at most ${period(e.lag)} ${moment}`,
+      at: held(low.lag?.lag ?? 0, () => high().lag?.lag ?? 0, e.lag),
+      wants: `a lag of at most ${limit(low.lag?.lag ?? 0, e.lag)} ${moment}`,
       text: low.lag
-        ? `the oldest unit in ${label(low.lag.stage)} waited ${period(low.lag.lag)}`
+        ? `the oldest unit in ${label(low.lag.stage)} waited ${took(low.lag.lag, e.lag)}`
         : e.queue != null
           ? `${label(e.queue)} keeps up`
           : 'no queue falls behind',
@@ -428,14 +441,14 @@ function momentCheck<P, C extends string>(
   if (e.clears != null) {
     const b = low.clears
     claims.push({
-      at: held(b?.empties ?? 0, high.clears?.empties ?? 0, e.clears),
-      wants: `${e.queue != null ? label(e.queue) : 'every queue'} to clear within ${period(e.clears)} ${moment}`,
+      at: held(b?.empties ?? 0, () => high().clears?.empties ?? 0, e.clears),
+      wants: `${e.queue != null ? label(e.queue) : 'every queue'} to clear within ${limit(b?.empties ?? 0, e.clears)} ${moment}`,
       text: !b
         ? e.queue != null
           ? `${label(e.queue)} keeps up`
           : 'no queue falls behind'
         : Number.isFinite(b.empties)
-          ? `${label(b.stage)} clears in ${period(b.empties)} at ${rest}`
+          ? `${label(b.stage)} clears in ${took(b.empties, e.clears)} at ${rest}`
           : `${label(b.stage)} never clears at ${rest}`,
     })
   }
@@ -447,6 +460,19 @@ function momentCheck<P, C extends string>(
   const outcome: Outcome =
     claims.some((x) => x.at === 'fail') && !data.length ? 'fail' : data.length || edges.length ? 'inconclusive' : 'pass'
   return result(e, outcome, outcome === 'fail' ? [] : [...data, ...edges], { target: null, full: null }, message)
+}
+
+/** The measured data that is missing and may move an answer: a capacity once, for its component, then every other. */
+function unread<C extends string>(
+  ev: { components: Readonly<Record<string, ComponentResult<C>>> },
+  gaps: readonly [string, { missing?: string }][],
+): string[] {
+  const all = Object.values<ComponentResult<C>>(ev.components)
+  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
+  return [
+    ...all.filter((x) => x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
+    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
+  ]
 }
 
 function result<C extends string>(

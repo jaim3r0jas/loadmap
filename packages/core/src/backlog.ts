@@ -149,8 +149,19 @@ function backlogOf(
       else if (n > 0) dropsAll = false
       // the oldest unit waiting: what waits is the newest that arrived, so it reaches back units ÷ arrivals a second;
       // a full queue takes in only what its reader does. Never longer than the peak, or than a drop rule allows
-      const taken = room[i]! < 1 ? p.inflow[i]! - over[i]! : p.inflow[i]!
-      const age = n > 0 ? Math.min(lasts, drop?.olderThan ?? lasts, taken > 0 ? n / taken : lasts) : 0
+      // a full queue takes in only what its reader does: once that has gone through everything it held when it
+      // filled, the oldest waits units ÷ that rate; until then the oldest is still one it took in before it was full
+      const read = p.inflow[i]! - over[i]!
+      const since = room[i]! < 1 ? lasts - fills.get(e.q)!.after : 0
+      const reach =
+        room[i]! < 1
+          ? read * since >= n
+            ? n / read
+            : since + (n - read * since) / p.inflow[i]!
+          : p.inflow[i]! > 0
+            ? n / p.inflow[i]!
+            : lasts
+      const age = n > 0 ? Math.min(lasts, drop?.olderThan ?? lasts, reach) : 0
       lags.set(e.q, Math.max(lags.get(e.q) ?? 0, age))
       const row = waiting.get(e.q) ?? {}
       row[e.f] = (row[e.f] ?? 0) + n

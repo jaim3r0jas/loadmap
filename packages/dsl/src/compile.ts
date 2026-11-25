@@ -3343,11 +3343,18 @@ export class Compiler {
         if (p) this.report.error('bad-expect', p.key, `an expect on a moment takes no ${p.key.name}`)
       }
       const preset = this.named(b, 'preset', Object.keys(peaks), 'preset that lasts')
+      // one queue, by its name or its box's where the box holds that one stage, as a route names it
+      const one = this.prop(b, 'queue')
+      if (one?.chain && one.chain.length > 1) {
+        this.report.error('bad-expect', one.value, 'queue is one queue, not a way through several', 'queue: topic')
+        return undefined
+      }
       const queues = [...this.kinds].filter(([, kind]) => kind === 'queue').map(([id]) => id)
-      const queue = this.named(b, 'queue', queues, 'queue')
-      if (preset == null || queue === null) return undefined
+      const boxes = [...this.single].filter(([, stage]) => queues.includes(stage)).map(([box]) => box)
+      const said = this.named(b, 'queue', [...queues, ...boxes], 'queue')
+      if (preset == null || said === null) return undefined
       e.preset = preset
-      if (queue != null) e.queue = queue
+      if (said != null) e.queue = queues.includes(said) ? said : this.single.get(said)!
       for (const k of takes) {
         const v = this.constProp<number>(b, k)
         if (!(v != null && v > 0 && Number.isFinite(v))) {

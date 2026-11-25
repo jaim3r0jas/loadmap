@@ -41,6 +41,14 @@ describe('the lag a peak leaves', () => {
     expect(backlog(shop({ holds: 5000 }), { load: 3 }, 600)[0]!.lag).toBe(25)
   })
 
+  it('is still of a unit taken in before the queue was full, shortly after it filled', () => {
+    // full after 50 s; 5 s later the runners have read 1000 of the 5000, and the next arrived 4000 ÷ 300 s before it
+    const lag = (lasts: number) => backlog(shop({ holds: 5000 }), { load: 3 }, lasts)[0]!.lag
+    expect(lag(49)).toBeCloseTo(4900 / 300, 9)
+    expect(lag(55)).toBeCloseTo(5 + 4000 / 300, 9)
+    expect(lag(100)).toBe(25)
+  })
+
   it('is read at an edge of a ±', () => {
     // at the low edge the runners take 140 a second, at the high one 260
     const m = shop({ within: 0.3 })
@@ -108,6 +116,12 @@ describe('an expectation on a moment', () => {
     )
   })
 
+  it('says both times in seconds when they read alike', () => {
+    expect(said(shop({ holds: 5000, expect: [{ preset: 'Rush', lag: 24.99 }] }))).toEqual([
+      'fail: expected a lag of at most 24.99 s after 10 min of Rush, but the oldest unit in inbox waited 25 s',
+    ])
+  })
+
   it('refuses what it cannot hold', () => {
     expect(() => shop({ expect: [{ preset: 'Rush' }] })).toThrow('holds a moment: give its lag or clears')
     expect(() => shop({ expect: [{ lag: 10 }] })).toThrow('holds a moment: name a preset that lasts')
@@ -115,5 +129,9 @@ describe('an expectation on a moment', () => {
     expect(() => shop({ expect: [{ preset: 'Rush', queue: 'api', lag: 10 }] })).toThrow('names unknown queue "api"')
     expect(() => shop({ expect: [{ preset: 'Rush', lag: 10, flow: 'jobs' }] })).toThrow('holds a moment: no flow')
     expect(() => shop({ expect: [{ preset: 'Rush', lag: 0 }] })).toThrow('has a lag of 0: a time above 0')
+    expect(() => shop({ expect: [{ preset: 'constructor', lag: 10 }] })).toThrow('not "constructor"')
+    expect(() => shop({ expect: [{ preset: 'Rush', lasts: 600, lag: 60 }] })).toThrow(
+      'holds a moment: no lasts (the preset has it)',
+    )
   })
 })

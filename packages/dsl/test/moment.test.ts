@@ -114,6 +114,13 @@ describe('an expect on a moment', () => {
     expect(errors(withLine('expect "Rush" { preset: "Rush"; queue: api; lag: 10s }'))).toEqual([
       'error: unknown-name: unknown queue "api"',
     ])
+    // by its box's name too, where the box holds that one queue
+    const box = compile(withLine('expect "Rush" { preset: "Rush"; queue: buffer; lag: 1min }'))
+    expect(box.diagnostics).toEqual([])
+    expect(box.definition!.model.expectations[0]).toMatchObject({ queue: 'inbox' })
+    expect(errors(withLine('expect "Rush" { preset: "Rush"; queue: inbox -> runners; lag: 1min }'))).toEqual([
+      'error: bad-expect: queue is one queue, not a way through several | queue: topic',
+    ])
     expect(errors(withLine('expect "Rush" { preset: "Rush"; flow: jobs; lag: 10s }'))).toEqual([
       'error: bad-expect: an expect on a moment takes no flow',
     ])
