@@ -37,6 +37,8 @@ export interface Moment {
   /** Seconds it then holds. */
   lasts: number
   steps: readonly MomentStep[]
+  /** Seconds into it where its way up ends: past it the pods are ready, the caches warm, the buckets spent. */
+  wayUp: number
   /**
    * Each flow over the whole moment: the units it lost, their share of what it sent, the worst share at one step, and
    * the seconds from and until which it lost more than it does once every pod is ready.
@@ -406,5 +408,5 @@ export function moment<P>(
     const many = who.length > 1
     text = `${capital(head)}: ${who.join(' and ')} ${many ? 'have' : 'has'} no published benchmark while ${many ? 'their' : 'its'} pods start, so what is lost on the way is not known.`
   }
-  return { preset, ramp, lasts, steps: out, lost, unknown: [...unknown], text }
+  return { preset, ramp, lasts, steps: out, wayUp: settled, lost, unknown: [...unknown], text }
 }

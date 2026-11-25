@@ -88,6 +88,19 @@ export type Chrome = 'all' | 'least'
 /** The key a moment's step is set under in the values: the model reads it, the URL leaves it out. */
 const MOMENT = Symbol.for('loadmap.moment')
 
+/**
+ * A preset has a way up worth walking: a ramp, cold caches, or at its values a pool whose pods take time to be ready.
+ * `ev` is the evaluation at the preset's values. The line under the verdict and the board ask the same.
+ */
+export function hasWayUp(model: Model<any>, ev: Evaluation<any>, label: string): boolean {
+  const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, label)
+  if (!named(model.def.peaks)) return false
+  if (named(model.def.ramps) || named(model.def.colds)) return true
+  return Object.values(ev.stages).some(
+    (s) => s.kind === 'workers' && s.autoscale?.ready != null && s.autoscale.ready > 0,
+  )
+}
+
 export interface LoadmapController<P = any> {
   model: Model<P>
   view: View
@@ -410,15 +423,14 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const playing = played.engine === engine && played.on
   const cue = played.engine === engine ? played.cue : null
   const stop = useCallback(() => engine.stopStory(), [engine])
-  // a moment being played: the reader's own change stops it
-  const moment = useRef<{ live: boolean } | null>(null)
+  // the reader's own change stops the story, and a moment playing
   const setValues = useCallback(
     (v: Partial<Values<P>>) => {
       stop()
-      if (moment.current) moment.current.live = false
+      engine.stopMoment()
       apply(v)
     },
-    [stop, apply],
+    [stop, apply, engine],
   )
   const playMoment = useCallback(
     (label: string) => {
@@ -426,21 +438,31 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
       const shown = evaluated.current?.ev ?? model.evaluate(valuesRef.current)
       const set = shown.presets.find((p) => p.label === label)?.values as Partial<Values<P>> | undefined
       if (!set) return
-      setValues(set)
-      // a way up worth playing: a ramp, cold caches, or pods that take time to start
-      const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, label)
-      const late = Object.values(shown.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
-      if (!(named(model.def.peaks) && (named(model.def.ramps) || named(model.def.colds) || late))) return
-      const run = { live: true }
-      moment.current = run
-      // the walk and its playing load only now: no first load carries them
+      const at = model.evaluate({ ...valuesRef.current, ...set } as Partial<Values<P>>)
+      // a reader who asked for less motion gets the preset at once, as without a way up
+      if (reducedMotion || !hasWayUp(model, at, label)) {
+        setValues(set)
+        return
+      }
+      stop()
+      engine.stopMoment()
+      const from = { ...valuesRef.current }
+      // the walk loads only now; until it is there the board stays as it was, then climbs from the default load
       import('./playMoment')
-        .then(({ playMoment: play }) => play(model, { ...valuesRef.current }, label, engine.sim.speed, run, set, apply))
+        .then(({ wayUp }) =>
+          engine.playMoment(
+            wayUp(model, from, label, set),
+            (v) => apply(v as Partial<Values<P>>),
+            () => apply(set),
+          ),
+        )
         // a moment that cannot be walked leaves the preset as pressed
-        .catch(() => {})
+        .catch(() => apply(set))
     },
-    [model, engine, setValues, apply],
+    [model, engine, setValues, apply, stop, reducedMotion],
   )
+  // a new model or engine, or the page gone: the moment playing stops with it
+  useEffect(() => () => engine.stopMoment(), [engine, model])
 
   const scenario = useMemo(() => model.scenarioOf(values), [model, values])
   const setScenario = useCallback(
@@ -466,9 +488,10 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const setStep = useCallback(
     (i: number | null) => {
       stop()
+      engine.stopMoment()
       show(i)
     },
-    [stop, show],
+    [stop, show, engine],
   )
   // a value the reader changed since the step was shown: the step's text and outline no longer describe the board
   const shown = step == null ? undefined : model.story[step]

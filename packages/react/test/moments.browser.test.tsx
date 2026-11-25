@@ -61,48 +61,59 @@ describe('a preset with a way up', () => {
 })
 
 describe('pressing a preset with a way up', () => {
-  it('plays it on the board: the load climbs, late pods fill in, then the preset holds', async () => {
+  /** The board paused, so only `step()` moves it: the sim's clock, not the wall's. */
+  async function mountPaused(speed: number) {
     const def = compile(SOURCE).definition!
     host = document.createElement('div')
     document.body.appendChild(host)
     const ref = createRef<LoadmapHandle>()
     root = createRoot(host)
-    // fast: the way up, the ramp and two ready times, is 210 s of the sim's time
-    root.render(<Loadmap ref={ref} model={def.model} view={def.view} speed={100} />)
+    root.render(<Loadmap ref={ref} model={def.model} view={def.view} speed={speed} defaultOpen="limits" />)
     await expect.poll(() => ref.current).toBeTruthy()
     await ref.current!.ready()
-    const mark = host.querySelector<HTMLButtonElement>('.lm-marks [aria-label="Flash sale"]')!
-    mark.click()
-    // on the way: a load between the default and the preset's, and pods the autoscaler wants drawn as not running
-    const loads: number[] = []
-    let idle = 0
+    ref.current!.pause()
+    return ref.current!
+  }
+  const press = () => host!.querySelector<HTMLButtonElement>('.lm-marks [aria-label="Flash sale"]')!.click()
+  const idle = () => host!.querySelectorAll('[data-node="api"] [data-idle]').length
+
+  it("plays it on the sim's clock: the load climbs, late pods fill in, then the preset holds", async () => {
+    const board = await mountPaused(10)
+    press()
+    // nothing moves while the board is paused and nobody steps it
+    await new Promise((r) => setTimeout(r, 200))
+    expect(board.values().load).toBe(1)
+    // a tenth of a second at 10× is a second of the sim's time: the walk's first steps, on the ramp
     await expect
-      .poll(
-        () => {
-          loads.push(ref.current!.values().load as number)
-          idle = Math.max(idle, host!.querySelectorAll('[data-node="api"] [data-idle]').length)
-          return loads.some((l) => l > 1 && l < 8) && idle > 0
-        },
-        { timeout: 5000, interval: 16 },
-      )
-      .toBe(true)
-    // then it holds at the preset, every pod it wants running
-    await expect.poll(() => ref.current!.values().load, { timeout: 10_000 }).toBe(8)
-    await expect.poll(() => host!.querySelector('.lm-moment')?.textContent ?? null, { timeout: 5000 }).not.toBeNull()
+      .poll(() => {
+        board.step(0.1)
+        return board.values().load
+      })
+      .toBeGreaterThan(1)
+    expect(board.values().load).toBeLessThan(8)
+    // past the ramp the load is the preset's, and the pods the autoscaler wants wait to be ready, drawn as not running
+    for (let i = 0; i < 40; i++) board.step(0.1)
+    expect(board.values().load).toBe(8)
+    await expect.poll(idle).toBeGreaterThan(0)
+    // the way up is the ramp and two ready times: 210 s, then the preset holds with every pod it wants running
+    for (let i = 0; i < 200; i++) board.step(0.1)
+    expect(board.values()).toMatchObject({ load: 8 })
+    await expect
+      .poll(() => host!.querySelector('.lm-moment')?.textContent ?? null)
+      .toBe('8× in 30 s: up to 75 % of requests is lost for 103 s, until the eighth pod of the API is ready.')
   })
 
-  it('stops when the reader changes a value', async () => {
-    const def = compile(SOURCE).definition!
-    host = document.createElement('div')
-    document.body.appendChild(host)
-    const ref = createRef<LoadmapHandle>()
-    root = createRoot(host)
-    root.render(<Loadmap ref={ref} model={def.model} view={def.view} speed={10} />)
-    await expect.poll(() => ref.current).toBeTruthy()
-    await ref.current!.ready()
-    host.querySelector<HTMLButtonElement>('.lm-marks [aria-label="Flash sale"]')!.click()
-    ref.current!.setValues({ load: 2 })
-    await new Promise((r) => setTimeout(r, 500))
-    expect(ref.current!.values().load).toBe(2)
+  it('stops where it is when the reader changes a value while it plays', async () => {
+    const board = await mountPaused(10)
+    press()
+    await expect
+      .poll(() => {
+        board.step(0.1)
+        return board.values().load
+      })
+      .toBeGreaterThan(1)
+    board.setValues({ load: 2 })
+    for (let i = 0; i < 100; i++) board.step(0.1)
+    expect(board.values().load).toBe(2)
   })
 })
