@@ -39,7 +39,7 @@ describe('a quota over a window', () => {
     const ev = partner(undefined, 100).evaluate({ load: 1 })
     expect(ev.components.plan.demand).toBeCloseTo(40, 9)
     expect(ev.components.plan.quota).toBeUndefined()
-    expect(() => limit('plan', { per: 'week' as never })).toThrow('per hour, day or month')
+    expect(() => limit('plan', { per: 'week' as never })).toThrow('per minute, hour, day, month, not "week"')
   })
 
   it('counts its window alone: no demand of its own, and no other stage on its component', () => {

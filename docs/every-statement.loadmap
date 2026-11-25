@@ -157,7 +157,8 @@ node gateway "Gateway" {
 }
 
 node limiter "Rate limiter" "2,000 req/s" {
-  limit
+  # a bucket: a rush of 5,000 above the limit passes before the limit cuts in
+  limit { burst: 5_000 }
   short: "the rate limiter"
   capacity: configured(2_000, "req/s", "gateway config")
   over: "clients above the limit get 429s"

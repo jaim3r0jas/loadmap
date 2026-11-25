@@ -1309,9 +1309,15 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       per: {
         value: 'enum',
         scope: 'const',
-        values: ['hour', 'day', 'month'],
+        values: ['minute', 'hour', 'day', 'month'],
         since: '1.7',
-        doc: 'A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for an hour and at each flow\'s average for a day or a month.',
+        doc: 'A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for a minute (from loadmap 1.8) or an hour and at each flow\'s average for a day or a month.',
+      },
+      burst: {
+        value: 'number',
+        scope: 'values',
+        since: '1.8',
+        doc: 'A rate limit\'s bucket, in units: past the limit it lets everything through until the bucket is spent, burst ÷ what arrives above the limit a second, then cuts to the limit. No steady figure changes; the limits say how long it lasts: "a burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut to 100 req/s". Not with per: a quota counts a window already.',
       },
       component: STAGE_COMPONENT,
     },

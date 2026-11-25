@@ -227,6 +227,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'down.zone ?' }],
   },
   {
+    id: 'limit-burst',
+    example: SEARCH,
+    request: 'The rate limiter lets a burst of 300 searches through before it cuts in. Model that.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'burst: 300' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

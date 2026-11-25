@@ -719,8 +719,23 @@ A rate limiter is a `limit` stage. Its capacity is the limit, `configured(…)`:
 takes no `±`. Above it the share over is turned away ("17 % rejected at the limiter"), and the stages after it see
 only what got through, so the service behind a limit may never run out.
 
-A quota counts a window, not a second (from `loadmap 1.7`): `per` is `hour`, `day` or `month`, the capacity is what
-the window allows, and the demand is what reaches the limit in one window, at the peak for an hour and at each flow's
+A limit that lets a short rush through has a bucket: `burst: 500` (from `loadmap 1.8`), in units. Past the limit it
+lets everything through until the bucket is spent, its size over what arrives above the limit a second, then cuts to
+the limit. No steady figure changes: past the limit the share over is turned away as before, and the limits list says
+how long the bucket lasts at the load shown ("A burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut
+to 100 req/s").
+
+```loadmap
+node limiter "Rate limiter" {
+  limit { burst: 500 }
+  capacity: configured(100, "req/s", "gateway config")
+  over: "clients above the limit get 429s"
+}
+```
+
+A quota counts a window, not a second (from `loadmap 1.7`): `per` is `minute` (from `loadmap 1.8`), `hour`, `day` or
+`month`, the capacity is what the window allows, and the demand is what reaches the limit in one window, at the peak
+for a minute or an hour and at each flow's
 `average` ([Stocks](#stocks)) for a day or a month. It runs out at a load multiple like any rate; past it the limits
 list says how far into the window it is gone ("gone after 7 h, the rest refused"), and the share over is turned away,
 spread over the window as the dots show it.
@@ -1996,7 +2011,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute` | |
 
 ## In code
 
@@ -2841,7 +2856,8 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `per` | `hour` \| `day` \| `month` | A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for an hour and at each flow's average for a day or a month. From loadmap 1.7. |
+| `per` | `minute` \| `hour` \| `day` \| `month` | A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for a minute (from loadmap 1.8) or an hour and at each flow's average for a day or a month. From loadmap 1.7. |
+| `burst` | number, formula of parameters | A rate limit's bucket, in units: past the limit it lets everything through until the bucket is spent, burst ÷ what arrives above the limit a second, then cuts to the limit. No steady figure changes; the limits say how long it lasts: "a burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut to 100 req/s". Not with per: a quota counts a window already. From loadmap 1.8. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 ### store

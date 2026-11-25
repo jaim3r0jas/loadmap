@@ -48,6 +48,7 @@ const SYNTAX = {
   poolScale: { since: '1.5', what: 'autoscale on the pool' },
   day: { since: '1.7', what: 'a day (7d)' },
   branchChain: { since: '1.8', what: 'a fan-out branch that goes on (a -> b -> c)' },
+  perMinute: { since: '1.8', what: 'a quota per minute' },
   downDomain: { since: '1.8', what: 'down.<domain>, whether a part of it is out' },
 } as const
 
@@ -110,6 +111,10 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
         if (!(parent === 'preset' && s.key.name === 'lasts' && paramLasts))
           add(`property ${parent} ${s.key.name}`, spec?.since, `"${s.key.name}:"`, s.key)
         if (s.as) add('as', SYNTAX.as.since, SYNTAX.as.what, s.as)
+        // the window is a word, bare or quoted
+        const word = s.value.t === 'id' ? s.value.name : s.value.t === 'str' ? s.value.value : undefined
+        if (parent === 'limit' && s.key.name === 'per' && word === 'minute')
+          add('perMinute', SYNTAX.perMinute.since, SYNTAX.perMinute.what, s.value)
         if (parent === '' && s.key.name === 'direction' && s.value.t === 'id' && s.value.name === 'auto')
           add('autoDirection', SYNTAX.autoDirection.since, SYNTAX.autoDirection.what, s.value)
         expr(s.value)
