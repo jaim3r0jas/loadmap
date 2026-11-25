@@ -61,6 +61,14 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
       {whenRange(model, r) && <small>{whenRange(model, r)}</small>}
     </>
   )
+  // what each scenario costs a month, and the change from the first, where a box has a cost
+  const costs = c.rows.some((r) => r.cost != null)
+  const unit = model.def.currency ? ` ${model.def.currency}` : ''
+  const money = (r: (typeof c.rows)[number]) => {
+    if (r.cost == null) return '—'
+    const d = r.costChange ?? 0
+    return `${fmt(r.cost)}${unit}${Math.abs(d) >= 0.5 ? ` (${d > 0 ? '+' : '−'}${fmt(Math.abs(d))})` : ''}`
+  }
   return (
     <div className="lm-card lm-compare">
       <h3>{title}</h3>
@@ -73,6 +81,7 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
               <th scope="col">Limited by</th>
               <th scope="col">{target}</th>
               <th scope="col">Runs out</th>
+              {costs && <th scope="col">Cost a month</th>}
             </tr>
           </thead>
           <tbody>
@@ -89,6 +98,7 @@ export function Compare({ lm, title = 'Scenarios compared' }: { lm: LoadmapContr
                 <td data-multiple={r.full ?? ''} data-high={r.fullRange?.high ?? ''}>
                   {at(r.fullRange)}
                 </td>
+                {costs && <td data-cost={r.cost ?? ''}>{money(r)}</td>}
               </tr>
             ))}
           </tbody>

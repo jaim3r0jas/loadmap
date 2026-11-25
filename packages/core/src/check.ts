@@ -69,6 +69,11 @@ export interface Expectation<C extends string = string> {
   lag?: number
   /** After the moment, at the default load, the queues are empty again within this many seconds. */
   clears?: number
+  /**
+   * A budget: what the components with a cost cost a month stays at or under this, at the scenario's values, or at
+   * `underTarget` with one (an autoscaled pool costs what it runs at that load).
+   */
+  cost?: number
   /** A warning is reported but never fails a check run (`loadmap check`); default fail. */
   severity?: 'warn' | 'fail'
 }
@@ -92,6 +97,8 @@ export interface CheckResult<C extends string = string> {
   full: CrossingRange | null
   /** One sentence: what holds, or what was expected and what was found. */
   message: string
+  /** For a budget: what it costs a month on the pessimistic edge. */
+  cost?: number
 }
 
 /** Tests a model's expectations (or these) on the pessimistic edge. */
@@ -127,7 +134,9 @@ export function check<P, C extends string>(
         .map((part) => check(model, [{ ...written, down: part }])[0]!)
       if (!each.length) throw new Error(`loadmap: no part of "${e.down}" to take out`)
       const rank = { fail: 0, inconclusive: 1, pass: 2 } as const
-      const low = (r: CheckResult<C>) => r.target?.low ?? r.full?.low ?? Number.POSITIVE_INFINITY
+      // a budget: the part that costs most is the worst
+      const low = (r: CheckResult<C>) =>
+        r.cost != null ? -r.cost : (r.target?.low ?? r.full?.low ?? Number.POSITIVE_INFINITY)
       const worst = each.reduce((a, b) =>
         rank[b.outcome] < rank[a.outcome] || (rank[b.outcome] === rank[a.outcome] && low(b) < low(a)) ? b : a,
       )
@@ -143,6 +152,7 @@ export function check<P, C extends string>(
     const down =
       outage?.kind === 'select' && e.down != null ? ` with ${outage.format?.(e.down) ?? `${e.down} down`}` : ''
     const where = (scenario ? ` in ${scenario.label}` : '') + down
+    if (e.cost != null) return costCheck(model, e, values ?? {}, where, gaps)
     if (moment) return momentCheck(model, e, values ?? {}, where, gaps)
     if (e.lost != null) return lostCheck(model, e, values ?? {}, ev, where, gaps)
     if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
@@ -480,6 +490,59 @@ function momentCheck<P, C extends string>(
   const outcome: Outcome =
     claims.some((x) => x.at === 'fail') && !data.length ? 'fail' : data.length || edges.length ? 'inconclusive' : 'pass'
   return result(e, outcome, outcome === 'fail' ? [] : [...data, ...edges], { target: null, full: null }, message)
+}
+
+/** A budget: what the components with a cost cost a month, at the values or at `underTarget`. */
+function costCheck<P, C extends string>(
+  model: Model<P, string, C>,
+  e: Expectation<C>,
+  values: object,
+  where: string,
+  gaps: readonly [string, { missing?: string }][],
+): CheckResult<C> {
+  const load = e.underTarget ?? (values as { load?: number }).load ?? (model.defaults() as { load: number }).load
+  // at an edge of every ±: a capacity at its low bound runs more pods, so the pessimistic edge costs most. A published
+  // figure is never scaled, and keeps its own
+  const at = (edge: -1 | 0 | 1) => {
+    const ev = model.evaluate({ ...values, load } as Partial<Values<P>>)
+    if (edge === 0) return ev
+    const capacity: Record<string, number> = {}
+    for (const c of Object.values<ComponentResult<C>>(ev.components)) {
+      const w = c.capacity?.within ?? 0
+      if (w > 0 && c.capacity?.provenance !== 'published') capacity[c.id] = 1 + edge * w
+    }
+    if (!Object.keys(capacity).length) return ev
+    return model.evaluate({ ...values, load, [Symbol.for('loadmap.moment')]: { capacity } } as Partial<Values<P>>)
+  }
+  const stated = at(0)
+  if (!stated.cost) throw new Error('loadmap: an expectation on cost needs a component with a cost')
+  const low = at(-1).cost!.total
+  const high = at(1).cost!.total
+  const unit = stated.cost.currency ? ` ${stated.cost.currency}` : ''
+  const money = (x: number) => `${fmt(x)}${unit}`
+  const where_ = `at ${fmt(load)}×${where}`
+  const data = unread(stated, gaps)
+  const fits = (x: number) => x <= e.cost! + 1e-9
+  const outcome: Outcome = fits(low)
+    ? data.length
+      ? 'inconclusive'
+      : 'pass'
+    : fits(high) || data.length
+      ? 'inconclusive'
+      : 'fail'
+  const edge = !fits(low) && fits(high) ? ['holds only at the high edge of a ±'] : []
+  return {
+    ...result(
+      e,
+      outcome,
+      outcome === 'fail' ? [] : [...data, ...edge],
+      { target: null, full: null },
+      fits(low)
+        ? `it costs ${money(low)} a month ${where_}, within ${money(e.cost!)}`
+        : `expected at most ${money(e.cost!)} a month, but it costs ${money(low)} ${where_}`,
+    ),
+    cost: low,
+  }
 }
 
 /** The measured data that is missing and may move an answer: a capacity once, for its component, then every other. */

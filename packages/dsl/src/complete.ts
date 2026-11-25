@@ -517,6 +517,8 @@ class Help {
     // in a prototype or a subsystem: what the box that is like it sets, over a parameter of that name
     const inputs = scope === 'values' ? [] : this.ownInputs().flatMap((i) => (i.flow ? [] : [i.name]))
     const list: Completion[] = [
+      // in a cost: the pods or members the box runs
+      ...(scope === 'cost' ? [{ label: 'running', type: 'variable' as const, detail: 'pods running', boost: 2 }] : []),
       { label: 'load', type: 'variable', detail: '× today' },
       ...this.ids('param').flatMap((label) =>
         inputs.includes(label)

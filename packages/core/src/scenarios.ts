@@ -1,5 +1,5 @@
 import type { CrossingRange } from './capacity'
-import { capital, joinAnd, pct } from './format'
+import { capital, fmt, joinAnd, pct } from './format'
 import { type ComponentResult, type Model, reach, type Scenario, type VerdictResult } from './model'
 import type { LooseValues, Values } from './params'
 
@@ -35,6 +35,10 @@ export interface ScenarioRow<P = any, C extends string = string> {
   verdict: VerdictResult
   /** Every component, in the model's order. */
   components: readonly ComponentChange<C>[]
+  /** What the components with a cost cost a month in this scenario, at the compared load; undefined when none has one. */
+  cost?: number
+  /** That cost less the first scenario's: what this design costs more (or less) a month. */
+  costChange?: number
 }
 
 export interface Comparison<P = any, C extends string = string> {
@@ -65,6 +69,7 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
       targetRange: ev.target,
       fullRange: ev.full,
       verdict: ev.verdict,
+      ...(ev.cost ? { cost: ev.cost.total } : {}),
       components: model.componentIds.map((c) => {
         const r = ev.components[c]
         return {
@@ -79,6 +84,9 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
       }),
     }
   })
+  // each scenario's cost against the first: the table and the sentence read the same figure
+  const first = rows[0]?.cost
+  if (first != null) for (const r of rows) if (r.cost != null) r.costChange = r.cost - first
   if (rows.length < 2) return { rows, best: null, text: '' }
 
   const th = pct(model.thresholds.target)
@@ -111,10 +119,15 @@ export function compare<P, C extends string>(model: Model<P, string, C>, load = 
   const later = rows.some((r) => r !== top && sameTarget(r, top))
     ? `${by ? ',' : ''} and runs out at ${at(top.fullRange)}`
     : ''
+  // what the headroom costs against the baseline, when both have a cost and it differs
+  const delta = top.costChange ?? 0
+  const unit = model.def.currency ? ` ${model.def.currency}` : ''
+  const price =
+    Math.abs(delta) >= 0.5 ? `, for ${fmt(Math.abs(delta))}${unit} a month ${delta > 0 ? 'more' : 'less'}` : ''
   return {
     rows,
     best: top,
-    text: `${top.label} buys ${more} headroom: the ${th} target holds up to ${upTo(top)}${by}${later}, against ${against}.`,
+    text: `${top.label} buys ${more} headroom: the ${th} target holds up to ${upTo(top)}${by}${later}, against ${against}${price}.`,
   }
 }
 

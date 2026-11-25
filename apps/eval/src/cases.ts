@@ -247,6 +247,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'warms: 10min' }, { kind: 'contains', text: 'cold: [' }],
   },
   {
+    id: 'cost',
+    example: SEARCH,
+    request: 'Each API pod costs 90 € a month. Model what the API costs, in euros.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'currency' }, { kind: 'contains', text: 'running * 90' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

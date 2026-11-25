@@ -539,7 +539,7 @@ function checkCapacity(v: unknown): void {
  */
 function grounded(model: Definition['model'], r: CheckResult): CheckResult {
   const e = r.expectation
-  if (e.flow != null || e.lost != null || (e.underTarget == null && e.notFull == null)) return r
+  if (e.flow != null || e.lost != null || e.cost != null || (e.underTarget == null && e.notFull == null)) return r
   const scenario = e.scenario == null ? undefined : model.scenarios.find((s) => s.label === e.scenario)
   // a domain with its parts by name is no value of the control: check() held each part, and so each is read here
   const parts = Object.keys(
@@ -612,6 +612,8 @@ export class Compiler {
   private scenarioIds = new Map<string, string>()
   /** The failure domains declared, by id: what across and down name. */
   private domainIds = new Map<string, Span>()
+  /** Some box has a cost: a budget in an expect has something to hold. */
+  private costed = false
   /** The named parts of the domains, each with its domain: what in names, and down takes out. */
   private partIds = new Map<string, string>()
   /** Each fan-out and the copies a second it sends: what `out.<stage>` reads. */
@@ -887,6 +889,10 @@ export class Compiler {
     const stageOf = new Map<string, { block: Block; box: Box }>()
     for (const box of boxes) for (const s of box.stages) stageOf.set(s.id, { block: s.block, box })
     this.kinds = new Map([...stageOf].map(([id, s]) => [id, s.block.keyword]))
+    // a box or a component with a cost: what a budget holds. Known before the expectations are read
+    this.costed =
+      boxes.some((x) => x.component?.block.props.has('cost') || x.block.props.has('cost')) ||
+      byKind('component').some((b) => b.props.has('cost'))
     this.single = new Map(boxes.flatMap((x) => (x.stages.length === 1 ? [[x.id, x.stages[0]!.id] as const] : [])))
     const boxById = new Map(boxes.map((b) => [b.id, b]))
 
@@ -1417,6 +1423,8 @@ export class Compiler {
     }
     const title = this.constProp<string>(root, 'title')
     if (title != null) model.title = title
+    const currency = this.constProp<string>(root, 'currency')
+    if (currency != null) model.currency = currency
     if (Object.keys(presets).length) model.presets = presets
     if (Object.keys(peaks).length) model.peaks = peaks
     if (Object.keys(ramps).length) model.ramps = ramps
@@ -3495,6 +3503,50 @@ export class Compiler {
     }
     if (scenario != null) e.scenario = scenario
     if (down != null) e.down = down
+    // a budget: what the boxes with a cost cost a month, at the values or at underTarget
+    if (b.props.has('cost')) {
+      for (const k of [
+        'component',
+        'flow',
+        'to',
+        'lost',
+        'notFull',
+        'lasts',
+        'preset',
+        'queue',
+        'lag',
+        'clears',
+        'p50',
+        'p95',
+        'p99',
+      ]) {
+        const p = this.prop(b, k)
+        if (p) this.report.error('bad-expect', p.key, `an expect on cost takes no ${p.key.name}`)
+      }
+      const v = this.constProp<number>(b, 'cost')
+      if (v == null) return undefined
+      if (!(v >= 0 && Number.isFinite(v))) {
+        this.report.error('out-of-range', this.prop(b, 'cost')!.value, 'a cost is a number from 0 a month')
+        return undefined
+      }
+      if (!this.costed) {
+        this.report.error(
+          'bad-expect',
+          this.prop(b, 'cost')!.key,
+          'a budget holds what boxes cost: give one a cost',
+          'cost: running * 140',
+        )
+        return undefined
+      }
+      e.cost = v
+      const under = this.constProp<number>(b, 'underTarget')
+      if (under != null && !(under > 0 && Number.isFinite(under)))
+        this.report.error('out-of-range', this.prop(b, 'underTarget')!.value, 'underTarget is a load multiple above 0')
+      else if (under != null) e.underTarget = under
+      const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
+      if (severity) e.severity = severity
+      return e
+    }
     // what a preset's moment leaves in the queues: a lag when it ends, a time to clear after it
     const moment = ['preset', 'queue', 'lag', 'clears'].filter((k) => b.props.has(k))
     if (moment.length) {
@@ -3963,6 +4015,17 @@ export class Compiler {
       const v = this.dyn(prop.value, want, 'ctx', check)
       // the model takes demand and fills as functions only: a constant (demand: 0) becomes one
       o[k] = (k === 'demand' || k === 'fills') && v !== undefined && typeof v !== 'function' ? () => v : v
+    }
+    // what it costs a month: running is the pods or members it runs, which the model gives the formula
+    const cost = this.prop(b, 'cost')
+    if (cost)
+      o.cost = this.dyn<number>(cost.value, 'number', 'cost', (v) => {
+        if (typeof v !== 'number' || !(v >= 0) || !Number.isFinite(v))
+          throw new Error(`a cost is a number from 0 a month, not ${String(v)}`)
+      })
+    if (typeof o.cost === 'number') {
+      const fixed = o.cost
+      o.cost = () => fixed
     }
     const fails = this.dynProp<number>(b, 'fails', 'number', (v) => {
       if (typeof v !== 'number' || !(v >= 0 && v < 1))

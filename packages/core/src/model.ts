@@ -278,10 +278,19 @@ export interface ComponentDef<X> {
   over: string | ((ctx: X) => string)
   /** One line under the name in the limits list. */
   describe?: string | ((ctx: X) => string)
+  /**
+   * What it costs a month, in the model's `currency`: a formula of the values, where `running` is the pods its pools
+   * run at this load (an autoscaled pool costs what it runs), its members across a domain (those left with a part
+   * down), or 1. It is given beside the values: a parameter named `running` is not seen here. A component
+   * switched off costs nothing. `ev.cost` sums them; `compare()` puts the total in each scenario's row.
+   */
+  cost?: (ctx: X & { running: number }) => number
 }
 
 export interface ModelDef<P, F extends string, C extends string, D extends string, S extends string> {
   title?: string
+  /** What a cost is counted in, as a reader writes it after the number: "€", "USD". */
+  currency?: string
   load: LoadParam
   params?: P
   presets?: Readonly<Record<string, Partial<NoInfer<Values<P>>>>>
@@ -579,6 +588,8 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   lost: Readonly<Record<F, Lost>>
   /** The context model functions saw: for labels and other view callbacks. */
   ctx: LooseValues
+  /** What the components with a `cost` cost a month at these values, each and in all; undefined when none has one. */
+  cost?: { total: number; components: Readonly<Partial<Record<C, number>>>; currency?: string }
 }
 
 export interface Model<P = any, F extends string = string, C extends string = string, S extends string = string> {
@@ -944,6 +955,22 @@ export function defineModel<
   const expectations = (def.expect ?? []).map((written) => {
     let e = expectationNamed(written)
     const name = e.label ? `expectation "${e.label}"` : 'an expectation'
+    // a budget: what the components with a cost cost a month, at the values or at underTarget
+    if (e.cost != null) {
+      if (!(e.cost >= 0 && Number.isFinite(e.cost)))
+        throw new Error(`loadmap: ${name} has a cost of ${e.cost}: a number from 0`)
+      if (!componentIds.some((c) => def.components[c].cost != null))
+        throw new Error(`loadmap: ${name} holds a cost: give a component one`)
+      const more = (
+        ['component', 'flow', 'to', 'lost', 'notFull', 'lasts', 'preset', 'queue', 'lag', 'clears'] as const
+      ).find((k) => e[k] != null)
+      if (more || PERCENTILES.some((q) => e[q] != null))
+        throw new Error(`loadmap: ${name} holds a cost: no ${more ?? 'latency'}`)
+      const x = e.underTarget
+      if (x != null && !(x > 0 && Number.isFinite(x)))
+        throw new Error(`loadmap: ${name} needs underTarget above 0, not ${x}`)
+      return { ...e } as Expectation<C>
+    }
     const moment = e.preset != null || e.queue != null || e.lag != null || e.clears != null
     // the preset says how long its moment lasts: an expectation's own lasts is a time for growth
     if (moment && e.lasts != null) throw new Error(`loadmap: ${name} holds a moment: no lasts (the preset has it)`)
@@ -1209,6 +1236,51 @@ export function defineModel<
     return stages
   }
 
+  // the components with a monthly cost, and what they cost at a set of values
+  const costed = componentIds.filter((c) => def.components[c].cost != null)
+  // the pools each costed component runs: fixed with the definition
+  const poolsOf = new Map(
+    costed.map((c) => [
+      c,
+      stageIds.filter((s) => {
+        const st = def.stages[s] as StageDef
+        return st.kind === 'workers' && st.component === c
+      }),
+    ]),
+  )
+  const costOf = (
+    ctx: LooseValues,
+    stages: Readonly<Record<string, ResolvedStage>>,
+    components: Record<C, ComponentResult<C>>,
+  ) => {
+    const by = {} as Partial<Record<C, number>>
+    let total = 0
+    for (const c of costed) {
+      const r = components[c]
+      // switched off, it costs nothing
+      if (r.util == null && r.missing == null) {
+        by[c] = 0
+        continue
+      }
+      // what it runs at this load: its pools' pods, the members left across a domain, or one
+      const pools = poolsOf.get(c)!
+      const across = def.components[c].across
+      const members =
+        across == null ? 1 : typeof across.members === 'function' ? across.members(ctx as any) : across.members
+      const running = pools.length
+        ? pools.reduce((a, s) => {
+            const st = stages[s]
+            return a + (st?.kind === 'workers' ? st.running : 0)
+          }, 0)
+        : (r.out?.left ?? members)
+      const v = def.components[c].cost!({ ...ctx, running } as never)
+      if (!(v >= 0 && Number.isFinite(v)))
+        throw new Error(`loadmap: component "${c}" costs ${v} a month: a number from 0`)
+      by[c] = v
+      total += v
+    }
+    return { total, components: by, ...(def.currency != null ? { currency: def.currency } : {}) }
+  }
   const evaluate = (partial?: Partial<Values<P>>): Evaluation<P, F, C, S> => {
     const values = { ...defaults(), ...partial } as Values<P>
     const {
@@ -1418,6 +1490,7 @@ export function defineModel<
         return lost
       },
       ctx,
+      ...(costed.length ? { cost: costOf(ctx, stages as Record<string, ResolvedStage>, components) } : {}),
     }
   }
 
