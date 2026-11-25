@@ -40,6 +40,8 @@ export interface Particle {
   to: Place
   /** Set on a copy made at a fan-out: the branch stage it is heading to. */
   branch?: string
+  /** Set on a copy whose branch goes on: the stages it goes through, as a unit goes its route. */
+  chain?: readonly string[]
   /** Set on a cache hit heading back to where it came from, answered. */
   back?: boolean
   /** Which attempt this is: 0 for the first, 1 for the first retry, and so on. */
@@ -119,6 +121,7 @@ export class Sim {
   #lost = new Map<string, string>() // `${stage}/${outcome}` → the lost box that takes what the stage loses so
   #late = new Map<string, number>() // `${flow}/${path}` or `${flow}/${path}/${cache}` → the share of those too slow
   #inflow = new Map<string, number>() // `${stage}/${flow}` → units per second reaching that stage
+  #branch = new Map<string, readonly string[]>() // `${queue}/${flow}` → the fan-out branch the queue is on
   #capacity = new Map<string, number>() // stage → units per second it can drain
   #spawn = new Map<string, number>()
   #nextId = 1
@@ -202,6 +205,7 @@ export class Sim {
         for (const w of ev.latency[f]?.ways ?? [])
           this.#late.set(`${f}/${w.path}${w.answeredAt ? `/${w.answeredAt}` : ''}`, w.timedOut)
     this.#inflow.clear()
+    this.#branch.clear()
     for (const f of this.#model.flowIds) {
       const ways = ev.paths[f] ?? []
       for (const way of ways) {
@@ -218,6 +222,22 @@ export class Sim {
           const u = reader == null ? null : ev.components[reader]?.util
           if (s.kind === 'queue' && ev.overload[f]?.drop && u != null && u > full) rate *= full / u
           if (s.kind === 'cache') rate *= 1 - s.hit
+          // what the stage works on and fails goes no further
+          rate *= 1 - (s.fails ?? 0)
+          // a branch that goes on: what reaches each of its stages, so a queue on it fills as one on a route does
+          if (s.kind === 'fanout')
+            for (const b of s.to[f] ?? []) {
+              if (b.stages.length < 2) continue
+              let copies = rate * (1 - s.shed) * b.share
+              for (const t of b.stages) {
+                this.#inflow.set(`${t}/${f}`, (this.#inflow.get(`${t}/${f}`) ?? 0) + copies)
+                // the queue's reader on this branch: the next stage of it
+                if (ev.stages[t]?.kind === 'queue') this.#branch.set(`${t}/${f}`, b.stages)
+                const on = ev.stages[t] as ResolvedStage
+                copies *= (1 - this.#shedOf(t, f)) * (1 - (on.fails ?? 0))
+                if (on.kind === 'cache') copies *= 1 - on.hit
+              }
+            }
         }
       }
     }
@@ -358,7 +378,9 @@ export class Sim {
       this.#queues.set(q.id, qs)
       for (const f of this.#model.flowIds) {
         // the stage after a queue is the same on every way through it: the ways part only at a split
-        const route = (ev.paths[f] ?? []).find((p) => p.stages.includes(q.id))?.stages
+        // on a way, or on a fan-out's branch that goes on: its reader is the next stage there
+        const route =
+          (ev.paths[f] ?? []).find((p) => p.stages.includes(q.id))?.stages ?? this.#branch.get(`${q.id}/${f}`)
         if (!route) continue
         const fq = qs.get(f) ?? { cohorts: [], s: emptyQueue() }
         qs.set(f, fq)
@@ -596,10 +618,10 @@ export class Sim {
     }
     const born: Particle[] = []
     const advance = (d: Particle) => {
-      const route = this.#way(d.flow, d.path, d.fallback)
+      const route = d.chain ?? this.#way(d.flow, d.path, d.fallback)
       if (d.leg + 1 >= route.length) {
         // too slow for its client: it fails at the end of its way and is sent again, as the model's share says
-        const late = d.fallback ? 0 : this.#late.get(`${d.flow}/${d.path ?? 0}`)
+        const late = d.fallback || d.chain ? 0 : this.#late.get(`${d.flow}/${d.path ?? 0}`)
         if (late && this.#r() < late) return reject(d, 'timedout')
         return fade(d, 'delivered', 0.35)
       }
@@ -654,6 +676,9 @@ export class Sim {
       return true
     }
     const reject = (d: Particle, outcome: 'rejected' | 'timedout' | 'failed' = 'rejected', at = d.to.stage) => {
+      // a copy is no unit: nobody sends it again, no fallback serves it, and no lost box counts it. It fades where it
+      // is, as a copy to a one-stage branch does
+      if (d.chain) return fade(d, outcome, 0.6)
       // the fallback's own units are no attempts: what it turns away is lost
       // a hop's caller sends it again first; a timeout is the client's, so only the client's retry answers it
       const room = !d.fallback && this.particles.length + born.length < this.#o.maxParticles
@@ -696,17 +721,31 @@ export class Sim {
           const copies = Math.floor(b.share) + (this.#r() < b.share % 1 ? 1 : 0)
           for (let i = 0; i < copies; i++, made++)
             if (this.particles.length + born.length < this.#o.maxParticles)
-              born.push({
-                id: this.#nextId++,
-                flow: d.flow,
-                leg: d.leg,
-                phase: 'move',
-                t: 0,
-                dur: this.#o.legSeconds,
-                from: d.to,
-                to: { stage: b.stage },
-                branch: b.stage,
-              })
+              born.push(
+                b.stages.length > 1
+                  ? {
+                      id: this.#nextId++,
+                      flow: d.flow,
+                      leg: 0,
+                      phase: 'move',
+                      t: 0,
+                      dur: this.#o.legSeconds,
+                      from: d.to,
+                      to: this.#place(b.stage, d.flow, d.to),
+                      chain: b.stages,
+                    }
+                  : {
+                      id: this.#nextId++,
+                      flow: d.flow,
+                      leg: d.leg,
+                      phase: 'move',
+                      t: 0,
+                      dur: this.#o.legSeconds,
+                      from: d.to,
+                      to: { stage: b.stage },
+                      branch: b.stage,
+                    },
+              )
         }
         // the copies carry on; a unit nobody receives fades where it stopped
         if (made) fade(d, 'delivered', 0)
@@ -714,7 +753,9 @@ export class Sim {
       } else if (d.phase === 'move') {
         const turnsAway =
           stage.kind === 'pass' || stage.kind === 'limit' || stage.kind === 'cache' || stage.kind === 'split'
-        if (turnsAway && this.#r() < this.#shedOf(stage.id, d.flow)) reject(d)
+        // a copy the fan-out itself turned away never starts along its branch
+        if (d.chain && d.leg === 0 && this.#r() < this.shed(d.from.stage ?? '')) fade(d, 'rejected', 0.35)
+        else if (turnsAway && this.#r() < this.#shedOf(stage.id, d.flow)) reject(d)
         // what the stage works on and fails: the same share the model counts as failed there
         else if (stage.fails && this.#r() < stage.fails) reject(d, 'failed')
         else if (stage.kind === 'cache' && this.#r() < stage.hit) {
@@ -786,7 +827,7 @@ export class Sim {
    * reads, the lag on average over the partitions. Without an exclusive connection after the queue, the lag.
    */
   #heat(d: Particle): number {
-    const route = this.#way(d.flow, d.path, d.fallback)
+    const route = d.chain ?? this.#way(d.flow, d.path, d.fallback)
     const next = route[d.leg + 1]
     const s = next == null ? undefined : this.#ev.stages[next]
     const a = s?.kind === 'workers' ? s.assignment : undefined

@@ -56,7 +56,8 @@ pool senders "Senders" `${pods} pods × 8` {
 node dispatch "Dispatch" {
   fanout {
     events -> push: 1
-    events -> email: emailShare
+    # a branch that goes on: emails wait in an outbox for the mailers, and only then reach the provider
+    events -> outbox -> mailers -> email: emailShare
     events -> sms: 0.05
   }
 }
@@ -67,6 +68,21 @@ node push "Push service" "APNs and FCM" {
   demand: flows.events
   capacity: estimated(5_000, "messages/s", "provider guidance")
   over: "pushes are throttled and arrive late"
+}
+
+cluster mailQueue "Outbox" "emails waiting" {
+  members: 1
+  queue outbox { partitions { events: 4 } }
+}
+
+pool mailers "Mailers" "2 pods × 4" {
+  pods: 2
+  perPod: 4
+  short: "the mailers"
+  plural: true
+  demand: at.mailers.events * 5ms
+  capacity: measured(2 * 1, "cores", "pod CPU limit")
+  over: "emails wait in the outbox and arrive late"
 }
 
 node email "Email provider" {
@@ -90,5 +106,7 @@ api -> broker
 broker -> senders
 senders -> dispatch
 dispatch -> push
-dispatch -> email
+dispatch -> mailQueue
+mailQueue -> mailers
+mailers -> email
 dispatch -> sms

@@ -737,7 +737,9 @@ function RateStrokes({ lm, scene }: { lm: LoadmapController; scene: Scene }) {
       const last = way.stages.at(-1)
       const st = last ? ev.stages[last] : undefined
       if (st?.kind === 'fanout')
-        for (const b of st.to[f] ?? []) legs.push([scene.stageNode[last!], scene.stageNode[b.stage], rate * b.share])
+        for (const b of st.to[f] ?? [])
+          for (const [k, s] of b.stages.entries())
+            legs.push([scene.stageNode[k ? b.stages[k - 1]! : last!], scene.stageNode[s], rate * b.share])
     }
     const on = new Map<string, { points: Scene['edges'][number]['points']; r: number }>()
     for (const [from, to, r] of legs) {

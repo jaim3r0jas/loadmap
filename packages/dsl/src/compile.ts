@@ -860,6 +860,7 @@ export class Compiler {
 
     const stageOf = new Map<string, { block: Block; box: Box }>()
     for (const box of boxes) for (const s of box.stages) stageOf.set(s.id, { block: s.block, box })
+    this.kinds = new Map([...stageOf].map(([id, s]) => [id, s.block.keyword]))
     const boxById = new Map(boxes.map((b) => [b.id, b]))
 
     // the model
@@ -1853,6 +1854,8 @@ export class Compiler {
   private wayAt: { split: string; flow: string; stages: string[]; at: Span }[] = []
   private branchAt = new Map<string, Span>()
   private whenAt = new WeakMap<EdgeDef, Span>()
+  /** Each stage's keyword: what a fan-out's branch may go through. */
+  private kinds = new Map<string, string>()
   /** The edges that hold a delay, as written: the model takes them once the stages and flows are known. */
   private delays: { from: string; to: string; delay: number | ((v: unknown) => number); at: Span }[] = []
   private connectionAt = new Map<string, Span>()
@@ -3904,36 +3907,54 @@ export class Compiler {
         return queue({ ...base, partitions, ...(component ? { component } : {}) })
       }
       case 'fanout': {
-        const branches: [string, string, number | ((c: any) => number)][] = []
+        const branches: [string, string[], number | ((c: any) => number)][] = []
         for (const e of b.edges) {
-          if (e.chain.length !== 2) {
+          if (e.chain.length < 2) {
             this.report.error('bad-route', e, 'a branch is one "flow -> stage: copies" line')
             continue
           }
-          const [f, s] = e.chain as [Ident, Ident]
+          // the flow, then the stage its copy goes to, or the stages it goes on through
+          const [f, ...through] = e.chain as [Ident, ...Ident[]]
           if (!flows.has(f.name))
             this.report.error('unknown-name', f, `unknown flow "${f.name}"`, didYouMean(f.name, flows.keys()))
-          const stage = resolve(s, 'stage')
-          if (stage) reached.add(stage)
-          if (stage) this.branchAt.set(`${f.name}\u0000${stage}`, e)
+          const stages = through.map((n) => resolve(n, 'stage'))
+          let fits = true
+          for (const [k, stage] of stages.entries()) {
+            if (!stage) continue
+            reached.add(stage)
+            this.branchAt.set(`${f.name}\u0000${stage}`, e)
+            const kind = this.kinds.get(stage)
+            if (through.length > 1 && (kind === 'fanout' || kind === 'split' || kind === 'lost')) {
+              fits = false
+              this.report.error(
+                'bad-route',
+                through[k]!,
+                `a branch goes on through queues, pools and stages that end it, not through the ${kind === 'fanout' ? 'fan-out' : kind} "${stage}"`,
+              )
+            }
+          }
+          const said = through.map((n) => n.name).join(' -> ')
           if (e.colon) {
             this.report.error(
               'bad-route',
               e.colon,
               'a branch takes its copies after ":", not a block',
-              `${f.name} -> ${s.name}: 1`,
+              `${f.name} -> ${said}: 1`,
             )
             continue
           }
-          if (!e.value) this.report.error('bad-route', e, 'how many copies per unit?', `${f.name} -> ${s.name}: 1`)
+          if (!e.value) this.report.error('bad-route', e, 'how many copies per unit?', `${f.name} -> ${said}: 1`)
           if (e.body) this.report.error('bad-route', e.bodySpan ?? e, 'a branch has no block')
-          if (stage && e.value && flows.has(f.name)) branches.push([f.name, stage, this.dyn<number>(e.value, 'number')])
+          if (fits && stages.every((x) => x) && e.value && flows.has(f.name))
+            branches.push([f.name, stages as string[], this.dyn<number>(e.value, 'number')])
         }
         const build = (ctx: any) => {
           const to: Record<string, Branch[]> = {}
-          for (const [f, stage, share] of branches) {
+          for (const [f, stages, share] of branches) {
             const list = to[f] ?? []
-            list.push({ stage, share: typeof share === 'function' ? share(ctx) : share })
+            const copies = typeof share === 'function' ? share(ctx) : share
+            // one stage is the branch it always was
+            list.push(stages.length === 1 ? { stage: stages[0]!, share: copies } : { stages, share: copies })
             to[f] = list
           }
           return to
