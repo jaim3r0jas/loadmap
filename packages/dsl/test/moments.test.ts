@@ -69,3 +69,85 @@ describe('a moment in the language', () => {
     expect(m.def.presets).toEqual({ 'Flash sale': { load: 8, ramp: 2 } })
   })
 })
+
+const COLD = `loadmap 1.8
+load { max: 20 }
+
+preset "Sale" { load: 8; lasts: 10min; cold: [appCache] }
+
+flow reads "reads" { rate: 100 * load; from: users; route: appCache -> db }
+
+node users "Users"
+node appCache "Cache" {
+  cache { hit: 90%; warms: 5min }
+}
+node db "Database" {
+  pass
+  short: "the database"
+  capacity: measured(300, "req/s")
+  over: "reads are turned away"
+}
+node refused "Turned away" { lost { takes: [rejected] } }
+
+users -> appCache
+appCache -> db
+db -> refused
+`
+
+describe('a cold cache in the language', () => {
+  it('takes warms on a cache and cold on a preset', () => {
+    expect(format(COLD).text).toBe(COLD)
+    expect(errors(COLD)).toEqual([])
+    const m = compile(COLD).definition!.model
+    expect(m.def.colds).toEqual({ Sale: ['appCache'] })
+    expect(moment(m, {}, 'Sale').text).toBe('8× at once: up to 62 % of reads is lost for 3 min, while the cache warms.')
+  })
+
+  it('is from loadmap 1.8, and wants a cache with a warms time in a moment', () => {
+    expect(errors(COLD.replace('loadmap 1.8', 'loadmap 1.7'))).toEqual([
+      'error: language-version: "cold:" is from loadmap 1.8; this definition says loadmap 1.7 | write "loadmap 1.8" on the first line',
+      'error: language-version: "warms:" is from loadmap 1.8; this definition says loadmap 1.7 | write "loadmap 1.8" on the first line',
+    ])
+    expect(errors(COLD.replace('cold: [appCache]', 'cold: [db]'))).toEqual([
+      'error: bad-value: "db" is no cache: only a cache starts cold',
+    ])
+    expect(errors(COLD.replace('cold: [appCache]', 'cold: [nope]'))).toEqual([
+      'error: unknown-name: unknown stage "nope"',
+    ])
+    expect(errors(COLD.replace('; warms: 5min', ''))).toEqual([
+      'error: bad-value: cache "appCache" starts cold: give it warms, the time it takes | warms: 5min',
+    ])
+    expect(errors(COLD.replace('lasts: 10min; ', ''))).toEqual([
+      'error: bad-value: a preset starts caches cold in its moment: say how long it lasts | lasts: 10min',
+    ])
+  })
+})
+
+describe('a parameter named cold', () => {
+  it('is set in a preset as any value, in a file of loadmap 1.7', () => {
+    const src = `loadmap 1.7
+load { max: 10 }
+param cold "Cold" { default: false }
+preset "Winter" { cold: true }
+flow a "a" { rate: 10 * load; route: api; from: users }
+node users "Users"
+node api "API" {
+  pass
+  capacity: measured(100, "req/s")
+  over: "x"
+}
+users -> api
+`
+    expect(errors(src)).toEqual([])
+    expect(compile(src).definition!.model.def.presets).toEqual({ Winter: { cold: true } })
+  })
+
+  it('leaves no cold caches or ramp where the length was refused', () => {
+    const src = COLD.replace('lasts: 10min; cold: [appCache]', 'lasts: 0s; cold: [appCache]; ramp: 10s')
+    expect(errors(src)).toEqual([
+      'error: out-of-range: a peak lasts a time above 0',
+      'error: bad-value: a preset starts caches cold in its moment: say how long it lasts | lasts: 10min',
+      'error: bad-value: a ramp is the way up to a moment: say how long it lasts | lasts: 10min',
+    ])
+  })
+})

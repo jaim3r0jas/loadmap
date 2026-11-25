@@ -27,7 +27,7 @@ param newest "Keep only the newest event" { default: true }
 param hit "Cache hit ratio" { options: [0.5, 0.8]; default: 0.8 }
 
 # a moment with a way up: the load climbs to 20× in a minute, then holds for two hours
-preset "Sale day" { load: 20; pods: 8; lasts: 2h; ramp: 1min }
+preset "Sale day" { load: 20; pods: 8; lasts: 2h; ramp: 1min; cold: [resultCache] }
 
 scenario "Bigger API" { pods: 8 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
@@ -186,7 +186,8 @@ component lookups "Cache lookups" {
   over: "lookups time out and fall through"
 }
 
-node resultCache "Cache" `${hit * 100} % hits` { cache { hit: hit; component: lookups } }
+# cold, it takes five minutes to answer its share again
+node resultCache "Cache" `${hit * 100} % hits` { cache { hit: hit; warms: 5min; component: lookups } }
 
 # a pool of slots: each unit holds a connection for a while, so it counts slots in use, not a rate; through says the
 # stretch of the way it is held for on top, so the pool runs short when the database slows

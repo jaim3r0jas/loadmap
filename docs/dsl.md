@@ -190,8 +190,17 @@ fixed number of steps over the ramp and the moment's length, with no clock and n
 never scaled, so a pool still starting pods has none then. In TypeScript, `ramps` beside `peaks`, `ready` in the
 `autoscale`, and `moment(model, values, preset)` from `@loadmap/core/moments`.
 
+A moment can start with caches cold: `cold: [appCache]` on the preset, and `warms: 5min` on each cache, the time it
+takes from no hits to its `hit`. The walk spends a limit's `burst` too ([Rate limits](#rate-limits)), and fills a queue
+with a size before it refuses anything ([Queues](#queues)): "6× at once: nothing is lost for 2.5 s, until the burst of
+the rate limiter is spent, then 67 % of searches as it holds."
+
 ```loadmap
-preset "Flash sale" { load: 8; lasts: 10min; ramp: 30s }
+preset "Flash sale" { load: 8; lasts: 10min; ramp: 30s; cold: [appCache] }
+
+node appCache "Cache" {
+  cache { hit: 90%; warms: 5min }
+}
 
 pool api "API" "2 to 12 pods" {
   perPod: 4
@@ -2032,7 +2041,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up; `cold` on a preset and `warms` on a cache | |
 
 ## In code
 
@@ -2339,6 +2348,7 @@ After the keyword: label.
 | Property | Value | |
 | --- | --- | --- |
 | `lasts` | number in seconds, constant | How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load. From loadmap 1.7. |
+| `cold` | stages, constant | The caches its moment starts cold: [appCache]. Each has none of its hits at the start and warms over its warms time. Needs lasts. From loadmap 1.8. |
 | `ramp` | number in seconds, constant | How long the load takes to climb from the default to the preset's, before the moment holds: 30s. Needs lasts. The verdict then says what is lost on the way: "8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready". From loadmap 1.8. |
 | `down` | domain, constant | A failure domain with one part out (N−1): what the Outage control sets. From loadmap 1.7. |
 
@@ -2864,6 +2874,7 @@ After the keyword: [id] [label].
 | Property | Value | |
 | --- | --- | --- |
 | `hit` (required) | share, formula | The share answered here, 0 to 1. |
+| `warms` | number in seconds, formula of parameters | Seconds it takes to warm from no hits to hit: 5min. No steady figure changes; a preset that names it in cold starts its moment with the cache cold, and the verdict says what is lost while it warms. From loadmap 1.8. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 ### limit

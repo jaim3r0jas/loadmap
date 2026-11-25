@@ -81,6 +81,11 @@ export interface CacheStage<C extends string = string> extends StageBase {
   component?: C
   /** The share of units answered from the cache, 0 to 1. */
   hit: Dyn<number>
+  /**
+   * Seconds a cold cache takes to warm, from no hits to its `hit`. No steady figure changes: a preset names the caches
+   * its moment starts cold (`colds`), and `moment()` gives them their hits over that time.
+   */
+  warms?: Dyn<number>
 }
 
 /**
@@ -259,7 +264,7 @@ export function workers<const C extends string>(
 }
 
 export function cache<const C extends string = never>(
-  o: { hit: Dyn<number>; component?: C } & StageBase,
+  o: { hit: Dyn<number>; component?: C; warms?: Dyn<number> } & StageBase,
 ): CacheStage<C> {
   return { kind: 'cache', ...o }
 }

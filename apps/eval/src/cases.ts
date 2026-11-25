@@ -240,6 +240,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'ramp: 20s' }, { kind: 'contains', text: 'ready: 1min' }],
   },
   {
+    id: 'moment-cold',
+    example: SEARCH,
+    request:
+      'The cache takes 10 minutes to warm. Add a preset "Restart" at 3× that lasts an hour and starts with the cache cold.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'warms: 10min' }, { kind: 'contains', text: 'cold: [' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

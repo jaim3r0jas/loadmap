@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defineModel, lost, measured, p, pass, published, sink, workers } from '../src'
+import { cache, configured, defineModel, limit, lost, measured, p, pass, published, queue, sink, workers } from '../src'
 import { kafka } from '../src/catalog'
 import { moment } from '../src/moments'
 
@@ -90,7 +90,7 @@ describe('a moment', () => {
       '14× in 30 s: up to 86 % of requests is lost for 102 s, until the twelfth pod of the API is ready, then 14 % as it holds.',
     )
     expect(moment(shop({ to: 14 }), {}, 'Flash sale').text).toBe(
-      '14× at once: no more is lost on the way than once every pod is ready, 14 % of requests.',
+      '14× at once: no more is lost on the way than as it holds, 14 % of requests.',
     )
   })
 
@@ -126,5 +126,148 @@ describe('a moment', () => {
     )
     expect(() => shop({ ramp: -1 })).toThrow('preset "Flash sale" ramps over -1 s')
     expect(() => shop({ ready: -1 }).evaluate({ load: 1 })).toThrow('needs a ready time from 0 seconds, not -1')
+  })
+})
+
+describe('a moment that meets a cold cache, a bucket and a queue with a size', () => {
+  it('warms a cold cache over its time: the loss ends while it warms', () => {
+    // a cache of 90 % in front of a database of 300 a second; at 8× 800 arrive, all of them at the database at first
+    const cached = (o: { warms?: number; cold?: boolean } = {}) =>
+      defineModel({
+        load: p.load({ max: 20 }),
+        flows: { reads: { label: 'reads', rate: ({ load }) => 100 * load } },
+        components: { db: { name: 'Database', short: 'the database', capacity: measured(300, 'req/s'), over: 'x' } },
+        stages: {
+          appCache: cache({ hit: 0.9, ...(o.warms != null ? { warms: o.warms } : {}) }),
+          db: pass('db'),
+          gone: lost({ from: ['db'] }),
+          out: sink(),
+        },
+        routes: { reads: ['appCache', 'db', 'out'] },
+        presets: { Sale: { load: 8 } },
+        peaks: { Sale: 600 },
+        ...(o.cold ? { colds: { Sale: ['appCache'] } } : {}),
+      })
+    const m = moment(cached({ warms: 300, cold: true }), {}, 'Sale')
+    expect(m.text).toBe('8× at once: up to 62 % of reads is lost for 3 min, while the cache warms.')
+    // it answers 90 % × the share warmed: past 69 % warm, 300 of 800 reach the database
+    expect(m.lost.reads!.until).toBeCloseTo(207.5, 6)
+    expect(m.steps.at(-1)!.warm).toEqual({ appCache: 1 })
+    // warm from the start, it keeps up
+    expect(moment(cached({ warms: 300 }), {}, 'Sale').text).toBe('8× at once: everything keeps up on the way.')
+    expect(() => cached({ cold: true })).toThrow('starts cache "appCache" cold: give it warms')
+  })
+
+  it("spends a limit's bucket before the limit cuts in", () => {
+    // a limit of 100 a second with a bucket of 500; at 6× 300 arrive, 200 above it
+    const m = moment(
+      defineModel({
+        load: p.load({ max: 20 }),
+        flows: { searches: { label: 'searches', rate: ({ load }) => 50 * load } },
+        components: {
+          limiter: {
+            name: 'Rate limiter',
+            short: 'the rate limiter',
+            capacity: configured(100, 'req/s', 'gateway'),
+            over: 'x',
+          },
+        },
+        stages: { limiter: limit('limiter', { burst: 500 }), out: sink(), gone: lost({ from: ['limiter'] }) },
+        routes: { searches: ['limiter', 'out'] },
+        presets: { Rush: { load: 6 } },
+        peaks: { Rush: 60 },
+      }),
+      {},
+      'Rush',
+    )
+    expect(m.text).toBe(
+      '6× at once: nothing is lost for 2.5 s, until the burst of the rate limiter is spent, then 67 % of searches as it holds.',
+    )
+    expect(m.steps[0]!.bucket.limiter).toBeLessThan(500)
+    // what the bucket let through is not lost: 200 a second for 57.5 s
+    expect(m.lost.searches!.units).toBeCloseTo(200 * 57.5, 6)
+  })
+
+  it('fills a queue with a size before it refuses anything', () => {
+    // an inbox of 5,000 before runners of 200 a second; at 3× 300 arrive: full after 50 s
+    const inbox = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { jobs: { label: 'jobs', rate: ({ load }) => 100 * load } },
+      components: {
+        runners: {
+          name: 'Runners',
+          demand: ({ flows }) => flows.jobs * 0.01,
+          capacity: measured(2, 'cores'),
+          over: 'x',
+        },
+      },
+      stages: {
+        inbox: queue({ partitions: { jobs: 1 }, holds: 5000, label: 'the inbox' }),
+        runners: workers('runners', { pods: 2, perPod: 4 }),
+        refused: lost({ from: ['inbox'] }),
+        out: sink(),
+      },
+      routes: { jobs: ['inbox', 'runners', 'out'] },
+      presets: { Rush: { load: 3 } },
+      peaks: { Rush: 600 },
+    })
+    const m = moment(inbox, {}, 'Rush')
+    expect(m.text).toBe('3× at once: nothing is lost for 50 s, until the inbox is full, then 33 % of jobs as it holds.')
+    expect(m.steps.at(-1)!.queued).toEqual({ inbox: 5000 })
+  })
+})
+
+describe('a moment with a bucket or a queue on a long hold', () => {
+  const limited = (lasts: number) =>
+    defineModel({
+      load: p.load({ max: 20 }),
+      flows: { searches: { label: 'searches', rate: ({ load }) => 50 * load } },
+      components: {
+        limiter: {
+          name: 'Rate limiter',
+          short: 'the rate limiter',
+          capacity: configured(100, 'req/s', 'gateway'),
+          over: 'x',
+        },
+      },
+      stages: { limiter: limit('limiter', { burst: 500 }), out: sink(), gone: lost({ from: ['limiter'] }) },
+      routes: { searches: ['limiter', 'out'] },
+      presets: { Rush: { load: 6 } },
+      peaks: { Rush: lasts },
+    })
+  const inbox = (holds: number, lasts: number) =>
+    defineModel({
+      load: p.load({ max: 10 }),
+      flows: { jobs: { label: 'jobs', rate: ({ load }) => 100 * load } },
+      components: {
+        runners: {
+          name: 'Runners',
+          demand: ({ flows }) => flows.jobs * 0.01,
+          capacity: measured(2, 'cores'),
+          over: 'x',
+        },
+      },
+      stages: {
+        inbox: queue({ partitions: { jobs: 1 }, holds, label: 'the inbox' }),
+        runners: workers('runners', { pods: 2, perPod: 4 }),
+        refused: lost({ from: ['inbox'] }),
+        out: sink(),
+      },
+      routes: { jobs: ['inbox', 'runners', 'out'] },
+      presets: { Rush: { load: 3 } },
+      peaks: { Rush: lasts },
+    })
+
+  it('still sees a short burst inside a long moment', () => {
+    const m = moment(limited(600), {}, 'Rush')
+    expect(m.text).toBe(
+      '6× at once: nothing is lost for 2.5 s, until the burst of the rate limiter is spent, then 67 % of searches as it holds.',
+    )
+    expect(m.lost.searches!.units).toBeCloseTo(200 * 597.5, 6)
+  })
+
+  it('says nothing is lost when the queue never fills in the moment', () => {
+    // 100,000 at 100 a second take 1,000 s: more than the minute it lasts
+    expect(moment(inbox(100_000, 60), {}, 'Rush').text).toBe('3× at once: nothing is lost in its 1 min.')
   })
 })
