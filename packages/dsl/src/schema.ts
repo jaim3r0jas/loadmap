@@ -720,6 +720,32 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         since: '1.7',
         doc: "Nothing (or this component) runs out for this long from growth's asOf: 365d. The growth turns it into a load multiple, so it needs one.",
       },
+      preset: {
+        value: 'string',
+        scope: 'const',
+        since: '1.8',
+        doc: 'A moment: the label of a preset that lasts. With lag or clears, the expect holds what that long at the preset\'s values (on top of the scenario\'s) leaves in the queues: `preset: "Sale day"; lag: 5min`.',
+      },
+      queue: {
+        value: 'route',
+        scope: 'const',
+        since: '1.8',
+        doc: 'With preset: one queue. Every queue without.',
+      },
+      lag: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        since: '1.8',
+        doc: "When the preset's moment ends, the oldest unit waiting in the queue has waited at most this long: 5min.",
+      },
+      clears: {
+        value: 'number',
+        scope: 'const',
+        unit: 'seconds',
+        since: '1.8',
+        doc: "After the preset's moment, at the default load, the queue is empty again within this long: 1h.",
+      },
       severity: {
         value: 'enum',
         scope: 'const',

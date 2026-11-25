@@ -896,7 +896,7 @@ export class Compiler {
     const expects: Record<string, unknown>[] = []
     this.hasGrowth = byKind('growth').length > 0
     for (const b of byKind('expect')) {
-      const e = this.expectation(b, scenarios, limits, flowNames)
+      const e = this.expectation(b, scenarios, limits, flowNames, peaks)
       if (!e) continue
       expects.push(e)
       this.expectSpans.push({ from: b.at.from, to: b.args.label?.to ?? b.at.to })
@@ -3285,6 +3285,7 @@ export class Compiler {
     scenarios: Record<string, unknown>,
     components: Map<string, Span>,
     flows: Map<string, Span>,
+    peaks: Readonly<Record<string, number>>,
   ): Record<string, unknown> | undefined {
     const e: Record<string, unknown> = {}
     const label = this.text(b.args.label)
@@ -3322,6 +3323,50 @@ export class Compiler {
     }
     if (scenario != null) e.scenario = scenario
     if (down != null) e.down = down
+    // what a preset's moment leaves in the queues: a lag when it ends, a time to clear after it
+    const moment = ['preset', 'queue', 'lag', 'clears'].filter((k) => b.props.has(k))
+    if (moment.length) {
+      const takes = ['lag', 'clears'].filter((k) => b.props.has(k))
+      if (!takes.length || !b.props.has('preset')) {
+        this.report.error(
+          'bad-expect',
+          this.prop(b, moment[0]!)!.key,
+          takes.length
+            ? `${takes[0]} is what a moment leaves in a queue: name the preset that lasts`
+            : `${moment[0]} is for a moment: say the lag it may leave, or the time to clear it`,
+          'preset: "Sale day"; lag: 5min',
+        )
+        return undefined
+      }
+      for (const k of ['component', 'flow', 'to', 'lost', 'underTarget', 'notFull', 'lasts', 'p50', 'p95', 'p99']) {
+        const p = this.prop(b, k)
+        if (p) this.report.error('bad-expect', p.key, `an expect on a moment takes no ${p.key.name}`)
+      }
+      const preset = this.named(b, 'preset', Object.keys(peaks), 'preset that lasts')
+      // one queue, by its name or its box's where the box holds that one stage, as a route names it
+      const one = this.prop(b, 'queue')
+      if (one?.chain && one.chain.length > 1) {
+        this.report.error('bad-expect', one.value, 'queue is one queue, not a way through several', 'queue: topic')
+        return undefined
+      }
+      const queues = [...this.kinds].filter(([, kind]) => kind === 'queue').map(([id]) => id)
+      const boxes = [...this.single].filter(([, stage]) => queues.includes(stage)).map(([box]) => box)
+      const said = this.named(b, 'queue', [...queues, ...boxes], 'queue')
+      if (preset == null || said === null) return undefined
+      e.preset = preset
+      if (said != null) e.queue = queues.includes(said) ? said : this.single.get(said)!
+      for (const k of takes) {
+        const v = this.constProp<number>(b, k)
+        if (!(v != null && v > 0 && Number.isFinite(v))) {
+          this.report.error('out-of-range', this.prop(b, k)!.value, `${k} is a time above 0`)
+          return undefined
+        }
+        e[k] = v
+      }
+      const severity = this.constProp<'warn' | 'fail'>(b, 'severity')
+      if (severity) e.severity = severity
+      return e
+    }
     if (component != null) e.component = component
     // a flow's latency: one percentile under a time, at the values or up to underTarget
     const qs = ['p50', 'p95', 'p99'].filter((q) => b.props.has(q))

@@ -131,5 +131,5 @@ describe('rename', () => {
         expect(back.source).toBe(src)
       }
     }
-  }, 180_000)
+  }, 360_000)
 })

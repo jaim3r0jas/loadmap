@@ -39,6 +39,8 @@ expect "Orders answer in a second" { flow: orders; p99: 1 }
 expect "Orders lose nothing today" { flow: orders; lost: 0% }
 # a fan-out branch has figures of its own: to names a stage on it, and the expect holds the branch up to there
 expect "Every audited event is archived" { flow: events; to: archive; lost: 0% }
+# what a moment leaves in a queue: how old its oldest unit is when the preset ends, and how soon it is empty again
+expect "The topic is read again an hour after a sale day" { preset: "Sale day"; queue: topic; lag: 2min; clears: 1h }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }
 step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: eventWorkers }

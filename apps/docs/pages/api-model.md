@@ -346,7 +346,7 @@ pessimistic edge (`derived: true`).
 `peaks` says how long a preset's moment lasts, by its label: `{ 'Black Friday': 7_200 }`. The preset then has its
 `lasts`, and `backlog(model, values, seconds)` (from `@loadmap/core/backlog`) gives what that long at those values leaves in each queue whose reader
 cannot keep up (`units`, and each flow's), with the seconds its reader then needs to clear it at the default load
-(`empties`). It follows the sim's rules: a reader drains at its component's `full`, serves priority 1 first, and a drop
+(`empties`) and how long its oldest unit has waited (`lag`); a fourth argument, `'low'` or `'high'`, reads an edge of a ±. It follows the sim's rules: a reader drains at its component's `full`, serves priority 1 first, and a drop
 or a merge leaves less.
 
 `growth` is `{ rate, per: 'month' | 'year', asOf }`, compounded: 1× is the load on `asOf` (`'2026-11-01'` or
@@ -368,6 +368,7 @@ a page and its recordings say the same date on any day. `model.dateAt(multiple)`
 | `flow`        | With `p50`, `p95` or `p99` (seconds): the flow's latency stays under it, up to `underTarget` if given |
 | `lost`        | A share: `flow` (or each flow) loses at most this for good, up to `underTarget` if given              |
 | `to`          | With `flow`, and `lost` or a percentile: a stage on a fan-out branch; the branch is held, not the flow |
+| `preset`      | A preset that lasts: with `lag` or `clears` (seconds), what its moment leaves in `queue` (or each one) |
 | `severity`    | `'warn'` is reported but never fails a check run; default `'fail'`                                    |
 
 ```ts
