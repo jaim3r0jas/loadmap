@@ -71,6 +71,8 @@ export interface QueueState {
   merged: number
   /** A merge rule is at work: more than a second of arrivals waits. */
   merging: boolean
+  /** Units per second that found a queue with a size full (smoothed); 0 for a queue that holds whatever comes. */
+  refused: number
 }
 
 const emptyQueue = (): QueueState => ({
@@ -81,6 +83,7 @@ const emptyQueue = (): QueueState => ({
   dropped: 0,
   merged: 0,
   merging: false,
+  refused: 0,
 })
 
 interface Cohort {
@@ -220,7 +223,8 @@ export class Sim {
           // a queue that drops lets on what its reader drains: the model's share, so what is behind it agrees
           const reader = (ev.stages[way.stages[i + 1] ?? ''] as ResolvedStage | undefined)?.component
           const u = reader == null ? null : ev.components[reader]?.util
-          if (s.kind === 'queue' && ev.overload[f]?.drop && u != null && u > full) rate *= full / u
+          // and so does one with a size, once it is full
+          if (s.kind === 'queue' && (ev.overload[f]?.drop || s.holds != null) && u != null && u > full) rate *= full / u
           if (s.kind === 'cache') rate *= 1 - s.hit
           // what the stage works on and fails goes no further
           rate *= 1 - (s.fails ?? 0)
@@ -364,6 +368,14 @@ export class Sim {
     return s?.kind === 'workers' && s.running > 0 ? s.pods / s.running : 1
   }
 
+  /** Whether a dot arriving at a queue with a size finds it full: the share of its arrivals the queue refuses. */
+  #refuses(stage: string, d: Particle): boolean {
+    const q = this.queue(stage, d.flow)
+    const share = q.arriving > 0 ? Math.min(1, q.refused / q.arriving) : 0
+    // no draw for a queue with room: the dots of a model that never fills one stay as they were
+    return share > 0 && this.#r() < share
+  }
+
   #stepQueues(dt: number): void {
     const ev = this.#ev
     const entries: {
@@ -429,7 +441,27 @@ export class Sim {
       }
     }
 
+    // a queue with a size keeps no more than it holds: what is above it found it full, the newest first, each flow's
+    // share as its arrivals are
+    const refused = new Map<string, number>()
+    for (const q of new Set(entries.map((e) => e.q))) {
+      const holds = (ev.stages[q] as { holds?: number }).holds
+      if (holds == null) continue
+      const own = entries.filter((e) => e.q === q)
+      const excess = own.reduce((a, e) => a + backlog(e.fq.cohorts), 0) - holds
+      if (!(excess > 0)) continue
+      const inflows = own.map((e) => this.#inflow.get(`${q}/${e.f}`) ?? 0)
+      const all = inflows.reduce((a, x) => a + x, 0)
+      own.forEach((e, i) => {
+        const b = backlog(e.fq.cohorts)
+        const n = Math.min(b, all > 0 ? (excess * inflows[i]!) / all : excess / own.length)
+        dropNewest(e.fq.cohorts, n)
+        refused.set(`${q}/${e.f}`, n)
+      })
+    }
+
     for (const { q, f, fq } of entries) {
+      fq.s.refused = ema(fq.s.refused, (refused.get(`${q}/${f}`) ?? 0) / dt, dt)
       let dropped = 0
       const rule = ev.overload[f]?.drop
       if (rule)
@@ -778,6 +810,9 @@ export class Sim {
           d.t = 0
           d.dur = this.#o.legSeconds
           d.back = true
+        } else if (stage.kind === 'queue' && stage.holds != null && this.#refuses(stage.id, d)) {
+          // it found the queue full: turned away there, or with `block` at the stage that could not hand it over
+          reject(d, 'rejected', stage.whenFull === 'block' ? (d.from.stage ?? stage.id) : stage.id)
         } else if (stage.kind === 'queue') {
           const lag = this.queue(stage.id, d.flow).lag
           d.phase = 'hold'
@@ -893,6 +928,20 @@ export function createSim(model: Model, ev: Evaluation, o?: SimOptions): Sim {
 }
 
 const backlog = (c: readonly Cohort[]) => c.reduce((a, x) => a + x.n, 0)
+
+/** Takes `amount` units off the newest end: what arrived last found the queue full. */
+function dropNewest(c: Cohort[], amount: number): void {
+  let left = amount
+  while (left > 0 && c.length) {
+    const last = c.at(-1)!
+    if (last.n > left) {
+      last.n -= left
+      return
+    }
+    left -= last.n
+    c.pop()
+  }
+}
 
 function serveOldest(c: Cohort[], amount: number): void {
   let left = amount

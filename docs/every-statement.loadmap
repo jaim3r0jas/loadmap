@@ -224,14 +224,19 @@ cluster kafka "Kafka" "events" {
   tier: services
   members: 3
   memberLabel: `broker ${i}`
-  queue topic "events topic" { partitions { events: 12 } }
+  # a topic with a size: full, it turns away what its readers cannot take, unless the events got too old first
+  queue topic "events topic" {
+    holds: 2_000_000
+    full: reject
+    partitions { events: 12 }
+  }
   short: "the brokers"
   plural: true
   demand: flows.events / 1_000
   capacity: brokersRef
   over: "producers wait"
 }
-node kafkaDropped "Too old" { lost { takes: [dropped] } }
+node kafkaDropped "Too old or refused" { lost { takes: [dropped, rejected] } }
 
 pool eventWorkers "Event workers" "2 to 6 pods" {
   perPod: 4

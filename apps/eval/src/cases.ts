@@ -202,6 +202,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'gather' }, { kind: 'contains', text: 'hedge: 95%' }],
   },
   {
+    id: 'queue-holds',
+    example: ALERTS,
+    request:
+      'The alert topic holds at most 50,000 alerts. Once it is full, more are turned away at the topic. Model that, and count what it turns away in a lost box.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'holds: 50' }, { kind: 'contains', text: 'lost' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

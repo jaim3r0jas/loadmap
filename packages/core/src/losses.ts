@@ -46,7 +46,8 @@ export function waysOf(def: Shape, f: string): { ways: string[][]; open: boolean
 
 /**
  * The losses each stage can have, so a lost box may take them: a pass, limit, cache or split turns units away past
- * capacity; a queue drops what is too old for a flow with a drop rule; the last stage of a way times out what is too
+ * capacity; a queue drops what is too old for a flow with a drop rule, and one with a size turns away what finds it
+ * full; the last stage of a way times out what is too
  * slow for a flow with a timeout; a stage whose component `fails` fails a share of them. A rule worked out from the values counts as there. The ways are walked once, for
  * every stage asked after.
  */
@@ -81,6 +82,17 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
           break
         }
       }
+    // a queue with a size turns away what finds it full, at the queue or with `block` at the stage before it
+    const fills = (q: string, w: readonly string[]) => {
+      const qs = def.stages[q]
+      if (qs?.kind !== 'queue' || qs.holds == null) return false
+      const next = def.stages[w[w.indexOf(q) + 1] ?? '']
+      if (next == null || !('component' in next) || next.component == null) return false
+      const before = w[w.indexOf(q) - 1]
+      return (qs.whenFull === 'block' && before != null ? before : q) === stage
+    }
+    if (!out.includes('rejected') && flows.some((f) => known.get(f)!.ways.some((w) => w.some((q) => fills(q, w)))))
+      out.push('rejected')
     // a stage whose component fails a share of its units, whatever the load
     const of = (st as { component?: string }).component
     // a gather fails the units too few of whose calls answer

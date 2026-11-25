@@ -1614,7 +1614,7 @@ export class Compiler {
                 'bad-lost',
                 n,
                 `"${n.name}" loses nothing the lost box "${s.id}" takes`,
-                'a pass, limit, cache or split turns units away, a queue with a drop rule drops them, the last stage of a flow with a timeout times them out',
+                'a pass, limit, cache or split turns units away, a queue with a drop rule drops them and one with a size turns away what finds it full, the last stage of a flow with a timeout times them out',
               )
               return
             }
@@ -1640,7 +1640,8 @@ export class Compiler {
   }
 
   /**
-   * A warning at each loss the definition plans that no lost box counts: a limiter's rejections, a flow's drops (at each
+   * A warning at each loss the definition plans that no lost box counts: a limiter's rejections, what a queue with a
+   * size turns away, a flow's drops (at each
    * queue it can drop in) and its timeouts (at each end of its ways). A pass, cache or split past capacity loses too,
    * but every one of them could: the bars and the `over` line already say so.
    */
@@ -1661,8 +1662,13 @@ export class Compiler {
       warned.add(key)
       return true
     }
+    // and a queue with a size: what finds it full is turned away there
     for (const [id, s] of stageOf)
-      if (s.block.keyword === 'limit' && losses(id).includes('rejected') && first(id, 'rejected'))
+      if (
+        (s.block.keyword === 'limit' || s.block.keyword === 'queue') &&
+        losses(id).includes('rejected') &&
+        first(id, 'rejected')
+      )
         this.report.warning(
           'unseen-loss',
           s.block.at,
@@ -3950,7 +3956,25 @@ export class Compiler {
         const at = (ctx: any): Record<string, number> =>
           Object.fromEntries(entries.map(([k, v]) => [k, typeof v === 'function' ? v(ctx) : v]))
         const partitions = fixed ? at(undefined) : at
-        return queue({ ...base, partitions, ...(component ? { component } : {}) })
+        const holds = this.dynProp<number>(b, 'holds', 'number', (v) => {
+          if (typeof v !== 'number' || !(v > 0) || !Number.isFinite(v))
+            throw new Error(`a queue holds a number of units above 0, not ${String(v)}`)
+        })
+        const whenFull = this.constProp<'reject' | 'block'>(b, 'full')
+        if (whenFull && holds == null)
+          this.report.error(
+            'model',
+            this.prop(b, 'full')?.key ?? b.at,
+            'full says where a unit is turned away once the queue holds no more: give the queue its size',
+            'holds: 10000',
+          )
+        return queue({
+          ...base,
+          partitions,
+          ...(component ? { component } : {}),
+          ...(holds != null ? { holds } : {}),
+          ...(whenFull && holds != null ? { whenFull } : {}),
+        })
       }
       case 'fanout':
       case 'gather': {

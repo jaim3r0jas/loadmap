@@ -227,7 +227,7 @@ values (`partitions`, `pods`, `perPod`, `hit`, `to`) take a function of the cont
 | Builder                                                                 | What                                                                   |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `pass(component, { label? })`                                           | Flows pass through; past capacity the share above 100 % is rejected    |
-| `queue({ partitions, component?, label? })`                             | Flows wait; the next stage on each route drains it at its own capacity |
+| `queue({ partitions, holds?, whenFull?, component?, label? })`          | Flows wait; the next stage on each route drains it at its own capacity |
 | `workers(component, { pods \| autoscale, perPod, placement?, label? })` | A pool: pods × workers per pod                                         |
 | `cache({ hit, component?, label? })`                                    | A share `hit` is answered here and goes no further                     |
 | `limit(component, { label? })`                                          | A rate limiter: what it rejects is gone from every stage after it      |
@@ -242,7 +242,9 @@ values (`partitions`, `pods`, `perPod`, `hit`, `to`) take a function of the cont
 offered ("as if what is in front kept up"); after a `limit`, the rate reaching them stops at the limit.
 
 **queue** holds the partitions of each flow, drawn as cells: `queue({ partitions: { orders: 12, events: 24 } })`, or
-`({ pods }) => ({ positions: pods * 16 })`. Its `component` (the brokers) is optional.
+`({ pods }) => ({ positions: pods * 16 })`. Its `component` (the brokers) is optional. With `holds` it is a queue with
+a size: once its reader is past full, what the reader cannot take is turned away at the queue, or with `whenFull:
+'block'` at the stage before it.
 
 **workers** takes either `pods` or `autoscale`, never both. `placement: 'round-robin'` (the default) spreads busy
 workers across pods; `'in-order'` fills pod 0 first. An autoscaled pool holds each running pod near `target`
@@ -505,7 +507,7 @@ A stage's result (`ev.stages.workerPool`) has its `id`, `label`, `kind` and `com
 | ----------------- | ----------------------------------------------------------------------------------------------------- |
 | `pass`, `limit`   | `rejects` (the share of what is offered above capacity), `shed` (of what reaches it)                  |
 | `cache`           | `hit`, `rejects`, `shed`                                                                              |
-| `queue`           | `partitions` per flow; `skew`, the share on the hottest partition, with a `key` connection            |
+| `queue`           | `partitions` per flow; `skew`, the hottest partition's share, with a `key` connection; `holds`        |
 | `workers`         | `pods` (drawn: an autoscaled pool's max), `running`, `perPod`, `placement`, `autoscale`, `assignment` |
 | `fanout`, `split` | `to` per flow, `rejects`, `shed`                                                                      |
 | `gather`          | `to` per flow, `needs`, and `failing`: the share of each flow's units that fail there                 |

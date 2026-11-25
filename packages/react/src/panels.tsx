@@ -95,7 +95,11 @@ function usePeak(lm: LoadmapController): string | null {
       const one = flows.length === 1 ? flows[0]![0] : undefined
       const what = one == null ? 'units' : (model.def.flows[one]?.label ?? one)
       const clears = Number.isFinite(b.empties) ? `clears in ${period(b.empties)}` : 'never clears'
-      return `${compact(b.units)} ${what} wait in ${ev.stages[b.stage]?.label ?? b.stage}, which at ${rest} ${clears}`
+      const name = ev.stages[b.stage]?.label ?? b.stage
+      // a queue with a size: when the peak fills it, and what it then holds
+      if (b.full)
+        return `${name} is full after ${period(b.full.after)} with ${compact(b.units)} ${what}, and at ${rest} ${clears}`
+      return `${compact(b.units)} ${what} wait in ${name}, which at ${rest} ${clears}`
     })
     return `${head}, ${parts.join('; ')}.`
   }, [ev, model])

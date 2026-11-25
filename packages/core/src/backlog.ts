@@ -10,6 +10,8 @@ export interface Backlog<S extends string = string> {
   units: number
   /** Seconds its reader then needs to clear them at the default load; Infinity when it never does. */
   empties: number
+  /** A queue with a size that the peak fills: the units it holds, and the seconds into the peak when it is full. */
+  full?: { holds: number; after: number }
 }
 
 /**
@@ -83,6 +85,7 @@ function backlogOf(
       }
   const waiting = new Map<string, Record<string, number>>()
   const empties = new Map<string, number>()
+  const fills = new Map<string, { holds: number; after: number }>()
   for (const d of new Set(entries.map((e) => e.d))) {
     const feeding = entries.filter((e) => e.d === d)
     // in the reader's own units: a merging flow takes 1 − share of its arrivals, the rest superseded by the newest
@@ -107,14 +110,25 @@ function backlogOf(
     let left = 0
     let oldest = 0
     let dropsAll = true
-    feeding.forEach((e, i) => {
-      // a drop rule keeps none older than its limit
-      let n = over[i]! * lasts
+    // a drop rule keeps none older than its limit
+    const kept = feeding.map((e, i) => {
       const drop = peak.overload[e.f]?.drop
-      if (drop) {
-        n = Math.min(n, p.inflow[i]! * drop.olderThan)
-        oldest = Math.max(oldest, drop.olderThan)
-      } else if (n > 0) dropsAll = false
+      return drop ? Math.min(over[i]! * lasts, p.inflow[i]! * drop.olderThan) : over[i]! * lasts
+    })
+    // and a queue with a size no more than it holds: what arrives once it is full is turned away
+    const room = feeding.map((e) => {
+      const holds = (peak.stages[e.q] as { holds?: number }).holds
+      const all = feeding.reduce((a, x, i) => a + (x.q === e.q ? kept[i]! : 0), 0)
+      if (holds == null || !(all > holds)) return 1
+      const grows = feeding.reduce((a, x, i) => a + (x.q === e.q ? over[i]! : 0), 0)
+      fills.set(e.q, { holds, after: holds / grows })
+      return holds / all
+    })
+    feeding.forEach((e, i) => {
+      const n = kept[i]! * room[i]!
+      const drop = peak.overload[e.f]?.drop
+      if (drop) oldest = Math.max(oldest, drop.olderThan)
+      else if (n > 0) dropsAll = false
       const row = waiting.get(e.q) ?? {}
       row[e.f] = (row[e.f] ?? 0) + n
       waiting.set(e.q, row)
@@ -133,6 +147,7 @@ function backlogOf(
       flows,
       units: Object.values(flows).reduce((a, x) => a + x, 0),
       empties: empties.get(stage) ?? 0,
+      ...(fills.has(stage) ? { full: fills.get(stage)! } : {}),
     }))
     .filter((b) => b.units > 0)
 }
