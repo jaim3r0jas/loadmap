@@ -32,6 +32,8 @@ export interface Names {
   functions: HostFunctions
   /** The options of each select parameter: a literal compared with one must be one of them. */
   options?: ReadonlyMap<string, readonly (number | string)[]>
+  /** The failure domains, by id: `down.zone` is true while a part of that domain is out. */
+  domains?: { has(id: string): boolean; keys(): Iterable<string> }
   /** Each fan-out stage and what it sends, copies a second: `out.push`. Filled in once the stage is compiled. */
   out?: ReadonlyMap<string, { run: (ctx: any) => number }>
 }
@@ -308,6 +310,27 @@ class Compiler {
     if (let_) {
       if (!this.canRead(e, `"${name}"`)) return bad
       return { type: let_, constant: false, run: (c) => c.derived[name] }
+    }
+    // down.<domain>: whether the Outage control has a part of that domain out. A subsystem named down keeps its boxes
+    if (
+      name.startsWith('down.') &&
+      ![...this.names.stages, ...this.names.components].some((n) => n.startsWith('down.'))
+    ) {
+      const d = name.slice(5)
+      const known = [...(this.names.domains?.keys() ?? [])]
+      if (!this.names.domains?.has(d)) {
+        this.report.error(
+          'unknown-name',
+          e,
+          known.length
+            ? `unknown domain "${d}"`
+            : `"${name}" asks whether a part of the failure domain "${d}" is out: declare it`,
+          known.length ? didYouMean(d, known) : `domain ${d} "${d}" { count: 3 }`,
+        )
+        return bad
+      }
+      if (!this.canRead(e, 'a parameter')) return bad
+      return { type: 'boolean', constant: false, run: (c) => c.down === d }
     }
     if ((TABLES as readonly string[]).includes(name)) {
       this.report.error(

@@ -542,6 +542,8 @@ class Help {
       ),
     )
     for (const label of TABLES) list.push({ label, type: 'type', apply: `${label}.`, boost: -1 })
+    // whether a part of a failure domain is out
+    for (const d of this.ids('domain')) list.push({ label: `down.${d}`, type: 'variable', detail: 'a part of it out' })
     if (slot.key === 'demand') {
       const box = this.box()
       if (box)

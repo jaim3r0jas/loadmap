@@ -779,6 +779,7 @@ export class Compiler {
       fits: this.fits,
       functions: this.functions,
       out: this.sent,
+      domains: this.domainIds,
     }
     for (const box of boxes)
       for (const s of box.stages)
@@ -1244,7 +1245,33 @@ export class Compiler {
         )
         continue
       }
+      // one member is in one part: with that part out none is left to carry the work
+      if (typeof members === 'number' && members >= 1 && members - Math.ceil(members / domains[domain]!.count) < 1)
+        this.report.warning(
+          'single-point',
+          this.prop(box.block, 'across')!.value,
+          `"${box.id}" has ${members === 1 ? 'one member' : `${members} members`} across "${domain}": with a part of it out none is left`,
+          'give it a member in more than one part',
+        )
       ;(componentDefs[box.component.id] as Record<string, unknown>).across = { domain, members }
+    }
+
+    // a box every flow passes that stands across no domain: no outage the model knows touches it, and with it gone
+    // nothing gets through. Only where the definition speaks of outages at all
+    if (Object.keys(domains).length && flows.length) {
+      const ways = flows.flatMap((b) => (b.args.id ? [waysOf(shape, b.args.id.name)] : []))
+      for (const box of boxes) {
+        if (!box.component || box.block.props.has('across')) continue
+        const ids = new Set(box.stages.map((x) => x.id))
+        const passed = ways.every((w) => !w.open && w.ways.some((way) => way.some((s) => ids.has(s))))
+        if (passed)
+          this.report.warning(
+            'single-point',
+            box.block.at,
+            `every flow passes "${box.id}", which stands across no failure domain: no outage touches it`,
+            `say the domain its members stand across: across: ${Object.keys(domains)[0]}`,
+          )
+      }
     }
 
     this.apart(componentDefs, byKind('subsystem'))
