@@ -195,6 +195,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'gather' }, { kind: 'contains', text: 'needs: 2' }],
   },
   {
+    id: 'gather-hedge',
+    example: SEARCH,
+    request:
+      'Each search asks both index shards at once and needs both answers. Model that as a gather, and hedge the calls at their p95.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'gather' }, { kind: 'contains', text: 'hedge: 95%' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

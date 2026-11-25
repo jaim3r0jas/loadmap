@@ -228,7 +228,8 @@ export class Sim {
           if (s.kind === 'fanout' || s.kind === 'gather')
             for (const b of s.to[f] ?? []) {
               if (b.stages.length < 2) continue
-              let copies = rate * (s.kind === 'fanout' ? 1 - s.shed : 1) * b.share
+              const again = s.kind === 'gather' && s.hedge != null ? 2 - s.hedge : 1
+              let copies = rate * (s.kind === 'fanout' ? 1 - s.shed : 1) * b.share * again
               for (const t of b.stages) {
                 this.#inflow.set(`${t}/${f}`, (this.#inflow.get(`${t}/${f}`) ?? 0) + copies)
                 // the queue's reader on this branch: the next stage of it
@@ -722,7 +723,9 @@ export class Sim {
       } else if (d.phase === 'move' && (stage.kind === 'fanout' || stage.kind === 'gather')) {
         let made = 0
         for (const b of stage.to[d.flow] ?? []) {
-          const copies = Math.floor(b.share) + (this.#r() < b.share % 1 ? 1 : 0)
+          // a hedged gather sends the share of its calls past its percentile a second time
+          const share = stage.kind === 'gather' && stage.hedge != null ? b.share * (2 - stage.hedge) : b.share
+          const copies = Math.floor(share) + (this.#r() < share % 1 ? 1 : 0)
           for (let i = 0; i < copies; i++, made++)
             if (this.particles.length + born.length < this.#o.maxParticles)
               born.push(

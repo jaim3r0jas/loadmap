@@ -173,6 +173,12 @@ export interface GatherStage extends StageBase {
   component?: undefined
   to: Dyn<readonly Branch[] | Readonly<Record<string, readonly Branch[]>>>
   needs?: Dyn<number>
+  /**
+   * A hedge: a call not answered by this percentile of its own time (0.95: by its p95) is sent a second time, and the
+   * first of the two answers counts. It cuts the wait for a slow call, and what is called sees the second calls too:
+   * 5 % more at 0.95.
+   */
+  hedge?: Dyn<number>
 }
 
 export type StageDef<C extends string = string> =
@@ -247,7 +253,9 @@ export function fanout<const C extends string = never>(
   return { kind: 'fanout', ...o }
 }
 
-export function gather(o: { to: GatherStage['to']; needs?: GatherStage['needs'] } & StageBase): GatherStage {
+export function gather(
+  o: { to: GatherStage['to']; needs?: GatherStage['needs']; hedge?: GatherStage['hedge'] } & StageBase,
+): GatherStage {
   return { kind: 'gather', ...o }
 }
 
@@ -323,6 +331,8 @@ export type ResolvedStage = {
       to: Readonly<Record<string, readonly ResolvedBranch[]>>
       /** How many of the calls must answer; all of them without it. */
       needs?: number
+      /** The percentile of a call's time past which it is sent again; none without it. */
+      hedge?: number
       /** The share of each flow's units that fail here: too few of their calls answered. */
       failing: Readonly<Record<string, number>>
     }
@@ -439,7 +449,19 @@ export function resolveStage(
             `loadmap: gather "${id}" needs ${needs} of its ${calls} calls: a whole number from 1 to ${calls}`,
           )
       }
-      return { id, label, kind: 'gather', to: perFlow, ...(needs != null ? { needs } : {}), failing: {} }
+      const hedge = s.hedge == null ? undefined : dyn(s.hedge, ctx)
+      // 1 is no hedge: a call is never still out past all of its time, so a control can switch it off
+      if (hedge != null && !(hedge > 0 && hedge <= 1))
+        throw new Error(`loadmap: gather "${id}" hedges at a share of ${hedge}: a percentile above 0, up to 1`)
+      return {
+        id,
+        label,
+        kind: 'gather',
+        to: perFlow,
+        ...(needs != null ? { needs } : {}),
+        ...(hedge != null && hedge < 1 ? { hedge } : {}),
+        failing: {},
+      }
     }
     case 'cache':
       return { id, label, kind: 'cache', component: s.component, hit: hitOf(id, s, ctx), rejects, shed: rejects }

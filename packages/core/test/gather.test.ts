@@ -135,4 +135,79 @@ describe('a gather', () => {
       } as never).evaluate()
     expect(two).toThrow('gather "scatter" has 2 branches for "reads": one a flow')
   })
+
+  describe('with a hedge', () => {
+    // one call of 10 ms to a stage with room to spare; hedged at a percentile, a call still out then is sent again
+    const one = (o: { hedge?: number; calls?: number; delay?: number } = {}) =>
+      defineModel({
+        load: p.load({ max: 10 }),
+        flows: { reads: { rate: ({ load }) => 100 * load } },
+        components: { shards: { name: 'Shards', capacity: measured(1e9, 'req/s'), service: 0.01, over: 'x' } },
+        stages: {
+          scatter: gather({ to: [{ stage: 'shards', share: o.calls ?? 1 }], ...(o.hedge ? { hedge: o.hedge } : {}) }),
+          shards: pass('shards'),
+          out: sink(),
+        },
+        routes: { reads: ['scatter', 'out'] },
+        ...(o.delay ? { delays: [{ from: 'scatter' as const, to: 'shards' as const, delay: o.delay }] } : {}),
+      })
+    const time = (o: Parameters<typeof one>[0]) => one(o).evaluate({ load: 1 }).latency.reads!
+
+    it('sends the calls past its percentile again: what is called sees them', () => {
+      expect(one({ hedge: 0.95 }).evaluate({ load: 1 }).at.shards!.reads).toBeCloseTo(105, 9)
+      expect(one({ hedge: 0.5, calls: 8 }).evaluate({ load: 1 }).at.shards!.reads).toBeCloseTo(1_200, 9)
+      // the unit still makes its eight calls, and needs them all
+      expect(one({ hedge: 0.5, calls: 8 }).evaluate({ load: 1 }).stages.scatter).toMatchObject({
+        to: { reads: [{ share: 8 }] },
+        hedge: 0.5,
+      })
+    })
+
+    it('cuts the wait: one call hedged at a share h takes W (1 − (1 − h) / 2) on average', () => {
+      expect(time({ hedge: 0.95 }).mean).toBeCloseTo(0.01 * (1 - 0.05 / 2), 6)
+      expect(time({ hedge: 0.5 }).mean).toBeCloseTo(0.01 * (1 - 0.5 / 2), 6)
+      // the slowest of eight: its tail most of all
+      const plain = time({ calls: 8 })
+      const hedged = time({ calls: 8, hedge: 0.95 })
+      expect(hedged.mean).toBeLessThan(plain.mean)
+      expect(hedged.p99).toBeLessThan(plain.p99 * 0.85)
+      // a hedge that never fires is no hedge
+      expect(time({ calls: 8, hedge: 0.999999 }).mean).toBeCloseTo(plain.mean, 6)
+    })
+
+    it('helps little where the time is the edge’s: the second call takes the delay too', () => {
+      const plain = time({ delay: 0.05 })
+      const hedged = time({ delay: 0.05, hedge: 0.95 })
+      expect(plain.mean - hedged.mean).toBeLessThan(0.0001)
+      expect(hedged.mean).toBeGreaterThan(0.0599)
+    })
+
+    it('is a percentile above 0, and 1 is no hedge', () => {
+      expect(() => one({ hedge: 1.5 }).evaluate()).toThrow(
+        'gather "scatter" hedges at a share of 1.5: a percentile above 0, up to 1',
+      )
+      const none = one({ hedge: 1, calls: 8 }).evaluate({ load: 1 })
+      expect(none.at.shards!.reads).toBeCloseTo(800, 9)
+      expect(none.latency.reads!.mean).toBe(time({ calls: 8 }).mean)
+    })
+
+    it('sums the wait in steps small against how fast it fades: many calls, one needed', () => {
+      // the first of 100 calls answers after W / 100: a hedge that never fires leaves that as it is
+      const m = (hedge?: number) =>
+        defineModel({
+          load: p.load({ max: 10 }),
+          flows: { reads: { rate: 1 } },
+          components: { shards: { name: 'Shards', capacity: measured(1e9, 'req/s'), service: 0.01, over: 'x' } },
+          stages: {
+            scatter: gather({ to: [{ stage: 'shards', share: 100 }], needs: 1, ...(hedge ? { hedge } : {}) }),
+            shards: pass('shards'),
+            out: sink(),
+          },
+          routes: { reads: ['scatter', 'out'] },
+        })
+      const plain = m().evaluate().latency.reads!.mean
+      expect(plain).toBeCloseTo(0.0001, 9)
+      expect(m(0.999999).evaluate().latency.reads!.mean / plain).toBeCloseTo(1, 3)
+    })
+  })
 })

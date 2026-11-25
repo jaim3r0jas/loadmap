@@ -978,7 +978,15 @@ stages cannot say:
 A call is a copy on a branch, so a gather's line takes what a fan-out's does: a branch that goes on (`reads -> cache ->
 shards: 8`), and what a call loses or how long it takes is the branch's own figure. One line a flow, and a whole
 number of calls. A quorum is `needs: 2` of 3 calls; a read that asks two replicas and takes the first answer is
-`needs: 1` of 2. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`, and
+`needs: 1` of 2.
+
+A **hedge** sends a slow call again: `hedge: 95%` in the gather's block sends a second call for each one not answered
+by the p95 of its own time, and the first of the two answers counts. It trades a little load for the tail: what is
+called sees 5 % more calls, and a read that waits for 8 calls of 10 ms each has its p99 fall from 64 ms to 51 ms. The lower the
+percentile, the more is sent twice (`hedge: 50%` is half as many calls again). The second call takes the edge's delay
+too, so a hedge helps little where most of a call's time is the network. A hedge is about slowness: a call that
+fails is not sent again by it, and the second calls are counted for the calls that are slow, not for those that are
+lost. `hedge: 100%` is no hedge, so a control can switch it off. In TypeScript it is `hedge: 0.95` beside `needs`. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`, and
 `ev.stages.scatter.failing.reads` is the share of reads that fail there.
 
 #### Splits
@@ -1902,7 +1910,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge` | |
 
 ## In code
 
@@ -2884,7 +2892,8 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `needs` | number, formula of parameters | How many of the calls must answer for the unit to go on: a whole number up to the calls. All of them without it. A quorum is needs: 2 of 3 calls; a hedged read is needs: 1 of 2. |
+| `needs` | number, formula of parameters | How many of the calls must answer for the unit to go on: a whole number up to the calls. All of them without it. A quorum is needs: 2 of 3 calls; a read that asks two replicas and takes the first is needs: 1 of 2. |
+| `hedge` | share, formula of parameters | A hedge: a call not answered by this percentile of its own time is sent a second time, and the first of the two answers counts: `hedge: 95%`. It cuts the wait for a slow call; what is called sees the second calls too, 5 % more at 95 %. 100% is no hedge. |
 
 Holds branches: `flow -> stage: calls per unit`.
 
