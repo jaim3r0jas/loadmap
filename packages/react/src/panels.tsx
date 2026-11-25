@@ -249,6 +249,11 @@ export function Limits({ lm, title = 'Where it runs out, in order' }: { lm: Load
               {c.spread && c.util != null && <span className="lm-sub lm-spread">{c.spread.text}</span>}
               {c.stock && <span className="lm-sub lm-stock">{stockText(c.stock, c.capacity?.unit ?? '')}</span>}
               {c.quota && <span className="lm-sub lm-quota">{quotaText(c.quota)}</span>}
+              {c.keys && (
+                <span className="lm-sub lm-keys">
+                  {`${fmt(c.keys.count)} keys, each its own limit: the hottest carries ${pct(c.keys.hottest, true)} of what arrives.`}
+                </span>
+              )}
               {c.burst && (
                 <span className="lm-sub lm-burst">
                   {burstText(c.burst, lm.ev.values.load, c.capacity?.unit ?? 'units')}

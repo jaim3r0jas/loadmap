@@ -1360,6 +1360,18 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         since: '1.8',
         doc: 'A rate limit\'s bucket, in units: past the limit it lets everything through until the bucket is spent, burst ÷ what arrives above the limit a second, then cuts to the limit. No steady figure changes; the limits say how long it lasts: "a burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut to 100 req/s". Not with per: a quota counts a window already.',
       },
+      keys: {
+        value: 'number',
+        scope: 'values',
+        since: '1.8',
+        doc: "A limit for each key (each tenant, each client): the capacity is one key's. It runs out when the hottest key does, and turns away only what is above each key's own limit. Not with per or burst.",
+      },
+      skew: {
+        value: 'capacity',
+        scope: 'ctx',
+        since: '1.8',
+        doc: 'With keys: the share of what arrives the hottest key carries, measured or estimated: estimated(20%, "share", "the noisiest tenant"). An even share without it.',
+      },
       component: STAGE_COMPONENT,
     },
     children: [],
@@ -1583,6 +1595,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'The most connections the other side accepts: a limit named by this connection.',
       },
       skew: { value: 'capacity', scope: 'ctx', doc: "With key: a flow's share on its hottest part." },
+      busiest: {
+        value: 'capacity',
+        scope: 'ctx',
+        since: '1.8',
+        doc: 'The busiest member\'s share of the work, measured or estimated, whatever deals it (a hash ring, sticky sessions): estimated(32%, "share", "ring stats"). The component runs out when that member does: the share × the members.',
+      },
       rule: {
         value: 'string',
         scope: 'const',

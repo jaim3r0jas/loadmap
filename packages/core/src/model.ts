@@ -425,6 +425,8 @@ export interface ComponentResult<C extends string = string> {
    * many seconds the bucket lets everything through before the limit cuts in (size ÷ what arrives above it a second).
    */
   burst?: { size: number; passes: number; lasts?: number }
+  /** For a limit for each key: how many keys, and the share of what arrives the hottest carries. */
+  keys?: { count: number; hottest: number }
 }
 
 /** A component with a part of its domain down: "4 of 6 pods left". */
@@ -770,6 +772,12 @@ export function defineModel<
   }
   /** Each quota's window, by its component. */
   const quotaOf = new Map<string, QuotaWindow>()
+  /** The limit for each key, by its component: the stage that counts it. */
+  const keysOn = new Map<string, string>()
+  for (const s of stageIds) {
+    const st = def.stages[s] as StageDef
+    if (st.kind === 'limit' && st.keys != null) keysOn.set(st.component, s)
+  }
   /** Each rate limit's bucket, by its component: one limit stage gives it. */
   const burstOf = new Map<string, Dyn<number>>()
   for (const c of componentIds) {
@@ -820,6 +828,11 @@ export function defineModel<
         )
       quotaOf.set(c, [...windows][0]!)
     }
+    // a limit for each key counts its hottest key: the component counts that limit alone
+    if (runs.some((s) => s.kind === 'limit' && s.keys != null) && (runs.length > 1 || d.demand || holds))
+      throw new Error(
+        `loadmap: component "${c}" is a limit for each key: it counts that limit alone, no demand, held or other stage`,
+      )
     const buckets = runs.flatMap((s) => (s.kind === 'limit' && s.burst != null ? [s.burst] : []))
     if (buckets.length) {
       // the bucket spends what reaches the limit above it: the component counts that limit's units and nothing else
@@ -1091,6 +1104,15 @@ export function defineModel<
       return (typeof l === 'function' ? l(values) : l)?.within ?? 0
     }
     const uncertain = componentIds.filter((c) => (stated.capacity(c).within ?? 0) > 0 || levelWithin(c) > 0)
+    // a share with a ± moves the crossings too: a hottest key's, a connection's busiest member's or skew
+    const shareWithin = (x: unknown) =>
+      x != null &&
+      ((typeof x === 'function' ? (x as (c: unknown) => Capacity)(stated.ctx) : (x as Capacity)).within ?? 0) > 0
+    const sharesUnsure =
+      Object.values(def.stages as Record<string, StageDef>).some((st) => st.kind === 'limit' && shareWithin(st.skew)) ||
+      Object.values((def.connections ?? {}) as Record<string, ConnectionDef>).some(
+        (cn) => shareWithin(cn.busiest) || shareWithin(cn.skew),
+      )
     const components: Crossings['components'] = {}
     // the scans of every component visit the same loads: one context per load and bound serves them all, and with
     // retries it holds the solve
@@ -1109,7 +1131,7 @@ export function defineModel<
         const x = crossing(at(), th, searchMax)
         if (x == null) return { x, range: null }
         // without a ± anywhere, every bound is the stated value
-        if (!uncertain.length) return { x, range: { low: x, high: x } }
+        if (!uncertain.length && !sharesUnsure) return { x, range: { low: x, high: x } }
         const low = crossing(at('low'), th, searchMax) ?? x
         const high = crossing(at('high'), th, searchMax) ?? x
         return { x, range: { low, high } }
@@ -1318,6 +1340,7 @@ export function defineModel<
       failsAt,
       gathered,
       outAt,
+      keysOf,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -1354,6 +1377,11 @@ export function defineModel<
       // a quota is hard: past all it allows it is gone, whatever the full threshold
       if (per)
         components[c].quota = { per, ...(util != null && util > 1 ? { goneAfter: QUOTA_SECONDS[per] / util } : {}) }
+      const keyed = off ? undefined : keysOn.get(c)
+      if (keyed) {
+        const k = keysOf(keyed)
+        if (k) components[c].keys = k
+      }
       const bucket = off ? undefined : burstOf.get(c)
       if (bucket != null) {
         const size = dyn(bucket, ctx as LooseValues)
@@ -2073,8 +2101,36 @@ function contextAt(
         !st.component
       )
         return 0
-      return rejectShare(ctx.util[st.component] as number | null, full)
+      const u = ctx.util[st.component] as number | null
+      // a limit for each key: the hottest key's utilization is the component's; the others share the rest evenly. Each
+      // key turns away only what is above its own limit
+      const keyed = st.kind === 'limit' ? keysOf(s) : undefined
+      if (keyed && u != null) {
+        const rest = keyed.count > 1 ? (u * (1 - keyed.hottest)) / (keyed.count - 1) / keyed.hottest : 0
+        return keyed.hottest * rejectShare(u, full) + (1 - keyed.hottest) * rejectShare(rest, full)
+      }
+      return rejectShare(u, full)
     })
+  /**
+   * A limit for each key: how many keys, and the share of what arrives the hottest carries, at the edge of its ± the
+   * bound asks for (the pessimistic one takes the larger share); an even share without a skew, never below it.
+   */
+  const keysOf = (s: string) => {
+    const st = stages[s]!
+    if (st.kind !== 'limit' || st.keys == null) return undefined
+    return memo(`keys of ${s}`, () => {
+      const count = whole(dyn(st.keys!, ctx), `limit "${s}"`, 'keys')
+      if (st.skew == null) return { count, hottest: 1 / count }
+      const c = typeof st.skew === 'function' ? st.skew(ctx) : st.skew
+      if (!(c.value > 0 && c.value <= 1))
+        throw new Error(
+          `loadmap: limit "${s}" puts ${c.value} of what arrives on its hottest key: a share above 0, to 1`,
+        )
+      const w = c.within ?? 0
+      const edge = bound === 'low' ? c.value * (1 + w) : bound === 'high' ? c.value * (1 - w) : c.value
+      return { count, hottest: Math.min(1, Math.max(1 / count, edge)) }
+    })
+  }
   /** A pass that turns away by priority: the flow with the larger number first. */
   const byPriority = (s: string) => {
     const st = stages[s]!
@@ -3130,10 +3186,12 @@ function contextAt(
       for (const s of usedBy(c)) {
         // a quota counts a window: an hour at the peak, a day or a month at each flow's average
         const per = (stages[s] as { per?: QuotaWindow }).per
+        // a limit for each key counts the hottest key: what arrives × its share
+        const hot = keysOf(s)?.hottest ?? 1
         for (const f of flowIds)
           total +=
             per == null
-              ? arriving(s, f)
+              ? arriving(s, f) * hot
               : // in the averaged context the rates are averages already
                 arriving(s, f) * QUOTA_SECONDS[per] * (PEAK_WINDOWS.has(per) || averaged ? 1 : averageOf(f))
       }
@@ -3163,9 +3221,11 @@ function contextAt(
     })
   }
   // the components an exclusive connection spreads over: only these pay for a spread (utilization is the hot path)
+  // a connection that deals its work its own way, or says how much its busiest member takes
+  const spreads = (cn: ConnectionDef) => (cn.assign != null && cn.assign !== 'shared') || cn.busiest != null
   const spreading = new Set(
     Object.values(connections)
-      .filter((cn) => cn.assign != null && cn.assign !== 'shared')
+      .filter(spreads)
       .map((cn) => (stages[cn.to] as { component?: string }).component),
   )
   /** demand ÷ capacity, before any connection's spread. */
@@ -3259,8 +3319,7 @@ function contextAt(
       ? null
       : memo(`spread of ${c}`, () => {
           const spreaders = Object.entries(connections).filter(
-            ([k, cn]) =>
-              cn.assign != null && cn.assign !== 'shared' && usedBy(c).includes(cn.to) && covered(k).length > 0,
+            ([k, cn]) => spreads(cn) && usedBy(c).includes(cn.to) && covered(k).length > 0,
           )
           if (!spreaders.length) return null
           const [first, cn] = spreaders[0]!
@@ -3313,6 +3372,11 @@ function contextAt(
                 throw new Error(
                   `loadmap: connections "${spreaders.find(([, y]) => y.from === twice.from)![0]}" and "${k}" both bring "${f}" into "${stage}": a flow reaches a spread stage through one connection`,
                 )
+              // a connection that only says its busiest member's share deals nothing itself
+              if (x.assign == null || x.assign === 'shared') {
+                work.push({ flow: f, weight: 0, parts: null, at: [x.to] })
+                continue
+              }
               if (x.assign === 'exclusive') {
                 // a hot key on the queue in front lands on its partition 0, and so on the worker that reads it
                 const skew = hot(x.from)?.[f]
@@ -3331,10 +3395,35 @@ function contextAt(
           }
           // one flow alone has all the work, whatever its rate: what reaches the stage is read only to weigh several
           if (work.length > 1) for (const w of work) w.weight = weight(w.flow, w.at)
-          const s = spreadOver(shape, work)
+          let s = spreadOver(shape, work)
           const d = def.components[c]!
           const short = d.short ?? d.name
           const plural = d.plural ?? false
+          // the busiest member's share, measured or estimated, whatever deals the work: its factor is the share × the
+          // members (at the pessimistic edge of its ±, the larger share), never below an even share
+          const told = spreaders.find(([, x]) => x.busiest != null)
+          if (told) {
+            const [k, x] = told
+            const b = typeof x.busiest === 'function' ? x.busiest(ctx) : x.busiest!
+            if (!(b.value > 0 && b.value <= 1))
+              throw new Error(
+                `loadmap: connection "${k}" puts ${b.value} of the work on its busiest member: a share above 0, to 1`,
+              )
+            const w = b.within ?? 0
+            const edge = bound === 'low' ? b.value * (1 + w) : bound === 'high' ? b.value * (1 - w) : b.value
+            const share = Math.min(1, Math.max(1 / shape.units, edge))
+            const factor = share * shape.units
+            s = { ...s, factor: factor < 1 + 1e-9 ? 1 : factor }
+            const runs = `${short} ${plural ? 'run' : 'runs'} out at ${pct(1 / s.factor)} of ${plural ? 'their' : 'its'} capacity`
+            const text =
+              s.factor > 1
+                ? `The busiest ${shape.unit} takes ${pct(share)} of the work${b.source ? ` (${b.source})` : ''}: ${runs}.`
+                : null
+            const base = { stage, stages: into, shape, work, dealt: s, pool }
+            if (b.provenance !== 'published' && capacity(c).provenance === 'published')
+              return { ...base, factor: 1, published: true, text: null }
+            return { ...base, factor: s.factor, text }
+          }
           const queues = spreaders.every(([, x]) => stages[reads ? x.from : x.to]!.kind === 'queue')
           const mode = reads ? 'read' : spreaders.every(([, x]) => x.assign === 'leader') ? 'leader' : 'key'
           const text = spreadText(s, shape, work, { short, plural, part: queues ? 'partition' : 'part', mode })
@@ -3633,6 +3722,7 @@ function contextAt(
     failsAt,
     gathered,
     outAt,
+    keysOf,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,

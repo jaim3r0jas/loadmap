@@ -1,3 +1,4 @@
+import type { Capacity } from './capacity'
 import type { LooseValues } from './params'
 
 /** A number, or one computed from the model's context (parameters, flows, utilization). */
@@ -106,6 +107,14 @@ export interface LimitStage<C extends string = string> extends StageBase {
    * spends. Not on a quota, which counts a window already.
    */
   burst?: Dyn<number>
+  /**
+   * A limit for each key (each tenant, each client): the capacity is one key's, and the hottest key carries `skew` of
+   * what arrives (an even share without it). It runs out when that key does, and turns away only what is above each
+   * key's limit. Not with `per` or `burst`.
+   */
+  keys?: Dyn<number>
+  /** With keys: the share of what arrives that the hottest key carries, measured or estimated. */
+  skew?: Capacity | ((ctx: LooseValues) => Capacity)
 }
 
 /** The window of a quota. */
@@ -271,8 +280,17 @@ export function cache<const C extends string = never>(
 
 export function limit<const C extends string>(
   component: C,
-  o: StageBase & { per?: QuotaWindow; burst?: Dyn<number> } = {},
+  o: StageBase & {
+    per?: QuotaWindow
+    burst?: Dyn<number>
+    keys?: Dyn<number>
+    skew?: Capacity | ((ctx: LooseValues) => Capacity)
+  } = {},
 ): LimitStage<C> {
+  if (o.keys != null && (o.per != null || o.burst != null))
+    throw new Error(`loadmap: a limit of "${component}" for each key takes no per or burst: each key has its own limit`)
+  if (o.skew != null && o.keys == null)
+    throw new Error(`loadmap: a limit of "${component}" has a skew, the hottest key's share: give it keys`)
   if (o.per != null && o.burst != null)
     throw new Error(
       `loadmap: a limit of "${component}" is a quota per ${o.per} or takes a burst: a quota counts a window`,

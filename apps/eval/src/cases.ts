@@ -253,6 +253,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'currency' }, { kind: 'contains', text: 'running * 90' }],
   },
   {
+    id: 'limit-keys',
+    example: SEARCH,
+    request:
+      'The rate limiter is per client: 200 clients, each allowed what the limiter allows today, and the busiest client sends 15 % of the searches. Model that.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'keys: 200' }, { kind: 'contains', text: 'skew:' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',
