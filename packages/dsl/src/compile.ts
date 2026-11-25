@@ -2130,7 +2130,8 @@ export class Compiler {
     if (skew) def.skew = this.dyn(skew.value, 'capacity', 'ctx', checkCapacity)
     const busiest = this.prop(b, 'busiest')
     if (busiest) def.busiest = this.dyn(busiest.value, 'capacity', 'ctx', checkCapacity)
-    if ((def.assign === 'key' || def.assign === 'leader') && def.members === undefined) {
+    // the members a key, a leader or a busiest member sits on: a cluster's own, where the connection says none
+    if ((def.assign === 'key' || def.assign === 'leader' || def.busiest != null) && def.members === undefined) {
       const m = membersOf(to)
       if (m !== undefined) def.members = m
     }

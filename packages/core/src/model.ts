@@ -1108,11 +1108,10 @@ export function defineModel<
     const shareWithin = (x: unknown) =>
       x != null &&
       ((typeof x === 'function' ? (x as (c: unknown) => Capacity)(stated.ctx) : (x as Capacity)).within ?? 0) > 0
+    // (a key connection's skew reads its ± in the ranking only, as before 1.8: a file keeps its figures)
     const sharesUnsure =
       Object.values(def.stages as Record<string, StageDef>).some((st) => st.kind === 'limit' && shareWithin(st.skew)) ||
-      Object.values((def.connections ?? {}) as Record<string, ConnectionDef>).some(
-        (cn) => shareWithin(cn.busiest) || shareWithin(cn.skew),
-      )
+      Object.values((def.connections ?? {}) as Record<string, ConnectionDef>).some((cn) => shareWithin(cn.busiest))
     const components: Crossings['components'] = {}
     // the scans of every component visit the same loads: one context per load and bound serves them all, and with
     // retries it holds the solve
@@ -2101,10 +2100,10 @@ function contextAt(
         !st.component
       )
         return 0
-      const u = ctx.util[st.component] as number | null
-      // a limit for each key: the hottest key's utilization is the component's; the others share the rest evenly. Each
-      // key turns away only what is above its own limit
+      // a limit for each key: the hottest key's utilization is the component's, before any connection's spread; the
+      // others share the rest evenly. Each key turns away only what is above its own limit
       const keyed = st.kind === 'limit' ? keysOf(s) : undefined
+      const u = (keyed ? plain(st.component) : ctx.util[st.component]) as number | null
       if (keyed && u != null) {
         const rest = keyed.count > 1 ? (u * (1 - keyed.hottest)) / (keyed.count - 1) / keyed.hottest : 0
         return keyed.hottest * rejectShare(u, full) + (1 - keyed.hottest) * rejectShare(rest, full)
@@ -2121,15 +2120,19 @@ function contextAt(
     return memo(`keys of ${s}`, () => {
       const count = whole(dyn(st.keys!, ctx), `limit "${s}"`, 'keys')
       if (st.skew == null) return { count, hottest: 1 / count }
-      const c = typeof st.skew === 'function' ? st.skew(ctx) : st.skew
-      if (!(c.value > 0 && c.value <= 1))
-        throw new Error(
-          `loadmap: limit "${s}" puts ${c.value} of what arrives on its hottest key: a share above 0, to 1`,
-        )
-      const w = c.within ?? 0
-      const edge = bound === 'low' ? c.value * (1 + w) : bound === 'high' ? c.value * (1 - w) : c.value
-      return { count, hottest: Math.min(1, Math.max(1 / count, edge)) }
+      return { count, hottest: shareAt(st.skew, count, `limit "${s}" puts`, 'of what arrives on its hottest key') }
     })
+  }
+  /**
+   * A share of the work on the busiest part, at the edge of its ± the bound asks for (the pessimistic one takes the
+   * larger share), never below an even share of `n`: a hottest key's, a busiest member's.
+   */
+  const shareAt = (x: Capacity | ((ctx: any) => Capacity), n: number, who: string, what: string) => {
+    const c = typeof x === 'function' ? x(ctx) : x
+    if (!(c.value > 0 && c.value <= 1)) throw new Error(`loadmap: ${who} ${c.value} ${what}: a share above 0, to 1`)
+    const w = c.within ?? 0
+    const edge = bound === 'low' ? c.value * (1 + w) : bound === 'high' ? c.value * (1 - w) : c.value
+    return Math.min(1, Math.max(1 / n, edge))
   }
   /** A pass that turns away by priority: the flow with the larger number first. */
   const byPriority = (s: string) => {
@@ -3401,27 +3404,34 @@ function contextAt(
           const plural = d.plural ?? false
           // the busiest member's share, measured or estimated, whatever deals the work: its factor is the share × the
           // members (at the pessimistic edge of its ±, the larger share), never below an even share
-          const told = spreaders.find(([, x]) => x.busiest != null)
-          if (told) {
-            const [k, x] = told
-            const b = typeof x.busiest === 'function' ? x.busiest(ctx) : x.busiest!
-            if (!(b.value > 0 && b.value <= 1))
-              throw new Error(
-                `loadmap: connection "${k}" puts ${b.value} of the work on its busiest member: a share above 0, to 1`,
-              )
-            const w = b.within ?? 0
-            const edge = bound === 'low' ? b.value * (1 + w) : bound === 'high' ? b.value * (1 - w) : b.value
-            const share = Math.min(1, Math.max(1 / shape.units, edge))
-            const factor = share * shape.units
-            s = { ...s, factor: factor < 1 + 1e-9 ? 1 : factor }
+          // with a part of its domain down the busiest keeps its share among those left: the work of all over fewer
+          const told = spreaders.filter(([, x]) => x.busiest != null)
+          if (told.length) {
+            const all = o && shape.owner === 'member' ? (members[0] as number) : shape.units
+            // the busiest share any of them says, and whichever deals the work more unevenly
+            const shares = told.map(([k, x]) => ({
+              share: shareAt(x.busiest!, all, `connection "${k}" puts`, 'of the work on its busiest member'),
+              source: (typeof x.busiest === 'function' ? x.busiest(ctx) : x.busiest!).source,
+            }))
+            const top = shares.reduce((a, b) => (b.share > a.share ? b : a))
+            const factor = Math.max(s.factor, top.share * all)
+            if (factor > s.factor) {
+              // the busiest unit takes the share, the others the rest evenly: what each member's latency reads
+              const n = shape.units
+              const first = Math.min(1, factor / n)
+              const share = Array.from({ length: n }, (_, i) => (i === 0 ? first : n > 1 ? (1 - first) / (n - 1) : 0))
+              s = { ...s, factor: factor < 1 + 1e-9 ? 1 : factor, share }
+            }
             const runs = `${short} ${plural ? 'run' : 'runs'} out at ${pct(1 / s.factor)} of ${plural ? 'their' : 'its'} capacity`
             const text =
               s.factor > 1
-                ? `The busiest ${shape.unit} takes ${pct(share)} of the work${b.source ? ` (${b.source})` : ''}: ${runs}.`
+                ? `The busiest ${shape.unit} takes ${pct(top.share)} of the work${top.source ? ` (${top.source})` : ''}: ${runs}.`
                 : null
             const base = { stage, stages: into, shape, work, dealt: s, pool }
-            if (b.provenance !== 'published' && capacity(c).provenance === 'published')
-              return { ...base, factor: 1, published: true, text: null }
+            if (capacity(c).provenance === 'published') {
+              const keeps = `${capital(short)} ${plural ? 'keep their' : 'keeps its'} published figure: its run spread the work its own way.`
+              return { ...base, factor: 1, published: true, text: s.factor > 1 ? `${text} ${keeps}` : null }
+            }
             return { ...base, factor: s.factor, text }
           }
           const queues = spreaders.every(([, x]) => stages[reads ? x.from : x.to]!.kind === 'queue')
@@ -3567,6 +3577,11 @@ function contextAt(
       const target = opener(stages, cn)?.target
       const label = target == null ? to : (stages[target]!.label ?? target)
       return opens(k).trim() || `It gives the most ${label} accepts: the limit on the connections open to it.`
+    }
+    // one that says only its busiest member's share: that share and where it came from
+    if (cn.busiest != null) {
+      const b = typeof cn.busiest === 'function' ? cn.busiest(ctx) : cn.busiest
+      return `${capital(to)} takes the units from ${from}${which}; its busiest ${pool ? owner : 'member'} takes ${pct(b.value)} of them (${b.provenance}${b.source ? `, ${b.source}` : ''}).${opens(k)}`
     }
     const rule = pool
       ? `Any ${owner} of ${to} takes any unit from ${from}${which} (shared).`
@@ -3979,7 +3994,9 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
         throw new Error(`${at}: the parts of queue "${cn.to}" are its partitions; leave parts out`)
       if (cn.assign === 'key' && to.kind !== 'queue' && cn.parts == null)
         throw new Error(`${at} needs parts: "${cn.to}" is not a queue with partitions`)
-    } else if (cn.assign !== 'exclusive') continue
+    } else if (cn.busiest != null && !pool && cn.members == null)
+      throw new Error(`${at} needs members: its busiest is one of the members of "${cn.to}"`)
+    else if (cn.assign !== 'exclusive') continue
     if (target) {
       const c = to.kind === 'sink' || to.kind === 'lost' ? undefined : to.component
       if (!c) throw new Error(`${at} spreads parts over "${cn.to}", which has no component to run out`)

@@ -212,7 +212,19 @@ export function headroom<P, C extends string>(
       const live = Object.values(u).filter((x): x is number => x != null)
       return live.length ? Math.max(...live) : null
     }
-    const ranged = Object.values(ev.components).some((c) => (c as ComponentResult<C>).capacity?.within)
+    // a ± on a capacity, or on a share the crossings read: a hottest key's, a busiest member's
+    const within = (x: unknown) =>
+      x != null &&
+      ((typeof x === 'function' ? (x as (c: unknown) => { within?: number })(ev.ctx) : (x as { within?: number }))
+        .within ?? 0) > 0
+    const ranged =
+      Object.values(ev.components).some((c) => (c as ComponentResult<C>).capacity?.within) ||
+      Object.values(model.def.stages as Record<string, { kind: string; skew?: unknown }>).some(
+        (st) => st.kind === 'limit' && within(st.skew),
+      ) ||
+      Object.values((model.def.connections ?? {}) as Record<string, { busiest?: unknown }>).some((cn) =>
+        within(cn.busiest),
+      )
     const edge = (bound: 'low' | 'high'): Series =>
       xs.map((x) => [x, top(model.utilization({ ...v, load: x } as Partial<Values<P>>, bound))] as const)
     const components = model.componentIds.map((c) => ({

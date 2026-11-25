@@ -101,3 +101,60 @@ describe("a connection's busiest member", () => {
     expect(ring().evaluate({ load: 1 }).components.cache.util).toBeCloseTo(0.1, 9)
   })
 })
+
+describe('a busiest member, at the edges', () => {
+  const ring = (o: { members?: number; busiest?: number; domain?: boolean } = {}) =>
+    defineModel({
+      load: p.load({ max: 50 }),
+      ...(o.domain ? { domains: { zone: { name: 'Zone', count: 8 } } } : {}),
+      flows: { reads: { label: 'reads', rate: ({ load }) => 1000 * load } },
+      components: {
+        api: { name: 'API', capacity: measured(100_000, 'req/s'), over: 'x' },
+        cache: {
+          name: 'Cache',
+          short: 'the cache',
+          capacity: measured(10_000, 'req/s', 'load test'),
+          service: 0.001,
+          ...(o.domain ? { across: { domain: 'zone', members: 8 } } : {}),
+          over: 'x',
+        },
+      },
+      stages: { api: pass('api'), cache: pass('cache') },
+      routes: { reads: ['api', 'cache'] },
+      connections: {
+        ring: {
+          from: 'api',
+          to: 'cache',
+          ...(o.members != null ? { members: o.members } : {}),
+          busiest: estimated(o.busiest ?? 0.32, 'share', 'ring stats'),
+        },
+      },
+    })
+
+  it('needs the members of a stage that is no pool', () => {
+    expect(() => ring()).toThrow('connection "ring" needs members: its busiest is one of the members of "cache"')
+  })
+
+  it('weighs more on those left with a part of its domain down', () => {
+    const m = ring({ members: 8, busiest: 0.2, domain: true })
+    expect(m.evaluate({ load: 1 }).components.cache.util).toBeCloseTo(0.16, 9)
+    // the busiest keeps its share among the seven left: the work of eight over seven
+    expect(m.evaluate({ load: 1, down: 'zone' } as never).components.cache.util).toBeCloseTo((0.16 * 8) / 7, 9)
+  })
+
+  it('reads in the latency as in the bars: the busiest member is the slowest', () => {
+    // at 7× the busiest member is at 89.6 %, 1 ms a read: its p99 is past what an even 70 % gives
+    const ev = ring({ members: 4 }).evaluate({ load: 7 })
+    expect(ev.components.cache.util).toBeCloseTo(0.896, 9)
+    expect(ev.latency.reads!.p99).toBeGreaterThan((0.001 * 4.6) / (1 - 0.7))
+  })
+
+  it('says its share and where it came from in the assumptions', () => {
+    const texts = ring({ members: 4 })
+      .evaluate({ load: 1 })
+      .assumptions.map((a) => ('text' in a ? (a as { text: string }).text : ''))
+    expect(texts).toContain(
+      'The cache takes the units from api; its busiest member takes 32 % of them (estimated, ring stats).',
+    )
+  })
+})
