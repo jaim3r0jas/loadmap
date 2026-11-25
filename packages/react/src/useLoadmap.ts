@@ -85,6 +85,22 @@ export type FullScreenMode = 'panels' | 'focus'
 /** What stands around the diagram in full screen: everything, or the least. */
 export type Chrome = 'all' | 'least'
 
+/** The key a moment's step is set under in the values: the model reads it, the URL leaves it out. */
+const MOMENT = Symbol.for('loadmap.moment')
+
+/**
+ * A preset has a way up worth walking: a ramp, cold caches, or at its values a pool whose pods take time to be ready.
+ * `ev` is the evaluation at the preset's values. The line under the verdict and the board ask the same.
+ */
+export function hasWayUp(model: Model<any>, ev: Evaluation<any>, label: string): boolean {
+  const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, label)
+  if (!named(model.def.peaks)) return false
+  if (named(model.def.ramps) || named(model.def.colds)) return true
+  return Object.values(ev.stages).some(
+    (s) => s.kind === 'workers' && s.autoscale?.ready != null && s.autoscale.ready > 0,
+  )
+}
+
 export interface LoadmapController<P = any> {
   model: Model<P>
   view: View
@@ -94,6 +110,11 @@ export interface LoadmapController<P = any> {
   scenario: Scenario<P> | null
   /** Takes a scenario's values; the load stays. */
   setScenario: (label: string) => void
+  /**
+   * Takes a preset's values; one with a way up (a ramp, cold caches, pods that take time) plays it first, at the
+   * sim's speed: the load climbs, pods fill in as they are ready, caches warm. Any other change stops it.
+   */
+  playMoment: (label: string) => void
   /** The story step shown, by index; null outside the story. */
   step: number | null
   /** The reader changed a value since the step was shown: its outline is gone. */
@@ -380,13 +401,15 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   // the story player's own changes: the reader's stop it
   const apply = useCallback(
     (v: Partial<Values<P>>) => {
-      const next = { ...valuesRef.current, ...v }
-      valuesRef.current = next
+      const next = { ...valuesRef.current, ...v } as Record<string | symbol, unknown>
+      // a moment's step is for that step alone: values set without one leave it
+      if (!Object.hasOwn(v, MOMENT)) delete next[MOMENT]
+      valuesRef.current = next as Values<P>
       // the engine takes the new numbers now, so a frame stepped before React renders already uses them
-      const nextEv = model.evaluate(next)
-      evaluated.current = { values: next, ev: nextEv }
+      const nextEv = model.evaluate(next as Partial<Values<P>>)
+      evaluated.current = { values: next as Values<P>, ev: nextEv }
       engine.setEvaluation(nextEv)
-      setState({ model, values: next })
+      setState({ model, values: next as Values<P> })
     },
     [engine, model],
   )
@@ -400,13 +423,46 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const playing = played.engine === engine && played.on
   const cue = played.engine === engine ? played.cue : null
   const stop = useCallback(() => engine.stopStory(), [engine])
+  // the reader's own change stops the story, and a moment playing
   const setValues = useCallback(
     (v: Partial<Values<P>>) => {
       stop()
+      engine.stopMoment()
       apply(v)
     },
-    [stop, apply],
+    [stop, apply, engine],
   )
+  const playMoment = useCallback(
+    (label: string) => {
+      // a derived preset (today, where the target is reached) is pressed as any is: only a declared one has a way up
+      const shown = evaluated.current?.ev ?? model.evaluate(valuesRef.current)
+      const set = shown.presets.find((p) => p.label === label)?.values as Partial<Values<P>> | undefined
+      if (!set) return
+      const at = model.evaluate({ ...valuesRef.current, ...set } as Partial<Values<P>>)
+      // a reader who asked for less motion gets the preset at once, as without a way up
+      if (reducedMotion || !hasWayUp(model, at, label)) {
+        setValues(set)
+        return
+      }
+      stop()
+      engine.stopMoment()
+      const from = { ...valuesRef.current }
+      // the walk loads only now; until it is there the board stays as it was, then climbs from the default load
+      import('./playMoment')
+        .then(({ wayUp }) =>
+          engine.playMoment(
+            wayUp(model, from, label, set),
+            (v) => apply(v as Partial<Values<P>>),
+            () => apply(set),
+          ),
+        )
+        // a moment that cannot be walked leaves the preset as pressed
+        .catch(() => apply(set))
+    },
+    [model, engine, setValues, apply, stop, reducedMotion],
+  )
+  // a new engine, or the page gone: the moment playing stops with it (a new model stops it in the engine)
+  useEffect(() => () => engine.stopMoment(), [engine])
 
   const scenario = useMemo(() => model.scenarioOf(values), [model, values])
   const setScenario = useCallback(
@@ -432,9 +488,10 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
   const setStep = useCallback(
     (i: number | null) => {
       stop()
+      engine.stopMoment()
       show(i)
     },
-    [stop, show],
+    [stop, show, engine],
   )
   // a value the reader changed since the step was shown: the step's text and outline no longer describe the board
   const shown = step == null ? undefined : model.story[step]
@@ -537,6 +594,7 @@ export function useLoadmap<P>(model: Model<P>, whole: View, o: LoadmapOptions<P>
     setValues,
     scenario,
     setScenario,
+    playMoment,
     step,
     stepChanged,
     setStep,

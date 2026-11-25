@@ -5,7 +5,7 @@ import { type NMinusOne, outages } from '@loadmap/core/outages'
 import { curveText } from '@loadmap/core/scaling'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isOn, LoadRange, plusMinus } from './bar'
-import type { LoadmapController } from './useLoadmap'
+import { hasWayUp, type LoadmapController } from './useLoadmap'
 
 export { hasDesign, LoadBar, LoadRange, plusMinus } from './bar'
 
@@ -85,11 +85,9 @@ function useMoment(lm: LoadmapController): string | null {
   const preset = useMemo(() => {
     const p = shownMoment(ev)
     if (!p) return undefined
-    // a way up worth walking: a ramp, cold caches or pods that take time to start. A bucket and a queue with a size
-    // are spent and filled on it, but alone they are no way up: the backlog's line says what a queue holds
-    const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, p.label)
-    const late = Object.values(ev.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
-    return named(model.def.ramps) || named(model.def.colds) || late ? p.label : undefined
+    // a way up worth walking, as the board asks: a bucket and a queue with a size are spent and filled on it, but
+    // alone they are no way up (the backlog's line says what a queue holds)
+    return hasWayUp(model, ev, p.label) ? p.label : undefined
   }, [ev, model])
   const [said, setSaid] = useState<{ ev: unknown; text: string | null } | null>(null)
   useEffect(() => {
@@ -102,8 +100,8 @@ function useMoment(lm: LoadmapController): string | null {
       return
     }
     let live = true
-    import('@loadmap/core/moments')
-      .then(({ moment }) => moment(model, ev.values, preset).text)
+    import('./playMoment')
+      .then(({ walk }) => walk(model, ev.values, preset).text)
       // a model that throws on the way up (a formula at a load between two) has no line, as it has no error here
       .catch(() => null)
       .then((text) => {

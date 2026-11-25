@@ -1,4 +1,8 @@
-import type { Evaluation, Model } from '@loadmap/core'
+import type { Evaluation, Model, Values } from '@loadmap/core'
+
+/** The key a moment's step sets its pods and warmth under in the values. */
+const MOMENT = Symbol.for('loadmap.moment')
+
 import { anchor, legPath, type Point, pointAt, type Scene, type View } from '@loadmap/layout'
 import { morph, type Room } from '@loadmap/layout/internal'
 import { createSim, type Particle, type Sim, type SimOptions } from '@loadmap/sim'
@@ -173,6 +177,14 @@ export class Engine {
   #listeners = new Set<() => void>()
   /** The last steps came while paused: export drives a paused engine, a page that only paused it does not. */
   #driven = false
+  /** A moment playing: its steps, the sim's time into it, the step shown, and what applies them. */
+  #walk: {
+    steps: readonly { t: number; dt: number; values: Partial<Values<any>> }[]
+    t: number
+    shown: number
+    apply: (v: Partial<Values<any>>) => void
+    done: () => void
+  } | null = null
   /** While the structure moves, each leg's path in this frame, shared by the dots on it. */
   #legs = { frame: -1, paths: new Map<string, Point[]>() }
   /** Seconds the engine has run since the last reset: the first limit breathes on it. */
@@ -192,7 +204,25 @@ export class Engine {
    * flows, stages or routes starts its sim over then, so no dot looks for a box the old scene does not have; one with
    * the same keeps its sim, dots and backlog.
    */
+  /**
+   * Plays a moment's way up on the engine's clock, at the sim's speed: each step's values in turn as the sim's time
+   * reaches it, then `done`. A pause holds it, and `step()` drives it as it drives the dots.
+   */
+  playMoment(
+    steps: readonly { t: number; dt: number; values: Partial<Values<any>> }[],
+    apply: (v: Partial<Values<any>>) => void,
+    done: () => void,
+  ): void {
+    this.#walk = { steps, t: 0, shown: -1, apply, done }
+  }
+
+  /** Stops a moment playing where it is. */
+  stopMoment(): void {
+    this.#walk = null
+  }
+
   setModel(model: Model, view: View, ev: Evaluation, o: SimOptions): void {
+    this.stopMoment()
     this.stopStory({ cut: true })
     this.model = model
     this.view = view
@@ -207,7 +237,9 @@ export class Engine {
 
   setEvaluation(ev: Evaluation): void {
     if (ev === this.ev) return
-    const same = JSON.stringify(ev.values) === JSON.stringify(this.ev.values)
+    // a moment's step sets its pods and warmth under a symbol, which JSON leaves out: it counts as a change too
+    const key = (v: object) => `${JSON.stringify(v)}|${JSON.stringify((v as Record<symbol, unknown>)[MOMENT] ?? null)}`
+    const same = key(ev.values) === key(this.ev.values)
     const was = this.ev.firstLimit?.id
     const now = ev.firstLimit?.id
     this.ev = ev
@@ -382,6 +414,19 @@ export class Engine {
   step(dtReal: number, o: { particles?: boolean } = {}): void {
     this.#driven = this.paused
     this.sim.step(dtReal, o)
+    // a moment played on the sim's own clock: each step's values in turn, then what it settles on
+    const w = this.#walk
+    if (w && dtReal > 0) {
+      w.t += dtReal * this.sim.speed
+      const i = w.steps.findIndex((s) => s.t + s.dt / 2 > w.t)
+      if (i < 0) {
+        this.#walk = null
+        w.done()
+      } else if (i !== w.shown) {
+        w.shown = i
+        w.apply(w.steps[i]!.values)
+      }
+    }
     if (dtReal > 0) this.#clock += dtReal
     // a handover starts once the page has drawn the new limit: the same moment on any machine
     const h = this.#hand
@@ -410,6 +455,7 @@ export class Engine {
    */
   playStory(from: number): boolean {
     if (!this.frame || !this.model.story[from]) return false
+    this.stopMoment()
     const lead = this.viewer?.lead()
     this.#story = {
       i: from - 1,

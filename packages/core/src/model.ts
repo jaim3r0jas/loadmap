@@ -447,6 +447,8 @@ export interface Outage {
  */
 const MOMENT = Symbol.for('loadmap.moment')
 export interface MomentStepValues {
+  /** Each autoscaled pool's pods ready, by its stage: what the board draws running. */
+  pods?: Readonly<Record<string, number>>
   capacity?: Readonly<Record<string, number>>
   hit?: Readonly<Record<string, number>>
   room?: Readonly<Record<string, true>>
@@ -1200,6 +1202,9 @@ export function defineModel<
       // a cold cache in a moment's step, as the model reads it
       const warm = st.kind === 'cache' ? momentOf(ctx)?.hit?.[s] : undefined
       if (st.kind === 'cache' && warm != null) st = { ...st, hit: st.hit * warm }
+      // and a pool whose pods are not all ready: the others are drawn as pods it does not run
+      const ready = st.kind === 'workers' ? momentOf(ctx)?.pods?.[s] : undefined
+      if (st.kind === 'workers' && ready != null && ready < st.running) st = { ...st, running: ready }
       const a = st.kind === 'workers' ? assignment(s) : undefined
       const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
