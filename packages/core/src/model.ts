@@ -1629,7 +1629,14 @@ function contextAt(
    * ones they settled at. A breaker admits a share of these.
    */
   const sent = (f: string): number =>
-    fixed && Object.hasOwn(fixed, f) ? fixed[f]! : retryOf(f) ? retries()[f]!.attempts : rate(f)
+    fixed && Object.hasOwn(fixed, f)
+      ? fixed[f]!
+      : retryOf(f)
+        ? retries()[f]!.attempts
+        : // a breaker's trials ask it again and again: kept. A plain flow's rate is the flow itself, one step in a loop
+          breakerOf(f)
+          ? rate(f)
+          : rateOf(f)
   ctx.flows = table(flowIds, (f) =>
     memo(
       `flow ${f}`,

@@ -63,9 +63,15 @@ describe('a breaker', () => {
     // its client's retries go through it; a hop's would start again behind it
     expect(bad({ breaker: { opens: 0.5 }, retry: { times: 1 } })).not.toThrow()
     // with a timeout as well the three have no point they settle at together
-    expect(bad({ breaker: { opens: 0.5 }, retry: { times: 1 }, timeout: 1 })).toThrow(
-      'has a breaker, retries and a timeout',
-    )
+    expect(() =>
+      defineModel({
+        load: p.load({ max: 4 }),
+        flows: { f: { rate: 1, breaker: { opens: 0.5 }, retry: { times: 1 }, timeout: 1 } },
+        components: { a: { name: 'A', capacity: measured(1, 'r/s'), service: 0.1, over: 'x' } },
+        stages: { a: pass('a'), out: sink() },
+        routes: { f: ['a', 'out'] },
+      }).evaluate(),
+    ).toThrow('has a breaker, retries and a timeout')
     expect(bad({ breaker: { opens: 0.5 }, retry: { at: 'a', times: 1 } })).toThrow('a breaker and a retry at a hop')
     // a retry rule switched off at these values is none
     expect(bad({ breaker: { opens: 0.5 }, retry: () => undefined })).not.toThrow()
