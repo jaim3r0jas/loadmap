@@ -6,7 +6,7 @@ interface Shape {
   stages: Readonly<Record<string, StageDef>>
   routes: Readonly<Record<string, readonly string[]>>
   flows: Readonly<Record<string, { overload?: unknown; timeout?: unknown }>>
-  components?: Readonly<Record<string, { fails?: unknown }>>
+  components?: Readonly<Record<string, { fails?: unknown; in?: unknown }>>
 }
 
 /**
@@ -99,6 +99,9 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
       (anyWay || flows.some((f) => known.get(f)!.ways.some((w) => w.some((q) => fills(q, w)))))
     )
       out.push('rejected')
+    // a stage in a named part of a domain turns away what reaches it while that part is down
+    const part = (st as { component?: string }).component
+    if (passes && !out.includes('rejected') && part != null && def.components?.[part]?.in != null) out.push('rejected')
     // a stage whose component fails a share of its units, whatever the load
     const of = (st as { component?: string }).component
     // a gather fails the units too few of whose calls answer

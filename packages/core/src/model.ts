@@ -196,7 +196,13 @@ export interface BranchResult {
 /** A failure domain: its name ("Availability zone") and how many parts it has, from 2 up. */
 export interface Domain {
   name: string
-  count: number
+  /** How many parts it has, each like the others: a component stands `across` them. Left out with `parts`. */
+  count?: number
+  /**
+   * Its parts by id, each with the name a sentence gives it ("the EU region"): regions, sites. A component is `in`
+   * one, and the `down` control takes each part out by its id.
+   */
+  parts?: Readonly<Record<string, { name: string }>>
 }
 
 export interface ComponentDef<X> {
@@ -259,6 +265,12 @@ export interface ComponentDef<X> {
    * pods of a pool, the members of a cluster, or one in each part for a box that runs in every one.
    */
   across?: { domain: string; members: number | ((ctx: X) => number) }
+  /**
+   * It is in one named part of a failure domain (a region). With that part down (the `down` control at the part's
+   * id) it is switched off: a split deals the ways through it to the ways left, and what still reaches a stage of
+   * it is turned away there.
+   */
+  in?: { domain: string; part: string }
   /** The component is left out (no utilization) when this returns false. */
   when?: (ctx: X) => boolean
   /** What happens past 100 %, as a clause: "clients get 429s". */
@@ -398,6 +410,11 @@ export interface Outage {
   count: number
   members: number
   left: number
+}
+
+/** How many parts a domain has: its count, or its named parts. */
+function partCount(d: Domain): number {
+  return d.parts ? Object.keys(d.parts).length : (d.count ?? 0)
 }
 
 /** Of n members spread as evenly as they go over a domain's count parts, those left with the fullest part out. */
@@ -1054,14 +1071,15 @@ export function defineModel<
     assignment: (s: string) => WorkersAssignment | undefined,
     hot: (s: string) => Record<string, number> | undefined,
     shedBy: (s: string) => Record<string, number> | undefined,
-    poolOut: (st: StageDef) => StageDef,
+    poolOut: (st: StageDef, id?: string) => StageDef,
     shardsOf: (s: string) => Shards | undefined,
     failsAt: (s: string) => number,
     gathered: (s: string, f: string) => { fails: number } | undefined,
+    outAt: (s: string) => { gone: boolean; stranded: readonly string[] },
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
-      const st = resolveStage(s, poolOut(def.stages[s] as StageDef), ctx, flowIds, thresholds.full, plain)
+      const st = resolveStage(s, poolOut(def.stages[s] as StageDef, s), ctx, flowIds, thresholds.full, plain)
       const a = st.kind === 'workers' ? assignment(s) : undefined
       const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
@@ -1084,6 +1102,9 @@ export function defineModel<
       }
       const broken = failsAt(s)
       if (broken > 0) stages[s] = { ...stages[s], fails: broken } as ResolvedStage
+      const out = outAt(s)
+      if (out.gone) stages[s] = { ...stages[s], gone: true } as ResolvedStage
+      if (out.stranded.length) stages[s] = { ...stages[s], stranded: out.stranded } as ResolvedStage
     }
     for (const st of Object.values(stages) as ResolvedStage[]) {
       if (st.kind !== 'fanout' && st.kind !== 'gather') continue
@@ -1152,6 +1173,7 @@ export function defineModel<
       shardsOf,
       failsAt,
       gathered,
+      outAt,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -1222,7 +1244,19 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt, gathered)
+    const stages = resolveStages(
+      ctx,
+      shed,
+      plain,
+      assignment,
+      hot,
+      shedByOf,
+      poolOut,
+      shardsOf,
+      failsAt,
+      gathered,
+      outAt,
+    )
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1326,15 +1360,13 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf, failsAt, gathered } = context(
-        def as any,
-        values,
-      )
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf, failsAt, gathered, outAt } =
+        context(def as any, values)
       let ways: Record<F, readonly FlowPath<S>[]> | undefined
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt, gathered),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt, gathered, outAt),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -1358,9 +1390,16 @@ export function defineModel<
       const down = params.down
       const domains = def.domains
       if (!domains || down?.kind !== 'select' || shown.down !== 'none') return []
+      // a domain's id, or a named part of one
+      const of = (o: string) =>
+        Object.hasOwn(domains, o) ? o : Object.keys(domains).find((d) => Object.hasOwn(domains[d]!.parts ?? {}, o))
       return down.options
-        .filter((d): d is string => d !== 'none' && Object.hasOwn(domains, d))
-        .map((d) => ({ domain: d, with: `with ${down.format?.(d) ?? `${d} down`}`, values: { ...shown, down: d } }))
+        .filter((o): o is string => o !== 'none' && of(o as string) != null)
+        .map((o) => ({
+          domain: of(o)!,
+          with: `with ${down.format?.(o) ?? `${o} down`}`,
+          values: { ...shown, down: o },
+        }))
     },
   }
 }
@@ -1478,19 +1517,71 @@ function contextAt(
       const a = def.components[c]!.across
       if (!a || values.down !== a.domain) return undefined
       const d = def.domains![a.domain]!
+      const count = partCount(d)
       const members = whole(
         typeof a.members === 'function' ? a.members(ctx as any) : a.members,
         `component "${c}"`,
         'members across its domain',
       )
-      return { domain: a.domain, name: d.name, count: d.count, members, left: membersLeft(members, d.count) }
+      return { domain: a.domain, name: d.name, count, members, left: membersLeft(members, count) }
     })
   /**
    * A pool with a part of its domain down is a smaller pool: its pods, or its autoscaler's most, less those in the
    * fullest part. Its running pods, the autoscaler, a connection's workers and the dots all read it, so the pods out
    * run nothing and the busy share of those left is the utilization the members left give.
    */
-  const poolOut = (st: StageDef): StageDef => {
+  /** The component is in the named part that is down. */
+  const goneC = (c: string | undefined) => {
+    const at = c == null ? undefined : def.components[c]?.in
+    return at != null && values.down === at.part
+  }
+  /** The stage's component is in the part that is down: what reaches it is turned away there. */
+  const gone = (s: string) => goneC((stages[s] as { component?: string } | undefined)?.component)
+  /**
+   * A split with a part down deals again: a way through a stage of that part gets nothing, and the ways left take
+   * its share by their own (evenly, when theirs are all 0). Undefined while every part is up, or no way is touched.
+   */
+  const dealt = (s: string, st: Extract<StageDef, { kind: 'split' }>) =>
+    memo(`ways of ${s} with a part down`, () => {
+      const part = Object.values(def.domains ?? {}).some(
+        (d) => d.parts && Object.hasOwn(d.parts, values.down as string),
+      )
+      if (!part) return undefined
+      const to = splitOf(s, st, ctx as LooseValues, flowIds)
+      const out: Record<string, readonly SplitBranch[]> = {}
+      const stranded = new Set<string>()
+      let touched = false
+      for (const [f, list] of Object.entries(to)) {
+        const left = list.filter((b) => !b.stages.some(gone))
+        if (left.length === list.length) {
+          out[f] = list
+          continue
+        }
+        touched = true
+        // no way left: the flow is lost at the split
+        if (!left.length) {
+          stranded.add(f)
+          continue
+        }
+        const sum = left.reduce((a, b) => a + b.share, 0)
+        out[f] = left.map((b) => ({ ...b, share: sum > 0 ? b.share / sum : 1 / left.length }))
+      }
+      return touched ? { to: out, stranded } : undefined
+    })
+  /** A flow no way of the split is left for, with a part down: it is turned away at the split. */
+  const stranded = (s: string, f: string) => {
+    const st = stages[s]!
+    return st.kind === 'split' && (dealt(s, st)?.stranded.has(f) ?? false)
+  }
+  /** Everything of the flow that reaches the stage is turned away there: its part is down, or no way is left. */
+  const lostAll = (s: string, f: string) => gone(s) || stranded(s, f)
+  /** The same for a resolved stage: whether it is gone, and the flows stranded at it. */
+  const outAt = (s: string) => ({ gone: gone(s), stranded: flowIds.filter((f) => stranded(s, f)) })
+  const poolOut = (st: StageDef, id?: string): StageDef => {
+    if (st.kind === 'split' && id != null) {
+      const d = dealt(id, st)
+      return d ? { ...st, to: d.to } : st
+    }
     const o = st.kind === 'workers' ? outage(st.component) : undefined
     if (!o || st.kind !== 'workers') return st
     const a = st.autoscale
@@ -1505,6 +1596,8 @@ function contextAt(
       const target = head?.accepts != null ? opener(stages, head)?.target : undefined
       const of = target == null ? undefined : (stages[target] as { component?: string }).component
       if (of != null && !enabled(of)) return false
+      // in the part that is down
+      if (goneC(c)) return false
       return def.components[c]!.when?.(ctx as any) ?? true
     })
   /** The seconds a unit of each flow holds one of the component's slots; null when it does not count slots. */
@@ -1742,7 +1835,7 @@ function contextAt(
   /** A split's branches for each flow, checked. */
   const branchesOf = (s: string) =>
     memo(`branches of ${s}`, () =>
-      splitOf(s, stages[s] as Extract<StageDef, { kind: 'split' }>, ctx as LooseValues, flowIds),
+      splitOf(s, poolOut(stages[s]!, s) as Extract<StageDef, { kind: 'split' }>, ctx as LooseValues, flowIds),
     ) as Readonly<Record<string, readonly SplitBranch[]>>
   /**
    * A flow's ways through: its route, once per branch of each split on it, with the share of units that go that way.
@@ -1946,8 +2039,12 @@ function contextAt(
   const onward = (s: string, f?: string) => {
     const st = stages[s]!
     // a gather lets on the units enough of whose calls answered: a flow's own share, where the flow is known
-    const gone = f == null ? 0 : (gathered(s, f)?.fails ?? 0)
-    return (st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1) * (1 - failsAt(s)) * (1 - gone)
+    const short = f == null ? 0 : (gathered(s, f)?.fails ?? 0)
+    // nothing goes on past a stage whose part is down, or a split with no way left
+    if (f == null ? gone(s) : lostAll(s, f)) return 0
+    return (
+      (st.kind === 'cache' ? 1 - hit(s) : st.kind === 'limit' ? 1 - rejects(s) : 1) * (1 - failsAt(s)) * (1 - short)
+    )
   }
   /** Copies per unit of a flow that a fan-out at t sends to s: 0 unless t is a fan-out with a branch there. */
   /** A fan-out's branches for a flow, each as the stages its copies go through and its copies: none for any other stage. */
@@ -2102,6 +2199,8 @@ function contextAt(
             actual *= (1 - inner) * (1 + Math.min(excess(inner, rule.times), rule.budget ?? Number.POSITIVE_INFINITY))
             break
           }
+          // its part is down, or no way of its split is left: every unit is turned away here
+          if (lostAll(s, f)) actual = 0
           // a fan-out turns away copies, not the unit
           const r = stages[s]!.kind === 'fanout' ? 0 : rejectsFor(s, f)
           if (r > 0) actual = Math.min(actual, offered * (1 - r))
@@ -2168,6 +2267,7 @@ function contextAt(
           // a fan-out's copies, less the share it turns away (none of what a dropping queue let it read)
           total += r * copies(t, f, s) * (fed > 0 ? 1 : 1 - rejects(t))
           if (i >= last) break
+          if (lostAll(t, f)) r = 0
           const cut = rejectsFor(t, f)
           if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
           r *= (1 - failsAt(t)) * (1 - (gathered(t, f)?.fails ?? 0))
@@ -2253,6 +2353,11 @@ function contextAt(
         for (const [j, s] of way.stages.entries()) {
           r *= gain(f, s)
           const st = stages[s]!
+          // its part is down, or no way of its split is left
+          if (lostAll(s, f)) {
+            add(s, 'rejected', r)
+            r = 0
+          }
           if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
             const turned = r * shedFor(s, f)
             add(s, 'rejected', turned)
@@ -3278,6 +3383,10 @@ function contextAt(
                 variance: w.variance + g.time ** 2,
               })),
             )
+          if (gone(s)) {
+            add(s, 'rejected', r)
+            r = 0
+          }
           if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
             const left = Math.min(r, offered * (1 - rejectsFor(s, f)))
             add(s, 'rejected', r - left)
@@ -3343,6 +3452,7 @@ function contextAt(
     shardsOf,
     failsAt,
     gathered,
+    outAt,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
@@ -3492,25 +3602,47 @@ function withDomains<T extends ModelDef<any, any, any, any, any>>(def: T): T {
   for (const [c, cd] of Object.entries(def.components as Record<string, ComponentDef<any>>))
     if (cd.across && !Object.hasOwn(domains, cd.across.domain))
       throw new Error(`loadmap: component "${c}" stands across unknown domain "${cd.across.domain}"`)
+  for (const [c, cd] of Object.entries(def.components as Record<string, ComponentDef<any>>)) {
+    if (!cd.in) continue
+    const d = Object.hasOwn(domains, cd.in.domain) ? domains[cd.in.domain] : undefined
+    if (!d?.parts || !Object.hasOwn(d.parts, cd.in.part))
+      throw new Error(`loadmap: component "${c}" is in "${cd.in.part}", no named part of a domain "${cd.in.domain}"`)
+  }
   if (!ids.length) return def
-  for (const [id, d] of Object.entries(domains))
-    if (!(Number.isInteger(d.count) && d.count >= 2))
+  // what the control takes out: one part of a domain whose parts are alike, or a named part
+  const names: Record<string, string> = {}
+  for (const [id, d] of Object.entries(domains)) {
+    if (d.parts) {
+      const parts = Object.entries(d.parts)
+      if (d.count != null || parts.length < 2)
+        throw new Error(`loadmap: domain "${id}" has a count of parts or its parts by name, two or more`)
+      for (const [part, x] of parts) {
+        if (part === 'none' || Object.hasOwn(domains, part) || Object.hasOwn(names, part))
+          throw new Error(`loadmap: part "${part}" of domain "${id}" needs a name no domain and no other part has`)
+        names[part] = `${x.name} out`
+      }
+    } else if (!(Number.isInteger(d.count) && (d.count as number) >= 2))
       throw new Error(`loadmap: domain "${id}" needs a count of parts as a whole number from 2 up, not ${d.count}`)
+    else names[id] = outText(d.name)
+  }
+  const options = Object.keys(names)
   const own = (def.params as Record<string, ParamDef> | undefined)?.down
   if (own) {
     if (
       own.kind !== 'select' ||
       !own.options.includes('none') ||
-      own.options.some((o) => o !== 'none' && !ids.includes(o as string))
+      own.options.some((o) => o !== 'none' && !options.includes(o as string))
     )
-      throw new Error(`loadmap: parameter "down" takes "none" and the ids of the domains: ${ids.join(', ')}`)
+      throw new Error(
+        `loadmap: parameter "down" takes "none", the ids of the domains and of their named parts: ${options.join(', ')}`,
+      )
     return def
   }
   const down = p.select<string>({
     label: 'Outage',
-    options: ['none', ...ids],
+    options: ['none', ...options],
     default: 'none',
-    format: (v) => (v === 'none' ? 'none' : outText(domains[v]!.name)),
+    format: (v) => (v === 'none' ? 'none' : (names[v] ?? v)),
   })
   return { ...def, params: { ...def.params, down } }
 }

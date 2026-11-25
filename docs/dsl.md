@@ -1317,6 +1317,35 @@ point: no outage the model knows touches it, and with it gone nothing gets throu
 (`single-point`), and also for a box across a domain with one member, which has none left when its part is out. A
 plain node has no warning: a limit or a managed service may have no place in the domain.
 
+A domain can have its parts by name instead (from `loadmap 1.8`): regions, sites. A box, or a subsystem with every
+box in it, is `in` one of them, and the Outage control takes each part out by its id:
+
+```loadmap
+domain region "Region" { parts: [eu, us] }
+
+node router "Traffic router" {
+  split {
+    orders -> eu.api: 60%
+    orders -> us.api: 40%
+  }
+}
+subsystem eu "EU" { like: region; in: eu }
+subsystem us "US" { like: region; in: us }
+
+scenario euOut "EU out" { down: eu }
+expect "Any region out keeps 1.5×" { down: region; underTarget: 1.5 }
+```
+
+With a part down its boxes are switched off, and each split deals again: a way through a box of that part gets
+nothing, and the ways left take its share by their own (evenly when theirs are all 0, so `100%` and `0%` say "all of
+it here, and there only when here is gone"). A flow with no way left is turned away at the split, and what reaches a
+box of the part without a split in front is turned away at that box: `rejected`, which a lost box counts. A part
+reads as the label of the subsystem or box of its id: "With the EU out, the 50 % target holds up to 2×, limited by
+API in US." `down: region` in an expect holds the worst of its parts; a scenario, a step or a preset names the part.
+In a formula `down.eu` is true while that part is out, and `down.region` while any of them is. In TypeScript,
+`domains: { region: { name: 'Region', parts: { eu: { name: 'the EU' }, us: { name: 'the US' } } } }` and `in: {
+domain: 'region', part: 'eu' }` on a component.
+
 With every part up, the page also answers N−1. Under the verdict: "With one availability zone out, the 50 % target
 holds up to 8.3×, limited by the search API, which keeps 5 of 8." Each row of the limits gives its own figure with
 one part out when that comes sooner, and the headroom chart draws the shown line with one part out, dashed in the
@@ -1965,7 +1994,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue | |
 
 ## In code
 
@@ -2184,6 +2213,7 @@ After the keyword: id [label].
 | --- | --- | --- |
 | `like` | node, constant | Another subsystem, of this file or imported, to be like: everything it holds, under this id. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
+| `in` | part, constant | The named part of a failure domain it is in: a region, a site. With that part down (`down: eu`) it is switched off, a split deals the ways through it to the ways left, and what still reaches it is turned away there. On a subsystem, every box in it is in the part. From loadmap 1.8. |
 | `route` | route, constant | The stages a flow passes when its route names the subsystem, a -> b. An edge to the subsystem ends at the first one's box, an edge from it starts at the last one's. |
 
 Holds: `input`, `with`, `node`, `cluster`, `pool`, `component`, `connection`, `let`, `subsystem`.
@@ -2635,7 +2665,8 @@ After the keyword: id [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `count` (required) | number, constant | How many parts, from 2 up. |
+| `count` | number, constant | How many parts, from 2 up, each like the others: a box stands across them. This or parts. |
+| `parts` | options, constant | Its parts by name, two or more: regions, sites. A box or a subsystem is in one (`in: eu`), and the Outage control takes each out by its id (`down: eu`); `down: region` in an expect holds the worst of them. A part reads as the label of the subsystem or box of its id: "With the EU out, …". From loadmap 1.8. |
 
 ### tier
 
@@ -2667,6 +2698,7 @@ After the keyword: id [label] [sub].
 | `shape` | `box` \| `cylinder` | box (the default) or cylinder. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `across` | domain, constant | The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all. From loadmap 1.7. |
+| `in` | part, constant | The named part of a failure domain it is in: a region, a site. With that part down (`down: eu`) it is switched off, a split deals the ways through it to the ways left, and what still reaches it is turned away there. On a subsystem, every box in it is in the part. From loadmap 1.8. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
@@ -2703,6 +2735,7 @@ After the keyword: id [label] [sub].
 | `memberLabel` | string, formula of `i` | Each member's label, from its index i: `broker ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `across` | domain, constant | The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all. From loadmap 1.7. |
+| `in` | part, constant | The named part of a failure domain it is in: a region, a site. With that part down (`down: eu`) it is switched off, a split deals the ways through it to the ways left, and what still reaches it is turned away there. On a subsystem, every box in it is in the part. From loadmap 1.8. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |
@@ -2743,6 +2776,7 @@ After the keyword: id [label] [sub].
 | `podLabel` | string, formula of `i` | Each pod's label, from its index i: `pod ${i}`. |
 | `tier` | tier, constant | The tier the box stands in; without one, that of the boxes that feed it. |
 | `across` | domain, constant | The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all. From loadmap 1.7. |
+| `in` | part, constant | The named part of a failure domain it is in: a region, a site. With that part down (`down: eu`) it is switched off, a split deals the ways through it to the ways left, and what still reaches it is turned away there. On a subsystem, every box in it is in the part. From loadmap 1.8. |
 | `like` | node, constant | Another box of the same kind to be like: every line and stage of that box this one does not write itself. A line written here replaces the same line there; a stage written here replaces its stages. From loadmap 1.2. |
 | `name` | string, constant | The component's name in the limits list. Defaults to the label. |
 | `short` | string, constant | The name inside a sentence, with its article: "the database". |

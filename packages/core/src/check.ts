@@ -113,6 +113,20 @@ export function check<P, C extends string>(
         : named
     const scenario = e.scenario == null ? null : model.scenarios.find((s) => s.label === e.scenario)
     if (e.scenario != null && !scenario) throw new Error(`loadmap: no scenario "${e.scenario}"`)
+    // a domain with named parts: any one of them out, so the worst of them speaks
+    const parts =
+      e.down == null
+        ? undefined
+        : (model.def.domains as Record<string, { parts?: object }> | undefined)?.[e.down]?.parts
+    if (e.down != null && parts && Object.hasOwn(model.def.domains ?? {}, e.down)) {
+      const each = Object.keys(parts).map((part) => check(model, [{ ...written, down: part }])[0]!)
+      const rank = { fail: 0, inconclusive: 1, pass: 2 } as const
+      const low = (r: CheckResult<C>) => r.target?.low ?? r.full?.low ?? Number.POSITIVE_INFINITY
+      const worst = each.reduce((a, b) =>
+        rank[b.outcome] < rank[a.outcome] || (rank[b.outcome] === rank[a.outcome] && low(b) < low(a)) ? b : a,
+      )
+      return { ...worst, expectation: named }
+    }
     const outage = e.down == null ? undefined : model.params.find((x) => x.id === 'down')?.def
     if (e.down != null && !(outage?.kind === 'select' && e.down !== 'none' && outage.options.includes(e.down)))
       throw new Error(`loadmap: no domain "${e.down}" to take a part of out`)

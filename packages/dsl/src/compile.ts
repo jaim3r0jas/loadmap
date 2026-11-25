@@ -602,6 +602,8 @@ export class Compiler {
   private scenarioIds = new Map<string, string>()
   /** The failure domains declared, by id: what across and down name. */
   private domainIds = new Map<string, Span>()
+  /** The named parts of the domains, each with its domain: what in names, and down takes out. */
+  private partIds = new Map<string, string>()
   /** Each fan-out and the copies a second it sends: what `out.<stage>` reads. */
   private sent = new Map<string, { run: (ctx: any) => number }>()
   /** What the units of a formula's names come from: each let's formula, each fit's y, each parameter's default. */
@@ -780,6 +782,7 @@ export class Compiler {
       functions: this.functions,
       out: this.sent,
       domains: this.domainIds,
+      parts: this.partIds,
     }
     for (const box of boxes)
       for (const s of box.stages)
@@ -834,6 +837,17 @@ export class Compiler {
     for (const b of byKind('tier')) if (b.args.id) this.declare('tier', b.args.id.name, b.args.id, b, tierNames)
     for (const b of byKind('domain'))
       if (b.args.id) this.declare('domain', b.args.id.name, b.args.id, b, this.domainIds)
+    // their named parts, known before a scenario or an expect takes one out
+    for (const b of byKind('domain')) {
+      const list = b.args.id ? b.props.get('parts')?.[0]?.value : undefined
+      if (list?.t !== 'array') continue
+      for (const e of list.items) {
+        if (e.t !== 'id') continue
+        if (this.partIds.has(e.name) || this.domainIds.has(e.name) || e.name === 'none')
+          this.report.error('duplicate', e, `"${e.name}" is taken: a part has a name no domain and no other part has`)
+        else this.partIds.set(e.name, b.args.id!.name)
+      }
+    }
     if (!namesOnly) this.shadowed(boxes, loose)
     if (namesOnly) return undefined
     // a measure is read like a let, of its fallback's type: a capacity or a number
@@ -1195,11 +1209,38 @@ export class Compiler {
 
     // a failure domain and the boxes across it: the members of a pool are its pods (its autoscaler's max), of a
     // cluster its members, and a node runs one in each part
-    const domains: Record<string, { name: string; count: number }> = {}
+    const domains: Record<string, { name: string; count?: number; parts?: Record<string, { name: string }> }> = {}
+    // a part reads as the label of the subsystem or box of its id: "the EU region"
+    const labels = new Map<string, string>()
+    for (const b of [...byKind('subsystem'), ...boxes.map((x) => x.block)]) {
+      const label = b.args.id ? this.text(b.args.label) : undefined
+      if (b.args.id && label != null && !labels.has(b.args.id.name)) labels.set(b.args.id.name, label)
+    }
     for (const b of byKind('domain')) {
       if (!b.args.id) continue
+      const list = this.prop(b, 'parts')
       const count = this.constProp<number>(b, 'count')
-      if (count == null) continue
+      if (list) {
+        const items = list.value.t === 'array' ? list.value.items : []
+        const ids = items.flatMap((e) => (e.t === 'id' ? [e] : []))
+        if (count != null)
+          this.report.error('bad-value', list.key, 'a domain has a count of parts or its parts by name, not both')
+        else if (ids.length !== items.length || ids.length < 2)
+          this.report.error('bad-value', list.value, 'parts are two or more names', 'parts: [eu, us]')
+        else {
+          const parts: Record<string, { name: string }> = {}
+          for (const e of ids)
+            if (this.partIds.get(e.name) === b.args.id.name)
+              parts[e.name] = { name: `the ${labels.get(e.name) ?? e.name}` }
+          if (Object.keys(parts).length >= 2)
+            domains[b.args.id.name] = { name: this.text(b.args.label) ?? b.args.id.name, parts }
+        }
+        continue
+      }
+      if (count == null) {
+        this.report.error('missing-part', b.at, 'a domain needs its count of parts, or its parts by name', 'count: 3')
+        continue
+      }
       if (!(Number.isInteger(count) && count >= 2))
         this.report.error(
           'out-of-range',
@@ -1216,8 +1257,21 @@ export class Compiler {
         'give the parameter another name',
       )
     for (const box of boxes) {
+      // in a named part of a domain: a region, a site
+      const part = this.named(box.block, 'in', [...this.partIds.keys()], 'part of a domain')
+      if (part && box.component)
+        (componentDefs[box.component.id] as Record<string, unknown>).in = { domain: this.partIds.get(part)!, part }
       const domain = this.named(box.block, 'across', [...this.domainIds.keys()], 'domain')
       if (!domain || !Object.hasOwn(domains, domain)) continue
+      if (domains[domain]!.count == null) {
+        this.report.error(
+          'bad-box',
+          this.prop(box.block, 'across')!.value,
+          `"${domain}" has its parts by name: a box is in one of them`,
+          `in: ${Object.keys(domains[domain]!.parts ?? {})[0]}`,
+        )
+        continue
+      }
       if (!box.component) {
         this.report.error(
           'bad-box',
@@ -1236,7 +1290,7 @@ export class Compiler {
           : pool.pods
         : box.block.keyword === 'cluster'
           ? this.dynProp<number>(box.block, 'members', 'number')
-          : domains[domain]!.count
+          : domains[domain]!.count!
       if (members == null) {
         this.report.error(
           'bad-box',
@@ -3305,8 +3359,17 @@ export class Compiler {
       out[k] = v
     }
     if (!known.has('down')) {
-      const down = this.named(b, 'down', [...this.domainIds.keys()], 'domain')
-      if (down) out.down = down
+      const down = this.named(b, 'down', [...this.domainIds.keys(), ...this.partIds.keys()], 'domain')
+      // a domain with its parts by name has no "one part": which one is out changes the answer
+      const parts = down == null ? [] : [...this.partIds].filter(([, d]) => d === down).map(([p]) => p)
+      if (down && parts.length)
+        this.report.error(
+          'bad-value',
+          this.prop(b, 'down')!.value,
+          `"${down}" has its parts by name: say which one is out`,
+          `down: ${parts[0]}`,
+        )
+      else if (down) out.down = down
     }
     return out
   }
@@ -3325,7 +3388,7 @@ export class Compiler {
     const scenario = this.named(b, 'scenario', Object.keys(scenarios), 'scenario')
     const component = this.named(b, 'component', [...components.keys()], 'component')
     const flow = this.named(b, 'flow', [...flows.keys()], 'flow')
-    const down = this.named(b, 'down', [...this.domainIds.keys()], 'domain')
+    const down = this.named(b, 'down', [...this.domainIds.keys(), ...this.partIds.keys()], 'domain')
     // a stage on one of the flow's fan-out branches: the expect then holds the branch up to it
     // by the stage's name, or its box's where the box holds one stage: as a route and a branch name it
     const where = this.prop(b, 'to')

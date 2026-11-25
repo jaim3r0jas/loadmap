@@ -36,6 +36,8 @@ export type ValueKind =
   | 'tier'
   /** The id of a failure domain: `across: zone`. */
   | 'domain'
+  /** The id of a named part of a failure domain: `in: eu`. */
+  | 'part'
   /** The id of a measure: `x: requestRate`. */
   | 'measure'
   /** A list of options: `[2, 3, 4]`. */
@@ -288,6 +290,12 @@ const ACROSS: PropSpec = {
   since: '1.7',
   doc: "The failure domain its members stand across, spread as evenly as they go: with one part down, those in the fullest part are out and the rest carry the work. The members are a pool's pods (its autoscaler's max), a cluster's members, or one in each part for a node. A published figure is then left without a benchmark: its run had them all.",
 }
+const IN: PropSpec = {
+  value: 'part',
+  scope: 'const',
+  since: '1.8',
+  doc: 'The named part of a failure domain it is in: a region, a site. With that part down (`down: eu`) it is switched off, a split deals the ways through it to the ways left, and what still reaches it is turned away there. On a subsystem, every box in it is in the part.',
+}
 const DOWN: PropSpec = {
   value: 'domain',
   scope: 'const',
@@ -515,6 +523,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         doc: 'Another subsystem, of this file or imported, to be like: everything it holds, under this id.',
       },
       tier: TIER,
+      in: IN,
       route: {
         value: 'route',
         scope: 'const',
@@ -1156,8 +1165,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         inspector: 'main',
         value: 'number',
         scope: 'const',
-        required: true,
-        doc: 'How many parts, from 2 up.',
+        doc: 'How many parts, from 2 up, each like the others: a box stands across them. This or parts.',
+      },
+      parts: {
+        value: 'options',
+        scope: 'const',
+        since: '1.8',
+        doc: 'Its parts by name, two or more: regions, sites. A box or a subsystem is in one (`in: eu`), and the Outage control takes each out by its id (`down: eu`); `down: region` in an expect holds the worst of them. A part reads as the label of the subsystem or box of its id: "With the EU out, …".',
       },
     },
     children: [],
@@ -1192,6 +1206,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       shape: { value: 'enum', scope: 'const', values: ['box', 'cylinder'], doc: 'box (the default) or cylinder.' },
       tier: TIER,
       across: ACROSS,
+      in: IN,
       like: LIKE,
       ...COMPONENT_PROPS,
     },
@@ -1222,6 +1237,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       memberLabel: { value: 'string', scope: 'i', doc: "Each member's label, from its index i: `broker ${i}`." },
       tier: TIER,
       across: ACROSS,
+      in: IN,
       like: LIKE,
       ...COMPONENT_PROPS,
     },
@@ -1246,6 +1262,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
       podLabel: { value: 'string', scope: 'i', doc: "Each pod's label, from its index i: `pod ${i}`." },
       tier: TIER,
       across: ACROSS,
+      in: IN,
       like: LIKE,
       ...COMPONENT_PROPS,
     },

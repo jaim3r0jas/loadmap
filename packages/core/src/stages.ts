@@ -297,6 +297,10 @@ export type ResolvedStage = {
   shards?: Shards
   /** The share of the units it works on that its component fails, when it fails any. */
   fails?: number
+  /** Its component is in a named part of a domain that is down: what reaches it is turned away here. */
+  gone?: true
+  /** A split with a part down: the flows no way is left for, turned away here. */
+  stranded?: readonly string[]
 } & (
   | {
       kind: 'pass' | 'limit'
