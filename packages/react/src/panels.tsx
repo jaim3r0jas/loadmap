@@ -41,7 +41,7 @@ export function Verdict({ lm }: { lm: LoadmapController }) {
       </p>
       {peak && <p className="lm-peak">{peak}</p>}
       {nMinusOne(lm).map((o) => (
-        <p className="lm-outage" key={o.domain} data-domain={o.domain}>
+        <p className="lm-outage" key={o.part ?? o.domain} data-domain={o.domain} data-part={o.part}>
           {o.text}
         </p>
       ))}
@@ -327,10 +327,14 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   // what is promised for these values: the scenario shown, up to its underTarget (or at the values without one)
   const scenario = model.scenarioOf(lm.values)?.label
   const down = (lm.values as { down?: unknown }).down ?? 'none'
+  const partOf = (domain: string, part: unknown) =>
+    typeof part === 'string' &&
+    Object.hasOwn((model.def.domains as Record<string, { parts?: object }> | undefined)?.[domain]?.parts ?? {}, part)
   const promised = (e: (typeof model.expectations)[number]) =>
     (e.scenario == null || e.scenario === scenario) &&
     // a scenario may set the outage itself: only an expectation's own `down` asks for it
-    (e.down == null || e.down === down) &&
+    // one that names a domain with its parts by name holds whichever part is out
+    (e.down == null || e.down === down || partOf(e.down, down)) &&
     (e.underTarget == null || lm.values.load <= e.underTarget)
   // what a flow loses for good, where an expectation holds it at any values: against the strictest promised here
   for (const f of model.flowIds) {

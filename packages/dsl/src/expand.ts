@@ -544,6 +544,7 @@ export class Expander {
     })
     chains(stmts)
     const tier = propOf(d, 'tier')
+    const part = propOf(d, 'in')
     const { body: _, bodySpan: __, ...head } = d
     // one that holds no box leaves no line: nothing to draw a frame around, and nothing a few lines can multiply
     const holds = stmts.some((s) => s.kind === 'decl' && (s.keyword.name === 'subsystem' || isBox(s)))
@@ -557,6 +558,8 @@ export class Expander {
       if (isBox(s)) {
         // the tier of the subsystem is that of every box in it that names none
         if (tier && !propOf(s, 'tier')) s.body = [...(s.body ?? []), clone(tier)]
+        // and so is the named part of a domain it is in: a region's boxes go out together
+        if (part && !propOf(s, 'in')) s.body = [...(s.body ?? []), clone(part)]
       }
       out.push(s)
     }
@@ -603,7 +606,10 @@ export class Expander {
     const withs = body.filter(isWith)
     const inputs = body.filter(isInput)
     const own_ = body.filter(
-      (s) => !isWith(s) && !isInput(s) && !(s.kind === 'prop' && (s.key.name === 'like' || s.key.name === 'tier')),
+      (s) =>
+        !isWith(s) &&
+        !isInput(s) &&
+        !(s.kind === 'prop' && (s.key.name === 'like' || s.key.name === 'tier' || s.key.name === 'in')),
     )
     for (const s of own_)
       if (s.kind === 'prop' && s.key.name !== 'route')
@@ -611,7 +617,7 @@ export class Expander {
           'unknown-property',
           s.key,
           `unknown property "${s.key.name}" in subsystem`,
-          didYouMean(s.key.name, ['like', 'tier', 'route']),
+          didYouMean(s.key.name, ['like', 'tier', 'in', 'route']),
         )
       else if (s.kind === 'decl' && !SCHEMA.subsystem!.children.includes(s.keyword.name))
         this.report.error(

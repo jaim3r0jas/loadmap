@@ -34,6 +34,8 @@ export interface Names {
   options?: ReadonlyMap<string, readonly (number | string)[]>
   /** The failure domains, by id: `down.zone` is true while a part of that domain is out. */
   domains?: { has(id: string): boolean; keys(): Iterable<string> }
+  /** The named parts of the domains, each with its domain: `down.eu` is true while that part is out. */
+  parts?: ReadonlyMap<string, string>
   /** Each fan-out stage and what it sends, copies a second: `out.push`. Filled in once the stage is compiled. */
   out?: ReadonlyMap<string, { run: (ctx: any) => number }>
 }
@@ -317,7 +319,13 @@ class Compiler {
       ![...this.names.stages, ...this.names.components].some((n) => n.startsWith('down.'))
     ) {
       const d = name.slice(5)
-      const known = [...(this.names.domains?.keys() ?? [])]
+      const parts = this.names.parts
+      const known = [...(this.names.domains?.keys() ?? []), ...(parts?.keys() ?? [])]
+      // a named part: true while that one is out
+      if (parts?.has(d)) {
+        if (!this.canRead(e, 'a parameter')) return bad
+        return { type: 'boolean', constant: false, run: (c) => c.down === d }
+      }
       if (!this.names.domains?.has(d)) {
         this.report.error(
           'unknown-name',
@@ -330,7 +338,8 @@ class Compiler {
         return bad
       }
       if (!this.canRead(e, 'a parameter')) return bad
-      return { type: 'boolean', constant: false, run: (c) => c.down === d }
+      // a domain with its parts by name: true while any one of them is out
+      return { type: 'boolean', constant: false, run: (c) => c.down === d || parts?.get(c.down) === d }
     }
     if ((TABLES as readonly string[]).includes(name)) {
       this.report.error(

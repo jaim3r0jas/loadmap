@@ -7,6 +7,8 @@ import type { LooseValues } from './params'
 /** A failure domain with one part out: "With one availability zone out, the 70 % target holds up to 6×, …". */
 export interface NMinusOne<C extends string = string> {
   domain: string
+  /** The named part that is out, for a domain with its parts by name. */
+  part?: string
   /** "with one availability zone out" */
   with: string
   /** Where the target is reached first, on the pessimistic edge; null when nothing reaches it. */
@@ -22,7 +24,7 @@ export interface NMinusOne<C extends string = string> {
  * control). Each is a whole evaluation of its own: an entry of its own, for the panels that show it.
  */
 export function outages<C extends string>(model: Model<any, string, C>, values: LooseValues = {}): NMinusOne<C>[] {
-  return model.outageValues(values).map(({ domain: d, with: out, values: v }) => {
+  return model.outageValues(values).map(({ domain: d, part, with: out, values: v }) => {
     const ev = model.evaluate(v as never)
     const first = ev.firstLimit
     let text = `${capital(out)}, every component is switched off.`
@@ -39,6 +41,14 @@ export function outages<C extends string>(model: Model<any, string, C>, values: 
     const components = Object.fromEntries(
       model.componentIds.map((c) => [c, ev.components[c].util == null ? null : ev.components[c].targetRange]),
     ) as Record<C, CrossingRange | null>
-    return { domain: d, with: out, target: ev.target, firstLimit: first?.id ?? null, text, components }
+    return {
+      domain: d,
+      ...(part != null ? { part } : {}),
+      with: out,
+      target: ev.target,
+      firstLimit: first?.id ?? null,
+      text,
+      components,
+    }
   })
 }

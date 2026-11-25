@@ -312,6 +312,9 @@ export class Sim {
 
   /** The share a stage turns away of a flow: its own, or the flow's where it sheds by priority. */
   #shedOf(stage: string, flow: string): number {
+    // in a part that is down, or a split with no way left for the flow: nothing goes on
+    const s = this.#ev.stages[stage]
+    if (s?.gone || s?.stranded?.includes(flow)) return 1
     return this.#shedBy.get(stage)?.[flow] ?? this.#shed.get(stage) ?? 0
   }
 
@@ -750,7 +753,12 @@ export class Sim {
         d.outcome ??= 'delivered'
         continue
       }
-      if (d.phase === 'move' && d.branch) {
+      if (d.phase === 'move' && (stage.gone || (!d.branch && !d.chain && stage.stranded?.includes(d.flow)))) {
+        // its part is down, or no way of the split is left: turned away here, whatever the stage is. A copy is no
+        // unit: it fades where it landed
+        if (d.branch || d.chain) fade(d, 'rejected', 0.35)
+        else reject(d, 'rejected')
+      } else if (d.phase === 'move' && d.branch) {
         // a fan-out copy ends where it lands
         const refused =
           this.#r() < this.shed(d.from.stage ?? '') ||
