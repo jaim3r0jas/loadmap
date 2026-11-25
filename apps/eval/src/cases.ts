@@ -233,6 +233,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'burst: 300' }],
   },
   {
+    id: 'moment-ramp',
+    example: SEARCH,
+    request:
+      'Add a preset "Launch" at 6× that lasts 15 minutes and gets there in 20 seconds. The API pods take a minute to be ready.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'ramp: 20s' }, { kind: 'contains', text: 'ready: 1min' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

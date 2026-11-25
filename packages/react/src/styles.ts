@@ -129,7 +129,7 @@ export const LOADMAP_CSS = `
 .lm-verdict { margin: 0; padding: 10px 14px; border-left: 4px solid var(--lm-ok); background: var(--lm-accent-soft); border-radius: 0 6px 6px 0; }
 .lm-verdict[data-tier="warn"] { border-color: var(--lm-warn); }
 .lm-verdict[data-tier="over"] { border-color: var(--lm-drop); }
-.lm-measure, .lm-peak, .lm-outage { margin: 6px 0 0; padding: 0 14px; font-size: .86rem; color: var(--lm-muted); }
+.lm-measure, .lm-moment, .lm-peak, .lm-outage { margin: 6px 0 0; padding: 0 14px; font-size: .86rem; color: var(--lm-muted); }
 
 .lm-strip { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 14px; align-items: start; }
 @container (max-width: 860px) { .lm-strip { grid-template-columns: minmax(0, 1fr); } }

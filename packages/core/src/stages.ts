@@ -65,6 +65,11 @@ export interface Autoscale {
   max: Dyn<number>
   /** The utilization each running pod is held at, 0 to 1: 0.7 scales out above 70 %. */
   target: Dyn<number>
+  /**
+   * Seconds from when a pod is wanted until it takes work: start, warm-up, the checks. No steady figure changes; in a
+   * moment (`moment()` from `@loadmap/core/moments`) the pods the autoscaler wants count only that long after.
+   */
+  ready?: Dyn<number>
 }
 
 /**
@@ -358,7 +363,7 @@ export type ResolvedStage = {
       placement: 'round-robin' | 'in-order'
       /** The pods running at these values: `pods` unless the pool autoscales. */
       running: number
-      autoscale?: { min: number; max: number; target: number }
+      autoscale?: { min: number; max: number; target: number; ready?: number }
       /** With an exclusive connection into it: which worker reads each partition. */
       assignment?: WorkersAssignment
     }
@@ -423,7 +428,7 @@ export function podsOf(
   s: WorkersStage,
   ctx: LooseValues,
   util: number | null | undefined,
-): { pods: number; running: number; autoscale?: { min: number; max: number; target: number } } {
+): { pods: number; running: number; autoscale?: { min: number; max: number; target: number; ready?: number } } {
   if (!s.autoscale) {
     const pods = dyn(s.pods ?? 0, ctx)
     return { pods, running: pods }
@@ -588,7 +593,10 @@ function autoscaleOf(id: string, a: Autoscale, ctx: LooseValues) {
     throw new Error(`loadmap: workers "${id}" autoscale needs whole numbers with 1 ≤ min ≤ max, not ${min} and ${max}`)
   if (!(target > 0 && target <= 1))
     throw new Error(`loadmap: workers "${id}" autoscale needs a target above 0 and at most 1, not ${target}`)
-  return { min, max, target }
+  const ready = a.ready == null ? undefined : dyn(a.ready, ctx)
+  if (ready != null && !(ready >= 0 && Number.isFinite(ready)))
+    throw new Error(`loadmap: workers "${id}" autoscale needs a ready time from 0 seconds, not ${ready}`)
+  return { min, max, target, ...(ready != null ? { ready } : {}) }
 }
 
 /**

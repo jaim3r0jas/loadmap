@@ -89,6 +89,10 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
   const ownDown = body.some(
     (s) => s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id' && s.args[0].name === 'down',
   )
+  // a parameter named ramp is set in a preset as any value: that is no way up
+  const paramRamp = body.some(
+    (s) => s.kind === 'decl' && s.keyword.name === 'param' && s.args[0]?.t === 'id' && s.args[0].name === 'ramp',
+  )
   // a parameter named lasts is set in a preset as it always was: that is no peak's length
   const paramLasts = body.some(
     (s) => s.kind === 'decl' && s.keyword.name === 'param' && s.args[0]?.t === 'id' && s.args[0].name === 'lasts',
@@ -108,7 +112,10 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
           parent === '->'
             ? own(EDGE_PROPS, s.key.name)
             : (own(own(SCHEMA, parent)?.props ?? {}, s.key.name) ?? own(COMPONENT_PROPS, s.key.name))
-        if (!(parent === 'preset' && s.key.name === 'lasts' && paramLasts))
+        if (
+          !(parent === 'preset' && s.key.name === 'lasts' && paramLasts) &&
+          !(parent === 'preset' && s.key.name === 'ramp' && paramRamp)
+        )
           add(`property ${parent} ${s.key.name}`, spec?.since, `"${s.key.name}:"`, s.key)
         if (s.as) add('as', SYNTAX.as.since, SYNTAX.as.what, s.as)
         // the window is a word, bare or quoted

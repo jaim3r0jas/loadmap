@@ -291,6 +291,12 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
    */
   peaks?: Readonly<Record<string, number>>
   /**
+   * How long a preset's moment takes to get there, in seconds, by its label: the load climbs from the default to the
+   * preset's over that time, then holds for its `lasts`. What is lost on the way is `moment()` from
+   * `@loadmap/core/moments`; no steady figure changes.
+   */
+  ramps?: Readonly<Record<string, number>>
+  /**
    * Named designs to compare, by label: the defaults plus these values, never the load. The first is the baseline the
    * others are measured against.
    */
@@ -417,6 +423,9 @@ export interface Outage {
   members: number
   left: number
 }
+
+/** What `moment()` sets in the values: each autoscaled pool's component, and the share of its max pods that is ready. */
+const PODS_READY = Symbol.for('loadmap.podsReady')
 
 /** The windows a quota reads at the peak: short enough that the busiest one is what counts. */
 const PEAK_WINDOWS: ReadonlySet<QuotaWindow> = new Set(['minute', 'hour'])
@@ -884,6 +893,11 @@ export function defineModel<
   for (const [label, s] of Object.entries(def.peaks ?? {})) {
     if (!Object.hasOwn(def.presets ?? {}, label)) throw new Error(`loadmap: a peak names unknown preset "${label}"`)
     if (!(s > 0 && Number.isFinite(s))) throw new Error(`loadmap: preset "${label}" lasts ${s} s: a time above 0`)
+  }
+  for (const [label, s] of Object.entries(def.ramps ?? {})) {
+    if (!Object.hasOwn(def.peaks ?? {}, label))
+      throw new Error(`loadmap: preset "${label}" has a ramp, the way up to a moment: give it how long it lasts too`)
+    if (!(s >= 0 && Number.isFinite(s))) throw new Error(`loadmap: preset "${label}" ramps over ${s} s: a time from 0`)
   }
   for (const d of def.delays ?? []) {
     const hop = `the delay ${d.from == null ? 'into' : `${d.from} ->`} ${d.to}`
@@ -1544,6 +1558,14 @@ function contextAt(
       // a published figure holds only under its run's conditions, and fewer members are not them: never scaled
       if (o && cap.provenance === 'published' && cap.missing == null)
         return { ...cap, missing: `with ${outText(o.name)}` }
+      // in a moment, an autoscaled pool whose pods are not all ready yet: its capacity is the pool at max pods, so it
+      // has the share of it that is ready. Only `moment()` sets it, under a key no definition can write
+      const ready = (values as Record<symbol, Readonly<Record<string, number>> | undefined>)[PODS_READY]?.[c]
+      if (ready != null && ready < 1) {
+        if (cap.provenance === 'published')
+          return cap.missing == null ? { ...cap, missing: 'with pods still starting' } : cap
+        return { ...cap, value: cap.value * ready }
+      }
       return cap
     })
   /** With a part of its domain down, its members and those left; undefined while every part is up. */

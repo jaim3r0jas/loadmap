@@ -26,7 +26,8 @@ param tries "Retries per order" { options: [0, 2]; default: 0 }
 param newest "Keep only the newest event" { default: true }
 param hit "Cache hit ratio" { options: [0.5, 0.8]; default: 0.8 }
 
-preset "Sale day" { load: 20; pods: 8; lasts: 2h }
+# a moment with a way up: the load climbs to 20× in a minute, then holds for two hours
+preset "Sale day" { load: 20; pods: 8; lasts: 2h; ramp: 1min }
 
 scenario "Bigger API" { pods: 8 }
 growth { rate: 0.05; per: month; asOf: "2026-11-01" }
@@ -243,7 +244,8 @@ node kafkaDropped "Too old or refused" { lost { takes: [dropped, rejected] } }
 
 pool eventWorkers "Event workers" "2 to 6 pods" {
   perPod: 4
-  autoscale { min: 2; max: 6; target: 0.7 }
+  # a new pod takes work a minute and a half after it is wanted
+  autoscale { min: 2; max: 6; target: 0.7; ready: 90s }
   # its six pods, two in each zone
   across: zone
   short: "the event workers"

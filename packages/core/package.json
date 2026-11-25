@@ -26,6 +26,7 @@
     "./drift": "./src/drift.ts",
     "./format": "./src/format.ts",
     "./measure": "./src/measure.ts",
+    "./moments": "./src/moments.ts",
     "./outages": "./src/outages.ts",
     "./scaling": "./src/scaling.ts",
     "./internal": "./src/internal.ts"
@@ -59,6 +60,10 @@
       "./measure": {
         "types": "./dist/measure.d.ts",
         "import": "./dist/measure.js"
+      },
+      "./moments": {
+        "types": "./dist/moments.d.ts",
+        "import": "./dist/moments.js"
       },
       "./outages": {
         "types": "./dist/outages.d.ts",
