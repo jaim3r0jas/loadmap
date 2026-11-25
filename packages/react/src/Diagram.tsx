@@ -733,13 +733,14 @@ function RateStrokes({ lm, scene }: { lm: LoadmapController; scene: Scene }) {
       )
       const rate = (ev.flows[f] ?? 0) * way.share
       for (const [i, to] of seq.slice(1).entries()) legs.push([seq[i], to, rate])
-      // a fan-out's branches carry the rate times their share
-      const last = way.stages.at(-1)
-      const st = last ? ev.stages[last] : undefined
-      if (st?.kind === 'fanout')
+      // a fan-out's or a gather's branches carry the rate times their share
+      for (const t of way.stages) {
+        const st = ev.stages[t]
+        if (st?.kind !== 'fanout' && st?.kind !== 'gather') continue
         for (const b of st.to[f] ?? [])
           for (const [k, s] of b.stages.entries())
-            legs.push([scene.stageNode[k ? b.stages[k - 1]! : last!], scene.stageNode[s], rate * b.share])
+            legs.push([scene.stageNode[k ? b.stages[k - 1]! : t], scene.stageNode[s], rate * b.share])
+      }
     }
     const on = new Map<string, { points: Scene['edges'][number]['points']; r: number }>()
     for (const [from, to, r] of legs) {

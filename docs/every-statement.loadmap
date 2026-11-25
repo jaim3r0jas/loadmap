@@ -127,7 +127,7 @@ flow events "events" {
 flow signups "signups" {
   unit: "signup"
   rate: 20 / 1d
-  route: gateway -> api -> mailer
+  route: gateway -> api -> checks -> mailer
   from: users
   # what fails for good waits in an outbox, to be welcomed later
   fallback { after: api; route: outbox }
@@ -278,6 +278,15 @@ node audit "Audit" {
 node archive "Archive" { sink }
 
 # each signup is welcomed one way: by email, or by text where there is no email
+# a gather: each signup is checked by two services at once, and goes on when one of them has answered
+node checks "Checks" {
+  gather {
+    signups -> fraud: 2
+    needs: 1
+  }
+}
+node fraud "Fraud checks" { sink }
+
 node mailer "Mailer" {
   split {
     signups -> email: 0.7
@@ -305,7 +314,9 @@ push -> phones
 push -> audit
 audit -> archive
 push -> pushTimedOut
-api -> mailer
+api -> checks
+checks -> fraud
+checks -> mailer
 api -> outbox
 mailer -> email
 mailer -> sms

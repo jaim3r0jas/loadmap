@@ -1020,6 +1020,7 @@ export function defineModel<
     poolOut: (st: StageDef) => StageDef,
     shardsOf: (s: string) => Shards | undefined,
     failsAt: (s: string) => number,
+    gathered: (s: string, f: string) => { fails: number } | undefined,
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
@@ -1036,11 +1037,16 @@ export function defineModel<
               : st
       const sh = shardsOf(s)
       if (sh) stages[s] = { ...stages[s], shards: sh } as ResolvedStage
+      if (stages[s].kind === 'gather')
+        stages[s] = {
+          ...stages[s],
+          failing: Object.fromEntries(flowIds.flatMap((f) => (gathered(s, f) ? [[f, gathered(s, f)!.fails]] : []))),
+        } as ResolvedStage
       const broken = failsAt(s)
       if (broken > 0) stages[s] = { ...stages[s], fails: broken } as ResolvedStage
     }
     for (const st of Object.values(stages) as ResolvedStage[]) {
-      if (st.kind !== 'fanout') continue
+      if (st.kind !== 'fanout' && st.kind !== 'gather') continue
       // a branch that goes on never comes back: a stage of the flow's own route would count the copies with the units
       for (const [f, list] of Object.entries(st.to))
         for (const b of list)
@@ -1103,6 +1109,7 @@ export function defineModel<
       poolOut,
       shardsOf,
       failsAt,
+      gathered,
     } = context(def as any, values)
     const crossings = crossingsFor(values)
     let latency: Record<F, Latency | null> | undefined
@@ -1173,7 +1180,7 @@ export function defineModel<
 
     const flows = {} as Record<F, number>
     for (const f of flowIds) flows[f] = ctx.flows[f] as number
-    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt)
+    const stages = resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt, gathered)
     const overload = {} as Record<F, Overload>
     for (const f of flowIds) overload[f] = overloadOf(f)
     const at = {} as Record<S, Record<F, number>>
@@ -1277,7 +1284,7 @@ export function defineModel<
     evaluate,
     stagesAt: (partial) => {
       const values = { ...defaults(), ...partial } as Values<P>
-      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf, failsAt } = context(
+      const { ctx, shed, plain, assignment, hot, paths, shedByOf, poolOut, shardsOf, failsAt, gathered } = context(
         def as any,
         values,
       )
@@ -1285,7 +1292,7 @@ export function defineModel<
       return {
         values,
         ctx,
-        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt),
+        stages: resolveStages(ctx, shed, plain, assignment, hot, shedByOf, poolOut, shardsOf, failsAt, gathered),
         // the layout's load sweeps call this for many values and never read the ways: worked out on first read
         get paths() {
           ways ??= Object.fromEntries(flowIds.map((f) => [f, paths(f)])) as unknown as Record<F, readonly FlowPath<S>[]>
@@ -1789,6 +1796,40 @@ function contextAt(
       return 0
     })
   }
+  /**
+   * A gather for a flow: its calls, how many must answer, the share of units that fail there, and the time a unit
+   * waits. Each call is one copy on the gather's branch: it is lost with the branch's lost share, and takes the
+   * branch's mean time, taken as exponential. A unit fails when fewer than `needs` of its N calls answer, which is a
+   * binomial's tail; it waits for the `needs`-th answer of N, whose mean is W (1/N + … + 1/(N − needs + 1)) and whose
+   * variance is W² (1/N² + … + 1/(N − needs + 1)²). Undefined for any other stage, and for a flow it makes no calls for.
+   */
+  const gathered = (s: string, f: string) => {
+    const st = stages[s]!
+    if (st.kind !== 'gather') return undefined
+    return memo(`gather ${s} of ${f}`, () => {
+      const b = copiedTo(s, f)[0]
+      if (!b) return undefined
+      const calls = b.share
+      const needs = st.needs == null ? calls : (dyn(st.needs, ctx) as number)
+      const { lost, latency } = branch(f, b.stages.at(-1)!)
+      const q = lost.share
+      let fails = 0
+      let ways = 1
+      // fewer than needs of the calls answer: j answer, calls − j do not
+      for (let j = 0; j < needs; j++) {
+        fails += ways * (1 - q) ** j * q ** (calls - j)
+        ways = (ways * (calls - j)) / (j + 1)
+      }
+      const w = latency?.mean ?? 0
+      let mean = 0
+      let variance = 0
+      for (let i = calls - needs + 1; i <= calls; i++) {
+        mean += w / i
+        variance += (w / i) ** 2
+      }
+      return { calls, needs, fails: Math.min(1, fails), mean, variance, timed: latency != null }
+    })
+  }
   /** The share of the units a stage works on that its component fails: 0 without `fails`, or switched off. */
   const failsAt = (s: string): number => {
     const c = (stages[s] as { component?: string }).component
@@ -1810,7 +1851,7 @@ function contextAt(
   /** A fan-out's branches for a flow, each as the stages its copies go through and its copies: none for any other stage. */
   const copiedTo = (t: string, f: string): readonly { stages: readonly string[]; share: number }[] => {
     const st = stages[t]!
-    if (st.kind !== 'fanout') return NONE
+    if (st.kind !== 'fanout' && st.kind !== 'gather') return NONE
     return memo(`branches of ${t} for ${f}`, () => {
       const to = memo(`branches of ${t}`, () => dyn(st.to, ctx)) as
         | readonly Branch[]
@@ -1927,7 +1968,7 @@ function contextAt(
           const r = stages[s]!.kind === 'fanout' ? 0 : rejectsFor(s, f)
           if (r > 0) actual = Math.min(actual, offered * (1 - r))
           // what the stage works on and fails is gone as a rejection is
-          actual *= 1 - failsAt(s)
+          actual *= (1 - failsAt(s)) * (1 - (gathered(s, f)?.fails ?? 0))
           const d = drops(f, s, route[i + 1])
           if (d > 0) {
             gone += actual * d
@@ -1988,7 +2029,7 @@ function contextAt(
           if (i >= last) break
           const cut = rejectsFor(t, f)
           if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
-          r *= 1 - failsAt(t)
+          r *= (1 - failsAt(t)) * (1 - (gathered(t, f)?.fails ?? 0))
           fed = drops(f, t, route[i + 1])
           r *= 1 - fed
           if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
@@ -2076,6 +2117,10 @@ function contextAt(
           const broke = r * failsAt(s)
           add(s, 'failed', broke)
           r -= broke
+          // a gather fails the units too few of whose calls answered
+          const short = r * (gathered(s, f)?.fails ?? 0)
+          add(s, 'failed', short)
+          r -= short
           const dropped = r * drops(f, s, way.stages[j + 1])
           add(s, 'dropped', dropped)
           r -= dropped
@@ -2476,6 +2521,12 @@ function contextAt(
           if (wait) {
             parts = parts.map((w) => ({ ...w, mean: w.mean + wait, fixed: (w.fixed ?? 0) + wait }))
           }
+          // a gather waits for the slowest call it needs
+          const g = gathered(s, f)
+          if (g?.timed) {
+            timed = true
+            parts = parts.map((w) => ({ ...w, mean: w.mean + g.mean, variance: w.variance + g.variance }))
+          }
           const rs = responses(s, f)
           if (rs) timed = true
           if (rs?.length === 1 && Number.isNaN(rs[0]!.time))
@@ -2697,7 +2748,7 @@ function contextAt(
         (s, i) =>
           (s === from && (p.stages[i + 1] === to || first(s, f, to))) ||
           // or the two are next to each other on a fan-out's branch
-          (i === p.stages.length - 1 && along(s, f).some((c) => c.some((x, k) => x === from && c[k + 1] === to))),
+          along(s, f).some((c) => c.some((x, k) => x === from && c[k + 1] === to)),
       ),
     )
   /** The stages of each of a fan-out's branches that has copies, for a flow. */
@@ -2707,7 +2758,7 @@ function contextAt(
       .map((x) => x.stages)
   /** A flow's units or a fan-out's copies of them reach the stage: it is on one of its ways, or on a branch of one. */
   const passes = (f: string, s: string) =>
-    paths(f).some((p) => p.stages.includes(s) || along(p.stages.at(-1) ?? '', f).some((c) => c.includes(s)))
+    paths(f).some((p) => p.stages.includes(s) || p.stages.some((t) => along(t, f).some((c) => c.includes(s))))
   /** A fan-out's copy goes straight to this stage: it is the first of a branch with copies. */
   const first = (t: string, f: string, s: string) => along(t, f).some((c) => c[0] === s)
   /**
@@ -3029,7 +3080,7 @@ function contextAt(
     memo(`branch of ${f} to ${to}`, () => {
       if (!flowIds.includes(f)) throw new Error(`loadmap: no flow "${f}"`)
       // every branch of the flow's fan-outs that goes through the stage: their copies add up there
-      const found = [...new Set(paths(f).map((p) => p.stages.at(-1) ?? ''))]
+      const found = [...new Set(paths(f).flatMap((p) => p.stages))]
         .flatMap((t) => copiedTo(t, f).map((x) => ({ fan: t, ...x })))
         .filter((x) => x.stages.includes(to))
       if (!found.length) throw flowError(`loadmap: no fan-out branch of "${f}" goes through "${to}"`, f, 'route')
@@ -3132,6 +3183,7 @@ function contextAt(
     poolOut,
     shardsOf,
     failsAt,
+    gathered,
     shedByOf: (s: string) => (byPriority(s) ? Object.fromEntries(flowIds.map((f) => [f, shedFor(s, f)])) : undefined),
     overload,
     failure,
@@ -3402,15 +3454,15 @@ function checkConnections(def: ModelDef<any, string, string, string, string>): v
     const r = routes[f] ?? []
     if (r.some((s, i) => s === from && r[i + 1] === to)) return true
     if (r.some((s) => stages[s]?.kind === 'split')) return true
-    // a fan-out's copies, and where they go on to: from it to a branch's first stage, or along a branch. Branches
-    // worked out from the values may go anywhere
-    const last = stages[r.at(-1) ?? '']
-    if (last?.kind !== 'fanout') return false
-    if (from === r.at(-1) || typeof last.to === 'function') return true
-    const list = (
-      Array.isArray(last.to) ? last.to : ((last.to as Record<string, readonly Branch[]>)[f] ?? [])
-    ) as Branch[]
-    return list.some((b) => chainOf(b).some((s, i, c) => s === from && c[i + 1] === to))
+    // a fan-out's copies or a gather's calls, and where they go on to: from it to a branch's first stage, or along a
+    // branch. Branches worked out from the values may go anywhere
+    return r.some((t) => {
+      const st = stages[t]
+      if (st?.kind !== 'fanout' && st?.kind !== 'gather') return false
+      if (from === t || typeof st.to === 'function') return true
+      const list = (Array.isArray(st.to) ? st.to : ((st.to as Record<string, readonly Branch[]>)[f] ?? [])) as Branch[]
+      return list.some((x) => chainOf(x).some((s, i, c) => s === from && c[i + 1] === to))
+    })
   }
   const may = (cn: ConnectionDef) => flowIds.filter((f) => mayGo(f, cn.from, cn.to))
   // a connection that only counts what it holds open needs no flow on its hop: a pool keeps connections it may not use

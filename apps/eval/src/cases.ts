@@ -188,6 +188,13 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'to: contacts' }, { kind: 'contains', text: 'lost:' }],
   },
   {
+    id: 'gather-quorum',
+    example: CHECKOUT,
+    request:
+      'Each order is written to three database replicas at once and is done when two of them have answered. Model that in front of the database.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'gather' }, { kind: 'contains', text: 'needs: 2' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

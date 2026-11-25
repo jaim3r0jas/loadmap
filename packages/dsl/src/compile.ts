@@ -8,6 +8,7 @@ import {
   type Evaluation,
   type Fit,
   fanout,
+  gather,
   type Loss,
   limit,
   lost,
@@ -3938,7 +3939,8 @@ export class Compiler {
         const partitions = fixed ? at(undefined) : at
         return queue({ ...base, partitions, ...(component ? { component } : {}) })
       }
-      case 'fanout': {
+      case 'fanout':
+      case 'gather': {
         const branches: [string, string[], number | ((c: any) => number)][] = []
         for (const e of b.edges) {
           if (e.chain.length < 2) {
@@ -3958,7 +3960,7 @@ export class Compiler {
             reached.add(stage)
             this.branchAt.set(`${f.name}\u0000${stage}`, e)
             const kind = this.kinds.get(stage)
-            if (through.length > 1 && (kind === 'fanout' || kind === 'split' || kind === 'lost')) {
+            if (through.length > 1 && (kind === 'fanout' || kind === 'gather' || kind === 'split' || kind === 'lost')) {
               fits = false
               this.report.error(
                 'bad-route',
@@ -4002,6 +4004,10 @@ export class Compiler {
               0,
             )
         const fixed = branches.every(([, , v]) => typeof v === 'number')
+        if (b.keyword === 'gather') {
+          const needs = this.dynProp<number>(b, 'needs', 'number')
+          return gather({ ...base, to: fixed ? build(undefined) : build, ...(needs !== undefined ? { needs } : {}) })
+        }
         return fanout({ ...base, to: fixed ? build(undefined) : build, ...(component ? { component } : {}) })
       }
       case 'split': {

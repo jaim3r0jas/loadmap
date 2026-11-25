@@ -3,6 +3,7 @@ import {
   configured,
   defineModel,
   fanout,
+  gather,
   limit,
   lost,
   measured,
@@ -481,6 +482,47 @@ describe('lost boxes', () => {
     }
     expect(ends.get('late')).toEqual(new Set(['timedout']))
     expect([...(ends.get('out') ?? [])]).not.toContain('timedout')
+  })
+
+  it('makes a gather’s calls and lets the unit go on, or fails it with the share the model counts', () => {
+    // eight calls to shards that fail a tenth of them, all eight needed: 57 % of the units fail at the gather
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { reads: { rate: 100 } },
+      components: {
+        shards: { name: 'Shards', capacity: measured(10_000, 'u/s'), fails: 0.1, over: '' },
+        render: { name: 'Render', capacity: measured(10_000, 'u/s'), over: '' },
+      },
+      stages: {
+        scatter: gather({ to: [{ stage: 'shards', share: 8 }] }),
+        shards: pass('shards'),
+        render: pass('render'),
+        gone: lost({ from: ['scatter'] }),
+        out: sink(),
+      },
+      routes: { reads: ['scatter', 'render', 'out'] },
+    })
+    const ev = m.evaluate()
+    expect(ev.lost.reads.share).toBeCloseTo(1 - 0.9 ** 8, 12)
+    const sim = createSim(m, ev, { seed: 4, speed: 10, maxDots: 80, dotTarget: 100 })
+    const ends = new Map<string, number>()
+    const seen = new Set<number>()
+    for (let i = 0; i < 60 * 120; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles)
+        if (d.phase === 'fade' && !seen.has(d.id)) {
+          seen.add(d.id)
+          const k = `${d.to.stage}:${d.outcome}:${d.branch ? 'call' : 'unit'}`
+          ends.set(k, (ends.get(k) ?? 0) + 1)
+        }
+    }
+    const n = (k: string) => ends.get(k) ?? 0
+    const units = n('gone:failed:unit') + n('out:delivered:unit')
+    expect(n('gone:failed:unit') / units).toBeCloseTo(1 - 0.9 ** 8, 1)
+    // every unit made its eight calls, and a tenth of them failed at the shards
+    const calls = n('shards:delivered:call') + n('shards:failed:call')
+    expect(calls / units).toBeCloseTo(8, 0)
+    expect(n('shards:failed:call') / calls).toBeCloseTo(0.1, 1)
   })
 
   it('walks a copy along a fan-out branch that goes on, and fills the queue on it when its reader is full', () => {

@@ -83,6 +83,8 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
       }
     // a stage whose component fails a share of its units, whatever the load
     const of = (st as { component?: string }).component
+    // a gather fails the units too few of whose calls answer
+    if (passes && st.kind === 'gather') out.push('failed')
     // not a fan-out: it makes copies of a unit, and has none of its own to fail
     const fails = of == null ? undefined : def.components?.[of]?.fails
     if (passes && st.kind !== 'fanout' && fails != null && fails !== 0) out.push('failed')

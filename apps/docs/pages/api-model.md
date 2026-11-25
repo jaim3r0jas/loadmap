@@ -234,6 +234,7 @@ values (`partitions`, `pods`, `perPod`, `hit`, `to`) take a function of the cont
 | `store(component, { label? })`                                          | Where a flow ends: written to its component                            |
 | `sink({ label? })`                                                      | Where a flow ends without a component: a receiver, a viewer, an app    |
 | `fanout({ to, component?, label? })`                                    | Each unit copied to several sinks or stores, each with its share       |
+| `gather({ to, needs?, label? })`                                        | Each unit makes several calls at once and goes on when `needs` answer  |
 | `split({ to, component?, label? })`                                     | Each unit goes one of several ways, by share                           |
 | `lost({ from, takes?, label? })`                                        | Where what other stages lose ends, counted                             |
 
@@ -507,6 +508,7 @@ A stage's result (`ev.stages.workerPool`) has its `id`, `label`, `kind` and `com
 | `queue`           | `partitions` per flow; `skew`, the share on the hottest partition, with a `key` connection            |
 | `workers`         | `pods` (drawn: an autoscaled pool's max), `running`, `perPod`, `placement`, `autoscale`, `assignment` |
 | `fanout`, `split` | `to` per flow, `rejects`, `shed`                                                                      |
+| `gather`          | `to` per flow, `needs`, and `failing`: the share of each flow's units that fail there                 |
 | `lost`            | `from`, `takes`                                                                                       |
 
 A pool's `assignment`, with an exclusive connection into it, is `{ owner, cells, from, weights }`: per flow, the worker

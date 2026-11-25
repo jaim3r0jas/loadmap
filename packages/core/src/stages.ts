@@ -161,8 +161,23 @@ export interface SplitStage<C extends string = string> extends StageBase {
   to: Dyn<readonly SplitBranch[] | Readonly<Record<string, readonly SplitBranch[]>>>
 }
 
+/**
+ * Each unit makes several calls at once and goes on when enough of them have answered: a read from every shard, a
+ * quorum of replicas, a page built from many services. `to` is the calls of each flow, one branch a flow, written as
+ * a fan-out's: its `share` is the calls a unit makes, a whole number. `needs` is how many must answer (all of them
+ * without it). The unit waits for the slowest call it needs, and fails when too few answer. Unlike a fan-out it does
+ * not end the route.
+ */
+export interface GatherStage extends StageBase {
+  kind: 'gather'
+  component?: undefined
+  to: Dyn<readonly Branch[] | Readonly<Record<string, readonly Branch[]>>>
+  needs?: Dyn<number>
+}
+
 export type StageDef<C extends string = string> =
   | PassStage<C>
+  | GatherStage
   | QueueStage<C>
   | WorkersStage<C>
   | StoreStage<C>
@@ -232,6 +247,10 @@ export function fanout<const C extends string = never>(
   return { kind: 'fanout', ...o }
 }
 
+export function gather(o: { to: GatherStage['to']; needs?: GatherStage['needs'] } & StageBase): GatherStage {
+  return { kind: 'gather', ...o }
+}
+
 export function split<const C extends string = never>(
   o: { to: SplitStage['to']; component?: C } & StageBase,
 ): SplitStage<NoInfer<C>> {
@@ -296,6 +315,16 @@ export type ResolvedStage = {
       rejects: number
       /** The share of its copies it turns away. */
       shed: number
+    }
+  | {
+      kind: 'gather'
+      component?: undefined
+      /** Each flow's calls: one branch, its `share` the calls a unit makes. */
+      to: Readonly<Record<string, readonly ResolvedBranch[]>>
+      /** How many of the calls must answer; all of them without it. */
+      needs?: number
+      /** The share of each flow's units that fail here: too few of their calls answered. */
+      failing: Readonly<Record<string, number>>
     }
   | { kind: 'cache'; component?: string; hit: number; rejects: number; shed: number }
   | {
@@ -384,6 +413,33 @@ export function resolveStage(
           return { stage: stages[0]!, stages, share: b.share }
         })
       return { id, label, kind: 'fanout', component: s.component, to: perFlow, rejects, shed: rejects }
+    }
+    case 'gather': {
+      const to = dyn(s.to, ctx)
+      const perFlow: Record<string, readonly ResolvedBranch[]> = {}
+      for (const f of flowIds) {
+        const list = (Array.isArray(to) ? to : ((to as Record<string, Branch[]>)[f] ?? [])) as Branch[]
+        if (list.length > 1)
+          throw new Error(`loadmap: gather "${id}" has ${list.length} branches for "${f}": one a flow`)
+        perFlow[f] = list.map((b) => {
+          const stages = chainOf(b)
+          if (!stages.length) throw new Error(`loadmap: gather "${id}" has a branch with no stage`)
+          if (!(Number.isInteger(b.share) && b.share >= 1))
+            throw new Error(
+              `loadmap: gather "${id}" makes ${b.share} calls for each unit of "${f}": a whole number from 1`,
+            )
+          return { stage: stages[0]!, stages, share: b.share }
+        })
+      }
+      const needs = s.needs == null ? undefined : dyn(s.needs, ctx)
+      for (const f of flowIds) {
+        const calls = perFlow[f]![0]?.share
+        if (calls != null && needs != null && !(Number.isInteger(needs) && needs >= 1 && needs <= calls))
+          throw new Error(
+            `loadmap: gather "${id}" needs ${needs} of its ${calls} calls: a whole number from 1 to ${calls}`,
+          )
+      }
+      return { id, label, kind: 'gather', to: perFlow, ...(needs != null ? { needs } : {}), failing: {} }
     }
     case 'cache':
       return { id, label, kind: 'cache', component: s.component, hit: hitOf(id, s, ctx), rejects, shed: rejects }

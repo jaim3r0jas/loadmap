@@ -268,12 +268,14 @@ export function hopsOf<F extends string, S extends string>(
       const used = p.share > 0
       add(f, null, first, 'start', used)
       for (const [i, s] of rest.entries()) add(f, p.stages[i]!, s, 'route', used)
-      const last = stages[p.stages.at(-1)!]
-      if (last?.kind === 'fanout')
-        // a copy to the branch's first stage, and on along it
-        for (const b of last.to[f] ?? [])
+      // a fan-out's copy or a gather's call to the branch's first stage, and on along it
+      for (const t of p.stages) {
+        const from = stages[t]
+        if (from?.kind !== 'fanout' && from?.kind !== 'gather') continue
+        for (const b of from.to[f] ?? [])
           for (const [k, s] of b.stages.entries())
-            add(f, k ? b.stages[k - 1]! : last.id, s, 'fanout', used && b.share > 0)
+            add(f, k ? b.stages[k - 1]! : from.id, s, 'fanout', used && b.share > 0)
+      }
     }
     // what it fails for good goes back to the stage it falls back after, and on along the fallback's stages
     const fb = model.def.flows[f]?.fallback
