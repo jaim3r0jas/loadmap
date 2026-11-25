@@ -49,6 +49,29 @@ it('plays its story into the US region, where the order workers run out', async 
     .toContain('the workers in US region')
 })
 
+it('draws the boxes of a region that is out dashed, and its pods idle', async () => {
+  const { handle, el } = await mount()
+  handle.pause()
+  handle.setValues({ down: 'eu' })
+  el.querySelector('[data-node="eu"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await expect.poll(() => nodes(el), { timeout: 5000 }).toContain('eu.api')
+  const gone = () => [...el.querySelectorAll<SVGGElement>('[data-gone]')].map((n) => n.dataset.node)
+  await expect
+    .poll(gone, { timeout: 5000 })
+    .toEqual(expect.arrayContaining(['eu.lb', 'eu.api', 'eu.orders.workers', 'eu.db']))
+  expect(gone().some((id) => id?.startsWith('us') || id === 'router')).toBe(false)
+  expect(el.querySelectorAll('[data-node="eu.api"] [data-idle]').length).toBeGreaterThan(0)
+  // every order goes the US way: the verdict names its workers
+  await expect
+    .poll(
+      () => el.querySelector('.lm-headline')?.getAttribute('title') ?? el.querySelector('.lm-verdict')?.textContent,
+      {
+        timeout: 5000,
+      },
+    )
+    .toContain('the workers in US region')
+})
+
 for (const theme of ['light', 'dark'] as const)
   it(`renders the ${theme} theme`, async () => {
     const { el } = await mount({ theme })

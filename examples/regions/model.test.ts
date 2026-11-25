@@ -17,22 +17,26 @@ describe('two regions', () => {
     expect(today.firstLimit?.id).toBe('us.orders.workers')
     expect(today.firstLimit?.target).toBeCloseTo(2.5, 6)
     // the EU's orders go to the US: its workers are at their target already today
-    const euLost = at({ euLost: true })
+    const euLost = at({ down: 'eu' })
     expect(euLost.firstLimit?.id).toBe('us.orders.workers')
     expect(euLost.firstLimit?.target).toBeCloseTo(1, 6)
     expect(euLost.verdict.text).toContain('the workers in US region')
     // the other way round the EU holds longer: it is the bigger one
-    const usLost = at({ usLost: true })
+    const usLost = at({ down: 'us' })
     expect(usLost.firstLimit?.id).toBe('eu.orders.workers')
     expect(usLost.firstLimit?.target).toBeCloseTo(2, 6)
     // four US pods: the EU's orders fit in the US to 2×, where its API and its workers meet
-    const proposed = at({ euLost: true, usPods: 4 })
+    const proposed = at({ down: 'eu', usPods: 4 })
     expect(proposed.firstLimit?.target).toBeCloseTo(2, 6)
   })
 
   it("sends a lost region's orders to the other one, and none of them anywhere else", () => {
-    const ev = regions.evaluate({ load: 1, euLost: true } as never)
-    expect(ev.ctx.flows).toEqual({ eu: 0, euInUs: 300, us: 200, usInEu: 0 })
-    expect(ev.components['eu.lb']!.util).toBe(0)
+    const ev = regions.evaluate({ load: 1, down: 'eu' })
+    // the router deals again: the EU's 300 go the US way with the US's own 200
+    expect(ev.at['us.lb']).toEqual({ eu: 300, us: 200 })
+    expect(ev.at['eu.lb']).toEqual({ eu: 0, us: 0 })
+    // the EU's boxes are switched off, and nothing is lost
+    expect(ev.components['eu.lb']!.util).toBeNull()
+    expect(ev.lost.eu!.rate).toBe(0)
   })
 })

@@ -2,7 +2,7 @@ loadmap 1.8
 library "A region"
 import "./platform.loadmap" { postgres; pipeline }
 # One region: a load balancer, the API, the line that takes orders and the database. Its own orders come in as `main`,
-# those of a region that is lost as `spill`.
+# those of a region that is lost as `spill`: each box counts what reaches it of both.
 
 subsystem region "Region" {
   input flow main
@@ -13,7 +13,7 @@ subsystem region "Region" {
   node lb "Load balancer" {
     pass
     short: "the load balancer"
-    demand: flows.main + flows.spill
+    demand: at.lb.main + at.lb.spill
     capacity: estimated(20_000 +- 30%, "req/s", "vendor sizing guide")
     over: "requests are refused at the door"
   }
@@ -21,12 +21,12 @@ subsystem region "Region" {
     pods: apiPods
     perPod: 16
     short: "the API"
-    demand: (flows.main + flows.spill) * 4ms
+    demand: (at.api.main + at.api.spill) * 4ms
     capacity: measured(apiPods * 1, "cores", "pod CPU limit")
     over: "requests queue in the API"
   }
   subsystem orders { like: pipeline; with { main: main; spill: spill; pods: pods } }
-  node db "Postgres" "primary" { like: postgres; with { writes: flows.main + flows.spill; limit: dbLimit } }
+  node db "Postgres" "primary" { like: postgres; with { writes: at.db.main + at.db.spill; limit: dbLimit } }
   lb -> api
   api -> orders
   orders -> db

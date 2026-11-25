@@ -819,7 +819,7 @@ describe('a box of one copy of a subsystem, in the inspector', () => {
       if ('error' in r) throw new Error(r.error)
       return line(r.source)
     }
-    const us = 'subsystem us "US region" { like: region; with { main: us; spill: euInUs; pods: usPods; apiPods:'
+    const us = 'subsystem us "US region" { like: region; in: us; with { main: us; spill: eu; pods: usPods; apiPods:'
     expect(changed(edit(files[MAIN]!, 'subsystem:us/with/apiPods', 9, o))).toBe(`${us} 9 } }`)
     expect(changed(edit(files[MAIN]!, 'subsystem:us/with/dbLimit', 4500, o))).toBe(`${us} 8; dbLimit: 4500 } }`)
     // a default that is a formula is written as it is, to be changed there
@@ -829,18 +829,18 @@ describe('a box of one copy of a subsystem, in the inspector', () => {
     expect(edit(files[MAIN]!, 'subsystem:us/with/nope', 3, o)).toEqual({ error: '"region" has no input "nope"' })
     // a copy without a with gets one
     const bare = files[MAIN]!.replace(
-      'subsystem us "US region" { like: region; with { main: us; spill: euInUs; pods: usPods; apiPods: 8 } }',
-      'subsystem us "US region" {\n  like: region\n  with { main: us; spill: euInUs; pods: usPods }\n}',
+      'subsystem us "US region" { like: region; in: us; with { main: us; spill: eu; pods: usPods; apiPods: 8 } }',
+      'subsystem us "US region" {\n  like: region\n  in: us\n  with { main: us; spill: eu; pods: usPods }\n}',
     )
     const added = edit(bare, 'subsystem:us/with/apiPods', 5, { path: MAIN, files: { ...files, [MAIN]: bare } })
     if ('error' in added) throw new Error(added.error)
-    expect(added.source).toContain('  with { main: us; spill: euInUs; pods: usPods; apiPods: 5 }\n}')
-    const none = bare.replace('  with { main: us; spill: euInUs; pods: usPods }\n', '')
+    expect(added.source).toContain('  with { main: us; spill: eu; pods: usPods; apiPods: 5 }\n}')
+    const none = bare.replace('  with { main: us; spill: eu; pods: usPods }\n', '')
     expect(edit(none, 'subsystem:us/with/apiPods', 5)).toMatchObject({
       changes: [{ insert: '\n  with { apiPods: 5 }' }],
     })
     // an empty block over several lines keeps them
-    const open = none.replace('  like: region\n}', '  like: region\n  with {\n  }\n}')
+    const open = none.replace('  in: us\n}', '  in: us\n  with {\n  }\n}')
     expect(edit(open, 'subsystem:us/with/apiPods', 5)).toMatchObject({ changes: [{ insert: '\n    apiPods: 5' }] })
   })
 })

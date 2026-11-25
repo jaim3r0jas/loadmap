@@ -43,9 +43,7 @@ export const view = defineView(regions, {
   edges: [...eu.edges, ...us.edges, edge('users', 'router'), edge('router', 'eu.lb'), edge('router', 'us.lb')],
   flows: {
     eu: { from: 'users', color: 'accent', label: 'EU orders' },
-    euInUs: { from: 'users', color: 'accent', label: 'EU orders in the US' },
     us: { from: 'users', color: 'alt', label: 'US orders' },
-    usInEu: { from: 'users', color: 'alt', label: 'US orders in the EU' },
   },
   // a box stands in the subsystem its id starts with: `eu.orders.workers` in the EU region's orders
   subsystems: {
