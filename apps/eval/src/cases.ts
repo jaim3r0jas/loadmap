@@ -175,6 +175,13 @@ export const CASES: Case[] = [
     ],
   },
   {
+    id: 'fanout-branch-chain',
+    example: ALERTS,
+    request:
+      'Every alert is also copied into an audit queue, read by a pool of two audit workers that write it to an audit store. Add that as a branch of the fan-out.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'queue' }, { kind: 'contains', text: 'store' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

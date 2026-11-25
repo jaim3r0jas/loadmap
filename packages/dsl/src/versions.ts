@@ -47,6 +47,7 @@ const SYNTAX = {
   autoDirection: { since: '1.4', what: 'direction: auto' },
   poolScale: { since: '1.5', what: 'autoscale on the pool' },
   day: { since: '1.7', what: 'a day (7d)' },
+  branchChain: { since: '1.8', what: 'a fan-out branch that goes on (a -> b -> c)' },
 } as const
 
 /** A use of something a version added: where, what, and the version. */
@@ -106,6 +107,8 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
           add('autoDirection', SYNTAX.autoDirection.since, SYNTAX.autoDirection.what, s.value)
         expr(s.value)
       } else if (s.kind === 'edge') {
+        if (parent === 'fanout' && s.chain.length > 2)
+          add('branchChain', SYNTAX.branchChain.since, SYNTAX.branchChain.what, s.chain[2]!)
         if (s.value) expr(s.value)
         if (s.body) stmts(s.body, '->')
       } else for (const v of s.values) expr(v)

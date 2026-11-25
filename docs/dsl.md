@@ -911,6 +911,26 @@ node watches "Watches" { sink }
 Each alert reaches three phones and one watch. The copies are a formula and may be below 1: `alerts -> responders: 0.4`
 reaches a responder for two alerts in five ([Alerts](/examples/alerts/) has both).
 
+A branch can go on (from `loadmap 1.8`): the flow, then the stages its copy goes through one after the other, as a
+route is written.
+
+```loadmap
+node bus "Event bus" {
+  fanout {
+    orders -> mailQueue -> mailers -> smtp: 1
+    orders -> audit: 1
+  }
+}
+```
+
+Every order is copied into the mail queue, read by the mailers and sent through the relay, and none of that is on
+the order's own route: the order is done at the bus, and the mail takes as long as it takes. Each stage of the branch
+is reached by the copies (`at.mailers.orders`), runs its component and is ranked like any other, a queue on it fills
+when its reader is full, and an edge joins each pair of boxes along it. A branch goes through queues, pools and
+`pass`, `cache`, `limit`, `store` and `sink` stages; it takes no split and no second fan-out, and it never comes
+back to the route. This is how an asynchronous side of a system is written: email, search indexing, a replica that
+follows a log. In TypeScript a branch is `{ stages: ['mailQueue', 'mailers', 'smtp'], share: 1 }`.
+
 #### Splits
 
 A split sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
@@ -1832,7 +1852,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`) | |
 
 ## In code
 

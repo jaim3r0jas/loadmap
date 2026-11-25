@@ -483,6 +483,50 @@ describe('lost boxes', () => {
     expect([...(ends.get('out') ?? [])]).not.toContain('timedout')
   })
 
+  it('walks a copy along a fan-out branch that goes on, and fills the queue on it when its reader is full', () => {
+    // each order is copied into a queue, read by a pool that takes 200 a second, and on to a sink
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { orders: { rate: ({ load }) => 100 * load } },
+      components: {
+        pool: { name: 'Pool', demand: ({ at }) => at.pool.orders, capacity: measured(200, 'u/s'), over: '' },
+      },
+      stages: {
+        bus: fanout({
+          to: [
+            { stages: ['q', 'pool', 'done'], share: 1 },
+            { stage: 'log', share: 1 },
+          ],
+        }),
+        q: queue({ partitions: { orders: 4 } }),
+        pool: workers('pool', { pods: 2, perPod: 4 }),
+        done: sink(),
+        log: sink(),
+      },
+      routes: { orders: ['bus'] },
+    })
+    const run = (load: number) => {
+      const sim = createSim(m, m.evaluate({ load }), { seed: 2, speed: 10, maxDots: 80, dotTarget: 100 })
+      const ends = new Set<string>()
+      for (let i = 0; i < 60 * 30; i++) {
+        sim.step(1 / 60)
+        for (const d of sim.particles)
+          if (d.phase === 'fade')
+            ends.add(`${d.to.stage}:${d.outcome}:${d.chain ? 'chain' : d.branch ? 'branch' : 'unit'}`)
+      }
+      return { ends, q: sim.queue('q', 'orders') }
+    }
+    const calm = run(1)
+    // a copy goes the whole branch and ends at its last stage; the one-stage branch ends where it lands, as ever
+    expect([...calm.ends].sort()).toEqual(['done:delivered:chain', 'log:delivered:branch'])
+    expect(calm.q.arriving).toBeCloseTo(100, 3)
+    expect(calm.q.backlog).toBeCloseTo(0, 3)
+    // at 3× the pool drains 200 of 300: the queue on the branch keeps what is left, 100 a second for 300 s
+    const over = run(3)
+    expect(over.q.served).toBeCloseTo(200, 3)
+    expect(over.q.backlog).toBeCloseTo(30_000, -2)
+  })
+
   it('sends a retry through its flow’s breaker as the first attempt went: the dots end as the model counts', () => {
     // 200 a second against pricing's 100, a breaker past 20 % and two retries: half get through, 47 % fail fast for
     // good at the source, 3 % at pricing, and 62.5 dots in a hundred units reach a stage

@@ -113,11 +113,25 @@ export interface LostStage extends StageBase {
   takes?: readonly Loss[]
 }
 
-/** One branch of a fan-out: a copy goes to `stage`; `share` is the expected number of copies per unit (may pass 1). */
-export interface Branch {
+/**
+ * One branch of a fan-out: a copy goes to `stage`, or on through `stages` one after the other (a queue, the workers
+ * that read it, what they call); `share` is the expected number of copies per unit (may pass 1). A branch never comes
+ * back to the route.
+ */
+export type Branch = { share: number } & (
+  | { stage: string; stages?: undefined }
+  | { stages: readonly string[]; stage?: undefined }
+)
+
+/** A branch at one set of values: the stages its copies go through, `stage` the first of them. */
+export interface ResolvedBranch {
   stage: string
+  stages: readonly string[]
   share: number
 }
+
+/** The stages a branch's copies go through, in order. */
+export const chainOf = (b: Branch | ResolvedBranch): readonly string[] => b.stages ?? [b.stage as string]
 
 /**
  * Each unit is copied to several stages (sinks or stores), each copy with its own share. The last stage of a route.
@@ -278,7 +292,7 @@ export type ResolvedStage = {
   | {
       kind: 'fanout'
       component?: string
-      to: Readonly<Record<string, readonly Branch[]>>
+      to: Readonly<Record<string, readonly ResolvedBranch[]>>
       rejects: number
       /** The share of its copies it turns away. */
       shed: number
@@ -362,8 +376,13 @@ export function resolveStage(
     }
     case 'fanout': {
       const to = dyn(s.to, ctx)
-      const perFlow: Record<string, readonly Branch[]> = {}
-      for (const f of flowIds) perFlow[f] = Array.isArray(to) ? to : ((to as Record<string, Branch[]>)[f] ?? [])
+      const perFlow: Record<string, readonly ResolvedBranch[]> = {}
+      for (const f of flowIds)
+        perFlow[f] = ((Array.isArray(to) ? to : ((to as Record<string, Branch[]>)[f] ?? [])) as Branch[]).map((b) => {
+          const stages = chainOf(b)
+          if (!stages.length) throw new Error(`loadmap: fan-out "${id}" has a branch with no stage`)
+          return { stage: stages[0]!, stages, share: b.share }
+        })
       return { id, label, kind: 'fanout', component: s.component, to: perFlow, rejects, shed: rejects }
     }
     case 'cache':

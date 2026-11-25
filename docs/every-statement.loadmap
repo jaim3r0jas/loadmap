@@ -255,7 +255,11 @@ connection group {
 }
 
 node push "Push broker" {
-  fanout "push broker" { events -> phones: perEvent }
+  fanout "push broker" {
+    events -> phones: perEvent
+    # a branch that goes on through more than one stage: a copy in ten is checked, then kept
+    events -> audit -> archive: 0.1
+  }
   short: "the push broker"
   demand: flows.events * perEvent as "packets/s"
   capacity: estimated(8_000, "packets/s", "vendor figure")
@@ -264,6 +268,12 @@ node push "Push broker" {
 node pushTimedOut "Timed out" { lost { takes: [timedOut] } }
 
 node phones "Phones" "notified" { sink "phones" }
+node audit "Audit" {
+  pass
+  capacity: estimated(2_000, "events/s", "sized for a tenth of the events")
+  over: "audited events wait"
+}
+node archive "Archive" { sink }
 
 # each signup is welcomed one way: by email, or by text where there is no email
 node mailer "Mailer" {
@@ -290,6 +300,8 @@ kafka -> kafkaDropped
 eventWorkers -> push
 eventWorkers -> eventsFailed
 push -> phones
+push -> audit
+audit -> archive
 push -> pushTimedOut
 api -> mailer
 api -> outbox
