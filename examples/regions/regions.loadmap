@@ -3,6 +3,7 @@ include "./regions.story.loadmap"
 import "./region.loadmap" { region }
 # Two regions, each sized for its own users, and what happens to one when the other is lost. The regions are one
 # subsystem of a library, each with its own sizes; the line that takes orders is a subsystem in it, from another.
+# Each region is a named part of a failure domain: with it down its boxes are off, and the router deals again.
 title: "Two regions"
 view { speed: 10; transition: 0.8; closed: [eu, us] }
 assume: "1× is the busiest hour of an ordinary week, in both regions at once."
@@ -10,34 +11,38 @@ assume: "A region that is lost sends every order to the other one, at once."
 
 load "Users, × today" { max: 10; default: 1 }
 
-param euLost "Lose the EU region" { default: false }
-param usLost "Lose the US region" { default: false }
 param usPods "US order workers (pods)" { options: [2, 3, 4]; default: 2 }
 
+domain region "Region" { parts: [eu, us] }
+
 scenario "Today" {}
-scenario "EU lost" { euLost: true }
-scenario "US lost" { usLost: true }
-scenario "EU lost, four US pods" { euLost: true; usPods: 4 }
+scenario "EU lost" { down: eu }
+scenario "US lost" { down: us }
+scenario "EU lost, four US pods" { down: eu; usPods: 4 }
 
 expect "Today keeps 2×" { underTarget: 2 }
 expect "With the US lost, the EU keeps 1.5×" { scenario: "US lost"; underTarget: 1.5 }
 expect "With the EU lost and four US pods, the US keeps 1.5×" { scenario: "EU lost, four US pods"; underTarget: 1.5 }
 
-flow eu "EU orders" { rate: euLost ? 0 : 300 * load; route: router -> eu; from: users; color: accent }
-flow euInUs "EU orders in the US" { rate: euLost ? 300 * load : 0; route: router -> us; from: users; color: accent }
-flow us "US orders" { rate: usLost ? 0 : 200 * load; route: router -> us; from: users; color: alt }
-flow usInEu "US orders in the EU" { rate: usLost ? 200 * load : 0; route: router -> eu; from: users; color: alt }
+flow eu "EU orders" { rate: 300 * load; route: router; from: users; color: accent }
+flow us "US orders" { rate: 200 * load; route: router; from: users; color: alt }
 
 node users "Users" "EU and US"
 node router "Traffic router" "by region" {
-  pass
+  # every order to its own region, and to the other one only when its own is down
+  split {
+    eu -> eu.lb -> eu.api -> eu.orders.topic -> eu.orders.workers -> eu.db: 100%
+    eu -> us.lb -> us.api -> us.orders.topic -> us.orders.workers -> us.db: 0%
+    us -> us.lb -> us.api -> us.orders.topic -> us.orders.workers -> us.db: 100%
+    us -> eu.lb -> eu.api -> eu.orders.topic -> eu.orders.workers -> eu.db: 0%
+  }
   short: "the traffic router"
   capacity: estimated(50_000, "req/s", "vendor sizing guide")
   over: "users get timeouts"
 }
 
-subsystem eu "EU region" { like: region; with { main: eu; spill: usInEu; pods: 4; apiPods: 10; dbLimit: 6_000 } }
-subsystem us "US region" { like: region; with { main: us; spill: euInUs; pods: usPods; apiPods: 8 } }
+subsystem eu "EU region" { like: region; in: eu; with { main: eu; spill: us; pods: 4; apiPods: 10; dbLimit: 6_000 } }
+subsystem us "US region" { like: region; in: us; with { main: us; spill: eu; pods: usPods; apiPods: 8 } }
 
 users -> router
 router -> eu

@@ -30,7 +30,7 @@ subsystem pipeline "Orders" {
     pods: pods
     perPod: 8
     short: "the workers"
-    demand: (flows.main + flows.spill) * orderCost
+    demand: (at.workers.main + at.workers.spill) * orderCost
     capacity: measured(pods * 1, "cores", "pod CPU limit")
     over: "orders wait in the topic"
   }

@@ -1342,7 +1342,9 @@ it here, and there only when here is gone"). A flow with no way left is turned a
 box of the part without a split in front is turned away at that box: `rejected`, which a lost box counts. A part
 reads as the label of the subsystem or box of its id: "With the EU out, the 50 % target holds up to 2×, limited by
 API in US." `down: region` in an expect holds the worst of its parts; a scenario, a step or a preset names the part.
-In a formula `down.eu` is true while that part is out, and `down.region` while any of them is. In TypeScript,
+In a formula `down.eu` is true while that part is out, and `down.region` while any of them is. On the board the
+boxes of a part that is out are drawn dashed, their pods and members idle, and nothing moves. `examples/regions/` is
+two regions written so: each a subsystem in its part, behind a router that deals again. In TypeScript,
 `domains: { region: { name: 'Region', parts: { eu: { name: 'the EU' }, us: { name: 'the US' } } } }` and `in: {
 domain: 'region', part: 'eu' }` on a component.
 

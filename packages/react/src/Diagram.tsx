@@ -813,14 +813,18 @@ function Node({
   const first = n.stages[0] == null ? undefined : lm.ev.stages[n.stages[0]]
   const comp = n.component ?? (first && 'component' in first ? first.component : undefined)
   const out = comp == null ? undefined : lm.ev.components[comp as keyof typeof lm.ev.components]?.out
-  const running =
-    st?.kind === 'workers'
+  // a box in a named part of a domain that is down (a region out): dashed, and every pod or member of it idle
+  const gone = n.stages.some((s) => lm.ev.stages[s]?.gone)
+  const running = gone
+    ? 0
+    : st?.kind === 'workers'
       ? st.running
       : out
         ? n.members.length - Math.ceil(n.members.length / out.count)
         : n.members.length
   // a pod past the pool's size is leaving the drawing: it fades out as it was, running
-  const idle = (i: number) => i >= running && i < (st?.kind === 'workers' && !out ? st.pods : n.members.length)
+  const idle = (i: number) =>
+    gone || (i >= running && i < (st?.kind === 'workers' && !out ? st.pods : n.members.length))
   // behind an exclusive connection, a running worker that reads no partition is dashed too
   const a = st?.kind === 'workers' ? st.assignment : undefined
   const unassigned = (i: number) => a != null && i < a.weights.length && a.weights[i] === 0
@@ -837,6 +841,7 @@ function Node({
       transform={grow}
       data-node={n.id}
       data-lost={lost || undefined}
+      data-gone={gone || undefined}
       data-focus={focused || undefined}
       data-selected={selected || undefined}
       {...handlers}
@@ -848,12 +853,14 @@ function Node({
             fill="var(--lm-surface)"
             stroke={stroke}
             strokeWidth="1.5"
+            strokeDasharray={gone ? '3 3' : undefined}
           />
           <path
             d={`M${n.x} ${n.y + e} A${n.w / 2} ${e} 0 0 0 ${n.x + n.w} ${n.y + e}`}
             fill="none"
             stroke={stroke}
             strokeWidth="1.5"
+            strokeDasharray={gone ? '3 3' : undefined}
           />
         </>
       ) : (
@@ -866,7 +873,7 @@ function Node({
           fill={lost ? 'var(--lm-lost-fill)' : 'var(--lm-surface)'}
           stroke={stroke}
           strokeWidth="1.5"
-          strokeDasharray={lost ? '5 3' : undefined}
+          strokeDasharray={lost ? '5 3' : gone ? '3 3' : undefined}
         />
       )}
       <Txt s={n.title}>{title}</Txt>

@@ -36,7 +36,7 @@ describe('regions.loadmap in several files', () => {
   })
 
   it('moves the same dots', () => {
-    sameDots(regions, def.model, { load: 5, euLost: true })
+    sameDots(regions, def.model, { load: 5, down: 'eu' })
   })
 
   it('names the copies of one region apart, as model.ts does', () => {
