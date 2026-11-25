@@ -38,7 +38,7 @@ describe('a moment in the language', () => {
     expect(m.def.ramps).toEqual({ 'Flash sale': 30 })
     expect(m.evaluate({} as never).stages.api).toMatchObject({ autoscale: { ready: 90 } })
     expect(moment(m, {}, 'Flash sale').text).toBe(
-      '8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready.',
+      '8× in 30 s: up to 75 % of requests is lost for 103 s, until the eighth pod of the API is ready.',
     )
   })
 

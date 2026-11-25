@@ -427,6 +427,12 @@ export interface Outage {
 /** What `moment()` sets in the values: each autoscaled pool's component, and the share of its max pods that is ready. */
 const PODS_READY = Symbol.for('loadmap.podsReady')
 
+/** A cache key for values: JSON drops a symbol, so the pods ready of a moment are added to it. */
+function keyOf(values: object): string {
+  const ready = (values as Record<symbol, unknown>)[PODS_READY]
+  return ready == null ? JSON.stringify(values) : `${JSON.stringify(values)}|${JSON.stringify(ready)}`
+}
+
 /** The windows a quota reads at the peak: short enough that the busiest one is what counts. */
 const PEAK_WINDOWS: ReadonlySet<QuotaWindow> = new Set(['minute', 'hour'])
 
@@ -1021,6 +1027,8 @@ export function defineModel<
   const crossingCache = new Map<string, Crossings>()
   const crossingsFor = (values: LooseValues): Crossings => {
     const { load: _, ...rest } = values
+    // where the design reaches its target and runs out as the load rises: a moment's step reads none of it, so the pods
+    // ready in one (a symbol, which JSON leaves out) share the crossings of the plain values
     const key = JSON.stringify(rest)
     const hit = crossingCache.get(key)
     if (hit) return hit
@@ -3931,7 +3939,7 @@ function grown(
   const load = values.load as number
   if (!(load > 1)) return 0
   const { load: _, ...rest } = values
-  const key = `${c}|${bound}|${pinned}|${JSON.stringify(rest)}`
+  const key = `${c}|${bound}|${pinned}|${keyOf(rest)}`
   const byDef = grids.get(def) ?? new Map<string, { sum: number[]; at: number[] }>()
   grids.set(def, byDef)
   let grid = byDef.get(key)

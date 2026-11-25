@@ -5,8 +5,10 @@ import type { LooseValues } from './params'
 
 /** One step of a moment: the load then, each flow's lost share, each pool's pods ready, and what is past full. */
 export interface MomentStep {
-  /** Seconds from the start of the way up. */
+  /** Seconds from the start of the way up: the middle of the step. */
   t: number
+  /** Its length in seconds: short on the way up, longer once every pod could be ready. */
+  dt: number
   load: number
   /** Each flow's share lost for good at this step. */
   lost: Readonly<Record<string, number>>
@@ -29,6 +31,11 @@ export interface Moment {
    * the seconds from and until which it lost more than it does once every pod is ready.
    */
   lost: Readonly<Record<string, { units: number; share: number; worst: number; from?: number; until?: number }>>
+  /**
+   * The components with no figure on the way: a published one whose pool is still starting pods, which is never scaled.
+   * What is lost there is not known, and the text says so.
+   */
+  unknown: readonly string[]
   /** One sentence: "8× in 30 s: up to 14 % of requests is lost for 2 min, until the sixth pod of the API is ready." */
   text: string
 }
@@ -50,7 +57,11 @@ const ORDINALS = [
   'eleventh',
   'twelfth',
 ]
-const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}th`
+const ordinal = (n: number) => {
+  if (ORDINALS[n - 1]) return ORDINALS[n - 1]!
+  const teen = n % 100 >= 11 && n % 100 <= 13
+  return `${n}${teen ? 'th' : (({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th')}`
+}
 /** A span of a moment: seconds to two minutes, then as a stock's time reads. */
 const span = (s: number) => (s < 120 ? `${fmt(Math.round(s))} s` : period(s))
 
@@ -111,11 +122,15 @@ export function moment<P>(
     for (const p of pools) {
       const before = wanted(p.stage, from)
       const late = t >= p.ready ? wanted(p.stage, loadAt(t - p.ready)) : before
-      const n = Math.min(wanted(p.stage, loadAt(t)), Math.max(before, late))
+      const want = wanted(p.stage, loadAt(t))
+      const n = Math.min(want, Math.max(before, late))
       counts[p.stage] = n
-      shares[p.component] = n / p.max
+      // the capacity is the pool at its max pods, which the autoscaler takes as it needs: with every pod it wants
+      // ready it is whole, and short of them it has the pods ready (two pools on one component: the one further behind)
+      const share = n >= want ? 1 : n / p.max
+      shares[p.component] = Math.min(shares[p.component] ?? 1, share)
     }
-    return { counts, shares }
+    return { counts, shares: Object.values(shares).every((x) => x >= 1) ? undefined : shares }
   }
 
   const flows = Object.keys(base.flows)
@@ -123,8 +138,19 @@ export function moment<P>(
   const steady = Object.fromEntries(flows.map((f) => [f, base.lost[f]?.share ?? 0]))
   const full = model.thresholds.full
   const total = ramp + lasts
-  const dt = total / steps
+  // the way up in fine steps, and the rest of the moment, where nothing more starts, in a quarter as many: a short ramp
+  // inside a long moment is still seen. With nothing to wait for, one even grid
+  const settled = Math.min(total, ramp + 2 * Math.max(0, ...pools.map((p) => p.ready)))
+  const split = settled > 0 && settled < total
+  const fine = split ? steps : steps + Math.ceil(steps / 4)
+  const edges: number[] = []
+  for (let i = 0; i <= fine; i++) edges.push(((split ? settled : total) * i) / fine)
+  if (split) {
+    const coarse = Math.ceil(steps / 4)
+    for (let i = 1; i <= coarse; i++) edges.push(settled + ((total - settled) * i) / coarse)
+  }
   const out: MomentStep[] = []
+  const unknown = new Set<string>()
   const sent: Record<string, number> = Object.fromEntries(flows.map((f) => [f, 0]))
   // what each flow loses above what it does once every pod is ready: the way up's own loss
   const extra: Record<string, number> = Object.fromEntries(flows.map((f) => [f, 0]))
@@ -141,12 +167,16 @@ export function moment<P>(
       },
     ]),
   )
-  for (let i = 0; i < steps; i++) {
+  for (let i = 0; i < edges.length - 1; i++) {
     // each step at its middle: the sums are a midpoint rule over the moment
-    const t = (i + 0.5) * dt
+    const dt = edges[i + 1]! - edges[i]!
+    const t = edges[i]! + dt / 2
     const load = loadAt(t)
     const { counts, shares } = readyAt(t)
-    const ev = at(load, pools.length ? shares : undefined)
+    const ev = at(load, shares)
+    // a published figure is never scaled: while its pool starts pods it has none, and what is lost there is not known
+    for (const c of Object.keys(shares ?? {}))
+      if (ev.components[c]?.capacity?.missing === 'with pods still starting') unknown.add(c)
     const step: Record<string, number> = {}
     for (const f of flows) {
       const l = ev.lost[f] ?? { rate: 0, share: 0 }
@@ -157,15 +187,15 @@ export function moment<P>(
       x.worst = Math.max(x.worst, l.share)
       extra[f]! += Math.max(0, l.share - steady[f]!) * (ev.flows[f] ?? 0) * dt
       if (l.share > steady[f]! + 1e-6) {
-        x.from ??= i * dt
-        x.until = (i + 1) * dt
+        x.from ??= edges[i]!
+        x.until = edges[i + 1]!
         lastStep[f] = i
       }
     }
     const over = Object.values(ev.components)
       .filter((c) => c.util != null && c.util > full)
       .map((c) => c.id)
-    out.push({ t, load, lost: step, ready: counts, over })
+    out.push({ t, dt, load, lost: step, ready: counts, over })
   }
   for (const f of flows) lost[f]!.share = sent[f]! > 0 ? Math.min(1, lost[f]!.units / sent[f]!) : 0
 
@@ -180,7 +210,7 @@ export function moment<P>(
     const x = lost[worst]!
     const label = model.def.flows[worst]?.label ?? worst
     const last = lastStep[worst]!
-    let ends = last >= steps - 1 ? `, to the end of its ${period(lasts)}` : ''
+    let ends = last >= out.length - 1 ? `, to the end of its ${period(lasts)}` : ''
     if (!ends) {
       // the step where the loss ends: a pod that became ready there ends it
       const now = out[last + 1]!.ready
@@ -193,9 +223,15 @@ export function moment<P>(
     const then = steady[worst]! > 1e-6 ? `, then ${pct(steady[worst]!, true)} as it holds` : ''
     text = `${capital(head)}: up to ${pct(x.worst, true)} of ${label} is lost for ${span(x.until! - x.from!)}${ends}${then}.`
   } else if (!holds) {
-    const past = out.find((s) => s.over.some((c) => !base.components[c] || base.components[c]!.util! <= full))
-    if (past)
-      text = `${capital(head)}: nothing is lost, but ${base.components[past.over[0]!]?.short ?? past.over[0]} is past full on the way.`
+    // past full on the way, not at the moment itself
+    const onTheWay = (c: string) => !base.components[c] || !(base.components[c]!.util! > full)
+    const c = out.flatMap((s) => s.over).find(onTheWay)
+    if (c) text = `${capital(head)}: nothing is lost, but ${base.components[c]?.short ?? c} is past full on the way.`
   }
-  return { preset, ramp, lasts, steps: out, lost, text }
+  if (unknown.size) {
+    const who = [...unknown].map((c) => base.components[c]?.short ?? c)
+    const many = who.length > 1
+    text = `${capital(head)}: ${who.join(' and ')} ${many ? 'have' : 'has'} no published benchmark while ${many ? 'their' : 'its'} pods start, so what is lost on the way is not known.`
+  }
+  return { preset, ramp, lasts, steps: out, lost, unknown: [...unknown], text }
 }

@@ -46,7 +46,8 @@ describe('a moment', () => {
     const m = moment(shop({ ramp: 30 }), {}, 'Flash sale')
     expect(m.text).toBe('8× in 30 s: everything keeps up on the way.')
     expect(m.lost.requests).toEqual({ units: 0, share: 0, worst: 0 })
-    expect(m.steps).toHaveLength(120)
+    // 120 steps over the way up and a minute and a half, 30 for the rest
+    expect(m.steps).toHaveLength(150)
   })
 
   it('loses what the pods not yet ready cannot take, until enough of them are', () => {
@@ -65,18 +66,28 @@ describe('a moment', () => {
   it('climbs over its ramp, and says which pod ends the loss', () => {
     const m = moment(shop({ ready: 90, ramp: 30 }), {}, 'Flash sale')
     expect(m.text).toBe(
-      '8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready.',
+      '8× in 30 s: up to 75 % of requests is lost for 103 s, until the eighth pod of the API is ready.',
     )
-    // 120 steps over 630 s, each at its middle: the first at 2.625 s
-    expect(m.steps[0]!.load).toBeCloseTo(1 + (7 * 2.625) / 30, 9)
+    // 120 steps over the ramp and twice the ready time, 210 s, each at its middle: the first at 0.875 s
+    expect(m.steps[0]!.load).toBeCloseTo(1 + (7 * 0.875) / 30, 9)
     expect(m.steps.at(-1)!.ready).toEqual({ api: 12 })
+  })
+
+  it('gives a pool its whole capacity once every pod it wants is ready, short of its max', () => {
+    // at 3× five pods are wanted of twelve: once they are ready nothing differs from the steady 3×
+    const m = moment(shop({ ready: 90, to: 3 }), {}, 'Flash sale')
+    const steady = shop().evaluate({ load: 3 })
+    const last = m.steps.at(-1)!
+    expect(last.ready).toEqual({ api: steady.stages.api.kind === 'workers' ? steady.stages.api.running : 0 })
+    expect(last.over).toEqual([])
+    expect(m.lost.requests!.until).toBeLessThanOrEqual(90)
   })
 
   it('says what the preset loses once every pod is ready', () => {
     // 1,400 a second against 1,200: 14 % for as long as it holds
     const m = moment(shop({ ready: 90, ramp: 30, to: 14 }), {}, 'Flash sale')
     expect(m.text).toBe(
-      '14× in 30 s: up to 86 % of requests is lost for 100 s, until the twelfth pod of the API is ready, then 14 % as it holds.',
+      '14× in 30 s: up to 86 % of requests is lost for 102 s, until the twelfth pod of the API is ready, then 14 % as it holds.',
     )
     expect(moment(shop({ to: 14 }), {}, 'Flash sale').text).toBe(
       '14× at once: no more is lost on the way than once every pod is ready, 14 % of requests.',
@@ -101,7 +112,11 @@ describe('a moment', () => {
         },
       },
     } as never)
-    expect(moment(pub, {}, 'Flash sale').steps[0]!.over).toEqual([])
+    const r = moment(pub, {}, 'Flash sale')
+    expect(r.unknown).toEqual(['api'])
+    expect(r.text).toBe(
+      '8× at once: the API has no published benchmark while its pods start, so what is lost on the way is not known.',
+    )
   })
 
   it('needs a preset that lasts, and a ramp only with one', () => {

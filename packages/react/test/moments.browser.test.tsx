@@ -54,7 +54,7 @@ describe('a preset with a way up', () => {
     ref.current!.setValues({ load: 8 })
     await expect
       .poll(() => host!.querySelector('.lm-moment')?.textContent, { timeout: 5000 })
-      .toBe('8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready.')
+      .toBe('8× in 30 s: up to 75 % of requests is lost for 103 s, until the eighth pod of the API is ready.')
     ref.current!.setValues({ load: 3 })
     await expect.poll(() => host!.querySelector('.lm-moment'), { timeout: 5000 }).toBeNull()
   })

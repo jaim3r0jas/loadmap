@@ -83,27 +83,51 @@ export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: b
 function useMoment(lm: LoadmapController): string | null {
   const { ev, model } = lm
   const preset = useMemo(() => {
-    const p = ev.presets.find(
-      (x) =>
-        x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
-    )
-    if (!p?.lasts) return undefined
+    const p = shownMoment(ev)
+    if (!p) return undefined
     const ramp = model.def.ramps != null && Object.hasOwn(model.def.ramps, p.label)
     const late = Object.values(ev.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
     return ramp || late ? p.label : undefined
   }, [ev, model])
-  const [said, setSaid] = useState<{ ev: unknown; text: string } | null>(null)
+  const [said, setSaid] = useState<{ ev: unknown; text: string | null } | null>(null)
   useEffect(() => {
     if (preset == null) return
+    // the walk is a whole evaluation a step: once for these values, whatever renders them again
+    const key = `${preset}|${JSON.stringify(ev.values)}`
+    const known = moments.get(model)?.get(key)
+    if (known !== undefined) {
+      setSaid({ ev, text: known })
+      return
+    }
     let live = true
-    import('@loadmap/core/moments').then(({ moment }) => {
-      if (live) setSaid({ ev, text: moment(model, ev.values, preset).text })
-    })
+    import('@loadmap/core/moments')
+      .then(({ moment }) => moment(model, ev.values, preset).text)
+      // a model that throws on the way up (a formula at a load between two) has no line, as it has no error here
+      .catch(() => null)
+      .then((text) => {
+        const byKey = moments.get(model) ?? new Map<string, string | null>()
+        if (byKey.size > 16) byKey.delete(byKey.keys().next().value!)
+        byKey.set(key, text)
+        moments.set(model, byKey)
+        if (live) setSaid({ ev, text })
+      })
     return () => {
       live = false
     }
   }, [ev, model, preset])
   return preset != null && said?.ev === ev ? said.text : null
+}
+
+/** What each model's moments said, by preset and values. */
+const moments = new WeakMap<object, Map<string, string | null>>()
+
+/** The preset that lasts whose values are the ones shown, if one is. */
+function shownMoment(ev: LoadmapController['ev']) {
+  const p = ev.presets.find(
+    (x) =>
+      x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
+  )
+  return p?.lasts ? (p as typeof p & { lasts: number }) : undefined
 }
 
 /**
@@ -113,11 +137,8 @@ function useMoment(lm: LoadmapController): string | null {
 function usePeak(lm: LoadmapController): string | null {
   const { ev, model } = lm
   return useMemo(() => {
-    const p = ev.presets.find(
-      (x) =>
-        x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
-    )
-    if (!p?.lasts) return null
+    const p = shownMoment(ev)
+    if (!p) return null
     const left = backlog(model, ev.values, p.lasts)
     const head = `After ${period(p.lasts)} of ${p.label}`
     if (!left.length) return `${head}, no queue falls behind.`
