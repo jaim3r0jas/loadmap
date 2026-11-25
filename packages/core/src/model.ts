@@ -880,6 +880,26 @@ export function defineModel<
       if (e.flow == null) throw new Error(`loadmap: ${name} holds a branch (to): name the flow whose fan-out it is`)
     }
     const qs = PERCENTILES.filter((q) => e[q] != null)
+    // what a preset's moment leaves in the queues: a lag when it ends, a time to clear after it
+    if (e.preset != null || e.queue != null || e.lag != null || e.clears != null) {
+      if (e.lag == null && e.clears == null) throw new Error(`loadmap: ${name} holds a moment: give its lag or clears`)
+      if (e.preset == null || def.peaks?.[e.preset] == null)
+        throw new Error(
+          `loadmap: ${name} holds a moment: name a preset that lasts${e.preset == null ? '' : `, not "${e.preset}"`}`,
+        )
+      if (e.queue != null && (def.stages as Record<string, StageDef>)[e.queue]?.kind !== 'queue')
+        throw new Error(`loadmap: ${name} names unknown queue "${e.queue}"`)
+      const more = (['component', 'flow', 'to', 'lost', 'underTarget', 'notFull', 'lasts'] as const).find(
+        (k) => e[k] != null,
+      )
+      if (more || qs.length) throw new Error(`loadmap: ${name} holds a moment: no ${more ?? qs[0]}`)
+      for (const k of ['lag', 'clears'] as const) {
+        const x = e[k]
+        if (x != null && !(x > 0 && Number.isFinite(x)))
+          throw new Error(`loadmap: ${name} has a ${k} of ${x}: a time above 0`)
+      }
+      return { ...e } as Expectation<C>
+    }
     if (e.lost != null) {
       if (!(e.lost >= 0 && e.lost < 1))
         throw new Error(`loadmap: ${name} has a lost of ${e.lost}: a share from 0, below 1`)

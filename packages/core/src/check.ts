@@ -1,5 +1,6 @@
-import type { CrossingRange } from './capacity'
-import { duration, fmt, multiples, pct, period } from './format'
+import { backlog } from './backlog'
+import type { Bound, CrossingRange } from './capacity'
+import { duration, fmt, multiple, multiples, pct, period } from './format'
 import { PERCENTILES } from './latency'
 import {
   type ComponentResult,
@@ -57,6 +58,17 @@ export interface Expectation<C extends string = string> {
    * that branch up to the stage, the copies it loses or the time they take from the fan-out, not the flow itself.
    */
   to?: string
+  /**
+   * A moment: a preset that `lasts`. With `lag` or `clears`, what that long at the preset's values (on top of the
+   * scenario's) leaves in the queues.
+   */
+  preset?: string
+  /** With `preset`: one queue; every queue without. */
+  queue?: string
+  /** When the moment ends, the oldest unit waiting has waited at most this many seconds. */
+  lag?: number
+  /** After the moment, at the default load, the queues are empty again within this many seconds. */
+  clears?: number
   /** A warning is reported but never fails a check run (`loadmap check`); default fail. */
   severity?: 'warn' | 'fail'
 }
@@ -110,6 +122,8 @@ export function check<P, C extends string>(
     const down =
       outage?.kind === 'select' && e.down != null ? ` with ${outage.format?.(e.down) ?? `${e.down} down`}` : ''
     const where = (scenario ? ` in ${scenario.label}` : '') + down
+    if (e.preset != null || e.queue != null || e.lag != null || e.clears != null)
+      return momentCheck(model, e, values ?? {}, where, gaps)
     if (e.lost != null) return lostCheck(model, e, values ?? {}, ev, where, gaps)
     if (e.flow != null || PERCENTILES.some((q) => e[q] != null))
       return latencyCheck(model, e, values ?? {}, ev, where, gaps)
@@ -360,6 +374,79 @@ function lostCheck<P, C extends string>(
       ? [`holds at ${fmt(e.underTarget)}× only at the high edge of a ±`]
       : []
   return result(e, outcome, reasons(outcome, edge), { target: range, full: null }, message)
+}
+
+/** What a preset's moment leaves in the queues: the oldest unit's wait when it ends, and the time to clear after it. */
+function momentCheck<P, C extends string>(
+  model: Model<P, string, C>,
+  e: Expectation<C>,
+  values: object,
+  where: string,
+  gaps: readonly [string, { missing?: string }][],
+): CheckResult<C> {
+  const others = ['component', 'flow', 'to', 'lost', 'underTarget', 'notFull', 'lasts', ...PERCENTILES] as const
+  if (others.some((k) => e[k] != null) || (e.lag == null && e.clears == null))
+    throw new Error(
+      'loadmap: an expectation on a moment takes a preset, lag or clears (or both) and a queue, nothing else',
+    )
+  const lasts = e.preset == null ? undefined : model.def.peaks?.[e.preset]
+  if (e.preset == null) throw new Error('loadmap: an expectation on a lag or a time to clear names its preset')
+  if (lasts == null) throw new Error(`loadmap: no preset "${e.preset}" that lasts: lag and clears need a moment`)
+  if (e.queue != null && model.def.stages[e.queue]?.kind !== 'queue') throw new Error(`loadmap: no queue "${e.queue}"`)
+  const at = { ...values, ...model.def.presets?.[e.preset] } as Partial<Values<P>>
+  const ev = model.evaluate(at)
+  const label = (s: string) => ev.stages[s]?.label ?? s
+  // the queue that is worst off speaks for all of them
+  const found = (bound: Bound) => {
+    const left = backlog(model, at, lasts, bound).filter((b) => e.queue == null || b.stage === e.queue)
+    const worst = (k: 'lag' | 'empties') =>
+      left.reduce<(typeof left)[number] | undefined>((a, b) => (a && a[k] >= b[k] ? a : b), undefined)
+    return { lag: worst('lag'), clears: worst('empties') }
+  }
+  const low = found('low')
+  const high = found('high')
+  const all = Object.values<ComponentResult<C>>(ev.components)
+  const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
+  const data = [
+    ...all.filter((x) => x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
+    ...gaps.filter(([n]) => !read.has(n)).map(([n, m]) => `${n}: ${m.missing}`),
+  ]
+  const moment = `after ${period(lasts)} of ${e.preset}${where}`
+  const rest = multiple(model.defaults().load as number, model.searchMax)
+  const claims: { at: 'pass' | 'edge' | 'fail'; text: string; wants: string }[] = []
+  const held = (l: number, h: number, max: number) => (l <= max ? 'pass' : h <= max ? 'edge' : 'fail')
+  if (e.lag != null)
+    claims.push({
+      at: held(low.lag?.lag ?? 0, high.lag?.lag ?? 0, e.lag),
+      wants: `a lag of at most ${period(e.lag)} ${moment}`,
+      text: low.lag
+        ? `the oldest unit in ${label(low.lag.stage)} waited ${period(low.lag.lag)}`
+        : e.queue != null
+          ? `${label(e.queue)} keeps up`
+          : 'no queue falls behind',
+    })
+  if (e.clears != null) {
+    const b = low.clears
+    claims.push({
+      at: held(b?.empties ?? 0, high.clears?.empties ?? 0, e.clears),
+      wants: `${e.queue != null ? label(e.queue) : 'every queue'} to clear within ${period(e.clears)} ${moment}`,
+      text: !b
+        ? e.queue != null
+          ? `${label(e.queue)} keeps up`
+          : 'no queue falls behind'
+        : Number.isFinite(b.empties)
+          ? `${label(b.stage)} clears in ${period(b.empties)} at ${rest}`
+          : `${label(b.stage)} never clears at ${rest}`,
+    })
+  }
+  const failed = claims.filter((x) => x.at !== 'pass')
+  const message = failed.length
+    ? failed.map((x) => `expected ${x.wants}, but ${x.text}`).join('; ')
+    : `${moment}, ${[...new Set(claims.map((x) => x.text))].join('; ')}`
+  const edges = claims.some((x) => x.at === 'edge') ? ['holds only at the high edge of a ±'] : []
+  const outcome: Outcome =
+    claims.some((x) => x.at === 'fail') && !data.length ? 'fail' : data.length || edges.length ? 'inconclusive' : 'pass'
+  return result(e, outcome, outcome === 'fail' ? [] : [...data, ...edges], { target: null, full: null }, message)
 }
 
 function result<C extends string>(

@@ -209,6 +209,17 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'holds: 50' }, { kind: 'contains', text: 'lost' }],
   },
   {
+    id: 'expect-moment',
+    example: ALERTS,
+    request:
+      'Give the model a preset "Storm" at 5× that lasts 30 minutes, and expect that the alert topic is empty again within 10 minutes after it.',
+    asserts: [
+      { kind: 'change' },
+      { kind: 'contains', text: 'lasts: 30min' },
+      { kind: 'contains', text: 'clears: 10min' },
+    ],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

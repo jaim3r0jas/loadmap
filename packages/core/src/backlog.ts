@@ -1,3 +1,4 @@
+import type { Bound } from './capacity'
 import type { Evaluation, Model } from './model'
 import type { LooseValues } from './params'
 
@@ -10,6 +11,8 @@ export interface Backlog<S extends string = string> {
   units: number
   /** Seconds its reader then needs to clear them at the default load; Infinity when it never does. */
   empties: number
+  /** Seconds the oldest unit waiting has waited when the peak ends: the lag a dashboard shows then. */
+  lag: number
   /** A queue with a size that the peak fills: the units it holds, and the seconds into the peak when it is full. */
   full?: { holds: number; after: number }
 }
@@ -18,14 +21,28 @@ export interface Backlog<S extends string = string> {
  * What `lasts` seconds at these values leave in each queue whose reader cannot keep up, and how long the reader then
  * needs to clear it at the default load (the same design). The sim's own rules: a reader drains what reaches it at its
  * component's `full`, shared by every queue that feeds it; priority 1 first; a drop keeps none older than its limit,
- * and a merge clears more than the reader handles. A module of its own: only a panel reads it, never a first load.
+ * and a merge clears more than the reader handles. With a `bound`, every capacity at that edge of its ±: `low` is the
+ * pessimistic one, which an expectation holds. A module of its own, for the panel and the expectations on a moment.
  */
 export function backlog<S extends string>(
   model: Model<any, string, string, S>,
   values: LooseValues,
   lasts: number,
+  bound?: Bound,
 ): Backlog<S>[] {
-  const evaluate = (v: LooseValues) => model.evaluate(v as never) as Evaluation
+  const evaluate = (v: LooseValues) => {
+    const ev = model.evaluate(v as never) as Evaluation
+    if (!bound) return ev
+    // the readers as that edge has them: how busy they are, and the load where they run out
+    const util = model.utilization(v as never, bound) as Record<string, number | null>
+    const components = Object.fromEntries(
+      Object.entries(ev.components).map(([c, r]) => [
+        c,
+        { ...r, util: util[c] ?? null, full: r.fullRange ? r.fullRange[bound] : r.full },
+      ]),
+    )
+    return { ...ev, components } as Evaluation
+  }
   const all = { ...model.defaults(), ...values }
   const priority = (f: string) => model.def.flows[f]?.priority ?? 1
   return backlogOf(
@@ -85,6 +102,7 @@ function backlogOf(
       }
   const waiting = new Map<string, Record<string, number>>()
   const empties = new Map<string, number>()
+  const lags = new Map<string, number>()
   const fills = new Map<string, { holds: number; after: number }>()
   for (const d of new Set(entries.map((e) => e.d))) {
     const feeding = entries.filter((e) => e.d === d)
@@ -129,6 +147,11 @@ function backlogOf(
       const drop = peak.overload[e.f]?.drop
       if (drop) oldest = Math.max(oldest, drop.olderThan)
       else if (n > 0) dropsAll = false
+      // the oldest unit waiting: what waits is the newest that arrived, so it reaches back units ÷ arrivals a second;
+      // a full queue takes in only what its reader does. Never longer than the peak, or than a drop rule allows
+      const taken = room[i]! < 1 ? p.inflow[i]! - over[i]! : p.inflow[i]!
+      const age = n > 0 ? Math.min(lasts, drop?.olderThan ?? lasts, taken > 0 ? n / taken : lasts) : 0
+      lags.set(e.q, Math.max(lags.get(e.q) ?? 0, age))
       const row = waiting.get(e.q) ?? {}
       row[e.f] = (row[e.f] ?? 0) + n
       waiting.set(e.q, row)
@@ -147,6 +170,7 @@ function backlogOf(
       flows,
       units: Object.values(flows).reduce((a, x) => a + x, 0),
       empties: empties.get(stage) ?? 0,
+      lag: lags.get(stage) ?? 0,
       ...(fills.has(stage) ? { full: fills.get(stage)! } : {}),
     }))
     .filter((b) => b.units > 0)

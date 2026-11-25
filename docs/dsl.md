@@ -181,6 +181,25 @@ at the default load: "After 2 h of Black Friday, 1.4M events wait in the events 
 sim builds the same backlog: a reader drains at its component's `full`, priority 1 first, and a `drop` or a `merge`
 leaves less.
 
+An `expect` holds a moment (from `loadmap 1.8`): `preset` names it, `lag` is the longest the oldest unit waiting may
+have waited when it ends, and `clears` the longest the reader may then take to empty the queue at the default load.
+One `queue`, or every queue without. Like every expect it is held on the pessimistic edge, every capacity at its low
+bound.
+
+```loadmap
+preset "Black Friday" { load: 6; lasts: 2h }
+
+expect "The topic is read again an hour after Black Friday" {
+  preset: "Black Friday"
+  queue: topic
+  lag: 5min
+  clears: 1h
+}
+```
+
+`loadmap check` then says "after 2 h of Black Friday, the oldest unit in events topic waited 3 min; events topic
+clears in 40 min at 1×", or what it expected and what it found.
+
 A scenario ([Scenarios and growth](#scenarios-and-growth)) is another thing: a design to set beside another, and
 picking one keeps the load where it is.
 
@@ -2299,6 +2318,10 @@ After the keyword: [label].
 | `underTarget` | load multiple, constant | Every component (or this one) stays under the target utilization up to at least this load multiple. From loadmap 1.1; `target` before. |
 | `notFull` | load multiple, constant | Nothing (or this component) runs out before this load multiple. From loadmap 1.1; `full` before. |
 | `lasts` | number in seconds, constant | Nothing (or this component) runs out for this long from growth's asOf: 365d. The growth turns it into a load multiple, so it needs one. From loadmap 1.7. |
+| `preset` | string, constant | A moment: the label of a preset that lasts. With lag or clears, the expect holds what that long at the preset's values (on top of the scenario's) leaves in the queues: `preset: "Sale day"; lag: 5min`. From loadmap 1.8. |
+| `queue` | route, constant | With preset: one queue. Every queue without. From loadmap 1.8. |
+| `lag` | number in seconds, constant | When the preset's moment ends, the oldest unit waiting in the queue has waited at most this long: 5min. From loadmap 1.8. |
+| `clears` | number in seconds, constant | After the preset's moment, at the default load, the queue is empty again within this long: 1h. From loadmap 1.8. |
 | `severity` | `fail` \| `warn` | warn: `loadmap check` reports it, and never fails because of it. Default fail. |
 
 ### step

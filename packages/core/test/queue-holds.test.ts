@@ -170,13 +170,15 @@ describe('what a peak leaves in a queue with a size', () => {
   it('is no more than it holds, and says when it was full', () => {
     // 100 a second more than the runners take: 5000 after 50 s
     expect(backlog(shop({ holds: 5000 }), { load: 3 }, 600)).toEqual([
-      { stage: 'inbox', flows: { jobs: 5000 }, units: 5000, empties: 50, full: { holds: 5000, after: 50 } },
+      // read through in 5000 ÷ 200 a second
+      { stage: 'inbox', flows: { jobs: 5000 }, units: 5000, empties: 50, lag: 25, full: { holds: 5000, after: 50 } },
     ])
   })
 
   it('reads as before when the peak ends before it is full', () => {
     expect(backlog(shop({ holds: 5000 }), { load: 3 }, 20)).toEqual([
-      { stage: 'inbox', flows: { jobs: 2000 }, units: 2000, empties: 20 },
+      // the oldest of the 2000 arrived 2000 ÷ 300 a second ago
+      { stage: 'inbox', flows: { jobs: 2000 }, units: 2000, empties: 20, lag: expect.closeTo(20 / 3, 6) },
     ])
   })
 
