@@ -216,3 +216,58 @@ describe('a moment that meets a cold cache, a bucket and a queue with a size', (
     expect(m.steps.at(-1)!.queued).toEqual({ inbox: 5000 })
   })
 })
+
+describe('a moment with a bucket or a queue on a long hold', () => {
+  const limited = (lasts: number) =>
+    defineModel({
+      load: p.load({ max: 20 }),
+      flows: { searches: { label: 'searches', rate: ({ load }) => 50 * load } },
+      components: {
+        limiter: {
+          name: 'Rate limiter',
+          short: 'the rate limiter',
+          capacity: configured(100, 'req/s', 'gateway'),
+          over: 'x',
+        },
+      },
+      stages: { limiter: limit('limiter', { burst: 500 }), out: sink(), gone: lost({ from: ['limiter'] }) },
+      routes: { searches: ['limiter', 'out'] },
+      presets: { Rush: { load: 6 } },
+      peaks: { Rush: lasts },
+    })
+  const inbox = (holds: number, lasts: number) =>
+    defineModel({
+      load: p.load({ max: 10 }),
+      flows: { jobs: { label: 'jobs', rate: ({ load }) => 100 * load } },
+      components: {
+        runners: {
+          name: 'Runners',
+          demand: ({ flows }) => flows.jobs * 0.01,
+          capacity: measured(2, 'cores'),
+          over: 'x',
+        },
+      },
+      stages: {
+        inbox: queue({ partitions: { jobs: 1 }, holds, label: 'the inbox' }),
+        runners: workers('runners', { pods: 2, perPod: 4 }),
+        refused: lost({ from: ['inbox'] }),
+        out: sink(),
+      },
+      routes: { jobs: ['inbox', 'runners', 'out'] },
+      presets: { Rush: { load: 3 } },
+      peaks: { Rush: lasts },
+    })
+
+  it('still sees a short burst inside a long moment', () => {
+    const m = moment(limited(600), {}, 'Rush')
+    expect(m.text).toBe(
+      '6× at once: nothing is lost for 2.5 s, until the burst of the rate limiter is spent, then 67 % of searches as it holds.',
+    )
+    expect(m.lost.searches!.units).toBeCloseTo(200 * 597.5, 6)
+  })
+
+  it('says nothing is lost when the queue never fills in the moment', () => {
+    // 100,000 at 100 a second take 1,000 s: more than the minute it lasts
+    expect(moment(inbox(100_000, 60), {}, 'Rush').text).toBe('3× at once: nothing is lost in its 1 min.')
+  })
+})

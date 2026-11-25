@@ -1,6 +1,6 @@
 // types only from the model: a value would split the packed core in two
 import { capital, duration, fmt, pct, period } from './format'
-import type { Evaluation, Model } from './model'
+import type { Evaluation, Model, MomentStepValues } from './model'
 import type { LooseValues } from './params'
 
 /** One step of a moment: the load then, each flow's lost share, each pool's pods ready, and what is past full. */
@@ -51,10 +51,11 @@ export interface Moment {
  * hits, each queue not full yet. The model reads it; a definition cannot write it.
  */
 const MOMENT = Symbol.for('loadmap.moment')
-interface StepValues {
-  capacity?: Record<string, number>
-  hit?: Record<string, number>
-  room?: Record<string, true>
+type StepValues = {
+  -readonly [K in keyof MomentStepValues]?: Record<
+    string,
+    MomentStepValues[K] extends Readonly<Record<string, infer V>> | undefined ? V : never
+  >
 }
 
 const ORDINALS = [
@@ -158,17 +159,20 @@ export function moment<P>(
     return { stage, warms }
   })
   // the limits with a bucket, each full at the start; the queues with a size, each empty, and the stage that reads it
+  // (a published limit is never scaled: its bucket lets nothing more through, so it is left out)
   const buckets = Object.values(base.components).flatMap((c) =>
-    c.burst ? [{ component: c.id, size: c.burst.size }] : [],
+    c.burst && c.capacity?.provenance !== 'published' ? [{ component: c.id, size: c.burst.size }] : [],
   )
+  // a queue with a size, and each flow's own reader behind it: the stage after it on that flow's way
   const queues = Object.values(base.stages).flatMap((q) => {
     if (q.kind !== 'queue' || q.holds == null) return []
-    const way = Object.values(base.paths)
-      .flat()
-      .find((w) => w.stages.includes(q.id))
-    const reader = base.stages[way?.stages[way.stages.indexOf(q.id) + 1] ?? '']
-    const c = reader && 'component' in reader ? reader.component : undefined
-    return c ? [{ stage: q.id, holds: q.holds, reader: c }] : []
+    const readers: Record<string, string> = {}
+    for (const [f, ways] of Object.entries(base.paths))
+      for (const w of ways) {
+        const next = base.stages[w.stages[w.stages.indexOf(q.id) + 1] ?? '']
+        if (w.stages.includes(q.id) && next && 'component' in next && next.component) readers[f] = next.component
+      }
+    return Object.keys(readers).length ? [{ stage: q.id, holds: q.holds, readers }] : []
   })
   const tokens: Record<string, number> = Object.fromEntries(buckets.map((b) => [b.component, b.size]))
   const queued: Record<string, number> = Object.fromEntries(queues.map((q) => [q.stage, 0]))
@@ -183,9 +187,24 @@ export function moment<P>(
   const total = ramp + lasts
   // the way up in fine steps, and the rest of the moment, where nothing more starts, in a quarter as many: a short ramp
   // inside a long moment is still seen. With nothing to wait for, one even grid
+  // how long the preset's own load takes to spend each bucket and fill each queue: they are on the way up too
+  const fills = queues.map((q) => {
+    let grows = 0
+    for (const [f, reader] of Object.entries(q.readers)) {
+      const u = base.components[reader]?.util
+      if (u != null && u > full) grows += (base.at[q.stage]?.[f] ?? 0) * (1 - full / u)
+    }
+    return grows > 0 ? q.holds / grows : 0
+  })
+  const spends = buckets.map((b) => base.components[b.component]?.burst?.lasts ?? 0)
   const settled = Math.min(
     total,
-    ramp + 2 * Math.max(0, ...pools.map((p) => p.ready)) + Math.max(0, ...cold.map((c) => c.warms)),
+    ramp +
+      Math.max(
+        2 * Math.max(0, ...pools.map((p) => p.ready)),
+        Math.max(0, ...cold.map((c) => c.warms)),
+        1.5 * Math.max(0, ...fills, ...spends),
+      ),
   )
   const split = settled > 0 && settled < total
   const fine = split ? steps : steps + Math.ceil(steps / 4)
@@ -256,10 +275,13 @@ export function moment<P>(
       if (ev.components[c]?.capacity?.missing === 'with pods still starting') unknown.add(c)
     // what each queue with a size takes in above what its reader drains, and drains below it
     for (const q of queues) {
-      const u = ev.components[q.reader]?.util
-      const inflow = Object.values(ev.at[q.stage] ?? {}).reduce((a, x) => a + x, 0)
-      if (u == null || !(u > 0)) continue
-      const grows = u > full ? inflow * (1 - full / u) : -inflow * (full / u - 1)
+      // each flow grows the queue by what its own reader cannot drain, or drains it by what that reader has spare
+      let grows = 0
+      for (const [f, reader] of Object.entries(q.readers)) {
+        const u = ev.components[reader]?.util
+        const inflow = ev.at[q.stage]?.[f] ?? 0
+        if (u != null && u > 0) grows += u > full ? inflow * (1 - full / u) : -inflow * (full / u - 1)
+      }
       const before = queued[q.stage]!
       queued[q.stage] = Math.min(q.holds, Math.max(0, before + grows * dt))
       // full inside this step: the time it filled, not the step's end
@@ -313,7 +335,11 @@ export function moment<P>(
     return ''
   }
   let text = `${capital(head)}: everything keeps up on the way.`
-  if (holds) {
+  // what the preset loses as it holds, though nothing of it is lost in this moment: a queue that never fills, a bucket
+  // that lasts it out
+  const none = holds != null && out.every((st) => !(st.lost[holds]! > 1e-6))
+  if (holds && none) text = `${capital(head)}: nothing is lost in its ${period(lasts)}.`
+  else if (holds) {
     const late = startsLate(holds)
     const share = `${pct(steady[holds]!, true)} of ${model.def.flows[holds]?.label ?? holds}`
     text = late

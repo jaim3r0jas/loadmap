@@ -122,3 +122,32 @@ describe('a cold cache in the language', () => {
     ])
   })
 })
+
+describe('a parameter named cold', () => {
+  it('is set in a preset as any value, in a file of loadmap 1.7', () => {
+    const src = `loadmap 1.7
+load { max: 10 }
+param cold "Cold" { default: false }
+preset "Winter" { cold: true }
+flow a "a" { rate: 10 * load; route: api; from: users }
+node users "Users"
+node api "API" {
+  pass
+  capacity: measured(100, "req/s")
+  over: "x"
+}
+users -> api
+`
+    expect(errors(src)).toEqual([])
+    expect(compile(src).definition!.model.def.presets).toEqual({ Winter: { cold: true } })
+  })
+
+  it('leaves no cold caches or ramp where the length was refused', () => {
+    const src = COLD.replace('lasts: 10min; cold: [appCache]', 'lasts: 0s; cold: [appCache]; ramp: 10s')
+    expect(errors(src)).toEqual([
+      'error: out-of-range: a peak lasts a time above 0',
+      'error: bad-value: a preset starts caches cold in its moment: say how long it lasts | lasts: 10min',
+      'error: bad-value: a ramp is the way up to a moment: say how long it lasts | lasts: 10min',
+    ])
+  })
+})

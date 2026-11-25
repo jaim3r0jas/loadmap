@@ -76,8 +76,8 @@ export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: b
 }
 
 /**
- * While the values are a preset's with a way up (a ramp, or a pool whose pods take time to be ready): what is lost on
- * it. "8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready." The walk is a
+ * While the values are a preset's with a way up (a ramp, cold caches, or a pool whose pods take time to be ready): what
+ * is lost on it. "8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready." The walk is a
  * module of its own, loaded only then: no page loads it first.
  */
 function useMoment(lm: LoadmapController): string | null {
@@ -85,13 +85,11 @@ function useMoment(lm: LoadmapController): string | null {
   const preset = useMemo(() => {
     const p = shownMoment(ev)
     if (!p) return undefined
-    // a way up worth walking: a ramp, cold caches, pods that take time, a bucket to spend or a queue to fill
+    // a way up worth walking: a ramp, cold caches or pods that take time to start. A bucket and a queue with a size
+    // are spent and filled on it, but alone they are no way up: the backlog's line says what a queue holds
     const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, p.label)
-    const late = Object.values(ev.stages).some(
-      (s) => (s.kind === 'workers' && s.autoscale?.ready) || (s.kind === 'queue' && s.holds != null),
-    )
-    const bucket = Object.values(ev.components).some((c) => c.burst)
-    return named(model.def.ramps) || named(model.def.colds) || late || bucket ? p.label : undefined
+    const late = Object.values(ev.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
+    return named(model.def.ramps) || named(model.def.colds) || late ? p.label : undefined
   }, [ev, model])
   const [said, setSaid] = useState<{ ev: unknown; text: string | null } | null>(null)
   useEffect(() => {

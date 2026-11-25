@@ -914,7 +914,8 @@ export class Compiler {
         const at = this.prop(b, 'ramp')!
         if (!(ramp >= 0 && Number.isFinite(ramp)))
           this.report.error('out-of-range', at.value, 'a ramp is a time from 0')
-        else if (lasts == null)
+        // a length that was refused is none: the moment is not there to ramp up to
+        else if (peaks[label] == null)
           this.report.error(
             'bad-value',
             at.key,
@@ -923,8 +924,8 @@ export class Compiler {
           )
         else ramps[label] = ramp
       }
-      // the caches its moment starts cold: each a cache with a warms time
-      const cold = this.prop(b, 'cold')
+      // the caches its moment starts cold: each a cache with a warms time. A parameter named cold is a value here
+      const cold = params.some((x) => x.args.id?.name === 'cold') ? undefined : this.prop(b, 'cold')
       if (cold) {
         const items = cold.value.t === 'array' ? cold.value.items : []
         const list: string[] = []
@@ -950,7 +951,7 @@ export class Compiler {
         }
         if (cold.value.t !== 'array')
           this.report.error('wrong-type', cold.value, 'cold is a list of caches: [appCache]')
-        else if (lasts == null)
+        else if (peaks[label] == null)
           this.report.error(
             'bad-value',
             cold.key,

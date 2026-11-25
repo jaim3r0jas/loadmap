@@ -300,7 +300,7 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
    * The caches a preset's moment starts cold, by its label: each has none of its hits at the start and warms over its
    * `warms` time. What is lost meanwhile is `moment()`; no steady figure changes.
    */
-  colds?: Readonly<Record<string, readonly string[]>>
+  colds?: Readonly<Record<string, readonly NoInfer<S>[]>>
   /**
    * Named designs to compare, by label: the defaults plus these values, never the load. The first is the baseline the
    * others are measured against.
@@ -435,7 +435,7 @@ export interface Outage {
  * size that is not full yet. Under a symbol: no definition can write it, and it is no parameter.
  */
 const MOMENT = Symbol.for('loadmap.moment')
-interface MomentStepValues {
+export interface MomentStepValues {
   capacity?: Readonly<Record<string, number>>
   hit?: Readonly<Record<string, number>>
   room?: Readonly<Record<string, true>>
