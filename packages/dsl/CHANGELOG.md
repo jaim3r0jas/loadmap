@@ -1,5 +1,205 @@
 # @loadmap/dsl
 
+## 0.47.0
+
+### Minor Changes
+
+- 3c5c29f: A fan-out branch has figures of its own. `expect { flow: orders; to: smtp; lost: 1%; underTarget: 2× }` and
+  `expect { flow: orders; to: smtp; p99: 1s }` hold the branch through `smtp`, not the flow: what its copies lose (what
+  the fan-out turns away, and along the branch what a pass, a limit or a cache turns away, what a component fails and
+  what a queue drops, as a share of the copies asked for) and the time they take from the fan-out through that stage.
+  None of it is in the flow's own losses or latency: an order is not lost when its mail is. `to` may be any stage of
+  the branch. In code, `model.branch(flow, to, values?, bound?)` gives the branch's `stages`, `lost` and `latency`. A
+  `delay` on an edge along a branch now counts in the branch's time (it warned as unused). From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#fan-out-and-sinks
+- 1604406: A breaker with retries: a flow may have a `breaker` and its client's `retry` together, where it took one of them.
+  Each attempt goes through the breaker, and a call it fails fast is a failed attempt, sent again like any other. The
+  rate the breaker admits is the one at which the failures behind it reach `opens`, whatever is sent, so the retries
+  still settle at their least point, as many units fail for good as without the breaker, and the stages behind it see
+  what it admits, not the storm. `ev.breakers.<flow>.failedFast` counts attempts, and what is lost for good is shared
+  between the stages and the calls failed fast. On the board a retry goes through the breaker as the first attempt did.
+  A retry `at` a hop still takes no breaker. This lifts an error, so a file of any version reads it.
+
+  Docs: /language/building-blocks/#lost-units
+- 253c67e: Failures that are not about capacity: `fails: 2%` on a component is the share of the units its stages work on that
+  fail there whatever the load, a bug, a dependency that errors or a bad deploy. A failed unit is a new loss, `failed`:
+  a lost box takes it (`lost { takes: [failed] }`, and a box without `takes` takes it too), its dot goes there, the
+  flow's retries send it again, it counts toward the share that opens a breaker, a fallback serves it, and
+  `expect { lost }` holds it. The stages after the one that failed it are reached by the rest, in `at` too. It reads
+  the load and the parameters, so a scenario can be the bad deploy. A component that fails with no lost box for it warns
+  (`unseen-loss`), with the quick fix that adds the box. In TypeScript: `fails: 0.02` on the component;
+  `ev.stages.<id>.fails` is the share at the values. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#lost-units
+- 4613370: What a design costs. `cost: running * 140` on a box is what it costs a month, where `running` is the pods its pool runs
+  at this load (an autoscaled pool costs what it runs), the members left across a domain, or 1; `currency: "€"` says what
+  it is counted in. `ev.cost` gives the total and each component's, `compare()` puts the total in each scenario's row and
+  says what the headroom costs ("…, for 2,300 € a month more"), the scenarios table has a "Cost a month" column with the
+  change from the first, and `expect { cost: 5_000; underTarget: 3× }` holds a budget. In TypeScript, `currency` on the
+  model and `cost: ({ running }) => running * 140` on a component. From `loadmap 1.8`.
+
+  Docs: /language/scenarios/
+- 2c8ee75: A formula reads an outage: `down.zone` is true while a part of the failure domain `zone` is out, so a formula says
+  what the outage changes beyond the members it takes (`hit: down.zone ? 60% : 90%`, `fails: down.zone ? 2% : 0%`). In a
+  definition with a domain, a pool or a cluster every flow passes that stands across none has the new `single-point`
+  warning, and so has a box across a domain with one member: with its part out none is left. A library's box may read
+  `down.<domain>` as it may say `across`. Autocomplete
+  offers `down.<domain>` for each domain. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#failure-domains
+- 3b4c2d3: A delay on an edge: `users -> lb: "HTTPS" { delay: 80ms }` is the time a hop takes whatever the load, a network round
+  trip or a call to another region. It adds to the latency of every flow that goes from the one box straight to the
+  other (on the edge from a flow's `from` box, of the flows that start there), so it counts toward their timeout. No
+  unit is done before the delays of its way: the queues' times are fitted past them, so one queue behind a delay has
+  the exact percentiles of a shifted exponential. The edge says it after its label ("HTTPS · 80 ms"), and a delay no
+  flow goes along warns (`unused-delay`). It may read the load and the parameters. In TypeScript:
+  `delays: [{ from: 'api', to: 'payments', delay: 0.002 }]`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#latency-and-timeouts
+- 0d5900f: An expect holds a moment: `expect { preset: "Sale day"; queue: topic; lag: 5min; clears: 1h }` says that when the
+  preset's moment ends (its `lasts`), the oldest unit waiting in the queue has waited at most 5 minutes, and that the
+  reader then empties it within an hour at the default load. Without `queue` it holds every queue. It is held on the
+  pessimistic edge, and is inconclusive when it holds only at the high edge of a ±. `backlog()` gives each queue's
+  `lag` and takes a `bound`. In TypeScript, `expect: [{ preset: 'Sale day', queue: 'topic', lag: 300, clears: 3600 }]`.
+  From `loadmap 1.8`.
+
+  Docs: /language/controls/
+- 8b007aa: A fan-out branch that goes on: `orders -> mailQueue -> mailers -> smtp: 1` copies each order into a queue, to the
+  workers that read it and on to what they call, where a branch was one stage. The copies reach every stage of the
+  branch (`at.mailers.orders`), each stage runs its component and is ranked like any other, a queue on the branch fills
+  when its reader is full, the dots go the whole way, and an edge joins each pair of boxes along it. A branch goes
+  through queues, pools and `pass`, `cache`, `limit`, `store` and `sink` stages; it takes no split and no second
+  fan-out, and it never comes back to the route. This is how the asynchronous side of a system is written: email, search
+  indexing, a replica that follows a log. In TypeScript a branch is `{ stages: ['mailQueue', 'mailers', 'smtp'], share:
+  1 }`, and a resolved branch carries its `stages`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#fan-out-and-sinks
+- 7dca4d6: A hedge on a gather: `hedge: 95%` sends a second call for each one not answered by the p95 of its own time, and the
+  first of the two answers counts. What is called sees the second calls (5 % more at 95 %), and the unit's wait for the
+  calls it needs is shorter in the tail: a read that waits for 8 calls of 10 ms has its p99 fall from 64 ms to 51 ms. The wait is
+  summed over the survival of a hedged call, since the slowest of several has no closed form then. The second call
+  takes the edge's delay too. A call that fails is not sent again by a hedge. In TypeScript, `gather({ to, needs,
+  hedge: 0.95 })`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#gathers
+- 65f637c: A gather: one unit makes several calls at once and goes on when enough of them have answered. `gather { reads ->
+  shards: 8; needs: 6 }` is a read from every shard, a quorum write, a page built from many services. The stage it calls
+  sees every call (8 a read) and is ranked on that; the unit waits for the slowest call it needs, which is in its
+  latency (the 6th of 8 answers, from the calls' mean time); and it fails when too few answer, a loss at the gather
+  that a lost box takes and `expect { lost }` holds (a stage failing 1 % of its calls fails 7.7 % of the units that need
+  all 8). A call is a copy on a branch, so the line takes what a fan-out's does, a branch that goes on included. Unlike
+  a fan-out it does not end the route. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#gathers
+- 7068652: Slots held while something slow answers: `through: api -> payments` on a held component names a stretch of the way,
+  and a unit holds its slot for the time it takes there (each stage's time at its utilization, and the delays between
+  them), on top of `held` if there is one. A thread pool or a connection pool then runs out when the dependency slows
+  down, before the box itself is busy. A flow's timeout bounds the time; a cache's hits leave the stretch at the cache;
+  a stage past full counts as a million service times. `ev.components.<id>.held` and the box's detail say the whole
+  time. In TypeScript: `through: ['api', 'payments']`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#slots-held-for-a-while
+- 59e9179: Uneven work, said as a share. `limit { keys: 400; skew: estimated(20%, "share", "the noisiest tenant") }` is a limit for
+  each key: the capacity is one key's, it runs out when the hottest key does, and it turns away only what is above each
+  key's own limit; the limits list says "400 keys, each its own limit: the hottest carries 20 % of what arrives"
+  (`ev.components.<limit>.keys`). `busiest: estimated(32%, "share", "ring stats")` on a connection says how much its
+  busiest member takes, whatever deals the work: the stage runs out when that member does. A ± on either share moves the
+  crossings. In TypeScript, `limit(c, { keys, skew })` and `busiest` on a connection. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#rate-limits
+- 47d5230: A rate limit's bucket and a quota per minute. `limit { burst: 500 }` lets everything through past the limit until the
+  bucket is spent, its size over what arrives above the limit a second, then cuts to the limit. No steady figure
+  changes; `ev.components.<limit>.burst` gives `{ size, passes, lasts }`, and the limits list says "A burst of 500 passes: at 3×
+  all gets through for 2.5 s, then it is cut to 100 req/s". A quota counts a window of a minute too (`per: minute`),
+  read at the peak as an hour is. In TypeScript, `limit(c, { burst: 500 })` and `limit(c, { per: 'minute' })`. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#rate-limits
+- a1b9a99: A moment's way up walks more of what a peak meets. `cold: [appCache]` on a preset starts its moment with those caches
+  cold, and `warms: 5min` on a cache is how long it takes from no hits to its `hit` ("8× at once: up to 62 % of reads is
+  lost for 3 min, while the cache warms"). A limit's `burst` is spent on the way, and filled again below the limit ("6× at
+  once: nothing is lost for 2.5 s, until the burst of the rate limiter is spent, then 67 % of searches as it holds"). A
+  queue with a size takes everything in until it is full ("nothing is lost for 50 s, until the inbox is full"). Each step
+  of `moment()` says each cache's warmth, each bucket's units and each queue's backlog. In TypeScript, `colds` beside
+  `ramps` and `warms` on `cache()`. From `loadmap 1.8`.
+
+  Docs: /language/controls/#presets
+- 9c0e192: A moment's way up. `ramp: 30s` on a preset is how long the load takes to climb from the default to the preset's, and
+  `ready: 90s` on an autoscaler is how long after a pod is wanted it takes work. No steady figure changes. While the
+  preset is shown, the verdict says what is lost on the way: "8× in 30 s: up to 75 % of requests is lost for 100 s,
+  until the eighth pod of the API is ready." `moment(model, values, preset)` from `@loadmap/core/moments` walks a fixed
+  number of steps over the ramp and the moment's length and gives each flow's lost units, share and span; the page loads
+  it only while such a preset is shown. In TypeScript, `ramps` beside `peaks` and `ready` in the `autoscale`. From
+  `loadmap 1.8`.
+
+  Docs: /language/controls/#presets
+- 732644f: Language 1.8 is open: 1.7 shipped in @loadmap/dsl 0.46.0, so what is new to read needs a version of its own. Its first
+  addition is an expectation on what is lost: `expect { flow: orders; lost: 0.1%; underTarget: 5× }` holds while the flow
+  loses at most that share of what it sends for good (turned away, dropped by a queue or too slow for its timeout, after
+  every retry and after what its fallback serves), up to that load multiple or, without one, at the scenario's values.
+  Without a `flow` it holds for each flow. A failure names the flow, the share and where most of it goes. In code the
+  same figures are `ev.lost.<flow>` (rate, share and each stage's part) and `model.lost(values, bound, flows)`. A file
+  stamped before 1.8 that writes `lost` in an expect gets the error that says so, with the fix that raises its first
+  line. Every definition in the repository says `loadmap 1.8`, and the corpus holds what 0.46.0 released.
+
+  Docs: /language/how-sure/
+- 1aac4d6: A queue with a size: `holds: 10_000` on a queue makes it a bounded queue, a buffer, a mailbox. Once its reader is past
+  full the queue fills, and what the reader cannot take is turned away: `rejected` at the queue, so a retry sends it
+  again, a lost box counts it and `expect { lost }` sees it. `full: block` turns the unit away at the stage before the
+  queue instead. With a drop rule the queue takes in `holds` ÷ `olderThan` a second: what arrives above that finds it
+  full, and what it took in and its reader cannot take gets too old. A queue with a size and no lost box for what it turns away has a warning.
+  For a moment that `lasts`, the verdict says when the queue is full, and the board keeps no more waiting than it holds.
+  In TypeScript, `queue({ partitions, holds, whenFull })`, and `backlog()` gives `full: { holds, after }`. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#queues
+- 4f3a2e4: A region goes out: `domain region "Region" { parts: [eu, us] }` names a domain's parts, a box or a subsystem is `in`
+  one (`in: eu`), and the Outage control takes each part out by its id (`down: eu`). With a part down its boxes are
+  switched off and every split deals again: a way through the part gets nothing and the ways left take its share by
+  their own, evenly when theirs are all 0. A flow with no way left is turned away at the split, and what reaches a box
+  of the part with no split in front is turned away there. The N−1 line answers for each part ("With the EU out, the
+  50 % target holds up to 2×"), `down: region` in an expect holds the worst of the parts, and a formula reads
+  `down.eu` and `down.region`. In TypeScript, `parts` on a domain and `in: { domain, part }` on a component. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#failure-domains
+- c0ac379: Retries at a hop: `retry { at: payments; times: 2 }` is the caller of payments calling again. What fails at that stage
+  or after it is sent again from there, so only the stages from it on see those attempts. A flow takes one rule without
+  `at` (its client's, as before) and one for each stage, and retries inside retries multiply: the attempts a stage sees
+  are the product of every rule around it, and an attempt fails only when every attempt inside it does. The rules are
+  solved together, the hops inside the client's. `ev.retry.<flow>.hops` gives each hop's attempts a unit, its failing
+  share and what fails every attempt there; the Live panel shows the attempts at each hop; a dot sent again at a hop
+  starts there. In TypeScript `retry` takes a list: `[{ times: 1 }, { at: 'payments', times: 2 }]`. A timeout stays the
+  client's. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#retries
+
+### Patch Changes
+
+- Updated dependencies [3c5c29f]
+- Updated dependencies [1604406]
+- Updated dependencies [253c67e]
+- Updated dependencies [4613370]
+- Updated dependencies [3b4c2d3]
+- Updated dependencies [0d5900f]
+- Updated dependencies [8b007aa]
+- Updated dependencies [7dca4d6]
+- Updated dependencies [65f637c]
+- Updated dependencies [7068652]
+- Updated dependencies [59e9179]
+- Updated dependencies [47d5230]
+- Updated dependencies [3d5a64f]
+- Updated dependencies [a1b9a99]
+- Updated dependencies [9c0e192]
+- Updated dependencies [732644f]
+- Updated dependencies [1aac4d6]
+- Updated dependencies [4f3a2e4]
+- Updated dependencies [c0ac379]
+  - @loadmap/core@0.47.0
+  - @loadmap/layout@0.47.0
+
 ## 0.46.0
 
 ### Minor Changes

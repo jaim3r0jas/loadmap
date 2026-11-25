@@ -1,5 +1,63 @@
 # @loadmap/layout
 
+## 0.47.0
+
+### Minor Changes
+
+- 253c67e: Failures that are not about capacity: `fails: 2%` on a component is the share of the units its stages work on that
+  fail there whatever the load, a bug, a dependency that errors or a bad deploy. A failed unit is a new loss, `failed`:
+  a lost box takes it (`lost { takes: [failed] }`, and a box without `takes` takes it too), its dot goes there, the
+  flow's retries send it again, it counts toward the share that opens a breaker, a fallback serves it, and
+  `expect { lost }` holds it. The stages after the one that failed it are reached by the rest, in `at` too. It reads
+  the load and the parameters, so a scenario can be the bad deploy. A component that fails with no lost box for it warns
+  (`unseen-loss`), with the quick fix that adds the box. In TypeScript: `fails: 0.02` on the component;
+  `ev.stages.<id>.fails` is the share at the values. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#lost-units
+- 8b007aa: A fan-out branch that goes on: `orders -> mailQueue -> mailers -> smtp: 1` copies each order into a queue, to the
+  workers that read it and on to what they call, where a branch was one stage. The copies reach every stage of the
+  branch (`at.mailers.orders`), each stage runs its component and is ranked like any other, a queue on the branch fills
+  when its reader is full, the dots go the whole way, and an edge joins each pair of boxes along it. A branch goes
+  through queues, pools and `pass`, `cache`, `limit`, `store` and `sink` stages; it takes no split and no second
+  fan-out, and it never comes back to the route. This is how the asynchronous side of a system is written: email, search
+  indexing, a replica that follows a log. In TypeScript a branch is `{ stages: ['mailQueue', 'mailers', 'smtp'], share:
+  1 }`, and a resolved branch carries its `stages`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#fan-out-and-sinks
+- 65f637c: A gather: one unit makes several calls at once and goes on when enough of them have answered. `gather { reads ->
+  shards: 8; needs: 6 }` is a read from every shard, a quorum write, a page built from many services. The stage it calls
+  sees every call (8 a read) and is ranked on that; the unit waits for the slowest call it needs, which is in its
+  latency (the 6th of 8 answers, from the calls' mean time); and it fails when too few answer, a loss at the gather
+  that a lost box takes and `expect { lost }` holds (a stage failing 1 % of its calls fails 7.7 % of the units that need
+  all 8). A call is a copy on a branch, so the line takes what a fan-out's does, a branch that goes on included. Unlike
+  a fan-out it does not end the route. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#gathers
+
+### Patch Changes
+
+- Updated dependencies [3c5c29f]
+- Updated dependencies [1604406]
+- Updated dependencies [253c67e]
+- Updated dependencies [4613370]
+- Updated dependencies [3b4c2d3]
+- Updated dependencies [0d5900f]
+- Updated dependencies [8b007aa]
+- Updated dependencies [7dca4d6]
+- Updated dependencies [65f637c]
+- Updated dependencies [7068652]
+- Updated dependencies [59e9179]
+- Updated dependencies [47d5230]
+- Updated dependencies [3d5a64f]
+- Updated dependencies [a1b9a99]
+- Updated dependencies [9c0e192]
+- Updated dependencies [732644f]
+- Updated dependencies [1aac4d6]
+- Updated dependencies [4f3a2e4]
+- Updated dependencies [c0ac379]
+  - @loadmap/core@0.47.0
+
 ## 0.46.0
 
 ### Minor Changes

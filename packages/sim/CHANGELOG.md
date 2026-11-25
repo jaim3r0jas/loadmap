@@ -1,5 +1,110 @@
 # @loadmap/sim
 
+## 0.47.0
+
+### Minor Changes
+
+- 1604406: A breaker with retries: a flow may have a `breaker` and its client's `retry` together, where it took one of them.
+  Each attempt goes through the breaker, and a call it fails fast is a failed attempt, sent again like any other. The
+  rate the breaker admits is the one at which the failures behind it reach `opens`, whatever is sent, so the retries
+  still settle at their least point, as many units fail for good as without the breaker, and the stages behind it see
+  what it admits, not the storm. `ev.breakers.<flow>.failedFast` counts attempts, and what is lost for good is shared
+  between the stages and the calls failed fast. On the board a retry goes through the breaker as the first attempt did.
+  A retry `at` a hop still takes no breaker. This lifts an error, so a file of any version reads it.
+
+  Docs: /language/building-blocks/#lost-units
+- 253c67e: Failures that are not about capacity: `fails: 2%` on a component is the share of the units its stages work on that
+  fail there whatever the load, a bug, a dependency that errors or a bad deploy. A failed unit is a new loss, `failed`:
+  a lost box takes it (`lost { takes: [failed] }`, and a box without `takes` takes it too), its dot goes there, the
+  flow's retries send it again, it counts toward the share that opens a breaker, a fallback serves it, and
+  `expect { lost }` holds it. The stages after the one that failed it are reached by the rest, in `at` too. It reads
+  the load and the parameters, so a scenario can be the bad deploy. A component that fails with no lost box for it warns
+  (`unseen-loss`), with the quick fix that adds the box. In TypeScript: `fails: 0.02` on the component;
+  `ev.stages.<id>.fails` is the share at the values. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#lost-units
+- 8b007aa: A fan-out branch that goes on: `orders -> mailQueue -> mailers -> smtp: 1` copies each order into a queue, to the
+  workers that read it and on to what they call, where a branch was one stage. The copies reach every stage of the
+  branch (`at.mailers.orders`), each stage runs its component and is ranked like any other, a queue on the branch fills
+  when its reader is full, the dots go the whole way, and an edge joins each pair of boxes along it. A branch goes
+  through queues, pools and `pass`, `cache`, `limit`, `store` and `sink` stages; it takes no split and no second
+  fan-out, and it never comes back to the route. This is how the asynchronous side of a system is written: email, search
+  indexing, a replica that follows a log. In TypeScript a branch is `{ stages: ['mailQueue', 'mailers', 'smtp'], share:
+  1 }`, and a resolved branch carries its `stages`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#fan-out-and-sinks
+- 7dca4d6: A hedge on a gather: `hedge: 95%` sends a second call for each one not answered by the p95 of its own time, and the
+  first of the two answers counts. What is called sees the second calls (5 % more at 95 %), and the unit's wait for the
+  calls it needs is shorter in the tail: a read that waits for 8 calls of 10 ms has its p99 fall from 64 ms to 51 ms. The wait is
+  summed over the survival of a hedged call, since the slowest of several has no closed form then. The second call
+  takes the edge's delay too. A call that fails is not sent again by a hedge. In TypeScript, `gather({ to, needs,
+  hedge: 0.95 })`. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#gathers
+- 65f637c: A gather: one unit makes several calls at once and goes on when enough of them have answered. `gather { reads ->
+  shards: 8; needs: 6 }` is a read from every shard, a quorum write, a page built from many services. The stage it calls
+  sees every call (8 a read) and is ranked on that; the unit waits for the slowest call it needs, which is in its
+  latency (the 6th of 8 answers, from the calls' mean time); and it fails when too few answer, a loss at the gather
+  that a lost box takes and `expect { lost }` holds (a stage failing 1 % of its calls fails 7.7 % of the units that need
+  all 8). A call is a copy on a branch, so the line takes what a fan-out's does, a branch that goes on included. Unlike
+  a fan-out it does not end the route. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#gathers
+- 1aac4d6: A queue with a size: `holds: 10_000` on a queue makes it a bounded queue, a buffer, a mailbox. Once its reader is past
+  full the queue fills, and what the reader cannot take is turned away: `rejected` at the queue, so a retry sends it
+  again, a lost box counts it and `expect { lost }` sees it. `full: block` turns the unit away at the stage before the
+  queue instead. With a drop rule the queue takes in `holds` ÷ `olderThan` a second: what arrives above that finds it
+  full, and what it took in and its reader cannot take gets too old. A queue with a size and no lost box for what it turns away has a warning.
+  For a moment that `lasts`, the verdict says when the queue is full, and the board keeps no more waiting than it holds.
+  In TypeScript, `queue({ partitions, holds, whenFull })`, and `backlog()` gives `full: { holds, after }`. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#queues
+- 4f3a2e4: A region goes out: `domain region "Region" { parts: [eu, us] }` names a domain's parts, a box or a subsystem is `in`
+  one (`in: eu`), and the Outage control takes each part out by its id (`down: eu`). With a part down its boxes are
+  switched off and every split deals again: a way through the part gets nothing and the ways left take its share by
+  their own, evenly when theirs are all 0. A flow with no way left is turned away at the split, and what reaches a box
+  of the part with no split in front is turned away there. The N−1 line answers for each part ("With the EU out, the
+  50 % target holds up to 2×"), `down: region` in an expect holds the worst of the parts, and a formula reads
+  `down.eu` and `down.region`. In TypeScript, `parts` on a domain and `in: { domain, part }` on a component. From
+  `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#failure-domains
+- c0ac379: Retries at a hop: `retry { at: payments; times: 2 }` is the caller of payments calling again. What fails at that stage
+  or after it is sent again from there, so only the stages from it on see those attempts. A flow takes one rule without
+  `at` (its client's, as before) and one for each stage, and retries inside retries multiply: the attempts a stage sees
+  are the product of every rule around it, and an attempt fails only when every attempt inside it does. The rules are
+  solved together, the hops inside the client's. `ev.retry.<flow>.hops` gives each hop's attempts a unit, its failing
+  share and what fails every attempt there; the Live panel shows the attempts at each hop; a dot sent again at a hop
+  starts there. In TypeScript `retry` takes a list: `[{ times: 1 }, { at: 'payments', times: 2 }]`. A timeout stays the
+  client's. From `loadmap 1.8`.
+
+  Docs: /language/building-blocks/#retries
+
+### Patch Changes
+
+- Updated dependencies [3c5c29f]
+- Updated dependencies [1604406]
+- Updated dependencies [253c67e]
+- Updated dependencies [4613370]
+- Updated dependencies [3b4c2d3]
+- Updated dependencies [0d5900f]
+- Updated dependencies [8b007aa]
+- Updated dependencies [7dca4d6]
+- Updated dependencies [65f637c]
+- Updated dependencies [7068652]
+- Updated dependencies [59e9179]
+- Updated dependencies [47d5230]
+- Updated dependencies [3d5a64f]
+- Updated dependencies [a1b9a99]
+- Updated dependencies [9c0e192]
+- Updated dependencies [732644f]
+- Updated dependencies [1aac4d6]
+- Updated dependencies [4f3a2e4]
+- Updated dependencies [c0ac379]
+  - @loadmap/core@0.47.0
+
 ## 0.46.0
 
 ### Minor Changes
