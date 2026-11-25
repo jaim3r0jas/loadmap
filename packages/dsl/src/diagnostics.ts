@@ -60,6 +60,7 @@ export const CODES = {
   'unused-stage': 'a stage no flow passes',
   'unused-component': 'a component no stage uses or holds',
   'unused-delay': 'a delay on an edge no flow goes along',
+  'single-point': 'a box every flow passes across no failure domain, or one with no member left when a part is out',
   'tier-order': 'an edge that runs back against the tiers',
   deprecated: 'an old spelling: loadmap fmt rewrites it',
   removed: 'a statement or a property a language version dropped: what to write is in the hint',

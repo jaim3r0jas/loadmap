@@ -529,6 +529,8 @@ class Help {
       ),
       ...inputs.map((label) => ({ label, type: 'variable' as const, detail: 'input', boost: 1 })),
     ]
+    // down.<domain>, whether a part of it is out: it reads wherever a parameter does
+    if (this.ids('domain').length) list.push({ label: 'down', type: 'type', apply: 'down.', boost: -1 })
     if (scope === 'values') return list
     const capacity = slot.prop?.value === 'capacity'
     for (const label of this.ids('published'))
@@ -585,6 +587,8 @@ class Help {
     if (punct(tokens.at(-3), '.')) return []
     const self = this.component(slot)
     switch (name.text) {
+      case 'down':
+        return this.ids('domain').map((d) => entry(d, 'a part of it out'))
       case 'flows': {
         const box = slot.key === 'demand' ? this.box() : undefined
         const near = new Set(box ? this.reaching(box) : [])

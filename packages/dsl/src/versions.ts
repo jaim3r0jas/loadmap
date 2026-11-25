@@ -48,6 +48,7 @@ const SYNTAX = {
   poolScale: { since: '1.5', what: 'autoscale on the pool' },
   day: { since: '1.7', what: 'a day (7d)' },
   branchChain: { since: '1.8', what: 'a fan-out branch that goes on (a -> b -> c)' },
+  downDomain: { since: '1.8', what: 'down.<domain>, whether a part of it is out' },
 } as const
 
 /** A use of something a version added: where, what, and the version. */
@@ -78,9 +79,15 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
     if (e.t === 'num' && e.unit === 'd') add('day', SYNTAX.day.since, SYNTAX.day.what, e)
     if (e.t === 'str' && e.continued) add('continued', SYNTAX.continued.since, SYNTAX.continued.what, e)
     if (e.t === 'member' && e.object.name === 'out') add('out', SYNTAX.out.since, SYNTAX.out.what, e.object)
+    if (e.t === 'id' && e.name.startsWith('down.') && !ownDown)
+      add('downDomain', SYNTAX.downDomain.since, SYNTAX.downDomain.what, e)
     if (e.t === 'call' && e.callee.name === 'mod' && !ownMod) add('mod', SYNTAX.mod.since, SYNTAX.mod.what, e.callee)
     for (const c of childrenOf(e, true)) expr(c)
   }
+  // a subsystem named down has boxes of that name: down.api is one of them, as the compiler reads it
+  const ownDown = body.some(
+    (s) => s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id' && s.args[0].name === 'down',
+  )
   // a parameter named lasts is set in a preset as it always was: that is no peak's length
   const paramLasts = body.some(
     (s) => s.kind === 'decl' && s.keyword.name === 'param' && s.args[0]?.t === 'id' && s.args[0].name === 'lasts',

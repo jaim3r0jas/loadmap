@@ -248,8 +248,9 @@ pool eventWorkers "Event workers" "2 to 6 pods" {
   short: "the event workers"
   plural: true
   demand: flows.events * 2ms
-  # a failure that is not about capacity: one event in two hundred fails here whatever the load
-  fails: 0.5%
+  # a failure that is not about capacity: one event in two hundred fails here whatever the load, and twice as many
+  # while a zone is out: down.zone is true then
+  fails: down.zone ? 1% : 0.5%
   capacity: measured(6 * 1, "cores", "1 core a pod, at most 6")
   over: "events wait in the topic"
 }

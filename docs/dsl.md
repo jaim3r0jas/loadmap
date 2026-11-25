@@ -1307,6 +1307,16 @@ down. `ev.components.api.out` gives the members and those left; `down` is a para
 (`model.evaluate({ down: 'zone' })`), and in TypeScript `domains` on the model and `across: { domain, members }` on a
 component declare the same.
 
+A formula reads the outage as `down.zone` (from `loadmap 1.8`): true while a part of that domain is out, false
+otherwise. So what an outage changes beyond the members it takes is said where it happens: a cache that starts cold
+(`hit: down.zone ? 60% : 90%`), a share that fails while a replica is promoted (`fails: down.zone ? 2% : 0%`), a call
+that goes the long way (`delay: down.zone ? 40ms : 2ms`).
+
+In a definition with a domain, a pool or a cluster that every flow passes and that stands across none is a single
+point: no outage the model knows touches it, and with it gone nothing gets through. The checker warns
+(`single-point`), and also for a box across a domain with one member, which has none left when its part is out. A
+plain node has no warning: a limit or a managed service may have no place in the domain.
+
 With every part up, the page also answers N−1. Under the verdict: "With one availability zone out, the 50 % target
 holds up to 8.3×, limited by the search API, which keeps 5 of 8." Each row of the limits gives its own figure with
 one part out when that comes sooner, and the headroom chart draws the shown line with one part out, dashed in the
@@ -1904,6 +1914,7 @@ span ends (`endLine`, `endColumn`, the column after its last character).
 | `unused-stage` | a stage no flow passes |
 | `unused-component` | a component no stage uses or holds |
 | `unused-delay` | a delay on an edge no flow goes along |
+| `single-point` | a box every flow passes across no failure domain, or one with no member left when a part is out |
 | `tier-order` | an edge that runs back against the tiers |
 | `deprecated` | an old spelling: loadmap fmt rewrites it |
 | `removed` | a statement or a property a language version dropped: what to write is in the hint |
@@ -1954,7 +1965,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue | |
 
 ## In code
 
