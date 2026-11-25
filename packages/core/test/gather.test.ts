@@ -90,6 +90,31 @@ describe('a gather', () => {
     )
   })
 
+  it('lets on the units that did not fail there, and times a delay on its edge once', () => {
+    // a tenth of the calls failing, all eight needed: 43 of 100 reads reach the stage after it
+    const ev = shop({ fails: 0.1 }).evaluate({ load: 1 })
+    expect(ev.at.render.reads).toBeCloseTo(100 * 0.9 ** 8, 9)
+    expect(ev.components.render.util).toBeCloseTo((100 * 0.9 ** 8) / 10_000, 12)
+    // 50 ms to reach the shards: every call takes it, so the read waits 50 ms and the slowest of eight answers
+    const base = shop()
+    const far = defineModel({ ...base.def, delays: [{ from: 'scatter', to: 'shards', delay: 0.05 }] } as never)
+    const w = 0.01 / (1 - 0.2)
+    const own = 0.002 / (1 - 0.01) + 0.003 / (1 - 0.01)
+    expect(far.evaluate({ load: 1 }).latency.reads!.mean).toBeCloseTo(own + 0.05 + w * harmonic(1, 8), 12)
+  })
+
+  it('is for the flows that come its way: one list of calls does not stop another flow', () => {
+    const base = shop()
+    const m = defineModel({
+      ...base.def,
+      flows: { ...base.def.flows, pings: { rate: 5 } },
+      routes: { ...base.def.routes, pings: ['api', 'out'] },
+    } as never)
+    const ev = m.evaluate({ load: 1 })
+    expect(ev.at.shards.reads).toBeCloseTo(800, 9)
+    expect(ev.lost.pings!.share).toBe(0)
+  })
+
   it('makes a whole number of calls, needs no more than it makes, and one branch a flow', () => {
     expect(() => shop({ calls: 2.5 }).evaluate()).toThrow(
       'gather "scatter" makes 2.5 calls for each unit of "reads": a whole number from 1',

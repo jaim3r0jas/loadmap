@@ -1680,8 +1680,19 @@ export class Compiler {
         return open ? Object.keys(shape.stages) : ways.flat()
       }),
     )
+    // a gather fails a unit only where a call can be lost: turned away, failed or dropped on its branch
+    const loses = (id: string) =>
+      this.kinds.get(id) !== 'gather' ||
+      (this.called.get(id) ?? []).some((t) => {
+        const kind = this.kinds.get(t)
+        const of = (shape.stages[t] as { component?: string } | undefined)?.component
+        const fails = of == null ? undefined : (components[of] as { fails?: unknown } | undefined)?.fails
+        return (
+          kind === 'pass' || kind === 'limit' || kind === 'cache' || kind === 'queue' || (fails != null && fails !== 0)
+        )
+      })
     for (const [id, s] of stageOf)
-      if (unserved.has(id) && losses(id).includes('failed') && first(id, 'failed'))
+      if (unserved.has(id) && loses(id) && losses(id).includes('failed') && first(id, 'failed'))
         this.report.warning(
           'unseen-loss',
           s.block.at,
@@ -1859,6 +1870,8 @@ export class Compiler {
   private whenAt = new WeakMap<EdgeDef, Span>()
   /** The hops along fan-out branches, `from\0to`: from the fan-out to a branch's first stage, and on along it. */
   private branchHops = new Set<string>()
+  /** The stages each fan-out's or gather's branches go through. */
+  private called = new Map<string, string[]>()
   /** The one stage of each box that holds exactly one, by the box's id: a stage may be named by its box. */
   private single = new Map<string, string>()
   /** Each stage's keyword: what a fan-out's branch may go through. */
@@ -3957,6 +3970,7 @@ export class Compiler {
             if (!stage) continue
             // a hop of the branch, as two stages next to each other on a route are: an edge's delay counts on it
             this.branchHops.add(`${k ? stages[k - 1] : id}\u0000${stage}`)
+            this.called.set(id, [...(this.called.get(id) ?? []), stage])
             reached.add(stage)
             this.branchAt.set(`${f.name}\u0000${stage}`, e)
             const kind = this.kinds.get(stage)

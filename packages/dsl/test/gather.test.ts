@@ -58,7 +58,8 @@ describe('a gather, in the language', () => {
     // the shards fail 1 % of their calls: 7.7 % of the reads that need all eight, into the lost box
     const ev = m.evaluate({ load: 1 })
     expect(ev.at.shards!.reads).toBeCloseTo(800, 9)
-    expect(ev.at.render!.reads).toBeCloseTo(100, 9)
+    // the stage after it is reached by the reads that did not fail there
+    expect(ev.at.render!.reads).toBeCloseTo(100 * 0.99 ** 8, 9)
     expect(ev.at.incomplete!.reads).toBeCloseTo(100 * (1 - 0.99 ** 8), 9)
     expect(r.expectations.map((e) => `${e.result.outcome}: ${e.result.message}`)).toEqual([
       'pass: 7.7 % of reads is lost at 1×, within 10 %',

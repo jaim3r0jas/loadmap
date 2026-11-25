@@ -101,7 +101,7 @@ flow orders "orders" {
   retry { times: tries; budget: 0.1 }
   # a retry at a hop: the API calls the database again, and only the stages from there on see those attempts
   retry { at: db; times: 1 }
-  route: gateway -> limiter -> api -> resultCache -> db
+  route: gateway -> limiter -> api -> resultCache -> db -> receipts
   from: users
   color: accent
 }
@@ -127,7 +127,7 @@ flow events "events" {
 flow signups "signups" {
   unit: "signup"
   rate: 20 / 1d
-  route: gateway -> api -> checks -> mailer
+  route: gateway -> api -> mailer
   from: users
   # what fails for good waits in an outbox, to be welcomed later
   fallback { after: api; route: outbox }
@@ -277,16 +277,16 @@ node audit "Audit" {
 }
 node archive "Archive" { sink }
 
-# each signup is welcomed one way: by email, or by text where there is no email
-# a gather: each signup is checked by two services at once, and goes on when one of them has answered
-node checks "Checks" {
+# a gather: each order's receipt is asked of two printers at once, and one answer is enough
+node receipts "Receipts" {
   gather {
-    signups -> fraud: 2
+    orders -> printers: 2
     needs: 1
   }
 }
-node fraud "Fraud checks" { sink }
+node printers "Printers" { sink }
 
+# each signup is welcomed one way: by email, or by text where there is no email
 node mailer "Mailer" {
   split {
     signups -> email: 0.7
@@ -306,6 +306,8 @@ limiter -> tooMany
 api -> resultCache: `${compact(at.db.orders)} misses/s` { when: hit < 1 }
 # a delay is the time the hop takes whatever the load: it adds to the latency of the flows that go it
 resultCache -> db { delay: 2ms }
+db -> receipts
+receipts -> printers
 kafka -> eventWorkers
 kafka -> kafkaDropped
 eventWorkers -> push
@@ -314,9 +316,7 @@ push -> phones
 push -> audit
 audit -> archive
 push -> pushTimedOut
-api -> checks
-checks -> fraud
-checks -> mailer
+api -> mailer
 api -> outbox
 mailer -> email
 mailer -> sms

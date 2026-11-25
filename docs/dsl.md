@@ -972,7 +972,8 @@ stages cannot say:
 - **The unit fails when too few calls answer.** A shard that fails 1 % of its calls fails 7.7 % of the reads that need
   all 8, and 0.005 % of those that need 6. Past capacity it is worse: shards that take half their calls answer a read
   that needs all 8 once in 256. The failed units are a loss at the gather (`failed`), which a lost box takes and an
-  `expect { lost }` holds.
+  `expect { lost }` holds, and the stages after the gather are reached by the rest. A call's lost share is worked out
+  on the calls the gather would make if what is in front of it kept up, as every limit is.
 
 A call is a copy on a branch, so a gather's line takes what a fan-out's does: a branch that goes on (`reads -> cache ->
 shards: 8`), and what a call loses or how long it takes is the branch's own figure. One line a flow, and a whole
