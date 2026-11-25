@@ -111,7 +111,7 @@ describe('a gather', () => {
       routes: { ...base.def.routes, pings: ['api', 'out'] },
     } as never)
     const ev = m.evaluate({ load: 1 })
-    expect(ev.at.shards.reads).toBeCloseTo(800, 9)
+    expect(ev.at.shards!.reads).toBeCloseTo(800, 9)
     expect(ev.lost.pings!.share).toBe(0)
   })
 
