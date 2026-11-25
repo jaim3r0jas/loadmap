@@ -962,7 +962,8 @@ class Help {
     const visit = (list: readonly Stmt[], fanout: boolean) => {
       for (const s of list) {
         if (s.kind === 'edge' && fanout) for (const n of s.chain.slice(1)) add(s.chain[0]!.name, this.stageOf(n.name))
-        if (s.kind === 'decl' && s.body) visit(s.body, s.keyword.name === 'fanout' || s.keyword.name === 'split')
+        if (s.kind === 'decl' && s.body)
+          visit(s.body, s.keyword.name === 'fanout' || s.keyword.name === 'gather' || s.keyword.name === 'split')
       }
     }
     visit(this.body, false)

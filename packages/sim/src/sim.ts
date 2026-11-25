@@ -225,10 +225,10 @@ export class Sim {
           // what the stage works on and fails goes no further
           rate *= 1 - (s.fails ?? 0)
           // a branch that goes on: what reaches each of its stages, so a queue on it fills as one on a route does
-          if (s.kind === 'fanout')
+          if (s.kind === 'fanout' || s.kind === 'gather')
             for (const b of s.to[f] ?? []) {
               if (b.stages.length < 2) continue
-              let copies = rate * (1 - s.shed) * b.share
+              let copies = rate * (s.kind === 'fanout' ? 1 - s.shed : 1) * b.share
               for (const t of b.stages) {
                 this.#inflow.set(`${t}/${f}`, (this.#inflow.get(`${t}/${f}`) ?? 0) + copies)
                 // the queue's reader on this branch: the next stage of it
@@ -238,6 +238,8 @@ export class Sim {
                 if (on.kind === 'cache') copies *= 1 - on.hit
               }
             }
+          // a gather lets on the units enough of whose calls answered: every unit made its calls first
+          if (s.kind === 'gather') rate *= 1 - (s.failing[f] ?? 0)
         }
       }
     }
@@ -714,8 +716,10 @@ export class Sim {
         const refused =
           this.#r() < this.shed(d.from.stage ?? '') ||
           (stage.kind === 'pass' && this.#r() < this.#shedOf(stage.id, d.flow))
-        fade(d, refused ? 'rejected' : 'delivered', 0.35)
-      } else if (d.phase === 'move' && stage.kind === 'fanout') {
+        // a call or a copy its stage fails ends there too: the share the model counts
+        const broke = !refused && !!stage.fails && this.#r() < stage.fails
+        fade(d, refused ? 'rejected' : broke ? 'failed' : 'delivered', 0.35)
+      } else if (d.phase === 'move' && (stage.kind === 'fanout' || stage.kind === 'gather')) {
         let made = 0
         for (const b of stage.to[d.flow] ?? []) {
           const copies = Math.floor(b.share) + (this.#r() < b.share % 1 ? 1 : 0)
@@ -747,8 +751,13 @@ export class Sim {
                     },
               )
         }
+        // a gather's unit goes on once its calls are out, unless too few of them answer: the share the model counts
+        if (stage.kind === 'gather') {
+          if (this.#r() < (stage.failing[d.flow] ?? 0)) reject(d, 'failed')
+          else advance(d)
+        }
         // the copies carry on; a unit nobody receives fades where it stopped
-        if (made) fade(d, 'delivered', 0)
+        else if (made) fade(d, 'delivered', 0)
         else fade(d, 'unread', 0.6)
       } else if (d.phase === 'move') {
         const turnsAway =

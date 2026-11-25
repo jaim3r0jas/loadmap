@@ -114,6 +114,8 @@ export {
   dyn,
   type FanoutStage,
   fanout,
+  type GatherStage,
+  gather,
   type LimitStage,
   type Loss,
   type LostStage,

@@ -946,6 +946,41 @@ neither, as on a route). `to` may be any stage of the branch, so `to: mailers` h
 reads "expected at most 1 % of orders to smtp lost, but 25 % is lost at 2×, most of it turned away at SMTP
 relay". In code it is `model.branch('orders', 'smtp', values)`, which gives `stages`, `lost` and `latency`.
 
+#### Gathers
+
+A gather (from `loadmap 1.8`) is one unit making several calls at once and going on when enough of them have
+answered: a read from every shard, a write to a quorum of replicas, a page built from many services. It is written as
+a fan-out is, one line for the flow, with the calls a unit makes, but it does not end the route:
+
+```loadmap
+flow reads "reads" { rate: 400 * load; from: users; route: api -> scatter -> render }
+
+node scatter "Scatter" {
+  gather {
+    reads -> shards: 8
+    needs: 6
+  }
+}
+```
+
+Each read calls the shards eight times, so they see 3,200 calls a second for 400 reads (`at.shards.reads`), and are
+ranked on that. `needs` is how many calls must answer, all of them without it. Two things follow that a chain of
+stages cannot say:
+
+- **The unit waits for the slowest call it needs.** With calls that take W each, the last of 8 takes 2.7 W on average,
+  not W: `W × (1 + 1/2 + … + 1/8)`. Needing 6 of 8 takes 1.2 W. That is in the flow's latency and its timeout.
+- **The unit fails when too few calls answer.** A shard that fails 1 % of its calls fails 7.7 % of the reads that need
+  all 8, and 0.005 % of those that need 6. Past capacity it is worse: shards that take half their calls answer a read
+  that needs all 8 once in 256. The failed units are a loss at the gather (`failed`), which a lost box takes and an
+  `expect { lost }` holds, and the stages after the gather are reached by the rest. A call's lost share is worked out
+  on the calls the gather would make if what is in front of it kept up, as every limit is.
+
+A call is a copy on a branch, so a gather's line takes what a fan-out's does: a branch that goes on (`reads -> cache ->
+shards: 8`), and what a call loses or how long it takes is the branch's own figure. One line a flow, and a whole
+number of calls. A quorum is `needs: 2` of 3 calls; a read that asks two replicas and takes the first answer is
+`needs: 1` of 2. In TypeScript, `gather({ to: [{ stage: 'shards', share: 8 }], needs: 6 })`, and
+`ev.stages.scatter.failing.reads` is the share of reads that fail there.
+
 #### Splits
 
 A split sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
@@ -1867,7 +1902,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` | |
 
 ## In code
 
@@ -2583,7 +2618,7 @@ After the keyword: id [label] [sub].
 | `over` | string, formula | What happens past 100 %, as a clause: "clients get 429s". |
 | `describe` | string, formula | One line under the name in the limits list. |
 
-Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `split`, `cache`, `limit`, `component`, `held`, `runs`, `input`, `with`.
+Holds: `pass`, `store`, `sink`, `lost`, `fanout`, `gather`, `split`, `cache`, `limit`, `component`, `held`, `runs`, `input`, `with`.
 
 ### cluster
 
@@ -2833,6 +2868,25 @@ After the keyword: [id] [label].
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 Holds branches: `flow -> stage: copies per unit`.
+
+### gather
+
+Each unit makes several calls at once and goes on when enough of them have answered: a read from every shard, a quorum of replicas, a page built from many services. One "flow -> stage: calls" line a flow, written as a fan-out's branch (it may go on, a -> b). The unit waits for the slowest call it needs and fails when too few answer. It does not end the route. From loadmap 1.8.
+
+```loadmap
+gather {
+  reads -> shards: 8
+  needs: 6
+}
+```
+
+After the keyword: [id] [label].
+
+| Property | Value | |
+| --- | --- | --- |
+| `needs` | number, formula of parameters | How many of the calls must answer for the unit to go on: a whole number up to the calls. All of them without it. A quorum is needs: 2 of 3 calls; a hedged read is needs: 1 of 2. |
+
+Holds branches: `flow -> stage: calls per unit`.
 
 ### connection
 
