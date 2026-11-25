@@ -52,6 +52,11 @@ export interface Expectation<C extends string = string> {
    * scenario's values without one. One flow with `flow`, every flow without.
    */
   lost?: number
+  /**
+   * With `flow`, and `lost` or a percentile: a stage on one of the flow's fan-out branches. The expectation then holds
+   * that branch up to the stage, the copies it loses or the time they take from the fan-out, not the flow itself.
+   */
+  to?: string
   /** A warning is reported but never fails a check run (`loadmap check`); default fail. */
   severity?: 'warn' | 'fail'
 }
@@ -204,19 +209,31 @@ function latencyCheck<P, C extends string>(
   if (!model.flowIds.includes(f)) throw new Error(`loadmap: no flow "${f}"`)
   const q = qs[0]!
   const under = e[q]!
-  const name = `the ${q} of ${model.def.flows[f]?.label ?? f}`
+  const name = `the ${q} of ${model.def.flows[f]?.label ?? f}${e.to == null ? '' : ` to ${e.to}`}`
+  // a branch's time, from its fan-out through the stage, or the flow's
+  const timeAt = (v: Partial<Values<P>>, bound?: 'low' | 'high') =>
+    e.to == null ? model.latency(v, bound, [f])[f] : model.branch(f, e.to, v, bound).latency
+  // the branch at the values shown: its stages, and its time, read once
+  const shown = e.to == null ? undefined : model.branch(f, e.to, ev.values as Partial<Values<P>>)
   const none = () =>
-    result(e, 'fail', [], { target: null, full: null }, `"${f}" has no latency: no stage on its way has a service time`)
+    result(
+      e,
+      'fail',
+      [],
+      { target: null, full: null },
+      e.to == null
+        ? `"${f}" has no latency: no stage on its way has a service time`
+        : `the branch of "${f}" to "${e.to}" has no latency: no stage on it has a service time, and no edge a delay`,
+    )
   const load = ev.values.load
-  const now = ev.latency[f]
+  const now = shown ? shown.latency : ev.latency[f]
   if (!now) return none()
   const at = (bound: 'low' | 'high', l: number) =>
-    model.latency({ ...values, load: l } as Partial<Values<P>>, bound, [f])[f]?.[q] ?? Number.NaN
+    timeAt({ ...values, load: l } as Partial<Values<P>>, bound)?.[q] ?? Number.NaN
   // measured data that is missing may move the answer either way: a capacity on its way, or any other reading
   const all = Object.values<ComponentResult<C>>(ev.components)
-  const onWay = new Set(
-    (ev.paths[f] ?? []).flatMap((w) => w.stages.map((s) => (ev.stages[s] as { component?: string }).component)),
-  )
+  const through = shown ? shown.stages : (ev.paths[f] ?? []).flatMap((w) => w.stages)
+  const onWay = new Set(through.map((s) => (ev.stages[s] as { component?: string }).component))
   const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
   const data = [
     ...all.filter((x) => onWay.has(x.id) && x.capacity?.unread).map((x) => `${x.short}: ${x.capacity!.unread}`),
@@ -267,19 +284,24 @@ function lostCheck<P, C extends string>(
 ): CheckResult<C> {
   if (e.component != null || e.notFull != null || PERCENTILES.some((q) => e[q] != null))
     throw new Error('loadmap: an expectation on what is lost takes no component, no notFull and no latency')
+  if (e.to != null && e.flow == null)
+    throw new Error('loadmap: an expectation on a branch (to) names the flow whose fan-out it is')
   const under = e.lost!
   const flows = e.flow == null ? model.flowIds : [e.flow]
   if (!flows.every((f) => model.flowIds.includes(f))) throw new Error(`loadmap: no flow "${e.flow}"`)
-  // the flow that loses the largest share speaks for all of them
+  // the flow that loses the largest share speaks for all of them; a branch speaks for itself
   const worst = (bound: 'low' | 'high', l: number) => {
-    const all = model.lost({ ...values, load: l } as Partial<Values<P>>, bound, flows)
+    const at = { ...values, load: l } as Partial<Values<P>>
+    if (e.to != null) return { f: flows[0]!, ...model.branch(flows[0]!, e.to, at, bound).lost }
+    const all = model.lost(at, bound, flows)
     const f = flows.reduce((a, x) => (all[x]!.share > all[a]!.share ? x : a), flows[0]!)
     return { f, ...all[f]! }
   }
   const at = (bound: 'low' | 'high', l: number) => worst(bound, l).share
   // a share is held to a millionth of a percent: the sums behind it are not exact
   const past = (x: number) => x > under + 1e-8
-  const name = (f: string) => model.def.flows[f]?.label ?? f
+  // a branch is named by where it goes: "orders to mailers"
+  const name = (f: string) => `${model.def.flows[f]?.label ?? f}${e.to == null ? '' : ` to ${e.to}`}`
   // any measured data that is missing may move what a flow loses: a capacity once, for its component
   const all = Object.values<ComponentResult<C>>(ev.components)
   const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))

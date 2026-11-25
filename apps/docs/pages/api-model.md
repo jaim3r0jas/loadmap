@@ -364,6 +364,7 @@ a page and its recordings say the same date on any day. `model.dateAt(multiple)`
 | `lasts`       | Nothing (or this component) runs out for this many seconds from `growth.asOf`; needs growth           |
 | `flow`        | With `p50`, `p95` or `p99` (seconds): the flow's latency stays under it, up to `underTarget` if given |
 | `lost`        | A share: `flow` (or each flow) loses at most this for good, up to `underTarget` if given              |
+| `to`          | With `flow`, and `lost` or a percentile: a stage on a fan-out branch; the branch is held, not the flow |
 | `severity`    | `'warn'` is reported but never fails a check run; default `'fail'`                                    |
 
 ```ts
@@ -447,6 +448,7 @@ its longest chain. `layout()` turns a view into a scene: [The layout](/api/more/
 | `utilization(values?, bound?)`                                 | Each component's utilization, without the crossings; `bound` reads every capacity at `'low'` or `'high'` |
 | `latency(values?, bound?, flows?)`                             | Each flow's latency, as `evaluate` gives it                                                              |
 | `lost(values?, bound?, flows?)`                                | What each flow loses for good, as `evaluate` gives it                                                    |
+| `branch(flow, to, values?, bound?)`                            | A fan-out branch up to a stage on it: its `stages`, what its copies `lost`, their `latency`              |
 | `stagesAt(values?)`                                            | `values`, `ctx`, `stages` and `paths` alone: cheap to call for many values                               |
 | `scenarioOf(values)`                                           | The scenario these values are (the load aside), or null                                                  |
 | `dateAt(multiple)`                                             | When the load reaches it, from `growth`; null without growth, and at 1× or below                         |

@@ -178,6 +178,18 @@ export interface DelayDef<P = any, F extends string = string, S extends string =
   flows?: readonly F[]
 }
 
+/** A fan-out branch at one set of values, up to a stage on it. */
+export interface BranchResult {
+  /** The fan-out the copies are made at. */
+  from: string
+  /** The stages the copies go through, the last of them the one asked for. */
+  stages: readonly string[]
+  /** What the copies lose on the way: turned away (at the fan-out too), failed, or dropped by a queue. */
+  lost: Lost
+  /** The time from the fan-out through the last stage; null where no stage or edge of it takes any. */
+  latency: Latency | null
+}
+
 /** A failure domain: its name ("Availability zone") and how many parts it has, from 2 up. */
 export interface Domain {
   name: string
@@ -553,6 +565,12 @@ export interface Model<P = any, F extends string = string, C extends string = st
   ): Readonly<Partial<Record<F, Latency | null>>>
   /** What each flow loses for good at these values, as `evaluate` gives it; with a bound and flows as `latency`. */
   lost(values?: Partial<Values<P>>, bound?: Bound, flows?: readonly F[]): Readonly<Partial<Record<F, Lost>>>
+  /**
+   * A fan-out branch of a flow, up to and with the stage `to` on it: its stages from the fan-out, what its copies lose
+   * on the way (of the copies the fan-out is asked for), and the time they take from the fan-out on. A branch is the
+   * asynchronous side of a flow, so it has figures of its own: none of them are in the flow's.
+   */
+  branch(flow: F, to: S, values?: Partial<Values<P>>, bound?: Bound): BranchResult
   /** The scenario whose values these are, ignoring the load; null when they match none. */
   scenarioOf(values: LooseValues): Scenario<P> | null
   /**
@@ -845,6 +863,11 @@ export function defineModel<
       throw new Error(`loadmap: ${name} names unknown component "${e.component}"`)
     if (e.flow != null && !(flowIds as readonly string[]).includes(e.flow))
       throw new Error(`loadmap: ${name} names unknown flow "${e.flow}"`)
+    if (e.to != null) {
+      if (!(stageIds as readonly string[]).includes(e.to))
+        throw new Error(`loadmap: ${name} names unknown stage "${e.to}"`)
+      if (e.flow == null) throw new Error(`loadmap: ${name} holds a branch (to): name the flow whose fan-out it is`)
+    }
     const qs = PERCENTILES.filter((q) => e[q] != null)
     if (e.lost != null) {
       if (!(e.lost >= 0 && e.lost < 1))
@@ -1278,6 +1301,7 @@ export function defineModel<
       context(def as any, { ...defaults(), ...partial }, bound).latencies(only) as Record<F, Latency | null>,
     lost: (partial, bound, only) =>
       context(def as any, { ...defaults(), ...partial }, bound).losts(only) as Record<F, Lost>,
+    branch: (f, to, partial, bound) => context(def as any, { ...defaults(), ...partial }, bound).branch(f, to),
     scenarioOf,
     dateAt: when,
     outageValues: (partial = {}) => {
@@ -2996,6 +3020,89 @@ function contextAt(
   ctx.derived = table(Object.keys(def.derived ?? {}), (k) =>
     memo(`derived ${k}`, () => (def.derived as Record<string, (c: any) => number>)[k]!(ctx)),
   )
+  /**
+   * A fan-out branch of a flow up to the stage `to`: what its copies lose and how long they take, walked as a way is.
+   * The copies asked for are what reaches the fan-out times the branch's copies; the fan-out turns its share of them
+   * away first. A queue's wait is no part of the time, as on a route.
+   */
+  const branch = (f: string, to: string): BranchResult =>
+    memo(`branch of ${f} to ${to}`, () => {
+      if (!flowIds.includes(f)) throw new Error(`loadmap: no flow "${f}"`)
+      // every branch of the flow's fan-outs that goes through the stage: their copies add up there
+      const found = [...new Set(paths(f).map((p) => p.stages.at(-1) ?? ''))]
+        .flatMap((t) => copiedTo(t, f).map((x) => ({ fan: t, ...x })))
+        .filter((x) => x.stages.includes(to))
+      if (!found.length) throw flowError(`loadmap: no fan-out branch of "${f}" goes through "${to}"`, f, 'route')
+      const causes: { stage: string; loss: Loss; rate: number }[] = []
+      const add = (stage: string, loss: Loss, rate: number) => {
+        if (!(rate > 0)) return
+        const known = causes.find((c) => c.stage === stage && c.loss === loss)
+        if (known) known.rate += rate
+        else causes.push({ stage, loss, rate })
+      }
+      const ways: WayTime[] = []
+      const unknown = new Set<string>()
+      let timed = false
+      let all = 0
+      for (const b of found) {
+        const chain = b.stages.slice(0, b.stages.indexOf(to) + 1)
+        const asked = arriving(b.fan, f) * b.share
+        all += asked
+        // what is offered to each stage as if those before kept up, and what actually gets there: a stage lets on at
+        // most what is offered to it × what it does not turn away, so a bottleneck before it is not counted again
+        let offered = asked
+        let r = asked * (1 - rejects(b.fan))
+        add(b.fan, 'rejected', asked - r)
+        // one way timed, or one for each cache that answers on it and each group of members a spread sets apart
+        let parts: WayTime[] = [{ share: asked, mean: 0, variance: 0 }]
+        for (const [j, s] of chain.entries()) {
+          const st = stages[s]!
+          const wait = delayOn(f, j ? chain[j - 1] : b.fan, s)
+          if (wait != null) timed = true
+          if (wait) parts = parts.map((w) => ({ ...w, mean: w.mean + wait, fixed: (w.fixed ?? 0) + wait }))
+          const rs = responses(s, f)
+          if (rs) timed = true
+          if (rs?.length === 1 && Number.isNaN(rs[0]!.time))
+            unknown.add(def.components[(st as { component: string }).component]!.name)
+          else if (rs)
+            parts = parts.flatMap((w) =>
+              rs.map((g) => ({
+                ...w,
+                share: w.share * g.share,
+                mean: w.mean + g.time,
+                variance: w.variance + g.time ** 2,
+              })),
+            )
+          if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
+            const left = Math.min(r, offered * (1 - rejectsFor(s, f)))
+            add(s, 'rejected', r - left)
+            r = left
+          }
+          const broke = r * failsAt(s)
+          add(s, 'failed', broke)
+          r -= broke
+          // the queue's reader is the branch's next stage, whether or not the branch is asked that far
+          const dropped = r * drops(f, s, b.stages[j + 1])
+          add(s, 'dropped', dropped)
+          r -= dropped
+          if (st.kind === 'cache') {
+            for (const w of parts) ways.push({ ...w, share: w.share * hit(s) })
+            parts = parts.map((w) => ({ ...w, share: w.share * (1 - hit(s)) }))
+            r *= 1 - hit(s)
+          }
+          offered *= onward(s)
+        }
+        ways.push(...parts)
+      }
+      const first = found[0]!
+      const total = causes.reduce((a, c) => a + c.rate, 0)
+      return {
+        from: first.fan,
+        stages: first.stages.slice(0, first.stages.indexOf(to) + 1),
+        lost: { rate: total, share: all > 0 ? Math.min(1, total / all) : 0, causes },
+        latency: timed ? { ...latencyOf(ways), ...(unknown.size ? { unknown: [...unknown] } : {}) } : null,
+      }
+    })
   const text = (v: string | ((c: any) => string) | undefined) => (typeof v === 'function' ? v(ctx) : v)
   /** A stock at these values; undefined for any other component. */
   const stock = (c: string): Stock | undefined => {
@@ -3049,6 +3156,7 @@ function contextAt(
     connectionText,
     assignment,
     hot,
+    branch,
     losts: (only: readonly string[] = flowIds) => {
       // each flow's on first read: a timeout's share costs the gamma fits
       const out = {}

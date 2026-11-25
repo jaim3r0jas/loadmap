@@ -182,6 +182,12 @@ export const CASES: Case[] = [
     asserts: [{ kind: 'change' }, { kind: 'contains', text: 'queue' }, { kind: 'contains', text: 'store' }],
   },
   {
+    id: 'expect-branch',
+    example: ALERTS,
+    request: 'Add an expectation that no copy of an alert on its way to the contacts is lost, up to 3× today.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'to: contacts' }, { kind: 'contains', text: 'lost:' }],
+  },
+  {
     id: 'param-option',
     example: SHOP,
     request: 'Let the worker pods also be 16.',

@@ -861,6 +861,7 @@ export class Compiler {
     const stageOf = new Map<string, { block: Block; box: Box }>()
     for (const box of boxes) for (const s of box.stages) stageOf.set(s.id, { block: s.block, box })
     this.kinds = new Map([...stageOf].map(([id, s]) => [id, s.block.keyword]))
+    this.single = new Map(boxes.flatMap((x) => (x.stages.length === 1 ? [[x.id, x.stages[0]!.id] as const] : [])))
     const boxById = new Map(boxes.map((b) => [b.id, b]))
 
     // the model
@@ -1327,7 +1328,8 @@ export class Compiler {
       const hop = (f: string) =>
         waysOf(shape, f).ways.some((w) => w.some((s, i) => s === to && w[i - 1] === from)) || waysOf(shape, f).open
       // an edge can be both: a hop of one flow's route, and where another flow starts
-      const between = Object.hasOwn(stageDefs, from) && Object.keys(routes).some(hop)
+      const between =
+        Object.hasOwn(stageDefs, from) && (Object.keys(routes).some(hop) || this.branchHops.has(`${from}\u0000${to}`))
       if (between) delays.push({ from, to, delay })
       if (starting.length) delays.push({ to, delay, flows: starting })
       if (!between && !starting.length)
@@ -1854,6 +1856,10 @@ export class Compiler {
   private wayAt: { split: string; flow: string; stages: string[]; at: Span }[] = []
   private branchAt = new Map<string, Span>()
   private whenAt = new WeakMap<EdgeDef, Span>()
+  /** The hops along fan-out branches, `from\0to`: from the fan-out to a branch's first stage, and on along it. */
+  private branchHops = new Set<string>()
+  /** The one stage of each box that holds exactly one, by the box's id: a stage may be named by its box. */
+  private single = new Map<string, string>()
   /** Each stage's keyword: what a fan-out's branch may go through. */
   private kinds = new Map<string, string>()
   /** The edges that hold a delay, as written: the model takes them once the stages and flows are known. */
@@ -3248,7 +3254,33 @@ export class Compiler {
     const component = this.named(b, 'component', [...components.keys()], 'component')
     const flow = this.named(b, 'flow', [...flows.keys()], 'flow')
     const down = this.named(b, 'down', [...this.domainIds.keys()], 'domain')
-    if (scenario === null || component === null || flow === null || down === null) return undefined
+    // a stage on one of the flow's fan-out branches: the expect then holds the branch up to it
+    // by the stage's name, or its box's where the box holds one stage: as a route and a branch name it
+    const where = this.prop(b, 'to')
+    if (where?.chain && where.chain.length > 1) {
+      this.report.error(
+        'bad-expect',
+        where.value,
+        'to is one stage of a branch, the one it is held up to',
+        'to: mailers',
+      )
+      return undefined
+    }
+    const named = this.named(b, 'to', [...this.kinds.keys(), ...this.single.keys()], 'stage')
+    const to = named == null ? named : (this.single.get(named) ?? named)
+    if (scenario === null || component === null || flow === null || down === null || to === null) return undefined
+    if (to != null) {
+      if (flow == null || !(b.props.has('lost') || ['p50', 'p95', 'p99'].some((q) => b.props.has(q)))) {
+        this.report.error(
+          'bad-expect',
+          this.prop(b, 'to')!.key,
+          'to is a stage on a fan-out branch of a flow: name the flow, and what its branch must keep',
+          'flow: orders; to: mailers; lost: 1%',
+        )
+        return undefined
+      }
+      e.to = to
+    }
     if (scenario != null) e.scenario = scenario
     if (down != null) e.down = down
     if (component != null) e.component = component
@@ -3921,6 +3953,8 @@ export class Compiler {
           let fits = true
           for (const [k, stage] of stages.entries()) {
             if (!stage) continue
+            // a hop of the branch, as two stages next to each other on a route are: an edge's delay counts on it
+            this.branchHops.add(`${k ? stages[k - 1] : id}\u0000${stage}`)
             reached.add(stage)
             this.branchAt.set(`${f.name}\u0000${stage}`, e)
             const kind = this.kinds.get(stage)

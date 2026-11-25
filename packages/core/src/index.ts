@@ -36,6 +36,7 @@ export type {
 } from './measure'
 export {
   type Assumption,
+  type BranchResult,
   type ComponentDef,
   type ComponentResult,
   type ComponentState,

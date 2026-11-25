@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cache, defineModel, fanout, limit, measured, p, queue, sink, store, workers } from '../src'
+import { cache, check, defineModel, fanout, limit, measured, p, pass, queue, sink, store, workers } from '../src'
 
 // 100 orders a second at 1× to a bus that copies each into a mail queue, read by the mailers, sent through a relay
 // that takes 150 and on to an inbox; and twice into an audit log
@@ -83,5 +83,75 @@ describe('a fan-out branch that goes on', () => {
     expect(() => shop({ to: ['mailQueue', 'bus'] }).evaluate()).toThrow(
       'fan-out "bus" branches "orders" back through "bus", a stage of its own route',
     )
+  })
+
+  it('has figures of its own: what its copies lose up to a stage, of the copies asked for', () => {
+    // at 3× the relay lets 150 of 300 on; a cache answering a fifth and a relay failing a tenth lose 8 of 100 at 1×
+    const over = shop().branch('orders', 'inbox', { load: 3 })
+    expect(over).toMatchObject({
+      from: 'bus',
+      stages: ['mailQueue', 'mailers', 'seen', 'relay', 'inbox'],
+      latency: null,
+    })
+    expect(over.lost).toEqual({
+      rate: expect.closeTo(150, 6),
+      share: expect.closeTo(0.5, 9),
+      causes: [{ stage: 'relay', loss: 'rejected', rate: expect.closeTo(150, 6) }],
+    })
+    const some = shop({ hit: 0.2, fails: 0.1 }).branch('orders', 'inbox', { load: 1 }).lost
+    expect(some.causes).toEqual([{ stage: 'relay', loss: 'failed', rate: expect.closeTo(8, 9) }])
+    expect(some.share).toBeCloseTo(0.08, 12)
+    // up to a stage before the relay nothing is lost, and the flow itself loses none of it
+    expect(shop().branch('orders', 'mailers', { load: 3 }).lost.share).toBe(0)
+    expect(shop().evaluate({ load: 3 }).lost.orders.share).toBe(0)
+    expect(() => shop().branch('orders', 'bus')).toThrow('no fan-out branch of "orders" goes through "bus"')
+  })
+
+  it('counts a bottleneck on the branch once, and adds up the branches that go through a stage', () => {
+    // 200 copies: a gate lets 100 through, and the relay behind it takes 150, so it turns none of them away
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { orders: { rate: ({ load }) => 200 * load } },
+      components: {
+        gate: { name: 'Gate', capacity: measured(100, 'msg/s'), over: 'x' },
+        relay: { name: 'Relay', capacity: measured(150, 'msg/s'), over: 'x' },
+      },
+      stages: {
+        bus: fanout({
+          to: [
+            { stages: ['gate', 'relay', 'inbox'], share: 1 },
+            { stages: ['side', 'inbox'], share: 1 },
+          ],
+        }),
+        gate: pass('gate'),
+        relay: limit('relay'),
+        side: sink(),
+        inbox: sink(),
+      },
+      routes: { orders: ['bus'] },
+    })
+    expect(m.branch('orders', 'relay', { load: 1 }).lost).toEqual({
+      rate: expect.closeTo(100, 6),
+      share: expect.closeTo(0.5, 9),
+      causes: [{ stage: 'gate', loss: 'rejected', rate: expect.closeTo(100, 6) }],
+    })
+    // two branches reach the inbox: 400 copies asked, the 100 the gate turned away lost
+    expect(m.branch('orders', 'inbox', { load: 1 }).lost.share).toBeCloseTo(0.25, 9)
+  })
+
+  it('is held by an expectation with to, which names it', () => {
+    const said = check(shop(), [
+      { flow: 'orders', to: 'inbox', lost: 0.01, underTarget: 2 },
+      { flow: 'orders', to: 'inbox', lost: 0.01, underTarget: 1.2 },
+      { flow: 'orders', to: 'mailers', lost: 0 },
+    ]).map((r) => `${r.outcome}: ${r.message}`)
+    expect(said).toEqual([
+      'fail: expected at least 2×, but more than 1 % of orders to inbox is lost from 1.5×',
+      'pass: at most 1 % of orders to inbox is lost up to 1.5×',
+      'pass: nothing of orders to mailers is lost at 1×',
+    ])
+    const bad = (e: object) => () => defineModel({ ...shop().def, expect: [e] } as never)
+    expect(bad({ to: 'inbox', lost: 0.01 })).toThrow('holds a branch (to): name the flow whose fan-out it is')
+    expect(bad({ flow: 'orders', to: 'nope', lost: 0.01 })).toThrow('names unknown stage "nope"')
   })
 })
