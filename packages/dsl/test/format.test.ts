@@ -324,7 +324,7 @@ describe('format', () => {
   })
 
   // every-statement compiles twice over for each slice, and its breaker asks its flow's failures at each load the
-  // ranking scans: a minute, not the default 30 s
+  // ranking scans. It holds every statement there is, so it grows with the language: two minutes, not the default 30 s
   it('never throws, and whatever it formats stays the same definition', () => {
     let seed = 7
     const rnd = () => {
@@ -349,5 +349,5 @@ describe('format', () => {
         }
       }
     expect(formatted).toBeGreaterThan(50)
-  }, 60_000)
+  }, 120_000)
 })
