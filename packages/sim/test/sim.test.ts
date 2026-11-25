@@ -483,6 +483,43 @@ describe('lost boxes', () => {
     expect([...(ends.get('out') ?? [])]).not.toContain('timedout')
   })
 
+  it('sends a retry through its flow’s breaker as the first attempt went: the dots end as the model counts', () => {
+    // 200 a second against pricing's 100, a breaker past 20 % and two retries: half get through, 47 % fail fast for
+    // good at the source, 3 % at pricing, and 62.5 dots in a hundred units reach a stage
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      flows: { quotes: { rate: 200, breaker: { opens: 0.2 }, retry: { times: 2 } } },
+      components: {
+        api: { name: 'API', capacity: measured(10_000, 'u/s'), over: '' },
+        pricing: { name: 'Pricing', capacity: measured(100, 'u/s'), over: '' },
+      },
+      stages: { api: pass('api'), pricing: pass('pricing'), gone: lost({ from: ['pricing'] }), out: sink() },
+      routes: { quotes: ['api', 'pricing', 'out'] },
+    })
+    const sim = createSim(m, m.evaluate(), { seed: 3, speed: 10, maxDots: 80, dotTarget: 100 })
+    const seen = new Map<number, { moved: boolean; outcome?: string; at?: string | null }>()
+    for (let i = 0; i < 60 * 120; i++) {
+      sim.step(1 / 60)
+      for (const d of sim.particles) {
+        const k = seen.get(d.id) ?? { moved: d.phase === 'move' }
+        if (d.phase === 'fade') {
+          k.outcome = d.outcome
+          k.at = d.to.stage
+        }
+        seen.set(d.id, k)
+      }
+    }
+    const all = [...seen.values()].filter((k) => k.outcome)
+    const delivered = all.filter((k) => k.outcome === 'delivered').length
+    const fast = all.filter((k) => !k.moved).length
+    const counted = all.filter((k) => k.at === 'gone').length
+    const units = delivered + fast + counted
+    expect(delivered / units).toBeCloseTo(0.5, 1)
+    expect(fast / units).toBeCloseTo(0.4675, 1)
+    expect(counted / units).toBeCloseTo(0.0325, 1)
+    expect(all.filter((k) => k.moved).length / units).toBeCloseTo(0.625, 1)
+  })
+
   it('sends a dot that fails at a hop that retries again from there, as often as the model counts', () => {
     // payments fails 40 %, and its caller sends a call again twice: 1.56 attempts a unit, 6.4 % failing all three
     const m = defineModel({

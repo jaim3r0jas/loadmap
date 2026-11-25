@@ -443,7 +443,8 @@ export class Sim {
         acc -= 1
         if (this.particles.length >= maxParticles) continue
         // a closed breaker draws nothing: the recording stays the one without it
-        if (br && br.admitted < 1 && this.#r() >= br.admitted) {
+        const admittedAs = this.#admit(f, 0)
+        if (admittedAs.fast) {
           this.particles.push(this.#failFast(f))
           continue
         }
@@ -452,6 +453,7 @@ export class Sim {
           id: this.#nextId++,
           flow: f,
           leg: 0,
+          ...(admittedAs.attempt > 0 && { attempt: admittedAs.attempt }),
           ...(path != null && { path }),
           phase: 'move',
           t: 0,
@@ -462,6 +464,21 @@ export class Sim {
       }
       this.#spawn.set(f, acc)
     }
+  }
+
+  /**
+   * An attempt at the flow's breaker: an open one fails it fast with the share the model counts, and the client sends
+   * it again while it has retries left. `fast` when the last of them failed fast too; else the attempt that got in.
+   */
+  #admit(flow: string, attempt: number): { attempt: number; fast: boolean } {
+    const br = this.#ev.breakers[flow]
+    const r = this.#ev.retry[flow]
+    let n = attempt
+    while (br && br.admitted < 1 && this.#r() >= br.admitted) {
+      if (!r || n >= r.times || this.#r() >= r.retried) return { attempt: n, fast: true }
+      n++
+    }
+    return { attempt: n, fast: false }
   }
 
   /**
@@ -516,6 +533,9 @@ export class Sim {
     const r = this.#ev.retry[d.flow]
     const attempt = (d.attempt ?? 0) + 1
     if (!r || attempt > r.times || this.#r() >= r.retried) return null
+    // a retry goes through the flow's breaker as the first attempt did
+    const admittedAs = this.#admit(d.flow, attempt)
+    if (admittedAs.fast) return this.#failFast(d.flow)
     // a retry is a new attempt: it may go another way
     const path = this.#pick(d.flow)
     return {
@@ -528,7 +548,7 @@ export class Sim {
       dur: this.#o.legSeconds,
       from: { stage: null },
       to: this.#place(this.#way(d.flow, path)[0]!, d.flow),
-      attempt,
+      attempt: admittedAs.attempt,
     }
   }
 

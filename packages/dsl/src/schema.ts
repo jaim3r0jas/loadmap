@@ -1040,7 +1040,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
     children: [],
   },
   breaker: {
-    doc: 'A circuit breaker in its callers: past opens, a share of its attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share at which the failures among what it admits are opens; below that it stays closed. What it fails fast goes to the fallback, if any. A flow that retries takes none.',
+    doc: 'A circuit breaker in its callers: past opens, a share of its attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share at which the failures among what it admits are opens; below that it stays closed. What it fails fast goes to the fallback, if any. Its retries go through it: a call failed fast is a failed attempt, sent again. Not with a retry at a hop, nor with retries and a timeout at once.',
     since: '1.7',
     example: 'breaker { opens: 50% }',
     args: [],

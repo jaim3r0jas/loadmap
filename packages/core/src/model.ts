@@ -91,7 +91,8 @@ export interface FlowDef<X> {
    * A circuit breaker in its callers: past `opens`, a share of its attempts failing, it fails calls fast, so they reach
    * no stage. In steady state it admits the share α of the flow at which the failures among the admitted calls are
    * `opens`, p(α·rate) = opens; below that it stays closed. What it fails fast goes to the fallback, if any. It reads
-   * only the load and the parameters; a flow that retries takes none, since the two would depend on each other.
+   * only the load and the parameters. Its client's retries go through it: a call failed fast is a failed attempt,
+   * sent again like any other. It goes with no retry at a hop, and not with retries and a timeout at once.
    */
   breaker?: { opens: number } | ((values: LooseValues) => { opens: number } | undefined)
 }
@@ -491,8 +492,13 @@ export interface Evaluation<P = any, F extends string = string, C extends string
   overload: Readonly<Record<F, Overload>>
   /** The retries of each flow that has a retry rule. */
   retry: Readonly<Partial<Record<F, Retry>>>
-  /** Each flow's breaker, when it has one: what the flow sends, the share it admits, and what it fails fast a second. */
-  breakers: Readonly<Partial<Record<F, { opens: number; rate: number; admitted: number; failedFast: number }>>>
+  /**
+   * Each flow's breaker, when it has one: the units the flow sends a second (`rate`), the calls its client sends with
+   * its retries (`sent`), the share of those it admits, and the calls it fails fast a second.
+   */
+  breakers: Readonly<
+    Partial<Record<F, { opens: number; rate: number; sent: number; admitted: number; failedFast: number }>>
+  >
   /** Each flow's fallback, when it has one, and the units a second it serves: what the flow fails for good. */
   fallbacks: Readonly<Partial<Record<F, Fallback<S> & { rate: number }>>>
   /** Each flow's time through, from the service times of its stages; null for a flow none of them has one on. */
@@ -1048,6 +1054,7 @@ export function defineModel<
       breakerOf,
       admitted,
       failedFast,
+      sent,
       rate,
       outage,
       poolOut,
@@ -1182,9 +1189,11 @@ export function defineModel<
       breakers: Object.fromEntries(
         flowIds.flatMap((f) => {
           const b = breakerOf(f)
-          return b ? [[f, { opens: b.opens, rate: rate(f), admitted: admitted(f), failedFast: failedFast(f) }]] : []
+          return b
+            ? [[f, { opens: b.opens, rate: rate(f), sent: sent(f), admitted: admitted(f), failedFast: failedFast(f) }]]
+            : []
         }),
-      ) as Partial<Record<F, { opens: number; rate: number; admitted: number; failedFast: number }>>,
+      ) as Partial<Record<F, { opens: number; rate: number; sent: number; admitted: number; failedFast: number }>>,
       fallbacks: Object.fromEntries(
         flowIds.flatMap((f) => {
           const fb = def.flows[f].fallback
@@ -1543,9 +1552,18 @@ function contextAt(
         throw new Error(
           `loadmap: flow "${f}"'s breaker opens past a share of failures above 0 and below 1, not ${v.opens}`,
         )
-      if (v != null && retrying(f))
+      // its client's retries go through the breaker, attempt by attempt; a hop's would start again behind it
+      if (v != null && rulesOf(f).hops.size)
         throw flowError(
-          `loadmap: flow "${f}" has a breaker and retries: each would decide what the other sees, so give it one of them`,
+          `loadmap: flow "${f}" has a breaker and a retry at a hop: the breaker is in its callers, so give it the client's retry or none`,
+          f,
+          'breaker',
+        )
+      // a timeout's share is held while the retries settle, and a breaker's trials would read it at every rate alike:
+      // the three have no point they settle at together
+      if (v != null && retryOf(f) && timeoutOf(f) != null)
+        throw flowError(
+          `loadmap: flow "${f}" has a breaker, retries and a timeout: the three do not settle together, so give it two of them`,
           f,
           'breaker',
         )
@@ -1562,12 +1580,14 @@ function contextAt(
     memo(`admitted of ${f}`, () => {
       if (admitsAll?.has(f)) return 1
       const b = breakerOf(f)!
-      const lam = rate(f)
+      const lam = sent(f)
       // each trial holds the flow at its trial rate, the other values and the averaged flag as they are here
       const excess = (x: number) =>
         context(def, values, bound, pinned, fixed, slow, averaged, { ...trial, [f]: x * lam }).failure(f) - b.opens
       if (!(lam > 0)) return 1
-      const full = failsWhole && Object.hasOwn(failsWhole, f) ? failsWhole[f]! - b.opens : excess(1)
+      // what it failed admitted whole is known only at the same attempts: with retries of its own to settle, not here
+      const whole = failsWhole && Object.hasOwn(failsWhole, f) && (fixed != null || !retryOf(f))
+      const full = whole ? failsWhole[f]! - b.opens : excess(1)
       if (!(full > 0)) return 1
       // the secant's other end: nothing admitted fails nothing. Where something fails anyway (a latency past the
       // timeout at any rate) the root is 0, and the bisections reach it.
@@ -1601,17 +1621,28 @@ function contextAt(
       return lo
     })
   /** What a flow's breaker fails fast, units a second: they reach no stage. */
-  const failedFast = (f: string) =>
-    breakerOf(f) && !(trial && Object.hasOwn(trial, f)) && !admitsAll?.has(f) ? rate(f) * (1 - admitted(f)) : 0
+  const failedFast = (f: string) => (breaking(f) ? sent(f) * (1 - admitted(f)) : 0)
+  /** The flow's breaker decides here: it has one, and is neither on a trial of it nor taken to admit everything. */
+  const breaking = (f: string) => breakerOf(f) != null && !(trial && Object.hasOwn(trial, f)) && !admitsAll?.has(f)
+  /**
+   * What a flow's client sends a second, its retries with it: the attempts held while the retries are solved, or the
+   * ones they settled at. A breaker admits a share of these.
+   */
+  const sent = (f: string): number =>
+    fixed && Object.hasOwn(fixed, f)
+      ? fixed[f]!
+      : retryOf(f)
+        ? retries()[f]!.attempts
+        : // a breaker's trials ask it again and again: kept. A plain flow's rate is the flow itself, one step in a loop
+          breakerOf(f)
+          ? rate(f)
+          : rateOf(f)
   ctx.flows = table(flowIds, (f) =>
     memo(
       `flow ${f}`,
       () => {
-        if (fixed && Object.hasOwn(fixed, f)) return fixed[f]!
         if (trial && Object.hasOwn(trial, f)) return trial[f]!
-        if (admitsAll?.has(f)) return rate(f)
-        if (breakerOf(f)) return rate(f) * admitted(f)
-        return retryOf(f) ? retries()[f]!.attempts : rateOf(f)
+        return sent(f) * (breaking(f) ? admitted(f) : 1)
       },
       f,
     ),
@@ -1862,9 +1893,15 @@ function contextAt(
       // a unit that got through can still be too slow for its client; a dropped one is lost at its queue, never
       // sent again: it neither failed nor got through
       const late = slow?.[f] ?? timedOut(f)
-      if (!(late > 0)) return failed
       // without a drop both say the same: the second keeps every digit a flow with no drop rule had
-      return dropped > 0 ? failed + Math.max(0, 1 - failed - dropped) * late : 1 - (1 - failed) * (1 - late)
+      const among = !(late > 0)
+        ? failed
+        : dropped > 0
+          ? failed + Math.max(0, 1 - failed - dropped) * late
+          : 1 - (1 - failed) * (1 - late)
+      // for a client that retries through a breaker, a call failed fast is a failed attempt as well: of what it sends,
+      // only the admitted share can get through. The breaker's own trials read the share among the admitted.
+      return breaking(f) && retryOf(f) ? 1 - admitted(f) * (1 - among) : among
     })
 
   /**
@@ -2018,7 +2055,29 @@ function contextAt(
     const r = retrying(f) ? retries()[f] : undefined
     // with a retry at a hop each stage's failures are sent again by the rules around it, not all by the same ones
     if (r?.hops) return failing.reduce((a, c) => a + (!at || at.has(c.stage) ? c.rate * kept(f, c) : 0), 0)
-    return r ? (all > 0 ? (r.rate * r.failed * there) / all : 0) : there
+    return r ? there * perAttempt(f, r, all) : there
+  }
+  /**
+   * Of a retrying flow's failed attempts, the share that fail for good: the units failing every attempt over the
+   * attempts that fail, at a stage or fast at its breaker. One rule for both, so they add up to what is lost.
+   */
+  const perAttempt = (f: string, r: Retry, atStages: number) => {
+    const failing = atStages + failedFast(f)
+    return failing > 0 ? (r.rate * r.failed) / failing : 0
+  }
+  /** What a flow's breaker fails fast for good, units a second: with retries, its share of what fails every attempt. */
+  const fastForGood = (f: string) => {
+    const fast = failedFast(f)
+    const r = fixed || !retryOf(f) ? undefined : retries()[f]
+    if (!r || !(fast > 0)) return fast
+    return (
+      fast *
+      perAttempt(
+        f,
+        r,
+        causes(f).reduce((a, c) => a + (c.loss === 'dropped' ? 0 : c.rate), 0),
+      )
+    )
   }
   /**
    * Of the attempts a stage fails, the share that fail for good, for a flow retried at a hop: the product, over the
@@ -2041,7 +2100,7 @@ function contextAt(
    * The units a second a flow's fallback serves: what it fails for good past where it falls back after; what failed
    * before it never reached it.
    */
-  const failedFor = (f: string) => memo(`${f} failed for good`, () => forGood(f, pastAfter(f)) + failedFast(f))
+  const failedFor = (f: string) => memo(`${f} failed for good`, () => forGood(f, pastAfter(f)) + fastForGood(f))
   /**
    * What reaches a lost box of a flow: what its stages lose of what it takes, after every retry. The units a flow fails for
    * good (the model's failed share; without retries, every failure) are shared out over the rejections and timeouts in
@@ -2071,7 +2130,7 @@ function contextAt(
     memo(`${f} lost for good`, () => {
       const all = causes(f)
       const failing = all.reduce((a, c) => a + (c.loss === 'dropped' ? 0 : c.rate), 0)
-      const hops = !fixed && retrying(f) && retries()[f]!.hops != null
+      const hops = !fixed && retrying(f) && retries()[f]?.hops != null
       const k = hops ? 0 : failing > 0 ? Math.min(1, forGood(f) / failing) : 0
       const fb = def.flows[f]!.fallback
       const served = pastAfter(f)
@@ -2086,11 +2145,11 @@ function contextAt(
           out.push({ stage: s, loss: 'rejected', rate: turned })
           out.push({ stage: s, loss: 'failed', rate: (arriving(s, f) - turned) * failsAt(s) })
         }
-      else out.push({ loss: 'rejected', rate: failedFast(f) })
+      else out.push({ loss: 'rejected', rate: fastForGood(f) })
       const causesLeft = out.filter((c) => c.rate > 0)
       const total = causesLeft.reduce((a, c) => a + c.rate, 0)
-      const sent = rate(f)
-      return { rate: total, share: sent > 0 ? Math.min(1, total / sent) : 0, causes: causesLeft }
+      const units = rate(f)
+      return { rate: total, share: units > 0 ? Math.min(1, total / units) : 0, causes: causesLeft }
     })
 
   const retries = (): Record<string, Retry> =>
@@ -2099,7 +2158,8 @@ function contextAt(
       const rules = new Map<string, { flow: string; at?: string; rule: RetryRule }>()
       for (const f of flowIds) {
         const { top, hops } = rulesOf(f)
-        if (top) rules.set(f, { flow: f, rule: top })
+        // on a breaker's trial the flow's rate is the trial's: its client's retries are settled around it, not here
+        if (top && !(trial && Object.hasOwn(trial, f))) rules.set(f, { flow: f, rule: top })
         for (const [at, rule] of hops) {
           rules.set(`${f}@${at}`, { flow: f, at, rule })
         }
@@ -2286,13 +2346,13 @@ function contextAt(
           const retried =
             p > 0 && excess(p, times) > e[f]! * (1 + 1e-12) ? root((y) => excess(y, times), e[f]!, p) / p : 1
           // a flow that sends nothing retries nothing
-          const sent = sends(f)
+          const sending = sends(f)
           return {
             times,
             attempts: a[f]!,
             rejected: p,
-            retried: sent ? retried : 1,
-            failed: sent ? 1 - (1 - p) * (1 + e[f]!) : 0,
+            retried: sending ? retried : 1,
+            failed: sending ? 1 - (1 - p) * (1 + e[f]!) : 0,
           }
         }
         for (const f of new Set(ids.map(flowOf))) {
@@ -2911,6 +2971,7 @@ function contextAt(
     breakerOf,
     admitted,
     failedFast,
+    sent,
     rate,
     outage,
     poolOut,

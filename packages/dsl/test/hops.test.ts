@@ -109,3 +109,46 @@ describe('a retry at a hop, in the language', () => {
     ])
   })
 })
+
+describe('a breaker with retries, in the language', () => {
+  const src = `loadmap 1.7
+load { max: 10 }
+
+flow quotes "quotes" {
+  rate: 200 * load
+  retry { times: 2 }
+  breaker { opens: 20% }
+  from: shop
+  route: pricing
+}
+
+node shop "Shop"
+node pricing "Pricing" {
+  pass
+  capacity: measured(100, "req/s")
+  over: "quotes fail"
+}
+
+shop -> pricing
+`
+
+  it('is read by a file of any version: the client’s attempts go through the breaker', () => {
+    expect(format(src).text).toBe(src)
+    const r = compile(src)
+    expect(r.diagnostics).toEqual([])
+    const ev = r.definition!.model.evaluate({ load: 1 })
+    // the breaker admits the 125 a second at which pricing fails 20 %, of the 485 the client sends
+    expect(ev.at.pricing!.quotes).toBeCloseTo(125, 6)
+    expect(ev.retry.quotes!.attempts).toBeCloseTo(484.7322101863, 6)
+    expect(ev.lost.quotes!.share).toBeCloseTo(0.5, 9)
+  })
+
+  it('takes no retry at a hop', () => {
+    const hop = src
+      .replace('loadmap 1.7', 'loadmap 1.8')
+      .replace('retry { times: 2 }', 'retry { at: pricing; times: 2 }')
+    expect(errors(hop)).toEqual([
+      'error: model: flow "quotes" has a breaker and a retry at a hop: the breaker is in its callers, so give it the client\'s retry or none',
+    ])
+  })
+})
