@@ -1690,6 +1690,34 @@ api -> kafka -> workerPool
     expect(left!.empties).toBeCloseTo(7_200, 3)
   })
 
+  it("compile a moment's way up: a preset's ramp and an autoscaler's ready time, as TypeScript writes them", () => {
+    const dsl = model(`loadmap 1.8
+load "Load" { max: 20; default: 1 }
+preset "Flash sale" { load: 8; lasts: 10min; ramp: 30s }
+flow requests "requests" { rate: 100 * load; route: api; from: users }
+node users "Users"
+pool api "API" {
+  perPod: 4
+  autoscale { min: 2; max: 12; target: 0.7; ready: 90s }
+  capacity: measured(1_200, "req/s")
+  over: "requests queue"
+}
+users -> api
+`)
+    const ts = defineModel({
+      load: p.load({ label: 'Load', max: 20, default: 1 }),
+      flows: { requests: { label: 'requests', rate: ({ load }) => 100 * load } },
+      components: { api: { name: 'API', capacity: measured(1_200, 'req/s'), over: 'requests queue' } },
+      stages: { api: workers('api', { perPod: 4, autoscale: { min: 2, max: 12, target: 0.7, ready: 90 } }) },
+      routes: { requests: ['api'] },
+      presets: { 'Flash sale': { load: 8 } },
+      peaks: { 'Flash sale': 600 },
+      ramps: { 'Flash sale': 30 },
+    })
+    expect([dsl.def.peaks, dsl.def.ramps]).toEqual([ts.def.peaks, ts.def.ramps])
+    expect(dsl.evaluate({ load: 8 } as never).stages.api).toEqual(ts.evaluate({ load: 8 }).stages.api)
+  })
+
   it('compile stocks: one that keeps what it gains, one that grows, each flow at its average', () => {
     const dsl = model(`loadmap 1.7
 load "Load" { max: 10; default: 1 }

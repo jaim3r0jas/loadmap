@@ -181,6 +181,27 @@ at the default load: "After 2 h of Black Friday, 1.4M events wait in the events 
 sim builds the same backlog: a reader drains at its component's `full`, priority 1 first, and a `drop` or a `merge`
 leaves less.
 
+A moment has a way up too (from `loadmap 1.8`): `ramp: 30s` on the preset is how long the load takes to climb from the
+default to the preset's, and `ready: 90s` on an autoscaler is how long after a pod is wanted it takes work. No steady
+figure changes. While the preset is shown, the verdict says what is lost on the way: the load climbs over the ramp,
+a pool takes the pods it wants only its `ready` time later, and until then it has the share of its capacity those pods
+give ("8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready"). The walk is a
+fixed number of steps over the ramp and the moment's length, with no clock and no randomness; a published figure is
+never scaled, so a pool still starting pods has none then. In TypeScript, `ramps` beside `peaks`, `ready` in the
+`autoscale`, and `moment(model, values, preset)` from `@loadmap/core/moments`.
+
+```loadmap
+preset "Flash sale" { load: 8; lasts: 10min; ramp: 30s }
+
+pool api "API" "2 to 12 pods" {
+  perPod: 4
+  autoscale { min: 2; max: 12; target: 0.7; ready: 90s }
+  demand: flows.requests
+  capacity: measured(12 * 100, "req/s", "load test, 12 pods")
+  over: "requests are turned away"
+}
+```
+
 An `expect` holds a moment (from `loadmap 1.8`): `preset` names it, `lag` is the longest the oldest unit waiting may
 have waited when it ends, and `clears` the longest the reader may then take to empty the queue at the default load.
 One `queue`, or every queue without. Like every expect it is held on the pessimistic edge, every capacity at its low
@@ -2011,7 +2032,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute` | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up | |
 
 ## In code
 
@@ -2318,6 +2339,7 @@ After the keyword: label.
 | Property | Value | |
 | --- | --- | --- |
 | `lasts` | number in seconds, constant | How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load. From loadmap 1.7. |
+| `ramp` | number in seconds, constant | How long the load takes to climb from the default to the preset's, before the moment holds: 30s. Needs lasts. The verdict then says what is lost on the way: "8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready". From loadmap 1.8. |
 | `down` | domain, constant | A failure domain with one part out (N−1): what the Outage control sets. From loadmap 1.7. |
 
 Its properties are named by parameters (and `load`).
@@ -2952,6 +2974,7 @@ autoscale { min: 2; max: 10; target: 0.7 }
 | `min` (required) | number, formula | The fewest pods, at least 1. |
 | `max` (required) | number, formula | The most pods. |
 | `target` (required) | share, formula | The utilization each running pod is held at, above 0 and at most 1: 0.7 scales out above 70 %. |
+| `ready` | number in seconds, formula | Seconds from when a pod is wanted until it takes work: 90s. No steady figure changes; in a preset's moment the pods the autoscaler wants count only that long after, and the verdict says what is lost meanwhile. From loadmap 1.8. |
 
 ### split
 

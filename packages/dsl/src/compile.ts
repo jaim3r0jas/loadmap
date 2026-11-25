@@ -896,6 +896,7 @@ export class Compiler {
     for (const b of params) if (b.args.id) paramDefs[b.args.id.name] = this.param(b)
     const presets: Record<string, Record<string, unknown>> = {}
     const peaks: Record<string, number> = {}
+    const ramps: Record<string, number> = {}
     for (const b of byKind('preset')) {
       const label = this.text(b.args.label)
       if (label == null) continue
@@ -905,6 +906,21 @@ export class Compiler {
       if (lasts != null) {
         if (lasts > 0 && Number.isFinite(lasts)) peaks[label] = lasts
         else this.report.error('out-of-range', this.prop(b, 'lasts')!.value, 'a peak lasts a time above 0')
+      }
+      // the way up to the moment: a parameter named ramp is set here as any value is
+      const ramp = params.some((x) => x.args.id?.name === 'ramp') ? undefined : this.constProp<number>(b, 'ramp')
+      if (ramp != null) {
+        const at = this.prop(b, 'ramp')!
+        if (!(ramp >= 0 && Number.isFinite(ramp)))
+          this.report.error('out-of-range', at.value, 'a ramp is a time from 0')
+        else if (lasts == null)
+          this.report.error(
+            'bad-value',
+            at.key,
+            'a ramp is the way up to a moment: say how long it lasts',
+            'lasts: 10min',
+          )
+        else ramps[label] = ramp
       }
       const l = this.prop(b, 'load')
       if (l && load && typeof set.load === 'number' && !(set.load >= load.min && set.load <= load.max))
@@ -1365,6 +1381,7 @@ export class Compiler {
     if (title != null) model.title = title
     if (Object.keys(presets).length) model.presets = presets
     if (Object.keys(peaks).length) model.peaks = peaks
+    if (Object.keys(ramps).length) model.ramps = ramps
     if (Object.keys(scenarios).length) model.scenarios = scenarios
     if (growth) model.growth = growth
     if (Object.keys(domains).length) model.domains = domains
@@ -3347,7 +3364,7 @@ export class Compiler {
     for (const [k, props] of b.props) {
       // a step's own properties; its other lines are values. A parameter named lasts or down keeps its value, as
       // before 1.7
-      if (own(b.spec.props, k) && !((k === 'lasts' || k === 'down') && known.has(k))) continue
+      if (own(b.spec.props, k) && !((k === 'lasts' || k === 'ramp' || k === 'down') && known.has(k))) continue
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
       if (k === 'load' && kind === 'scenario') {
@@ -4118,7 +4135,11 @@ export class Compiler {
           // max is the pods drawn: the same bound as pods
           const max = this.dynProp<number>(scale, 'max', 'number', this.count('pods')) ?? 1
           const target = this.dynProp<number>(scale, 'target', 'number') ?? 1
-          return workers(component, { ...rest, autoscale: { min, max, target } })
+          const ready = this.dynProp<number>(scale, 'ready', 'number', (v) => {
+            if (typeof v !== 'number' || !(v >= 0) || !Number.isFinite(v))
+              throw new Error(`a pod is ready a time from 0 seconds after it is wanted, not ${String(v)}`)
+          })
+          return workers(component, { ...rest, autoscale: { min, max, target, ...(ready != null ? { ready } : {}) } })
         }
         const pods = this.dynProp<number>(b, 'pods', 'number', this.count('pods'))
         if (!this.prop(b, 'pods'))

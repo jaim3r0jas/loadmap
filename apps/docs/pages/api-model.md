@@ -66,6 +66,7 @@ component and stage ids) and fails the typecheck.
 | `derived`     | Named formulas every model function can read as `derived.<name>`                                       |
 | `presets`     | Named sets of values, the load included: buttons on the page                                           |
 | `peaks`       | How long a preset's moment lasts, in seconds, by its label: `backlog()` says what it leaves      |
+| `ramps`       | How long a preset's load takes to climb, in seconds: `moment()` says what is lost on the way     |
 | `scenarios`   | Named designs to compare: the defaults plus these values, never the load. The first is the baseline    |
 | `growth`      | How fast the load grows: `{ rate: 0.06, per: 'month', asOf: '2026-11-01' }` turns multiples into dates |
 | `expect`      | What must keep holding: [Expectations](#expectations)                                                  |
@@ -536,6 +537,7 @@ away is.
 | `compare(model, load?)`                          | The scenarios side by side at a load (default: the load's default): `Comparison`     |
 | `headroom(model, values?, { samples? })`         | Utilization over the load multiple, per scenario: what the headroom chart draws      |
 | `outages(model, values?)`                        | N−1 from `@loadmap/core/outages`: with one part of each domain out, the first limit  |
+| `moment(model, values, preset)`                  | A preset's way up from `@loadmap/core/moments`: what each flow loses, and its text   |
 | `compareDefinitions(base, head, { tolerance? })` | What a change of the model does to its limits (`loadmap check --base`)               |
 
 ```ts

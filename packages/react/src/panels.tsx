@@ -34,11 +34,13 @@ function nMinusOne(lm: LoadmapController): readonly NMinusOne[] {
 export function Verdict({ lm }: { lm: LoadmapController }) {
   const { measure } = lm.ev
   const peak = usePeak(lm)
+  const way = useMoment(lm)
   return (
     <>
       <p className="lm-verdict" data-tier={lm.ev.verdict.tier} aria-live="polite">
         {lm.ev.verdict.text}
       </p>
+      {way && <p className="lm-moment">{way}</p>}
       {peak && <p className="lm-peak">{peak}</p>}
       {nMinusOne(lm).map((o) => (
         <p className="lm-outage" key={o.part ?? o.domain} data-domain={o.domain} data-part={o.part}>
@@ -74,17 +76,69 @@ export function CapTag({ c, short }: { c: Capacity | null | undefined; short?: b
 }
 
 /**
+ * While the values are a preset's with a way up (a ramp, or a pool whose pods take time to be ready): what is lost on
+ * it. "8× in 30 s: up to 75 % of requests is lost for 100 s, until the eighth pod of the API is ready." The walk is a
+ * module of its own, loaded only then: no page loads it first.
+ */
+function useMoment(lm: LoadmapController): string | null {
+  const { ev, model } = lm
+  const preset = useMemo(() => {
+    const p = shownMoment(ev)
+    if (!p) return undefined
+    const ramp = model.def.ramps != null && Object.hasOwn(model.def.ramps, p.label)
+    const late = Object.values(ev.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
+    return ramp || late ? p.label : undefined
+  }, [ev, model])
+  const [said, setSaid] = useState<{ ev: unknown; text: string | null } | null>(null)
+  useEffect(() => {
+    if (preset == null) return
+    // the walk is a whole evaluation a step: once for these values, whatever renders them again
+    const key = `${preset}|${JSON.stringify(ev.values)}`
+    const known = moments.get(model)?.get(key)
+    if (known !== undefined) {
+      setSaid({ ev, text: known })
+      return
+    }
+    let live = true
+    import('@loadmap/core/moments')
+      .then(({ moment }) => moment(model, ev.values, preset).text)
+      // a model that throws on the way up (a formula at a load between two) has no line, as it has no error here
+      .catch(() => null)
+      .then((text) => {
+        const byKey = moments.get(model) ?? new Map<string, string | null>()
+        if (byKey.size > 16) byKey.delete(byKey.keys().next().value!)
+        byKey.set(key, text)
+        moments.set(model, byKey)
+        if (live) setSaid({ ev, text })
+      })
+    return () => {
+      live = false
+    }
+  }, [ev, model, preset])
+  return preset != null && said?.ev === ev ? said.text : null
+}
+
+/** What each model's moments said, by preset and values. */
+const moments = new WeakMap<object, Map<string, string | null>>()
+
+/** The preset that lasts whose values are the ones shown, if one is. */
+function shownMoment(ev: LoadmapController['ev']) {
+  const p = ev.presets.find(
+    (x) =>
+      x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
+  )
+  return p?.lasts ? (p as typeof p & { lasts: number }) : undefined
+}
+
+/**
  * While the values are a preset's that says how long it lasts: what it leaves in the queues. "After 2 h of Black
  * Friday, 1.4M events wait in the events topic, which at 1× clears in 5 h." Worked out once per evaluation.
  */
 function usePeak(lm: LoadmapController): string | null {
   const { ev, model } = lm
   return useMemo(() => {
-    const p = ev.presets.find(
-      (x) =>
-        x.lasts != null && Object.entries(x.values).every(([k, v]) => (ev.values as Record<string, unknown>)[k] === v),
-    )
-    if (!p?.lasts) return null
+    const p = shownMoment(ev)
+    if (!p) return null
     const left = backlog(model, ev.values, p.lasts)
     const head = `After ${period(p.lasts)} of ${p.label}`
     if (!left.length) return `${head}, no queue falls behind.`
