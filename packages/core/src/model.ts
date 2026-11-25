@@ -297,6 +297,11 @@ export interface ModelDef<P, F extends string, C extends string, D extends strin
    */
   ramps?: Readonly<Record<string, number>>
   /**
+   * The caches a preset's moment starts cold, by its label: each has none of its hits at the start and warms over its
+   * `warms` time. What is lost meanwhile is `moment()`; no steady figure changes.
+   */
+  colds?: Readonly<Record<string, readonly string[]>>
+  /**
    * Named designs to compare, by label: the defaults plus these values, never the load. The first is the baseline the
    * others are measured against.
    */
@@ -424,13 +429,23 @@ export interface Outage {
   left: number
 }
 
-/** What `moment()` sets in the values: each autoscaled pool's component, and the share of its max pods that is ready. */
-const PODS_READY = Symbol.for('loadmap.podsReady')
+/**
+ * What `moment()` sets in the values, a step of a moment: each component's share of its capacity (an autoscaled pool's
+ * pods ready, a limit's bucket still letting more through), each cold cache's share of its hits, and each queue with a
+ * size that is not full yet. Under a symbol: no definition can write it, and it is no parameter.
+ */
+const MOMENT = Symbol.for('loadmap.moment')
+interface MomentStepValues {
+  capacity?: Readonly<Record<string, number>>
+  hit?: Readonly<Record<string, number>>
+  room?: Readonly<Record<string, true>>
+}
+const momentOf = (values: object) => (values as Record<symbol, MomentStepValues | undefined>)[MOMENT]
 
-/** A cache key for values: JSON drops a symbol, so the pods ready of a moment are added to it. */
+/** A cache key for values: JSON drops a symbol, so a moment's step is added to it. */
 function keyOf(values: object): string {
-  const ready = (values as Record<symbol, unknown>)[PODS_READY]
-  return ready == null ? JSON.stringify(values) : `${JSON.stringify(values)}|${JSON.stringify(ready)}`
+  const step = momentOf(values)
+  return step == null ? JSON.stringify(values) : `${JSON.stringify(values)}|${JSON.stringify(step)}`
 }
 
 /** The windows a quota reads at the peak: short enough that the busiest one is what counts. */
@@ -900,6 +915,16 @@ export function defineModel<
     if (!Object.hasOwn(def.presets ?? {}, label)) throw new Error(`loadmap: a peak names unknown preset "${label}"`)
     if (!(s > 0 && Number.isFinite(s))) throw new Error(`loadmap: preset "${label}" lasts ${s} s: a time above 0`)
   }
+  for (const [label, list] of Object.entries(def.colds ?? {})) {
+    if (!Object.hasOwn(def.peaks ?? {}, label))
+      throw new Error(`loadmap: preset "${label}" starts caches cold, in a moment: give it how long it lasts too`)
+    for (const s of list) {
+      const st = Object.hasOwn(def.stages, s) ? (def.stages as Record<string, StageDef>)[s] : undefined
+      if (st?.kind !== 'cache') throw new Error(`loadmap: preset "${label}" starts "${s}" cold, which is no cache`)
+      if (st.warms == null)
+        throw new Error(`loadmap: preset "${label}" starts cache "${s}" cold: give it warms, the time it takes`)
+    }
+  }
   for (const [label, s] of Object.entries(def.ramps ?? {})) {
     if (!Object.hasOwn(def.peaks ?? {}, label))
       throw new Error(`loadmap: preset "${label}" has a ramp, the way up to a moment: give it how long it lasts too`)
@@ -1123,7 +1148,10 @@ export function defineModel<
   ) => {
     const stages = {} as Record<S, ResolvedStage>
     for (const s of stageIds) {
-      const st = resolveStage(s, poolOut(def.stages[s] as StageDef, s), ctx, flowIds, thresholds.full, plain)
+      let st = resolveStage(s, poolOut(def.stages[s] as StageDef, s), ctx, flowIds, thresholds.full, plain)
+      // a cold cache in a moment's step, as the model reads it
+      const warm = st.kind === 'cache' ? momentOf(ctx)?.hit?.[s] : undefined
+      if (st.kind === 'cache' && warm != null) st = { ...st, hit: st.hit * warm }
       const a = st.kind === 'workers' ? assignment(s) : undefined
       const skew = st.kind === 'queue' ? hot(s) : undefined
       stages[s] =
@@ -1566,13 +1594,14 @@ function contextAt(
       // a published figure holds only under its run's conditions, and fewer members are not them: never scaled
       if (o && cap.provenance === 'published' && cap.missing == null)
         return { ...cap, missing: `with ${outText(o.name)}` }
-      // in a moment, an autoscaled pool whose pods are not all ready yet: its capacity is the pool at max pods, so it
-      // has the share of it that is ready. Only `moment()` sets it, under a key no definition can write
-      const ready = (values as Record<symbol, Readonly<Record<string, number>> | undefined>)[PODS_READY]?.[c]
-      if (ready != null && ready < 1) {
+      // in a moment's step: an autoscaled pool whose pods are not all ready has the share of its capacity they give,
+      // a limit whose bucket is not spent lets more through. Only `moment()` sets it, under a key no definition writes
+      const share = momentOf(values)?.capacity?.[c]
+      if (share != null && share !== 1) {
+        // a published figure is never scaled: a pool still starting pods has none, a bucket adds nothing to it
         if (cap.provenance === 'published')
-          return cap.missing == null ? { ...cap, missing: 'with pods still starting' } : cap
-        return { ...cap, value: cap.value * ready }
+          return share < 1 && cap.missing == null ? { ...cap, missing: 'with pods still starting' } : cap
+        return { ...cap, value: cap.value * share }
       }
       return cap
     })
@@ -2103,7 +2132,12 @@ function contextAt(
       return enabled(c!) ? v : 0
     })
   }
-  const hit = (s: string) => memo(`hit at ${s}`, () => hitOf(s, stages[s] as Extract<StageDef, { kind: 'cache' }>, ctx))
+  // a cold cache in a moment's step has the share of its hits it has warmed to
+  const hit = (s: string) =>
+    memo(
+      `hit at ${s}`,
+      () => hitOf(s, stages[s] as Extract<StageDef, { kind: 'cache' }>, ctx) * (momentOf(values)?.hit?.[s] ?? 1),
+    )
   /** The share of a flow's units that go on past a stage: cache hits stay, and what a limiter turns away. */
   const onward = (s: string, f?: string) => {
     const st = stages[s]!
@@ -2199,6 +2233,8 @@ function contextAt(
     if (q.kind !== 'queue' || !next || !('component' in next) || !next.component) return none
     const drop = overload(f).drop
     if (q.holds == null && !drop) return none
+    // a queue a moment has not filled yet takes everything in: it is not full, and nothing in it is old yet
+    if (momentOf(values)?.room?.[s]) return none
     const o = rejectShare(ctx.util[next.component] as number | null, full)
     if (!(o > 0)) return none
     if (q.holds == null) return { refused: 0, dropped: o }

@@ -85,9 +85,13 @@ function useMoment(lm: LoadmapController): string | null {
   const preset = useMemo(() => {
     const p = shownMoment(ev)
     if (!p) return undefined
-    const ramp = model.def.ramps != null && Object.hasOwn(model.def.ramps, p.label)
-    const late = Object.values(ev.stages).some((s) => s.kind === 'workers' && s.autoscale?.ready)
-    return ramp || late ? p.label : undefined
+    // a way up worth walking: a ramp, cold caches, pods that take time, a bucket to spend or a queue to fill
+    const named = (o: Readonly<Record<string, unknown>> | undefined) => o != null && Object.hasOwn(o, p.label)
+    const late = Object.values(ev.stages).some(
+      (s) => (s.kind === 'workers' && s.autoscale?.ready) || (s.kind === 'queue' && s.holds != null),
+    )
+    const bucket = Object.values(ev.components).some((c) => c.burst)
+    return named(model.def.ramps) || named(model.def.colds) || late || bucket ? p.label : undefined
   }, [ev, model])
   const [said, setSaid] = useState<{ ev: unknown; text: string | null } | null>(null)
   useEffect(() => {

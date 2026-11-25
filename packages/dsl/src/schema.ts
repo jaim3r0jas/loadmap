@@ -30,6 +30,8 @@ export type ValueKind =
   | 'flows'
   /** A list of subsystem ids: `closed: [eu, us.orders]`. */
   | 'subsystems'
+  /** A list of stage ids: `cold: [appCache]`. */
+  | 'stages'
   /** A scenario's label, bare or quoted: `scenario: Proposed`. */
   | 'scenario'
   /** The id of a tier: `tier: data`. */
@@ -622,6 +624,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         unit: 'seconds',
         since: '1.7',
         doc: 'How long the moment lasts: 2h. The verdict then says what it leaves in each queue, and how long its reader takes to clear it at the default load.',
+      },
+      cold: {
+        value: 'stages',
+        scope: 'const',
+        since: '1.8',
+        doc: 'The caches its moment starts cold: [appCache]. Each has none of its hits at the start and warms over its warms time. Needs lasts.',
       },
       ramp: {
         value: 'number',
@@ -1303,6 +1311,13 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         unit: 'share',
         doc: 'The share answered here, 0 to 1.',
         required: true,
+      },
+      warms: {
+        value: 'number',
+        scope: 'values',
+        unit: 'seconds',
+        since: '1.8',
+        doc: 'Seconds it takes to warm from no hits to hit: 5min. No steady figure changes; a preset that names it in cold starts its moment with the cache cold, and the verdict says what is lost while it warms.',
       },
       component: STAGE_COMPONENT,
     },

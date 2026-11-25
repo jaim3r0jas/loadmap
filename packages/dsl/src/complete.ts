@@ -409,6 +409,9 @@ class Help {
       return cur.in === 'code' ? this.flowsHere(this.spec === SCHEMA.connection ? this.hopFlows() : undefined) : []
     if (kind === 'component')
       return cur.in === 'code' ? this.ids('component').map((label) => ({ label, type: 'variable' })) : []
+    // cold: [|]: the stages, of which the compiler takes the caches
+    if (kind === 'stages')
+      return cur.in === 'code' ? this.ids('stage').map((label) => ({ label, type: 'variable' })) : []
     // with { main: | }: a flow for a flow input, else a formula of this file
     if (this.spec === SCHEMA.with) {
       if (this.inputNamed(key)?.flow)

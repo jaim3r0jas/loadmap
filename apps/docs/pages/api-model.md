@@ -67,6 +67,7 @@ component and stage ids) and fails the typecheck.
 | `presets`     | Named sets of values, the load included: buttons on the page                                           |
 | `peaks`       | How long a preset's moment lasts, in seconds, by its label: `backlog()` says what it leaves      |
 | `ramps`       | How long a preset's load takes to climb, in seconds: `moment()` says what is lost on the way     |
+| `colds`       | The caches a preset's moment starts cold, by its label; each warms over its `warms` time         |
 | `scenarios`   | Named designs to compare: the defaults plus these values, never the load. The first is the baseline    |
 | `growth`      | How fast the load grows: `{ rate: 0.06, per: 'month', asOf: '2026-11-01' }` turns multiples into dates |
 | `expect`      | What must keep holding: [Expectations](#expectations)                                                  |

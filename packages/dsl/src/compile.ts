@@ -897,6 +897,7 @@ export class Compiler {
     const presets: Record<string, Record<string, unknown>> = {}
     const peaks: Record<string, number> = {}
     const ramps: Record<string, number> = {}
+    const colds: Record<string, string[]> = {}
     for (const b of byKind('preset')) {
       const label = this.text(b.args.label)
       if (label == null) continue
@@ -921,6 +922,42 @@ export class Compiler {
             'lasts: 10min',
           )
         else ramps[label] = ramp
+      }
+      // the caches its moment starts cold: each a cache with a warms time
+      const cold = this.prop(b, 'cold')
+      if (cold) {
+        const items = cold.value.t === 'array' ? cold.value.items : []
+        const list: string[] = []
+        for (const e of items) {
+          if (e.t !== 'id') {
+            this.report.error('wrong-type', e, 'cold is a list of caches: [appCache]')
+            continue
+          }
+          // a stage by its name, or its box's where the box holds that one stage
+          const id = stageOf.has(e.name) ? e.name : this.single.get(e.name)
+          const st = id == null ? undefined : stageOf.get(id)?.block
+          if (!st) this.report.error('unknown-name', e, `unknown stage "${e.name}"`, didYouMean(e.name, stageOf.keys()))
+          else if (st.keyword !== 'cache')
+            this.report.error('bad-value', e, `"${e.name}" is no cache: only a cache starts cold`)
+          else if (!st.props.has('warms'))
+            this.report.error(
+              'bad-value',
+              e,
+              `cache "${e.name}" starts cold: give it warms, the time it takes`,
+              'warms: 5min',
+            )
+          else list.push(id!)
+        }
+        if (cold.value.t !== 'array')
+          this.report.error('wrong-type', cold.value, 'cold is a list of caches: [appCache]')
+        else if (lasts == null)
+          this.report.error(
+            'bad-value',
+            cold.key,
+            'a preset starts caches cold in its moment: say how long it lasts',
+            'lasts: 10min',
+          )
+        else if (list.length) colds[label] = list
       }
       const l = this.prop(b, 'load')
       if (l && load && typeof set.load === 'number' && !(set.load >= load.min && set.load <= load.max))
@@ -1382,6 +1419,7 @@ export class Compiler {
     if (Object.keys(presets).length) model.presets = presets
     if (Object.keys(peaks).length) model.peaks = peaks
     if (Object.keys(ramps).length) model.ramps = ramps
+    if (Object.keys(colds).length) model.colds = colds
     if (Object.keys(scenarios).length) model.scenarios = scenarios
     if (growth) model.growth = growth
     if (Object.keys(domains).length) model.domains = domains
@@ -3364,7 +3402,8 @@ export class Compiler {
     for (const [k, props] of b.props) {
       // a step's own properties; its other lines are values. A parameter named lasts or down keeps its value, as
       // before 1.7
-      if (own(b.spec.props, k) && !((k === 'lasts' || k === 'ramp' || k === 'down') && known.has(k))) continue
+      if (own(b.spec.props, k) && !((k === 'lasts' || k === 'ramp' || k === 'cold' || k === 'down') && known.has(k)))
+        continue
       const prop = props[0]!
       const v = this.constant(prop.value, 'any')
       if (k === 'load' && kind === 'scenario') {
@@ -4103,7 +4142,16 @@ export class Compiler {
       }
       case 'cache': {
         const hit = this.dynProp<number>(b, 'hit', 'number')
-        return cache({ ...base, hit: hit ?? 0, ...(component ? { component } : {}) })
+        const warms = this.dynProp<number>(b, 'warms', 'number', (v) => {
+          if (typeof v !== 'number' || !(v >= 0) || !Number.isFinite(v))
+            throw new Error(`a cache warms over a time from 0, not ${String(v)}`)
+        })
+        return cache({
+          ...base,
+          hit: hit ?? 0,
+          ...(component ? { component } : {}),
+          ...(warms != null ? { warms } : {}),
+        })
       }
       case 'store':
         return component ? store(component, base) : needs()
