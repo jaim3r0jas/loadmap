@@ -37,6 +37,8 @@ expect "The gateway lasts to 10× with a bigger API" { scenario: "Bigger API"; c
 expect "Orders answer in a second" { flow: orders; p99: 1 }
 # what a flow loses for good, as a share of what it sends: of one flow, or of each without one
 expect "Orders lose nothing today" { flow: orders; lost: 0% }
+# a fan-out branch has figures of its own: to names a stage on it, and the expect holds the branch up to there
+expect "Every audited event is archived" { flow: events; to: archive; lost: 0% }
 
 step "An ordinary hour: every box is under half its capacity." { load: 1 }
 step "Past 5× the event workers run out first: their pool is at its six pods." { load: 6; focus: eventWorkers }

@@ -666,6 +666,12 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         scope: 'const',
         doc: "One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. With lost, the flow whose losses count.",
       },
+      to: {
+        value: 'route',
+        scope: 'const',
+        since: '1.8',
+        doc: "With flow, and lost or a percentile: a stage on one of the flow's fan-out branches. The expect then holds that branch up to the stage, the copies it loses or the time they take from the fan-out, not the flow itself: `flow: orders; to: mailers; lost: 1%`.",
+      },
       lost: {
         value: 'number',
         scope: 'const',

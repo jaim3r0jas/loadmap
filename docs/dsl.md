@@ -931,6 +931,21 @@ when its reader is full, and an edge joins each pair of boxes along it. A branch
 back to the route. This is how an asynchronous side of a system is written: email, search indexing, a replica that
 follows a log. In TypeScript a branch is `{ stages: ['mailQueue', 'mailers', 'smtp'], share: 1 }`.
 
+A branch has figures of its own, and none of them are in the flow's: an order is not lost when its mail is, and it
+is not slow because its mail is. An expectation holds a branch with `to`, a stage on it:
+
+```loadmap
+expect "Mail is sent up to 1.4×" { flow: orders; to: smtp; lost: 1%; underTarget: 1.4× }
+expect "Mail leaves within a second" { flow: orders; to: smtp; p99: 1s }
+```
+
+What a branch loses is of the copies its fan-out is asked for: what the fan-out turns away, and along the branch up
+to `to` what a `pass`, a `limit` or a cache turns away, what a component `fails`, and what a queue drops. Its time
+runs from the fan-out through `to`: the stages' times and the delays of the edges between them (a queue's wait is in
+neither, as on a route). `to` may be any stage of the branch, so `to: mailers` holds it up to the mailers. A failure
+reads "expected at most 1 % of orders to smtp lost, but 25 % is lost at 2×, most of it turned away at SMTP
+relay". In code it is `model.branch('orders', 'smtp', values)`, which gives `stages`, `lost` and `latency`.
+
 #### Splits
 
 A split sends each unit on one way of several, by share: a read/write split, shards, regions, an A/B test,
@@ -1852,7 +1867,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`) | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it | |
 
 ## In code
 
@@ -2208,6 +2223,7 @@ After the keyword: [label].
 | `down` | domain, constant | A failure domain with one part out (N−1), on top of the scenario: `down: zone`. From loadmap 1.7. |
 | `component` | component, constant | One component; the first limit without one. |
 | `flow` | flow, constant | One flow's latency, with p50, p95 or p99: it stays under that time up to underTarget, or at the values. With lost, the flow whose losses count. |
+| `to` | route, constant | With flow, and lost or a percentile: a stage on one of the flow's fan-out branches. The expect then holds that branch up to the stage, the copies it loses or the time they take from the fan-out, not the flow itself: `flow: orders; to: mailers; lost: 1%`. From loadmap 1.8. |
 | `lost` | share, constant | What is lost for good (turned away, dropped, failed or too slow, after every retry and the fallback) stays at or under this share of what a flow sends, up to underTarget or at the values: `lost: 0.1%`. Of one flow, or of each flow without one. From loadmap 1.8. |
 | `p50` | number in seconds, constant | The flow's median stays under this many seconds. |
 | `p95` | number in seconds, constant | The flow's 95th percentile stays under this many seconds. |
