@@ -62,6 +62,10 @@ describe('a breaker', () => {
       }).evaluate()
     // its client's retries go through it; a hop's would start again behind it
     expect(bad({ breaker: { opens: 0.5 }, retry: { times: 1 } })).not.toThrow()
+    // with a timeout as well the three have no point they settle at together
+    expect(bad({ breaker: { opens: 0.5 }, retry: { times: 1 }, timeout: 1 })).toThrow(
+      'has a breaker, retries and a timeout',
+    )
     expect(bad({ breaker: { opens: 0.5 }, retry: { at: 'a', times: 1 } })).toThrow('a breaker and a retry at a hop')
     // a retry rule switched off at these values is none
     expect(bad({ breaker: { opens: 0.5 }, retry: () => undefined })).not.toThrow()
@@ -92,6 +96,7 @@ describe('a breaker', () => {
       expect(ev.breakers.quotes).toEqual({
         opens: 0.2,
         rate: 200,
+        sent: expect.closeTo(attempts, 6),
         admitted: expect.closeTo(125 / attempts, 9),
         failedFast: expect.closeTo(attempts - 125, 5),
       })

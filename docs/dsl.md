@@ -844,8 +844,10 @@ goes through the breaker, and one it fails fast is a failed attempt, sent again 
 admits is the one at which the failures behind it are `opens`, whatever is sent: more attempts only lower the share
 it admits. So the retries still settle from below, as many units fail for good as without the breaker, and the stages
 behind it are spared the storm. 200 quotes a second against a pricing service of 100, two retries: the client sends
-485 attempts a second, and pricing sees the 125 the breaker admits, not the 485. A breaker is in the flow's callers,
-so it goes with the client's retry, not with one `at` a hop.
+485 attempts a second, and pricing sees the 125 the breaker admits, not the 485. `ev.breakers.quotes.sent` is those
+attempts, and `admitted` and `failedFast` count them, not the units. A breaker is in the flow's callers, so it goes
+with the client's retry, not with one `at` a hop. A flow with a breaker and retries takes no `timeout`: the share too
+slow is held while the retries settle, and the three have no point they settle at together.
 
 A dead-letter queue is a lost box with a stock beside it, which reads what reaches the box: `component dlq { fills:
 at.deadLetters * 1KB; keeps: 14d; … }` ([Stocks](#stocks)). In TypeScript, `fallback: { after: 'api', route:
@@ -2417,7 +2419,7 @@ merge { share: 0.37; reason: "newest kept" }
 
 ### breaker
 
-A circuit breaker in its callers: past opens, a share of its attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share at which the failures among what it admits are opens; below that it stays closed. What it fails fast goes to the fallback, if any. A flow that retries takes none. From loadmap 1.7.
+A circuit breaker in its callers: past opens, a share of its attempts failing, it fails calls fast, so they reach no stage. In steady state it admits the share at which the failures among what it admits are opens; below that it stays closed. What it fails fast goes to the fallback, if any. Its retries go through it: a call failed fast is a failed attempt, sent again. Not with a retry at a hop, nor with retries and a timeout at once. From loadmap 1.7.
 
 ```loadmap
 breaker { opens: 50% }
