@@ -233,7 +233,7 @@ values (`partitions`, `pods`, `perPod`, `hit`, `to`) take a function of the cont
 | `queue({ partitions, holds?, whenFull?, component?, label? })`          | Flows wait; the next stage on each route drains it at its own capacity |
 | `workers(component, { pods \| autoscale, perPod, placement?, label? })` | A pool: pods × workers per pod                                         |
 | `cache({ hit, component?, label? })`                                    | A share `hit` is answered here and goes no further                     |
-| `limit(component, { per?, burst?, label? })`                           | A rate limiter: what it rejects is gone from every stage after it      |
+| `limit(component, { per?, burst?, keys?, skew?, label? })`             | A rate limiter: what it rejects is gone from every stage after it      |
 | `store(component, { label? })`                                          | Where a flow ends: written to its component                            |
 | `sink({ label? })`                                                      | Where a flow ends without a component: a receiver, a viewer, an app    |
 | `fanout({ to, component?, label? })`                                    | Each unit copied to several sinks or stores, each with its share       |

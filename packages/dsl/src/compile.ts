@@ -1,5 +1,6 @@
 import {
   type Branch,
+  type Capacity,
   type Catalog,
   type CheckResult,
   cache,
@@ -2127,7 +2128,10 @@ export class Compiler {
     if (accepts) def.accepts = this.dyn(accepts.value, 'capacity', 'ctx', checkCapacity)
     const skew = this.prop(b, 'skew')
     if (skew) def.skew = this.dyn(skew.value, 'capacity', 'ctx', checkCapacity)
-    if ((def.assign === 'key' || def.assign === 'leader') && def.members === undefined) {
+    const busiest = this.prop(b, 'busiest')
+    if (busiest) def.busiest = this.dyn(busiest.value, 'capacity', 'ctx', checkCapacity)
+    // the members a key, a leader or a busiest member sits on: a cluster's own, where the connection says none
+    if ((def.assign === 'key' || def.assign === 'leader' || def.busiest != null) && def.members === undefined) {
       const m = membersOf(to)
       if (m !== undefined) def.members = m
     }
@@ -4200,8 +4204,33 @@ export class Compiler {
           )
           return component ? limit(component, { ...base, per }) : needs()
         }
+        // a limit for each key, and the share the hottest carries
+        const keys = this.dynProp<number>(b, 'keys', 'number', (v) => {
+          if (typeof v !== 'number' || !Number.isInteger(v) || v < 1)
+            throw new Error(`keys is a whole number from 1, not ${String(v)}`)
+        })
+        const skew = this.prop(b, 'skew')
+        const hot = skew ? this.dyn<Capacity>(skew.value, 'capacity', 'ctx', checkCapacity) : undefined
+        if (keys != null && (per || burst != null)) {
+          this.report.error(
+            'bad-value',
+            this.prop(b, 'keys')!.key,
+            'a limit for each key takes no per or burst: each key has its own limit',
+          )
+          return component ? limit(component, { ...base, ...(per ? { per } : {}) }) : needs()
+        }
+        if (skew && keys == null) {
+          this.report.error('bad-value', skew.key, "skew is the hottest key's share: give the limit keys", 'keys: 400')
+          return component ? limit(component, { ...base, ...(per ? { per } : {}) }) : needs()
+        }
         return component
-          ? limit(component, { ...base, ...(per ? { per } : {}), ...(burst != null ? { burst } : {}) })
+          ? limit(component, {
+              ...base,
+              ...(per ? { per } : {}),
+              ...(burst != null ? { burst } : {}),
+              ...(keys != null ? { keys } : {}),
+              ...(hot != null ? { skew: hot } : {}),
+            })
           : needs()
       }
       case 'cache': {

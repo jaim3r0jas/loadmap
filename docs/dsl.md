@@ -777,6 +777,23 @@ the limit. No steady figure changes: past the limit the share over is turned awa
 how long the bucket lasts at the load shown ("A burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut
 to 100 req/s").
 
+A limit can be one for each key, a tenant or a client (from `loadmap 1.8`): `keys: 400` makes the capacity one key's,
+and `skew` the share of what arrives the hottest key carries (an even share without it). It runs out when the hottest
+key does, and turns away only what is above each key's own limit: 400 tenants of 100 req/s each, the noisiest with
+20 % of 1,000 a second, turn away half of that tenant's 200 and nothing of the rest, 10 % of all. The limits list says
+"400 keys, each its own limit: the hottest carries 20 % of what arrives". Not with `per` or `burst`.
+
+```loadmap
+node perTenant "Tenant limit" {
+  limit {
+    keys: 400
+    skew: estimated(20%, "share", "the noisiest tenant")
+  }
+  capacity: configured(100, "req/s", "a tenant's plan")
+  over: "a tenant's requests above its plan get 429s"
+}
+```
+
 ```loadmap
 node limiter "Rate limiter" {
   limit { burst: 500 }
@@ -1280,6 +1297,20 @@ connection produce {
   hop: gateway -> topic
   assign: key
   skew: estimated(0.25, "share", "busiest customer")
+}
+```
+
+Where nothing says how the work is dealt (a hash ring, sticky sessions), `busiest` on a connection says how much its
+busiest member takes, measured or estimated (from `loadmap 1.8`): `busiest: estimated(32%, "share", "ring stats")` on
+a connection to 4 members runs the stage out when that member does, at 78 % of its capacity ("The busiest member takes
+32 % of the work (ring stats): the cache runs out at 78 % of its capacity"). A ± on it moves the crossings as one on a
+capacity does.
+
+```loadmap
+connection ring {
+  hop: api -> appCache
+  members: 4
+  busiest: estimated(32%, "share", "ring stats")
 }
 ```
 
@@ -2063,7 +2094,7 @@ with no warning first; none is planned.
 | 1.5 | `closed`, in `view` and in a `step`: the subsystems drawn closed, each as one box; one spelling each: `direction`, `rows` and `layout` in `view { … }`; a pool's workers on the pool (`pods`, `perPod`, `placement`, `stageLabel`, `component`, `autoscale { … }`); a `%` after a number is always a share; `===`, `!==` and `derived.x` warn (`loadmap fmt` writes `==`, `!=` and `x`) | gone: the `workers` block, `label:` in an edge's block, `sub:` on a box, `tag` on a param, `grid` in the view (`removed`); `%` between two values (`remainder`, `mod(a, b)`); the old names and the view settings at the top (`deprecated`) |
 | 1.6 | `+-` for a capacity's ± (`loadmap fmt` writes it for `±` and `+/-`) | `a +- b` is no longer `a + -b` (`plus-minus` warns before) |
 | 1.7 | `d`, a day (`7d`) | |
-| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up; `cold` on a preset and `warms` on a cache; `cost` on a box, `currency`, and `cost` in an `expect` | |
+| 1.8 | `lost` in an `expect`: the share a flow loses for good; `delay` on an edge; `through` on a held component; `fails` on a component and the loss `failed`; `at` in a `retry`: a retry at a hop, several a flow; a fan-out branch that goes on (`a -> b -> c: 1`), and `to` in an `expect` for it; `gather` with `needs` and `hedge`; `holds` and `full` on a queue; `down.<domain>` in a formula; `parts` on a domain and `in` on a box or a subsystem; `preset`, `queue`, `lag` and `clears` in an `expect`: what a moment leaves in a queue; `burst` on a `limit`, and `per: minute`; `ramp` on a preset and `ready` on an autoscaler: a moment's way up; `cold` on a preset and `warms` on a cache; `cost` on a box, `currency`, and `cost` in an `expect`; `keys` and `skew` on a limit, `busiest` on a connection | |
 
 ## In code
 
@@ -2919,6 +2950,8 @@ After the keyword: [id] [label].
 | --- | --- | --- |
 | `per` | `minute` \| `hour` \| `day` \| `month` | A quota over a window, not a rate: the capacity is what the window allows (configured(5_000_000, "requests/day", …)), and the demand what reaches it in one window, at the peak for a minute (from loadmap 1.8) or an hour and at each flow's average for a day or a month. From loadmap 1.7. |
 | `burst` | number, formula of parameters | A rate limit's bucket, in units: past the limit it lets everything through until the bucket is spent, burst ÷ what arrives above the limit a second, then cuts to the limit. No steady figure changes; the limits say how long it lasts: "a burst of 500 passes: at 3× all gets through for 2.5 s, then it is cut to 100 req/s". Not with per: a quota counts a window already. From loadmap 1.8. |
+| `keys` | number, formula of parameters | A limit for each key (each tenant, each client): the capacity is one key's. It runs out when the hottest key does, and turns away only what is above each key's own limit. Not with per or burst. From loadmap 1.8. |
+| `skew` | capacity, formula | With keys: the share of what arrives the hottest key carries, measured or estimated: estimated(20%, "share", "the noisiest tenant"). An even share without it. From loadmap 1.8. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 
 ### store
@@ -3094,6 +3127,7 @@ After the keyword: id.
 | `open` | number, formula | Connections each member of the pool on the hop keeps open to the other side. |
 | `accepts` | capacity, formula | The most connections the other side accepts: a limit named by this connection. From loadmap 1.1; `max` before. |
 | `skew` | capacity, formula | With key: a flow's share on its hottest part. |
+| `busiest` | capacity, formula | The busiest member's share of the work, measured or estimated, whatever deals it (a hash ring, sticky sessions): estimated(32%, "share", "ring stats"). The component runs out when that member does: the share × the members. From loadmap 1.8. |
 | `rule` | string, constant | A rule from the catalog, "kafka/consumer-group": its assign and owner unless written, its source cited. |
 
 ### thresholds

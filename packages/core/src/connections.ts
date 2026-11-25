@@ -55,6 +55,11 @@ export interface ConnectionDef<S extends string = string, F extends string = str
   /** With key: the share of a flow on its hottest part, measured or estimated: a hot key, a hot tenant. */
   skew?: Capacity | ((ctx: any) => Capacity)
   /**
+   * The busiest member's share of the work, measured or estimated, whatever deals it: a hash ring, sticky sessions. The
+   * component then runs out when that member does: its spread is the share × the members.
+   */
+  busiest?: Capacity | ((ctx: any) => Capacity)
+  /**
    * A rule from the catalog, `rule(kafka, 'kafka/consumer-group')`: its assign and owner unless the connection writes
    * its own, and its source in the assumptions.
    */
