@@ -814,7 +814,8 @@ function Node({
   const comp = n.component ?? (first && 'component' in first ? first.component : undefined)
   const out = comp == null ? undefined : lm.ev.components[comp as keyof typeof lm.ev.components]?.out
   // a box in a named part of a domain that is down (a region out): dashed, and every pod or member of it idle
-  const gone = n.stages.some((s) => lm.ev.stages[s]?.gone)
+  // every stage it draws: a closed subsystem with one box of the part in it still takes traffic
+  const gone = n.stages.length > 0 && n.stages.every((s) => lm.ev.stages[s]?.gone)
   const running = gone
     ? 0
     : st?.kind === 'workers'
@@ -823,8 +824,7 @@ function Node({
         ? n.members.length - Math.ceil(n.members.length / out.count)
         : n.members.length
   // a pod past the pool's size is leaving the drawing: it fades out as it was, running
-  const idle = (i: number) =>
-    gone || (i >= running && i < (st?.kind === 'workers' && !out ? st.pods : n.members.length))
+  const idle = (i: number) => i >= running && i < (st?.kind === 'workers' && !out ? st.pods : n.members.length)
   // behind an exclusive connection, a running worker that reads no partition is dashed too
   const a = st?.kind === 'workers' ? st.assignment : undefined
   const unassigned = (i: number) => a != null && i < a.weights.length && a.weights[i] === 0

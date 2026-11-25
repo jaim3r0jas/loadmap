@@ -8,7 +8,8 @@ shows two copies of one design, framed and named. It opens with both regions clo
 
 **Try:** read the overview first: each closed region says how busy the busiest part in it is, and wears the limit
 when it is inside · open **Design** and set **Outage** to **the EU region out**: the US region wears the limit at 1×,
-today's load · click the US region to open it, then click its frame to fly in, and the path over the board says where
+today's load, and the EU's boxes are drawn dashed with their pods idle: each region is `in` a named part of a failure
+domain, and with it out the router deals every order to the one left · click the US region to open it, then click its frame to fly in, and the path over the board says where
 you are · **▶ Story** walks the same way.
 
 <div class="island" data-island="example" data-name="regions" data-editor="../../editor/"></div>

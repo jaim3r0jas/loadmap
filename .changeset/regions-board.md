@@ -7,4 +7,4 @@ their pods and members idle as members out are, and no box moves. The Two region
 subsystem `in` its part, two flows and a router whose split deals again, in place of a switch and a second flow for
 each region.
 
-Docs: /examples/regions/
+Docs: /language/building-blocks/#failure-domains
