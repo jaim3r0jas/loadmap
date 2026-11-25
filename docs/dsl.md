@@ -1312,9 +1312,10 @@ otherwise. So what an outage changes beyond the members it takes is said where i
 (`hit: down.zone ? 60% : 90%`), a share that fails while a replica is promoted (`fails: down.zone ? 2% : 0%`), a call
 that goes the long way (`delay: down.zone ? 40ms : 2ms`).
 
-In a definition with a domain, a box that every flow passes and that stands across none is a single point: no outage
-the model knows touches it, and with it gone nothing gets through. The checker warns (`single-point`), and also for a
-box across a domain with one member, which has none left when its part is out.
+In a definition with a domain, a pool or a cluster that every flow passes and that stands across none is a single
+point: no outage the model knows touches it, and with it gone nothing gets through. The checker warns
+(`single-point`), and also for a box across a domain with one member, which has none left when its part is out. A
+plain node has no warning: a limit or a managed service may have no place in the domain.
 
 With every part up, the page also answers N−1. Under the verdict: "With one availability zone out, the 50 % target
 holds up to 8.3×, limited by the search API, which keeps 5 of 8." Each row of the limits gives its own figure with

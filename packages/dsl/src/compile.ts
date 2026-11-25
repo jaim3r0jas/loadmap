@@ -1246,24 +1246,29 @@ export class Compiler {
         continue
       }
       // one member is in one part: with that part out none is left to carry the work
-      if (typeof members === 'number' && members >= 1 && members - Math.ceil(members / domains[domain]!.count) < 1)
+      if (members === 1)
         this.report.warning(
           'single-point',
           this.prop(box.block, 'across')!.value,
-          `"${box.id}" has ${members === 1 ? 'one member' : `${members} members`} across "${domain}": with a part of it out none is left`,
+          `"${box.id}" has one member across "${domain}": with a part of it out none is left`,
           'give it a member in more than one part',
         )
       ;(componentDefs[box.component.id] as Record<string, unknown>).across = { domain, members }
     }
 
-    // a box every flow passes that stands across no domain: no outage the model knows touches it, and with it gone
-    // nothing gets through. Only where the definition speaks of outages at all
+    // a pool or a cluster every flow passes, on every way it goes, whose members stand across no domain: no outage
+    // the model knows touches it, and with it gone nothing gets through. Only where the definition speaks of outages
+    // at all, and only for a box with members to spread: a plain node may be a limit or a service with no place
     if (Object.keys(domains).length && flows.length) {
       const ways = flows.flatMap((b) => (b.args.id ? [waysOf(shape, b.args.id.name)] : []))
       for (const box of boxes) {
         if (!box.component || box.block.props.has('across')) continue
+        const members =
+          box.block.keyword === 'cluster' ||
+          box.stages.some((x) => (stageDefs[x.id] as { kind?: string })?.kind === 'workers')
+        if (!members) continue
         const ids = new Set(box.stages.map((x) => x.id))
-        const passed = ways.every((w) => !w.open && w.ways.some((way) => way.some((s) => ids.has(s))))
+        const passed = ways.every((w) => !w.open && w.ways.every((way) => way.some((s) => ids.has(s))))
         if (passed)
           this.report.warning(
             'single-point',

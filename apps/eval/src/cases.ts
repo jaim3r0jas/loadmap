@@ -223,8 +223,8 @@ export const CASES: Case[] = [
     id: 'down-in-formula',
     example: SEARCH,
     request:
-      'Give the model a failure domain zone with 3 parts. While a zone is out the cache hits only half as often as it does otherwise. Say that in the formula of its hit rate.',
-    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'domain zone' }, { kind: 'contains', text: 'down.zone ?' }],
+      'While an availability zone is out the cache hits only half as often as it does otherwise. Say that in the formula of its hit rate.',
+    asserts: [{ kind: 'change' }, { kind: 'contains', text: 'down.zone ?' }],
   },
   {
     id: 'param-option',

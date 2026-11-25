@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compile, format } from '../src'
+import { completions } from '../src/completion'
+import { references, rename } from '../src/help'
 
 const SRC = `loadmap 1.8
 load { max: 10 }
@@ -104,26 +106,60 @@ describe('a box across a domain with one member', () => {
   })
 })
 
-describe('a box every flow passes that stands across no domain', () => {
-  const bare = SRC.replace('  pass\n  across: zone\n', '  pass\n')
+describe('a pool or a cluster every flow passes that stands across no domain', () => {
+  const bare = SRC.replace('  perPod: 4\n  across: zone\n', '  perPod: 4\n')
 
   it('has a warning: no outage touches it', () => {
     expect(errors(bare)).toEqual([
-      'warning: single-point: every flow passes "db", which stands across no failure domain: no outage touches it | say the domain its members stand across: across: zone',
+      'warning: single-point: every flow passes "api", which stands across no failure domain: no outage touches it | say the domain its members stand across: across: zone',
     ])
   })
 
+  it('has none for a plain node: a limit or a service may have no place in the domain', () => {
+    expect(errors(SRC.replace('  pass\n  across: zone\n', '  pass\n'))).toEqual([])
+  })
+
   it('has none in a definition with no domain, and none for a box only some flows pass', () => {
-    const none = bare
-      .replace('domain zone "Availability zone" { count: 3 }\n\n', '')
-      .replace('  across: zone\n', '')
+    const none = SRC.replace('domain zone "Availability zone" { count: 3 }\n\n', '')
+      .replaceAll('  across: zone\n', '')
       .replace('down.zone ? 60% : 90%', '90%')
       .replace('down.zone ? 2% : 0%', '1%')
     expect(errors(none)).toEqual([])
-    const some = bare.replace(
-      'flow reads "reads" {',
-      'flow pings "pings" { rate: 10 * load; from: users; route: api }\nflow reads "reads" {',
-    )
+    const some = bare
+      .replace(
+        'flow reads "reads" {',
+        'flow pings "pings" { rate: 10 * load; from: users; route: appCache }\nflow reads "reads" {',
+      )
+      .replace('users -> api\n', 'users -> api\nusers -> appCache\n')
     expect(errors(some)).toEqual([])
+  })
+})
+
+describe('down.<domain> in the editor', () => {
+  it('is renamed with its domain, and found as a reference to it', () => {
+    const at = SRC.indexOf('domain zone') + 8
+    const r = rename(SRC, at, 'az')
+    if (!('source' in r)) throw new Error(r.error)
+    expect(r.source).toContain('let hitRate = down.az ? 60% : 90%')
+    expect(r.source).toContain('fails: down.az ? 2% : 0%')
+    expect(compile(r.source).diagnostics).toEqual([])
+    // the declaration, two boxes across it and two formulas
+    expect(references(SRC, at)).toHaveLength(5)
+  })
+
+  it('is offered: down, then the domains after its dot', () => {
+    const dot = SRC.indexOf('down.zone ? 60%') + 5
+    const after = SRC.slice(0, dot) + SRC.slice(dot + 4)
+    expect(completions(after, dot).options.map((o) => o.label)).toEqual(['zone'])
+    const before = SRC.slice(0, dot - 5) + SRC.slice(dot + 4)
+    expect(completions(before, dot - 5).options.map((o) => o.label)).toContain('down')
+  })
+
+  it('keeps the gate of loadmap 1.8 beside a box named down', () => {
+    const old = SRC.replace('loadmap 1.8', 'loadmap 1.7').replace(
+      'node users "Users"',
+      'node users "Users"\nnode down "Down"',
+    )
+    expect(errors(old).filter((e) => e.includes('down.<domain>'))).toHaveLength(1)
   })
 })

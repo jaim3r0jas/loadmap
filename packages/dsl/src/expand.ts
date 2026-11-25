@@ -456,7 +456,15 @@ export class Expander {
         const id = lib.value(name, 'formula')
         if (id != null) node.name = id
         else if (
-          !(own(BUILTINS, name) || RESERVED.has(name) || this.hosted.has(name) || name === 'i' || name === 'value')
+          // down.<domain> asks after the model's outage, as across names the model's domain
+          !(
+            own(BUILTINS, name) ||
+            RESERVED.has(name) ||
+            this.hosted.has(name) ||
+            name === 'i' ||
+            name === 'value' ||
+            name.startsWith('down.')
+          )
         )
           this.report.error(
             'unknown-name',

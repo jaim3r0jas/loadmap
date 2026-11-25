@@ -84,9 +84,9 @@ export function needs(body: readonly Stmt[], hosted: ReadonlySet<string> = new S
     if (e.t === 'call' && e.callee.name === 'mod' && !ownMod) add('mod', SYNTAX.mod.since, SYNTAX.mod.what, e.callee)
     for (const c of childrenOf(e, true)) expr(c)
   }
-  // a subsystem (or a part) named down has boxes of that name: down.api is one of them
+  // a subsystem named down has boxes of that name: down.api is one of them, as the compiler reads it
   const ownDown = body.some(
-    (s) => s.kind === 'decl' && s.args[0]?.t === 'id' && s.args[0].name === 'down' && s.keyword.name !== 'param',
+    (s) => s.kind === 'decl' && s.keyword.name === 'subsystem' && s.args[0]?.t === 'id' && s.args[0].name === 'down',
   )
   // a parameter named lasts is set in a preset as it always was: that is no peak's length
   const paramLasts = body.some(

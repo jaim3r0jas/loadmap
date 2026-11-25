@@ -174,8 +174,12 @@ class Walk {
   }
 
   expr(e: Expr) {
-    if (e.t === 'id') this.add('formula', e, e.name)
-    else if (e.t === 'call') this.add('formula', e.callee, e.callee.name)
+    // down.<domain>: the domain it asks after, at its name
+    if (e.t === 'id') {
+      this.add('formula', e, e.name)
+      // down.<domain>: the domain it asks after, at its name, so a rename and the references find it
+      if (e.name.startsWith('down.')) this.add('domain', { from: e.from + 5, to: e.to }, e.name.slice(5))
+    } else if (e.t === 'call') this.add('formula', e.callee, e.callee.name)
     else if (e.t === 'member') {
       const table = e.object.name
       if (table === 'flows') this.add('flow', e.prop, e.prop.name)
