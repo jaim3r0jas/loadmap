@@ -86,6 +86,14 @@ describe('a domain with its parts by name', () => {
     expect(m.scenarios.map((s) => [s.label, (s.values as { down?: string }).down])).toEqual([['EU out', 'eu']])
   })
 
+  it('lets a lost box count what a box of the part turns away while it is down', () => {
+    const src = SRC.replace(
+      'eu -> db\n',
+      'eu -> db\nnode euGone "EU gone" { lost { takes: [rejected] } }\neu.api -> euGone\n',
+    )
+    expect(errors(src)).toEqual([])
+  })
+
   it('reads a part as the label of the subsystem of its id', () => {
     expect(outages(compile(SRC).definition!.model).map((o) => o.text)).toEqual([
       'With the EU out, the 50 % target holds up to 2×, limited by API in US.',

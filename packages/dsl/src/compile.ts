@@ -540,6 +540,15 @@ function grounded(model: Definition['model'], r: CheckResult): CheckResult {
   const e = r.expectation
   if (e.flow != null || e.lost != null || (e.underTarget == null && e.notFull == null)) return r
   const scenario = e.scenario == null ? undefined : model.scenarios.find((s) => s.label === e.scenario)
+  // a domain with its parts by name is no value of the control: check() held each part, and so each is read here
+  const parts = Object.keys(
+    (model.def.domains as Record<string, { parts?: object }> | undefined)?.[e.down ?? '']?.parts ?? {},
+  )
+  if (parts.length) {
+    const each = parts.map((part) => grounded(model, { ...r, expectation: { ...e, down: part } }))
+    const moved = each.find((x) => x.outcome !== r.outcome)
+    return moved ? { ...moved, expectation: e } : r
+  }
   const values = e.down == null ? scenario?.values : { ...scenario?.values, down: e.down }
   const all = Object.values(model.evaluate(values as never).components)
   const scope = e.component == null ? all : all.filter((x) => x.id === e.component)
@@ -1127,6 +1136,19 @@ export class Compiler {
     for (const [id, s] of stageOf)
       if (!reached.has(id) && s.block.keyword !== 'fanout' && s.block.keyword !== 'lost')
         this.report.warning('unused-stage', s.block.args.id ?? s.block.at, `no flow passes the stage "${id}"`)
+    // in a named part of a domain (a region, a site): on the box's component, and on its stages for one that has
+    // none. Before the losses are read: a stage in a part turns away what reaches it while the part is down
+    for (const box of boxes) {
+      const part = this.named(box.block, 'in', [...this.partIds.keys()], 'part of a domain')
+      if (!part) continue
+      const at = { domain: this.partIds.get(part)!, part }
+      if (box.component) (componentDefs[box.component.id] as Record<string, unknown>).in = at
+      for (const x of box.stages) {
+        const st = stageDefs[x.id]
+        // a lost box counts what others lose: it is nowhere
+        if (st && st.kind !== 'lost') stageDefs[x.id] = { ...st, in: at }
+      }
+    }
     const shape = { stages: stageDefs, routes, flows: flowDefs as never, components: componentDefs }
     // what each stage can lose, worked out once, over ways walked once: the lost boxes and the warnings both read it
     const known = new Map<string, readonly Loss[]>()
@@ -1257,10 +1279,6 @@ export class Compiler {
         'give the parameter another name',
       )
     for (const box of boxes) {
-      // in a named part of a domain: a region, a site
-      const part = this.named(box.block, 'in', [...this.partIds.keys()], 'part of a domain')
-      if (part && box.component)
-        (componentDefs[box.component.id] as Record<string, unknown>).in = { domain: this.partIds.get(part)!, part }
       const domain = this.named(box.block, 'across', [...this.domainIds.keys()], 'domain')
       if (!domain || !Object.hasOwn(domains, domain)) continue
       if (domains[domain]!.count == null) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { check, defineModel, lost, measured, p, pass, sink, split } from '../src'
+import { check, defineModel, fanout, lost, measured, p, pass, sink, split } from '../src'
 import { outages } from '../src/outages'
 
 // 500 orders a second at 1×, dealt to two regions, then one ledger for both
@@ -50,9 +50,9 @@ describe('a domain with its parts by name', () => {
   it('gives the Outage control each part', () => {
     const m = shop()
     expect(m.params.find((x) => x.id === 'down')?.def).toMatchObject({ options: ['none', 'eu', 'us'] })
-    expect(m.outageValues({}).map((o) => [o.domain, o.with, o.values.down])).toEqual([
-      ['region', 'with the EU out', 'eu'],
-      ['region', 'with the US out', 'us'],
+    expect(m.outageValues({}).map((o) => [o.domain, o.part, o.with, o.values.down])).toEqual([
+      ['region', 'eu', 'with the EU out', 'eu'],
+      ['region', 'us', 'with the US out', 'us'],
     ])
   })
 
@@ -87,6 +87,62 @@ describe('a domain with its parts by name', () => {
     expect(m.evaluate({ load: 1, down: 'us' } as never).lost.orders!.rate).toBe(0)
   })
 
+  it('takes a stage with no component as in the part too, and deals around a split that has no way left', () => {
+    // each region has a door that only routes; the EU door's one way is the EU API
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      domains: { region: { name: 'Region', parts: { eu: { name: 'the EU' }, us: { name: 'the US' } } } },
+      flows: { orders: { rate: ({ load }) => 500 * load } },
+      components: {
+        euApi: { name: 'EU API', capacity: measured(1_000, 'req/s'), in: { domain: 'region', part: 'eu' }, over: 'x' },
+        usApi: { name: 'US API', capacity: measured(800, 'req/s'), in: { domain: 'region', part: 'us' }, over: 'x' },
+      },
+      stages: {
+        router: split({
+          to: [
+            { stages: ['euDoor'], share: 0.6 },
+            { stages: ['usApi'], share: 0.4 },
+          ],
+        }),
+        euDoor: split({ to: [{ stages: ['euApi'], share: 1 }] }),
+        euApi: pass('euApi'),
+        usApi: pass('usApi'),
+        out: sink(),
+      },
+      routes: { orders: ['router', 'out'] },
+    })
+    const out = m.evaluate({ load: 1, down: 'eu' } as never)
+    expect(out.at.usApi!.orders).toBe(500)
+    expect(out.lost.orders!.rate).toBe(0)
+    // the door itself, when it says where it is
+    const placed = defineModel({
+      ...m.def,
+      stages: { ...m.def.stages, euDoor: { ...m.def.stages.euDoor, in: { domain: 'region', part: 'eu' } } },
+    } as never)
+    expect(placed.evaluate({ load: 1, down: 'eu' } as never).stages.euDoor).toMatchObject({ gone: true })
+  })
+
+  it('makes no copies at a fan-out whose part is down', () => {
+    const m = defineModel({
+      load: p.load({ max: 10 }),
+      domains: { region: { name: 'Region', parts: { eu: { name: 'the EU' }, us: { name: 'the US' } } } },
+      flows: { orders: { rate: ({ load }) => 500 * load } },
+      components: {
+        bus: { name: 'EU bus', capacity: measured(5_000, 'req/s'), in: { domain: 'region', part: 'eu' }, over: 'x' },
+        push: { name: 'Push', demand: ({ at }) => at.push.orders, capacity: measured(5_000, 'req/s'), over: 'x' },
+      },
+      stages: {
+        bus: fanout({ component: 'bus', to: { orders: [{ stage: 'push', share: 2 }] } }),
+        push: pass('push'),
+      },
+      routes: { orders: ['bus'] },
+    })
+    expect(m.evaluate({ load: 1 }).at.push!.orders).toBe(1000)
+    const out = m.evaluate({ load: 1, down: 'eu' } as never)
+    expect(out.at.push!.orders).toBe(0)
+    expect(out.components.push.util).toBe(0)
+  })
+
   it('answers N−1 for each part', () => {
     expect(outages(shop()).map((o) => o.text)).toEqual([
       'With the EU out, the 50 % target holds up to 0.8×, limited by the US API.',
@@ -107,6 +163,21 @@ describe('a domain with its parts by name', () => {
       'pass: the 50 % target holds up to 1× with the US out, limited by the EU API',
       'pass: nothing is lost at 1× with the US out',
     ])
+  })
+
+  it('refuses a component across a domain with its parts by name: it is in one of them', () => {
+    expect(() =>
+      defineModel({
+        load: p.load({ max: 10 }),
+        domains: { region: { name: 'Region', parts: { eu: { name: 'the EU' }, us: { name: 'the US' } } } },
+        flows: { orders: { rate: ({ load }) => 500 * load } },
+        components: {
+          api: { name: 'API', capacity: measured(1_000, 'req/s'), across: { domain: 'region', members: 6 }, over: 'x' },
+        },
+        stages: { api: pass('api') },
+        routes: { orders: ['api'] },
+      }),
+    ).toThrow('component "api" stands across "region", which has its parts by name: it is in one of them')
   })
 
   it('refuses a part no domain has, a single part and a name taken twice', () => {

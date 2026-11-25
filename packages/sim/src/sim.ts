@@ -753,9 +753,11 @@ export class Sim {
         d.outcome ??= 'delivered'
         continue
       }
-      if (d.phase === 'move' && !d.branch && !d.chain && (stage.gone || stage.stranded?.includes(d.flow))) {
-        // its part is down, or no way of the split is left: turned away here, whatever the stage is
-        reject(d, 'rejected')
+      if (d.phase === 'move' && (stage.gone || (!d.branch && !d.chain && stage.stranded?.includes(d.flow)))) {
+        // its part is down, or no way of the split is left: turned away here, whatever the stage is. A copy is no
+        // unit: it fades where it landed
+        if (d.branch || d.chain) fade(d, 'rejected', 0.35)
+        else reject(d, 'rejected')
       } else if (d.phase === 'move' && d.branch) {
         // a fan-out copy ends where it lands
         const refused =

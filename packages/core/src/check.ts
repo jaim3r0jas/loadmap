@@ -119,7 +119,13 @@ export function check<P, C extends string>(
         ? undefined
         : (model.def.domains as Record<string, { parts?: object }> | undefined)?.[e.down]?.parts
     if (e.down != null && parts && Object.hasOwn(model.def.domains ?? {}, e.down)) {
-      const each = Object.keys(parts).map((part) => check(model, [{ ...written, down: part }])[0]!)
+      // a model that declares its own Outage control may leave a part out of it: that one cannot be taken out
+      const options = (model.params.find((x) => x.id === 'down')?.def as { options?: readonly unknown[] } | undefined)
+        ?.options
+      const each = Object.keys(parts)
+        .filter((part) => options?.includes(part) ?? true)
+        .map((part) => check(model, [{ ...written, down: part }])[0]!)
+      if (!each.length) throw new Error(`loadmap: no part of "${e.down}" to take out`)
       const rank = { fail: 0, inconclusive: 1, pass: 2 } as const
       const low = (r: CheckResult<C>) => r.target?.low ?? r.full?.low ?? Number.POSITIVE_INFINITY
       const worst = each.reduce((a, b) =>

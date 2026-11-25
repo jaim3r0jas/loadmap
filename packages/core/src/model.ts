@@ -602,7 +602,7 @@ export interface Model<P = any, F extends string = string, C extends string = st
    * N−1 is asked with every part up: these values with one part out of each domain the `down` control offers, and how
    * to say it ("with one availability zone out"). Empty with a part already out, or without domains.
    */
-  outageValues(values?: Partial<Values<P>>): { domain: string; with: string; values: Values<P> }[]
+  outageValues(values?: Partial<Values<P>>): { domain: string; part?: string; with: string; values: Values<P> }[]
 }
 
 const RESERVED = ['load', 'flows', 'at', 'demand', 'util', 'derived']
@@ -1397,6 +1397,7 @@ export function defineModel<
         .filter((o): o is string => o !== 'none' && of(o as string) != null)
         .map((o) => ({
           domain: of(o)!,
+          ...(of(o) === o ? {} : { part: o }),
           with: `with ${down.format?.(o) ?? `${o} down`}`,
           values: { ...shown, down: o },
         }))
@@ -1536,7 +1537,10 @@ function contextAt(
     return at != null && values.down === at.part
   }
   /** The stage's component is in the part that is down: what reaches it is turned away there. */
-  const gone = (s: string) => goneC((stages[s] as { component?: string } | undefined)?.component)
+  const gone = (s: string) => {
+    const st = stages[s] as { component?: string; in?: { part: string } } | undefined
+    return goneC(st?.component) || (st?.in != null && values.down === st.in.part)
+  }
   /**
    * A split with a part down deals again: a way through a stage of that part gets nothing, and the ways left take
    * its share by their own (evenly, when theirs are all 0). Undefined while every part is up, or no way is touched.
@@ -1552,7 +1556,8 @@ function contextAt(
       const stranded = new Set<string>()
       let touched = false
       for (const [f, list] of Object.entries(to)) {
-        const left = list.filter((b) => !b.stages.some(gone))
+        // a way is gone with a stage of the part on it, or a split further on that has no way left itself
+        const left = list.filter((b) => !b.stages.some((x) => x !== s && lostAll(x, f)))
         if (left.length === list.length) {
           out[f] = list
           continue
@@ -2051,6 +2056,8 @@ function contextAt(
   const copiedTo = (t: string, f: string): readonly { stages: readonly string[]; share: number; calls: number }[] => {
     const st = stages[t]!
     if (st.kind !== 'fanout' && st.kind !== 'gather') return NONE
+    // in a part that is down it makes no copy and no call: the unit is turned away there
+    if (gone(t)) return NONE
     return memo(`branches of ${t} for ${f}`, () => {
       const to = memo(`branches of ${t}`, () => dyn(st.to, ctx)) as
         | readonly Branch[]
@@ -3602,12 +3609,26 @@ function withDomains<T extends ModelDef<any, any, any, any, any>>(def: T): T {
   for (const [c, cd] of Object.entries(def.components as Record<string, ComponentDef<any>>))
     if (cd.across && !Object.hasOwn(domains, cd.across.domain))
       throw new Error(`loadmap: component "${c}" stands across unknown domain "${cd.across.domain}"`)
-  for (const [c, cd] of Object.entries(def.components as Record<string, ComponentDef<any>>)) {
-    if (!cd.in) continue
-    const d = Object.hasOwn(domains, cd.in.domain) ? domains[cd.in.domain] : undefined
-    if (!d?.parts || !Object.hasOwn(d.parts, cd.in.part))
-      throw new Error(`loadmap: component "${c}" is in "${cd.in.part}", no named part of a domain "${cd.in.domain}"`)
+  const placed: [string, { in?: { domain: string; part: string } }][] = [
+    ...Object.entries(def.components as Record<string, ComponentDef<any>>).map(
+      ([c, cd]) => [`component "${c}"`, cd] as [string, typeof cd],
+    ),
+    ...Object.entries(def.stages as Record<string, StageDef>).map(
+      ([s, st]) => [`stage "${s}"`, st] as [string, typeof st],
+    ),
+  ]
+  for (const [who, x] of placed) {
+    if (!x.in) continue
+    const d = Object.hasOwn(domains, x.in.domain) ? domains[x.in.domain] : undefined
+    if (!d?.parts || !Object.hasOwn(d.parts, x.in.part))
+      throw new Error(`loadmap: ${who} is in "${x.in.part}", no named part of a domain "${x.in.domain}"`)
   }
+  // a component stands across parts that are alike; one of a domain with its parts by name is in one of them
+  for (const [c, cd] of Object.entries(def.components as Record<string, ComponentDef<any>>))
+    if (cd.across && Object.hasOwn(domains, cd.across.domain) && domains[cd.across.domain]!.parts)
+      throw new Error(
+        `loadmap: component "${c}" stands across "${cd.across.domain}", which has its parts by name: it is in one of them`,
+      )
   if (!ids.length) return def
   // what the control takes out: one part of a domain whose parts are alike, or a named part
   const names: Record<string, string> = {}
@@ -3634,7 +3655,8 @@ function withDomains<T extends ModelDef<any, any, any, any, any>>(def: T): T {
       own.options.some((o) => o !== 'none' && !options.includes(o as string))
     )
       throw new Error(
-        `loadmap: parameter "down" takes "none", the ids of the domains and of their named parts: ${options.join(', ')}`,
+        // as it always read for domains with a count; a named part is taken out by its own id
+        `loadmap: parameter "down" takes "none" and the ids of the domains${Object.values(domains).some((d) => d.parts) ? ', or of their parts where they have names' : ''}: ${options.join(', ')}`,
       )
     return def
   }

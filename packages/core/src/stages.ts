@@ -6,6 +6,11 @@ export type Dyn<T> = T | ((ctx: LooseValues) => T)
 interface StageBase {
   /** How meters and cluster groups name the stage: "positions topic". Defaults to its id. */
   label?: string
+  /**
+   * The named part of a failure domain the stage is in, for one with no component to say it (a split that only
+   * routes): with that part down, what reaches it is turned away here. A stage with a component is where that is.
+   */
+  in?: { domain: string; part: string }
 }
 
 /** Flows pass through; when its component is over capacity, the share above 100 % is rejected. */

@@ -101,7 +101,8 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
       out.push('rejected')
     // a stage in a named part of a domain turns away what reaches it while that part is down
     const part = (st as { component?: string }).component
-    if (passes && !out.includes('rejected') && part != null && def.components?.[part]?.in != null) out.push('rejected')
+    const placed = (st as { in?: unknown }).in != null || (part != null && def.components?.[part]?.in != null)
+    if (passes && !out.includes('rejected') && placed) out.push('rejected')
     // a stage whose component fails a share of its units, whatever the load
     const of = (st as { component?: string }).component
     // a gather fails the units too few of whose calls answer
