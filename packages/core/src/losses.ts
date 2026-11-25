@@ -91,7 +91,13 @@ export function lossesIn(def: Shape): (stage: string) => Loss[] {
       const before = w[w.indexOf(q) - 1]
       return (qs.whenFull === 'block' && before != null ? before : q) === stage
     }
-    if (!out.includes('rejected') && flows.some((f) => known.get(f)!.ways.some((w) => w.some((q) => fills(q, w)))))
+    // a split that works its ways out from the values could lead through the queue
+    const anyWay =
+      st.kind === 'queue' && st.holds != null && st.whenFull !== 'block' && flows.some((f) => known.get(f)!.open)
+    if (
+      !out.includes('rejected') &&
+      (anyWay || flows.some((f) => known.get(f)!.ways.some((w) => w.some((q) => fills(q, w)))))
+    )
       out.push('rejected')
     // a stage whose component fails a share of its units, whatever the load
     const of = (st as { component?: string }).component

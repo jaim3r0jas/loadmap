@@ -910,9 +910,9 @@ buffer -> refused
 ```
 
 A reader at 1.5 times what it can take leaves a third of the jobs at the door, and retries cannot help: they only
-raise what arrives. With a drop rule the flow loses one way or the other, never both: a full queue is read through
-in `holds` ÷ what its reader takes a second, so a unit is dropped only when that is longer than `olderThan`, and
-turned away when the queue is full first. For a moment that `lasts`, the verdict says when the queue is full: "inbox
+raise what arrives. With a drop rule the queue takes in what it can read through within the rule's limit, `holds` ÷
+`olderThan` a second: what arrives above that finds it full, and what it took in and its reader cannot take gets too
+old. So a small queue only turns away, a large one only drops, and one between does both. For a moment that `lasts`, the verdict says when the queue is full: "inbox
 is full after 2 min with 10k jobs, and at 1× clears in 2 min". In TypeScript, `queue({ partitions, holds: 10_000,
 whenFull: 'block' })`.
 
@@ -2824,7 +2824,7 @@ After the keyword: [id] [label].
 
 | Property | Value | |
 | --- | --- | --- |
-| `holds` | number, formula | How many units it holds: a bounded queue, a buffer, a mailbox. Once its reader is past full it fills, and what the reader cannot take is turned away (rejected, so a retry sends it again and a lost box counts it). Without it the queue holds whatever comes. A flow with a drop rule is dropped instead when a full queue takes longer to read through than olderThan. From loadmap 1.8. |
+| `holds` | number, formula | How many units it holds: a bounded queue, a buffer, a mailbox. Once its reader is past full it fills, and what the reader cannot take is turned away (rejected, so a retry sends it again and a lost box counts it). Without it the queue holds whatever comes. With a drop rule the queue takes in holds ÷ olderThan a second: what arrives above that finds it full, and what it took in and its reader cannot take gets too old. From loadmap 1.8. |
 | `full` | `reject` \| `block` | Where a unit that finds the queue full is turned away: reject, at the queue (the default), or block, at the stage before it, which waits to hand it over and cannot. Needs holds. From loadmap 1.8. |
 | `component` | component, constant | The component whose capacity this stage uses. Defaults to its box's component. |
 

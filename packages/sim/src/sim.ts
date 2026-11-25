@@ -241,6 +241,11 @@ export class Sim {
                 const on = ev.stages[t] as ResolvedStage
                 copies *= (1 - this.#shedOf(t, f)) * (1 - (on.fails ?? 0))
                 if (on.kind === 'cache') copies *= 1 - on.hit
+                // a queue on it that drops or is full lets on what its reader drains, as one on a route does
+                const by = (ev.stages[b.stages[b.stages.indexOf(t) + 1] ?? ''] as ResolvedStage | undefined)?.component
+                const busy = by == null ? null : ev.components[by]?.util
+                if (on.kind === 'queue' && (ev.overload[f]?.drop || on.holds != null) && busy != null && busy > full)
+                  copies *= full / busy
               }
             }
           // a gather lets on the units enough of whose calls answered: every unit made its calls first
@@ -387,8 +392,11 @@ export class Sim {
       /** Units removed per unit of capacity used: 1, or 1 ÷ (1 − share) while a merge is at work. */
       k: number
     }[] = []
+    // the queues with a size: none in most models, and then nothing more is done for them
+    const sized: [string, number][] = []
     for (const q of Object.values(ev.stages) as ResolvedStage[]) {
       if (q.kind !== 'queue') continue
+      if (q.holds != null) sized.push([q.id, q.holds])
       const qs = this.#queues.get(q.id) ?? new Map()
       this.#queues.set(q.id, qs)
       for (const f of this.#model.flowIds) {
@@ -444,9 +452,7 @@ export class Sim {
     // a queue with a size keeps no more than it holds: what is above it found it full, the newest first, each flow's
     // share as its arrivals are
     const refused = new Map<string, number>()
-    for (const q of new Set(entries.map((e) => e.q))) {
-      const holds = (ev.stages[q] as { holds?: number }).holds
-      if (holds == null) continue
+    for (const [q, holds] of sized) {
       const own = entries.filter((e) => e.q === q)
       const excess = own.reduce((a, e) => a + backlog(e.fq.cohorts), 0) - holds
       if (!(excess > 0)) continue
@@ -825,7 +831,8 @@ export class Sim {
         } else advance(d)
       } else if (d.phase === 'hold') {
         const q = stage.kind === 'queue' ? this.queue(stage.id, d.flow) : null
-        const dropShare = q && q.arriving > 0 ? Math.min(1, q.dropped / q.arriving) : 0
+        // of what the queue took in: a dot it refused never waited
+        const dropShare = q && q.arriving > q.refused ? Math.min(1, q.dropped / (q.arriving - q.refused)) : 0
         const mergeShare = q?.merging ? (ev.overload[d.flow]?.merge?.share ?? 0) : 0
         if (this.#r() < mergeShare) fade(d, 'superseded', 0.6)
         else if (this.#r() < dropShare) lose(d, 'dropped', stage.id)

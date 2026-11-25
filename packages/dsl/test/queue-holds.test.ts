@@ -96,6 +96,15 @@ describe('a queue with a size', () => {
     ])
   })
 
+  it('warns at the stage before it when it blocks and nothing counts what is turned away there', () => {
+    const src = SRC.replace('holds: 5_000\n', 'holds: 5_000\n    full: block\n')
+      .replace('node refused "Refused" { lost { takes: [rejected] } }\n', '')
+      .replace('buffer -> refused\n', '')
+    expect(errors(src)).toEqual([
+      'warning: unseen-loss: what finds "inbox" full is turned away at "api" and vanishes: give "api" a lost box that counts it',
+    ])
+  })
+
   it('has no lost box to feed without a size', () => {
     expect(errors(SRC.replace('    holds: 5_000\n', ''))[0]).toMatch(
       /^error: bad-lost: "buffer" loses nothing the lost box "refused" takes/,

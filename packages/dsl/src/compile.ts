@@ -1676,6 +1676,25 @@ export class Compiler {
           undefined,
           { stage: id, reason: 'rejected' },
         )
+    // a queue that blocks turns its units away at the stage before it, whatever that stage is
+    for (const b of flows) {
+      const f = b.args.id?.name
+      if (!f) continue
+      for (const w of waysOf(shape, f).ways)
+        for (const [i, q] of w.entries()) {
+          const st = shape.stages[q]
+          const before = w[i - 1]
+          if (st?.kind !== 'queue' || st.holds == null || st.whenFull !== 'block' || before == null) continue
+          if (!losses(before).includes('rejected') || !first(before, 'rejected')) continue
+          this.report.warning(
+            'unseen-loss',
+            stageOf.get(q)?.block.at ?? b.at,
+            `what finds "${q}" full is turned away at "${before}" and vanishes: give "${before}" a lost box that counts it`,
+            undefined,
+            { stage: before, reason: 'rejected' },
+          )
+        }
+    }
     // what a component that fails loses at each stage it runs, unless every flow through it has a fallback: that
     // serves what fails past where it falls back after
     const unserved = new Set(

@@ -3,7 +3,9 @@ import { defineModel, fanout, lost, measured, p, pass, queue, sink, workers } fr
 import { backlog } from '../src/backlog'
 
 // 100 jobs a second at 1×, through an inbox to runners that take 200 a second
-const shop = (o: { holds?: number; block?: boolean; drop?: boolean; retry?: number; gate?: number } = {}) =>
+const shop = (
+  o: { holds?: number; block?: boolean; drop?: boolean; retry?: number; gate?: number; fails?: number } = {},
+) =>
   defineModel({
     load: p.load({ max: 10 }),
     flows: {
@@ -16,12 +18,19 @@ const shop = (o: { holds?: number; block?: boolean; drop?: boolean; retry?: numb
     },
     components: {
       api: { name: 'API', capacity: measured(o.gate ?? 10_000, 'req/s'), over: 'x' },
+      brokers: {
+        name: 'Brokers',
+        capacity: measured(10_000, 'req/s'),
+        ...(o.fails ? { fails: o.fails } : {}),
+        over: 'x',
+      },
       runners: { name: 'Runners', demand: ({ flows }) => flows.jobs * 0.01, capacity: measured(2, 'cores'), over: 'x' },
     },
     stages: {
       api: pass('api'),
       inbox: queue({
         partitions: { jobs: 1 },
+        component: 'brokers',
         ...(o.holds ? { holds: o.holds } : {}),
         ...(o.block ? { whenFull: 'block' as const } : {}),
       }),
@@ -76,13 +85,36 @@ describe('a queue with a size', () => {
     ])
   })
 
-  it('drops or turns away, whichever comes first', () => {
-    // full, it is read through in 5000 ÷ 200 = 25 s: no job gets to be 30 s old
-    const full = shop({ holds: 5000, drop: true }).evaluate({ load: 3 })
-    expect(full.lost.jobs!.causes).toEqual([{ stage: 'inbox', loss: 'rejected', rate: expect.closeTo(100, 6) }])
-    // 7000 ÷ 200 = 35 s: the oldest are dropped before it fills
-    const old = shop({ holds: 7000, drop: true }).evaluate({ load: 3 })
-    expect(old.lost.jobs!.causes).toEqual([{ stage: 'inbox', loss: 'dropped', rate: expect.closeTo(100, 6) }])
+  it('only turns away with a drop rule when it is read through before a job is too old', () => {
+    // it takes in at most 5000 ÷ 30 s = 167 a second, less than the 200 its runners take
+    const ev = shop({ holds: 5000, drop: true }).evaluate({ load: 3 })
+    expect(ev.lost.jobs!.causes).toEqual([{ stage: 'inbox', loss: 'rejected', rate: expect.closeTo(100, 6) }])
+  })
+
+  it('turns away and drops between: it takes in holds ÷ olderThan a second', () => {
+    // 7000 ÷ 30 s = 233 a second taken in of 300, and the runners take 200 of them
+    const ev = shop({ holds: 7000, drop: true }).evaluate({ load: 3 })
+    expect(ev.lost.jobs!.causes).toEqual([
+      { stage: 'inbox', loss: 'rejected', rate: expect.closeTo(200 / 3, 6) },
+      { stage: 'inbox', loss: 'dropped', rate: expect.closeTo(100 / 3, 6) },
+    ])
+    expect(ev.lost.jobs!.rate).toBeCloseTo(100, 6)
+  })
+
+  it("only drops when it holds more than arrives within the rule's limit", () => {
+    // 300 a second for 30 s are 9000: it never fills
+    const ev = shop({ holds: 12_000, drop: true }).evaluate({ load: 3 })
+    expect(ev.lost.jobs!.causes).toEqual([{ stage: 'inbox', loss: 'dropped', rate: expect.closeTo(100, 6) }])
+  })
+
+  it('does not turn away again what its own component failed', () => {
+    // the brokers fail 15 of 300; of the 285 left the runners take 200
+    const ev = shop({ holds: 5000, fails: 0.05 }).evaluate({ load: 3 })
+    expect(ev.lost.jobs!.causes).toEqual([
+      { stage: 'inbox', loss: 'failed', rate: expect.closeTo(15, 6) },
+      { stage: 'inbox', loss: 'rejected', rate: expect.closeTo(85, 6) },
+    ])
+    expect(ev.lost.jobs!.share).toBeCloseTo(1 / 3, 9)
   })
 
   it('refuses a size that is not above 0', () => {

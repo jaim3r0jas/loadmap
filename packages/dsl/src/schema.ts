@@ -1313,7 +1313,7 @@ export const SCHEMA: Readonly<Record<string, BlockSpec>> = {
         value: 'number',
         scope: 'ctx',
         since: '1.8',
-        doc: 'How many units it holds: a bounded queue, a buffer, a mailbox. Once its reader is past full it fills, and what the reader cannot take is turned away (rejected, so a retry sends it again and a lost box counts it). Without it the queue holds whatever comes. A flow with a drop rule is dropped instead when a full queue takes longer to read through than olderThan.',
+        doc: 'How many units it holds: a bounded queue, a buffer, a mailbox. Once its reader is past full it fills, and what the reader cannot take is turned away (rejected, so a retry sends it again and a lost box counts it). Without it the queue holds whatever comes. With a drop rule the queue takes in holds ÷ olderThan a second: what arrives above that finds it full, and what it took in and its reader cannot take gets too old.',
       },
       full: {
         value: 'enum',

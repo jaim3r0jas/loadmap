@@ -1991,49 +1991,42 @@ function contextAt(
   })
 
   /**
-   * The share of what reaches a queue that it drops, on the way that goes on to `after`: in steady state what its
-   * reader there cannot drain (the rate the sim drains it at). 0 without a drop rule, or a reader with a component.
+   * What a queue loses of a flow once the stage after it on this way is past `full`: in steady state what that reader
+   * cannot drain (the rate the sim drains it at), as shares of what is offered to the queue. A queue that holds
+   * whatever comes drops it, when the flow has a drop rule. One with a size turns it away. With both, the queue
+   * takes in what it reads through within the rule's limit, holds ÷ olderThan a second: the rest of what arrives
+   * finds it full, and what it took in and its reader cannot drain gets too old. So a small queue only turns away,
+   * a large one only drops, and one between does both.
    */
-  const drops = (f: string, s: string, after: string | undefined) => {
-    const next = stages[after ?? '']
-    if (stages[s]!.kind !== 'queue' || !next || !('component' in next) || !next.component || !overload(f).drop) return 0
-    if (fillsFirst(f, s, next.component)) return 0
-    return rejectShare(ctx.util[next.component] as number | null, full)
-  }
-  /**
-   * Whether a queue with a size is full before a unit of the flow is old enough to drop: a full queue is read through
-   * in holds ÷ what its reader takes a second, and a drop rule throws away what waited longer than its limit. So the
-   * flow loses there one way or the other, never both. True for a flow with no drop rule, false for a queue that
-   * holds whatever comes.
-   */
-  const fillsFirst = (f: string, s: string, reader: string): boolean => {
-    const q = stages[s] as QueueStage
-    if (q.holds == null) return false
-    const drop = overload(f).drop
-    if (!drop) return true
-    return memo(`${s} fills before ${f} drops`, () => {
-      const read = 1 - rejectShare(ctx.util[reader] as number | null, full)
-      const served = flowIds.reduce((a, g) => a + arriving(s, g) * read, 0)
-      return dyn(q.holds!, ctx) < served * drop.olderThan
-    })
-  }
-  /**
-   * The share of what is offered to a queue with a size that finds it full, on the way that goes on to `after`: in
-   * steady state a reader past `full` fills it, and what the reader cannot drain is turned away. 0 for a queue that
-   * holds whatever comes, for a flow whose drop rule empties it before it fills and for a reader with no component.
-   */
-  const overflows = (f: string, s: string, after: string | undefined) => {
+  const over = (f: string, s: string, after: string | undefined): { refused: number; dropped: number } => {
     const q = stages[s]!
     const next = stages[after ?? '']
-    if (q.kind !== 'queue' || q.holds == null || !next || !('component' in next) || !next.component) return 0
-    if (!fillsFirst(f, s, next.component)) return 0
-    return rejectShare(ctx.util[next.component] as number | null, full)
+    const none = { refused: 0, dropped: 0 }
+    if (q.kind !== 'queue' || !next || !('component' in next) || !next.component) return none
+    const drop = overload(f).drop
+    if (q.holds == null && !drop) return none
+    const o = rejectShare(ctx.util[next.component] as number | null, full)
+    if (!(o > 0)) return none
+    if (q.holds == null) return { refused: 0, dropped: o }
+    if (!drop) return { refused: o, dropped: 0 }
+    const inflow = flowIds.reduce((a, g) => a + arriving(s, g), 0)
+    const taken = inflow > 0 ? dyn(q.holds, ctx) / (drop.olderThan * inflow) : 1
+    const refused = Math.min(o, Math.max(0, 1 - taken))
+    return { refused, dropped: o - refused }
   }
+  /** The share of what a queue took in that it drops as too old, on the way that goes on to `after`. */
+  const drops = (f: string, s: string, after: string | undefined) => {
+    const { refused, dropped } = over(f, s, after)
+    return dropped > 0 ? dropped / (1 - refused) : 0
+  }
+  /** The share of what is offered to a queue with a size that finds it full, on the way that goes on to `after`. */
+  const overflows = (f: string, s: string, after: string | undefined) => over(f, s, after).refused
   /** The same as a share of what actually reaches the queue: behind a stage that turns work away the bottleneck decides. */
   const spills = (f: string, s: string, after: string | undefined): number => {
     const o = overflows(f, s, after)
     if (!(o > 0)) return 0
-    const reaching = actual(s, f)
+    // of what the queue's own component did not fail: that is gone before it could wait
+    const reaching = actual(s, f) * (1 - failsAt(s))
     return reaching > 0 ? Math.max(0, 1 - (arriving(s, f) * (1 - o)) / reaching) : 0
   }
   /** Where a unit that finds the queue `s` full is turned away: at the queue, or with `block` at the stage before it. */
@@ -2152,13 +2145,11 @@ function contextAt(
           const cut = rejectsFor(t, f)
           if (cut > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - cut))
           r *= (1 - failsAt(t)) * (1 - (gathered(t, f)?.fails ?? 0))
+          const spill = overflows(f, t, route[i + 1])
+          if (spill > 0) r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - spill))
           fed = drops(f, t, route[i + 1])
           r *= 1 - fed
-          const over = overflows(f, t, route[i + 1])
-          if (over > 0) {
-            r = Math.min(r, (ways.length === 1 ? arriving(t, f) : offered) * (1 - over))
-            fed = over
-          }
+          fed ||= spill
           if (stages[t]!.kind === 'cache') r *= 1 - hit(t)
           offered *= onward(t, f)
         }
@@ -2248,12 +2239,13 @@ function contextAt(
           const short = r * (gathered(s, f)?.fails ?? 0)
           add(s, 'failed', short)
           r -= short
-          const dropped = r * drops(f, s, way.stages[j + 1])
-          add(s, 'dropped', dropped)
-          r -= dropped
+          // a full queue turns away first; of what it took in, some gets too old
           const spilled = r * spills(f, s, way.stages[j + 1])
           add(fullAt(s, way.stages[j - 1]), 'rejected', spilled)
           r -= spilled
+          const dropped = r * drops(f, s, way.stages[j + 1])
+          add(s, 'dropped', dropped)
+          r -= dropped
           if (st.kind === 'cache') {
             // a cache's answer is too slow at the cache; any other unit at the end of its way
             add(s, 'timedOut', r * hit(s) * late(`${i}/${s}`))
@@ -3269,12 +3261,12 @@ function contextAt(
           add(s, 'failed', broke)
           r -= broke
           // the queue's reader is the branch's next stage, whether or not the branch is asked that far
-          const dropped = r * drops(f, s, b.stages[j + 1])
-          add(s, 'dropped', dropped)
-          r -= dropped
           const fits = Math.min(r, offered * (1 - overflows(f, s, b.stages[j + 1])))
           add(fullAt(s, j ? chain[j - 1] : b.fan), 'rejected', r - fits)
           r = fits
+          const dropped = r * drops(f, s, b.stages[j + 1])
+          add(s, 'dropped', dropped)
+          r -= dropped
           if (st.kind === 'cache') {
             for (const w of parts) ways.push({ ...w, share: w.share * hit(s) })
             parts = parts.map((w) => ({ ...w, share: w.share * (1 - hit(s)) }))

@@ -242,6 +242,13 @@ export function Meters({ lm }: { lm: LoadmapController }) {
             label: `${flowLabel(f)} superseded /s (${rules.merge.reason ?? 'newest kept'})`,
             state: q.merged > 0.5 ? 'warn' : 'ok',
           })
+        if (s.holds != null)
+          items.push({
+            key: `${s.id}/${f}/full`,
+            value: compact(q.refused),
+            label: `${flowLabel(f)} turned away /s (${s.label} holds ${compact(s.holds)})`,
+            state: q.refused > 0.5 ? 'over' : 'ok',
+          })
         if (rules.drop)
           items.push({
             key: `${s.id}/${f}/drop`,
