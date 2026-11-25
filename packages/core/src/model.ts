@@ -3028,56 +3028,79 @@ function contextAt(
   const branch = (f: string, to: string): BranchResult =>
     memo(`branch of ${f} to ${to}`, () => {
       if (!flowIds.includes(f)) throw new Error(`loadmap: no flow "${f}"`)
-      const found = paths(f)
-        .map((p) => p.stages.at(-1) ?? '')
-        .flatMap((t) => copiedTo(t, f).map((b) => ({ fan: t, ...b })))
-        .find((b) => b.stages.includes(to))
-      if (!found) throw flowError(`loadmap: no fan-out branch of "${f}" goes through "${to}"`, f, 'route')
-      const chain = found.stages.slice(0, found.stages.indexOf(to) + 1)
-      const asked = arriving(found.fan, f) * found.share
+      // every branch of the flow's fan-outs that goes through the stage: their copies add up there
+      const found = [...new Set(paths(f).map((p) => p.stages.at(-1) ?? ''))]
+        .flatMap((t) => copiedTo(t, f).map((x) => ({ fan: t, ...x })))
+        .filter((x) => x.stages.includes(to))
+      if (!found.length) throw flowError(`loadmap: no fan-out branch of "${f}" goes through "${to}"`, f, 'route')
       const causes: { stage: string; loss: Loss; rate: number }[] = []
       const add = (stage: string, loss: Loss, rate: number) => {
-        if (rate > 0) causes.push({ stage, loss, rate })
+        if (!(rate > 0)) return
+        const known = causes.find((c) => c.stage === stage && c.loss === loss)
+        if (known) known.rate += rate
+        else causes.push({ stage, loss, rate })
       }
-      let r = asked * (1 - rejects(found.fan))
-      add(found.fan, 'rejected', asked - r)
-      // one way timed, or one for each cache that answers on it
       const ways: WayTime[] = []
-      let part: WayTime = { share: 1, mean: 0, variance: 0 }
+      const unknown = new Set<string>()
       let timed = false
-      for (const [j, s] of chain.entries()) {
-        const st = stages[s]!
-        const wait = delayOn(f, j ? chain[j - 1] : found.fan, s)
-        if (wait != null) timed = true
-        if (wait) part = { ...part, mean: part.mean + wait, fixed: (part.fixed ?? 0) + wait }
-        const time = response(s)
-        if (time != null) timed = true
-        if (time != null && !Number.isNaN(time))
-          part = { ...part, mean: part.mean + time, variance: part.variance + time ** 2 }
-        if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
-          const turned = r * shedFor(s, f)
-          add(s, 'rejected', turned)
-          r -= turned
+      let all = 0
+      for (const b of found) {
+        const chain = b.stages.slice(0, b.stages.indexOf(to) + 1)
+        const asked = arriving(b.fan, f) * b.share
+        all += asked
+        // what is offered to each stage as if those before kept up, and what actually gets there: a stage lets on at
+        // most what is offered to it × what it does not turn away, so a bottleneck before it is not counted again
+        let offered = asked
+        let r = asked * (1 - rejects(b.fan))
+        add(b.fan, 'rejected', asked - r)
+        // one way timed, or one for each cache that answers on it and each group of members a spread sets apart
+        let parts: WayTime[] = [{ share: asked, mean: 0, variance: 0 }]
+        for (const [j, s] of chain.entries()) {
+          const st = stages[s]!
+          const wait = delayOn(f, j ? chain[j - 1] : b.fan, s)
+          if (wait != null) timed = true
+          if (wait) parts = parts.map((w) => ({ ...w, mean: w.mean + wait, fixed: (w.fixed ?? 0) + wait }))
+          const rs = responses(s, f)
+          if (rs) timed = true
+          if (rs?.length === 1 && Number.isNaN(rs[0]!.time))
+            unknown.add(def.components[(st as { component: string }).component]!.name)
+          else if (rs)
+            parts = parts.flatMap((w) =>
+              rs.map((g) => ({
+                ...w,
+                share: w.share * g.share,
+                mean: w.mean + g.time,
+                variance: w.variance + g.time ** 2,
+              })),
+            )
+          if (st.kind === 'pass' || st.kind === 'limit' || st.kind === 'cache' || st.kind === 'split') {
+            const left = Math.min(r, offered * (1 - rejectsFor(s, f)))
+            add(s, 'rejected', r - left)
+            r = left
+          }
+          const broke = r * failsAt(s)
+          add(s, 'failed', broke)
+          r -= broke
+          // the queue's reader is the branch's next stage, whether or not the branch is asked that far
+          const dropped = r * drops(f, s, b.stages[j + 1])
+          add(s, 'dropped', dropped)
+          r -= dropped
+          if (st.kind === 'cache') {
+            for (const w of parts) ways.push({ ...w, share: w.share * hit(s) })
+            parts = parts.map((w) => ({ ...w, share: w.share * (1 - hit(s)) }))
+            r *= 1 - hit(s)
+          }
+          offered *= onward(s)
         }
-        const broke = r * failsAt(s)
-        add(s, 'failed', broke)
-        r -= broke
-        const dropped = r * drops(f, s, chain[j + 1])
-        add(s, 'dropped', dropped)
-        r -= dropped
-        if (st.kind === 'cache') {
-          ways.push({ ...part, share: part.share * hit(s) })
-          part = { ...part, share: part.share * (1 - hit(s)) }
-          r *= 1 - hit(s)
-        }
+        ways.push(...parts)
       }
-      ways.push(part)
+      const first = found[0]!
       const total = causes.reduce((a, c) => a + c.rate, 0)
       return {
-        from: found.fan,
-        stages: chain,
-        lost: { rate: total, share: asked > 0 ? Math.min(1, total / asked) : 0, causes },
-        latency: timed ? latencyOf(ways) : null,
+        from: first.fan,
+        stages: first.stages.slice(0, first.stages.indexOf(to) + 1),
+        lost: { rate: total, share: all > 0 ? Math.min(1, total / all) : 0, causes },
+        latency: timed ? { ...latencyOf(ways), ...(unknown.size ? { unknown: [...unknown] } : {}) } : null,
       }
     })
   const text = (v: string | ((c: any) => string) | undefined) => (typeof v === 'function' ? v(ctx) : v)

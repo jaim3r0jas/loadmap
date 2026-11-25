@@ -185,6 +185,11 @@ bus -> audit
     expect(errors(line('to: smtp; lost: 1%'))).toEqual([needs])
     expect(errors(line('flow: orders; to: smtp; underTarget: 2×'))).toEqual([needs])
     expect(errors(line('flow: orders; to: nope; lost: 1%'))).toEqual(['error: unknown-name: unknown stage "nope"'])
+    expect(errors(line('flow: orders; to: mailers -> smtp; lost: 1%'))).toEqual([
+      'error: bad-expect: to is one stage of a branch, the one it is held up to | to: mailers',
+    ])
+    // a stage is named by its box where the box holds one, as a branch names it: the cluster "mail" is its queue
+    expect(errors(line('flow: orders; to: mail; lost: 0%'))).toEqual([])
     expect(errors(line('flow: orders; to: api; lost: 1%'))).toEqual([
       'error: model: no fan-out branch of "orders" goes through "api"',
     ])

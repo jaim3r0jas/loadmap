@@ -861,6 +861,7 @@ export class Compiler {
     const stageOf = new Map<string, { block: Block; box: Box }>()
     for (const box of boxes) for (const s of box.stages) stageOf.set(s.id, { block: s.block, box })
     this.kinds = new Map([...stageOf].map(([id, s]) => [id, s.block.keyword]))
+    this.single = new Map(boxes.flatMap((x) => (x.stages.length === 1 ? [[x.id, x.stages[0]!.id] as const] : [])))
     const boxById = new Map(boxes.map((b) => [b.id, b]))
 
     // the model
@@ -1857,6 +1858,8 @@ export class Compiler {
   private whenAt = new WeakMap<EdgeDef, Span>()
   /** The hops along fan-out branches, `from\0to`: from the fan-out to a branch's first stage, and on along it. */
   private branchHops = new Set<string>()
+  /** The one stage of each box that holds exactly one, by the box's id: a stage may be named by its box. */
+  private single = new Map<string, string>()
   /** Each stage's keyword: what a fan-out's branch may go through. */
   private kinds = new Map<string, string>()
   /** The edges that hold a delay, as written: the model takes them once the stages and flows are known. */
@@ -3252,7 +3255,19 @@ export class Compiler {
     const flow = this.named(b, 'flow', [...flows.keys()], 'flow')
     const down = this.named(b, 'down', [...this.domainIds.keys()], 'domain')
     // a stage on one of the flow's fan-out branches: the expect then holds the branch up to it
-    const to = this.named(b, 'to', [...this.kinds.keys()], 'stage')
+    // by the stage's name, or its box's where the box holds one stage: as a route and a branch name it
+    const where = this.prop(b, 'to')
+    if (where?.chain && where.chain.length > 1) {
+      this.report.error(
+        'bad-expect',
+        where.value,
+        'to is one stage of a branch, the one it is held up to',
+        'to: mailers',
+      )
+      return undefined
+    }
+    const named = this.named(b, 'to', [...this.kinds.keys(), ...this.single.keys()], 'stage')
+    const to = named == null ? named : (this.single.get(named) ?? named)
     if (scenario === null || component === null || flow === null || down === null || to === null) return undefined
     if (to != null) {
       if (flow == null || !(b.props.has('lost') || ['p50', 'p95', 'p99'].some((q) => b.props.has(q)))) {

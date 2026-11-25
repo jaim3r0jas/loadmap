@@ -213,17 +213,26 @@ function latencyCheck<P, C extends string>(
   // a branch's time, from its fan-out through the stage, or the flow's
   const timeAt = (v: Partial<Values<P>>, bound?: 'low' | 'high') =>
     e.to == null ? model.latency(v, bound, [f])[f] : model.branch(f, e.to, v, bound).latency
+  // the branch at the values shown: its stages, and its time, read once
+  const shown = e.to == null ? undefined : model.branch(f, e.to, ev.values as Partial<Values<P>>)
   const none = () =>
-    result(e, 'fail', [], { target: null, full: null }, `"${f}" has no latency: no stage on its way has a service time`)
+    result(
+      e,
+      'fail',
+      [],
+      { target: null, full: null },
+      e.to == null
+        ? `"${f}" has no latency: no stage on its way has a service time`
+        : `the branch of "${f}" to "${e.to}" has no latency: no stage on it has a service time, and no edge a delay`,
+    )
   const load = ev.values.load
-  const now = e.to == null ? ev.latency[f] : timeAt(ev.values as Partial<Values<P>>)
+  const now = shown ? shown.latency : ev.latency[f]
   if (!now) return none()
   const at = (bound: 'low' | 'high', l: number) =>
     timeAt({ ...values, load: l } as Partial<Values<P>>, bound)?.[q] ?? Number.NaN
   // measured data that is missing may move the answer either way: a capacity on its way, or any other reading
   const all = Object.values<ComponentResult<C>>(ev.components)
-  const through =
-    e.to == null ? (ev.paths[f] ?? []).flatMap((w) => w.stages) : model.branch(f, e.to, ev.values as never).stages
+  const through = shown ? shown.stages : (ev.paths[f] ?? []).flatMap((w) => w.stages)
   const onWay = new Set(through.map((s) => (ev.stages[s] as { component?: string }).component))
   const read = new Set(all.flatMap((x) => (x.capacity?.measure ? [x.capacity.measure] : [])))
   const data = [

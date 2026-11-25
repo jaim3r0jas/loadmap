@@ -323,7 +323,8 @@ export function Meters({ lm }: { lm: LoadmapController }) {
     (e.underTarget == null || lm.values.load <= e.underTarget)
   // what a flow loses for good, where an expectation holds it at any values: against the strictest promised here
   for (const f of model.flowIds) {
-    const held = model.expectations.filter((e) => e.lost != null && (e.flow ?? f) === f)
+    // a branch's expectation (to) holds the branch, not the flow
+    const held = model.expectations.filter((e) => e.lost != null && e.to == null && (e.flow ?? f) === f)
     if (!held.length) continue
     const goals = held.filter(promised).map((e) => e.lost!)
     const lost = ev.lost[f]?.share ?? 0
@@ -338,7 +339,7 @@ export function Meters({ lm }: { lm: LoadmapController }) {
   for (const f of model.flowIds) {
     const l = ev.latency[f]
     if (!l) continue
-    const goal = model.expectations.find((e) => e.flow === f && e.p99 != null && promised(e))?.p99
+    const goal = model.expectations.find((e) => e.flow === f && e.to == null && e.p99 != null && promised(e))?.p99
     items.push({
       key: `${f}/p99`,
       value: duration(l.p99),
